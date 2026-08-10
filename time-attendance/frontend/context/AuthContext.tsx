@@ -17,7 +17,17 @@ interface User {
     organizations: any[];
     teams: any[];
     currentOrganization: any;
+    attendanceAccess?: {
+        roleKeys: string[];
+        roleNames: string[];
+        permissions: string[];
+        scopes: Record<string, 'self' | 'reports' | 'organization'>;
+        canAccessManagement: boolean;
+        canManageAccess: boolean;
+    } | null;
 }
+
+export type AttendanceWorkspaceMode = 'employee' | 'management';
 
 interface AuthContextType {
     user: User | null;
@@ -25,6 +35,9 @@ interface AuthContextType {
     isLoading: boolean;
     logout: () => Promise<void>;
     switchOrganization: (orgId: string) => Promise<void>;
+    workspaceMode: AttendanceWorkspaceMode;
+    setWorkspaceMode: (mode: AttendanceWorkspaceMode) => void;
+    canAccessManagement: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -33,11 +46,15 @@ const AuthContext = createContext<AuthContextType>({
     isLoading: true,
     logout: async () => { },
     switchOrganization: async () => { },
+    workspaceMode: 'employee',
+    setWorkspaceMode: () => { },
+    canAccessManagement: false,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const [workspaceMode, setWorkspaceModeState] = useState<AttendanceWorkspaceMode>('employee');
     const router = useRouter();
     const pathname = usePathname();
 
@@ -81,10 +98,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 try {
                     const response = await authApi.getMe();
 
-                    setUser({
+                    const nextUser = {
                         ...response.user,
                         currentOrganization: response.currentOrganization,
-                    });
+                        attendanceAccess: response.attendanceAccess,
+                    };
+                    setUser(nextUser);
+                    const storageKey = `attendance-workspace:${response.currentOrganization?.id || 'default'}`;
+                    const savedMode = localStorage.getItem(storageKey);
+                    setWorkspaceModeState(savedMode === 'management' && response.attendanceAccess?.canAccessManagement ? 'management' : 'employee');
                     resetRedirectFlag(); // Reset flag after successful auth
                 } catch (error: any) {
                     console.error('Failed to fetch user:', error);
@@ -138,6 +160,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const canAccessManagement = Boolean(user?.attendanceAccess?.canAccessManagement);
+    const setWorkspaceMode = (mode: AttendanceWorkspaceMode) => {
+        const nextMode = mode === 'management' && !canAccessManagement ? 'employee' : mode;
+        setWorkspaceModeState(nextMode);
+        if (user?.currentOrganization?.id) localStorage.setItem(`attendance-workspace:${user.currentOrganization.id}`, nextMode);
+    };
+
     return (
         <AuthContext.Provider
             value={{
@@ -146,6 +175,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 isLoading: loading,
                 logout,
                 switchOrganization,
+                workspaceMode,
+                setWorkspaceMode,
+                canAccessManagement,
             }}
         >
             {children}

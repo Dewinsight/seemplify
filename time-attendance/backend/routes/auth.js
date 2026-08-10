@@ -8,6 +8,7 @@ const {
     generatePKCE,
 } = require('../config/oidc');
 const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
+const { getEffectiveAccess } = require('../services/attendanceAccessService');
 
 // Store PKCE verifiers temporarily (in production, use Redis or similar)
 const pkceStore = new Map();
@@ -220,6 +221,20 @@ router.get('/me', async (req, res) => {
             currentOrganization = userinfo.organizations[0];
         }
 
+        const attendanceAccess = currentOrganization?.id
+            ? await getEffectiveAccess({
+                organizationId: currentOrganization.id,
+                user: {
+                    id: userinfo.sub,
+                    email: userinfo.email,
+                    name: userinfo.name,
+                    organizations: userinfo.organizations || [],
+                    teams: userinfo.teams || [],
+                    currentOrganization,
+                },
+            })
+            : null;
+
         res.json({
             user: {
                 id: userinfo.sub,
@@ -230,6 +245,7 @@ router.get('/me', async (req, res) => {
             },
             currentOrganization,
             currentOrganizationId: currentOrganization?.id,
+            attendanceAccess,
         });
     } catch (error) {
         console.error('Get user error:', error);

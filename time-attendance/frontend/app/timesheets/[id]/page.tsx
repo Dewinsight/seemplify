@@ -23,6 +23,7 @@ import {
     CalendarDays
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import CorrectionRequestDialog, { CorrectionRequestPayload } from '@/components/CorrectionRequestDialog';
 
 // Safe date parsing - handles ISO strings, Date objects, and invalid dates
 const safeParseDate = (dateValue: any): Date | null => {
@@ -73,7 +74,7 @@ export default function TimesheetDetailPage() {
     const { id } = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { user } = useAuth();
+    const { workspaceMode, canAccessManagement } = useAuth();
     const [timesheet, setTimesheet] = useState<any>(null);
     const [attendanceExceptions, setAttendanceExceptions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -84,6 +85,7 @@ export default function TimesheetDetailPage() {
     const [dayAction, setDayAction] = useState<{ mode: 'employee' | 'manager'; date: string; exceptionId?: string } | null>(null);
     const [dayActionType, setDayActionType] = useState('absence');
     const [dayActionReason, setDayActionReason] = useState('');
+    const [correctionReviewerLabel, setCorrectionReviewerLabel] = useState('your line manager, HR Manager or Attendance Admin');
     const reviewMode = searchParams.get('review') === '1';
 
     const fetchCurrentTimesheet = useCallback(async () => {
@@ -249,31 +251,53 @@ export default function TimesheetDetailPage() {
     };
 
     const submitDayAction = async () => {
-        if (!dayAction || dayActionReason.trim().length < 5) return;
+        if (!dayAction || dayAction.mode !== 'manager' || dayActionReason.trim().length < 5) return;
         const timesheetId = String(timesheet._id || id);
         try {
             setSubmitting(true);
             setActionError('');
-            if (dayAction.mode === 'manager') {
-                await exceptionsApi.flagTimesheetDay(timesheetId, {
-                    date: dayAction.date,
-                    type: dayActionType,
-                    explanation: dayActionReason.trim(),
-                });
-                setActionMessage('The issue was flagged for this employee and added to the audit history.');
-            } else {
-                await exceptionsApi.requestTimesheetCorrection(timesheetId, {
-                    date: dayAction.date,
-                    exceptionId: dayAction.exceptionId,
-                    explanation: dayActionReason.trim(),
-                });
-                setActionMessage('Your correction request was sent to your reviewer with this date attached.');
-            }
+            await exceptionsApi.flagTimesheetDay(timesheetId, {
+                date: dayAction.date,
+                type: dayActionType,
+                explanation: dayActionReason.trim(),
+            });
+            setActionMessage('The issue was flagged for this employee and added to the audit history.');
             setDayAction(null);
             setDayActionReason('');
             await fetchTimesheet(timesheetId);
         } catch (error: any) {
             setActionError(error?.response?.data?.error || 'The attendance issue could not be submitted.');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const openEmployeeCorrection = async (date: string, exceptionId?: string) => {
+        setDayAction({ mode: 'employee', date, exceptionId });
+        setCorrectionReviewerLabel('your line manager, HR Manager or Attendance Admin');
+        try {
+            const data = await exceptionsApi.getCorrectionRoute(String(timesheet._id || id));
+            if (data.routing?.fallbackLabel) setCorrectionReviewerLabel(data.routing.fallbackLabel);
+        } catch {
+            // Submission resolves the route again on the server.
+        }
+    };
+
+    const submitEmployeeCorrection = async (payload: CorrectionRequestPayload) => {
+        if (!dayAction || dayAction.mode !== 'employee') return;
+        try {
+            setSubmitting(true);
+            setActionError('');
+            const result = await exceptionsApi.requestTimesheetCorrection(String(timesheet._id || id), {
+                date: dayAction.date,
+                exceptionId: dayAction.exceptionId,
+                ...payload,
+            });
+            setDayAction(null);
+            setActionMessage(`Your proposed times were sent to ${result.routing?.fallbackLabel || correctionReviewerLabel}.`);
+            await fetchTimesheet(String(timesheet._id || id));
+        } catch (error: any) {
+            setActionError(error?.response?.data?.error || 'The correction request could not be sent.');
         } finally {
             setSubmitting(false);
         }
@@ -297,9 +321,7 @@ export default function TimesheetDetailPage() {
     const storedDays = Number(timesheet.summary?.daysWorked ?? timesheet.daysWorked ?? 0);
     const daysWorked = storedDays > 0 || calculatedDays === 0 ? storedDays : calculatedDays;
     const daysOnLeave = Number(timesheet.summary?.daysOnLeave || 0);
-    const organizationRole = user?.currentOrganization?.role;
-    const hasManagerRole = ['owner', 'admin', 'hr_manager'].includes(String(organizationRole)) || (user?.teams || []).some((team: any) => ['line_manager', 'team_lead'].includes(team.role));
-    const isReviewer = reviewMode && hasManagerRole;
+    const isReviewer = reviewMode && workspaceMode === 'management' && canAccessManagement;
     const incompleteEntries = Number(timesheet.summary?.incompleteEntries || 0);
     const blockingExceptions = attendanceExceptions.filter(item => item.approvalBlocking && ['open', 'correction_requested'].includes(item.status));
     const canApprove = incompleteEntries === 0 && blockingExceptions.length === 0;
@@ -618,7 +640,7 @@ export default function TimesheetDetailPage() {
                                                 {isReviewer ? <>
                                                     <button type="button" onClick={() => { setDayAction({ mode: 'manager', date: dateId }); setDayActionType(entry.status === 'absent' ? 'absence' : 'manual_review'); setDayActionReason(''); }} className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-300 hover:text-amber-200"><AlertTriangle className="h-3.5 w-3.5" />Flag an issue for this day</button>
                                                     {!!dayExceptions.length && <Link href={`${scopedExceptionHref()}&exceptionId=${encodeURIComponent(dayExceptions[0]._id)}`} className="text-xs font-medium text-teal-300 hover:underline">Review {dayExceptions.length} {dayExceptions.length === 1 ? 'exception' : 'exceptions'}</Link>}
-                                                </> : <button type="button" onClick={() => { setDayAction({ mode: 'employee', date: dateId, exceptionId: openDayException?._id }); setDayActionReason(''); }} className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-300 hover:text-teal-200"><PenLine className="h-3.5 w-3.5" />Request a correction for this day</button>}
+                                                </> : <button type="button" onClick={() => void openEmployeeCorrection(dateId, openDayException?._id)} className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-300 hover:text-teal-200"><PenLine className="h-3.5 w-3.5" />Request a correction for this day</button>}
                                             </div>}
 
                                             {/* Manual Entry Note */}
@@ -683,7 +705,8 @@ export default function TimesheetDetailPage() {
 
             </div>
 
-            {dayAction && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-labelledby="day-action-title" className="w-full max-w-lg rounded-xl border border-zinc-700 bg-zinc-900 p-6 shadow-xl"><h2 id="day-action-title" className="text-lg font-semibold text-white">{dayAction.mode === 'manager' ? 'Flag an attendance issue' : 'Request a correction'}</h2><p className="mt-2 text-sm leading-6 text-zinc-400">{safeFormatDate(dayAction.date, 'EEEE, MMMM d, yyyy')}. {dayAction.mode === 'manager' ? 'The employee will see the issue and your reason. This will block approval until it is reviewed.' : 'Explain what is wrong and what should change. Your reviewer’s decision and reason will be recorded.'}</p>{dayAction.mode === 'manager' && <label className="mt-4 block text-sm font-medium text-zinc-200" htmlFor="day-issue-type">Issue type<select id="day-issue-type" value={dayActionType} onChange={event => setDayActionType(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-teal-500"><option value="absence">Absence</option><option value="no_clock_out">Missing clock out</option><option value="late_arrival">Late arrival</option><option value="early_departure">Early departure</option><option value="missed_break">Missed break</option><option value="leave_conflict">Leave conflict</option><option value="manual_review">Other review issue</option></select></label>}<label className="mt-4 block text-sm font-medium text-zinc-200" htmlFor="day-action-reason">{dayAction.mode === 'manager' ? 'Reason and required action' : 'What happened and what should be corrected'}</label><textarea id="day-action-reason" autoFocus value={dayActionReason} onChange={event => setDayActionReason(event.target.value)} rows={5} className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white outline-none focus:border-teal-500" /><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => { setDayAction(null); setDayActionReason(''); }} className="rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 hover:bg-zinc-800">Cancel</button><button type="button" onClick={submitDayAction} disabled={submitting || dayActionReason.trim().length < 5} className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50">{dayAction.mode === 'manager' ? 'Flag issue' : 'Send request'}</button></div></div></div>}
+            {dayAction?.mode === 'manager' && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-labelledby="day-action-title" className="w-full max-w-lg rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] p-6 shadow-lg"><h2 id="day-action-title" className="text-lg font-semibold text-[var(--suite-ink)]">Flag an attendance issue</h2><p className="mt-2 text-sm leading-6 text-[var(--suite-muted)]">{safeFormatDate(dayAction.date, 'EEEE, MMMM d, yyyy')}. The employee will see the issue and your reason. This blocks approval until it is reviewed.</p><label className="mt-4 block text-sm font-medium text-[var(--suite-ink)]" htmlFor="day-issue-type">Issue type<select id="day-issue-type" value={dayActionType} onChange={event => setDayActionType(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 text-sm text-[var(--suite-ink)]"><option value="absence">Absence</option><option value="no_clock_out">Missing clock out</option><option value="late_arrival">Late arrival</option><option value="early_departure">Early departure</option><option value="missed_break">Missed break</option><option value="leave_conflict">Leave conflict</option><option value="manual_review">Other review issue</option></select></label><label className="mt-4 block text-sm font-medium text-[var(--suite-ink)]" htmlFor="day-action-reason">Reason and required action</label><textarea id="day-action-reason" autoFocus value={dayActionReason} onChange={event => setDayActionReason(event.target.value)} rows={5} className="mt-2 w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] p-3 text-sm text-[var(--suite-ink)]" /><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => { setDayAction(null); setDayActionReason(''); }} className="rounded-md px-3 py-2 text-sm font-medium text-[var(--suite-muted)] hover:bg-[var(--suite-surface-muted)]">Cancel</button><button type="button" onClick={submitDayAction} disabled={submitting || dayActionReason.trim().length < 5} className="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Flag issue</button></div></div></div>}
+            {dayAction?.mode === 'employee' && <CorrectionRequestDialog date={dayAction.date} reviewerLabel={correctionReviewerLabel} submitting={submitting} onCancel={() => setDayAction(null)} onSubmit={submitEmployeeCorrection} />}
         </div>
     );
 }

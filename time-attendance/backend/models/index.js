@@ -18,6 +18,7 @@ const AttendanceContextAccessLog = require('./AttendanceContextAccessLog');
 const PublicHolidaySnapshot = require('./PublicHolidaySnapshot');
 const AttendanceException = require('./AttendanceException');
 const CorrectionRun = require('./CorrectionRun');
+const AttendanceAccessPolicy = require('./AttendanceAccessPolicy');
 
 module.exports = {
     TimeEntry,
@@ -49,4 +50,5 @@ module.exports = {
     PublicHolidaySnapshot,
     AttendanceException,
     CorrectionRun,
+    AttendanceAccessPolicy,
 };

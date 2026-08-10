@@ -31,6 +31,7 @@ const performanceIntegrationRoutes = require('./routes/performanceIntegration');
 const exceptionRoutes = require('./routes/exceptions');
 const presenceReporterIntegrationRoutes = require('./routes/presenceReporterIntegration');
 const correctionRunRoutes = require('./routes/correctionRuns');
+const accessPolicyRoutes = require('./routes/accessPolicy');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -109,6 +110,7 @@ app.use('/api/v1/scheduling', schedulingRoutes);
 app.use('/api/v1/presence', presenceRoutes);
 app.use('/api/internal/v1/presence', presenceReporterIntegrationRoutes);
 app.use('/api/admin/correction-runs', correctionRunRoutes);
+app.use('/api/admin/access-policy', accessPolicyRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/integrations/v1/performance', performanceIntegrationRoutes);

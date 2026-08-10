@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -47,7 +47,8 @@ const personalNavigation: NavItem[] = [
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
-    const { user, switchOrganization, isLoading, isAuthenticated } = useAuth();
+    const router = useRouter();
+    const { user, switchOrganization, isLoading, isAuthenticated, workspaceMode, setWorkspaceMode, canAccessManagement } = useAuth();
     const [mobileOpen, setMobileOpen] = useState(false);
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [orgMenuOpen, setOrgMenuOpen] = useState(false);
@@ -74,35 +75,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated && !isPublicRoute) return null;
     if (isPublicRoute || pathname === '/login') return <>{children}</>;
 
-    const currentOrgRole = user?.currentOrganization?.role;
-    const isManager = user?.teams?.some(team =>
-        team.organizationId === user?.currentOrganization?.id &&
-        ['line_manager', 'team_lead'].includes(team.role)
-    );
-    const isAdmin = ['owner', 'admin', 'hr_manager'].includes(currentOrgRole);
-    const showManagement = isAdmin || isManager;
+    const permissions = new Set(user?.attendanceAccess?.permissions || []);
+    const showManagement = canAccessManagement;
 
     const primaryManagementNavigation: NavItem[] = [
         { name: 'Approvals', label: 'Approvals', href: '/approvals', icon: CheckCircle2 },
         { name: 'Team Attendance', label: 'Team', href: '/team', icon: Users },
     ];
 
-    const secondaryManagementNavigation: NavItem[] = isAdmin
-        ? [
-            { name: 'Reports', label: 'Reports', href: '/reports', icon: BarChart3 },
-            { name: 'Rule Packs', label: 'Rules', href: '/admin/rule-packs', icon: Scale },
-            { name: 'Settings', label: 'Settings', href: '/admin/settings', icon: Settings },
-        ]
-        : [];
+    const secondaryManagementNavigation: NavItem[] = [
+        { name: 'Correction Queue', label: 'Corrections', href: '/exceptions', icon: AlertCircle },
+        { name: 'Schedule', label: 'Schedule', href: '/schedule', icon: CalendarClock },
+        { name: 'Notifications', label: 'Alerts', href: '/notifications', icon: Bell },
+        ...(permissions.has('reports.view') ? [{ name: 'Reports', label: 'Reports', href: '/reports', icon: BarChart3 }] : []),
+        ...(permissions.has('policy.view') ? [{ name: 'Rule Packs', label: 'Rules', href: '/admin/rule-packs', icon: Scale }, { name: 'Settings', label: 'Settings', href: '/admin/settings', icon: Settings }] : []),
+    ];
 
     const managementNavigation = [
         ...primaryManagementNavigation,
         ...secondaryManagementNavigation,
     ];
 
-    const desktopNavigation = showManagement
-        ? [...personalNavigation, ...primaryManagementNavigation]
-        : personalNavigation;
+    const employeePrimaryNavigation = personalNavigation.filter(item => ['/dashboard', '/timesheets'].includes(item.href));
+    const employeeSecondaryNavigation = personalNavigation.filter(item => !employeePrimaryNavigation.some(primary => primary.href === item.href));
+    const desktopNavigation = workspaceMode === 'management' && showManagement
+        ? [{ name: 'Dashboard', label: 'Dashboard', href: '/dashboard', icon: LayoutGrid }, ...primaryManagementNavigation]
+        : employeePrimaryNavigation;
+    const dropdownNavigation = workspaceMode === 'management' && showManagement ? secondaryManagementNavigation : employeeSecondaryNavigation;
+    const dropdownLabel = workspaceMode === 'management' && showManagement ? 'Manage' : 'Work';
 
     const isActive = (item: NavItem) =>
         pathname === item.href ||
@@ -130,6 +130,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         setOrgMenuOpen(false);
         setMobileOpen(false);
         void switchOrganization(organizationId);
+    };
+
+    const selectWorkspace = (mode: 'employee' | 'management') => {
+        setWorkspaceMode(mode);
+        setMobileOpen(false);
+        setMoreMenuOpen(false);
+        router.push('/dashboard');
     };
 
     const renderNavigationLink = (item: NavItem, mobile = false) => {
@@ -181,23 +188,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <div className="relative hidden h-16 min-w-0 flex-1 items-center min-[1450px]:flex" data-testid="desktop-navigation">
                         {desktopNavigation.map(item => renderNavigationLink(item))}
 
-                        {secondaryManagementNavigation.length > 0 && (
+                        {dropdownNavigation.length > 0 && (
                             <div className="relative flex h-16 items-center">
                                 <button
                                     type="button"
                                     onClick={toggleMoreMenu}
-                                    aria-label="More management pages"
+                                    aria-label={`${dropdownLabel} pages`}
                                     aria-expanded={moreMenuOpen}
                                     aria-haspopup="menu"
                                     className={cn(
                                         'flex h-16 items-center gap-2 px-2.5 text-[13px] font-medium transition-colors',
-                                        secondaryManagementNavigation.some(isActive) || moreMenuOpen
+                                    dropdownNavigation.some(isActive) || moreMenuOpen
                                             ? 'text-white'
                                             : 'text-zinc-400 hover:text-zinc-100'
                                     )}
                                 >
-                                    <MoreHorizontal className={cn('h-4 w-4', secondaryManagementNavigation.some(isActive) && 'text-teal-400')} />
-                                    <span>More</span>
+                                <MoreHorizontal className={cn('h-4 w-4', dropdownNavigation.some(isActive) && 'text-teal-400')} />
+                                    <span>{dropdownLabel}</span>
                                     <ChevronDown className={cn('h-3.5 w-3.5 text-zinc-500 transition-transform', moreMenuOpen && 'rotate-180')} />
                                 </button>
 
@@ -210,7 +217,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                             onClick={() => setMoreMenuOpen(false)}
                                         />
                                         <div className="absolute right-0 top-14 z-50 w-52 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 p-1 shadow-lg shadow-black/30" role="menu">
-                                            {secondaryManagementNavigation.map(item => (
+                                            {dropdownNavigation.map(item => (
                                                 <Link
                                                     key={item.href}
                                                     href={item.href}
@@ -235,6 +242,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </div>
 
                     <div className="ml-auto flex shrink-0 items-center gap-2" data-testid="header-actions">
+                        {showManagement && <div role="group" aria-label="Attendance workspace" className="hidden h-9 items-center rounded-md border border-zinc-800 bg-zinc-900 p-0.5 sm:flex">
+                            <button type="button" aria-pressed={workspaceMode === 'employee'} onClick={() => selectWorkspace('employee')} className={cn('h-7 rounded px-2.5 text-xs font-medium transition-colors', workspaceMode === 'employee' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white')}>Employee</button>
+                            <button type="button" aria-pressed={workspaceMode === 'management'} onClick={() => selectWorkspace('management')} className={cn('h-7 rounded px-2.5 text-xs font-medium transition-colors', workspaceMode === 'management' ? 'bg-teal-600 text-white' : 'text-zinc-400 hover:text-white')}>Management</button>
+                        </div>}
                         <ThemePreferenceMenu />
                         <div className="relative hidden md:block">
                             <button
@@ -384,21 +395,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                 <ThemePreferenceMenu mobile />
                             </div>
 
+                            {showManagement && <div className="border-t border-zinc-800 py-5"><div className="mb-2 text-xs font-medium text-zinc-500">Workspace</div><div role="group" aria-label="Attendance workspace" className="grid grid-cols-2 gap-2"><button type="button" aria-pressed={workspaceMode === 'employee'} onClick={() => selectWorkspace('employee')} className={cn('min-h-11 border px-3 text-sm font-medium', workspaceMode === 'employee' ? 'border-zinc-600 bg-zinc-800 text-white' : 'border-zinc-800 text-zinc-400')}>Employee view</button><button type="button" aria-pressed={workspaceMode === 'management'} onClick={() => selectWorkspace('management')} className={cn('min-h-11 border px-3 text-sm font-medium', workspaceMode === 'management' ? 'border-teal-600 bg-teal-600 text-white' : 'border-zinc-800 text-zinc-400')}>Management view</button></div></div>}
+
                             <div className="border-t border-zinc-800 py-5">
-                                <div className="mb-2 text-xs font-medium text-zinc-500">Personal</div>
+                                <div className="mb-2 text-xs font-medium text-zinc-500">{workspaceMode === 'management' && showManagement ? 'Management' : 'Employee'}</div>
                                 <div className="grid gap-1 sm:grid-cols-2">
-                                    {personalNavigation.map(item => renderNavigationLink(item, true))}
+                                    {(workspaceMode === 'management' && showManagement ? managementNavigation : personalNavigation).map(item => renderNavigationLink(item, true))}
                                 </div>
                             </div>
-
-                            {showManagement && (
-                                <div className="border-t border-zinc-800 py-5">
-                                    <div className="mb-2 text-xs font-medium text-zinc-500">Management</div>
-                                    <div className="grid gap-1 sm:grid-cols-2">
-                                        {managementNavigation.map(item => renderNavigationLink(item, true))}
-                                    </div>
-                                </div>
-                            )}
 
                             <div className="border-t border-zinc-800 pt-5 md:hidden">
                                 <div className="mb-2 text-xs font-medium text-zinc-500">Organization</div>

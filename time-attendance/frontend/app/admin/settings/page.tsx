@@ -15,8 +15,11 @@ import {
     Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
+import AttendanceRoleSettings from '@/components/AttendanceRoleSettings';
 
 export default function SettingsPage() {
+    const { user } = useAuth();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [policy, setPolicy] = useState<any>(null);
@@ -223,7 +226,8 @@ export default function SettingsPage() {
                         <h2 className="text-lg font-semibold text-white">Work Schedule</h2>
                     </div>
 
-                    <div className="space-y-6">
+            <div className="space-y-6">
+                {user?.attendanceAccess?.canManageAccess && <AttendanceRoleSettings />}
                         <div className="grid grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-sm font-medium text-zinc-400 mb-2">Default Start Time</label>

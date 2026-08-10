@@ -1,16 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
+const { requireAuth, requireOrganization, isHRAdmin, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
 const { Timesheet, AttendancePolicy, AttendanceException } = require('../models');
 const { createNotification } = require('../services/notificationService');
 const { refreshTimesheetEntries } = require('./timesheets');
+const { PERMISSIONS, hasAttendancePermission } = require('../services/attendanceAccessService');
 
 // Apply auth middleware
 router.use(requireAuth);
 router.use(requireOrganization);
 router.use(async (req, res, next) => {
     try {
-        if (isHRAdmin(req) || isLineManager(req) || isDepartmentHead(req)) return next();
+        if (await hasAttendancePermission(req, PERMISSIONS.TIMESHEETS_APPROVE)) return next();
         const policy = await AttendancePolicy.findOne({ organizationId: req.organizationId }).lean();
         const delegated = (policy?.timesheetSettings?.approvalDelegations || []).some(delegation => (
             String(delegation.toUserId) === String(req.user.id)
@@ -39,7 +40,25 @@ function hasActiveDelegation(policy, fromUserId, toUserId, now = new Date()) {
     ));
 }
 
+function configuredApprovalScope(req) {
+    return req.attendanceAccess?.scopes?.[PERMISSIONS.TIMESHEETS_APPROVE];
+}
+
+function configuredReportIds(req) {
+    const ids = new Set((getDepartmentHeadScope(req).directReports || []).map(String));
+    for (const team of req.user.teams || []) {
+        if (String(team.organizationId) !== String(req.organizationId) || !['line_manager', 'team_lead'].includes(team.role)) continue;
+        for (const id of [...(team.directReports || []), ...(team.directReportAccountIds || [])]) ids.add(String(id));
+    }
+    return Array.from(ids);
+}
+
+function hasOrganizationApprovalScope(req) {
+    return configuredApprovalScope(req) === 'organization';
+}
+
 function approvalScopeQuery(req, policy) {
+    if (hasOrganizationApprovalScope(req)) return {};
     const userId = String(req.user.id);
     const delegatedFrom = (policy?.timesheetSettings?.approvalDelegations || [])
         .filter(delegation => hasActiveDelegation(policy, delegation.fromUserId, userId))
@@ -48,12 +67,14 @@ function approvalScopeQuery(req, policy) {
         { 'assignedApprover.userId': userId },
         ...(delegatedFrom.length ? [{ 'assignedApprover.userId': { $in: delegatedFrom } }] : []),
     ];
-    if (isDepartmentHead(req)) scope.push({ userId: { $in: getDepartmentHeadScope(req).directReports } });
+    const reportIds = configuredApprovalScope(req) === 'reports' ? configuredReportIds(req) : [];
+    if (reportIds.length) scope.push({ userId: { $in: reportIds } });
     return { $or: scope };
 }
 
 function canApproveTimesheet(req, timesheet, policy) {
-    if (isHRAdmin(req)) return true;
+    if (hasOrganizationApprovalScope(req)) return true;
+    if (configuredApprovalScope(req) === 'reports' && configuredReportIds(req).includes(String(timesheet.userId))) return true;
     const userId = String(req.user.id);
     const level = activeApprovalLevel(timesheet);
     if (level?.approverType === 'department_head') {
@@ -142,14 +163,14 @@ router.get('/', async (req, res) => {
         const policy = await AttendancePolicy.findOne({ organizationId }).lean();
         // If not HR admin, include direct assignments, active delegations and
         // department-head scope, then enforce the current level in memory.
-        if (!isHRAdmin(req)) {
+        if (!hasOrganizationApprovalScope(req)) {
             Object.assign(query, approvalScopeQuery(req, policy));
         }
 
         const candidates = await Timesheet.find(query)
             .sort({ submittedAt: -1 })
             .limit(Math.min(500, Math.max(parseInt(limit) * 5, 50)));
-        const timesheets = (status === 'submitted' && !isHRAdmin(req)
+        const timesheets = (status === 'submitted' && !hasOrganizationApprovalScope(req)
             ? candidates.filter(timesheet => canApproveTimesheet(req, timesheet, policy))
             : candidates).slice(0, parseInt(limit));
 
@@ -203,18 +224,17 @@ router.get('/history', async (req, res) => {
             status: { $in: ['approved', 'payroll_pending', 'payroll_exported', 'locked', 'rejected', 'revision_requested'] },
         };
 
-        // If not HR admin, only show timesheets this manager processed
-        if (!isHRAdmin(req)) {
-            if (isDepartmentHead(req)) {
-                query.userId = { $in: getDepartmentHeadScope(req).directReports };
-            } else {
+        // Organization-scoped attendance roles see the full audit history.
+        // Report-scoped roles see their people plus decisions they processed.
+        if (!hasOrganizationApprovalScope(req)) {
+            const reportIds = configuredApprovalScope(req) === 'reports' ? configuredReportIds(req) : [];
             query.$or = [
+                ...(reportIds.length ? [{ userId: { $in: reportIds } }] : []),
                 { 'approvedBy.userId': userId },
                 { 'rejectedBy.userId': userId },
                 { 'revisionRequestedBy.userId': userId },
                 { 'approvalWorkflow.levels.decidedBy': userId },
             ];
-            }
         }
 
         const timesheets = await Timesheet.find(query)
@@ -238,7 +258,7 @@ router.get('/counts', async (req, res) => {
         const organizationId = req.organizationId;
 
         const matchQuery = { organizationId };
-        if (!isHRAdmin(req)) {
+        if (!hasOrganizationApprovalScope(req)) {
             const policy = await AttendancePolicy.findOne({ organizationId }).lean();
             Object.assign(matchQuery, approvalScopeQuery(req, policy));
         }
@@ -709,4 +729,6 @@ module.exports = router;
 module.exports.activeApprovalLevel = activeApprovalLevel;
 module.exports.advanceApproval = advanceApproval;
 module.exports.hasActiveDelegation = hasActiveDelegation;
+module.exports.approvalScopeQuery = approvalScopeQuery;
+module.exports.canApproveTimesheet = canApproveTimesheet;
 module.exports.approvalReadiness = approvalReadiness;

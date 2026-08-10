@@ -111,6 +111,20 @@ const TimeEntrySchema = new Schema({
         reason: String,
     },
 
+    // Approved correction requests never erase original punches. Replaced
+    // punches are retained as superseded audit evidence and excluded from
+    // normal attendance calculations.
+    correction: {
+        state: { type: String, enum: ['active', 'superseded'] },
+        exceptionId: { type: Schema.Types.ObjectId, ref: 'AttendanceException', index: true },
+        replacesEntryIds: [{ type: Schema.Types.ObjectId, ref: 'TimeEntry' }],
+        supersededAt: Date,
+        supersededBy: String,
+        supersededByName: String,
+        reason: String,
+        appliedAt: Date,
+    },
+
     // Auto clock-out state (stored on the originating clock_in entry)
     autoClockOut: {
         warningSentAt: Date,
@@ -155,6 +169,13 @@ const TimeEntrySchema = new Schema({
     },
 }, {
     timestamps: true,
+});
+
+TimeEntrySchema.pre(/^find/, function excludeSupersededCorrections(next) {
+    if (!this.getOptions().includeSuperseded && this.getQuery()?.['correction.state'] === undefined) {
+        this.where({ 'correction.state': { $ne: 'superseded' } });
+    }
+    next();
 });
 
 // Compound indexes for common queries

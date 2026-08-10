@@ -36,6 +36,20 @@ const user = {
     organizations: [organization],
     teams: [{ id: 'team-1', name: 'Operations', organizationId: 'org-1', role: 'line_manager' }],
 };
+const attendanceAccess = {
+    roleKeys: ['employee', 'line_manager', 'attendance_admin'],
+    roleNames: ['Employee', 'Line Manager', 'Attendance Admin'],
+    permissions: ['employee.view', 'corrections.request', 'management.view', 'team.view', 'timesheets.approve', 'corrections.review', 'reports.view', 'policy.view', 'policy.manage', 'access.manage'],
+    scopes: { 'corrections.review': 'organization', 'timesheets.approve': 'organization' },
+    canAccessManagement: true,
+    canManageAccess: true,
+};
+const attendanceRoles = [
+    { key: 'employee', name: 'Employee', scope: 'self', permissions: ['employee.view', 'corrections.request'], locked: true },
+    { key: 'line_manager', name: 'Line Manager', scope: 'reports', permissions: ['management.view', 'team.view', 'timesheets.approve', 'corrections.review'], locked: false },
+    { key: 'hr_manager', name: 'HR Manager', scope: 'organization', permissions: ['management.view', 'team.view', 'timesheets.approve', 'corrections.review', 'reports.view', 'policy.view'], locked: false },
+    { key: 'attendance_admin', name: 'Attendance Admin', scope: 'organization', permissions: attendanceAccess.permissions, locked: true },
+];
 
 const timesheet = {
     _id: 'timesheet-1',
@@ -119,7 +133,7 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'GET' && path === '/api/auth/oidc/start') return route.fulfill({ status: 200, contentType: 'text/html', body: '<main><h1>Mock Identity Provider sign-in</h1></main>' });
         if (method === 'GET' && path === '/api/auth/me') {
             const authenticatedUser = state.approvalConflict ? { ...user, id: 'manager-1', email: 'manager@example.com', name: 'Morgan Manager' } : user;
-            return json(route, { user: authenticatedUser, currentOrganization: organization });
+            return json(route, { user: authenticatedUser, currentOrganization: organization, attendanceAccess });
         }
         if (method === 'POST' && path === '/api/auth/logout') return json(route, { success: true });
 
@@ -242,10 +256,11 @@ async function installApiMock(page: Page, state: MockState) {
                 ],
             });
         }
-        if (method === 'POST' && path === '/api/v1/exceptions/exception-1/correction-requests') { state.exceptionStatus = 'correction_requested'; return json(route, { success: true }); }
-        if (method === 'POST' && path === '/api/v1/exceptions/exception-1/review') return json(route, { success: true });
-        if (method === 'POST' && path === '/api/v1/exceptions/exception-3/review') return json(route, { success: true });
-        if (method === 'POST' && path === '/api/v1/exceptions/timesheets/timesheet-1/correction-requests') { state.timesheetCorrectionRequested = true; return json(route, { success: true }); }
+        if (method === 'GET' && path === '/api/v1/exceptions/timesheets/timesheet-1/correction-route') return json(route, { routing: { fallbackLabel: 'Morgan Manager (Line manager)', reason: 'Employee line manager', recipients: [{ userId: 'manager-1', userName: 'Morgan Manager', roleLabel: 'Line manager' }] } });
+        if (method === 'POST' && path === '/api/v1/exceptions/exception-1/correction-requests') { state.exceptionStatus = 'correction_requested'; return json(route, { routing: { fallbackLabel: 'Morgan Manager (Line manager)' } }); }
+        if (method === 'POST' && path === '/api/v1/exceptions/exception-1/review') return json(route, { applied: { timesheetId: 'timesheet-1', version: 1, createdAdjustment: false } });
+        if (method === 'POST' && path === '/api/v1/exceptions/exception-3/review') return json(route, { applied: { timesheetId: 'timesheet-1', version: 1, createdAdjustment: false } });
+        if (method === 'POST' && path === '/api/v1/exceptions/timesheets/timesheet-1/correction-requests') { state.timesheetCorrectionRequested = true; return json(route, { routing: { fallbackLabel: 'Morgan Manager (Line manager)' } }); }
         if (method === 'POST' && path === '/api/v1/exceptions/timesheets/timesheet-1/flags') { state.managerExceptionFlagged = true; return json(route, { success: true }); }
 
         if (method === 'GET' && path === '/api/v1/presence/notice') return json(route, { purpose: 'Shows transparent application-session evidence alongside attendance.', rawRetentionDays: 90, dailySummaryRetentionDays: 365, captured: ['session start and end', 'visible-tab heartbeat'], excluded: ['keystrokes', 'screenshots', 'field values'] });
@@ -262,6 +277,10 @@ async function installApiMock(page: Page, state: MockState) {
 
         if (method === 'GET' && path === '/api/admin/attendance-policy') return json(route, { policy });
         if (method === 'PUT' && path === '/api/admin/attendance-policy') return json(route, { policy });
+        if (method === 'GET' && path === '/api/admin/access-policy') return json(route, { policy: { roles: attendanceRoles, assignments: [] }, editablePermissions: ['management.view', 'team.view', 'timesheets.approve', 'corrections.review', 'reports.view', 'policy.view', 'policy.manage'] });
+        if (method === 'PUT' && path === '/api/admin/access-policy') return json(route, { policy: { roles: attendanceRoles, assignments: [] } });
+        if (method === 'GET' && path === '/api/admin/access-policy/people') return json(route, { people: [{ userId: 'employee-2', name: 'Jamie Lee', email: 'jamie@example.com', roleKeys: [] }] });
+        if (method === 'PUT' && path === '/api/admin/access-policy/people/employee-2') return json(route, { assignment: { userId: 'employee-2', roleKeys: request.postDataJSON().roleKeys } });
         if (path.startsWith('/api/admin/geofence-locations')) return json(route, { policy });
 
         if (method === 'GET' && path === '/api/v1/rule-packs') return json(route, { packs: state.rulePacks });
@@ -432,9 +451,12 @@ test('submits an explainable correction request', async ({ page, mockState }) =>
     await page.getByRole('button', { name: 'Clear search' }).click();
 
     await page.getByRole('button', { name: 'Request correction', exact: true }).click();
-    await page.getByLabel('Employee explanation').fill('Train cancellation delayed my arrival.');
-    await page.getByRole('button', { name: 'Submit request' }).click();
-    await expect(page.getByText('Correction request submitted with a full audit trail.')).toBeVisible();
+    await expect(page.getByRole('dialog')).toContainText('Sent to Morgan Manager (Line manager)');
+    await page.getByLabel('Clock in').fill('09:15');
+    await page.getByLabel('Clock out').fill('17:15');
+    await page.getByLabel('Why should this be corrected?').fill('Train cancellation delayed my arrival.');
+    await page.getByRole('button', { name: 'Send correction request' }).click();
+    await expect(page.getByText('Correction request sent to Morgan Manager (Line manager).')).toBeVisible();
     await expect(page.getByText(/Employee correction request · Awaiting review/).first()).toBeVisible();
     const explanation = page.getByTestId('employee-explanation').filter({ hasText: 'Train cancellation delayed arrival.' });
     await expect(explanation).toBeVisible();
@@ -490,6 +512,31 @@ test('covers manager approvals, team status, reports, rule packs and policy sett
         await page.goto(path);
         await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     }
+});
+
+test('separates employee and management workspaces and exposes seeded attendance roles', async ({ page, mockState }) => {
+    await authenticate(page);
+    await page.goto('/dashboard');
+
+    await expect(page.getByRole('heading', { name: /Good (morning|afternoon|evening), Alex/ })).toBeVisible();
+    const desktopManagementToggle = page.getByRole('button', { name: 'Management', exact: true });
+    if (await desktopManagementToggle.isVisible()) await desktopManagementToggle.click();
+    else {
+        await page.getByRole('button', { name: 'Open navigation' }).click();
+        await page.getByRole('button', { name: 'Management view' }).click();
+    }
+    await expect(page.getByRole('heading', { name: 'Management dashboard' })).toBeVisible();
+    await expect(page.getByText('Correction requests')).toBeVisible();
+
+    await page.goto('/admin/settings');
+    await expect(page.getByRole('heading', { name: 'Attendance roles and permissions' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: /Line Manager/ })).toBeVisible();
+    await page.getByPlaceholder('Search organization employees').fill('Jamie');
+    await expect(page.getByText('Jamie Lee')).toBeVisible();
+    const lineManagerAssignment = page.getByRole('checkbox', { name: 'Line Manager', exact: true });
+    await lineManagerAssignment.click();
+    await expect(lineManagerAssignment).toBeChecked();
+    expect(mockState.calls).toContain('PUT /api/admin/access-policy/people/employee-2');
 });
 
 test('keeps the team attendance workspace readable at wide and standard desktop widths', async ({ page, mockState: _mockState }) => {
@@ -619,6 +666,7 @@ test('approves a pending timesheet and runs a rule-pack impact preview', async (
 
 test('explains an incomplete-attendance approval conflict without losing the request', async ({ page, mockState }) => {
     mockState.approvalConflict = true;
+    await page.addInitScript(() => localStorage.setItem('attendance-workspace:org-1', 'management'));
     await authenticate(page);
     await page.goto('/approvals');
 
@@ -633,6 +681,7 @@ test('explains an incomplete-attendance approval conflict without losing the req
 
 test('keeps employee and period context through timesheet review and exception decisions', async ({ page, mockState }) => {
     mockState.approvalConflict = true;
+    await page.addInitScript(() => localStorage.setItem('attendance-workspace:org-1', 'management'));
     await authenticate(page);
     await page.goto('/approvals');
 
@@ -659,10 +708,10 @@ test('keeps employee and period context through timesheet review and exception d
     await expect(page.getByTestId('exception-row').first()).toContainText('Week 32');
 
     const correction = page.getByTestId('exception-row').filter({ hasText: 'Approved leave was not synced yet.' });
-    await correction.getByRole('button', { name: 'Accept', exact: true }).click();
+    await correction.getByRole('button', { name: 'Approve and apply', exact: true }).click();
     await page.getByLabel('Decision reason').fill('Approved leave evidence was verified for this date.');
-    await page.getByRole('button', { name: 'Save decision' }).click();
-    await expect(page.getByText('The correction was accepted and the reason was recorded.')).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: 'Approve and apply', exact: true }).click();
+    await expect(page.getByText('The correction was approved and applied to timesheet version 1.')).toBeVisible();
     expect(mockState.calls).toContain('POST /api/v1/exceptions/exception-3/review');
 });
 
@@ -671,10 +720,12 @@ test('lets an employee request a correction from the exact timesheet day', async
     await page.goto('/timesheets/timesheet-1');
 
     await page.getByRole('button', { name: 'Request a correction for this day' }).first().click();
-    await expect(page.getByRole('dialog')).toContainText('Monday, August 3, 2026');
-    await page.getByLabel('What happened and what should be corrected').fill('My clock-in was recorded ten minutes later than the actual arrival.');
-    await page.getByRole('button', { name: 'Send request' }).click();
-    await expect(page.getByText('Your correction request was sent to your reviewer with this date attached.')).toBeVisible();
+    await expect(page.getByRole('dialog')).toContainText('Sent to Morgan Manager (Line manager)');
+    await page.getByLabel('Clock in').fill('07:50');
+    await page.getByLabel('Clock out').fill('16:00');
+    await page.getByLabel('Why should this be corrected?').fill('My clock-in was recorded ten minutes later than the actual arrival.');
+    await page.getByRole('button', { name: 'Send correction request' }).click();
+    await expect(page.getByText('Your proposed times were sent to Morgan Manager (Line manager).')).toBeVisible();
     expect(mockState.timesheetCorrectionRequested).toBe(true);
 });
 
@@ -709,10 +760,11 @@ test('renders navigation and core workflows at a mobile viewport', async ({ page
 
 test('keeps desktop navigation clear of account controls at the reported viewport', async ({ page, mockState: _mockState }) => {
     await page.setViewportSize({ width: 1573, height: 900 });
+    await page.addInitScript(() => localStorage.setItem('attendance-workspace:org-1', 'management'));
     await authenticate(page);
     await page.goto('/dashboard');
 
-    const moreButton = page.getByRole('button', { name: 'More management pages' });
+    const moreButton = page.getByRole('button', { name: 'Manage pages' });
     const headerActions = page.getByTestId('header-actions');
     await expect(moreButton).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();

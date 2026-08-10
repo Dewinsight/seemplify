@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { exceptionsApi } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import CorrectionRequestDialog, { CorrectionRequestPayload } from '@/components/CorrectionRequestDialog';
 
 type ExceptionStatus = 'open' | 'correction_requested' | 'resolved' | 'dismissed';
 
@@ -57,6 +58,23 @@ type AttendanceException = {
         decision?: 'pending' | 'accepted' | 'rejected';
         reviewedAt?: string;
         reviewNote?: string;
+        reviewedByName?: string;
+        requestedChanges?: {
+            workDate?: string;
+            timezone?: string;
+            clockIn?: string;
+            clockOut?: string;
+            breakStart?: string;
+            breakEnd?: string;
+        };
+        reviewRouting?: {
+            fallbackLabel?: string;
+            reason?: string;
+            recipients?: Array<{ userId?: string; userName?: string; roleLabel?: string }>;
+        };
+        appliedAt?: string;
+        appliedTimesheetId?: string;
+        createdAdjustmentVersion?: boolean;
     };
     auditLog?: Array<{ action: string; actorName?: string; at?: string; details?: string }>;
 };
@@ -84,7 +102,7 @@ function Status({ value }: { value: ExceptionStatus }) {
 
 export default function ExceptionsPage() {
     const params = useSearchParams();
-    const { user } = useAuth();
+    const { user, workspaceMode } = useAuth();
     const [items, setItems] = useState<AttendanceException[]>([]);
     const [context, setContext] = useState<PeriodContext | null>(null);
     const [disclaimer, setDisclaimer] = useState('');
@@ -93,16 +111,19 @@ export default function ExceptionsPage() {
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
     const [editing, setEditing] = useState<AttendanceException | null>(null);
-    const [explanation, setExplanation] = useState('');
+    const [reviewerLabel, setReviewerLabel] = useState('your line manager, HR Manager or Attendance Admin');
+    const [submittingCorrection, setSubmittingCorrection] = useState(false);
     const [reviewing, setReviewing] = useState<{ item: AttendanceException; accepted: boolean } | null>(null);
     const [reviewNote, setReviewNote] = useState('');
-    const targetUserId = params.get('userId') || undefined;
+    const requestedTargetUserId = params.get('userId') || undefined;
+    const targetUserId = requestedTargetUserId || (workspaceMode === 'employee' ? user?.id : undefined);
     const timesheetId = params.get('timesheetId') || undefined;
     const focusedExceptionId = params.get('exceptionId') || undefined;
     const start = params.get('start') || undefined;
     const end = params.get('end') || undefined;
     const returnToValue = params.get('returnTo');
     const returnTo = returnToValue?.startsWith('/') && !returnToValue.startsWith('//') ? returnToValue : undefined;
+    const canReviewCorrections = Boolean(user?.attendanceAccess?.permissions?.includes('corrections.review'));
 
     const load = useCallback(async () => {
         const data = await exceptionsApi.list({ userId: targetUserId, timesheetId, start, end });
@@ -142,17 +163,32 @@ export default function ExceptionsPage() {
         }, []);
     }, [filter, items, query]);
 
-    const submit = async () => {
-        if (!editing || !explanation.trim()) return;
+    const openCorrection = async (item: AttendanceException) => {
+        setEditing(item);
+        setReviewerLabel(item.correctionRequest?.reviewRouting?.fallbackLabel || 'your line manager, HR Manager or Attendance Admin');
+        const itemTimesheetId = item.period?.timesheetId || item.timesheetId;
+        if (!itemTimesheetId) return;
+        try {
+            const data = await exceptionsApi.getCorrectionRoute(itemTimesheetId);
+            if (data.routing?.fallbackLabel) setReviewerLabel(data.routing.fallbackLabel);
+        } catch {
+            // The submit endpoint resolves the route again. Keep the safe role label.
+        }
+    };
+
+    const submit = async (payload: CorrectionRequestPayload) => {
+        if (!editing) return;
         try {
             setError('');
-            await exceptionsApi.requestCorrection(editing._id, { explanation, evidence: [] });
+            setSubmittingCorrection(true);
+            const result = await exceptionsApi.requestCorrection(editing._id, payload);
             setEditing(null);
-            setExplanation('');
-            setMessage('Correction request submitted with a full audit trail.');
+            setMessage(`Correction request sent to ${result.routing?.fallbackLabel || reviewerLabel}.`);
             await load();
         } catch (requestError: any) {
             setError(requestError?.response?.data?.error || 'The correction request could not be submitted.');
+        } finally {
+            setSubmittingCorrection(false);
         }
     };
 
@@ -160,8 +196,10 @@ export default function ExceptionsPage() {
         if (!reviewing || reviewNote.trim().length < 3) return;
         try {
             setError('');
-            await exceptionsApi.review(reviewing.item._id, reviewing.accepted, reviewNote.trim());
-            setMessage(reviewing.accepted ? 'The correction was accepted and the reason was recorded.' : 'The correction was not accepted; the reason was shared with the employee.');
+            const result = await exceptionsApi.review(reviewing.item._id, reviewing.accepted, reviewNote.trim());
+            setMessage(reviewing.accepted
+                ? `The correction was approved and applied to timesheet version ${result.applied?.version || reviewing.item.period?.status || ''}.`
+                : 'The correction was not approved; the reason was shared with the employee.');
             setReviewing(null);
             setReviewNote('');
             await load();
@@ -242,13 +280,16 @@ export default function ExceptionsPage() {
                             </div>
                             <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
                                 {period?.timesheetId && <Link href={`/timesheets/${period.timesheetId}?review=${isOwn ? '0' : '1'}`} className="rounded-md border border-[var(--suite-line-strong)] px-3 py-1.5 text-xs font-medium text-[var(--suite-ink)] hover:bg-[var(--suite-surface-muted)]">View day</Link>}
-                                {isOwn && item.status === 'open' && <button onClick={() => setEditing(item)} className="inline-flex items-center gap-2 rounded-md border border-[var(--suite-line-strong)] px-3 py-1.5 text-xs font-medium text-[var(--suite-ink)] hover:bg-[var(--suite-surface-muted)]"><FilePenLine className="h-3.5 w-3.5" />Request correction</button>}
-                                {!isOwn && item.status === 'correction_requested' && <><button onClick={() => setReviewing({ item, accepted: true })} className="rounded-md border border-teal-600/40 px-3 py-1.5 text-xs font-medium text-teal-700 dark:text-teal-300">Accept</button><button onClick={() => setReviewing({ item, accepted: false })} className="rounded-md border border-[var(--suite-line-strong)] px-3 py-1.5 text-xs font-medium text-[var(--suite-muted)]">Do not accept</button></>}
+                                {workspaceMode === 'employee' && isOwn && item.status === 'open' && <button onClick={() => void openCorrection(item)} className="inline-flex items-center gap-2 rounded-md border border-[var(--suite-line-strong)] px-3 py-1.5 text-xs font-medium text-[var(--suite-ink)] hover:bg-[var(--suite-surface-muted)]"><FilePenLine className="h-3.5 w-3.5" />Request correction</button>}
+                                {workspaceMode === 'management' && canReviewCorrections && !isOwn && item.status === 'correction_requested' && <><button onClick={() => setReviewing({ item, accepted: true })} className="rounded-md border border-teal-600/40 px-3 py-1.5 text-xs font-medium text-teal-700 dark:text-teal-300">Approve and apply</button><button onClick={() => setReviewing({ item, accepted: false })} className="rounded-md border border-[var(--suite-line-strong)] px-3 py-1.5 text-xs font-medium text-[var(--suite-muted)]">Reject request</button></>}
+                                {workspaceMode === 'management' && isOwn && item.status === 'correction_requested' && <span className="max-w-48 text-right text-xs leading-5 text-[var(--suite-muted)]">Your request requires a different authorised reviewer.</span>}
                             </div>
                         </div>
                         {item.correctionRequest?.explanation && <div data-testid="employee-explanation" className="mt-4 rounded-md border border-amber-500/25 bg-amber-500/[0.07] px-4 py-3 md:ml-[calc(170px+1rem)]">
                             <div className="flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-300"><Clock3 className="h-3.5 w-3.5" />Employee correction request · {item.correctionRequest.decision === 'pending' || !item.correctionRequest.decision ? 'Awaiting review' : formatStatus(item.correctionRequest.decision)}</div>
                             <p className="mt-1.5 text-sm leading-6 text-[var(--suite-ink)]">{item.correctionRequest.explanation}</p>
+                            {item.correctionRequest.requestedChanges?.clockIn && item.correctionRequest.requestedChanges?.clockOut && <div className="mt-3 grid gap-2 border-t border-amber-500/20 pt-3 text-xs sm:grid-cols-3"><div><p className="font-semibold text-[var(--suite-ink)]">Proposed date</p><p className="mt-1 text-[var(--suite-muted)]">{item.correctionRequest.requestedChanges.workDate}</p></div><div><p className="font-semibold text-[var(--suite-ink)]">Proposed work time</p><p className="mt-1 text-[var(--suite-muted)]">{new Date(item.correctionRequest.requestedChanges.clockIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(item.correctionRequest.requestedChanges.clockOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p></div><div><p className="font-semibold text-[var(--suite-ink)]">Reviewer</p><p className="mt-1 text-[var(--suite-muted)]">{item.correctionRequest.reviewRouting?.fallbackLabel || 'Attendance reviewer queue'}</p></div></div>}
+                            {item.correctionRequest.appliedAt && <p className="mt-3 text-xs font-medium text-emerald-700 dark:text-emerald-300">Approved punches were applied{item.correctionRequest.createdAdjustmentVersion ? ' in a new protected-period adjustment version' : ''}.</p>}
                             {item.correctionRequest.reviewNote && <div className="mt-3 border-t border-amber-500/20 pt-3"><p className="text-xs font-semibold text-[var(--suite-ink)]">Reviewer decision reason</p><p className="mt-1 text-sm text-[var(--suite-muted)]">{item.correctionRequest.reviewNote}</p></div>}
                         </div>}
                         {!!item.auditLog?.length && <details className="mt-3 text-xs text-[var(--suite-muted)] md:ml-[calc(170px+1rem)]"><summary className="cursor-pointer font-medium text-[var(--suite-ink)]">View audit history ({item.auditLog.length})</summary><ol className="mt-2 space-y-2 border-l border-[var(--suite-line-strong)] pl-3">{item.auditLog.map((entry, index) => <li key={`${entry.action}-${index}`}><span className="font-medium">{formatType(entry.action)}</span>{entry.actorName ? ` by ${entry.actorName}` : ''}{entry.at ? ` · ${shortDate(entry.at)}` : ''}{entry.details ? <p className="mt-0.5">{entry.details}</p> : null}</li>)}</ol></details>}
@@ -257,8 +298,8 @@ export default function ExceptionsPage() {
             </div>)}
         </section> : <div className="rounded-lg border border-dashed border-[var(--suite-line-strong)] bg-[var(--suite-surface)] px-6 py-12 text-center"><p className="text-sm font-medium text-[var(--suite-ink)]">No exceptions found</p><p className="mt-1 text-sm text-[var(--suite-muted)]">This employee and period have no exceptions matching the selected status.</p></div>}
 
-        {editing && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-labelledby="correction-title" className="w-full max-w-lg rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] p-6 shadow-lg"><h2 id="correction-title" className="text-base font-semibold text-[var(--suite-ink)]">Explain the correction</h2><p className="mt-2 text-sm leading-6 text-[var(--suite-muted)]">Describe what happened on {dateKey(editing.occurrenceDate)} and the change you are requesting. Your manager’s decision and reason will remain visible here.</p><label className="mt-4 block text-sm font-medium text-[var(--suite-ink)]" htmlFor="correction-explanation">Employee explanation</label><textarea id="correction-explanation" autoFocus value={explanation} onChange={event => setExplanation(event.target.value)} rows={6} className="mt-2 w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] p-3 text-sm text-[var(--suite-ink)] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15" /><div className="mt-4 flex justify-end gap-2"><button onClick={() => setEditing(null)} className="rounded-md px-3 py-2 text-sm font-medium text-[var(--suite-muted)] hover:bg-[var(--suite-surface-muted)]">Cancel</button><button onClick={submit} disabled={!explanation.trim()} className="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500">Submit request</button></div></div></div>}
+        {editing && <CorrectionRequestDialog date={editing.occurrenceDate} reviewerLabel={reviewerLabel} submitting={submittingCorrection} onCancel={() => setEditing(null)} onSubmit={submit} />}
 
-        {reviewing && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-labelledby="review-title" className="w-full max-w-lg rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] p-6 shadow-lg"><h2 id="review-title" className="text-base font-semibold text-[var(--suite-ink)]">{reviewing.accepted ? 'Accept correction request' : 'Do not accept correction request'}</h2><p className="mt-2 text-sm leading-6 text-[var(--suite-muted)]">Record why you made this decision. The employee will see this reason and it will be kept in the audit history.</p><div className="mt-4 rounded-md border border-[var(--suite-line)] bg-[var(--suite-surface-muted)] px-3 py-2 text-sm text-[var(--suite-ink)]">{reviewing.item.correctionRequest?.explanation}</div><label className="mt-4 block text-sm font-medium text-[var(--suite-ink)]" htmlFor="review-note">Decision reason</label><textarea id="review-note" autoFocus value={reviewNote} onChange={event => setReviewNote(event.target.value)} rows={4} className="mt-2 w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] p-3 text-sm text-[var(--suite-ink)] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15" /><div className="mt-4 flex justify-end gap-2"><button onClick={() => { setReviewing(null); setReviewNote(''); }} className="rounded-md px-3 py-2 text-sm font-medium text-[var(--suite-muted)] hover:bg-[var(--suite-surface-muted)]">Cancel</button><button onClick={review} disabled={reviewNote.trim().length < 3} className="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500">Save decision</button></div></div></div>}
+        {reviewing && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-labelledby="review-title" className="w-full max-w-lg rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] p-6 shadow-lg"><h2 id="review-title" className="text-base font-semibold text-[var(--suite-ink)]">{reviewing.accepted ? 'Approve and apply correction' : 'Reject correction request'}</h2><p className="mt-2 text-sm leading-6 text-[var(--suite-muted)]">{reviewing.accepted ? 'The proposed punches will replace the active punches for this day. Previous values remain in the audit record.' : 'The proposed punches will not be applied.'} The employee will see your reason.</p><div className="mt-4 rounded-md border border-[var(--suite-line)] bg-[var(--suite-surface-muted)] px-3 py-2 text-sm text-[var(--suite-ink)]">{reviewing.item.correctionRequest?.explanation}</div><label className="mt-4 block text-sm font-medium text-[var(--suite-ink)]" htmlFor="review-note">Decision reason</label><textarea id="review-note" autoFocus value={reviewNote} onChange={event => setReviewNote(event.target.value)} rows={4} className="mt-2 w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] p-3 text-sm text-[var(--suite-ink)] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15" /><div className="mt-4 flex justify-end gap-2"><button onClick={() => { setReviewing(null); setReviewNote(''); }} className="rounded-md px-3 py-2 text-sm font-medium text-[var(--suite-muted)] hover:bg-[var(--suite-surface-muted)]">Cancel</button><button onClick={review} disabled={reviewNote.trim().length < 3} className="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500">{reviewing.accepted ? 'Approve and apply' : 'Reject request'}</button></div></div></div>}
     </div>;
 }

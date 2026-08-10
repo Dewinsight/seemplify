@@ -2,10 +2,12 @@ const crypto = require('crypto');
 const express = require('express');
 const router = express.Router();
 const {
-    requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope,
+    requireAuth, requireOrganization, getDepartmentHeadScope,
 } = require('../middleware/auth');
-const { AttendanceException, AttendancePolicy, EmployeeRoster, Timesheet } = require('../models');
+const { AttendanceAccessPolicy, AttendanceException, AttendancePolicy, EmployeeRoster, Timesheet } = require('../models');
 const { createNotification } = require('../services/notificationService');
+const { PERMISSIONS, hasAttendancePermission } = require('../services/attendanceAccessService');
+const { applyApprovedCorrection, normalizeRequestedChanges } = require('../services/attendanceCorrectionService');
 
 router.use(requireAuth, requireOrganization);
 
@@ -23,16 +25,21 @@ function managedUserIds(req) {
     return ids;
 }
 
-function canManage(req, userId) {
-    return isHRAdmin(req) || ((isLineManager(req) || isDepartmentHead(req)) && managedUserIds(req).has(String(userId)));
+async function canManage(req, userId) {
+    if (!await hasAttendancePermission(req, PERMISSIONS.CORRECTIONS_REVIEW)) return false;
+    const scope = req.attendanceAccess?.scopes?.[PERMISSIONS.CORRECTIONS_REVIEW];
+    if (scope === 'organization') return true;
+    return scope === 'reports' && managedUserIds(req).has(String(userId));
 }
 
-function canView(req, userId) {
-    return String(userId) === String(req.user.id) || canManage(req, userId);
+async function canView(req, userId) {
+    return String(userId) === String(req.user.id) || await canManage(req, userId);
 }
 
 async function canReviewTimesheet(req, timesheet) {
-    if (canManage(req, timesheet.userId)) return true;
+    if (String(timesheet.userId) === String(req.user.id)) return false;
+    if (!await hasAttendancePermission(req, PERMISSIONS.CORRECTIONS_REVIEW)) return false;
+    if (await canManage(req, timesheet.userId)) return true;
     const currentLevel = timesheet.approvalWorkflow?.levels?.[Number(timesheet.approvalWorkflow?.currentLevel || 0)];
     const expectedApprover = currentLevel?.approverId || timesheet.assignedApprover?.userId;
     if (String(expectedApprover || '') === String(req.user.id)) return true;
@@ -44,6 +51,67 @@ async function canReviewTimesheet(req, timesheet) {
         && new Date(delegation.startsAt) <= now
         && new Date(delegation.endsAt) >= now
     ));
+}
+
+async function resolveCorrectionReviewers(req, timesheet) {
+    const candidates = [];
+    const addCandidate = (candidate) => {
+        if (!candidate?.userId || String(candidate.userId) === String(timesheet.userId)) return;
+        if (candidates.some(item => String(item.userId) === String(candidate.userId))) return;
+        candidates.push(candidate);
+    };
+    const currentLevel = timesheet.approvalWorkflow?.levels?.[Number(timesheet.approvalWorkflow?.currentLevel || 0)];
+    const assigned = currentLevel?.approverId
+        ? { userId: currentLevel.approverId, userName: currentLevel.approverName || currentLevel.name, userEmail: currentLevel.approverEmail, roleLabel: currentLevel.name || 'Assigned timesheet approver' }
+        : timesheet.assignedApprover?.userId
+            ? { ...timesheet.assignedApprover.toObject?.() || timesheet.assignedApprover, roleLabel: 'Assigned timesheet approver' }
+            : null;
+    addCandidate(assigned);
+
+    const employeeRoster = await EmployeeRoster.findOne({ organizationId: req.organizationId, userId: timesheet.userId }).lean();
+    if (employeeRoster?.managerId) {
+        const manager = await EmployeeRoster.findOne({ organizationId: req.organizationId, userId: employeeRoster.managerId, status: 'active' }).lean();
+        addCandidate({
+            userId: employeeRoster.managerId,
+            userName: manager?.name || 'Line manager',
+            userEmail: manager?.email,
+            roleLabel: 'Line manager',
+        });
+    }
+
+    if (!candidates.length) {
+        const accessPolicy = await AttendanceAccessPolicy.findOne({ organizationId: req.organizationId }).lean();
+        const reviewerRoleKeys = new Set((accessPolicy?.roles || [])
+            .filter(role => (role.permissions || []).includes(PERMISSIONS.CORRECTIONS_REVIEW) && role.scope === 'organization')
+            .map(role => role.key));
+        const assignmentIds = (accessPolicy?.assignments || [])
+            .filter(assignment => (assignment.roleKeys || []).some(roleKey => reviewerRoleKeys.has(roleKey)))
+            .map(assignment => String(assignment.userId));
+        const reviewerRoster = await EmployeeRoster.find({
+            organizationId: req.organizationId,
+            status: 'active',
+            $or: [
+                { userId: { $in: assignmentIds } },
+                { role: { $in: ['owner', 'admin', 'hr_manager'] } },
+            ],
+        }).select('userId name email role').limit(20).lean();
+        reviewerRoster.forEach(person => addCandidate({
+            userId: person.userId,
+            userName: person.name,
+            userEmail: person.email,
+            roleLabel: person.role === 'hr_manager' ? 'HR Manager' : 'Attendance Admin',
+        }));
+    }
+
+    return {
+        recipients: candidates,
+        fallbackLabel: candidates.length
+            ? candidates.map(item => `${item.userName || item.roleLabel} (${item.roleLabel})`).join(', ')
+            : 'the HR Manager or Attendance Admin correction queue',
+        reason: assigned && candidates.some(item => String(item.userId) === String(assigned.userId))
+            ? 'Assigned timesheet approver'
+            : candidates.some(item => item.roleLabel === 'Line manager') ? 'Employee line manager' : 'Organization correction queue',
+    };
 }
 
 function validDate(value) {
@@ -96,13 +164,11 @@ function exceptionView(exception, timesheet) {
 async function findTimesheetForAccess(req, id) {
     const timesheet = await Timesheet.findOne({ _id: id, organizationId: req.organizationId });
     if (!timesheet) return { status: 404, error: 'Timesheet not found' };
-    if (!canView(req, timesheet.userId) && !await canReviewTimesheet(req, timesheet)) return { status: 403, error: 'Access denied' };
+    if (!await canView(req, timesheet.userId) && !await canReviewTimesheet(req, timesheet)) return { status: 403, error: 'Access denied' };
     return { timesheet };
 }
 
-async function notifyCorrectionRequested(req, exception, timesheet) {
-    const roster = await EmployeeRoster.findOne({ organizationId: req.organizationId, userId: exception.userId }).lean();
-    if (!roster?.managerId) return;
+async function notifyCorrectionRequested(req, exception, timesheet, routing) {
     const params = new URLSearchParams({
         userId: String(exception.userId),
         timesheetId: String(exception.timesheetId),
@@ -110,16 +176,19 @@ async function notifyCorrectionRequested(req, exception, timesheet) {
         start: new Date(timesheet.startDate).toISOString(),
         end: new Date(timesheet.endDate).toISOString(),
     });
-    await createNotification({
-        organizationId: req.organizationId,
-        userId: roster.managerId,
-        type: 'general',
-        title: 'Attendance correction requested',
-        message: `${exception.userName || req.user.name || req.user.email} requested a correction for ${exception.type.replace(/_/g, ' ')}.`,
-        actionUrl: `/exceptions?${params.toString()}`,
-        priority: 'high',
-        eventKey: `exception-correction:${exception._id}:${exception.correctionRequest.requestedAt.toISOString()}`,
-    });
+    for (const recipient of routing.recipients) {
+        await createNotification({
+            organizationId: req.organizationId,
+            userId: recipient.userId,
+            userEmail: recipient.userEmail,
+            type: 'general',
+            title: 'Attendance correction awaiting your decision',
+            message: `${exception.userName || req.user.name || req.user.email} proposed corrected work times for ${exception.type.replace(/_/g, ' ')}.`,
+            actionUrl: `/exceptions?${params.toString()}`,
+            priority: 'high',
+            eventKey: `exception-correction:${exception._id}:${exception.correctionRequest.requestedAt.toISOString()}:${recipient.userId}`,
+        });
+    }
 }
 
 async function applyCorrectionRequest(req, exception, timesheet) {
@@ -130,12 +199,17 @@ async function applyCorrectionRequest(req, exception, timesheet) {
         url: /^https?:\/\//i.test(String(item.url || '')) ? item.url : undefined,
         note: String(item.note || '').slice(0, 1000),
     }));
+    const normalized = normalizeRequestedChanges(req.body.requestedChanges || {}, timesheet);
+    if (normalized.error) return { status: 400, error: normalized.error };
+    const routing = await resolveCorrectionReviewers(req, timesheet);
     exception.status = 'correction_requested';
     exception.correctionRequest = {
         explanation,
         requestedAt: new Date(),
+        requestedBy: { userId: req.user.id, userName: req.user.name, userEmail: req.user.email },
         evidence,
-        requestedChanges: req.body.requestedChanges || {},
+        requestedChanges: normalized.value,
+        reviewRouting: { ...routing, routedAt: new Date() },
         decision: 'pending',
     };
     exception.auditLog.push({
@@ -145,9 +219,21 @@ async function applyCorrectionRequest(req, exception, timesheet) {
         details: explanation,
     });
     await exception.save();
-    await notifyCorrectionRequested(req, exception, timesheet);
-    return { exception };
+    await notifyCorrectionRequested(req, exception, timesheet, routing);
+    return { exception, routing };
 }
+
+router.get('/timesheets/:timesheetId/correction-route', async (req, res) => {
+    try {
+        const access = await findTimesheetForAccess(req, req.params.timesheetId);
+        if (access.error) return res.status(access.status).json({ error: access.error });
+        const routing = await resolveCorrectionReviewers(req, access.timesheet);
+        res.json({ routing });
+    } catch (error) {
+        console.error('Get correction route error:', error);
+        res.status(500).json({ error: 'Failed to determine the correction reviewer' });
+    }
+});
 
 router.get('/', async (req, res) => {
     try {
@@ -165,11 +251,11 @@ router.get('/', async (req, res) => {
             query.timesheetId = timesheet._id;
             query.userId = timesheet.userId;
         } else if (targetUserId) {
-            if (!canView(req, targetUserId)) return res.status(403).json({ error: 'Access denied' });
+            if (!await canView(req, targetUserId)) return res.status(403).json({ error: 'Access denied' });
             query.userId = targetUserId;
-        } else if (isHRAdmin(req)) {
+        } else if (await hasAttendancePermission(req, PERMISSIONS.CORRECTIONS_REVIEW) && req.attendanceAccess?.scopes?.[PERMISSIONS.CORRECTIONS_REVIEW] === 'organization') {
             // HR can review all exceptions in the active organization.
-        } else if (isLineManager(req) || isDepartmentHead(req)) {
+        } else if (await hasAttendancePermission(req, PERMISSIONS.CORRECTIONS_REVIEW) && req.attendanceAccess?.scopes?.[PERMISSIONS.CORRECTIONS_REVIEW] === 'reports') {
             query.userId = { $in: Array.from(new Set([String(req.user.id), ...managedUserIds(req)])) };
         } else {
             query.userId = req.user.id;
@@ -327,7 +413,7 @@ router.post('/timesheets/:timesheetId/correction-requests', async (req, res) => 
         }
         const result = await applyCorrectionRequest(req, exception, timesheet);
         if (result.error) return res.status(result.status).json({ error: result.error });
-        res.status(201).json({ exception: exceptionView(result.exception, timesheet) });
+        res.status(201).json({ exception: exceptionView(result.exception, timesheet), routing: result.routing });
     } catch (error) {
         console.error('Create timesheet correction request error:', error);
         res.status(500).json({ error: 'Failed to request the correction' });
@@ -342,7 +428,7 @@ router.post('/:id/correction-requests', async (req, res) => {
         if (!timesheet) return res.status(404).json({ error: 'Timesheet not found' });
         const result = await applyCorrectionRequest(req, exception, timesheet);
         if (result.error) return res.status(result.status).json({ error: result.error });
-        res.status(201).json({ exception: exceptionView(result.exception, timesheet) });
+        res.status(201).json({ exception: exceptionView(result.exception, timesheet), routing: result.routing });
     } catch (error) {
         console.error('Request exception correction error:', error);
         res.status(500).json({ error: 'Failed to request the correction' });
@@ -359,11 +445,29 @@ router.post('/:id/review', async (req, res) => {
         const note = String(req.body.note || '').trim();
         if (note.length < 3) return res.status(400).json({ error: 'A decision reason of at least 3 characters is required' });
         const accepted = req.body.accepted === true;
+        let applied = null;
+        if (accepted) {
+            applied = await applyApprovedCorrection({
+                exception,
+                timesheet,
+                actor: { userId: req.user.id, userName: req.user.name, userEmail: req.user.email },
+                note: note.slice(0, 2000),
+            });
+            if (applied.error) return res.status(applied.status).json({ error: applied.error });
+        }
         exception.status = accepted ? 'resolved' : 'open';
         exception.correctionRequest.decision = accepted ? 'accepted' : 'rejected';
         exception.correctionRequest.reviewedBy = req.user.id;
+        exception.correctionRequest.reviewedByName = req.user.name;
         exception.correctionRequest.reviewedAt = new Date();
         exception.correctionRequest.reviewNote = note.slice(0, 2000);
+        if (applied) {
+            exception.correctionRequest.appliedAt = new Date();
+            exception.correctionRequest.appliedTimesheetId = applied.target._id;
+            exception.correctionRequest.createdAdjustmentVersion = applied.createdAdjustment;
+            exception.correctionRequest.replacementEntryIds = applied.replacementEntryIds;
+            exception.correctionRequest.supersededEntryIds = applied.supersededEntryIds;
+        }
         exception.auditLog.push({
             action: accepted ? 'correction_accepted' : 'correction_rejected',
             actorId: req.user.id,
@@ -376,7 +480,7 @@ router.post('/:id/review', async (req, res) => {
             userId: exception.userId,
             userEmail: exception.userEmail,
             type: 'general',
-            title: accepted ? 'Attendance correction accepted' : 'Attendance correction not accepted',
+            title: accepted ? 'Attendance correction approved and applied' : 'Attendance correction not approved',
             message: exception.correctionRequest.reviewNote,
             actionUrl: `/exceptions?timesheetId=${encodeURIComponent(String(exception.timesheetId))}&exceptionId=${encodeURIComponent(String(exception._id))}`,
             priority: accepted ? 'normal' : 'high',
@@ -384,7 +488,11 @@ router.post('/:id/review', async (req, res) => {
         });
         res.json({
             exception: exceptionView(exception, timesheet),
-            nextStep: accepted ? 'Any time change must use the versioned timesheet correction workflow.' : undefined,
+            applied: applied ? {
+                timesheetId: String(applied.target._id),
+                version: applied.target.version,
+                createdAdjustment: applied.createdAdjustment,
+            } : undefined,
         });
     } catch (error) {
         console.error('Review exception correction error:', error);

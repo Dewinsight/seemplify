@@ -1,36 +1,45 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { AlertCircle, ArrowRight, Calendar, Clock, LayoutGrid } from 'lucide-react';
+import { AlertCircle, ArrowRight, Calendar, CheckCircle2, Clock, LayoutGrid, Users } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getIdpUrl } from '@/lib/env';
-import { attendanceApi } from '@/lib/api';
+import { approvalsApi, attendanceApi, exceptionsApi } from '@/lib/api';
 import ClockWidget from '@/components/ClockWidget';
 
 export default function Dashboard() {
-    const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+    const { user, isAuthenticated, isLoading: authLoading, workspaceMode, canAccessManagement } = useAuth();
     const router = useRouter();
     const [dashboardData, setDashboardData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [managementData, setManagementData] = useState<{ approvals: any[]; corrections: any[]; team: any }>({ approvals: [], corrections: [], team: null });
 
-    const fetchDashboardData = async () => {
+    const fetchDashboardData = useCallback(async () => {
         try {
             setDashboardData(await attendanceApi.getDashboard());
+            if (workspaceMode === 'management' && canAccessManagement) {
+                const [approvals, corrections, team] = await Promise.all([
+                    approvalsApi.getPending().catch(() => []),
+                    exceptionsApi.list({ status: 'correction_requested' }).then(data => data.exceptions || []).catch(() => []),
+                    attendanceApi.getTeamStatus().catch(() => null),
+                ]);
+                setManagementData({ approvals, corrections, team });
+            }
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [workspaceMode, canAccessManagement]);
 
     useEffect(() => {
         if (!authLoading) {
             if (!isAuthenticated) router.push('/login');
             else fetchDashboardData();
         }
-    }, [isAuthenticated, authLoading, router]);
+    }, [isAuthenticated, authLoading, router, fetchDashboardData]);
 
     if (authLoading || loading) {
         return (
@@ -52,6 +61,26 @@ export default function Dashboard() {
         const date = new Date(value);
         return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     };
+
+    if (workspaceMode === 'management' && canAccessManagement) {
+        const teamMembers = managementData.team?.members || managementData.team?.team || [];
+        const workingNow = teamMembers.filter((member: any) => member.status === 'working' || member.isClockedIn).length;
+        return <div className="space-y-6">
+            <header className="flex flex-col gap-4 border-b border-[var(--suite-line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
+                <div><h1 className="text-2xl font-semibold text-[var(--suite-ink)]">Management dashboard</h1><p className="mt-1 text-sm text-[var(--suite-muted)]">Review attendance work that requires a manager, HR Manager or Attendance Admin decision.</p></div>
+                <p className="text-sm font-medium text-[var(--suite-muted)]">{user?.currentOrganization?.name}</p>
+            </header>
+            <section aria-labelledby="management-queue-heading" className="overflow-hidden rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)]">
+                <div className="border-b border-[var(--suite-line-strong)] px-5 py-4"><h2 id="management-queue-heading" className="font-semibold text-[var(--suite-ink)]">Work requiring attention</h2><p className="mt-1 text-sm text-[var(--suite-muted)]">Correction decisions are separate from final timesheet approval.</p></div>
+                <div className="divide-y divide-[var(--suite-line)]">
+                    <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 text-[var(--suite-muted)]" /><div><p className="font-medium text-[var(--suite-ink)]">Timesheet approvals</p><p className="mt-0.5 text-sm text-[var(--suite-muted)]">{managementData.approvals.length} submitted {managementData.approvals.length === 1 ? 'timesheet' : 'timesheets'} waiting.</p></div></div><Link href="/approvals" className="suite-button-secondary">Open approvals <ArrowRight className="h-4 w-4" /></Link></div>
+                    <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><AlertCircle className="mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-300" /><div><p className="font-medium text-[var(--suite-ink)]">Correction requests</p><p className="mt-0.5 text-sm text-[var(--suite-muted)]">{managementData.corrections.length} proposed time {managementData.corrections.length === 1 ? 'correction needs' : 'corrections need'} a decision.</p></div></div><Link href="/exceptions" className="suite-button-secondary">Open correction queue <ArrowRight className="h-4 w-4" /></Link></div>
+                    <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><Users className="mt-0.5 h-5 w-5 text-[var(--suite-muted)]" /><div><p className="font-medium text-[var(--suite-ink)]">Team attendance</p><p className="mt-0.5 text-sm text-[var(--suite-muted)]">{workingNow} of {teamMembers.length} visible team members currently working.</p></div></div><Link href="/team" className="suite-button-secondary">View team <ArrowRight className="h-4 w-4" /></Link></div>
+                </div>
+            </section>
+            <section aria-labelledby="correction-process-heading" className="rounded-lg border border-[var(--suite-line)] bg-[var(--suite-surface)] p-5"><h2 id="correction-process-heading" className="font-semibold text-[var(--suite-ink)]">Correction process</h2><ol className="mt-4 grid gap-3 text-sm text-[var(--suite-muted)] md:grid-cols-3"><li><span className="font-semibold text-[var(--suite-ink)]">1. Employee proposes times</span><p className="mt-1 leading-6">The date, clock-in, clock-out, optional break and explanation are recorded.</p></li><li><span className="font-semibold text-[var(--suite-ink)]">2. Reviewer decides</span><p className="mt-1 leading-6">The assigned approver, line manager, HR Manager or Attendance Admin approves or rejects it.</p></li><li><span className="font-semibold text-[var(--suite-ink)]">3. Approved times are applied</span><p className="mt-1 leading-6">Old punches remain auditable and the timesheet is recalculated before final approval.</p></li></ol></section>
+        </div>;
+    }
 
     return (
         <div className="suite-dashboard">

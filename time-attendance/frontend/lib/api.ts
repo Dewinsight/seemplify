@@ -277,6 +277,13 @@ export const adminApi = {
     },
 };
 
+export const attendanceAccessApi = {
+    getPolicy: async () => (await api.get('/admin/access-policy')).data,
+    updatePolicy: async (roles: Array<{ key: string; permissions: string[] }>) => (await api.put('/admin/access-policy', { roles })).data,
+    searchPeople: async (q = '') => (await api.get('/admin/access-policy/people', { params: { q } })).data,
+    assignPerson: async (userId: string, roleKeys: string[]) => (await api.put(`/admin/access-policy/people/${encodeURIComponent(userId)}`, { roleKeys })).data,
+};
+
 // Approvals API helpers
 export const approvalsApi = {
     getPending: async () => {
@@ -331,6 +338,7 @@ export const exceptionsApi = {
     requestTimesheetCorrection: async (timesheetId: string, data: any) => (await api.post(`/v1/exceptions/timesheets/${timesheetId}/correction-requests`, data)).data,
     flagTimesheetDay: async (timesheetId: string, data: any) => (await api.post(`/v1/exceptions/timesheets/${timesheetId}/flags`, data)).data,
     review: async (id: string, accepted: boolean, note = '') => (await api.post(`/v1/exceptions/${id}/review`, { accepted, note })).data,
+    getCorrectionRoute: async (timesheetId: string) => (await api.get(`/v1/exceptions/timesheets/${timesheetId}/correction-route`)).data,
 };
 
 export const presenceApi = {

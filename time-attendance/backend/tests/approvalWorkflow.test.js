@@ -1,5 +1,5 @@
 const Timesheet = require('../models/Timesheet');
-const { advanceApproval, hasActiveDelegation } = require('../routes/approvals');
+const { advanceApproval, approvalScopeQuery, canApproveTimesheet, hasActiveDelegation } = require('../routes/approvals');
 
 function submittedTimesheet() {
     return new Timesheet({
@@ -44,4 +44,22 @@ test('delegation is active only inside its configured window', () => {
     const policy = { timesheetSettings: { approvalDelegations: [{ fromUserId: 'manager-1', toUserId: 'delegate-1', startsAt: '2026-08-01', endsAt: '2026-08-31' }] } };
     expect(hasActiveDelegation(policy, 'manager-1', 'delegate-1', new Date('2026-08-15'))).toBe(true);
     expect(hasActiveDelegation(policy, 'manager-1', 'delegate-1', new Date('2026-09-01'))).toBe(false);
+});
+
+test('configured attendance roles control organization and direct-report approval scope', () => {
+    const organizationReviewer = {
+        user: { id: 'assigned-hr', teams: [] },
+        organizationId: 'org-1',
+        attendanceAccess: { scopes: { 'timesheets.approve': 'organization' } },
+    };
+    expect(approvalScopeQuery(organizationReviewer, {})).toEqual({});
+    expect(canApproveTimesheet(organizationReviewer, submittedTimesheet(), {})).toBe(true);
+
+    const reportReviewer = {
+        user: { id: 'manager-2', teams: [{ organizationId: 'org-1', role: 'line_manager', directReports: ['employee-1'] }] },
+        organizationId: 'org-1',
+        attendanceAccess: { scopes: { 'timesheets.approve': 'reports' } },
+    };
+    expect(canApproveTimesheet(reportReviewer, submittedTimesheet(), {})).toBe(true);
+    expect(approvalScopeQuery(reportReviewer, {}).$or).toContainEqual({ userId: { $in: ['employee-1'] } });
 });
