@@ -105,6 +105,23 @@
   color: var(--suite-danger) !important;
 }
 
+.interview-transcript-menu {
+  border-color: var(--suite-line) !important;
+  border-radius: 8px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+  box-shadow: var(--suite-shadow) !important;
+}
+
+.interview-transcript-menu [role="menuitem"] {
+  border-radius: 6px !important;
+}
+
+.interview-transcript-menu [role="menuitem"]:focus {
+  background: var(--suite-surface-muted) !important;
+  color: var(--suite-ink) !important;
+}
+
 .interview-transcript-content {
   display: flex;
   flex-direction: column;
@@ -363,6 +380,18 @@
 
 .interview-transcript-tabs [role="tabpanel"] {
   margin-top: 12px;
+}
+
+.interview-transcript-setup-alert {
+  border-color: color-mix(in srgb, var(--suite-attention) 32%, var(--suite-line)) !important;
+  border-radius: 8px !important;
+  background: var(--suite-attention-soft) !important;
+  color: var(--suite-ink) !important;
+}
+
+.interview-transcript-setup-alert p,
+.interview-transcript-setup-alert button {
+  color: var(--suite-ink) !important;
 }
 
 .realtime-transcript-card {

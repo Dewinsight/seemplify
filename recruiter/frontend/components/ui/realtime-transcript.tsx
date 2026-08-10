@@ -229,9 +229,9 @@ export function RealtimeTranscript({
 
   if (isLoading && !transcript) {
     return (
-      <Card className={className}>
+      <Card className={`realtime-transcript-card ${className}`}>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="realtime-transcript-heading flex items-center gap-2">
             <FileText className="h-5 w-5" />
             Live Transcript
           </CardTitle>
@@ -250,22 +250,27 @@ export function RealtimeTranscript({
 
   if (error && !transcript) {
     return (
-      <Card className={className}>
+      <Card className={`realtime-transcript-card ${className}`}>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="realtime-transcript-heading flex items-center gap-2">
             <FileText className="h-5 w-5" />
             Live Transcript
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-          <Button onClick={handleRefresh} className="mt-4" variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
+          <div className="realtime-transcript-error" role="alert">
+            <div className="realtime-transcript-error__copy">
+              <AlertCircle className="h-4 w-4" />
+              <div>
+                <h3>Couldn&apos;t load the transcript</h3>
+                <p>{error}</p>
+              </div>
+            </div>
+            <Button onClick={handleRefresh} variant="outline" disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Try again
+            </Button>
+          </div>
         </CardContent>
       </Card>
     );
@@ -274,10 +279,10 @@ export function RealtimeTranscript({
   const parsedTranscript = transcript ? parseTranscript(transcript) : [];
 
   return (
-    <Card className={className}>
+    <Card className={`realtime-transcript-card ${className}`}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="realtime-transcript-heading flex items-center gap-2">
             <FileText className="h-5 w-5" />
             Live Transcript
           </CardTitle>
@@ -383,9 +388,9 @@ export function RealtimeTranscript({
             </div>
           </ScrollArea>
         ) : (
-          <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
-            <FileText className="h-12 w-12 mb-4" />
-            <p className="text-sm">No transcript available yet</p>
+          <div className="realtime-transcript-empty flex flex-col items-center justify-center text-muted-foreground">
+            <FileText className="h-8 w-8 mb-3" />
+            <p className="text-sm font-medium">No transcript available yet</p>
             {estimatedTime && (
               <p className="text-xs mt-2">
                 Expected around {new Date(estimatedTime).toLocaleTimeString()}
@@ -395,7 +400,7 @@ export function RealtimeTranscript({
         )}
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 mt-4">
+        <div className="realtime-transcript-actions flex items-center gap-2 mt-4">
           <Button
             onClick={handleRefresh}
             variant="outline"
@@ -425,4 +430,4 @@ export function RealtimeTranscript({
       </CardContent>
     </Card>
   );
-} 
+}

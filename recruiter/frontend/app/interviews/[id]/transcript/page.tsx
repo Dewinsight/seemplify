@@ -13,7 +13,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Download, Mic, MicOff, RefreshCw, FileText, Calendar, Clock, Users, AlertCircle, Plus, Loader2, ExternalLink, Video, CheckCircle, XCircle, Clock3, Sparkles, AlertTriangle, Search, MessageSquare, Play, Zap, FileCheck, X, Bot } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import { ArrowLeft, Download, Mic, MicOff, RefreshCw, FileText, Calendar, Clock, Users, AlertCircle, Plus, Loader2, ExternalLink, Video, CheckCircle, XCircle, Clock3, Sparkles, AlertTriangle, Search, MessageSquare, Play, Zap, FileCheck, X, Bot, MoreHorizontal } from 'lucide-react';
 import interviewService from '@/services/interviewService';
 import { toast } from 'sonner';
 import { RealtimeTranscript } from '@/components/ui/realtime-transcript';
@@ -1324,78 +1331,6 @@ export default function TranscriptPage() {
                 })()
               )}
               
-              {interview?.notetakerEnabled && interview?.notetakerId && !completedTranscript && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchCompletedTranscript}
-                  disabled={loadingTranscript}
-                  className="bg-white hover:bg-gray-50"
-                >
-                  {loadingTranscript ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Checking...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Refresh
-                    </>
-                  )}
-                </Button>
-              )}
-              
-              {/* Show additional sync button if status seems stuck */}
-              {(() => {
-                const recordingStatus = getActualRecordingStatus(interview, completedTranscript, timeStatus);
-                return recordingStatus.status === 'checking' && timeStatus?.status === 'ended' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleManualSync}
-                    disabled={syncing}
-                    className="bg-yellow-50 border-yellow-300 text-yellow-700 hover:bg-yellow-100"
-                  >
-                    {syncing ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Updating...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Update Status
-                      </>
-                    )}
-                  </Button>
-                );
-              })()}
-              
-              {/* Refresh Notetaker Status button - show if notetaker is enabled */}
-              {interview?.notetakerEnabled && interview?.notetakerId && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={refreshNotetakerStatus}
-                  disabled={refreshingStatus}
-                  className="bg-green-50 border-green-300 text-green-700 hover:bg-green-100"
-                  title="Check for latest notetaker status from Nylas API"
-                >
-                  {refreshingStatus ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Refreshing...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Refresh Status
-                    </>
-                  )}
-                </Button>
-              )}
-
               {(meetingLink || interview?.conferencing?.details?.url || interview?.meetingLink) && (
                 <Button
                   variant="outline"
@@ -1419,52 +1354,50 @@ export default function TranscriptPage() {
                 </Button>
               )}
 
-              {/* Manual transcript sync button */}
-              {interview?.notetakerEnabled && !completedTranscript && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleManualTranscriptSync}
-                  disabled={syncingTranscript}
-                  className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
-                  title="Manually download and sync transcript from Nylas"
-                >
-                  {syncingTranscript ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Syncing...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-4 w-4 mr-2" />
-                      Sync Transcript
-                    </>
-                  )}
-                </Button>
-              )}
-
-              {/* Force completion button */}
-              {interview?.status !== 'completed' && getMeetingTimeStatus()?.status === 'ended' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleForceCompletion}
-                  disabled={forcingCompletion}
-                  className="bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100"
-                  title="Force mark interview as completed (manual override)"
-                >
-                  {forcingCompletion ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Completing...
-                    </>
-                  ) : (
-                    <>
-                      <FileCheck className="h-4 w-4 mr-2" />
-                      Force Complete
-                    </>
-                  )}
-                </Button>
+              {(interview?.notetakerEnabled || (interview?.status !== 'completed' && timeStatus?.status === 'ended')) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <MoreHorizontal className="h-4 w-4 mr-2" />
+                      More actions
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="interview-transcript-menu w-56">
+                    {interview?.notetakerEnabled && interview?.notetakerId && !completedTranscript && (
+                      <DropdownMenuItem onSelect={() => void fetchCompletedTranscript()} disabled={loadingTranscript}>
+                        {loadingTranscript ? <Loader2 className="animate-spin" /> : <FileText />}
+                        {loadingTranscript ? 'Checking transcript…' : 'Check for transcript'}
+                      </DropdownMenuItem>
+                    )}
+                    {interview?.notetakerEnabled && interview?.notetakerId && (
+                      <DropdownMenuItem onSelect={() => void refreshNotetakerStatus()} disabled={refreshingStatus}>
+                        <RefreshCw className={refreshingStatus ? 'animate-spin' : ''} />
+                        {refreshingStatus ? 'Refreshing recorder…' : 'Refresh recorder status'}
+                      </DropdownMenuItem>
+                    )}
+                    {interview?.notetakerEnabled && !completedTranscript && (
+                      <DropdownMenuItem onSelect={() => void handleManualTranscriptSync()} disabled={syncingTranscript}>
+                        {syncingTranscript ? <Loader2 className="animate-spin" /> : <Download />}
+                        {syncingTranscript ? 'Syncing transcript…' : 'Sync transcript'}
+                      </DropdownMenuItem>
+                    )}
+                    {getActualRecordingStatus(interview, completedTranscript, timeStatus).status === 'checking' && timeStatus?.status === 'ended' && (
+                      <DropdownMenuItem onSelect={() => void handleManualSync()} disabled={syncing}>
+                        <RefreshCw className={syncing ? 'animate-spin' : ''} />
+                        {syncing ? 'Updating status…' : 'Update interview status'}
+                      </DropdownMenuItem>
+                    )}
+                    {interview?.status !== 'completed' && timeStatus?.status === 'ended' && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => void handleForceCompletion()} disabled={forcingCompletion}>
+                          {forcingCompletion ? <Loader2 className="animate-spin" /> : <FileCheck />}
+                          {forcingCompletion ? 'Completing interview…' : 'Mark interview complete'}
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
 
               {/* Cancel interview button - only show if interview is not completed/cancelled and is before current time */}
@@ -1653,13 +1586,13 @@ export default function TranscriptPage() {
             )}
           </div>
 
-          <Tabs defaultValue="transcript" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-12">
-              <TabsTrigger value="transcript" className="text-base font-medium">Transcript</TabsTrigger>
-              <TabsTrigger value="summary" className="text-base font-medium">Summary</TabsTrigger>
-              <TabsTrigger value="insights" className="text-base font-medium">AI Insights</TabsTrigger>
-              <TabsTrigger value="participants" className="text-base font-medium">Participants</TabsTrigger>
-              <TabsTrigger value="feedback" className="text-base font-medium">Feedbacks</TabsTrigger>
+          <Tabs defaultValue="transcript" className="interview-transcript-tabs w-full">
+            <TabsList className="interview-transcript-tabs__list">
+              <TabsTrigger value="transcript" className="interview-transcript-tabs__trigger">Transcript</TabsTrigger>
+              <TabsTrigger value="summary" className="interview-transcript-tabs__trigger">Summary</TabsTrigger>
+              <TabsTrigger value="insights" className="interview-transcript-tabs__trigger">AI insights</TabsTrigger>
+              <TabsTrigger value="participants" className="interview-transcript-tabs__trigger">Participants</TabsTrigger>
+              <TabsTrigger value="feedback" className="interview-transcript-tabs__trigger">Feedback</TabsTrigger>
             </TabsList>
             
             {/* Transcript Tab Content */}
@@ -1683,7 +1616,7 @@ export default function TranscriptPage() {
               ) : interview?.notetakerEnabled && interview?.notetakerId ? (
                 <>
                   {loadingTranscript && (
-                    <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
+                    <Card className="interview-transcript-card">
                       <CardContent className="pt-6">
                         <div className="flex items-center gap-3 text-gray-600">
                           <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
@@ -1695,12 +1628,13 @@ export default function TranscriptPage() {
                   <RealtimeTranscript
                     interviewId={interviewId}
                     onTranscriptReady={handleTranscriptReady}
+                    className="realtime-transcript-card"
                   />
                 </>
               ) : (
-                <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
+                <Card className="interview-transcript-card">
                   <CardContent className="pt-6">
-                    <Alert className="border-amber-200 bg-amber-50">
+                    <Alert className="interview-transcript-setup-alert">
                       <AlertCircle className="h-5 w-5 text-amber-600" />
                       <AlertDescription>
                         {interview?.notetakerEnabled && !interview?.notetakerId ? (
@@ -1777,7 +1711,7 @@ export default function TranscriptPage() {
                   comments={comments}
                 />
               ) : (
-                <Card>
+                <Card className="interview-transcript-card">
                   <CardContent className="pt-6">
                     <Alert>
                       <AlertCircle className="h-4 w-4" />
@@ -1800,7 +1734,7 @@ export default function TranscriptPage() {
                   onSummaryGenerated={handleSummaryGenerated}
                 />
               ) : (
-                <Card>
+                <Card className="interview-transcript-card">
                   <CardContent className="pt-6">
                     <Alert>
                       <AlertCircle className="h-4 w-4" />
@@ -1818,7 +1752,7 @@ export default function TranscriptPage() {
               {completedTranscript && completedTranscript.transcript ? (
                 <ParticipantsContent transcript={completedTranscript.transcript} />
               ) : (
-                <Card>
+                <Card className="interview-transcript-card">
                   <CardContent className="pt-6">
                     <Alert>
                       <AlertCircle className="h-4 w-4" />
