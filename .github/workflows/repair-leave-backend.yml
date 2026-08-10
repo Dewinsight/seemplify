@@ -11,6 +11,7 @@ on:
         options:
           - diagnose
           - restart
+          - configure-payroll-secret
 
 permissions:
   contents: read
@@ -93,10 +94,69 @@ jobs:
               exit 1
             fi
           fi
+
+          if [ "$action" = configure-payroll-secret ]; then
+            postgres_container="$(docker ps --format '{{.ID}} {{.Names}}' \
+              | awk '/dokploy-postgres/ { print $1; exit }')"
+            if [ -z "$postgres_container" ]; then
+              echo "Dokploy PostgreSQL container was not found." >&2
+              exit 1
+            fi
+
+            secret="$(openssl rand -hex 32)"
+            echo "=== Persisting a new service-specific secret in Dokploy ==="
+            updated="$(docker exec -i "$postgres_container" \
+              psql -U dokploy -d dokploy -At -v secret="$secret" <<'SQL'
+          UPDATE application AS app
+          SET env = concat_ws(
+            E'\n',
+            NULLIF(
+              (
+                SELECT string_agg(line, E'\n')
+                FROM unnest(string_to_array(COALESCE(app.env, ''), E'\n')) AS line
+                WHERE line !~ '^PAYROLL_LEAVE_SHARED_SECRET='
+                  AND line <> ''
+              ),
+              ''
+            ),
+            'PAYROLL_LEAVE_SHARED_SECRET=' || :'secret'
+          )
+          WHERE name IN ('leave-backend', 'payroll-backend')
+          RETURNING name;
+          SQL
+            )"
+            printf '%s\n' "$updated" | grep -q 'leave-backend' || {
+              echo "Dokploy application leave-backend was not updated." >&2
+              exit 1
+            }
+            printf '%s\n' "$updated" | grep -q 'payroll-backend' || {
+              echo "Dokploy application payroll-backend was not updated." >&2
+              exit 1
+            }
+            echo "Updated persistent environment for leave-backend and payroll-backend."
+
+            echo "=== Applying the secret to running services ==="
+            for service in $(docker service ls --format '{{.Name}}' \
+              | grep -E '^(leave-backend|payroll-backend)(-|$)' \
+              | grep -v -E 'dev|development'); do
+              if docker service inspect --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' "$service" \
+                | grep -q '^PAYROLL_LEAVE_SHARED_SECRET='; then
+                docker service update --detach=false \
+                  --env-rm PAYROLL_LEAVE_SHARED_SECRET \
+                  --env-add "PAYROLL_LEAVE_SHARED_SECRET=$secret" \
+                  "$service"
+              else
+                docker service update --detach=false \
+                  --env-add "PAYROLL_LEAVE_SHARED_SECRET=$secret" \
+                  "$service"
+              fi
+            done
+            unset secret
+          fi
           REMOTE
 
       - name: Verify public health after restart
-        if: inputs.action == 'restart'
+        if: inputs.action == 'restart' || inputs.action == 'configure-payroll-secret'
         run: |
           set -euo pipefail
           for attempt in $(seq 1 18); do
