@@ -4,6 +4,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
+const { getPresenceReporterBaseUrl } = require('../config/presenceReporterConfig');
 
 const router = express.Router();
 const APP_ID = 'recruiter';
@@ -20,7 +21,7 @@ async function forward(req, res, pathname, allowedFields) {
   if (!secret && process.env.NODE_ENV === 'production') return res.status(503).json({ error: 'Presence service authentication is not configured' });
   const timestamp = new Date().toISOString();
   const signature = secret ? crypto.createHmac('sha256', secret).update(`${timestamp}.${JSON.stringify(body)}`).digest('hex') : '';
-  const base = String(process.env.TIME_ATTENDANCE_PRESENCE_URL || 'http://localhost:5010/api/internal/v1/presence').replace(/\/$/, '');
+  const base = getPresenceReporterBaseUrl();
   try {
     const response = await fetch(`${base}${pathname}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-service-id': APP_ID, 'x-service-timestamp': timestamp, 'x-service-signature': signature ? `sha256=${signature}` : '' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) });
     return res.status(response.status).type(response.headers.get('content-type') || 'application/json').send(await response.text());

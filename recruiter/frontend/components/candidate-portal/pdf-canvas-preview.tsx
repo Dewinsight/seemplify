@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { FileWarning, Loader2 } from "lucide-react"
-import type { SignatureField } from "@/lib/types"
+import type { SignatureField } from "@/lib/candidate-portal/types"
 
 interface RenderedPage {
   pageNumber: number
@@ -43,41 +43,53 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
 
     const sourceBlob = blob
     let cancelled = false
+    let loadingTask: { destroy: () => Promise<void> } | null = null
     setLoading(true)
     setError("")
     setPages([])
 
+    async function destroyLoadingTask() {
+      const task = loadingTask
+      loadingTask = null
+      if (task) await task.destroy().catch(() => undefined)
+    }
+
     async function renderPdf() {
-      const pdfjsLib = await import("pdfjs-dist")
-      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString()
+      try {
+        const pdfjsLib = await import("pdfjs-dist")
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString()
 
-      const data = await sourceBlob.arrayBuffer()
-      const pdf = await pdfjsLib.getDocument({ data }).promise
-      const renderedPages: RenderedPage[] = []
+        const data = await sourceBlob.arrayBuffer()
+        const task = pdfjsLib.getDocument({ data })
+        loadingTask = task
+        const pdf = await task.promise
+        const renderedPages: RenderedPage[] = []
 
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-        if (cancelled) break
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          if (cancelled) break
 
-        const page = await pdf.getPage(pageNumber)
-        const viewport = page.getViewport({ scale: 1.35 })
-        const canvas = window.document.createElement("canvas")
-        const context = canvas.getContext("2d")
-        if (!context) throw new Error("Could not prepare PDF canvas")
+          const page = await pdf.getPage(pageNumber)
+          const viewport = page.getViewport({ scale: 1.35 })
+          const canvas = window.document.createElement("canvas")
+          const context = canvas.getContext("2d")
+          if (!context) throw new Error("Could not prepare PDF canvas")
 
-        canvas.width = Math.ceil(viewport.width)
-        canvas.height = Math.ceil(viewport.height)
-        await page.render({ canvas, canvasContext: context, viewport }).promise
+          canvas.width = Math.ceil(viewport.width)
+          canvas.height = Math.ceil(viewport.height)
+          await page.render({ canvas, canvasContext: context, viewport }).promise
 
-        renderedPages.push({
-          pageNumber,
-          width: canvas.width,
-          height: canvas.height,
-          dataUrl: canvas.toDataURL("image/png"),
-        })
+          renderedPages.push({
+            pageNumber,
+            width: canvas.width,
+            height: canvas.height,
+            dataUrl: canvas.toDataURL("image/png"),
+          })
+        }
+
+        if (!cancelled) setPages(renderedPages)
+      } finally {
+        await destroyLoadingTask()
       }
-
-      await pdf.destroy()
-      if (!cancelled) setPages(renderedPages)
     }
 
     renderPdf()
@@ -90,6 +102,7 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
 
     return () => {
       cancelled = true
+      void destroyLoadingTask()
     }
   }, [blob])
 
