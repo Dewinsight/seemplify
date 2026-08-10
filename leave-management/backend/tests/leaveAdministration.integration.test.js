@@ -82,10 +82,16 @@ describe('leave administration API', () => {
     const response = await request(app)
       .post('/api/leave-types')
       .set('x-test-organization', 'org-a')
-      .send({ name: 'Study Leave', defaultDays: 8, paid: true, requiresApproval: true });
+      .send({ name: 'Study Leave', defaultDays: 80, maxConsecutiveDays: 60, paid: true, requiresApproval: true });
 
     expect(response.status).toBe(201);
-    expect(response.body.leaveType).toMatchObject({ key: 'study-leave', name: 'Study Leave', defaultDays: 8 });
+    expect(response.body.leaveType).toMatchObject({
+      key: 'study-leave',
+      name: 'Study Leave',
+      defaultDays: 80,
+      maxConsecutiveDays: 60,
+      effectiveMaxConsecutiveDays: 60,
+    });
     const [policyA, policyB, logs] = await Promise.all([
       LeavePolicy.findOne({ organizationId: 'org-a' }),
       LeavePolicy.findOne({ organizationId: 'org-b' }),

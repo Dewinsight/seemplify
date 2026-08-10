@@ -4,10 +4,12 @@ const LeaveBalance = require('../models/LeaveBalance');
 const LeaveRequest = require('../models/LeaveRequest');
 const {
   getDefaultLeaveTypes,
+  getPolicyLeaveTypes,
   normalizeLeaveTypeKey,
   serializeBalance,
   synchronizeEntitlements,
 } = require('../services/leaveEntitlementService');
+const { validateLeaveDates } = require('../services/leaveCalculations');
 const { fetchOrganizationRoster } = require('../services/rosterService');
 const { buildLeaveData, buildPerformanceLeaveData } = require('../services/attendanceIntegrationService');
 
@@ -37,6 +39,47 @@ describe('dynamic leave entitlement contracts', () => {
     expect(defaults.find((item) => item.key === 'annual').defaultDays).toBe(30);
     expect(defaults.find((item) => item.key === 'sick').defaultDays).toBe(12);
     expect(defaults.find((item) => item.key === 'unpaid').paid).toBe(false);
+  });
+
+  test('uses configured family-leave entitlements instead of the organization request cap', () => {
+    const leaveTypes = getPolicyLeaveTypes({
+      maxConsecutiveDays: 30,
+      leaveTypes: [
+        { key: 'annual', name: 'Annual Leave', defaultDays: 40, active: true, paid: true, order: 10 },
+        { key: 'maternity', name: 'Maternity Leave', defaultDays: 90, active: true, paid: true, order: 20 },
+        { key: 'parental', name: 'Parental Leave', defaultDays: 120, maxConsecutiveDays: 75, active: true, paid: true, order: 30 },
+      ],
+    });
+
+    expect(leaveTypes.find((item) => item.key === 'annual')).toMatchObject({
+      effectiveMaxConsecutiveDays: 30,
+      maxConsecutiveDaysSource: 'organization',
+    });
+    expect(leaveTypes.find((item) => item.key === 'maternity')).toMatchObject({
+      effectiveMaxConsecutiveDays: 90,
+      maxConsecutiveDaysSource: 'entitlement',
+    });
+    expect(leaveTypes.find((item) => item.key === 'parental')).toMatchObject({
+      effectiveMaxConsecutiveDays: 75,
+      maxConsecutiveDaysSource: 'leave_type',
+    });
+  });
+
+  test('validates long maternity leave against its leave-type limit', () => {
+    const policy = { timezone: 'UTC', workingDays: [1, 2, 3, 4, 5], maxConsecutiveDays: 30 };
+    const allowed = validateLeaveDates('2099-11-02', '2099-12-18', policy, {
+      maxConsecutiveDays: 90,
+      leaveTypeName: 'Maternity Leave',
+    });
+    const rejected = validateLeaveDates('2099-11-02', '2100-03-19', policy, {
+      maxConsecutiveDays: 90,
+      leaveTypeName: 'Maternity Leave',
+    });
+
+    expect(allowed.numberOfDays).toBeGreaterThan(30);
+    expect(allowed.isValid).toBe(true);
+    expect(rejected.isValid).toBe(false);
+    expect(rejected.errors).toContain('Maternity Leave requests can include up to 90 consecutive working days');
   });
 
   test('normalizes administrator-created leave type keys', () => {

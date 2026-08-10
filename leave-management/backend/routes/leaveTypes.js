@@ -27,6 +27,15 @@ function validateDays(value) {
   return days;
 }
 
+function validateRequestLimit(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const days = Number(value);
+  if (!Number.isFinite(days) || days < 0.5 || days > 365) {
+    throw new AppError('Maximum days per request must be between 0.5 and 365', 400, 'INVALID_REQUEST_LIMIT');
+  }
+  return days;
+}
+
 router.get('/', asyncHandler(async (req, res) => {
   const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
   const includeInactive = req.query.includeInactive === 'true' &&
@@ -56,6 +65,7 @@ router.post('/', requireLeavePermission('manage_policies'), asyncHandler(async (
       name,
       description: String(req.body.description || '').trim(),
       defaultDays: validateDays(req.body.defaultDays),
+      maxConsecutiveDays: validateRequestLimit(req.body.maxConsecutiveDays),
       paid: req.body.paid !== false,
       active: true,
       requiresApproval: typeof req.body.requiresApproval === 'boolean' ? req.body.requiresApproval : null,
@@ -120,6 +130,9 @@ router.patch('/:key', requireLeavePermission('manage_policies'), asyncHandler(as
     }
     if (req.body.description !== undefined) definition.description = String(req.body.description || '').trim();
     if (req.body.defaultDays !== undefined) definition.defaultDays = validateDays(req.body.defaultDays);
+    if (req.body.maxConsecutiveDays !== undefined) {
+      definition.maxConsecutiveDays = validateRequestLimit(req.body.maxConsecutiveDays);
+    }
     if (req.body.paid !== undefined) definition.paid = Boolean(req.body.paid);
     if (req.body.active !== undefined) definition.active = Boolean(req.body.active);
     if (req.body.requiresApproval !== undefined) {

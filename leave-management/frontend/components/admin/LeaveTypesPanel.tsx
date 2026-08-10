@@ -11,12 +11,13 @@ type FormState = {
   name: string;
   description: string;
   defaultDays: string;
+  maxConsecutiveDays: string;
   paid: boolean;
   approval: 'inherit' | 'required' | 'automatic';
 };
 
 const emptyForm: FormState = {
-  name: '', description: '', defaultDays: '0', paid: true, approval: 'inherit',
+  name: '', description: '', defaultDays: '0', maxConsecutiveDays: '', paid: true, approval: 'inherit',
 };
 
 export default function LeaveTypesPanel() {
@@ -55,6 +56,7 @@ export default function LeaveTypesPanel() {
       name: definition.name,
       description: definition.description || '',
       defaultDays: String(definition.defaultDays),
+      maxConsecutiveDays: definition.maxConsecutiveDays === null ? '' : String(definition.maxConsecutiveDays),
       paid: definition.paid,
       approval: definition.requiresApproval === null
         ? 'inherit'
@@ -74,6 +76,7 @@ export default function LeaveTypesPanel() {
         name: form.name,
         description: form.description,
         defaultDays: Number(form.defaultDays),
+        maxConsecutiveDays: form.maxConsecutiveDays.trim() === '' ? null : Number(form.maxConsecutiveDays),
         paid: form.paid,
         requiresApproval,
       };
@@ -116,21 +119,22 @@ export default function LeaveTypesPanel() {
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr><th className="px-4 py-3">Leave type</th><th className="px-4 py-3">Default</th><th className="px-4 py-3">Pay</th><th className="px-4 py-3">Approval</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr>
+            <tr><th className="px-4 py-3">Leave type</th><th className="px-4 py-3">Default</th><th className="px-4 py-3">Per request</th><th className="px-4 py-3">Pay</th><th className="px-4 py-3">Approval</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr>
           </thead>
           <tbody className="divide-y divide-border">
             {leaveTypes.map((definition) => (
               <tr key={definition.key} className={!definition.active ? 'text-muted-foreground' : ''}>
                 <td className="px-4 py-4"><div className="font-medium text-foreground">{definition.name}</div><div className="mt-1 max-w-md text-xs text-muted-foreground">{definition.description || definition.key}</div></td>
                 <td className="px-4 py-4 font-medium">{definition.defaultDays} days</td>
+                <td className="px-4 py-4"><div className="font-medium">{definition.effectiveMaxConsecutiveDays === null ? 'No limit' : `${definition.effectiveMaxConsecutiveDays} days`}</div><div className="mt-1 text-xs text-muted-foreground">{definition.maxConsecutiveDaysSource === 'leave_type' ? 'Leave-type rule' : definition.maxConsecutiveDaysSource === 'entitlement' ? 'Entitlement default' : 'Organization rule'}</div></td>
                 <td className="px-4 py-4">{definition.paid ? 'Paid' : 'Unpaid'}</td>
                 <td className="px-4 py-4">{definition.requiresApproval === null ? 'Organization default' : definition.requiresApproval ? 'Required' : 'Automatic'}</td>
                 <td className="px-4 py-4">{definition.active ? 'Active' : 'Archived'}</td>
                 <td className="px-4 py-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => openEdit(definition)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>{definition.active ? <Button size="sm" variant="ghost" onClick={() => setActive(definition, false)}><Archive className="h-3.5 w-3.5" /> Archive</Button> : <Button size="sm" variant="ghost" onClick={() => setActive(definition, true)}><RotateCcw className="h-3.5 w-3.5" /> Restore</Button>}</div></td>
               </tr>
             ))}
-            {!loading && leaveTypes.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No leave types configured.</td></tr>}
-            {loading && <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">Loading leave types…</td></tr>}
+            {!loading && leaveTypes.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">No leave types configured.</td></tr>}
+            {loading && <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">Loading leave types…</td></tr>}
           </tbody>
         </table>
       </div>
@@ -143,6 +147,7 @@ export default function LeaveTypesPanel() {
               <label className="block"><span className="text-sm font-medium">Name</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" placeholder="Study leave" /></label>
               <label className="block"><span className="text-sm font-medium">Description</span><textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={3} maxLength={500} className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
               <label className="block"><span className="text-sm font-medium">Default days per year</span><input required type="number" min="0" max="365" step="0.5" value={form.defaultDays} onChange={(event) => setForm({ ...form, defaultDays: event.target.value })} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" /></label>
+              <label className="block"><span className="text-sm font-medium">Maximum working days per request <span className="font-normal text-muted-foreground">(optional)</span></span><input type="number" min="0.5" max="365" step="0.5" value={form.maxConsecutiveDays} onChange={(event) => setForm({ ...form, maxConsecutiveDays: event.target.value })} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" placeholder={editing?.effectiveMaxConsecutiveDays ? String(editing.effectiveMaxConsecutiveDays) : 'Use organization rule'} /><span className="mt-1 block text-xs text-muted-foreground">Leave blank to inherit the organization rule. Maternity and paternity leave use their entitlement default.</span></label>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block"><span className="text-sm font-medium">Pay treatment</span><select value={form.paid ? 'paid' : 'unpaid'} onChange={(event) => setForm({ ...form, paid: event.target.value === 'paid' })} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></label>
                 <label className="block"><span className="text-sm font-medium">Approval</span><select value={form.approval} onChange={(event) => setForm({ ...form, approval: event.target.value as FormState['approval'] })} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="inherit">Organization default</option><option value="required">Always required</option><option value="automatic">Automatic</option></select></label>

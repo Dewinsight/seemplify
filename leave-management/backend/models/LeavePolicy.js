@@ -9,6 +9,7 @@ const leaveTypeDefinitionSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 80 },
   description: { type: String, trim: true, maxlength: 500, default: '' },
   defaultDays: { type: Number, required: true, min: 0, max: 365, default: 0 },
+  maxConsecutiveDays: { type: Number, default: null, min: 0.5, max: 365 },
   paid: { type: Boolean, default: true },
   active: { type: Boolean, default: true },
   requiresApproval: { type: Boolean, default: null },

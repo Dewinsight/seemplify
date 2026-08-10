@@ -34,6 +34,7 @@ export default function NewLeaveRequestPage() {
     .filter((definition) => definition.active)
     .sort((left, right) => left.order - right.order), [policy]);
   const selectedEntitlement = balance?.entitlements?.find((entry) => entry.leaveTypeKey === leaveType);
+  const selectedLeaveType = leaveTypes.find((definition) => definition.key === leaveType);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.push('/login');
@@ -152,6 +153,7 @@ export default function NewLeaveRequestPage() {
             <div className="mt-5 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm">
               <span className="font-medium">{getLeaveTypeLabel(leaveType, selectedEntitlement.leaveTypeName)}</span>
               <span className="text-muted-foreground"> · {selectedEntitlement.used} used · {selectedEntitlement.pending} pending · {selectedEntitlement.available} available</span>
+              {selectedLeaveType?.effectiveMaxConsecutiveDays && <span className="text-muted-foreground"> · up to {selectedLeaveType.effectiveMaxConsecutiveDays} working days per request</span>}
             </div>
           )}
           {leaveTypes.length === 0 && <p className="mt-4 text-sm text-amber-700">Your organization has no active leave types. Contact an administrator.</p>}

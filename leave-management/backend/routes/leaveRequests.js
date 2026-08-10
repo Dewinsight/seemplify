@@ -358,7 +358,10 @@ router.post('/',
     }
 
     // Validate dates
-    const validation = validateLeaveDates(startDate, endDate, policy);
+    const validation = validateLeaveDates(startDate, endDate, policy, {
+      maxConsecutiveDays: leaveTypeDefinition.effectiveMaxConsecutiveDays,
+      leaveTypeName: leaveTypeDefinition.name,
+    });
     if (!validation.isValid) {
       throw new AppError(validation.errors.join(', '), 400, 'VALIDATION_ERROR');
     }

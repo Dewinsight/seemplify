@@ -138,6 +138,9 @@ export interface LeaveTypeDefinition {
   name: string;
   description?: string;
   defaultDays: number;
+  maxConsecutiveDays: number | null;
+  effectiveMaxConsecutiveDays: number | null;
+  maxConsecutiveDaysSource: 'leave_type' | 'entitlement' | 'organization';
   paid: boolean;
   active: boolean;
   requiresApproval: boolean | null;

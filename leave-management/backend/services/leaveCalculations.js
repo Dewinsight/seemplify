@@ -56,7 +56,7 @@ function calculateLeaveDays(startDate, endDate, policy = {}) {
 /**
  * Validate leave request dates
  */
-function validateLeaveDates(startDate, endDate, policy = {}) {
+function validateLeaveDates(startDate, endDate, policy = {}, options = {}) {
   const {
     timezone = 'UTC',
     advanceNoticeDays = 0,
@@ -102,9 +102,15 @@ function validateLeaveDates(startDate, endDate, policy = {}) {
   // Calculate leave days
   const days = calculateLeaveDays(start, end, { timezone, holidays, workingDays });
 
-  // Check max consecutive days
-  if (maxConsecutiveDays && days > maxConsecutiveDays) {
-    errors.push(`Cannot request more than ${maxConsecutiveDays} consecutive working days`);
+  const requestLimit = Object.prototype.hasOwnProperty.call(options, 'maxConsecutiveDays')
+    ? options.maxConsecutiveDays
+    : maxConsecutiveDays;
+
+  // Check the selected leave type's request limit. Ordinary leave types inherit
+  // the organization limit; protected/family leave can use a larger entitlement.
+  if (requestLimit && days > requestLimit) {
+    const subject = options.leaveTypeName ? `${options.leaveTypeName} requests` : 'Leave requests';
+    errors.push(`${subject} can include up to ${requestLimit} consecutive working days`);
   }
 
   return {

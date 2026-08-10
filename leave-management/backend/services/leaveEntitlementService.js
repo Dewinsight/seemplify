@@ -16,6 +16,8 @@ const LEGACY_POLICY_FIELDS = Object.freeze({
   unpaid: 'unpaidLeaveDays',
 });
 
+const ENTITLEMENT_LIMITED_TYPES = new Set(['maternity', 'paternity']);
+
 function normalizeLeaveTypeKey(value) {
   return String(value || '')
     .trim()
@@ -39,12 +41,36 @@ function getDefaultLeaveTypes(policy = {}) {
   });
 }
 
-function serializeLeaveType(definition) {
+function requestLimitFor(definition, policy = {}) {
+  const explicitLimit = definition.maxConsecutiveDays;
+  if (explicitLimit !== null && explicitLimit !== undefined && explicitLimit !== '') {
+    const days = Number(explicitLimit);
+    if (Number.isFinite(days) && days > 0) {
+      return { days, source: 'leave_type' };
+    }
+  }
+
+  if (ENTITLEMENT_LIMITED_TYPES.has(definition.key)) {
+    return { days: Number(definition.defaultDays || 0), source: 'entitlement' };
+  }
+
+  const organizationLimit = Number(policy.maxConsecutiveDays);
+  return {
+    days: Number.isFinite(organizationLimit) && organizationLimit > 0 ? organizationLimit : null,
+    source: 'organization',
+  };
+}
+
+function serializeLeaveType(definition, policy = {}) {
+  const requestLimit = requestLimitFor(definition, policy);
   return {
     key: definition.key,
     name: definition.name,
     description: definition.description || '',
     defaultDays: Number(definition.defaultDays || 0),
+    maxConsecutiveDays: definition.maxConsecutiveDays ?? null,
+    effectiveMaxConsecutiveDays: requestLimit.days,
+    maxConsecutiveDaysSource: requestLimit.source,
     paid: definition.paid !== false,
     active: definition.active !== false,
     requiresApproval: definition.requiresApproval ?? null,
@@ -62,7 +88,7 @@ function getPolicyLeaveTypes(policy, { includeInactive = false } = {}) {
     : getDefaultLeaveTypes(policy || {});
 
   return source
-    .map(serializeLeaveType)
+    .map((definition) => serializeLeaveType(definition, policy || {}))
     .filter((definition) => includeInactive || definition.active)
     .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
 }
@@ -157,6 +183,7 @@ module.exports = {
   getDefaultLeaveTypes,
   getPolicyLeaveTypes,
   normalizeLeaveTypeKey,
+  requestLimitFor,
   serializeBalance,
   synchronizeEntitlements,
 };
