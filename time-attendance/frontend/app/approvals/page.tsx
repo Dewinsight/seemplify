@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { format, isValid, parseISO } from 'date-fns';
-import { CalendarDays, Check, CheckCircle2, ChevronRight, History, Loader2, RotateCcw, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, CheckCircle2, ChevronRight, History, Loader2, RotateCcw, Trash2, X } from 'lucide-react';
 import { approvalsApi } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
 import { cn, formatDuration } from '@/lib/utils';
@@ -34,6 +34,7 @@ export default function ApprovalsPage() {
     const [history, setHistory] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<{ id: string; code?: string; message: string } | null>(null);
     const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
 
     useEffect(() => {
@@ -56,12 +57,30 @@ export default function ApprovalsPage() {
         if (action === 'reject' && !reason) return;
         try {
             setSubmitting(id);
+            setActionError(null);
             if (action === 'approve') await approvalsApi.approve(id);
             else await approvalsApi.reject(id, reason!);
             setApprovals(current => current.filter(item => item._id !== id));
-        } catch (error) {
-            console.error('Approval action failed', error);
-            alert('Failed to process request.');
+        } catch (error: any) {
+            const status = error?.response?.status;
+            const data = error?.response?.data || {};
+            if (status === 409 && data.code === 'INCOMPLETE_ATTENDANCE') {
+                const count = Number(data.incompleteEntries || 0);
+                setApprovals(current => current.map(item => item._id === id
+                    ? { ...item, summary: { ...(item.summary || {}), incompleteEntries: count } }
+                    : item));
+                setActionError({
+                    id,
+                    code: data.code,
+                    message: `${count || 'One or more'} incomplete or unpaired attendance ${count === 1 ? 'entry must' : 'entries must'} be corrected before this timesheet can be approved.`,
+                });
+            } else if (status === 404) {
+                setApprovals(current => current.filter(item => item._id !== id));
+                setActionError({ id: '', code: 'STALE_REQUEST', message: 'This approval request was already processed or recalled. The queue has been refreshed.' });
+            } else {
+                console.error('Approval action failed', error);
+                setActionError({ id, code: data.code, message: data.error || 'The approval action could not be completed. Please try again.' });
+            }
         } finally {
             setSubmitting(null);
         }
@@ -115,8 +134,10 @@ export default function ApprovalsPage() {
             <button role="tab" aria-selected={activeTab === 'history'} onClick={() => setActiveTab('history')} className={cn('ml-6 flex items-center gap-2 border-b-2 px-1 pb-3 pt-1 text-sm font-medium', activeTab === 'history' ? 'border-teal-500 text-teal-400' : 'border-transparent text-zinc-500 hover:text-zinc-300')}><History className="h-4 w-4" />History</button>
         </div>
 
+        {actionError?.id === '' && <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">{actionError.message}</div>}
+
         {loading ? <LoadingState /> : activeTab === 'pending'
-            ? <PendingList items={approvals} submitting={submitting} onAction={handleAction} />
+            ? <PendingList items={approvals} submitting={submitting} actionError={actionError} onAction={handleAction} />
             : <HistoryList items={history} submitting={submitting} onRevert={handleRevert} onDelete={handleDelete} />}
     </div>;
 }
@@ -129,21 +150,30 @@ function EmptyState({ history = false }: { history?: boolean }) {
     return <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-12 text-center"><CheckCircle2 className="mx-auto h-7 w-7 text-zinc-600" /><h2 className="mt-3 text-base font-semibold text-white">{history ? 'No approval history' : 'All caught up!'}</h2><p className="mt-1 text-sm text-zinc-500">{history ? 'Completed decisions will appear here.' : 'There are no timesheets waiting for your review.'}</p></div>;
 }
 
-function PendingList({ items, submitting, onAction }: { items: any[]; submitting: string | null; onAction: (id: string, action: 'approve' | 'reject') => void }) {
+function PendingList({ items, submitting, actionError, onAction }: { items: any[]; submitting: string | null; actionError: { id: string; code?: string; message: string } | null; onAction: (id: string, action: 'approve' | 'reject') => void }) {
     if (!items.length) return <EmptyState />;
     return <section className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
         <div className="hidden grid-cols-[minmax(220px,1.25fr)_minmax(180px,1fr)_170px_280px] gap-5 border-b border-zinc-800 px-5 py-3 text-xs font-medium text-zinc-500 md:grid"><span>Employee</span><span>Period</span><span>Recorded</span><span className="text-right">Actions</span></div>
         <div className="divide-y divide-zinc-800">{items.map(item => {
             const summary = itemSummary(item);
-            return <div key={item._id} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(220px,1.25fr)_minmax(180px,1fr)_170px_280px] md:items-center md:gap-5">
+            const incompleteEntries = Number(item.summary?.incompleteEntries || 0);
+            const blocker = actionError?.id === item._id ? actionError : incompleteEntries > 0 ? {
+                code: 'INCOMPLETE_ATTENDANCE',
+                message: `${incompleteEntries} incomplete or unpaired attendance ${incompleteEntries === 1 ? 'entry must' : 'entries must'} be corrected before this timesheet can be approved.`,
+            } : null;
+            return <div key={item._id} data-testid="approval-row" data-timesheet-id={item._id} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(220px,1.25fr)_minmax(180px,1fr)_170px_280px] md:items-center md:gap-5">
                 <EmployeeCell item={item} />
                 <PeriodCell item={item} />
                 <div className="text-sm text-zinc-300"><span className="font-medium text-white">{formatDuration(summary.hours * 60)}</span><span className="mx-2 text-zinc-700">·</span>{summary.days} {summary.days === 1 ? 'day' : 'days'}{summary.overtime > 0 && <div className="mt-1 text-xs text-amber-400">{formatDuration(summary.overtime * 60)} overtime</div>}</div>
                 <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
                     <Link href={`/timesheets/${item._id}`} className="inline-flex items-center gap-1 px-2 py-2 text-sm font-medium text-zinc-400 hover:text-white">Review<ChevronRight className="h-4 w-4" /></Link>
                     <button onClick={() => onAction(item._id, 'reject')} disabled={submitting === item._id} className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"><X className="h-4 w-4" />Reject</button>
-                    <button onClick={() => onAction(item._id, 'approve')} disabled={submitting === item._id} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50"><Check className="h-4 w-4" />Approve</button>
+                    <button onClick={() => onAction(item._id, 'approve')} disabled={submitting === item._id || incompleteEntries > 0} title={incompleteEntries > 0 ? 'Correct incomplete attendance before approving' : undefined} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />Approve</button>
                 </div>
+                {blocker && <div role="alert" className="flex flex-col gap-3 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 md:col-span-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-2.5"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" /><div><p className="text-sm font-medium text-amber-900 dark:text-amber-200">Approval blocked</p><p className="mt-0.5 text-sm text-amber-800 dark:text-amber-300">{blocker.message}</p></div></div>
+                    <div className="flex shrink-0 gap-3 pl-6 sm:pl-0"><Link href={`/timesheets/${item._id}`} className="text-sm font-semibold text-[var(--suite-ink)] hover:underline">Review timesheet</Link><Link href={`/exceptions?userId=${encodeURIComponent(item.userId)}`} className="text-sm font-semibold text-[var(--suite-ink)] hover:underline">View exceptions</Link></div>
+                </div>}
             </div>;
         })}</div>
     </section>;

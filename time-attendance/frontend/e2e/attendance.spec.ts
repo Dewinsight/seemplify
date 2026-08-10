@@ -18,6 +18,7 @@ type MockState = {
     rosterSyncCount: number;
     coverRequested: boolean;
     requestReviewed: boolean;
+    approvalConflict: boolean;
     rulePacks: any[];
     locationEnabled: boolean;
     clockBodies: any[];
@@ -156,8 +157,14 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'POST' && /^\/api\/timesheets\/timesheet-1\/(submit|recall)$/.test(path)) return json(route, { timesheet: { ...timesheet, status: path.endsWith('/submit') ? 'submitted' : 'draft' } });
         if (method === 'GET' && path === '/api/timesheets/timesheet-1/export') return route.fulfill({ status: 200, headers: { ...corsHeaders(route), 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'content-disposition': 'attachment; filename="timesheet-1.xlsx"' }, body: 'mock workbook' });
 
-        if (method === 'GET' && path === '/api/approvals') return json(route, { timesheets: [timesheet] });
+        if (method === 'GET' && path === '/api/approvals') return json(route, { timesheets: [{
+            ...timesheet,
+            summary: { ...timesheet.summary, incompleteEntries: state.approvalConflict ? 2 : 0 },
+        }] });
         if (method === 'GET' && path === '/api/approvals/history') return json(route, { timesheets: [{ ...timesheet, status: 'approved' }] });
+        if (method === 'POST' && path === '/api/approvals/timesheet-1/approve' && state.approvalConflict) {
+            return json(route, { error: 'Incomplete or unpaired attendance entries must be corrected before approval', code: 'INCOMPLETE_ATTENDANCE', incompleteEntries: 2 }, 409);
+        }
         if (/^\/api\/approvals\/timesheet-1\/(approve|reject|revert)$/.test(path)) return json(route, { success: true });
         if (method === 'DELETE' && path === '/api/approvals/timesheet-1') return json(route, { success: true });
 
@@ -269,6 +276,7 @@ const test = base.extend<{ mockState: MockState }>({
             lockedClockOut: false,
             notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false, rulePacks: [rulePack],
             rosterSynced: false, rosterSyncCount: 0, coverRequested: false, requestReviewed: false,
+            approvalConflict: false,
             locationEnabled: false, clockBodies: [], shiftBodies: [],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
@@ -559,6 +567,20 @@ test('approves a pending timesheet and runs a rule-pack impact preview', async (
     await page.goto('/admin/rule-packs');
     await page.getByRole('button', { name: 'Run simulation' }).click();
     await expect(page.getByText('Regular: 8h')).toBeVisible();
+});
+
+test('explains an incomplete-attendance approval conflict without losing the request', async ({ page, mockState }) => {
+    mockState.approvalConflict = true;
+    await authenticate(page);
+    await page.goto('/approvals');
+
+    await expect(page.getByText('Approval blocked')).toBeVisible();
+    await expect(page.getByText(/2 incomplete or unpaired attendance entries/)).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Review timesheet' })).toHaveAttribute('href', '/timesheets/timesheet-1');
+    await expect(page.getByRole('link', { name: 'View exceptions' })).toHaveAttribute('href', '/exceptions?userId=employee-1');
+    await expect(page.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    await expect(page.getByText('Alex Morgan')).toBeVisible();
+    expect(mockState.calls).not.toContain('POST /api/approvals/timesheet-1/approve');
 });
 
 test('recovers an empty rule-pack catalog and creates a custom draft', async ({ page, mockState }) => {

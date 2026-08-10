@@ -309,6 +309,56 @@ test('loads team status and approves a persisted employee timesheet', async ({ p
     expect(history.some(item => item.userId === 'employee-live-2' && ['approved', 'payroll_pending'].includes(item.status))).toBe(true);
 });
 
+test('explains a real incomplete-attendance approval conflict', async ({ page }, testInfo) => {
+    test.skip(!testInfo.project.name.startsWith('desktop'), 'Desktop live-flow coverage');
+    const mongoUri = process.env.LIVE_MONGODB_URI || 'mongodb://127.0.0.1:27017/time-attendance-live-e2e';
+    expect(mongoUri).toMatch(/live-e2e|ta-e2e/i);
+    const { AttendanceException, TimeEntry, Timesheet } = require('../../backend/models');
+    const mongoose = Timesheet.db.base;
+    await mongoose.connect(mongoUri);
+    const startDate = new Date('2026-07-06T00:00:00.000Z');
+    const endDate = new Date('2026-07-12T23:59:59.999Z');
+    const timesheet = await Timesheet.create({
+        userId: 'employee-live-2', userEmail: 'jamie.live@example.test', userName: 'Jamie Live',
+        organizationId: 'org-live-e2e', organizationName: 'Seemplify Live E2E', teamId: 'team-live-1', teamName: 'Operations',
+        periodType: 'weekly', periodKey: 'live-e2e-incomplete-approval', startDate, endDate, weekNumber: 28, year: 2026,
+        status: 'submitted', submittedAt: new Date(),
+        assignedApprover: { userId: 'employee-live-1', userName: 'Alex Live', assignedAt: new Date() },
+        approvalWorkflow: { currentLevel: 0, levels: [{ order: 0, name: 'Line manager', approverType: 'line_manager', approverId: 'employee-live-1', status: 'pending' }] },
+        summary: { totalHours: 0, regularHours: 0, overtimeHours: 0, daysWorked: 0 },
+        auditLog: [{ action: 'submitted', performedBy: 'employee-live-2', performedByName: 'Jamie Live' }],
+    });
+    await TimeEntry.create({
+        userId: 'employee-live-2', userEmail: 'jamie.live@example.test', userName: 'Jamie Live',
+        organizationId: 'org-live-e2e', organizationName: 'Seemplify Live E2E', teamId: 'team-live-1', teamName: 'Operations',
+        entryType: 'clock_out', timestamp: new Date('2026-07-07T17:00:00.000Z'), timezone: 'Europe/London', source: 'web', workMode: 'remote',
+    });
+    await mongoose.disconnect();
+
+    try {
+        await authenticate(page);
+        let approvalAttempts = 0;
+        page.on('request', request => {
+            if (request.url().endsWith(`/api/approvals/${timesheet._id}/approve`)) approvalAttempts += 1;
+        });
+        await page.goto('/approvals');
+        const row = page.locator(`[data-timesheet-id="${timesheet._id}"]`);
+        await expect(row).toBeVisible();
+        await expect(row.getByText('Approval blocked')).toBeVisible();
+        await expect(row.getByText(/incomplete or unpaired attendance/)).toBeVisible();
+        await expect(row.getByRole('button', { name: 'Approve' })).toBeDisabled();
+        expect(approvalAttempts).toBe(0);
+    } finally {
+        await mongoose.connect(mongoUri);
+        await Promise.all([
+            Timesheet.deleteOne({ _id: timesheet._id }),
+            TimeEntry.deleteMany({ organizationId: 'org-live-e2e', userId: 'employee-live-2', timestamp: { $gte: startDate, $lte: endDate } }),
+            AttendanceException.deleteMany({ timesheetId: timesheet._id }),
+        ]);
+        await mongoose.disconnect();
+    }
+});
+
 test('runs reports, real Excel exports, rule simulation and policy persistence', async ({ page, request, diagnostics: _diagnostics }, testInfo) => {
     test.skip(!testInfo.project.name.startsWith('desktop'), 'Desktop live-flow coverage');
     await authenticate(page);

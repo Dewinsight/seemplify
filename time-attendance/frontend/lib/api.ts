@@ -288,7 +288,7 @@ export const approvalsApi = {
         return response.data.timesheets || response.data;
     },
     approve: async (id: string, note?: string) => {
-        const response = await api.post(`/approvals/${id}/approve`, { note });
+        const response = await api.post(`/approvals/${id}/approve`, { comment: note });
         return response.data;
     },
     reject: async (id: string, reason: string) => {

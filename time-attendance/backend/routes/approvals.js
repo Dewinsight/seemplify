@@ -133,6 +133,16 @@ router.get('/', async (req, res) => {
             ? candidates.filter(timesheet => canApproveTimesheet(req, timesheet, policy))
             : candidates).slice(0, parseInt(limit));
 
+        // Approval must use the current attendance calculation, not the
+        // snapshot from submission. Refresh the visible queue before it is
+        // rendered so incomplete/unpaired entries are shown as blockers and
+        // managers do not discover them through a failed approval request.
+        if (status === 'submitted') {
+            for (const timesheet of timesheets) {
+                await refreshTimesheetEntries(timesheet, policy, { allowLocked: true });
+            }
+        }
+
         res.json({
             timesheets,
             count: timesheets.length,
