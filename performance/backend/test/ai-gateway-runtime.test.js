@@ -38,6 +38,8 @@ test('Performance local-only mode uses the selected Control Center runtime witho
     assert.equal(captured.body.activity, 'performance.okr');
     assert.equal(captured.body.executionMode, 'local-only');
     assert.equal(captured.body.codexSubjectId, undefined);
+    assert.match(captured.body.metering.eventId, /^usage_[a-f0-9]{48}$/);
+    assert.match(captured.body.metering.gatewayExecutionId, /^localexec_[a-f0-9]{48}$/);
     assert.ok(captured.init.headers['x-seemplify-signature']);
   });
 });
@@ -82,6 +84,8 @@ test('Performance ChatGPT mode binds the configured subject and never silently u
     assert.equal(captured.body.codexSubjectId, 'performance-user-9');
     assert.equal(captured.body.executionMode, 'codex-only');
     assert.equal(captured.body.requiredEngine, 'codex');
+    assert.match(captured.body.metering.eventId, /^usage_[a-f0-9]{48}$/);
+    assert.match(captured.body.metering.gatewayExecutionId, /^chatgptexec_[a-f0-9]{48}$/);
   });
 });
 

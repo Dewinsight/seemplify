@@ -128,6 +128,7 @@ class AIGatewayService {
       );
     }
     const eventId = `usage_${crypto.createHash('sha256').update(`${requestId}:${activity}:${runtime}`).digest('hex').slice(0, 48)}`;
+    const gatewayExecutionPrefix = local ? 'localexec' : 'chatgptexec';
     const body = JSON.stringify({
       activity,
       executionMode: local ? 'local-only' : 'codex-only',
@@ -147,7 +148,7 @@ class AIGatewayService {
       metering: {
         record: true,
         eventId,
-        gatewayExecutionId: `localexec_${crypto.createHash('sha256').update(eventId).digest('hex').slice(0, 48)}`,
+        gatewayExecutionId: `${gatewayExecutionPrefix}_${crypto.createHash('sha256').update(eventId).digest('hex').slice(0, 48)}`,
         requestId,
         sourceApp: 'performance-management'
       }
