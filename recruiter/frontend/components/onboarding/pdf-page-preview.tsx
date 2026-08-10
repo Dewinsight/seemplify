@@ -33,46 +33,52 @@ export function PdfPagePreview({ blob, pageNumber, title, onPageCount, onPageRen
     }
 
     let cancelled = false;
+    let loadingTask: { destroy: () => Promise<void> } | null = null;
     setLoading(true);
     setError("");
     setRenderedPage(null);
 
+    async function destroyLoadingTask() {
+      const task = loadingTask;
+      loadingTask = null;
+      if (task) await task.destroy().catch(() => undefined);
+    }
+
     async function renderPage() {
-      const pdfjsLib = await import("pdfjs-dist");
-      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
 
-      const data = await blob!.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data }).promise;
-      const totalPages = pdf.numPages || 1;
-      const safePageNumber = Math.max(1, Math.min(pageNumber, totalPages));
-      const page = await pdf.getPage(safePageNumber);
-      const viewport = page.getViewport({ scale: 1.5 });
-      const canvas = window.document.createElement("canvas");
-      const context = canvas.getContext("2d");
+        const data = await blob!.arrayBuffer();
+        const task = pdfjsLib.getDocument({ data });
+        loadingTask = task;
+        const pdf = await task.promise;
+        const totalPages = pdf.numPages || 1;
+        const safePageNumber = Math.max(1, Math.min(pageNumber, totalPages));
+        const page = await pdf.getPage(safePageNumber);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = window.document.createElement("canvas");
 
-      if (!context) {
-        await pdf.destroy();
-        throw new Error("Could not prepare PDF preview canvas");
-      }
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        await page.render({ canvas, viewport }).promise;
 
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      await page.render({ canvasContext: context, viewport }).promise;
-      await pdf.destroy();
-
-      if (!cancelled) {
-        const pageInfo = {
-          pageNumber: safePageNumber,
-          totalPages,
-          width: canvas.width,
-          height: canvas.height,
-        };
-        onPageCount?.(totalPages);
-        onPageRendered?.(pageInfo);
-        setRenderedPage({
-          dataUrl: canvas.toDataURL("image/png"),
-          ...pageInfo,
-        });
+        if (!cancelled) {
+          const pageInfo = {
+            pageNumber: safePageNumber,
+            totalPages,
+            width: canvas.width,
+            height: canvas.height,
+          };
+          onPageCount?.(totalPages);
+          onPageRendered?.(pageInfo);
+          setRenderedPage({
+            dataUrl: canvas.toDataURL("image/png"),
+            ...pageInfo,
+          });
+        }
+      } finally {
+        await destroyLoadingTask();
       }
     }
 
@@ -90,6 +96,7 @@ export function PdfPagePreview({ blob, pageNumber, title, onPageCount, onPageRen
 
     return () => {
       cancelled = true;
+      void destroyLoadingTask();
     };
   }, [blob, onPageCount, onPageRendered, pageNumber]);
 
