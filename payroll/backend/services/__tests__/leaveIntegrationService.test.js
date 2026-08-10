@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const axios = require('axios');
 const LeaveIntegrationService = require('../LeaveIntegrationService');
+const { getPayrollLeaveSigningReadiness } = require('../PayrollLeaveRequestSigner');
 
 jest.mock('axios');
 
@@ -126,5 +127,20 @@ describe('LeaveIntegrationService payroll boundary', () => {
       '2026-08-31'
     )).rejects.toMatchObject({ code: 'LEAVE_DATA_UNAVAILABLE', statusCode: 503 });
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('reports missing signing configuration without making the payroll app unavailable', () => {
+    expect(getPayrollLeaveSigningReadiness({
+      secret: '',
+      environment: 'production',
+    })).toEqual({
+      configured: false,
+      code: 'PAYROLL_LEAVE_SIGNING_UNAVAILABLE',
+    });
+
+    expect(getPayrollLeaveSigningReadiness({
+      secret: SECRET,
+      environment: 'production',
+    })).toEqual({ configured: true, code: null });
   });
 });

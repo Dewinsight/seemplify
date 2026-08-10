@@ -29,6 +29,21 @@ function assertStrongSharedSecret(secret, environment = process.env.NODE_ENV) {
   return value;
 }
 
+function getPayrollLeaveSigningReadiness({
+  secret = process.env.PAYROLL_LEAVE_SHARED_SECRET,
+  environment = process.env.NODE_ENV,
+} = {}) {
+  try {
+    assertStrongSharedSecret(secret, environment);
+    return { configured: true, code: null };
+  } catch (error) {
+    return {
+      configured: false,
+      code: error?.code || 'PAYROLL_LEAVE_SIGNING_UNAVAILABLE',
+    };
+  }
+}
+
 function canonicalRequestBuffer({ serviceId, timestamp, nonce, method, path, rawBody }) {
   const body = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody || ''), 'utf8');
   const prefix = [
@@ -86,5 +101,6 @@ module.exports = {
   SIGNATURE_VERSION,
   assertStrongSharedSecret,
   canonicalRequestBuffer,
+  getPayrollLeaveSigningReadiness,
   signPayrollLeaveRequest,
 };

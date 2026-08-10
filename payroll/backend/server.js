@@ -29,7 +29,7 @@ const MonthlyPayrollScheduler = require('./jobs/MonthlyPayrollScheduler');
 const ExchangeRateScheduler = require('./jobs/ExchangeRateScheduler');
 const taxJurisdictionService = require('./services/TaxJurisdictionService');
 const payrollSequenceMigrationService = require('./services/PayrollSequenceMigrationService');
-const { assertStrongSharedSecret: assertPayrollLeaveSecret } = require('./services/PayrollLeaveRequestSigner');
+const { getPayrollLeaveSigningReadiness } = require('./services/PayrollLeaveRequestSigner');
 
 // Import webhook routes and claims middleware
 const webhooksRouter = require('./routes/webhooks');
@@ -129,6 +129,9 @@ app.get('/health', (req, res) => {
     status: ready ? 'ok' : 'starting',
     service: 'payroll-management',
     database: mongoose.connection.readyState === 1 ? 'connected' : 'unavailable',
+    integrations: {
+      leaveSigning: getPayrollLeaveSigningReadiness(),
+    },
     error: startupError ? startupError.message : undefined,
   });
 });
@@ -165,10 +168,6 @@ async function migratePayrollIndexes() {
 
 async function startServer() {
   try {
-    if (process.env.NODE_ENV === 'production') {
-      assertPayrollLeaveSecret(process.env.PAYROLL_LEAVE_SHARED_SECRET, 'production');
-    }
-
     await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
