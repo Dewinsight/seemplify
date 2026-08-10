@@ -56,7 +56,7 @@ export default function LeaveTypesPanel() {
       name: definition.name,
       description: definition.description || '',
       defaultDays: String(definition.defaultDays),
-      maxConsecutiveDays: definition.maxConsecutiveDays === null ? '' : String(definition.maxConsecutiveDays),
+      maxConsecutiveDays: definition.maxConsecutiveDays == null ? '' : String(definition.maxConsecutiveDays),
       paid: definition.paid,
       approval: definition.requiresApproval === null
         ? 'inherit'
@@ -126,7 +126,7 @@ export default function LeaveTypesPanel() {
               <tr key={definition.key} className={!definition.active ? 'text-muted-foreground' : ''}>
                 <td className="px-4 py-4"><div className="font-medium text-foreground">{definition.name}</div><div className="mt-1 max-w-md text-xs text-muted-foreground">{definition.description || definition.key}</div></td>
                 <td className="px-4 py-4 font-medium">{definition.defaultDays} days</td>
-                <td className="px-4 py-4"><div className="font-medium">{definition.effectiveMaxConsecutiveDays === null ? 'No limit' : `${definition.effectiveMaxConsecutiveDays} days`}</div><div className="mt-1 text-xs text-muted-foreground">{definition.maxConsecutiveDaysSource === 'leave_type' ? 'Leave-type rule' : definition.maxConsecutiveDaysSource === 'entitlement' ? 'Entitlement default' : 'Organization rule'}</div></td>
+                <td className="px-4 py-4"><div className="font-medium">{definition.effectiveMaxConsecutiveDays == null ? 'No limit' : `${definition.effectiveMaxConsecutiveDays} days`}</div><div className="mt-1 text-xs text-muted-foreground">{definition.maxConsecutiveDaysSource === 'leave_type' ? 'Leave-type rule' : definition.maxConsecutiveDaysSource === 'entitlement' ? 'Entitlement default' : 'Organization rule'}</div></td>
                 <td className="px-4 py-4">{definition.paid ? 'Paid' : 'Unpaid'}</td>
                 <td className="px-4 py-4">{definition.requiresApproval === null ? 'Organization default' : definition.requiresApproval ? 'Required' : 'Automatic'}</td>
                 <td className="px-4 py-4">{definition.active ? 'Active' : 'Archived'}</td>

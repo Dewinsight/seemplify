@@ -20,7 +20,16 @@ router.use(requireOrganization);
 // Get current organization's leave policy
 router.get('/', asyncHandler(async (req, res) => {
   const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
-  res.json({ policy });
+  const serializedPolicy = policy.toObject();
+  const requestRulesByKey = new Map(
+    getPolicyLeaveTypes(policy, { includeInactive: true })
+      .map((definition) => [definition.key, definition])
+  );
+  serializedPolicy.leaveTypes = serializedPolicy.leaveTypes.map((definition) => ({
+    ...definition,
+    ...requestRulesByKey.get(definition.key),
+  }));
+  res.json({ policy: serializedPolicy });
 }));
 
 // Get default policy values
