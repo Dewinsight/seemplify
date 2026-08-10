@@ -11,6 +11,7 @@ const {
 } = require('../middleware');
 const { logLeavePolicyUpdated } = require('../services/auditService');
 const { queueAttendanceEvent } = require('../services/attendanceIntegrationService');
+const { getPolicyLeaveTypes, LEGACY_POLICY_FIELDS } = require('../services/leaveEntitlementService');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
@@ -75,6 +76,18 @@ router.put('/',
     for (const field of allowedFields) {
       if (updates[field] !== undefined) {
         policy[field] = updates[field];
+      }
+    }
+
+    // Keep the canonical definitions aligned while legacy policy fields are
+    // still accepted during migration.
+    for (const [key, legacyField] of Object.entries(LEGACY_POLICY_FIELDS)) {
+      if (updates[legacyField] === undefined) continue;
+      const definition = policy.leaveTypes.find((item) => item.key === key);
+      if (definition) {
+        definition.defaultDays = Math.max(0, Number(updates[legacyField]));
+        definition.updatedAt = new Date();
+        definition.updatedBy = req.user.id;
       }
     }
 
@@ -238,17 +251,12 @@ router.get('/holidays', asyncHandler(async (req, res) => {
 router.get('/entitlements', asyncHandler(async (req, res) => {
   const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
 
-  const entitlements = {
-    annual: policy.annualLeaveDays,
-    sick: policy.sickLeaveDays,
-    personal: policy.personalLeaveDays,
-    maternity: policy.maternityLeaveDays,
-    paternity: policy.paternityLeaveDays,
-    unpaid: policy.unpaidLeaveDays,
-  };
+  const leaveTypes = getPolicyLeaveTypes(policy);
+  const entitlements = Object.fromEntries(leaveTypes.map((definition) => [definition.key, definition.defaultDays]));
 
   res.json({
     entitlements,
+    leaveTypes,
     requiresApproval: policy.requiresApproval,
     autoApproveTypes: policy.autoApproveTypes,
     maxConsecutiveDays: policy.maxConsecutiveDays,

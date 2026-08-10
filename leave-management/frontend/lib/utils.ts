@@ -22,7 +22,8 @@ export function formatDateRange(startDate: string | Date, endDate: string | Date
   return `${start} - ${end}`;
 }
 
-export function getLeaveTypeLabel(type: string): string {
+export function getLeaveTypeLabel(type: string, configuredName?: string): string {
+  if (configuredName) return configuredName;
   const labels: Record<string, string> = {
     annual: 'Annual Leave',
     sick: 'Sick Leave',
@@ -31,7 +32,11 @@ export function getLeaveTypeLabel(type: string): string {
     paternity: 'Paternity Leave',
     unpaid: 'Unpaid Leave',
   };
-  return labels[type] || type;
+  return labels[type] || type
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 export function getLeaveTypeColor(type: string): string {

@@ -49,7 +49,7 @@ export default function LeaveRequestCard({
 
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className={cn('inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium', getLeaveTypeColor(request.leaveType))}>
-              {getLeaveTypeLabel(request.leaveType)}
+              {getLeaveTypeLabel(request.leaveType, request.leaveTypeName)}
             </span>
             <span className={cn('inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium', getStatusColor(request.status))}>
               {getStatusLabel(request.status)}

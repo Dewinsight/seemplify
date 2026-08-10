@@ -31,6 +31,19 @@ function leaveRange(request) {
   return `${format(new Date(request.startDate), 'MMM dd, yyyy')} - ${format(new Date(request.endDate), 'MMM dd, yyyy')}`;
 }
 
+function leaveName(request) {
+  return request.leaveTypeName || String(request.leaveType || '').replace(/[-_]/g, ' ');
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 async function sendLeaveRequestSubmittedToApprover(request) {
   const approver = request.assignedApprover;
   return sendLeaveRequestSubmittedToRecipient(request, approver);
@@ -41,7 +54,7 @@ async function sendLeaveRequestSubmittedToRecipient(request, recipient) {
   const html = `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
     <h2>New Leave Request Awaiting Approval</h2>
     <p>Hello ${recipient.userName || 'Approver'},</p>
-    <p><strong>${request.userName || 'An employee'}</strong> submitted a leave request for <strong>${request.leaveType}</strong>.</p>
+    <p><strong>${request.userName || 'An employee'}</strong> submitted a leave request for <strong>${leaveName(request)}</strong>.</p>
     <p>Leave period: <strong>${leaveRange(request)}</strong></p>
     <p>Total days: <strong>${request.numberOfDays}</strong></p>
     <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5003'}/approvals">Review request</a></p>
@@ -54,12 +67,12 @@ async function sendLeaveRequestCreatedConfirmation(request) {
   const html = `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
     <h2>Leave Request Received</h2>
     <p>Hello ${request.userName || 'there'},</p>
-    <p>Your leave request for <strong>${request.leaveType}</strong> was submitted.</p>
+    <p>Your leave request for <strong>${leaveName(request)}</strong> was submitted.</p>
     <p>Leave period: <strong>${leaveRange(request)}</strong></p>
     <p>Status: <strong>${request.status}</strong></p>
     <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5003'}/leave-requests">View request</a></p>
   </body></html>`;
-  return sendEmail(request.userEmail, `Leave request submitted (${request.leaveType})`, html);
+  return sendEmail(request.userEmail, `Leave request submitted (${leaveName(request)})`, html);
 }
 
 async function sendLeaveRequestApproved(request) {
@@ -69,12 +82,12 @@ async function sendLeaveRequestApproved(request) {
   const html = `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
     <h2>Leave Request Approved</h2>
     <p>Hello ${request.userName || 'there'},</p>
-    <p>Your leave request for <strong>${request.leaveType}</strong> has been approved by <strong>${approverName}</strong>.</p>
+    <p>Your leave request for <strong>${leaveName(request)}</strong> has been approved by <strong>${approverName}</strong>.</p>
     <p>Leave period: <strong>${leaveRange(request)}</strong></p>
     <p>Comment: ${comment}</p>
     <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5003'}/leave-requests/${request._id}">View request details</a></p>
   </body></html>`;
-  return sendEmail(request.userEmail, `Leave request approved (${request.leaveType})`, html);
+  return sendEmail(request.userEmail, `Leave request approved (${leaveName(request)})`, html);
 }
 
 async function sendLeaveRequestRejected(request) {
@@ -84,12 +97,12 @@ async function sendLeaveRequestRejected(request) {
   const html = `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
     <h2>Leave Request Rejected</h2>
     <p>Hello ${request.userName || 'there'},</p>
-    <p>Your leave request for <strong>${request.leaveType}</strong> was rejected by <strong>${rejectorName}</strong>.</p>
+    <p>Your leave request for <strong>${leaveName(request)}</strong> was rejected by <strong>${rejectorName}</strong>.</p>
     <p>Leave period: <strong>${leaveRange(request)}</strong></p>
     <p>Reason: ${reason}</p>
     <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5003'}/leave-requests/${request._id}">View request details</a></p>
   </body></html>`;
-  return sendEmail(request.userEmail, `Leave request rejected (${request.leaveType})`, html);
+  return sendEmail(request.userEmail, `Leave request rejected (${leaveName(request)})`, html);
 }
 
 async function sendLeaveRequestCancelled(request) {
@@ -99,11 +112,29 @@ async function sendLeaveRequestCancelled(request) {
   const html = `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
     <h2>Leave Request Cancelled</h2>
     <p>Hello ${request.assignedApprover?.userName || 'Approver'},</p>
-    <p><strong>${request.userName || 'An employee'}</strong> cancelled a leave request for <strong>${request.leaveType}</strong>.</p>
+    <p><strong>${request.userName || 'An employee'}</strong> cancelled a leave request for <strong>${leaveName(request)}</strong>.</p>
     <p>Leave period: <strong>${leaveRange(request)}</strong></p>
     <p>Cancellation reason: ${reason}</p>
   </body></html>`;
   return sendEmail(approverEmail, `Leave request cancelled by ${request.userName || 'employee'}`, html);
+}
+
+async function sendLeaveEntitlementAdjusted(adjustment) {
+  if (!adjustment.userEmail) return { success: false, reason: 'Employee email unavailable' };
+  const change = adjustment.delta > 0
+    ? `${adjustment.delta} day(s) added`
+    : adjustment.delta < 0
+      ? `${Math.abs(adjustment.delta)} day(s) removed`
+      : 'entitlement reset';
+  const html = `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
+    <h2>Your leave entitlement changed</h2>
+    <p>Hello ${escapeHtml(adjustment.userName || 'there')},</p>
+    <p>An administrator updated your <strong>${escapeHtml(adjustment.leaveTypeName)}</strong> entitlement for ${adjustment.year}.</p>
+    <p>Change: <strong>${change}</strong><br />New total: <strong>${adjustment.newTotal} day(s)</strong></p>
+    <p>Reason: ${escapeHtml(adjustment.reason)}</p>
+    <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5003'}/dashboard">View your leave balance and history</a></p>
+  </body></html>`;
+  return sendEmail(adjustment.userEmail, `Your ${adjustment.leaveTypeName} entitlement changed`, html);
 }
 
 module.exports = {
@@ -114,4 +145,5 @@ module.exports = {
   sendLeaveRequestApproved,
   sendLeaveRequestRejected,
   sendLeaveRequestCancelled,
+  sendLeaveEntitlementAdjusted,
 };

@@ -6,29 +6,36 @@ import { getLeaveTypeLabel } from '@/lib/utils';
 interface LeaveBalanceCardProps { balance: LeaveBalance; }
 
 export default function LeaveBalanceCard({ balance }: LeaveBalanceCardProps) {
-  const leaveTypes = ['annual', 'sick', 'personal'] as const;
+  const entitlements = (balance.entitlements || []).filter((item) => item.active);
   return (
     <div className="suite-panel overflow-hidden">
-      {leaveTypes.map((type) => {
-        const item = balance[type];
-        const available = item.remaining - item.pending;
+      {entitlements.map((item) => {
+        const available = item.available ?? item.remaining - item.pending;
         const used = item.total > 0 ? Math.min(100, (item.used / item.total) * 100) : 0;
         return (
-          <div key={type} className="border-b px-5 py-5 last:border-b-0" style={{ borderColor: 'var(--suite-line)' }}>
+          <div key={item.leaveTypeKey} className="border-b px-5 py-5 last:border-b-0" style={{ borderColor: 'var(--suite-line)' }}>
             <div className="flex items-end justify-between gap-4">
-              <div><p className="text-sm font-semibold">{getLeaveTypeLabel(type)}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{item.used} used · {item.pending} pending</p></div>
+              <div>
+                <p className="text-sm font-semibold">{getLeaveTypeLabel(item.leaveTypeKey, item.leaveTypeName)}</p>
+                <p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>
+                  {item.used} used · {item.pending} pending{item.source === 'override' ? ' · adjusted' : ''}
+                </p>
+              </div>
               <p className="text-sm"><span className="text-xl font-semibold">{available}</span> <span style={{ color: 'var(--suite-muted)' }}>/ {item.total} days</span></p>
             </div>
             <div className="suite-progress mt-4"><span style={{ width: `${used}%` }} /></div>
           </div>
         );
       })}
+      {entitlements.length === 0 && (
+        <p className="px-5 py-8 text-sm text-muted-foreground">No active leave entitlements are configured.</p>
+      )}
     </div>
   );
 }
 
 interface BalanceSummaryProps {
-  summary: { totalAvailable: number; totalUsed: number; totalPending: number; byType: Record<string, any>; };
+  summary: { totalAvailable: number; totalUsed: number; totalPending: number; byType: Record<string, unknown>; };
 }
 
 export function BalanceSummary({ summary }: BalanceSummaryProps) {

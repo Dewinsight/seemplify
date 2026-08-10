@@ -1,4 +1,23 @@
 const mongoose = require('mongoose');
+const {
+  getDefaultLeaveTypes,
+  getPolicyLeaveTypes,
+} = require('../services/leaveEntitlementService');
+
+const leaveTypeDefinitionSchema = new mongoose.Schema({
+  key: { type: String, required: true, trim: true, lowercase: true },
+  name: { type: String, required: true, trim: true, maxlength: 80 },
+  description: { type: String, trim: true, maxlength: 500, default: '' },
+  defaultDays: { type: Number, required: true, min: 0, max: 365, default: 0 },
+  paid: { type: Boolean, default: true },
+  active: { type: Boolean, default: true },
+  requiresApproval: { type: Boolean, default: null },
+  order: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+  createdBy: { type: String },
+  updatedAt: { type: Date, default: Date.now },
+  updatedBy: { type: String },
+}, { _id: true });
 
 const leavePolicySchema = new mongoose.Schema({
   // Organization reference
@@ -12,6 +31,13 @@ const leavePolicySchema = new mongoose.Schema({
   maternityLeaveDays: { type: Number, default: 90, min: 0, max: 365 },
   paternityLeaveDays: { type: Number, default: 14, min: 0, max: 365 },
   unpaidLeaveDays: { type: Number, default: 30, min: 0, max: 365 },
+
+  // Canonical organization-specific leave type definitions. The legacy day
+  // fields above are retained during migration for older clients and records.
+  leaveTypes: {
+    type: [leaveTypeDefinitionSchema],
+    default: [],
+  },
 
   // Approval settings
   requiresApproval: { type: Boolean, default: true },
@@ -79,6 +105,14 @@ const leavePolicySchema = new mongoose.Schema({
 // Pre-save middleware
 leavePolicySchema.pre('save', function(next) {
   this.updatedAt = new Date();
+  if (!Array.isArray(this.leaveTypes) || this.leaveTypes.length === 0) {
+    this.leaveTypes = getDefaultLeaveTypes(this);
+  }
+
+  const keys = this.leaveTypes.map((definition) => definition.key);
+  if (new Set(keys).size !== keys.length) {
+    return next(new Error('Leave type keys must be unique within an organization'));
+  }
   next();
 });
 
@@ -106,19 +140,20 @@ leavePolicySchema.methods.isHoliday = function(date) {
 };
 
 leavePolicySchema.methods.getLeaveEntitlement = function(leaveType) {
-  const entitlementMap = {
-    annual: this.annualLeaveDays,
-    sick: this.sickLeaveDays,
-    personal: this.personalLeaveDays,
-    maternity: this.maternityLeaveDays,
-    paternity: this.paternityLeaveDays,
-    unpaid: this.unpaidLeaveDays,
-  };
+  const definition = getPolicyLeaveTypes(this, { includeInactive: true })
+    .find((candidate) => candidate.key === leaveType);
+  return definition?.defaultDays || 0;
+};
 
-  return entitlementMap[leaveType] || 0;
+leavePolicySchema.methods.getLeaveType = function(leaveType, options = {}) {
+  return getPolicyLeaveTypes(this, options).find((candidate) => candidate.key === leaveType) || null;
 };
 
 leavePolicySchema.methods.requiresApprovalForType = function(leaveType) {
+  const definition = this.getLeaveType(leaveType, { includeInactive: true });
+  if (definition?.requiresApproval !== null && definition?.requiresApproval !== undefined) {
+    return definition.requiresApproval;
+  }
   if (!this.requiresApproval) {
     return false;
   }
@@ -134,6 +169,10 @@ leavePolicySchema.statics.findOrCreate = async function(organizationId, organiza
       organizationId,
       organizationName,
     });
+    await policy.save();
+  } else if (!Array.isArray(policy.leaveTypes) || policy.leaveTypes.length === 0) {
+    policy.leaveTypes = getDefaultLeaveTypes(policy);
+    if (organizationName && !policy.organizationName) policy.organizationName = organizationName;
     await policy.save();
   }
 
@@ -154,6 +193,7 @@ leavePolicySchema.statics.getDefaultPolicy = function() {
     carryOverAllowed: false,
     workingDays: [1, 2, 3, 4, 5],
     accrualMethod: 'upfront',
+    leaveTypes: getDefaultLeaveTypes(),
   };
 };
 

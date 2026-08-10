@@ -13,6 +13,10 @@ const auditLogSchema = new mongoose.Schema({
       'leave_request_cancelled',
       'leave_balance_updated',
       'leave_balance_accrued',
+      'leave_entitlement_adjusted',
+      'leave_type_created',
+      'leave_type_updated',
+      'leave_type_archived',
       'leave_policy_created',
       'leave_policy_updated',
       'user_login',
@@ -25,7 +29,7 @@ const auditLogSchema = new mongoose.Schema({
   // Resource information
   resourceType: {
     type: String,
-    enum: ['LeaveRequest', 'LeaveBalance', 'LeavePolicy', 'User', 'Session'],
+    enum: ['LeaveRequest', 'LeaveBalance', 'LeavePolicy', 'LeaveType', 'LeaveEntitlement', 'User', 'Session'],
     index: true,
   },
   resourceId: { type: String, index: true },
@@ -61,8 +65,8 @@ auditLogSchema.index({ organizationId: 1, performedAt: -1 });
 auditLogSchema.index({ resourceType: 1, resourceId: 1, performedAt: -1 });
 auditLogSchema.index({ performedBy: 1, performedAt: -1 });
 
-// TTL index for automatic cleanup (optional - keep logs for 2 years)
-auditLogSchema.index({ performedAt: 1 }, { expireAfterSeconds: 63072000 }); // 2 years
+// Audit records are intentionally retained. Entitlement and policy changes must
+// remain visible to the organization and affected employee.
 
 // Static methods
 auditLogSchema.statics.log = async function({
@@ -79,9 +83,9 @@ auditLogSchema.statics.log = async function({
   userAgent,
   previousState,
   newState,
+  session,
 }) {
-  try {
-    const log = new this({
+  const log = new this({
       action,
       resourceType,
       resourceId,
@@ -97,13 +101,8 @@ auditLogSchema.statics.log = async function({
       newState,
     });
 
-    await log.save();
-    return log;
-  } catch (error) {
-    // Log errors but don't throw - audit logging shouldn't break operations
-    console.error('Audit log error:', error);
-    return null;
-  }
+  await log.save(session ? { session } : undefined);
+  return log;
 };
 
 auditLogSchema.statics.getResourceHistory = async function(resourceType, resourceId, limit = 50) {

@@ -1,137 +1,91 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
-import Layout from '@/components/Layout';
-import { leaveRequestsApi, leaveBalancesApi, leavePoliciesApi } from '@/lib/api';
-import { LeaveType, LeaveBalance, LeavePolicy, Team } from '@/types';
-import { getLeaveTypeLabel } from '@/lib/utils';
-import { Calendar, ArrowLeft, AlertCircle, CheckCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, CheckCircle2 } from 'lucide-react';
+
+import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/context/AuthContext';
+import { leaveBalancesApi, leavePoliciesApi, leaveRequestsApi } from '@/lib/api';
+import { getLeaveTypeLabel } from '@/lib/utils';
+import { LeaveBalance, LeavePolicy } from '@/types';
 
 export default function NewLeaveRequestPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [balance, setBalance] = useState<LeaveBalance | null>(null);
   const [policy, setPolicy] = useState<LeavePolicy | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-
-  // Form state
-  const [leaveType, setLeaveType] = useState<LeaveType>('annual');
+  const [leaveType, setLeaveType] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
   const [teamId, setTeamId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
 
-  // User's teams
-  const userTeams = (user?.teams || []).filter(t =>
-    t.organizationId === user?.currentOrganization?.id
-  );
+  const teams = useMemo(() => (user?.teams || []).filter(
+    (team) => team.organizationId === user?.currentOrganization?.id
+  ), [user]);
+  const leaveTypes = useMemo(() => (policy?.leaveTypes || [])
+    .filter((definition) => definition.active)
+    .sort((left, right) => left.order - right.order), [policy]);
+  const selectedEntitlement = balance?.entitlements?.find((entry) => entry.leaveTypeKey === leaveType);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push('/login');
-    }
+    if (!authLoading && !isAuthenticated) router.push('/login');
   }, [authLoading, isAuthenticated, router]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!isAuthenticated) return;
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    Promise.all([leaveBalancesApi.getMyBalance(), leavePoliciesApi.get()])
+      .then(([balanceResponse, policyResponse]) => {
+        if (cancelled) return;
+        setBalance(balanceResponse.balance);
+        setPolicy(policyResponse.policy);
+        const first = (policyResponse.policy.leaveTypes || []).find((definition: { active: boolean }) => definition.active);
+        setLeaveType(first?.key || '');
+        if (teams.length === 1) setTeamId(teams[0].id);
+      })
+      .catch((requestError) => setError(requestError.response?.data?.error || 'Unable to load leave options.'))
+      .finally(() => setLoading(false));
+    return () => { cancelled = true; };
+  }, [isAuthenticated, teams]);
 
-      try {
-        setLoading(true);
-        const [balanceRes, policyRes] = await Promise.all([
-          leaveBalancesApi.getMyBalance(),
-          leavePoliciesApi.get(),
-        ]);
-
-        setBalance(balanceRes.balance);
-        setPolicy(policyRes.policy);
-
-        // Set default team if user has one
-        if (userTeams.length === 1) {
-          setTeamId(userTeams[0].id);
-        }
-      } catch (err: any) {
-        setError(err.response?.data?.error || 'Failed to load data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [isAuthenticated]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (!startDate || !endDate) {
-      setError('Please select start and end dates');
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setError('');
+    if (!leaveType || !startDate || !endDate) {
+      setError('Choose a leave type and both dates.');
       return;
     }
-
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-      await leaveRequestsApi.create({
-        leaveType,
-        startDate,
-        endDate,
-        reason,
-        teamId: teamId || undefined,
-      });
-
-      setSuccess(true);
-      setTimeout(() => {
-        router.push('/leave-requests');
-      }, 2000);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create leave request');
+      await leaveRequestsApi.create({ leaveType, startDate, endDate, reason, teamId: teamId || undefined });
+      setSubmitted(true);
+      window.setTimeout(() => router.push('/leave-requests'), 1200);
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.error || 'Unable to submit this leave request.');
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const getAvailableBalance = (type: LeaveType) => {
-    if (!balance) return 0;
-    const typeBalance = balance[type];
-    return typeBalance ? typeBalance.remaining - typeBalance.pending : 0;
-  };
-
-  if (authLoading || loading) {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-        </div>
-      </Layout>
-    );
   }
 
-  if (success) {
+  if (authLoading || loading) {
+    return <Layout><div className="py-16 text-center text-sm text-muted-foreground">Loading your leave options…</div></Layout>;
+  }
+
+  if (submitted) {
     return (
       <Layout>
-        <div className="w-full">
-          <div className="bg-card dark:bg-zinc-900/90 border border-green-500/30 rounded-2xl p-8 text-center shadow-2xl shadow-green-500/10">
-            <CheckCircle className="h-16 w-16 text-green-500 dark:text-green-400 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-foreground dark:text-zinc-100 mb-2">
-              Leave Request Submitted
-            </h2>
-            <p className="text-green-600 dark:text-green-400">
-              Your leave request has been submitted for approval.
-            </p>
-            <p className="text-sm text-muted-foreground dark:text-zinc-400 mt-2">
-              Redirecting to your requests...
-            </p>
-          </div>
+        <div className="mx-auto max-w-xl rounded-lg border border-border bg-card p-8 text-center">
+          <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" />
+          <h1 className="mt-4 text-xl font-semibold">Leave request submitted</h1>
+          <p className="mt-2 text-sm text-muted-foreground">You can follow its approval status from My Requests.</p>
         </div>
       </Layout>
     );
@@ -139,219 +93,75 @@ export default function NewLeaveRequestPage() {
 
   return (
     <Layout>
-      <div className="w-full space-y-6">
-        {/* Header */}
-        <div className="mb-2 relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-card dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl border border-border dark:border-zinc-700/50 p-6 shadow-2xl shadow-purple-500/10">
-            <Link
-              href="/leave-requests"
-              className="inline-flex items-center text-sm text-muted-foreground dark:text-zinc-400 hover:text-foreground dark:hover:text-zinc-200 mb-4 font-medium transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back to Requests
-            </Link>
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground via-foreground/80 to-muted-foreground dark:from-white dark:via-zinc-100 dark:to-zinc-200 bg-clip-text text-transparent">
-                  Request Leave
-                </h1>
-                <p className="text-muted-foreground mt-2">Fill out the form below to submit a leave request</p>
-              </div>
-              {userTeams.length > 0 && (
-                <Badge variant="secondary" className="bg-indigo-500/20 border-indigo-500/30 text-indigo-600 dark:text-indigo-300">
-                  {userTeams.length} team{userTeams.length === 1 ? '' : 's'} linked
-                </Badge>
-              )}
-            </div>
-          </div>
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div>
+          <Link href="/leave-requests" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> My requests
+          </Link>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Request leave</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Select from the leave types configured for your organization.</p>
         </div>
 
-        {/* Error message */}
-        {error && (
-          <Alert variant="danger" className="flex items-start gap-2">
-            <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
-            <div className="text-sm">{error}</div>
-          </Alert>
-        )}
-
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
-          {/* Form */}
-          <form
-            onSubmit={handleSubmit}
-            className="bg-card dark:bg-zinc-900/50 backdrop-blur-sm rounded-2xl shadow-lg border border-border dark:border-slate-200/5 p-6 space-y-6"
-          >
-            {/* Leave Type */}
-            <div>
-              <label className="block text-sm font-semibold text-foreground dark:text-slate-200 mb-2">
-                Leave Type
-              </label>
+        <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-6">
+          <div className="grid gap-5 md:grid-cols-2">
+            <label className="md:col-span-2">
+              <span className="text-sm font-medium">Leave type</span>
               <select
                 value={leaveType}
-                onChange={(e) => setLeaveType(e.target.value as LeaveType)}
-                className="w-full px-3 py-2.5 border border-input dark:border-zinc-700 rounded-xl bg-background dark:bg-zinc-800/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                onChange={(event) => setLeaveType(event.target.value)}
+                className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                disabled={leaveTypes.length === 0}
               >
-                {(['annual', 'sick', 'personal', 'maternity', 'paternity', 'unpaid'] as LeaveType[]).map((type) => (
-                  <option key={type} value={type}>
-                    {getLeaveTypeLabel(type)} ({getAvailableBalance(type)} days available)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Date Range */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-foreground dark:text-slate-200 mb-2">
-                  Start Date
-                </label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground dark:text-slate-400" />
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full pl-10 pr-3 py-2.5 border border-input dark:border-zinc-700 rounded-xl bg-background dark:bg-zinc-800/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-foreground dark:text-slate-200 mb-2">
-                  End Date
-                </label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground dark:text-slate-400" />
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    min={startDate || new Date().toISOString().split('T')[0]}
-                    className="w-full pl-10 pr-3 py-2.5 border border-input dark:border-zinc-700 rounded-xl bg-background dark:bg-zinc-800/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Team Selection (if multiple teams) */}
-            {userTeams.length > 1 && (
-              <div>
-                <label className="block text-sm font-semibold text-foreground dark:text-slate-200 mb-2">
-                  Team (for approval routing)
-                </label>
-                <select
-                  value={teamId}
-                  onChange={(e) => setTeamId(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-input dark:border-zinc-700 rounded-xl bg-background dark:bg-zinc-800/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">Select a team</option>
-                  {userTeams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.hierarchyPath?.join(' > ') || team.name}
+                {leaveTypes.map((definition) => {
+                  const entitlement = balance?.entitlements?.find((entry) => entry.leaveTypeKey === definition.key);
+                  return (
+                    <option key={definition.key} value={definition.key}>
+                      {definition.name} · {entitlement?.available ?? definition.defaultDays} days available
                     </option>
-                  ))}
+                  );
+                })}
+              </select>
+            </label>
+
+            <label>
+              <span className="text-sm font-medium">Start date</span>
+              <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" />
+            </label>
+            <label>
+              <span className="text-sm font-medium">End date</span>
+              <input type="date" min={startDate || undefined} value={endDate} onChange={(event) => setEndDate(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" />
+            </label>
+
+            {teams.length > 1 && (
+              <label className="md:col-span-2">
+                <span className="text-sm font-medium">Team</span>
+                <select value={teamId} onChange={(event) => setTeamId(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">Choose your team</option>
+                  {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
                 </select>
-                <p className="mt-2 text-xs text-muted-foreground dark:text-slate-500">
-                  Your line manager from this team will be assigned to approve your request
-                </p>
-              </div>
-            )}
-
-            {/* Reason */}
-            <div>
-              <label className="block text-sm font-semibold text-foreground dark:text-slate-200 mb-2">
-                Reason (optional)
               </label>
-              <textarea
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={4}
-                maxLength={1000}
-                placeholder="Provide additional details about your leave request..."
-                className="w-full px-3 py-2.5 border border-input dark:border-zinc-700 rounded-xl bg-background dark:bg-zinc-800/50 focus:outline-none focus:ring-2 focus:ring-primary/30 placeholder:text-muted-foreground/50"
-              />
-              <p className="mt-2 text-xs text-muted-foreground dark:text-slate-500">{reason.length}/1000 characters</p>
-            </div>
-
-            {/* Submit button */}
-            <div className="flex justify-end gap-4">
-              <Link href="/leave-requests">
-                <Button variant="outline" className="rounded-xl">
-                  Cancel
-                </Button>
-              </Link>
-              <Button
-                type="submit"
-                disabled={submitting}
-                className="rounded-xl px-6 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? 'Submitting...' : 'Submit Request'}
-              </Button>
-            </div>
-          </form>
-
-          {/* Side panel (desktop) */}
-          <div className="space-y-6">
-            <Card className="rounded-xl border-border dark:border-zinc-700/50 bg-card dark:bg-zinc-900/90 backdrop-blur-xl shadow-lg">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base text-foreground dark:text-zinc-100">Balance</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-foreground/80 dark:text-zinc-300 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground dark:text-zinc-400">Selected type</span>
-                  <Badge variant="secondary" className="bg-purple-500/20 border-purple-500/30 text-purple-600 dark:text-purple-300">
-                    {getLeaveTypeLabel(leaveType)}
-                  </Badge>
-                </div>
-                <div className="flex items-end justify-between">
-                  <div className="text-muted-foreground dark:text-zinc-400">Available</div>
-                  <div className="text-2xl font-bold text-foreground dark:text-zinc-100">{getAvailableBalance(leaveType)} days</div>
-                </div>
-                {!balance && (
-                  <p className="text-xs text-muted-foreground dark:text-zinc-500">Balance info unavailable.</p>
-                )}
-              </CardContent>
-            </Card>
-
-            {policy && (
-              <Card className="rounded-xl border-border dark:border-zinc-700/50 bg-card dark:bg-zinc-900/90 backdrop-blur-xl shadow-lg">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base text-foreground dark:text-zinc-100">Leave Policy</CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-foreground/80 dark:text-zinc-300">
-                  <ul className="space-y-2">
-                    {policy.advanceNoticeDays > 0 && (
-                      <li>
-                        <span className="font-semibold text-foreground dark:text-zinc-200">Advance notice:</span>{' '}
-                        <span className="text-muted-foreground dark:text-zinc-400">{policy.advanceNoticeDays} day(s)</span>
-                      </li>
-                    )}
-                    {policy.maxConsecutiveDays && (
-                      <li>
-                        <span className="font-semibold text-foreground dark:text-zinc-200">Max consecutive:</span>{' '}
-                        <span className="text-muted-foreground dark:text-zinc-400">{policy.maxConsecutiveDays} day(s)</span>
-                      </li>
-                    )}
-                    {policy.requiresApproval && (
-                      <li>
-                        <span className="font-semibold text-foreground dark:text-zinc-200">Approval:</span>{' '}
-                        <span className="text-muted-foreground dark:text-zinc-400">Manager required</span>
-                      </li>
-                    )}
-                    {policy.advanceNoticeDays === 0 && (
-                      <li>
-                        <span className="font-semibold text-foreground dark:text-zinc-200">Advance notice:</span>{' '}
-                        <span className="text-muted-foreground dark:text-zinc-400">None</span>
-                      </li>
-                    )}
-                  </ul>
-                </CardContent>
-              </Card>
             )}
+
+            <label className="md:col-span-2">
+              <span className="text-sm font-medium">Reason <span className="font-normal text-muted-foreground">(optional)</span></span>
+              <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={4} maxLength={1000} className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder="Add useful context for your approver." />
+            </label>
           </div>
-        </div>
+
+          {selectedEntitlement && (
+            <div className="mt-5 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm">
+              <span className="font-medium">{getLeaveTypeLabel(leaveType, selectedEntitlement.leaveTypeName)}</span>
+              <span className="text-muted-foreground"> · {selectedEntitlement.used} used · {selectedEntitlement.pending} pending · {selectedEntitlement.available} available</span>
+            </div>
+          )}
+          {leaveTypes.length === 0 && <p className="mt-4 text-sm text-amber-700">Your organization has no active leave types. Contact an administrator.</p>}
+          {error && <p role="alert" className="mt-4 text-sm text-red-600">{error}</p>}
+
+          <div className="mt-6 flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
+            <Button type="submit" disabled={submitting || leaveTypes.length === 0}>{submitting ? 'Submitting…' : 'Submit request'}</Button>
+          </div>
+        </form>
       </div>
     </Layout>
   );

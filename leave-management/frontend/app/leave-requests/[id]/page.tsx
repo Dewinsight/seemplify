@@ -224,7 +224,7 @@ export default function LeaveRequestDetailPage() {
                   getLeaveTypeColor(request.leaveType)
                 )}
               >
-                {getLeaveTypeLabel(request.leaveType)}
+                {getLeaveTypeLabel(request.leaveType, request.leaveTypeName)}
               </span>
             </div>
 

@@ -1,10 +1,28 @@
 const mongoose = require('mongoose');
+const {
+  getPolicyLeaveTypes,
+  synchronizeEntitlements,
+} = require('../services/leaveEntitlementService');
 
 const balanceTypeSchema = new mongoose.Schema({
   total: { type: Number, default: 0 },
   used: { type: Number, default: 0 },
   remaining: { type: Number, default: 0 },
   pending: { type: Number, default: 0 }, // Days in pending requests
+}, { _id: false });
+
+const entitlementSchema = new mongoose.Schema({
+  leaveTypeKey: { type: String, required: true, trim: true, lowercase: true },
+  leaveTypeName: { type: String, required: true, trim: true },
+  total: { type: Number, default: 0, min: 0, max: 3650 },
+  used: { type: Number, default: 0, min: 0 },
+  remaining: { type: Number, default: 0 },
+  pending: { type: Number, default: 0, min: 0 },
+  policyDefault: { type: Number, default: 0, min: 0, max: 3650 },
+  source: { type: String, enum: ['policy', 'override'], default: 'policy' },
+  overrideReason: { type: String, maxlength: 1000, default: '' },
+  lastAdjustedAt: { type: Date },
+  lastAdjustedBy: { type: String },
 }, { _id: false });
 
 const leaveBalanceSchema = new mongoose.Schema({
@@ -42,6 +60,10 @@ const leaveBalanceSchema = new mongoose.Schema({
     default: () => ({ total: 30, used: 0, remaining: 30, pending: 0 }),
   },
 
+  // Canonical dynamic balances. Legacy fields remain during migration so
+  // historical records and older deployed clients can still be read.
+  entitlements: { type: [entitlementSchema], default: [] },
+
   // Year tracking
   year: { type: Number, required: true, index: true },
 
@@ -71,7 +93,7 @@ leaveBalanceSchema.index({ userId: 1, organizationId: 1, year: 1 }, { unique: tr
 leaveBalanceSchema.pre('save', function(next) {
   this.updatedAt = new Date();
 
-  // Recalculate remaining for all leave types
+  // Recalculate remaining for all legacy leave types
   const leaveTypes = ['annual', 'sick', 'personal', 'maternity', 'paternity', 'unpaid'];
   for (const type of leaveTypes) {
     if (this[type]) {
@@ -79,16 +101,21 @@ leaveBalanceSchema.pre('save', function(next) {
     }
   }
 
+  for (const entitlement of this.entitlements || []) {
+    entitlement.remaining = Number(entitlement.total || 0) - Number(entitlement.used || 0);
+  }
+
   next();
 });
 
 // Instance methods
 leaveBalanceSchema.methods.hasBalance = function(leaveType, days) {
-  if (!this[leaveType]) {
+  const entitlement = this.getEntitlement(leaveType);
+  if (!entitlement) {
     return { hasBalance: false, reason: `Invalid leave type: ${leaveType}` };
   }
 
-  const available = this[leaveType].remaining - this[leaveType].pending;
+  const available = Number(entitlement.total || 0) - Number(entitlement.used || 0) - Number(entitlement.pending || 0);
   if (available >= days) {
     return { hasBalance: true, available };
   }
@@ -101,48 +128,62 @@ leaveBalanceSchema.methods.hasBalance = function(leaveType, days) {
 };
 
 leaveBalanceSchema.methods.reserveBalance = function(leaveType, days) {
-  if (!this[leaveType]) {
+  const entitlement = this.getEntitlement(leaveType);
+  if (!entitlement) {
     throw new Error(`Invalid leave type: ${leaveType}`);
   }
 
-  const available = this[leaveType].remaining - this[leaveType].pending;
+  const available = Number(entitlement.total || 0) - Number(entitlement.used || 0) - Number(entitlement.pending || 0);
   if (available < days) {
     throw new Error(`Insufficient ${leaveType} leave balance`);
   }
 
-  this[leaveType].pending += days;
+  entitlement.pending += days;
   this.version += 1;
 };
 
 leaveBalanceSchema.methods.useBalance = function(leaveType, days) {
-  if (!this[leaveType]) {
+  const entitlement = this.getEntitlement(leaveType);
+  if (!entitlement) {
     throw new Error(`Invalid leave type: ${leaveType}`);
   }
 
   // Move from pending to used
-  this[leaveType].pending -= days;
-  this[leaveType].used += days;
-  this[leaveType].remaining = this[leaveType].total - this[leaveType].used;
+  entitlement.pending = Math.max(0, Number(entitlement.pending || 0) - days);
+  entitlement.used += days;
+  entitlement.remaining = entitlement.total - entitlement.used;
   this.version += 1;
 };
 
 leaveBalanceSchema.methods.releaseReservation = function(leaveType, days) {
-  if (!this[leaveType]) {
+  const entitlement = this.getEntitlement(leaveType);
+  if (!entitlement) {
     throw new Error(`Invalid leave type: ${leaveType}`);
   }
 
-  this[leaveType].pending = Math.max(0, this[leaveType].pending - days);
+  entitlement.pending = Math.max(0, entitlement.pending - days);
   this.version += 1;
 };
 
 leaveBalanceSchema.methods.restoreBalance = function(leaveType, days) {
-  if (!this[leaveType]) {
+  const entitlement = this.getEntitlement(leaveType);
+  if (!entitlement) {
     throw new Error(`Invalid leave type: ${leaveType}`);
   }
 
-  this[leaveType].used = Math.max(0, this[leaveType].used - days);
-  this[leaveType].remaining = this[leaveType].total - this[leaveType].used;
+  entitlement.used = Math.max(0, entitlement.used - days);
+  entitlement.remaining = entitlement.total - entitlement.used;
   this.version += 1;
+};
+
+leaveBalanceSchema.methods.getEntitlement = function(leaveType) {
+  const dynamic = (this.entitlements || []).find((entry) => entry.leaveTypeKey === leaveType);
+  if (dynamic) return dynamic;
+  return this[leaveType] || null;
+};
+
+leaveBalanceSchema.methods.synchronizeWithPolicy = function(policy) {
+  return synchronizeEntitlements(this, policy);
 };
 
 // Static methods
@@ -153,7 +194,17 @@ leaveBalanceSchema.statics.findOrCreate = async function(userId, userEmail, user
   if (!balance) {
     // Get policy to set initial balances
     const LeavePolicy = mongoose.model('LeavePolicy');
-    const policy = await LeavePolicy.findOne({ organizationId });
+    const policy = await LeavePolicy.findOrCreate(organizationId);
+    const entitlements = getPolicyLeaveTypes(policy, { includeInactive: true }).map((definition) => ({
+      leaveTypeKey: definition.key,
+      leaveTypeName: definition.name,
+      total: definition.defaultDays,
+      used: 0,
+      remaining: definition.defaultDays,
+      pending: 0,
+      policyDefault: definition.defaultDays,
+      source: 'policy',
+    }));
 
     try {
       // Use findOneAndUpdate with upsert to handle race conditions atomically
@@ -167,22 +218,24 @@ leaveBalanceSchema.statics.findOrCreate = async function(userId, userEmail, user
             userName,
             organizationId,
             year,
+            timezone: policy.timezone,
+            entitlements,
             annual: {
-              total: policy?.annualLeaveDays || 20,
+              total: policy?.annualLeaveDays ?? 20,
               used: 0,
-              remaining: policy?.annualLeaveDays || 20,
+              remaining: policy?.annualLeaveDays ?? 20,
               pending: 0,
             },
             sick: {
-              total: policy?.sickLeaveDays || 10,
+              total: policy?.sickLeaveDays ?? 10,
               used: 0,
-              remaining: policy?.sickLeaveDays || 10,
+              remaining: policy?.sickLeaveDays ?? 10,
               pending: 0,
             },
             personal: {
-              total: policy?.personalLeaveDays || 5,
+              total: policy?.personalLeaveDays ?? 5,
               used: 0,
-              remaining: policy?.personalLeaveDays || 5,
+              remaining: policy?.personalLeaveDays ?? 5,
               pending: 0,
             },
           }
@@ -205,6 +258,20 @@ leaveBalanceSchema.statics.findOrCreate = async function(userId, userEmail, user
         throw error;
       }
     }
+  }
+
+  const LeavePolicy = mongoose.model('LeavePolicy');
+  const policy = await LeavePolicy.findOrCreate(organizationId);
+  const changed = balance.synchronizeWithPolicy(policy);
+  if (balance.userEmail !== userEmail || balance.userName !== userName) {
+    balance.userEmail = userEmail;
+    balance.userName = userName;
+    balance.timezone = policy.timezone;
+    balance.version += 1;
+    await balance.save();
+  } else if (changed) {
+    balance.version += 1;
+    await balance.save();
   }
 
   return balance;

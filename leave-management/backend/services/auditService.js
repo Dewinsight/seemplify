@@ -16,6 +16,8 @@ async function logAudit({
   req,
   previousState,
   newState,
+  required = false,
+  session,
 }) {
   try {
     const log = await AuditLog.log({
@@ -32,14 +34,64 @@ async function logAudit({
       userAgent: req?.get?.('user-agent'),
       previousState,
       newState,
+      session,
     });
 
     return log;
   } catch (error) {
-    // Log errors but don't throw - audit logging shouldn't break operations
+    if (required) throw error;
     console.error('Audit log error:', error);
     return null;
   }
+}
+
+async function logLeaveTypeChanged({ action, policy, leaveType, user, req, previousState, session }) {
+  return logAudit({
+    action,
+    resourceType: 'LeaveType',
+    resourceId: leaveType.key,
+    organizationId: policy.organizationId,
+    performedBy: user.id,
+    performedByName: user.name,
+    performedByEmail: user.email,
+    details: `${action === 'leave_type_created' ? 'Created' : action === 'leave_type_archived' ? 'Archived' : 'Updated'} leave type ${leaveType.name}`,
+    metadata: { leaveTypeKey: leaveType.key, leaveTypeName: leaveType.name },
+    req,
+    previousState,
+    newState: leaveType,
+    required: true,
+    session,
+  });
+}
+
+async function logLeaveEntitlementAdjusted({ balance, adjustment, user, req, previousState, session }) {
+  return logAudit({
+    action: 'leave_entitlement_adjusted',
+    resourceType: 'LeaveEntitlement',
+    resourceId: `${balance.userId}:${balance.year}:${adjustment.leaveTypeKey}`,
+    organizationId: balance.organizationId,
+    performedBy: user.id,
+    performedByName: user.name,
+    performedByEmail: user.email,
+    details: `Changed ${adjustment.leaveTypeName} entitlement for ${balance.userName || balance.userEmail}`,
+    metadata: {
+      targetUserId: balance.userId,
+      targetUserName: balance.userName,
+      targetUserEmail: balance.userEmail,
+      year: balance.year,
+      leaveTypeKey: adjustment.leaveTypeKey,
+      leaveTypeName: adjustment.leaveTypeName,
+      previousTotal: adjustment.previousTotal,
+      newTotal: adjustment.newTotal,
+      delta: adjustment.delta,
+      reason: adjustment.reason,
+    },
+    req,
+    previousState,
+    newState: adjustment,
+    required: true,
+    session,
+  });
 }
 
 /**
@@ -54,7 +106,7 @@ async function logLeaveRequestCreated(leaveRequest, user, req) {
     performedBy: user.id,
     performedByName: user.name,
     performedByEmail: user.email,
-    details: `Created ${leaveRequest.leaveType} leave request for ${leaveRequest.numberOfDays} day(s)`,
+    details: `Created ${leaveRequest.leaveTypeName || leaveRequest.leaveType} leave request for ${leaveRequest.numberOfDays} day(s)`,
     metadata: {
       leaveType: leaveRequest.leaveType,
       startDate: leaveRequest.startDate,
@@ -78,7 +130,7 @@ async function logLeaveRequestApproved(leaveRequest, approver, req, comment) {
     performedBy: approver.id,
     performedByName: approver.name,
     performedByEmail: approver.email,
-    details: `Approved ${leaveRequest.leaveType} leave request for ${leaveRequest.userName}`,
+    details: `Approved ${leaveRequest.leaveTypeName || leaveRequest.leaveType} leave request for ${leaveRequest.userName}`,
     metadata: {
       requesterId: leaveRequest.userId,
       requesterName: leaveRequest.userName,
@@ -102,7 +154,7 @@ async function logLeaveRequestRejected(leaveRequest, rejector, req, reason) {
     performedBy: rejector.id,
     performedByName: rejector.name,
     performedByEmail: rejector.email,
-    details: `Rejected ${leaveRequest.leaveType} leave request for ${leaveRequest.userName}`,
+    details: `Rejected ${leaveRequest.leaveTypeName || leaveRequest.leaveType} leave request for ${leaveRequest.userName}`,
     metadata: {
       requesterId: leaveRequest.userId,
       requesterName: leaveRequest.userName,
@@ -125,7 +177,7 @@ async function logLeaveRequestCancelled(leaveRequest, user, req, reason) {
     performedBy: user.id,
     performedByName: user.name,
     performedByEmail: user.email,
-    details: `Cancelled ${leaveRequest.leaveType} leave request`,
+    details: `Cancelled ${leaveRequest.leaveTypeName || leaveRequest.leaveType} leave request`,
     metadata: {
       cancellationReason: reason,
       previousStatus: 'pending', // or 'approved'
@@ -217,4 +269,6 @@ module.exports = {
   logLeavePolicyUpdated,
   logUserLogin,
   logHubLaunch,
+  logLeaveTypeChanged,
+  logLeaveEntitlementAdjusted,
 };

@@ -30,10 +30,13 @@ const leaveRequestSchema = new mongoose.Schema({
   // Leave details
   leaveType: {
     type: String,
-    enum: ['annual', 'sick', 'personal', 'maternity', 'paternity', 'unpaid'],
     required: true,
+    trim: true,
+    lowercase: true,
+    maxlength: 50,
     index: true,
   },
+  leaveTypeName: { type: String, trim: true, maxlength: 80 },
   startDate: { type: Date, required: true, index: true },
   endDate: { type: Date, required: true },
   numberOfDays: { type: Number, required: true },

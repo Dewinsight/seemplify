@@ -16,6 +16,8 @@ const authRoutes = require('./routes/auth');
 const leaveRequestRoutes = require('./routes/leaveRequests');
 const leaveBalanceRoutes = require('./routes/leaveBalances');
 const leavePolicyRoutes = require('./routes/leavePolicies');
+const leaveTypeRoutes = require('./routes/leaveTypes');
+const auditLogRoutes = require('./routes/auditLogs');
 const hubRoutes = require('./routes/hub');
 const webhooksRouter = require('./routes/webhooks');
 
@@ -91,6 +93,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/leave-requests', leaveRequestRoutes);
 app.use('/api/leave-balances', leaveBalanceRoutes);
 app.use('/api/leave-policies', leavePolicyRoutes);
+app.use('/api/leave-types', leaveTypeRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/hub', hubRoutes);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/presence', require('./routes/presenceReporter'));

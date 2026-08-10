@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import Layout from '@/components/Layout';
 import { leaveRequestsApi, leavePoliciesApi } from '@/lib/api';
-import { LeaveRequest, Holiday } from '@/types';
+import { LeaveRequest, Holiday, LeaveTypeDefinition } from '@/types';
 import { getLeaveTypeLabel, getLeaveTypeColor, cn } from '@/lib/utils';
 import {
   format,
@@ -33,6 +33,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeDefinition[]>([]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -49,16 +50,18 @@ export default function CalendarPage() {
         const start = startOfMonth(currentMonth);
         const end = endOfMonth(currentMonth);
 
-        const [leavesRes, holidaysRes] = await Promise.all([
+        const [leavesRes, holidaysRes, policyRes] = await Promise.all([
           leaveRequestsApi.getCalendar(
             format(start, 'yyyy-MM-dd'),
             format(end, 'yyyy-MM-dd')
           ),
           leavePoliciesApi.getHolidays(currentMonth.getFullYear()),
+          leavePoliciesApi.get(),
         ]);
 
         setLeaves(leavesRes.requests || []);
         setHolidays(holidaysRes.holidays || []);
+        setLeaveTypes((policyRes.policy.leaveTypes || []).filter((item: LeaveTypeDefinition) => item.active));
       } catch (err: any) {
         setError(err.response?.data?.error || 'Failed to load calendar data');
       } finally {
@@ -222,7 +225,7 @@ export default function CalendarPage() {
                               'text-xs px-1 py-0.5 rounded truncate',
                               getLeaveTypeColor(leave.leaveType)
                             )}
-                            title={`${leave.userName} - ${getLeaveTypeLabel(leave.leaveType)}`}
+                            title={`${leave.userName} - ${getLeaveTypeLabel(leave.leaveType, leave.leaveTypeName)}`}
                           >
                             {leave.userName.split(' ')[0]}
                           </div>
@@ -280,7 +283,7 @@ export default function CalendarPage() {
                           getLeaveTypeColor(leave.leaveType)
                         )}
                       >
-                        {getLeaveTypeLabel(leave.leaveType)}
+                        {getLeaveTypeLabel(leave.leaveType, leave.leaveTypeName)}
                       </span>
                     </div>
                     <div className="text-sm text-muted-foreground dark:text-slate-400">
@@ -297,15 +300,15 @@ export default function CalendarPage() {
         <div className="bg-card dark:bg-zinc-900/90 backdrop-blur-xl rounded-xl shadow-lg border border-border dark:border-zinc-700/50 p-4">
           <h3 className="text-sm font-semibold text-muted-foreground dark:text-zinc-300 mb-3">Legend</h3>
           <div className="flex flex-wrap gap-4">
-            {['annual', 'sick', 'personal', 'maternity', 'paternity', 'unpaid'].map(type => (
-              <div key={type} className="flex items-center gap-2">
+            {leaveTypes.map((definition) => (
+              <div key={definition.key} className="flex items-center gap-2">
                 <span
                   className={cn(
                     'w-3 h-3 rounded',
-                    getLeaveTypeColor(type).replace('text-', 'bg-').split(' ')[0]
+                    getLeaveTypeColor(definition.key).replace('text-', 'bg-').split(' ')[0]
                   )}
                 />
-                <span className="text-sm text-muted-foreground dark:text-zinc-400">{getLeaveTypeLabel(type)}</span>
+                <span className="text-sm text-muted-foreground dark:text-zinc-400">{getLeaveTypeLabel(definition.key, definition.name)}</span>
               </div>
             ))}
             <div className="flex items-center gap-2">

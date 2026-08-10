@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import Layout from '@/components/Layout';
 import LeaveRequestCard from '@/components/LeaveRequestCard';
-import { leaveRequestsApi } from '@/lib/api';
-import { LeaveRequest, LeaveStatus, LeaveType } from '@/types';
+import { leavePoliciesApi, leaveRequestsApi } from '@/lib/api';
+import { LeaveRequest, LeaveStatus, LeaveType, LeaveTypeDefinition } from '@/types';
 import { Plus, Filter } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -23,12 +23,20 @@ export default function LeaveRequestsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState<LeaveStatus | ''>('');
   const [typeFilter, setTypeFilter] = useState<LeaveType | ''>('');
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeDefinition[]>([]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.push('/login');
     }
   }, [authLoading, isAuthenticated, router]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    leavePoliciesApi.get()
+      .then((response) => setLeaveTypes((response.policy.leaveTypes || []).filter((item: LeaveTypeDefinition) => item.active)))
+      .catch(() => setLeaveTypes([]));
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const fetchRequests = async () => {
@@ -137,12 +145,9 @@ export default function LeaveRequestsPage() {
               className="px-3 py-2.5 border border-input dark:border-zinc-700 rounded-lg text-sm bg-background dark:bg-zinc-800/60 text-foreground dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
             >
               <option value="">All Types</option>
-              <option value="annual">Annual Leave</option>
-              <option value="sick">Sick Leave</option>
-              <option value="personal">Personal Leave</option>
-              <option value="maternity">Maternity Leave</option>
-              <option value="paternity">Paternity Leave</option>
-              <option value="unpaid">Unpaid Leave</option>
+              {leaveTypes.map((definition) => (
+                <option key={definition.key} value={definition.key}>{definition.name}</option>
+              ))}
             </select>
           </CardContent>
         </Card>

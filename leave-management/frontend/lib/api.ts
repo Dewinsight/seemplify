@@ -165,6 +165,11 @@ export const leaveBalancesApi = {
     return response.data;
   },
 
+  getMembers: async (params?: Record<string, string | number>) => {
+    const response = await api.get('/leave-balances/members', { params });
+    return response.data;
+  },
+
   getUserBalance: async (userId: string, year?: number) => {
     const response = await api.get(`/leave-balances/user/${userId}`, { params: { year } });
     return response.data;
@@ -181,6 +186,62 @@ export const leaveBalancesApi = {
       updates,
       reason,
     });
+    return response.data;
+  },
+
+  adjustEntitlement: async (userId: string, leaveTypeKey: string, data: {
+    year: number;
+    total?: number;
+    delta?: number;
+    reason: string;
+    resetToPolicy?: boolean;
+    expectedVersion?: number;
+  }) => {
+    const response = await api.patch(
+      `/leave-balances/user/${encodeURIComponent(userId)}/entitlements/${encodeURIComponent(leaveTypeKey)}`,
+      data
+    );
+    return response.data;
+  },
+
+  getUserHistory: async (userId: string, year?: number) => {
+    const response = await api.get(`/leave-balances/user/${encodeURIComponent(userId)}/history`, { params: { year } });
+    return response.data;
+  },
+
+  getMyHistory: async (year?: number) => {
+    const response = await api.get('/leave-balances/me/history', { params: { year } });
+    return response.data;
+  },
+
+  initializeOrganization: async (year?: number) => {
+    const response = await api.post('/leave-balances/initialize', { year });
+    return response.data;
+  },
+};
+
+export const leaveTypesApi = {
+  getAll: async (includeInactive = false) => {
+    const response = await api.get('/leave-types', { params: { includeInactive } });
+    return response.data;
+  },
+  create: async (data: Record<string, unknown>) => {
+    const response = await api.post('/leave-types', data);
+    return response.data;
+  },
+  update: async (key: string, data: Record<string, unknown>) => {
+    const response = await api.patch(`/leave-types/${encodeURIComponent(key)}`, data);
+    return response.data;
+  },
+  archive: async (key: string) => {
+    const response = await api.delete(`/leave-types/${encodeURIComponent(key)}`);
+    return response.data;
+  },
+};
+
+export const auditLogsApi = {
+  getAll: async (params?: Record<string, string | number>) => {
+    const response = await api.get('/audit-logs', { params });
     return response.data;
   },
 };

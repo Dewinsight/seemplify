@@ -26,6 +26,7 @@ const {
 } = require('../services/auditService');
 const emailService = require('../services/emailService');
 const { queueLeaveEvent } = require('../services/attendanceIntegrationService');
+const { normalizeLeaveTypeKey } = require('../services/leaveEntitlementService');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
@@ -301,7 +302,7 @@ router.get('/calendar', asyncHandler(async (req, res) => {
   }
 
   const requests = await LeaveRequest.find(query)
-    .select('userId userName leaveType startDate endDate numberOfDays teamName')
+    .select('userId userName leaveType leaveTypeName startDate endDate numberOfDays teamName')
     .sort({ startDate: 1 });
 
   res.json({ requests });
@@ -341,7 +342,8 @@ router.get('/:id', asyncHandler(async (req, res) => {
 router.post('/',
   createLeaveRequestLimiter,
   asyncHandler(async (req, res) => {
-    const { leaveType, startDate, endDate, reason, teamId } = req.body;
+    const { startDate, endDate, reason, teamId } = req.body;
+    const leaveType = normalizeLeaveTypeKey(req.body.leaveType);
 
     // Validate required fields
     if (!leaveType || !startDate || !endDate) {
@@ -350,6 +352,10 @@ router.post('/',
 
     // Get policy for validation
     const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
+    const leaveTypeDefinition = policy.getLeaveType(leaveType);
+    if (!leaveTypeDefinition) {
+      throw new AppError('This leave type is not available for requests', 400, 'LEAVE_TYPE_NOT_AVAILABLE');
+    }
 
     // Validate dates
     const validation = validateLeaveDates(startDate, endDate, policy);
@@ -364,7 +370,8 @@ router.post('/',
       req.user.id,
       req.user.email,
       req.user.name,
-      req.organizationId
+      req.organizationId,
+      new Date(startDate).getFullYear()
     );
 
     // Check balance
@@ -415,6 +422,7 @@ router.post('/',
       teamName: userTeam?.name,
       teamHierarchyPath: userTeam?.hierarchyPath || [],
       leaveType,
+      leaveTypeName: leaveTypeDefinition.name,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       numberOfDays,
@@ -441,6 +449,7 @@ router.post('/',
 
     // Reserve balance for pending request
     balance.reserveBalance(leaveType, numberOfDays);
+    if (leaveRequest.status === 'approved') balance.useBalance(leaveType, numberOfDays);
 
     // Save both in transaction
     const session = await mongoose.startSession();
@@ -462,7 +471,7 @@ router.post('/',
     if (leaveRequest.status === 'approved') await queueLeaveEvent(leaveRequest, 'leave.approved');
 
     // Email notifications
-    if (policy.notifyApproversOnRequest) {
+    if (policy.notifyApproversOnRequest && leaveRequest.status === 'pending') {
       const lineManagerRecipients = collectLineManagerRecipients(
         userinfo,
         req.organizationId,

@@ -9,7 +9,8 @@ import Layout from '@/components/Layout';
 import LeaveBalanceCard, { BalanceSummary } from '@/components/LeaveBalanceCard';
 import LeaveRequestCard from '@/components/LeaveRequestCard';
 import { leaveBalancesApi, leaveRequestsApi } from '@/lib/api';
-import { LeaveBalance, LeaveRequest } from '@/types';
+import { LeaveBalance, LeaveEntitlementAdjustment, LeaveRequest } from '@/types';
+import { formatDate } from '@/lib/utils';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<any>(null);
   const [recentRequests, setRecentRequests] = useState<LeaveRequest[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<LeaveRequest[]>([]);
+  const [entitlementHistory, setEntitlementHistory] = useState<LeaveEntitlementAdjustment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
@@ -31,14 +33,16 @@ export default function DashboardPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [balanceRes, summaryRes, requestsRes] = await Promise.all([
+        const [balanceRes, summaryRes, requestsRes, historyRes] = await Promise.all([
           leaveBalancesApi.getMyBalance(),
           leaveBalancesApi.getSummary(),
           leaveRequestsApi.getAll({ limit: 5 }),
+          leaveBalancesApi.getMyHistory(),
         ]);
         setBalance(balanceRes.balance);
         setSummary(summaryRes.summary);
         setRecentRequests(requestsRes.requests);
+        setEntitlementHistory((historyRes.adjustments || []).slice(0, 5));
         try {
           const approvalsRes = await leaveRequestsApi.getApprovals({ limit: 5 });
           setPendingApprovals(approvalsRes.requests);
@@ -122,6 +126,20 @@ export default function DashboardPage() {
             ))}
           </div>
         </section>
+
+        {entitlementHistory.length > 0 && (
+          <section className="suite-section">
+            <div className="suite-section-heading"><div><h2 className="suite-section-title">Your entitlement changes</h2><p className="suite-section-copy">Every administrator adjustment is shown here with its reason.</p></div></div>
+            <div className="suite-panel divide-y" style={{ borderColor: 'var(--suite-line)' }}>
+              {entitlementHistory.map((entry) => (
+                <div key={entry._id || `${entry.leaveTypeKey}-${entry.createdAt}`} className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                  <div><p className="text-sm font-semibold">{entry.leaveTypeName}: {entry.previousTotal} → {entry.newTotal} days</p><p className="mt-1 text-sm" style={{ color: 'var(--suite-muted)' }}>{entry.reason}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-subtle)' }}>Changed by {entry.actorName || entry.actorEmail || 'Administrator'}</p></div>
+                  <time className="text-xs" style={{ color: 'var(--suite-muted)' }}>{formatDate(entry.createdAt, 'MMM d, yyyy')}</time>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="suite-section suite-split">
           <div>

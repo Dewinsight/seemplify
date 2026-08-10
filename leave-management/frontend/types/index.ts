@@ -41,6 +41,7 @@ export interface LeaveRequest {
   teamName?: string;
   teamHierarchyPath?: string[];
   leaveType: LeaveType;
+  leaveTypeName?: string;
   startDate: string;
   endDate: string;
   numberOfDays: number;
@@ -89,7 +90,7 @@ export interface AuditLogEntry {
   details?: string;
 }
 
-export type LeaveType = 'annual' | 'sick' | 'personal' | 'maternity' | 'paternity' | 'unpaid';
+export type LeaveType = string;
 
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
@@ -100,12 +101,13 @@ export interface LeaveBalance {
   userName?: string;
   organizationId: string;
   year: number;
-  annual: BalanceType;
-  sick: BalanceType;
-  personal: BalanceType;
-  maternity: BalanceType;
-  paternity: BalanceType;
-  unpaid: BalanceType;
+  entitlements: LeaveEntitlement[];
+  annual?: BalanceType;
+  sick?: BalanceType;
+  personal?: BalanceType;
+  maternity?: BalanceType;
+  paternity?: BalanceType;
+  unpaid?: BalanceType;
   timezone: string;
   version: number;
   createdAt: string;
@@ -119,6 +121,33 @@ export interface BalanceType {
   pending: number;
 }
 
+export interface LeaveEntitlement extends BalanceType {
+  leaveTypeKey: string;
+  leaveTypeName: string;
+  available: number;
+  policyDefault: number;
+  source: 'policy' | 'override';
+  overrideReason?: string;
+  lastAdjustedAt?: string | null;
+  lastAdjustedBy?: string | null;
+  active: boolean;
+}
+
+export interface LeaveTypeDefinition {
+  key: string;
+  name: string;
+  description?: string;
+  defaultDays: number;
+  paid: boolean;
+  active: boolean;
+  requiresApproval: boolean | null;
+  order: number;
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
 export interface LeavePolicy {
   _id: string;
   organizationId: string;
@@ -129,6 +158,7 @@ export interface LeavePolicy {
   maternityLeaveDays: number;
   paternityLeaveDays: number;
   unpaidLeaveDays: number;
+  leaveTypes: LeaveTypeDefinition[];
   requiresApproval: boolean;
   approvalRoles: string[];
   autoApproveTypes: string[];
@@ -144,6 +174,53 @@ export interface LeavePolicy {
   accrualDay: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LeaveMember {
+  userId: string;
+  accountId?: string;
+  email: string;
+  name: string;
+  role: string;
+  employeeId?: string | null;
+  departmentId?: string | null;
+  teamIds: string[];
+  teamAssignments?: Array<{ teamId: string; name?: string; departmentId?: string | null; managerId?: string | null }>;
+  managerId?: string | null;
+  status: string;
+  balance: LeaveBalance & { initialized?: boolean };
+}
+
+export interface LeaveEntitlementAdjustment {
+  _id?: string;
+  organizationId: string;
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+  year: number;
+  leaveTypeKey: string;
+  leaveTypeName: string;
+  previousTotal: number;
+  newTotal: number;
+  delta: number;
+  reason: string;
+  actorId: string;
+  actorName?: string;
+  actorEmail?: string;
+  createdAt: string;
+}
+
+export interface OrganizationAuditLog {
+  _id: string;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  performedBy: string;
+  performedByName?: string;
+  performedByEmail?: string;
+  performedAt: string;
+  details?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Holiday {

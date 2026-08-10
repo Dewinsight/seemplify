@@ -35,10 +35,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
-  // Check if user has admin/HR manager access
-  const hasAdminAccess = user?.organizations?.some(
-    org => org.role === 'admin' || org.role === 'hr_manager' || org.role === 'owner'
-  );
+  // Administration follows the active organization, not a role the user may
+  // hold in a different tenant.
+  const leavePermissions = currentOrganization?.appPermissions?.['leave-management'] || [];
+  const hasAdminAccess = currentOrganization?.role === 'admin' ||
+    currentOrganization?.role === 'owner' ||
+    leavePermissions.includes('*') ||
+    leavePermissions.includes('manage_policies') ||
+    leavePermissions.includes('manage_leaves');
 
   const navigation: NavItem[] = useMemo(() => {
     const main: NavItem[] = [
@@ -85,7 +89,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center gap-2">
               {navigation.map((item) => {
-                const active = pathname === item.href;
+                const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
                 return (
                   <Link
                     key={item.href}
@@ -283,7 +287,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <div className="space-y-1 mb-6">
                 <div className="text-xs font-semibold text-muted-foreground px-2 mb-2">Navigation</div>
                 {navigation.map((item) => {
-                  const active = pathname === item.href;
+                  const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
                   return (
                     <Link
                       key={item.href}
