@@ -71,8 +71,8 @@ export const productPages: ProductPageData[] = [
         description: 'Move candidates through configured stages, maintain shortlists and carry out batch pipeline actions with a visible history.',
       },
       {
-        title: 'Interviews and feedback',
-        description: 'Schedule interviews, collect structured feedback and keep the interview record alongside the job and candidate.',
+        title: 'Interviews, AI Interview and feedback',
+        description: 'Schedule live interviews or invite candidates into a guided AI Interview, then keep transcripts and structured feedback alongside the job and candidate.',
       },
       {
         title: 'Recruiting assistance',

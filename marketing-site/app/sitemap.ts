@@ -38,6 +38,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly' as const,
       priority: 0.9,
     })),
+    {
+      url: `${config.url}/products/recruiter/ai-interview`,
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.9,
+    },
     ...primaryMarkets.map((market) => ({
       url: `${config.url}/africa/${market.slug}`,
       lastModified: now,

@@ -11,6 +11,7 @@ import {
   KeyRound,
   MapPin,
   MessageSquareText,
+  Mic2,
   ScanSearch,
   ShieldCheck,
   Sparkles,
@@ -91,7 +92,12 @@ const suiteApps: SuiteApp[] = [
   },
 ]
 
-const aiCapabilities = [
+const aiCapabilities: Array<{
+  icon: LucideIcon
+  title: string
+  description: string
+  href?: string
+}> = [
   {
     icon: ScanSearch,
     title: 'CV understanding and matching',
@@ -106,6 +112,12 @@ const aiCapabilities = [
     icon: MessageSquareText,
     title: 'Recruiter assistant',
     description: 'Ask questions about jobs and candidates, then move directly to the record or action that needs attention.',
+  },
+  {
+    icon: Mic2,
+    title: 'Guided AI interviews',
+    description: 'Give candidates a structured voice or text interview, then return transcripts and scoring evidence for recruiter review.',
+    href: '/products/recruiter/ai-interview',
   },
 ]
 
@@ -289,13 +301,53 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
                   return (
                     <article key={capability.title}>
                       <Icon aria-hidden="true" size={20} />
-                      <div><h3>{capability.title}</h3><p>{capability.description}</p></div>
+                      <div>
+                        <h3>{capability.title}</h3>
+                        <p>{capability.description}</p>
+                        {capability.href ? (
+                          <Link href={capability.href} className="marketing-ai-capabilities__link">
+                            Explore AI Interview <ArrowRight aria-hidden="true" size={15} />
+                          </Link>
+                        ) : null}
+                      </div>
                     </article>
                   )
                 })}
               </div>
             </div>
             <AiWorkflowGraphic />
+          </div>
+
+          <div className="marketing-container marketing-ai-interview-highlight">
+            <div className="marketing-ai-interview-highlight__media">
+              <Image
+                src="/images/seemplify-ai-interview-candidate.webp"
+                alt="A candidate speaking naturally during a remote structured interview"
+                width={1536}
+                height={1024}
+                sizes="(max-width: 920px) 100vw, 52vw"
+              />
+              <div className="marketing-ai-interview-highlight__caption">
+                <Mic2 aria-hidden="true" size={18} />
+                <span>Voice or text, one clear question at a time</span>
+              </div>
+            </div>
+            <div className="marketing-ai-interview-highlight__copy">
+              <p className="marketing-section-kicker">Featured in Recruiter</p>
+              <h3>Let candidates interview when they are ready. Return to evidence, not an empty calendar.</h3>
+              <p>
+                Prepare role-specific questions, send a controlled interview link and give every candidate the same guided path.
+                Recruiters can review the transcript, question-level evidence, strengths and concerns before deciding what happens next.
+              </p>
+              <ol>
+                <li><span>01</span><strong>Prepare</strong><small>Questions, scoring criteria and timing</small></li>
+                <li><span>02</span><strong>Invite</strong><small>A candidate-specific interview window</small></li>
+                <li><span>03</span><strong>Review</strong><small>Transcript, evidence and human decision</small></li>
+              </ol>
+              <Link href="/products/recruiter/ai-interview" className="marketing-button marketing-button--secondary">
+                See the AI Interview story <ArrowRight aria-hidden="true" size={17} />
+              </Link>
+            </div>
           </div>
         </section>
 

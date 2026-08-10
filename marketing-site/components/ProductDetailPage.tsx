@@ -12,6 +12,7 @@ import {
   WalletCards,
   Waypoints,
 } from 'lucide-react'
+import Image from 'next/image'
 import Link from 'next/link'
 import type { ProductPageData, ProductVisualKind } from '@/app/products/product-data'
 import { productPages } from '@/app/products/product-data'
@@ -127,6 +128,33 @@ export default function ProductDetailPage({ product }: { product: ProductPageDat
             </div>
           </header>
         </div>
+
+        {product.slug === 'recruiter' ? (
+          <section className={styles.featureStory} aria-labelledby="recruiter-ai-interview-title">
+            <div className={`marketing-container ${styles.featureStoryLayout}`}>
+              <div className={styles.featureStoryImage}>
+                <Image
+                  src="/images/seemplify-ai-interview-candidate.webp"
+                  alt="A candidate speaking during a structured remote interview"
+                  width={1536}
+                  height={1024}
+                  sizes="(max-width: 900px) 100vw, 50vw"
+                />
+              </div>
+              <div className={styles.featureStoryCopy}>
+                <span>Recruiter feature · AI Interview</span>
+                <h2 id="recruiter-ai-interview-title">A consistent first interview, without turning candidates into a score.</h2>
+                <p>
+                  Prepare role-specific questions, invite candidates through a controlled link and let them respond by voice or text.
+                  Recruiters return to the transcript, question-level evidence and follow-up context before making the decision.
+                </p>
+                <Link href="/products/recruiter/ai-interview">
+                  Explore AI Interview <ArrowRight aria-hidden="true" size={17} />
+                </Link>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section className={styles.section} aria-labelledby={`${product.slug}-capabilities`}>
           <div className="marketing-container">
