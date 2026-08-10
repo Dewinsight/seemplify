@@ -4,12 +4,13 @@ const Schema = mongoose.Schema;
 /**
  * PayrollProfile Model
  * 
- * Stores employee-specific payroll configuration.
- * This is linked to the IdP user account but contains payroll-specific data
+ * Stores payroll configuration for an employee identity owned by the IdP.
+ * This is an overlay linked to the IdP user account, not a second employee
+ * record. It contains payroll-specific data
  * like salary, bank details, tax info, and recurring allowances/deductions.
  * 
  * Access Control:
- * - HR Admins (owner, admin, hr_manager) can create/edit profiles
+ * - HR Admins (owner, admin, hr_manager) can initialize/edit payroll overlays
  * - Employees can view their own profile (limited fields)
  * - Line Managers can view team members' basic salary info
  */

@@ -1318,112 +1318,24 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
 
 /**
  * POST /api/payroll/profiles
- * Create new payroll profile (HR Admin only)
+ *
+ * Retired: Payroll does not own employee identities. A payroll configuration
+ * may only be initialized for a member verified against the selected Identity
+ * Provider organization through /profiles/sync-from-idp.
  */
-router.post('/profiles', requireHRAdmin, async (req, res) => {
-  try {
-    const { organizationId, userId: adminId } = getUserInfo(req);
-    const {
-      userId,
-      basicSalary,
-      currency,
-      payFrequency,
-      workTerms,
-      employeeInfo,
-      allowances,
-      recurringDeductions,
-      benefits,
-      benefitItems,
-      taxConfig,
-      statutoryContributions,
-      bankAccounts,
-      payrollFlags,
-      status,
-      isActive,
-      notes,
-      tags,
-      employerEntityId,
-      taxAssignment,
-    } = req.body || {};
-    const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
-    const normalizedBasicSalary = Math.max(0, toNumber(basicSalary, 0));
-
-    const existing = await PayrollProfile.findOne({ userId, organizationId });
-    if (existing) {
-      return res.status(400).json({ error: 'Profile already exists for this user' });
-    }
-
-    await organizationCurrencyService.getPolicy(organizationId, { userId: adminId });
-    const defaultPaymentCurrency = await organizationCurrencyService.getDefaultPaymentCurrency(organizationId);
-    const paymentCurrency = await organizationCurrencyService.assertPaymentCurrency(
-      organizationId,
-      currency || defaultPaymentCurrency
-    );
-    const profile = new PayrollProfile({
-      userId,
-      organizationId,
-      employerEntityId: employerEntityId || null,
-      basicSalary: normalizedBasicSalary,
-      currency: paymentCurrency,
-      payFrequency: payFrequency || 'monthly',
-      workTerms: workTerms || {},
-      employeeInfo: employeeInfo || {},
-      allowances: allowances || [],
-      recurringDeductions: recurringDeductions || [],
-      benefits: benefits || {},
-      benefitItems: benefitItems || [],
-      taxConfig: normalizedTaxConfig || {},
-      statutoryContributions: statutoryContributions || {},
-      bankAccounts: bankAccounts || [],
-      payrollFlags: normalizePayrollFlagsPayload(payrollFlags, normalizedBasicSalary, {}, workTerms || {}),
-      status: status || 'active',
-      isActive: isActive !== undefined ? !!isActive : true,
-      notes,
-      tags,
-      taxAssignment: taxAssignment || {},
-      createdBy: adminId
-    });
-
-    // Record initial salary
-    if (normalizedBasicSalary > 0) {
-      profile.salaryHistory.push({
-        effectiveDate: new Date(),
-        newSalary: normalizedBasicSalary,
-        changeReason: 'joining',
-        approvedBy: adminId
-      });
-    }
-
-    if (profile.employerEntityId) {
-      const employerEntity = await employerEntityService.assertAssignableEntity(profile.employerEntityId, organizationId);
-      employerEntityService.assertProfileAssignment(profile, employerEntity);
-    } else if (profile.payrollFlags?.includeInNextRun) {
-      profile.payrollFlags.includeInNextRun = false;
-      profile.payrollFlags.requiresReview = true;
-      profile.payrollFlags.reviewReason = 'Assign a legal employer before including this employee in payroll.';
-    }
-
-    await profile.save();
-    res.status(201).json({ success: true, profile });
-  } catch (err) {
-    console.error('Create Profile Error:', err);
-    if (err?.name === 'ValidationError') {
-      return res.status(400).json({
-        error: 'Invalid payroll profile data',
-        details: extractValidationMessages(err)
-      });
-    }
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create profile', details: err.details });
-  }
+router.post('/profiles', requireHRAdmin, (_req, res) => {
+  res.status(410).json({
+    error: 'Payroll cannot create employees. Configure an existing Identity Provider member instead.',
+    code: 'PAYROLL_PROFILE_REQUIRES_IDP_MEMBER',
+    replacement: '/api/payroll/profiles/sync-from-idp'
+  });
 });
 
 /**
- * POST /api/payroll/profiles/import-from-idp
- * Create a payroll profile for an IDP member (HR Admin only)
- *
- * Body: { userId: "<idp_sub>" }
+ * Initialize or refresh the payroll-only configuration attached to an
+ * authoritative IDP member. This never creates an employee identity.
  */
-router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
+async function syncPayrollProfileFromIdp(req, res) {
   try {
     const { organizationId, userId: adminId } = getUserInfo(req);
     const accessToken = getIdpAccessToken(req);
@@ -1458,7 +1370,12 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
       applyPayrollSyncFromMember(existing, member);
       existing.payrollFlags = normalizePayrollFlagsPayload(undefined, existing.basicSalary, existing.payrollFlags, existing.workTerms);
       await existing.save();
-      return res.json({ success: true, profile: existing, existed: true });
+      return res.json({
+        success: true,
+        profile: existing,
+        existed: true,
+        identitySource: 'identity_provider'
+      });
     }
 
     await organizationCurrencyService.getPolicy(organizationId, { userId: adminId });
@@ -1482,12 +1399,30 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
 
     await profile.save();
 
-    res.status(201).json({ success: true, profile, existed: false });
+    res.status(201).json({ success: true, profile, existed: false, identitySource: 'identity_provider' });
   } catch (err) {
-    console.error('Import Profile From IDP Error:', err);
-    const statusCode = isIdpUpstreamAuthFailure(err) ? 502 : 500;
-    res.status(statusCode).json({ error: getIdpProxyErrorMessage(err, 'Failed to import profile from IDP') });
+    console.error('Sync Payroll Profile From IDP Error:', err);
+    const upstreamStatus = Number(err?.response?.status || 0);
+    const statusCode = isIdpUpstreamAuthFailure(err)
+      ? 502
+      : (upstreamStatus === 404 ? 404 : 500);
+    res.status(statusCode).json({ error: getIdpProxyErrorMessage(err, 'Failed to synchronize payroll configuration from IDP') });
   }
+}
+
+/**
+ * POST /api/payroll/profiles/sync-from-idp
+ * Initialize or refresh payroll configuration for an existing IDP member.
+ * Body: { userId: "<idp_sub>" }
+ */
+router.post('/profiles/sync-from-idp', requireHRAdmin, syncPayrollProfileFromIdp);
+
+// Compatibility alias for already-deployed clients. It retains the same
+// IDP-membership verification and cannot create a payroll-only employee.
+router.post('/profiles/import-from-idp', requireHRAdmin, (req, res) => {
+  res.set('Deprecation', 'true');
+  res.set('Link', '</api/payroll/profiles/sync-from-idp>; rel="successor-version"');
+  return syncPayrollProfileFromIdp(req, res);
 });
 
 // =====================================================

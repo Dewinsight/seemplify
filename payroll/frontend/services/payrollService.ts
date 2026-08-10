@@ -63,9 +63,9 @@ export const payrollService = {
     return response.data;
   },
 
-  // Create payroll profile (admin only)
-  async createProfile(profile: Partial<PayrollProfile>): Promise<PayrollProfile> {
-    const response = await apiClient.post('/payroll/profiles', profile);
+  // Initialize payroll configuration for an existing IDP member (admin only)
+  async configureProfileForMember(userId: string): Promise<PayrollProfile> {
+    const response = await apiClient.post('/payroll/profiles/sync-from-idp', { userId });
     return response.data.profile || response.data;
   },
 

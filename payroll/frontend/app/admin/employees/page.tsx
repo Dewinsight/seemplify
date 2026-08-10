@@ -60,6 +60,7 @@ type EmployeeIssue = 'onboarding' | 'profile' | 'setup' | null;
 const AUTO_EXCLUSION_REASONS = [
     'Automatically excluded from payroll until onboarding is completed.',
     'Automatically excluded from payroll until a payroll profile is created.',
+    'Automatically excluded from payroll until payroll configuration is prepared.',
     'Automatically excluded from payroll until payroll setup is completed.',
 ];
 
@@ -158,7 +159,7 @@ function shouldForceExcludeFromPayroll(row: EmployeeRow): boolean {
 function getResolveIssueLabel(row: EmployeeRow): string {
     const issue = getPrimaryEmployeeIssue(row);
     if (issue === 'onboarding') return 'Resolve Onboarding';
-    if (issue === 'profile') return 'Create Payroll Profile';
+    if (issue === 'profile') return 'Configure Payroll';
     if (issue === 'setup') return 'Resolve Setup';
     return 'View';
 }
@@ -169,7 +170,7 @@ function getAutoExclusionReason(row: EmployeeRow): string {
         return 'Automatically excluded from payroll until onboarding is completed.';
     }
     if (issue === 'profile') {
-        return 'Automatically excluded from payroll until a payroll profile is created.';
+        return 'Automatically excluded from payroll until payroll configuration is prepared.';
     }
     if (issue === 'setup') {
         return 'Automatically excluded from payroll until payroll setup is completed.';
@@ -280,13 +281,19 @@ export default function EmployeesPage() {
                     .filter((row) => !!row.userId);
 
                 const seen = new Set(rows.map((row) => row.userId));
-                profiles.forEach((profile) => {
-                    const userId = String(profile?.userId || '').trim();
-                    if (userId && !seen.has(userId)) {
-                        rows.push({ userId, profile });
-                        seen.add(userId);
-                    }
-                });
+                // IDP is the employee directory. Only use profile-only rows as
+                // a temporary read-only fallback when the IDP roster itself is
+                // unavailable; never present a stale payroll overlay as a new
+                // employee while the authoritative roster is healthy.
+                if (idpResult.status !== 'fulfilled' || idpPayload?.syncAvailable === false) {
+                    profiles.forEach((profile) => {
+                        const userId = String(profile?.userId || '').trim();
+                        if (userId && !seen.has(userId)) {
+                            rows.push({ userId, profile });
+                            seen.add(userId);
+                        }
+                    });
+                }
 
                 rows.sort((left, right) => getEmployeeName(left).localeCompare(getEmployeeName(right)));
 
@@ -955,9 +962,9 @@ export default function EmployeesPage() {
                                 )}
                                 {resolutionIssue === 'profile' && (
                                     <>
-                                        <p className="payroll-dialog-title mb-2 text-sm font-medium">Payroll profile not created yet.</p>
+                                        <p className="payroll-dialog-title mb-2 text-sm font-medium">Payroll configuration is not set up yet.</p>
                                         <p className="payroll-dialog-copy text-sm">
-                                            Onboarding is complete, but this employee does not have a payroll profile yet. Create the payroll profile before they can be included in a payroll run.
+                                            This employee already comes from the Identity Provider. Load their identity into Payroll, then configure salary, tax, banking and legal-employer details before including them in a run.
                                         </p>
                                     </>
                                 )}
@@ -997,11 +1004,11 @@ export default function EmployeesPage() {
 
                                 {resolutionIssue === 'profile' && (
                                     <Link
-                                        href={`/admin/employees/onboard/${resolutionRow.userId}`}
+                                        href={`/admin/employees/configure/${resolutionRow.userId}`}
                                         className="payroll-button-primary"
                                     >
                                         <UserPlus className="h-4 w-4" />
-                                        Create Payroll Profile
+                                        Configure Payroll
                                     </Link>
                                 )}
 
@@ -1137,7 +1144,7 @@ export default function EmployeesPage() {
                                     {onboardingComplete && missingPayrollProfile && (
                                         <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
                                             <UserPlus className="w-3 h-3" />
-                                            Payroll Profile Needed
+                                            Payroll Setup Needed
                                         </span>
                                     )}
                                     {onboardingComplete && !missingPayrollProfile && needsSetup && (

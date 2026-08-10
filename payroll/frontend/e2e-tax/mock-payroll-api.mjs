@@ -107,6 +107,45 @@ const jurisdictions = [
   },
 ];
 
+const idpMembers = [
+  {
+    id: 'member-ng',
+    sub: 'user-ng',
+    name: 'Ada Nigeria (synthetic)',
+    email: 'ada.ng@example.invalid',
+    employeeId: 'SYN-NG-001',
+    designation: 'Operations Analyst',
+    departmentName: 'Operations',
+    onboardingStatus: 'completed',
+    teamIds: ['team-operations'],
+    teamNames: ['Operations'],
+  },
+  {
+    id: 'member-uk',
+    sub: 'user-uk',
+    name: 'Ben United Kingdom (synthetic)',
+    email: 'ben.uk@example.invalid',
+    employeeId: 'SYN-UK-001',
+    designation: 'Product Manager',
+    departmentName: 'Product',
+    onboardingStatus: 'completed',
+    teamIds: ['team-product'],
+    teamNames: ['Product'],
+  },
+  {
+    id: 'member-unconfigured',
+    sub: 'user-unconfigured',
+    name: 'Chidi Existing IDP Member (synthetic)',
+    email: 'chidi.idp@example.invalid',
+    employeeId: 'SYN-NG-002',
+    designation: 'Customer Operations Specialist',
+    departmentName: 'Operations',
+    onboardingStatus: 'completed',
+    teamIds: ['team-operations'],
+    teamNames: ['Operations'],
+  },
+];
+
 const profiles = {
   'employee-ng': {
     _id: 'employee-ng',
@@ -239,6 +278,23 @@ const server = http.createServer(async (request, response) => {
   if (path === '/payroll/employer-entities/adapter-candidates') {
     return json(response, 200, { candidates });
   }
+  if (path === '/payroll/idp/members') {
+    return json(response, 200, {
+      organizationId: 'org-e2e',
+      members: idpMembers,
+      syncAvailable: true,
+    });
+  }
+  if (path === '/payroll/idp/teams') {
+    return json(response, 200, {
+      organizationId: 'org-e2e',
+      teams: [
+        { id: 'team-operations', name: 'Operations', department: { id: 'department-operations', name: 'Operations' } },
+        { id: 'team-product', name: 'Product', department: { id: 'department-product', name: 'Product' } },
+      ],
+      syncAvailable: true,
+    });
+  }
   if (path === '/payroll/employer-entities' && request.method === 'GET') {
     const status = url.searchParams.get('status');
     return json(response, 200, { entities: status ? entities.filter((entity) => entity.status === status) : entities });
@@ -264,9 +320,44 @@ const server = http.createServer(async (request, response) => {
   if (path === '/payroll/profiles' && request.method === 'GET') {
     return json(response, 200, { profiles: Object.values(profiles), total: Object.keys(profiles).length });
   }
+  if (path === '/payroll/profiles/sync-from-idp' && request.method === 'POST') {
+    const member = idpMembers.find((row) => row.sub === body?.userId || row.id === body?.userId);
+    if (!member) return json(response, 404, { error: 'Employee not found in IDP organization members' });
+    const existing = Object.values(profiles).find((profile) => profile.userId === member.sub);
+    if (existing) return json(response, 200, { success: true, profile: existing, existed: true });
+    const profile = {
+      _id: `profile-${member.sub}`,
+      userId: member.sub,
+      organizationId: 'org-e2e',
+      employeeInfo: {
+        name: member.name,
+        email: member.email,
+        employeeId: member.employeeId,
+        designation: member.designation,
+        department: member.departmentName,
+      },
+      basicSalary: 0,
+      currency: 'NGN',
+      payFrequency: 'monthly',
+      isActive: true,
+      payrollFlags: { includeInNextRun: false, requiresReview: true },
+      allowances: [],
+      benefitItems: [],
+      recurringDeductions: [],
+      bankAccounts: [],
+      statutoryContributions: {},
+      taxConfig: {},
+    };
+    profiles[member.sub] = profile;
+    return json(response, 201, { success: true, profile, existed: false, identitySource: 'identity_provider' });
+  }
   const profileMatch = path.match(/^\/payroll\/profiles\/([^/]+)$/);
   if (profileMatch && request.method === 'GET') {
-    return json(response, 200, profiles[profileMatch[1]] || profiles['employee-ng']);
+    const profile = profiles[profileMatch[1]]
+      || Object.values(profiles).find((row) => row.userId === profileMatch[1]);
+    return profile
+      ? json(response, 200, profile)
+      : json(response, 404, { error: 'Payroll configuration not found' });
   }
   if (profileMatch && request.method === 'PUT') {
     profiles[profileMatch[1]] = { ...(profiles[profileMatch[1]] || {}), ...body };

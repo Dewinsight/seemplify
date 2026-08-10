@@ -99,6 +99,27 @@ test('assigns employees to the correct legal employer and jurisdiction', async (
   });
 });
 
+test('configures an existing IDP member without creating a second employee', async ({ page, request }) => {
+  await page.goto('/admin/employees');
+  await dismissPageGuide(page);
+
+  await expect(page.getByText('Chidi Existing IDP Member (synthetic)')).toBeVisible();
+  await expect(page.getByText('Payroll Setup Needed')).toBeVisible();
+
+  await page.goto('/admin/employees/configure/user-unconfigured');
+  await expect(page).toHaveURL(/\/admin\/employees\/user-unconfigured$/);
+  await dismissPageGuide(page);
+  await expect(page.getByText('Chidi Existing IDP Member (synthetic)')).toBeVisible();
+
+  const logged = await requests(request);
+  expect(logged).toContainEqual(expect.objectContaining({
+    method: 'POST',
+    path: '/payroll/profiles/sync-from-idp',
+    body: { userId: 'user-unconfigured' },
+  }));
+  expect(logged.some((entry) => entry.method === 'POST' && entry.path === '/payroll/profiles')).toBe(false);
+});
+
 test('runs Nigeria and UK payroll separately and blocks preview finalization', async ({ page, request }, testInfo) => {
   await page.goto('/admin/run');
   await dismissPageGuide(page);

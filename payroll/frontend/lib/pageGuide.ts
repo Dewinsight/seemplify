@@ -149,7 +149,7 @@ const guides: RouteGuideMatcher[] = [
       id: 'admin-employees',
       title: 'Employee Management Guide',
       audience: 'HR admins',
-      summary: 'This page is the payroll readiness queue. Use it to find employees who are blocked by onboarding, profile creation, or missing payroll setup.',
+      summary: 'This page is the payroll readiness queue for employees synchronized from the Identity Provider. Use it to find people blocked by onboarding or missing payroll configuration.',
       steps: [
         'Search or filter by setup status, team, or department to narrow the list.',
         'Resolve onboarding blockers from the employee card when someone is not fully onboarded.',
@@ -170,14 +170,14 @@ const guides: RouteGuideMatcher[] = [
     },
   },
   {
-    pattern: /^\/admin\/employees\/onboard\/[^/]+$/,
+    pattern: /^\/admin\/employees\/configure\/[^/]+$/,
     guide: {
-      id: 'admin-employee-onboard',
-      title: 'Employee Onboarding Sync Guide',
+      id: 'admin-employee-payroll-configure',
+      title: 'Payroll Configuration Sync Guide',
       audience: 'HR admins',
-      summary: 'This transitional page creates a payroll profile from the Identity Provider and then moves you into the full employee payroll setup screen.',
+      summary: 'This page verifies the existing Identity Provider member, initializes their payroll-only configuration, and then opens the full payroll setup screen.',
       steps: [
-        'Wait for the profile import and identity sync to complete.',
+        'Wait for Identity Provider verification and payroll configuration sync to complete.',
         'If the import succeeds, continue in the employee setup screen that opens next.',
         'If it fails, go back to Employee Management and confirm the employee exists in the organization and IDP sync is available.',
       ],
