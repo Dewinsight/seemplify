@@ -74,9 +74,8 @@ type NavigationGroup = {
 
 type NavigationItem = NavigationLink | NavigationGroup;
 
-const navigationItems: NavigationItem[] = [
+const recruiterNavigationItems: NavigationItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: Home },
-  { title: "My Documents", href: "/my-documents", icon: FileSignature, feature: "peopleTransitions" },
   {
     title: "Recruitment",
     icon: Users,
@@ -87,21 +86,32 @@ const navigationItems: NavigationItem[] = [
       { title: "AI Interviews", href: "/ai-interviews", icon: Bot, feature: "aiInterviews" },
     ],
   },
+  { title: "Calendar", href: "/calendar", icon: Calendar },
+];
+
+const peopleTransitionsNavigationItems: NavigationItem[] = [
+  { title: "Dashboard", href: "/people-transitions", icon: Home, feature: "peopleTransitions" },
   {
-    title: "People Transitions",
+    title: "Processes",
     icon: GraduationCap,
     feature: "peopleTransitions",
     children: [
-      { title: "Overview", href: "/people-transitions", icon: GraduationCap },
       { title: "Start Process", href: "/people-transitions/new", icon: PlusCircle },
       { title: "Segments", href: "/people-transitions/segments", icon: ListChecks },
-      { title: "Documents", href: "/people-transitions/documents", icon: FileText },
-      { title: "Templates", href: "/people-transitions/templates", icon: ClipboardList },
       { title: "Tasks", href: "/people-transitions/tasks", icon: ListTodo },
-      { title: "Analytics", href: "/people-transitions/analytics", icon: BarChart3 },
     ],
   },
-  { title: "Calendar", href: "/calendar", icon: Calendar },
+  {
+    title: "Documents & Signing",
+    icon: FileSignature,
+    feature: "peopleTransitions",
+    children: [
+      { title: "Documents", href: "/people-transitions/documents", icon: FileText },
+      { title: "Templates", href: "/people-transitions/templates", icon: ClipboardList },
+      { title: "My Documents", href: "/my-documents", icon: FileSignature },
+    ],
+  },
+  { title: "Analytics", href: "/people-transitions/analytics", icon: BarChart3, feature: "peopleTransitions" },
 ];
 
 // Directly use the Settings component for the icon
@@ -112,7 +122,7 @@ function isNavigationGroup(item: NavigationItem): item is NavigationGroup {
 }
 
 function isLinkActive(pathname: string | null, href: string) {
-  return Boolean(pathname?.startsWith(href));
+  return pathname === href || Boolean(pathname?.startsWith(`${href}/`));
 }
 
 function isGroupActive(pathname: string | null, item: NavigationGroup) {
@@ -190,6 +200,14 @@ const TopNavbar = () => {
   const { currentOrganization } = useOrganization();
   const { isFeatureEnabled } = useFeatureFlags();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const isPeopleTransitionsWorkspace = Boolean(
+    pathname?.startsWith("/people-transitions") ||
+    pathname?.startsWith("/my-documents") ||
+    pathname?.startsWith("/onboarding")
+  );
+  const navigationItems = isPeopleTransitionsWorkspace
+    ? peopleTransitionsNavigationItems
+    : recruiterNavigationItems;
   const visibleNavigationItems = useMemo<NavigationItem[]>(() =>
     navigationItems.reduce<NavigationItem[]>((items, item) => {
       if (item.feature && !isFeatureEnabled(item.feature)) {
@@ -209,7 +227,7 @@ const TopNavbar = () => {
       items.push(item);
       return items;
     }, []),
-  [isFeatureEnabled]);
+  [isFeatureEnabled, navigationItems]);
   
   // Get available theme options from environment configuration
   const availableThemes = getAvailableThemeOptions();
@@ -259,6 +277,9 @@ const TopNavbar = () => {
           </div>
           <div className="recruiter-topbar__logo-wrap">
             <Logo size="sm" className="recruiter-topbar__logo" />
+            <span className="hidden border-l border-border pl-3 text-sm font-semibold text-foreground sm:inline">
+              {isPeopleTransitionsWorkspace ? "People Transitions" : "Recruiter"}
+            </span>
           </div>
         </div>
 

@@ -13,9 +13,7 @@ import {
   Users,
   Briefcase,
   Clock,
-  FileSignature,
   FileText,
-  GraduationCap,
   Bot,
   ArrowRight,
   Send,
@@ -33,57 +31,26 @@ import { MetricDetailModal } from "@/components/dashboard/MetricDetailModal"
 import { MetroQuickActions } from "@/components/ui/metro-quick-actions"
 import { Badge } from "@/components/ui/badge"
 import { getIdpBaseUrl } from "@/utils/env"
-import { getMySigningDocuments, getOnboardingRecords, type CandidateOnboarding, type MySigningDocuments } from "@/services/onboardingService"
 import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService"
 import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 type WorkQueueSummary = {
-  onboarding: {
-    total: number;
-    active: number;
-    sentPackets: number;
-    completed: number;
-  };
   aiInterviews: {
     total: number;
     open: number;
     candidates: number;
     completedSessions: number;
   };
-  myDocuments: MySigningDocuments;
 };
 
 const emptyWorkQueueSummary: WorkQueueSummary = {
-  onboarding: {
-    total: 0,
-    active: 0,
-    sentPackets: 0,
-    completed: 0,
-  },
   aiInterviews: {
     total: 0,
     open: 0,
     candidates: 0,
     completedSessions: 0,
   },
-  myDocuments: {
-    pending: [],
-    signed: [],
-  },
 };
-
-function summarizeOnboarding(records: CandidateOnboarding[]) {
-  return {
-    total: records.length,
-    active: records.filter((record) => ["pending", "in_progress"].includes(record.status)).length,
-    sentPackets: records.reduce(
-      (count, record) =>
-        count + (record.envelopes || []).filter((envelope) => ["sent", "viewed", "partially_signed"].includes(envelope.status)).length,
-      0
-    ),
-    completed: records.filter((record) => record.status === "completed").length,
-  };
-}
 
 function summarizeAIInterviews(interviews: AIInterview[]) {
   return {
@@ -101,7 +68,6 @@ export default function Dashboard() {
   const { viewMode, setViewMode, sections } = useDashboardState()
   const { isFeatureEnabled } = useFeatureFlags()
   const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
-  const peopleTransitionsEnabled = isFeatureEnabled('peopleTransitions')
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [workQueues, setWorkQueues] = useState<WorkQueueSummary>(emptyWorkQueueSummary)
   const [workQueuesLoading, setWorkQueuesLoading] = useState(false)
@@ -137,24 +103,16 @@ export default function Dashboard() {
     async function loadWorkQueues() {
       try {
         setWorkQueuesLoading(true);
-        const [onboardingResult, aiInterviewsResult, myDocumentsResult] = await Promise.allSettled([
-          peopleTransitionsEnabled ? getOnboardingRecords() : Promise.resolve(null),
-          aiInterviewsEnabled ? aiInterviewService.list() : Promise.resolve(null),
-          peopleTransitionsEnabled ? getMySigningDocuments(8) : Promise.resolve(null),
-        ]);
+        const aiInterviewsResult = await Promise.resolve(
+          aiInterviewsEnabled ? aiInterviewService.list() : null
+        );
 
         if (!mounted) return;
 
         setWorkQueues({
-          onboarding: onboardingResult.status === "fulfilled" && onboardingResult.value
-            ? summarizeOnboarding(onboardingResult.value.data || [])
-            : emptyWorkQueueSummary.onboarding,
-          aiInterviews: aiInterviewsResult.status === "fulfilled" && aiInterviewsResult.value
-            ? summarizeAIInterviews(aiInterviewsResult.value || [])
+          aiInterviews: aiInterviewsResult
+            ? summarizeAIInterviews(aiInterviewsResult)
             : emptyWorkQueueSummary.aiInterviews,
-          myDocuments: myDocumentsResult.status === "fulfilled" && myDocumentsResult.value
-            ? myDocumentsResult.value
-            : emptyWorkQueueSummary.myDocuments,
         });
       } catch (error) {
         console.error("Failed to load dashboard work queues:", error);
@@ -168,7 +126,7 @@ export default function Dashboard() {
     return () => {
       mounted = false;
     };
-  }, [aiInterviewsEnabled, peopleTransitionsEnabled, user])
+  }, [aiInterviewsEnabled, user])
 
   const handleProfileModalClose = (open: boolean) => {
     setShowProfileModal(open)
@@ -400,27 +358,6 @@ export default function Dashboard() {
           </Alert>
         )}
 
-        {peopleTransitionsEnabled && workQueues.myDocuments.pending.length > 0 && (
-          <Alert className="recruiter-notice">
-            <FileSignature className="h-4 w-4" />
-            <AlertDescription className="recruiter-notice__content">
-              <div>
-                <strong>Documents waiting for your signature</strong>
-                <span>
-                  {workQueues.myDocuments.pending.length === 1
-                    ? `${workQueues.myDocuments.pending[0].title} needs your review.`
-                    : `${workQueues.myDocuments.pending.length} packets need your review.`}
-                </span>
-              </div>
-              <Button asChild size="sm" variant="outline" className="w-fit">
-                <Link href="/my-documents">
-                  Open My Documents
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
       </div>
 
       {sections.keyMetrics?.visible && (
@@ -521,7 +458,7 @@ export default function Dashboard() {
         </section>
       )}
 
-      {(peopleTransitionsEnabled || aiInterviewsEnabled) && (
+      {aiInterviewsEnabled && (
         <section className="recruiter-dashboard__section" aria-labelledby="recruiter-queues-title">
           <div className="recruiter-section-heading">
             <div>
@@ -532,50 +469,6 @@ export default function Dashboard() {
           </div>
 
           <div className="recruiter-queue-grid">
-            {peopleTransitionsEnabled && <article className="recruiter-queue-card">
-              <header className="recruiter-queue-card__header">
-                <div>
-                  <h3>People transitions</h3>
-                  <p>Onboarding, exits, retirement packets, and signing progress.</p>
-                </div>
-                <span className="recruiter-queue-card__icon"><GraduationCap className="h-5 w-5" /></span>
-              </header>
-              <div className="recruiter-queue-card__body">
-                <div className="recruiter-queue-card__stats">
-                  <div>
-                    <strong>{workQueues.onboarding.total}</strong>
-                    <span>Total</span>
-                  </div>
-                  <div>
-                    <strong>{workQueues.onboarding.active}</strong>
-                    <span>Active</span>
-                  </div>
-                  <div>
-                    <strong>{workQueues.onboarding.sentPackets}</strong>
-                    <span>Sent</span>
-                  </div>
-                  <div>
-                    <strong>{workQueues.onboarding.completed}</strong>
-                    <span>Complete</span>
-                  </div>
-                </div>
-                <div className="recruiter-queue-card__actions">
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/people-transitions">
-                      Open transitions
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/people-transitions/new">
-                      <Send className="mr-2 h-4 w-4" />
-                      Start process
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            </article>}
-
             {aiInterviewsEnabled && <article className="recruiter-queue-card">
               <header className="recruiter-queue-card__header">
                 <div>
@@ -620,62 +513,6 @@ export default function Dashboard() {
               </div>
             </article>}
 
-            {peopleTransitionsEnabled && <article className="recruiter-queue-card recruiter-queue-card--documents">
-              <header className="recruiter-queue-card__header">
-                <div>
-                  <h3>My documents</h3>
-                  <p>Packets waiting for you and documents you have signed.</p>
-                </div>
-                <span className="recruiter-queue-card__icon"><FileSignature className="h-5 w-5" /></span>
-              </header>
-              <div className="recruiter-queue-card__body">
-                <div className="recruiter-queue-card__stats recruiter-queue-card__stats--two">
-                  <div>
-                    <strong>{workQueues.myDocuments.pending.length}</strong>
-                    <span>To sign</span>
-                  </div>
-                  <div>
-                    <strong>{workQueues.myDocuments.signed.length}</strong>
-                    <span>Signed</span>
-                  </div>
-                </div>
-
-                {workQueues.myDocuments.pending.length > 0 ? (
-                  <div className="recruiter-document-list">
-                    {workQueues.myDocuments.pending.slice(0, 3).map((item) => {
-                      const signerQuery = item.signer.key ? `?signer=${encodeURIComponent(item.signer.key)}` : "";
-                      return (
-                        <Link
-                          key={`pending-${item._id}-${item.signer.key || item.signer._id}`}
-                          href={`/my-documents/${item._id}${signerQuery}`}
-                          className="recruiter-document-list__item"
-                        >
-                          <div className="min-w-0">
-                            <strong>{item.title}</strong>
-                            <span>
-                              {item.documentCount} document{item.documentCount === 1 ? "" : "s"}
-                              {item.assignedFieldCount ? ` - ${item.assignedFieldCount} assigned field${item.assignedFieldCount === 1 ? "" : "s"}` : ""}
-                            </span>
-                          </div>
-                          <ArrowRight className="h-4 w-4 shrink-0" />
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="recruiter-queue-card__empty">
-                    No documents are waiting for your signature.
-                  </div>
-                )}
-
-                <Button asChild size="sm" variant="outline" className="w-fit">
-                  <Link href="/my-documents">
-                    Open My Documents
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-              </div>
-            </article>}
           </div>
         </section>
       )}

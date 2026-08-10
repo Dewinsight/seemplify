@@ -2,32 +2,55 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Clock, FileSignature, FileText, Plus, Search, Send, ShieldCheck, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  FileCheck2,
+  FileText,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  ShieldAlert,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
-import { getOnboardingDashboard, getOnboardingRecords, runOnboardingReminders, type CandidateOnboarding, type OnboardingAuditEvent, type ProcessType } from "@/services/onboardingService";
+import {
+  getOnboardingDashboard,
+  getOnboardingRecords,
+  runOnboardingReminders,
+  type CandidateOnboarding,
+  type OnboardingAuditEvent,
+  type ProcessType,
+} from "@/services/onboardingService";
 import { toast } from "sonner";
 
 const processOptions: Array<{ value: ProcessType | "all"; label: string }> = [
-  { value: "all", label: "All" },
+  { value: "all", label: "All transitions" },
   { value: "onboarding", label: "Onboarding" },
-  { value: "exit", label: "Exit" },
+  { value: "exit", label: "Exits" },
   { value: "retirement", label: "Retirement" },
 ];
 
-function candidateName(onboarding: CandidateOnboarding) {
-  const candidate = onboarding.candidate || {};
+function candidateName(transition: CandidateOnboarding) {
+  const candidate = transition.candidate || {};
   return `${candidate.firstName || ""} ${candidate.lastName || ""}`.trim() || candidate.email || "Candidate";
 }
 
-function processLabel(onboarding: CandidateOnboarding) {
-  const processType = onboarding.processType || "onboarding";
-  if (processType === "exit") return "Exit";
-  if (processType === "retirement") return "Retirement";
+function processLabel(transition: CandidateOnboarding) {
+  if (transition.processType === "exit") return "Exit";
+  if (transition.processType === "retirement") return "Retirement";
   return "Onboarding";
+}
+
+function formatEventAction(action: string) {
+  return action
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 export default function OnboardingDashboardPage() {
@@ -41,14 +64,17 @@ export default function OnboardingDashboardPage() {
 
   useEffect(() => {
     let mounted = true;
+
     async function load() {
       try {
         setLoading(true);
-        const result = await getOnboardingRecords({ search, processType });
-        const dashboardResult = await getOnboardingDashboard(processType);
+        const [recordsResult, dashboardResult] = await Promise.all([
+          getOnboardingRecords({ search, processType }),
+          getOnboardingDashboard(processType),
+        ]);
         if (!mounted) return;
-        setRecords(result.data || []);
-        setEvents(result.recentEvents || []);
+        setRecords(recordsResult.data || []);
+        setEvents(recordsResult.recentEvents || []);
         setDashboard(dashboardResult);
       } catch (error: any) {
         toast.error(error.message || "Failed to load people transitions");
@@ -56,6 +82,7 @@ export default function OnboardingDashboardPage() {
         if (mounted) setLoading(false);
       }
     }
+
     const timer = setTimeout(load, 250);
     return () => {
       mounted = false;
@@ -64,12 +91,48 @@ export default function OnboardingDashboardPage() {
   }, [search, processType]);
 
   const stats = useMemo(() => {
-    const total = records.length;
-    const inProgress = records.filter((record) => ["pending", "in_progress"].includes(record.status)).length;
+    const active = records.filter((record) => ["pending", "in_progress"].includes(record.status)).length;
     const completed = records.filter((record) => record.status === "completed").length;
-    const sent = records.reduce((count, record) => count + (record.envelopes || []).filter((envelope) => ["sent", "viewed", "partially_signed"].includes(envelope.status)).length, 0);
-    return { total, inProgress, completed, sent };
+    const sentPackets = records.reduce(
+      (count, record) => count + (record.envelopes || []).filter((envelope) =>
+        ["sent", "viewed", "partially_signed"].includes(envelope.status)
+      ).length,
+      0
+    );
+    const completionRate = records.length ? Math.round((completed / records.length) * 100) : 0;
+    return { active, completed, sentPackets, completionRate };
   }, [records]);
+
+  const attentionItems = [
+    {
+      label: "Overdue workflow items",
+      detail: "Steps that have passed their due date",
+      value: dashboard?.overdueItems || 0,
+      icon: AlertTriangle,
+      iconClass: "text-red-600 dark:text-red-400",
+    },
+    {
+      label: "Pending HR review",
+      detail: "Transitions waiting for an internal decision",
+      value: dashboard?.pendingApprovals || 0,
+      icon: Clock,
+      iconClass: "text-amber-600 dark:text-amber-400",
+    },
+    {
+      label: "Candidate forms to review",
+      detail: "Submitted information awaiting verification",
+      value: dashboard?.formReviews || 0,
+      icon: FileCheck2,
+      iconClass: "text-teal-700 dark:text-teal-400",
+    },
+    {
+      label: "Employee handoff issues",
+      detail: "Completed transitions that did not hand off cleanly",
+      value: dashboard?.handoffFailures || 0,
+      icon: ShieldAlert,
+      iconClass: "text-gray-700 dark:text-gray-300",
+    },
+  ];
 
   async function runReminders() {
     try {
@@ -84,19 +147,19 @@ export default function OnboardingDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-gray-50 text-gray-950 dark:bg-gray-950 dark:text-gray-100">
       <div className="mx-auto max-w-screen-2xl px-4 py-6 lg:px-8">
-        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <header className="flex flex-col gap-4 border-b border-gray-200 pb-6 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">People Transitions</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600">
-              Start onboarding, exit, and retirement processes, send signature packets, and track completion.
+            <h1 className="text-2xl font-semibold tracking-tight">People Transitions</h1>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              Manage onboarding, exits, retirement, documents, signatures, and employee handoffs.
             </p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" onClick={runReminders} disabled={reminding}>
-              <Clock className="h-4 w-4" />
-              {reminding ? "Running..." : "Run reminders"}
+              <RefreshCw className={`h-4 w-4 ${reminding ? "animate-spin" : ""}`} />
+              {reminding ? "Sending reminders" : "Run reminders"}
             </Button>
             <Button asChild variant="outline">
               <Link href="/people-transitions/documents">
@@ -111,94 +174,94 @@ export default function OnboardingDashboardPage() {
               </Link>
             </Button>
           </div>
-        </div>
+        </header>
 
-        <div className="mb-5 flex flex-wrap gap-2">
+        <nav className="mt-5 flex gap-6 overflow-x-auto border-b border-gray-200 dark:border-gray-800" aria-label="Transition type">
           {processOptions.map((option) => (
-            <Button
+            <button
               key={option.value}
               type="button"
-              size="sm"
-              variant={processType === option.value ? "default" : "outline"}
+              className={`whitespace-nowrap border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${
+                processType === option.value
+                  ? "border-teal-700 text-gray-950 dark:border-teal-400 dark:text-white"
+                  : "border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+              }`}
               onClick={() => setProcessType(option.value)}
             >
               {option.label}
-            </Button>
+            </button>
           ))}
-        </div>
+        </nav>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card className="rounded-md">
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Total</CardTitle></CardHeader>
-            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{stats.total}</div><Users className="h-5 w-5 text-slate-400" /></CardContent>
-          </Card>
-          <Card className="rounded-md">
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">In progress</CardTitle></CardHeader>
-            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{stats.inProgress}</div><ArrowRight className="h-5 w-5 text-blue-500" /></CardContent>
-          </Card>
-          <Card className="rounded-md">
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Sent packets</CardTitle></CardHeader>
-            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{stats.sent}</div><Send className="h-5 w-5 text-violet-500" /></CardContent>
-          </Card>
-          <Card className="rounded-md">
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Completed</CardTitle></CardHeader>
-            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{stats.completed}</div><FileSignature className="h-5 w-5 text-emerald-500" /></CardContent>
-          </Card>
-        </div>
-
-        <div className="mt-4 grid gap-4 md:grid-cols-4">
-          <Card className="rounded-md">
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Pending HR review</CardTitle></CardHeader>
-            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{dashboard?.pendingApprovals || 0}</div><ShieldCheck className="h-5 w-5 text-amber-600" /></CardContent>
-          </Card>
-          <Card className="rounded-md">
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Form reviews</CardTitle></CardHeader>
-            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{dashboard?.formReviews || 0}</div><FileText className="h-5 w-5 text-slate-400" /></CardContent>
-          </Card>
-          <Card className="rounded-md">
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Overdue items</CardTitle></CardHeader>
-            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{dashboard?.overdueItems || 0}</div><Clock className="h-5 w-5 text-rose-600" /></CardContent>
-          </Card>
-          <Card className="rounded-md">
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Handoff failures</CardTitle></CardHeader>
-            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{dashboard?.handoffFailures || 0}</div><ArrowRight className="h-5 w-5 text-slate-400" /></CardContent>
-          </Card>
-        </div>
+        <section className="mt-6 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" aria-label="Transition summary">
+          <dl className="grid divide-y divide-gray-200 dark:divide-gray-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+            <div className="p-4">
+              <dt className="text-sm text-gray-500 dark:text-gray-400">Active transitions</dt>
+              <dd className="mt-2 flex items-center justify-between text-2xl font-semibold">
+                {loading ? "—" : stats.active}
+                <ArrowRight className="h-5 w-5 text-teal-700 dark:text-teal-400" />
+              </dd>
+            </div>
+            <div className="p-4">
+              <dt className="text-sm text-gray-500 dark:text-gray-400">Packets awaiting signatures</dt>
+              <dd className="mt-2 flex items-center justify-between text-2xl font-semibold">
+                {loading ? "—" : stats.sentPackets}
+                <Send className="h-5 w-5 text-gray-400" />
+              </dd>
+            </div>
+            <div className="p-4">
+              <dt className="text-sm text-gray-500 dark:text-gray-400">Completed</dt>
+              <dd className="mt-2 flex items-center justify-between text-2xl font-semibold">
+                {loading ? "—" : stats.completed}
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </dd>
+            </div>
+            <div className="p-4">
+              <dt className="text-sm text-gray-500 dark:text-gray-400">Completion rate</dt>
+              <dd className="mt-2 text-2xl font-semibold">{loading ? "—" : `${stats.completionRate}%`}</dd>
+            </div>
+          </dl>
+        </section>
 
         <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="rounded-md border bg-white">
-            <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+          <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex flex-col gap-3 border-b border-gray-200 p-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-slate-950">Transition records</h2>
-                <p className="text-sm text-slate-500">Open a candidate transition workspace to manage packets and status.</p>
+                <h2 className="font-semibold">Transition records</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Open a workspace to manage its forms, packets, and handoff.</p>
               </div>
-              <div className="relative sm:w-80">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search candidate" className="pl-9" />
+              <div className="relative sm:w-72">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people" className="pl-9" />
               </div>
             </div>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Candidate</TableHead>
+                    <TableHead>Person</TableHead>
                     <TableHead>Process</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Envelopes</TableHead>
+                    <TableHead>Packets</TableHead>
                     <TableHead>Started</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={6} className="py-10 text-center text-slate-500">Loading transition records...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="py-12 text-center text-gray-500">Loading transition records…</TableCell></TableRow>
                   ) : records.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="py-10 text-center text-slate-500">No transition records found.</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-12 text-center">
+                        <div className="font-medium">No transitions found</div>
+                        <div className="mt-1 text-sm text-gray-500">Start a process or change the current filters.</div>
+                      </TableCell>
+                    </TableRow>
                   ) : records.map((record) => (
                     <TableRow key={record._id}>
                       <TableCell>
-                        <div className="font-medium text-slate-950">{candidateName(record)}</div>
-                        <div className="text-xs text-slate-500">{record.candidate?.email}</div>
+                        <div className="font-medium">{candidateName(record)}</div>
+                        <div className="text-xs text-gray-500">{record.candidate?.email}</div>
                       </TableCell>
                       <TableCell>{processLabel(record)}</TableCell>
                       <TableCell><OnboardingStatusBadge status={record.status} /></TableCell>
@@ -216,19 +279,47 @@ export default function OnboardingDashboardPage() {
             </div>
           </section>
 
-          <section className="rounded-md border bg-white p-4">
-            <h2 className="text-lg font-semibold text-slate-950">Recent activity</h2>
-            <div className="mt-4 space-y-3">
-              {events.length === 0 ? (
-                <p className="text-sm text-slate-500">No transition activity yet.</p>
-              ) : events.map((event) => (
-                <div key={event._id} className="border-b pb-3 last:border-0">
-                  <div className="text-sm font-medium text-slate-900">{event.action.replace(/_/g, " ")}</div>
-                  <div className="text-xs text-slate-500">{event.actorEmail || event.actorType} - {new Date(event.createdAt).toLocaleString()}</div>
+          <div className="space-y-5">
+            <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+              <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-800">
+                <div>
+                  <h2 className="font-semibold">Needs attention</h2>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Work that may block a transition.</p>
                 </div>
-              ))}
-            </div>
-          </section>
+                <Button asChild size="sm" variant="ghost">
+                  <Link href="/people-transitions/tasks">View tasks</Link>
+                </Button>
+              </div>
+              <div className="divide-y divide-gray-200 dark:divide-gray-800">
+                {attentionItems.map((item) => (
+                  <Link key={item.label} href="/people-transitions/tasks" className="flex items-center gap-3 p-4 hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                    <item.icon className={`h-5 w-5 shrink-0 ${item.iconClass}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium">{item.label}</div>
+                      <div className="truncate text-xs text-gray-500 dark:text-gray-400">{item.detail}</div>
+                    </div>
+                    <strong className="text-lg">{loading ? "—" : item.value}</strong>
+                  </Link>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+              <h2 className="font-semibold">Recent transition activity</h2>
+              <div className="mt-4 space-y-4">
+                {events.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No transition activity yet.</p>
+                ) : events.slice(0, 5).map((event) => (
+                  <div key={event._id} className="border-b border-gray-200 pb-4 last:border-0 last:pb-0 dark:border-gray-800">
+                    <div className="text-sm font-medium">{formatEventAction(event.action)}</div>
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {event.actorEmail || event.actorType} · {new Date(event.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
         </div>
       </div>
     </div>

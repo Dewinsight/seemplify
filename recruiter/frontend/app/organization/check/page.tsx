@@ -37,10 +37,13 @@ export default function OrganizationCheckPage() {
 
       try {
         if (organizations.length > 0 && currentOrganization) {
+          const workspace = new URLSearchParams(window.location.search).get('workspace');
+          const destination = workspace === 'people-transitions' ? '/people-transitions' : '/dashboard';
+          const workspaceName = workspace === 'people-transitions' ? 'People Transitions' : 'your Recruiter dashboard';
           sessionStorage.removeItem(IDP_REDIRECT_GUARD_KEY);
-          setLoadingMessage('Opening your Recruiter dashboard…');
+          setLoadingMessage(`Opening ${workspaceName}…`);
           await new Promise((resolve) => setTimeout(resolve, 500));
-          router.push('/dashboard');
+          router.push(destination);
           return;
         }
 

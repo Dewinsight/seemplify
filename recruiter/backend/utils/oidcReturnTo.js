@@ -20,6 +20,8 @@ const DEVELOPMENT_FRONTEND_ORIGINS = [
   'http://127.0.0.1:5173'
 ];
 
+const OIDC_WORKSPACES = new Set(['people-transitions']);
+
 function parseHttpOrigin(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
 
@@ -82,9 +84,19 @@ function normalizeOidcReturnTo(value, env = process.env) {
   return allowedOrigins.has(origin) ? origin : null;
 }
 
-function getOidcCallbackTarget(value, env = process.env) {
+function normalizeOidcWorkspace(value) {
+  const workspace = typeof value === 'string' ? value.trim() : '';
+  return OIDC_WORKSPACES.has(workspace) ? workspace : null;
+}
+
+function getOidcCallbackTarget(value, env = process.env, workspace = '') {
   const origin = normalizeOidcReturnTo(value, env);
-  return origin ? `${origin}/oidc/callback` : null;
+  if (!origin) return null;
+
+  const normalizedWorkspace = normalizeOidcWorkspace(workspace);
+  return normalizedWorkspace
+    ? `${origin}/oidc/callback?workspace=${encodeURIComponent(normalizedWorkspace)}`
+    : `${origin}/oidc/callback`;
 }
 
 module.exports = {
@@ -92,5 +104,6 @@ module.exports = {
   DEVELOPMENT_FRONTEND_ORIGINS,
   getAllowedOidcReturnOrigins,
   getOidcCallbackTarget,
-  normalizeOidcReturnTo
+  normalizeOidcReturnTo,
+  normalizeOidcWorkspace
 };

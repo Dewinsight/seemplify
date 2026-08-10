@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 
 const {
   getOidcCallbackTarget,
-  normalizeOidcReturnTo
+  normalizeOidcReturnTo,
+  normalizeOidcWorkspace
 } = require('../utils/oidcReturnTo');
 
 const productionEnv = { NODE_ENV: 'production' };
@@ -44,6 +45,24 @@ test('accepts the frontend URL used by the App Hub launch configuration', () => 
   assert.equal(
     getOidcCallbackTarget('https://recruiter.workspace.example', env),
     'https://recruiter.workspace.example/oidc/callback'
+  );
+});
+
+test('carries only known workspace destinations into the signed callback flow', () => {
+  assert.equal(normalizeOidcWorkspace('people-transitions'), 'people-transitions');
+  assert.equal(normalizeOidcWorkspace('dashboard'), null);
+  assert.equal(normalizeOidcWorkspace('https://attacker.example'), null);
+  assert.equal(
+    getOidcCallbackTarget(
+      'https://app.seemplifyai.com',
+      productionEnv,
+      'people-transitions'
+    ),
+    'https://app.seemplifyai.com/oidc/callback?workspace=people-transitions'
+  );
+  assert.equal(
+    getOidcCallbackTarget('https://app.seemplifyai.com', productionEnv, 'dashboard'),
+    'https://app.seemplifyai.com/oidc/callback'
   );
 });
 

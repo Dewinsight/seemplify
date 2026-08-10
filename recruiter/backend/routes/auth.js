@@ -14,7 +14,8 @@ const {
 } = require('../utils/organizationIdentitySync');
 const {
   getOidcCallbackTarget,
-  normalizeOidcReturnTo
+  normalizeOidcReturnTo,
+  normalizeOidcWorkspace
 } = require('../utils/oidcReturnTo');
 const {
   canUseLocalCredentials,
@@ -538,6 +539,7 @@ router.get('/oidc/start', async (req, res) => {
       random: generators.state(),
       returnTo: returnTo,
       issuerUrl: issuerUrl,
+      workspace: normalizeOidcWorkspace(req.query.workspace) || undefined,
     };
 
     // Sign state with JWT for security
@@ -978,7 +980,7 @@ router.get('/oidc/callback', async (req, res) => {
       return res.status(400).json({ msg: 'Missing returnTo in state' });
     }
 
-    const target = getOidcCallbackTarget(returnTo);
+    const target = getOidcCallbackTarget(returnTo, process.env, statePayload.workspace);
     if (!target) {
       console.warn('Rejected untrusted OIDC returnTo from signed state:', { returnTo });
       return res.status(400).json({ msg: 'Invalid returnTo URL' });

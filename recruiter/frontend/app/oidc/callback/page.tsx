@@ -30,6 +30,11 @@ export default function OidcCallbackPage() {
         const token = callbackToken || getCookie('dev_jwt') || ''
         const refreshToken = hashParams.get('refreshToken') || searchParams.get('refreshToken') || getCookie('dev_refreshToken') || ''
         const expiresIn = hashParams.get('expiresIn') || searchParams.get('expiresIn') || getCookie('dev_expiresIn') || '10m'
+        const workspace = searchParams.get('workspace') === 'people-transitions' ? 'people-transitions' : ''
+        const organizationCheckUrl = workspace
+          ? `/organization/check?workspace=${encodeURIComponent(workspace)}`
+          : '/organization/check'
+        const workspaceLabel = workspace ? 'People Transitions' : 'your Recruiter workspace'
 
         if (token) {
           if (callbackToken) markCentralSessionEstablished()
@@ -45,14 +50,14 @@ export default function OidcCallbackPage() {
           document.cookie = 'dev_jwt=; Max-Age=0; path=/'
           document.cookie = 'dev_refreshToken=; Max-Age=0; path=/'
           document.cookie = 'dev_expiresIn=; Max-Age=0; path=/'
-          setStatus('Opening your Recruiter workspace…')
-          window.location.assign('/organization/check')
+          setStatus(`Opening ${workspaceLabel}…`)
+          window.location.assign(organizationCheckUrl)
           return
         }
 
         if (tokenManager.getAccessToken()) {
-          setStatus('Opening your Recruiter workspace…')
-          window.location.assign('/organization/check')
+          setStatus(`Opening ${workspaceLabel}…`)
+          window.location.assign(organizationCheckUrl)
           return
         }
 
