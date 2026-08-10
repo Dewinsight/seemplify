@@ -47,6 +47,12 @@
   min-width: 0;
 }
 
+.recruiter-topbar__logo-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .recruiter-topbar__logo > div > div:first-child {
   box-shadow: none;
   transition: none;

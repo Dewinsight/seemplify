@@ -277,9 +277,11 @@ const TopNavbar = () => {
           </div>
           <div className="recruiter-topbar__logo-wrap">
             <Logo size="sm" className="recruiter-topbar__logo" />
-            <span className="hidden border-l border-border pl-3 text-sm font-semibold text-foreground sm:inline">
-              {isPeopleTransitionsWorkspace ? "People Transitions" : "Recruiter"}
-            </span>
+            {isPeopleTransitionsWorkspace && (
+              <span className="hidden border-l border-border pl-3 text-sm font-semibold text-foreground sm:inline">
+                People Transitions
+              </span>
+            )}
           </div>
         </div>
 
