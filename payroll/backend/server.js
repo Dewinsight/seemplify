@@ -155,9 +155,24 @@ async function migratePayrollIndexes() {
   if (runIndexes.some((index) => index.name === 'organizationId_1_activePeriodKey_1')) {
     await PayrollRun.collection.dropIndex('organizationId_1_activePeriodKey_1');
   }
+  const targetRunIndexName = 'organizationId_1_employerEntityId_1_activePeriodKey_1';
+  const targetRunIndex = runIndexes.find((index) => index.name === targetRunIndexName);
+  const hasExpectedPartialFilter = targetRunIndex?.unique === true
+    && targetRunIndex?.partialFilterExpression?.employerEntityId?.$type === 'objectId'
+    && targetRunIndex?.partialFilterExpression?.activePeriodKey?.$type === 'string';
+  if (targetRunIndex && !hasExpectedPartialFilter) {
+    await PayrollRun.collection.dropIndex(targetRunIndexName);
+  }
   await PayrollRun.collection.createIndex(
     { organizationId: 1, employerEntityId: 1, activePeriodKey: 1 },
-    { unique: true, sparse: true, name: 'organizationId_1_employerEntityId_1_activePeriodKey_1' }
+    {
+      unique: true,
+      partialFilterExpression: {
+        employerEntityId: { $type: 'objectId' },
+        activePeriodKey: { $type: 'string' },
+      },
+      name: targetRunIndexName,
+    }
   );
   await PayrollSequence.init();
   // Fail readiness rather than serve nondeterministic FX history if an

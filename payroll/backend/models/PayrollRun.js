@@ -278,7 +278,16 @@ const PayrollRunSchema = new Schema({
 PayrollRunSchema.index({ organizationId: 1, 'payPeriod.year': -1, 'payPeriod.month': -1 });
 PayrollRunSchema.index({ organizationId: 1, status: 1 });
 PayrollRunSchema.index({ organizationId: 1, runNumber: 1 }, { unique: true });
-PayrollRunSchema.index({ organizationId: 1, employerEntityId: 1, activePeriodKey: 1 }, { unique: true, sparse: true });
+PayrollRunSchema.index(
+  { organizationId: 1, employerEntityId: 1, activePeriodKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      employerEntityId: { $type: 'objectId' },
+      activePeriodKey: { $type: 'string' },
+    },
+  }
+);
 
 PayrollRunSchema.pre('validate', function setActivePeriodKey(next) {
   if (this.status === 'cancelled') {
