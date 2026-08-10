@@ -7,6 +7,7 @@ const {
   requireAuth,
   requireOrganization,
   requireLeavePermission,
+  canApproveLeaveForUser,
   requireApprovalPermission,
   createLeaveRequestLimiter,
   approvalLimiter,
@@ -335,7 +336,18 @@ router.get('/:id', asyncHandler(async (req, res) => {
     }
   }
 
-  res.json({ request });
+  const userinfo = req.user?.userinfo || req.user;
+  const approvalCheck = request.status === 'pending'
+    ? await canApproveLeaveForUser(req.user.id, request.userId, request.organizationId, userinfo)
+    : { canApprove: false };
+
+  res.json({
+    request,
+    permissions: {
+      canApprove: Boolean(approvalCheck.canApprove),
+      canReject: Boolean(approvalCheck.canApprove),
+    },
+  });
 }));
 
 // Create leave request

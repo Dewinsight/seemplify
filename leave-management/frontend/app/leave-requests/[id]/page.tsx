@@ -32,6 +32,7 @@ import {
 import Link from 'next/link';
 
 type ActivityHistoryEntry = LeaveRequest['auditLog'][number];
+type RequestPermissions = { canApprove: boolean; canReject: boolean };
 
 function formatActivityTitle(action: string): string {
   const actionLabels: Record<string, string> = {
@@ -68,6 +69,7 @@ export default function LeaveRequestDetailPage() {
   const params = useParams();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [request, setRequest] = useState<LeaveRequest | null>(null);
+  const [permissions, setPermissions] = useState<RequestPermissions>({ canApprove: false, canReject: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -92,6 +94,7 @@ export default function LeaveRequestDetailPage() {
         setLoading(true);
         const response = await leaveRequestsApi.getById(requestId);
         setRequest(response.request);
+        setPermissions(response.permissions || { canApprove: false, canReject: false });
       } catch (err: any) {
         setError(err.response?.data?.error || 'Failed to load leave request');
       } finally {
@@ -123,6 +126,7 @@ export default function LeaveRequestDetailPage() {
       setActionLoading(true);
       const response = await leaveRequestsApi.approve(request._id);
       setRequest(response.request);
+      setPermissions({ canApprove: false, canReject: false });
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to approve request');
     } finally {
@@ -140,6 +144,7 @@ export default function LeaveRequestDetailPage() {
       setActionLoading(true);
       const response = await leaveRequestsApi.reject(request._id, rejectReason);
       setRequest(response.request);
+      setPermissions({ canApprove: false, canReject: false });
       setShowRejectDialog(false);
       setRejectReason('');
     } catch (err: any) {
@@ -154,7 +159,7 @@ export default function LeaveRequestDetailPage() {
       (request.status === 'approved' && request.approvedBy?.approvedAt &&
         (Date.now() - new Date(request.approvedBy.approvedAt).getTime()) < 24 * 60 * 60 * 1000));
 
-  const isApprover = request && request.assignedApprover?.userId === user?.id;
+  const canDecideRequest = request?.status === 'pending' && (permissions.canApprove || permissions.canReject);
 
   if (authLoading || loading) {
     return (
@@ -383,22 +388,22 @@ export default function LeaveRequestDetailPage() {
                 </Button>
               )}
 
-              {isApprover && request.status === 'pending' && (
+              {canDecideRequest && (
                 <>
                   <Button
                     variant="outline"
                     onClick={() => setShowRejectDialog(true)}
                     disabled={actionLoading}
-                    className="rounded-xl border-red-300 dark:border-red-500/40 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10"
+                    className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
                   >
                     Reject
                   </Button>
                   <Button
                     onClick={handleApprove}
                     disabled={actionLoading}
-                    className="rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
+                    className="bg-emerald-600 text-white hover:bg-emerald-700"
                   >
-                    Approve
+                    {actionLoading ? 'Approving…' : 'Approve'}
                   </Button>
                 </>
               )}
