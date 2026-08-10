@@ -10,7 +10,7 @@ import LeaveBalanceCard, { BalanceSummary } from '@/components/LeaveBalanceCard'
 import LeaveRequestCard from '@/components/LeaveRequestCard';
 import { leaveBalancesApi, leaveRequestsApi } from '@/lib/api';
 import { LeaveBalance, LeaveEntitlementAdjustment, LeaveRequest } from '@/types';
-import { formatDate } from '@/lib/utils';
+import { formatDate, getEntitlementAdjustmentLabel } from '@/lib/utils';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -133,7 +133,7 @@ export default function DashboardPage() {
             <div className="suite-panel divide-y" style={{ borderColor: 'var(--suite-line)' }}>
               {entitlementHistory.map((entry) => (
                 <div key={entry._id || `${entry.leaveTypeKey}-${entry.createdAt}`} className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
-                  <div><p className="text-sm font-semibold">{entry.leaveTypeName}: {entry.previousTotal} → {entry.newTotal} days</p><p className="mt-1 text-sm" style={{ color: 'var(--suite-muted)' }}>{entry.reason}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-subtle)' }}>Changed by {entry.actorName || entry.actorEmail || 'Administrator'}</p></div>
+                  <div><p className="text-sm font-semibold">{entry.leaveTypeName}: {getEntitlementAdjustmentLabel(entry)} · {entry.previousTotal} → {entry.newTotal} days</p><p className="mt-1 text-sm" style={{ color: 'var(--suite-muted)' }}>{entry.reason}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-subtle)' }}>Changed by {entry.actorName || entry.actorEmail || 'Administrator'}</p></div>
                   <time className="text-xs" style={{ color: 'var(--suite-muted)' }}>{formatDate(entry.createdAt, 'MMM d, yyyy')}</time>
                 </div>
               ))}

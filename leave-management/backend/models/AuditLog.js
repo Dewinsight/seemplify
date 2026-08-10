@@ -13,6 +13,7 @@ const auditLogSchema = new mongoose.Schema({
       'leave_request_cancelled',
       'leave_balance_updated',
       'leave_balance_accrued',
+      'leave_balances_initialized',
       'leave_entitlement_adjusted',
       'leave_type_created',
       'leave_type_updated',

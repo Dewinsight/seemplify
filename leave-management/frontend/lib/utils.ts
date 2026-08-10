@@ -74,3 +74,14 @@ export function getStatusLabel(status: string): string {
 export function pluralize(count: number, singular: string, plural?: string): string {
   return count === 1 ? singular : plural || `${singular}s`;
 }
+
+export function getEntitlementAdjustmentLabel(adjustment: {
+  operation?: 'add' | 'deduct' | 'set' | 'reset';
+  delta: number;
+}) {
+  const operation = adjustment.operation || (adjustment.delta > 0 ? 'add' : adjustment.delta < 0 ? 'deduct' : 'set');
+  if (operation === 'add') return `Added ${Math.abs(adjustment.delta)} days`;
+  if (operation === 'deduct') return `Deducted ${Math.abs(adjustment.delta)} days`;
+  if (operation === 'reset') return 'Reset to organization default';
+  return 'Set exact total';
+}

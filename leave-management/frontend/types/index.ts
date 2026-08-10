@@ -203,6 +203,7 @@ export interface LeaveEntitlementAdjustment {
   year: number;
   leaveTypeKey: string;
   leaveTypeName: string;
+  operation?: 'add' | 'deduct' | 'set' | 'reset';
   previousTotal: number;
   newTotal: number;
   delta: number;

@@ -193,6 +193,7 @@ export const leaveBalancesApi = {
     year: number;
     total?: number;
     delta?: number;
+    operation?: 'add' | 'deduct' | 'set' | 'reset';
     reason: string;
     resetToPolicy?: boolean;
     expectedVersion?: number;

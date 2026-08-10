@@ -8,6 +8,12 @@ const leaveEntitlementAdjustmentSchema = new mongoose.Schema({
   year: { type: Number, required: true, index: true },
   leaveTypeKey: { type: String, required: true, index: true },
   leaveTypeName: { type: String, required: true },
+  operation: {
+    type: String,
+    enum: ['add', 'deduct', 'set', 'reset'],
+    required: true,
+    default: 'set',
+  },
   previousTotal: { type: Number, required: true },
   newTotal: { type: Number, required: true },
   delta: { type: Number, required: true },

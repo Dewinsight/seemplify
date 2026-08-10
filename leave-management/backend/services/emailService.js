@@ -121,11 +121,13 @@ async function sendLeaveRequestCancelled(request) {
 
 async function sendLeaveEntitlementAdjusted(adjustment) {
   if (!adjustment.userEmail) return { success: false, reason: 'Employee email unavailable' };
-  const change = adjustment.delta > 0
-    ? `${adjustment.delta} day(s) added`
-    : adjustment.delta < 0
-      ? `${Math.abs(adjustment.delta)} day(s) removed`
-      : 'entitlement reset';
+  const changes = {
+    add: `${adjustment.delta} day(s) added`,
+    deduct: `${Math.abs(adjustment.delta)} day(s) deducted`,
+    set: `total set from ${adjustment.previousTotal} to ${adjustment.newTotal} day(s)`,
+    reset: `reset to the organization default of ${adjustment.newTotal} day(s)`,
+  };
+  const change = changes[adjustment.operation] || `total changed from ${adjustment.previousTotal} to ${adjustment.newTotal} day(s)`;
   const html = `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
     <h2>Your leave entitlement changed</h2>
     <p>Hello ${escapeHtml(adjustment.userName || 'there')},</p>

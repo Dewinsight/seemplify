@@ -45,11 +45,12 @@ describe('leave administration API', () => {
     app.use(express.json());
     app.use((req, _res, next) => {
       const organizationId = String(req.get('x-test-organization') || 'org-a');
+      const employeeRequest = req.get('x-test-user') === 'employee';
       const testUser = {
-        id: `admin-${organizationId}`,
-        name: `Admin ${organizationId}`,
-        email: `admin-${organizationId}@example.com`,
-        organizations: [{ id: organizationId, name: organizationId, role: 'admin', appPermissions: { 'leave-management': ['*'] } }],
+        id: employeeRequest ? 'employee-a' : `admin-${organizationId}`,
+        name: employeeRequest ? 'Employee A' : `Admin ${organizationId}`,
+        email: employeeRequest ? 'a@example.com' : `admin-${organizationId}@example.com`,
+        organizations: [{ id: organizationId, name: organizationId, role: employeeRequest ? 'staff' : 'admin', appPermissions: { 'leave-management': employeeRequest ? ['request_leave'] : ['*'] } }],
         teams: [],
         currentOrganization: { id: organizationId, name: organizationId },
       };
@@ -102,7 +103,7 @@ describe('leave administration API', () => {
     expect(logs).toHaveLength(1);
   });
 
-  test('applies an employee override with an immutable adjustment and organization audit log', async () => {
+  test('adds, deducts, and resets an entitlement with employee-visible immutable audit history', async () => {
     await request(app)
       .post('/api/leave-types')
       .set('x-test-organization', 'org-a')
@@ -111,21 +112,59 @@ describe('leave administration API', () => {
     const response = await request(app)
       .patch('/api/leave-balances/user/employee-a/entitlements/study-leave')
       .set('x-test-organization', 'org-a')
-      .send({ year: 2026, delta: 2, reason: 'Approved examination period', expectedVersion: 0 });
+      .send({ year: 2026, operation: 'add', delta: 2, reason: 'Approved examination period', expectedVersion: 0 });
 
     expect(response.status).toBe(200);
     const entitlement = response.body.balance.entitlements.find((item) => item.leaveTypeKey === 'study-leave');
     expect(entitlement).toMatchObject({ total: 10, policyDefault: 8, source: 'override' });
+    const deductResponse = await request(app)
+      .patch('/api/leave-balances/user/employee-a/entitlements/study-leave')
+      .set('x-test-organization', 'org-a')
+      .send({ year: 2026, operation: 'deduct', delta: -1, reason: 'Corrected allocation', expectedVersion: 1 });
+    expect(deductResponse.status).toBe(200);
+    expect(deductResponse.body.balance.entitlements.find((item) => item.leaveTypeKey === 'study-leave').total).toBe(9);
+
+    const resetResponse = await request(app)
+      .patch('/api/leave-balances/user/employee-a/entitlements/study-leave')
+      .set('x-test-organization', 'org-a')
+      .send({ year: 2026, operation: 'reset', resetToPolicy: true, reason: 'Return to standard policy', expectedVersion: 2 });
+    expect(resetResponse.status).toBe(200);
+    expect(resetResponse.body.balance.entitlements.find((item) => item.leaveTypeKey === 'study-leave')).toMatchObject({
+      total: 8, source: 'policy', policyDefault: 8,
+    });
+
+    const employeeHistory = await request(app)
+      .get('/api/leave-balances/me/history?year=2026')
+      .set('x-test-organization', 'org-a')
+      .set('x-test-user', 'employee');
+    expect(employeeHistory.status).toBe(200);
+    expect(employeeHistory.body.adjustments.map((item) => item.operation)).toEqual(['reset', 'deduct', 'add']);
+
     const [balance, adjustments, logs] = await Promise.all([
       LeaveBalance.findOne({ organizationId: 'org-a', userId: 'employee-a', year: 2026 }),
-      LeaveEntitlementAdjustment.find({ organizationId: 'org-a', userId: 'employee-a' }),
-      AuditLog.find({ organizationId: 'org-a', action: 'leave_entitlement_adjusted' }),
+      LeaveEntitlementAdjustment.find({ organizationId: 'org-a', userId: 'employee-a' }).sort({ _id: 1 }),
+      AuditLog.find({ organizationId: 'org-a', action: 'leave_entitlement_adjusted' }).sort({ _id: 1 }),
     ]);
-    expect(balance.getEntitlement('study-leave').total).toBe(10);
-    expect(adjustments).toHaveLength(1);
+    expect(balance.getEntitlement('study-leave')).toMatchObject({ total: 8, source: 'policy' });
+    expect(adjustments).toHaveLength(3);
+    expect(adjustments.map((item) => item.operation)).toEqual(['add', 'deduct', 'reset']);
     expect(adjustments[0]).toMatchObject({ previousTotal: 8, newTotal: 10, delta: 2, reason: 'Approved examination period' });
-    expect(logs).toHaveLength(1);
+    expect(logs).toHaveLength(3);
+    expect(logs.map((item) => item.metadata.operation)).toEqual(['add', 'deduct', 'reset']);
     expect(logs[0].metadata.targetUserId).toBe('employee-a');
+  });
+
+  test('records bulk balance initialization in the organization audit log', async () => {
+    const response = await request(app)
+      .post('/api/leave-balances/initialize')
+      .set('x-test-organization', 'org-a')
+      .send({ year: 2026 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.results).toMatchObject({ created: 1, existing: 0, errors: [] });
+    const log = await AuditLog.findOne({ organizationId: 'org-a', action: 'leave_balances_initialized' });
+    expect(log).toMatchObject({ performedBy: 'admin-org-a', resourceId: 'org-a:2026' });
+    expect(log.metadata).toMatchObject({ year: 2026, created: 1, existing: 0 });
   });
 
   test('rejects cross-organization targets and changes without a reason', async () => {

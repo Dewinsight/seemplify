@@ -14,7 +14,7 @@ const {
   asyncHandler,
   AppError,
 } = require('../middleware');
-const { logLeaveEntitlementAdjusted } = require('../services/auditService');
+const { logLeaveEntitlementAdjusted, logLeaveBalancesInitialized } = require('../services/auditService');
 const emailService = require('../services/emailService');
 const { fetchOrganizationRoster, findRosterMember } = require('../services/rosterService');
 const {
@@ -177,6 +177,9 @@ router.post('/initialize', balanceUpdateLimiter, requireLeavePermission('manage_
       results.errors.push({ userId: member.userId, error: error.message });
     }
   }
+  await logLeaveBalancesInitialized({
+    organizationId: req.organizationId, year, results, user: req.user, req,
+  });
   res.json({ success: true, results });
 }));
 
@@ -231,11 +234,26 @@ router.patch('/user/:userId/entitlements/:leaveTypeKey',
       const previousState = entitlement.toObject ? entitlement.toObject() : { ...entitlement };
       const previousTotal = Number(entitlement.total || 0);
       const resetToPolicy = req.body.resetToPolicy === true;
+      const hasTotal = req.body.total !== undefined;
+      const delta = Number(req.body.delta);
+      const operation = resetToPolicy
+        ? 'reset'
+        : hasTotal
+          ? 'set'
+          : delta > 0
+            ? 'add'
+            : 'deduct';
+      if (!resetToPolicy && !hasTotal && (!Number.isFinite(delta) || delta === 0)) {
+        throw new AppError('Days to add or deduct must be greater than zero', 400, 'INVALID_DELTA');
+      }
+      if (req.body.operation !== undefined && req.body.operation !== operation) {
+        throw new AppError('The requested operation does not match the entitlement change', 400, 'INVALID_OPERATION');
+      }
       const requestedTotal = resetToPolicy
         ? definition.defaultDays
-        : req.body.total !== undefined
+        : hasTotal
           ? Number(req.body.total)
-          : previousTotal + Number(req.body.delta);
+          : previousTotal + delta;
       if (!Number.isFinite(requestedTotal) || requestedTotal < 0 || requestedTotal > 3650) {
         throw new AppError('Entitlement total must be between 0 and 3650 days', 400, 'INVALID_TOTAL');
       }
@@ -261,6 +279,7 @@ router.patch('/user/:userId/entitlements/:leaveTypeKey',
         year,
         leaveTypeKey: key,
         leaveTypeName: definition.name,
+        operation,
         previousTotal,
         newTotal: requestedTotal,
         delta: requestedTotal - previousTotal,

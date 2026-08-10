@@ -65,6 +65,13 @@ async function logLeaveTypeChanged({ action, policy, leaveType, user, req, previ
 }
 
 async function logLeaveEntitlementAdjusted({ balance, adjustment, user, req, previousState, session }) {
+  const operationLabels = {
+    add: `Added ${adjustment.delta} day(s) to`,
+    deduct: `Deducted ${Math.abs(adjustment.delta)} day(s) from`,
+    set: 'Set the total for',
+    reset: 'Reset',
+  };
+  const operationLabel = operationLabels[adjustment.operation] || 'Changed';
   return logAudit({
     action: 'leave_entitlement_adjusted',
     resourceType: 'LeaveEntitlement',
@@ -73,7 +80,7 @@ async function logLeaveEntitlementAdjusted({ balance, adjustment, user, req, pre
     performedBy: user.id,
     performedByName: user.name,
     performedByEmail: user.email,
-    details: `Changed ${adjustment.leaveTypeName} entitlement for ${balance.userName || balance.userEmail}`,
+    details: `${operationLabel} ${adjustment.leaveTypeName} entitlement for ${balance.userName || balance.userEmail}`,
     metadata: {
       targetUserId: balance.userId,
       targetUserName: balance.userName,
@@ -81,6 +88,7 @@ async function logLeaveEntitlementAdjusted({ balance, adjustment, user, req, pre
       year: balance.year,
       leaveTypeKey: adjustment.leaveTypeKey,
       leaveTypeName: adjustment.leaveTypeName,
+      operation: adjustment.operation,
       previousTotal: adjustment.previousTotal,
       newTotal: adjustment.newTotal,
       delta: adjustment.delta,
@@ -91,6 +99,22 @@ async function logLeaveEntitlementAdjusted({ balance, adjustment, user, req, pre
     newState: adjustment,
     required: true,
     session,
+  });
+}
+
+async function logLeaveBalancesInitialized({ organizationId, year, results, user, req }) {
+  return logAudit({
+    action: 'leave_balances_initialized',
+    resourceType: 'LeaveBalance',
+    resourceId: `${organizationId}:${year}`,
+    organizationId,
+    performedBy: user.id,
+    performedByName: user.name,
+    performedByEmail: user.email,
+    details: `Initialized ${year} leave balances: ${results.created} created, ${results.existing} already existed`,
+    metadata: { year, ...results },
+    req,
+    required: true,
   });
 }
 
@@ -222,6 +246,7 @@ async function logLeavePolicyUpdated(policy, user, req, previousPolicy) {
     req,
     previousState: previousPolicy,
     newState: policy.toObject(),
+    required: true,
   });
 }
 
@@ -271,4 +296,5 @@ module.exports = {
   logHubLaunch,
   logLeaveTypeChanged,
   logLeaveEntitlementAdjusted,
+  logLeaveBalancesInitialized,
 };
