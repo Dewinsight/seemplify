@@ -442,6 +442,10 @@ function PublicAIInterviewExperience() {
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
+  const handleChatgptReady = useCallback(() => {
+    setChatgptReady(true);
+  }, []);
+
   const disconnectChatgpt = useCallback(async () => {
     if (disconnectingChatgpt) return;
     setDisconnectingChatgpt(true);
@@ -1783,6 +1787,24 @@ function PublicAIInterviewExperience() {
     <main className="min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.10),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.10),transparent_30%),linear-gradient(135deg,#f8fafc_0%,#eef6ff_54%,#f6f7fb_100%)]">
       <audio ref={ttsAudioRef} preload="auto" className="hidden" />
       {renderProctoringModal()}
+      {session.status !== "in_progress" && !chatgptReady && (
+        <Dialog open>
+          <DialogContent
+            showCloseButton={false}
+            className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[500px] overflow-x-hidden overflow-y-auto border-0 bg-transparent p-0 shadow-none outline-none"
+            onEscapeKeyDown={(event) => event.preventDefault()}
+            onInteractOutside={(event) => event.preventDefault()}
+          >
+            <DialogHeader className="sr-only">
+              <DialogTitle>Connect ChatGPT to begin the interview</DialogTitle>
+              <DialogDescription>
+                Sign in to the ChatGPT account that will run this interview.
+              </DialogDescription>
+            </DialogHeader>
+            <CandidateChatgptGate token={token} onReady={handleChatgptReady} />
+          </DialogContent>
+        </Dialog>
+      )}
       <div
         ref={layoutRef}
         style={layoutStyle}
@@ -2267,8 +2289,14 @@ function PublicAIInterviewExperience() {
                         Start Interview
                       </Button>
                     ) : (
-                      <div className="mt-5">
-                        <CandidateChatgptGate token={token} onReady={() => setChatgptReady(true)} />
+                      <div className="mt-5 rounded-lg border border-white/15 bg-white/5 p-4" aria-live="polite">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                          <Loader2 className="h-4 w-4 animate-spin text-emerald-300" />
+                          ChatGPT sign-in required
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-slate-300">
+                          Complete the secure sign-in window to unlock the interview.
+                        </p>
                       </div>
                     )}
                     <p className="mt-3 text-xs leading-5 text-slate-400">

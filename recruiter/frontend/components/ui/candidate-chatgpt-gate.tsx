@@ -164,25 +164,25 @@ export function CandidateChatgptGate({
 
   return (
     <div
-      className="mx-auto w-full max-w-[440px] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-xl dark:border-white/10 dark:bg-[#171717]"
+      className="mx-auto w-full max-w-[500px] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950 shadow-2xl shadow-slate-950/20"
       data-testid="candidate-chatgpt-gate"
     >
-      <div className="flex flex-col items-center px-7 pb-6 pt-9 text-center">
-        <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0d0d0d] text-white shadow-sm ring-1 ring-black/5 dark:bg-white dark:text-[#0d0d0d] dark:ring-white/10">
-          <OpenAILogo className="h-8 w-8" />
+      <div className="flex flex-col items-center px-5 pb-5 pt-7 text-center sm:px-7 sm:pt-8">
+        <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm ring-1 ring-black/5">
+          <OpenAILogo className="h-7 w-7" />
         </span>
-        <h2 className="text-[22px] font-semibold leading-tight tracking-[-0.01em]">
+        <h2 className="text-xl font-semibold leading-tight tracking-[-0.01em] sm:text-[22px]">
           Connect ChatGPT to begin
         </h2>
-        <p className="mx-auto mt-2 max-w-[20rem] text-[14.5px] leading-relaxed text-muted-foreground">
-          This interview is conducted by AI running on <strong className="font-medium text-foreground">your
+        <p className="mx-auto mt-2 max-w-[24rem] text-sm leading-6 text-slate-600">
+          This interview is conducted by AI running on <strong className="font-semibold text-slate-950">your
           own ChatGPT account</strong>, so your answers are processed on your plan rather than ours.
         </p>
       </div>
 
-      <div className="space-y-3 px-7">
-        <p className="flex gap-2.5 rounded-xl border border-black/10 px-3.5 py-3 text-[12.5px] leading-relaxed text-muted-foreground dark:border-white/10">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="space-y-3 px-5 sm:px-7">
+        <p className="flex gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-slate-600">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
           <span>
             The questions you are asked and the answers you give are processed by OpenAI on your
             account. Voice audio is handled separately by the platform and is not sent to your account.
@@ -192,22 +192,22 @@ export function CandidateChatgptGate({
 
         {connected && (
           <div
-            className="rounded-xl border border-black/10 px-3.5 py-3 dark:border-white/10"
+            className="rounded-lg border border-slate-200 px-3.5 py-3"
             data-testid="candidate-chatgpt-connected"
           >
             <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0d0d0d] text-sm font-medium text-white dark:bg-white dark:text-[#0d0d0d]">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-medium text-white">
                 {accountName.charAt(0).toUpperCase()}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{accountName}</span>
-                <span className="block text-xs text-muted-foreground">
+                <span className="block text-xs text-slate-500">
                   {account?.planType ? `ChatGPT ${account.planType}` : "Signed in with OpenAI"}
                 </span>
               </span>
-              <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <Check className="h-4 w-4 shrink-0 text-emerald-600" />
             </div>
-            <label className="mt-3 flex items-start gap-2.5 border-t border-black/5 pt-3 text-[12.5px] leading-relaxed dark:border-white/5">
+            <label className="mt-3 flex items-start gap-2.5 border-t border-slate-100 pt-3 text-[12.5px] leading-relaxed text-slate-700">
               <Checkbox
                 className="mt-0.5"
                 checked={Boolean(account?.dataSharingAcknowledgedAt)}
@@ -221,7 +221,7 @@ export function CandidateChatgptGate({
               type="button"
               variant="ghost"
               disabled={busy}
-              className="mt-2 h-8 w-full text-xs font-normal text-muted-foreground hover:text-foreground"
+              className="mt-2 h-8 w-full text-xs font-normal text-slate-500 hover:bg-slate-50 hover:text-slate-950"
               onClick={() => void disconnect()}
             >
               {working === "disconnect" && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
@@ -232,32 +232,32 @@ export function CandidateChatgptGate({
 
         {login && !login.connected && (
           <div
-            className="rounded-xl border border-black/10 px-3.5 py-4 dark:border-white/10"
+            className="rounded-lg border border-slate-200 px-3.5 py-4"
             data-testid="candidate-chatgpt-device-login"
           >
-            <p className="text-center text-[12.5px] text-muted-foreground">
+            <p className="text-center text-[12.5px] font-medium text-slate-600">
               Enter this code on the OpenAI page
             </p>
-            <div className="mt-2.5 flex items-center gap-2">
+            <div className="mt-2.5 flex min-w-0 items-center gap-2">
               <Input
                 id="candidate-chatgpt-code"
                 readOnly
                 aria-label="One-time code"
                 value={login.userCode || ""}
-                className="h-12 rounded-lg border-black/10 bg-muted/30 text-center font-mono text-xl font-semibold tracking-[0.3em] dark:border-white/10"
+                className="h-12 min-w-0 flex-1 rounded-md border-slate-300 bg-slate-50 px-2 text-center font-mono text-base font-bold tracking-[0.16em] text-slate-950 opacity-100 caret-slate-950 focus-visible:ring-slate-400 sm:px-3 sm:text-xl sm:tracking-[0.24em]"
                 onFocus={(event) => event.currentTarget.select()}
               />
               <Button
                 type="button"
                 variant="outline"
-                className="h-12 w-12 shrink-0 rounded-lg border-black/10 p-0 dark:border-white/10"
+                className="h-12 w-12 shrink-0 rounded-md border-slate-300 bg-white p-0 text-slate-700 hover:bg-slate-50 hover:text-slate-950"
                 aria-label={copied ? "Code copied" : "Copy code"}
                 onClick={() => void copyCode()}
               >
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
-            <p className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground" role="status">
+            <p className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600" role="status">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />Waiting for you to finish on OpenAI…
             </p>
           </div>
@@ -265,7 +265,7 @@ export function CandidateChatgptGate({
 
         {error && (
           <div
-            className="flex gap-2.5 rounded-xl border border-destructive/30 bg-destructive/5 px-3.5 py-3 text-[13px] leading-relaxed text-destructive"
+            className="flex gap-2.5 rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-[13px] leading-relaxed text-red-700"
             role="alert"
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -281,13 +281,13 @@ export function CandidateChatgptGate({
         )}
       </div>
 
-      <div className="mt-6 space-y-2 px-7 pb-7">
+      <div className="mt-5 space-y-2 px-5 pb-6 sm:px-7 sm:pb-7">
         {login && !login.connected ? (
           <>
             {login.verificationUrl && (
               <Button
                 asChild
-                className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+                className="h-11 w-full rounded-md bg-slate-950 text-[15px] font-medium text-white hover:bg-slate-800"
               >
                 <a href={login.verificationUrl} target="_blank" rel="noreferrer noopener">
                   <OpenAILogo className="mr-2 h-4 w-4" />Open OpenAI
@@ -299,7 +299,7 @@ export function CandidateChatgptGate({
               type="button"
               variant="ghost"
               disabled={busy || cooling}
-              className="h-9 w-full text-xs font-normal text-muted-foreground hover:text-foreground"
+              className="h-9 w-full text-xs font-normal text-slate-500 hover:bg-slate-50 hover:text-slate-950"
               onClick={() => void connect(true)}
             >
               {working === "restart"
@@ -312,7 +312,7 @@ export function CandidateChatgptGate({
           <Button
             type="button"
             disabled={busy || cooling}
-            className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] disabled:opacity-60 dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+            className="h-11 w-full rounded-md bg-slate-950 text-[15px] font-medium text-white hover:bg-slate-800 disabled:opacity-60"
             onClick={() => void connect()}
             data-testid="candidate-chatgpt-connect"
           >

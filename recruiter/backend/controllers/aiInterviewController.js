@@ -14,6 +14,10 @@ const aiInterviewVoiceLiveService = require('../services/aiInterviewVoiceLiveSer
 const azureSpeechTtsService = require('../services/azureSpeechTtsService');
 const aiInterviewCostService = require('../services/aiInterviewCostService');
 const interviewCodexAccountService = require('../services/aiRuntime/interviewCodexAccountService');
+const {
+  getRecruiterPublicPath,
+  verifyRecruiterPublicToken
+} = require('../services/aiInterviewPublicLinkService');
 const { runWithAIRequestContext } = require('../services/aiRuntime/requestContext');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
@@ -77,6 +81,13 @@ function createLegacyPublicLinkValue() {
 function getSessionCandidateName(session) {
   const snapshot = session.candidateSnapshot || {};
   return snapshot.name || `${snapshot.firstName || ''} ${snapshot.lastName || ''}`.trim() || snapshot.email || 'Candidate';
+}
+
+function buildRecruiterSession(session) {
+  const item = typeof session?.toObject === 'function' ? session.toObject() : { ...session };
+  delete item.tokenHash;
+  item.publicInterviewPath = getRecruiterPublicPath(item._id);
+  return item;
 }
 
 function buildScoringSummary(sessions = []) {
@@ -463,7 +474,13 @@ async function enforceDeadlines(session, interview) {
 
 async function findPublicSession(token) {
   const tokenHash = hashPublicToken(token);
-  return AIInterviewSession.findOne({ tokenHash })
+  let sessionQuery = AIInterviewSession.findOne({ tokenHash });
+  const recruiterSessionId = verifyRecruiterPublicToken(token);
+  if (recruiterSessionId) {
+    sessionQuery = AIInterviewSession.findById(recruiterSessionId);
+  }
+
+  return sessionQuery
     .populate({
       path: 'aiInterview',
       populate: [
@@ -796,7 +813,7 @@ exports.createAIInterview = async (req, res) => {
       success: true,
       message: 'AI interview scheduled successfully',
       aiInterview,
-      sessions,
+      sessions: sessions.map(buildRecruiterSession),
       creditPreview: {
         perCandidateCost,
         totalRequired,
@@ -870,7 +887,11 @@ exports.getAIInterview = async (req, res) => {
     const aiInterviewObject = aiInterview.toObject();
     aiInterviewObject.scoringSummary = buildScoringSummary(sessions);
 
-    res.json({ success: true, aiInterview: aiInterviewObject, sessions });
+    res.json({
+      success: true,
+      aiInterview: aiInterviewObject,
+      sessions: sessions.map(buildRecruiterSession)
+    });
   } catch (error) {
     console.error('Get AI interview error:', error);
     res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
@@ -894,7 +915,7 @@ exports.getAIInterviewSession = async (req, res) => {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview session not found' });
     }
 
-    res.json({ success: true, session });
+    res.json({ success: true, session: buildRecruiterSession(session) });
   } catch (error) {
     console.error('Get AI interview session error:', error);
     res.status(500).json({ error: 'SERVER_ERROR', message: error.message });

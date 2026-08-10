@@ -1284,42 +1284,42 @@ export default function TranscriptPage() {
   const timeStatus = getMeetingTimeStatus();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto p-6 max-w-7xl">
+    <div className="interview-transcript-page">
+      <div className="interview-transcript-shell">
         {/* Header */}
-        <div className="mb-8">
+        <header className="interview-transcript-header">
           <Button
             variant="ghost"
             onClick={handleBackNavigation}
-            className="mb-6 hover:bg-white"
+            className="interview-transcript-back"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to {referrerSource === 'jobs' ? 'Job Details' : referrerSource === 'calendar' ? 'Calendar' : 'Interview'}
           </Button>
           
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">Interview Transcript</h1>
-              <p className="text-lg text-gray-600">
+          <div className="interview-transcript-heading">
+            <div className="interview-transcript-title">
+              <h1>Interview Transcript</h1>
+              <p>
                 AI-powered recording and analysis for your interview
               </p>
             </div>
-            
-            <div className="flex items-center gap-3">
+
+            <div className="interview-transcript-controls">
               {interview?.notetakerEnabled && (
                 (() => {
                   const recordingStatus = getActualRecordingStatus(interview, completedTranscript, timeStatus);
                   return (
-                    <Badge 
-                      className={`${recordingStatus.color} border px-3 py-1.5 text-sm font-medium`}
+                    <div
+                      className={`interview-transcript-notetaker ${recordingStatus.color}`}
                     >
                       <recordingStatus.icon className={`h-4 w-4 ${
                         recordingStatus.status === 'processing' ? 'animate-spin' : ''
                       }`} />
-                      <span className="ml-2">
+                      <span>
                         AI Notetaker {recordingStatus.title.replace('Recording ', '')}
                       </span>
-                    </Badge>
+                    </div>
                   );
                 })()
               )}
@@ -1476,7 +1476,7 @@ export default function TranscriptPage() {
                   variant="outline"
                   size="sm"
                   onClick={handleShowCancelDialog}
-                  className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100"
+                  className="interview-transcript-danger"
                   title="Cancel this interview"
                 >
                   <X className="h-4 w-4 mr-2" />
@@ -1485,43 +1485,39 @@ export default function TranscriptPage() {
               )}
             </div>
           </div>
-        </div>
+        </header>
 
-        <div className="space-y-6">
+        <div className="interview-transcript-content">
           {/* Interview Overview Card */}
           {interview && (
-            <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xl font-semibold text-gray-900">Interview Overview</CardTitle>
+            <Card className="interview-transcript-card interview-transcript-overview">
+              <CardHeader>
+                <div className="interview-transcript-overview__heading">
+                  <CardTitle>Interview overview</CardTitle>
                   {timeStatus && (
-                    <Badge variant="outline" className={`${timeStatus.color} border-current bg-transparent`}>
+                    <Badge variant="outline" className="interview-transcript-time">
                       <Clock className="h-3 w-3 mr-1" />
                       {timeStatus.text}
                     </Badge>
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Users className="h-4 w-4 text-blue-600" />
-                    </div>
+              <CardContent>
+                <div className="interview-transcript-overview-grid">
+                  <div className="interview-transcript-meta">
+                    <Users className="interview-transcript-meta__icon h-4 w-4" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Candidate</p>
+                      <p>Candidate</p>
                       <p className="text-sm text-gray-600">
                         {interview.candidateId?.firstName} {interview.candidateId?.lastName}
                       </p>
                     </div>
                   </div>
-                  
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <Calendar className="h-4 w-4 text-green-600" />
-                    </div>
+
+                  <div className="interview-transcript-meta">
+                    <Calendar className="interview-transcript-meta__icon h-4 w-4" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Scheduled</p>
+                      <p>Scheduled</p>
                       <p className="text-sm text-gray-600">
                         {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleDateString('en-US', {
                           weekday: 'short',
@@ -1539,12 +1535,10 @@ export default function TranscriptPage() {
                     </div>
                   </div>
                   
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-purple-100 rounded-lg">
-                      <Clock className="h-4 w-4 text-purple-600" />
-                    </div>
+                  <div className="interview-transcript-meta">
+                    <Clock className="interview-transcript-meta__icon h-4 w-4" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Duration</p>
+                      <p>Duration</p>
                       <p className="text-sm text-gray-600">
                         {formatDuration(interview.duration)}
                       </p>
@@ -1553,21 +1547,16 @@ export default function TranscriptPage() {
                 </div>
                 
                 {interview.conferencing?.details?.url && (
-                  <>
-                    <Separator />
-                    <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 rounded-lg">
-                          <Video className="h-4 w-4 text-blue-600" />
-                        </div>
+                    <div className="interview-transcript-meeting">
+                      <div className="interview-transcript-meeting__copy">
+                        <Video className="h-4 w-4" />
                         <div>
-                          <p className="text-sm font-medium text-blue-900">Meeting Link</p>
-                          <p className="text-xs text-blue-700">Click to join the interview</p>
+                          <p>Meeting link</p>
+                          <p>Open the scheduled interview in a new tab</p>
                         </div>
                       </div>
                       <Button
                         size="sm"
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
                         asChild
                       >
                         <a
@@ -1580,23 +1569,23 @@ export default function TranscriptPage() {
                         </a>
                       </Button>
                     </div>
-                  </>
                 )}
               </CardContent>
             </Card>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="interview-transcript-status-grid">
             {/* AI Analysis Status */}
-            <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-purple-600" />
-                  AI Analysis
+            <Card className="interview-transcript-card">
+              <CardHeader>
+                <CardTitle className="interview-transcript-section-title">
+                  <Sparkles className="h-4 w-4" />
+                  Analysis
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <CardContent>
+                <div className="interview-transcript-analysis-list">
+                <div className="interview-transcript-analysis-row">
                   <div className="flex items-center gap-2">
                     <FileText className="h-4 w-4 text-gray-600" />
                     <span className="text-sm font-medium text-gray-900">Summary</span>
@@ -1605,8 +1594,8 @@ export default function TranscriptPage() {
                     {aiSummary ? "Ready" : "Pending"}
                   </Badge>
                 </div>
-                
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+
+                <div className="interview-transcript-analysis-row">
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4 text-gray-600" />
                     <span className="text-sm font-medium text-gray-900">Team Feedback</span>
@@ -1615,9 +1604,10 @@ export default function TranscriptPage() {
                     {teamAnalysis ? "Analyzed" : "Pending"}
                   </Badge>
                 </div>
-                
+                </div>
+
                 {(!aiSummary && !teamAnalysis) && (
-                  <p className="text-xs text-gray-500 mt-3">
+                  <p className="interview-transcript-analysis-note">
                     AI analysis will be available after the interview transcript is complete.
                   </p>
                 )}
@@ -1626,9 +1616,12 @@ export default function TranscriptPage() {
 
             {/* Recording Status */}
             {interview?.notetakerEnabled && interview?.notetakerId && (
-              <Card className="bg-white shadow-sm border-0 ring-1 ring-gray-200">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-lg font-semibold text-gray-900">Recording Status</CardTitle>
+              <Card className="interview-transcript-card">
+                <CardHeader>
+                  <CardTitle className="interview-transcript-section-title">
+                    <Mic className="h-4 w-4" />
+                    Recording status
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {(() => {
@@ -1639,7 +1632,7 @@ export default function TranscriptPage() {
                     return (
                       <div className="space-y-4">
                         {/* Main Status Display */}
-                        <div className={`p-4 rounded-lg border ${recordingStatus.color}`}>
+                        <div className={`interview-transcript-recording-state ${recordingStatus.color}`}>
                           <div className="flex items-center gap-3">
                             <div className="flex-shrink-0">
                               <IconComponent className={`h-6 w-6 ${

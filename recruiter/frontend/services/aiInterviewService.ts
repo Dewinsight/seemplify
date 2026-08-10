@@ -15,6 +15,7 @@ export interface AIInterviewQuestionSnapshot {
 export interface AIInterviewSession {
   _id: string;
   aiInterview: string;
+  publicInterviewPath?: string;
   candidate?: any;
   recipientType?: 'candidate' | 'guest';
   candidateSnapshot: {

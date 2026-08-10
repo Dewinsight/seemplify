@@ -11,6 +11,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
+  Copy,
   DollarSign,
   FileQuestion,
   Loader2,
@@ -27,7 +28,6 @@ import {
   Trophy,
   Users,
   Volume2,
-  Workflow,
   XCircle
 } from "lucide-react";
 import { toast } from "sonner";
@@ -60,6 +60,16 @@ function toLocalInputValue(date: Date) {
 function formatDate(value?: string) {
   if (!value) return "Not set";
   return new Date(value).toLocaleString();
+}
+
+function resolvePublicInterviewUrl(path?: string) {
+  if (!path) return "";
+  if (typeof window === "undefined") return path;
+  try {
+    return new URL(path, window.location.origin).toString();
+  } catch {
+    return path;
+  }
 }
 
 function formatCurrencyValue(amount?: number | null, currency = "USD", locale?: string) {
@@ -231,6 +241,12 @@ type ScheduledInterviewSummary = {
   expiresAt: string;
   totalCredits?: number;
   voiceName?: string;
+  candidateLinks: Array<{
+    sessionId: string;
+    candidateName: string;
+    candidateEmail: string;
+    url: string;
+  }>;
 };
 
 type ScheduleDialogState =
@@ -316,6 +332,18 @@ export default function AIInterviewsPage() {
   const [rankingListEntries, setRankingListEntries] = useState<any[]>([]);
   const [showRankingListDialog, setShowRankingListDialog] = useState(false);
   const [lastScheduledInterview, setLastScheduledInterview] = useState<ScheduledInterviewSummary | null>(null);
+  const lastScheduledCandidateLink = lastScheduledInterview?.candidateLinks.length === 1
+    ? lastScheduledInterview.candidateLinks[0]
+    : null;
+
+  const copyInterviewLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Interview link copied");
+    } catch {
+      toast.error("Unable to copy the interview link");
+    }
+  };
 
   useEffect(() => {
     setActiveTab(requestedTab === "interviews" ? "interviews" : "create");
@@ -852,17 +880,17 @@ export default function AIInterviewsPage() {
   };
 
   const renderWizardFooter = () => (
-    <div className="flex flex-col gap-3 rounded-xl border bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 sm:flex-row sm:items-center sm:justify-between">
+    <div className="ai-interviews-wizard-footer flex flex-col gap-3 rounded-xl border bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 sm:flex-row sm:items-center sm:justify-between">
       <Button type="button" variant="outline" onClick={goToPreviousStep} disabled={createStepIndex === 0}>
         Back
       </Button>
       <div className="flex flex-col gap-2 sm:flex-row">
         {createStep !== "review" ? (
-          <Button type="button" onClick={goToNextStep}>
+          <Button type="button" className="ai-interviews-primary" onClick={goToNextStep}>
             Continue
           </Button>
         ) : (
-          <Button className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={submit} disabled={saving}>
+          <Button className="ai-interviews-primary bg-emerald-600 text-white hover:bg-emerald-700" onClick={submit} disabled={saving}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
             Schedule AI Interview
           </Button>
@@ -872,8 +900,8 @@ export default function AIInterviewsPage() {
   );
 
   const renderRecipientsCard = () => (
-    <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
-      <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+    <Card className="ai-interviews-panel overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+      <CardHeader className="ai-interviews-panel__header border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
@@ -1056,7 +1084,15 @@ export default function AIInterviewsPage() {
         sendAt: result.aiInterview.schedule?.sendAt || new Date(form.sendAt).toISOString(),
         expiresAt: result.aiInterview.schedule?.expiresAt || new Date(form.expiresAt).toISOString(),
         totalCredits: result.creditPreview?.estimate?.totalCredits || result.aiInterview.costEstimate?.totalCredits,
-        voiceName: result.aiInterview.voice?.displayName || selectedVoice?.displayName
+        voiceName: result.aiInterview.voice?.displayName || selectedVoice?.displayName,
+        candidateLinks: (result.sessions || [])
+          .filter((session) => Boolean(session.publicInterviewPath))
+          .map((session) => ({
+            sessionId: session._id,
+            candidateName: session.candidateSnapshot?.name || session.candidateSnapshot?.email || "Candidate",
+            candidateEmail: session.candidateSnapshot?.email || "",
+            url: resolvePublicInterviewUrl(session.publicInterviewPath)
+          }))
       };
 
       setLastScheduledInterview(scheduledInterview);
@@ -1092,15 +1128,11 @@ export default function AIInterviewsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container max-w-screen-2xl space-y-6 py-6">
-        <div className="rounded-2xl border border-white/70 bg-white/85 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
+    <div className="ai-interviews-workspace min-h-screen">
+      <div className="ai-interviews-workspace__inner container max-w-screen-2xl space-y-6 py-6">
+        <div className="ai-interviews-header rounded-2xl border border-white/70 bg-white/85 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
-                <Workflow className="h-3.5 w-3.5" />
-                Structured candidate interview workflow
-              </div>
+            <div>
               <div>
                 <h1 className="text-2xl font-bold tracking-normal text-slate-950 dark:text-white md:text-3xl">AI Interviews</h1>
                 <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
@@ -1130,8 +1162,8 @@ export default function AIInterviewsPage() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-xl border border-blue-100 bg-blue-50/80 p-4 dark:border-blue-900/70 dark:bg-blue-950/30">
+          <div className="ai-interviews-metrics mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="ai-interviews-metric rounded-xl border border-blue-100 bg-blue-50/80 p-4 dark:border-blue-900/70 dark:bg-blue-950/30">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Active</span>
                 <BarChart3 className="h-5 w-5 text-blue-600 dark:text-blue-300" />
@@ -1139,7 +1171,7 @@ export default function AIInterviewsPage() {
               <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{activeInterviews}</div>
               <p className="text-xs text-blue-700/80 dark:text-blue-300/80">Running interview batches</p>
             </div>
-            <div className="rounded-xl border border-amber-100 bg-amber-50/90 p-4 dark:border-amber-900/70 dark:bg-amber-950/30">
+            <div className="ai-interviews-metric rounded-xl border border-amber-100 bg-amber-50/90 p-4 dark:border-amber-900/70 dark:bg-amber-950/30">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Scheduled</span>
                 <CalendarClock className="h-5 w-5 text-amber-600 dark:text-amber-300" />
@@ -1147,7 +1179,7 @@ export default function AIInterviewsPage() {
               <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{scheduledInterviews}</div>
               <p className="text-xs text-amber-700/80 dark:text-amber-300/80">Waiting for send time</p>
             </div>
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50/90 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/30">
+            <div className="ai-interviews-metric rounded-xl border border-emerald-100 bg-emerald-50/90 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/30">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Completed</span>
                 <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
@@ -1155,7 +1187,7 @@ export default function AIInterviewsPage() {
               <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{completedSessions}</div>
               <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">Candidate sessions submitted</p>
             </div>
-            <div className="rounded-xl border border-violet-100 bg-violet-50/90 p-4 dark:border-violet-900/70 dark:bg-violet-950/30">
+            <div className="ai-interviews-metric rounded-xl border border-violet-100 bg-violet-50/90 p-4 dark:border-violet-900/70 dark:bg-violet-950/30">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Avg AI Score</span>
                 <Trophy className="h-5 w-5 text-violet-600 dark:text-violet-300" />
@@ -1165,7 +1197,7 @@ export default function AIInterviewsPage() {
                 {topRankedInterview ? `Top interview: ${topRankedInterview.title}` : "No scored interviews yet"}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+            <div className="ai-interviews-metric rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Candidates</span>
                 <Users className="h-5 w-5 text-slate-600 dark:text-slate-300" />
@@ -1177,7 +1209,7 @@ export default function AIInterviewsPage() {
         </div>
 
         {lastScheduledInterview && (
-          <Card className="border-emerald-200 bg-emerald-50/90 shadow-lg shadow-emerald-100/70 dark:border-emerald-900 dark:bg-emerald-950/30 dark:shadow-none">
+          <Card className="ai-interviews-success border-emerald-200 bg-emerald-50/90 shadow-lg shadow-emerald-100/70 dark:border-emerald-900 dark:bg-emerald-950/30 dark:shadow-none">
             <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
@@ -1210,26 +1242,58 @@ export default function AIInterviewsPage() {
                       </span>
                     )}
                   </div>
+                  {lastScheduledCandidateLink && (
+                    <div className="mt-3 max-w-2xl rounded-md border border-emerald-200 bg-white px-3 py-2 dark:border-emerald-900 dark:bg-slate-950/60">
+                      <div className="text-xs font-medium text-emerald-950 dark:text-emerald-100">
+                        {lastScheduledCandidateLink.candidateName}&apos;s interview link
+                      </div>
+                      <a
+                        href={lastScheduledCandidateLink.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 block truncate text-xs text-emerald-800 underline underline-offset-2 dark:text-emerald-200"
+                      >
+                        {lastScheduledCandidateLink.url}
+                      </a>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Button
-                  type="button"
-                  className="bg-emerald-700 text-white hover:bg-emerald-800"
-                  onClick={() => {
-                    setActiveTab("interviews");
-                    setSelectedInterviewId(lastScheduledInterview.id);
-                  }}
-                >
-                  Open interview
-                  <ArrowUpRight className="ml-2 h-4 w-4" />
-                </Button>
-                <Button asChild variant="outline" className="border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100">
-                  <Link href={`/ai-interviews/${lastScheduledInterview.id}`}>
-                    Open batch
-                    <ArrowUpRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
+                {lastScheduledCandidateLink ? (
+                  <>
+                    <Button asChild className="bg-emerald-700 text-white hover:bg-emerald-800">
+                      <a href={lastScheduledCandidateLink.url} target="_blank" rel="noreferrer">
+                        Open interview
+                        <ArrowUpRight className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100"
+                      onClick={() => copyInterviewLink(lastScheduledCandidateLink.url)}
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copy link
+                    </Button>
+                  </>
+                ) : (
+                  <Button asChild className="bg-emerald-700 text-white hover:bg-emerald-800">
+                    <Link href={`/ai-interviews/${lastScheduledInterview.id}`}>
+                      View candidate links
+                      <ArrowUpRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
+                {lastScheduledCandidateLink && (
+                  <Button asChild variant="outline" className="border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100">
+                    <Link href={`/ai-interviews/${lastScheduledInterview.id}`}>
+                      Open batch
+                      <ArrowUpRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
                 <Button type="button" variant="ghost" className="text-emerald-900 hover:text-emerald-950 dark:text-emerald-100" onClick={() => setLastScheduledInterview(null)}>
                   Dismiss
                 </Button>
@@ -1238,23 +1302,23 @@ export default function AIInterviewsPage() {
           </Card>
         )}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid h-auto w-full grid-cols-2 rounded-xl border bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:w-[420px]">
-            <TabsTrigger value="create" className="rounded-lg py-2.5 data-[state=active]:bg-slate-900 data-[state=active]:text-white dark:data-[state=active]:bg-white dark:data-[state=active]:text-slate-950">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="ai-interviews-tabs space-y-6">
+          <TabsList className="ai-interviews-tab-list grid h-auto w-full grid-cols-2 rounded-xl border bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:w-[420px]">
+            <TabsTrigger value="create" className="ai-interviews-tab rounded-lg py-2.5 data-[state=active]:bg-slate-900 data-[state=active]:text-white dark:data-[state=active]:bg-white dark:data-[state=active]:text-slate-950">
               <Plus className="mr-2 h-4 w-4" />
               Create
             </TabsTrigger>
-            <TabsTrigger value="interviews" className="rounded-lg py-2.5 data-[state=active]:bg-slate-900 data-[state=active]:text-white dark:data-[state=active]:bg-white dark:data-[state=active]:text-slate-950">
+            <TabsTrigger value="interviews" className="ai-interviews-tab rounded-lg py-2.5 data-[state=active]:bg-slate-900 data-[state=active]:text-white dark:data-[state=active]:bg-white dark:data-[state=active]:text-slate-950">
               <CalendarClock className="mr-2 h-4 w-4" />
               Interviews
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="create" className="space-y-6">
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="ai-interviews-create-grid grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
               <div className="space-y-6">
-                <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
-                  <CardHeader className="border-b bg-slate-950 px-5 py-4 text-white dark:border-slate-800">
+                <Card className="ai-interviews-panel ai-interviews-wizard overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+                  <CardHeader className="ai-interviews-wizard__header border-b bg-slate-950 px-5 py-4 text-white dark:border-slate-800">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base">
@@ -1271,7 +1335,7 @@ export default function AIInterviewsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-5 p-5">
-                    <div className="grid gap-3 md:grid-cols-5">
+                    <div className="ai-interviews-step-list grid gap-3 md:grid-cols-5">
                       {CREATE_STEPS.map((step, index) => {
                         const StepIcon = step.icon;
                         const selected = step.id === createStep;
@@ -1281,7 +1345,7 @@ export default function AIInterviewsPage() {
                             type="button"
                             key={step.label}
                             onClick={() => setCreateStep(step.id)}
-                            className={`flex min-h-[76px] items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+                            className={`ai-interviews-step ${selected ? "is-selected" : !hasIssues ? "is-complete" : ""} flex min-h-[76px] items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
                               selected
                                 ? "border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
                                 : !hasIssues
@@ -1479,8 +1543,8 @@ export default function AIInterviewsPage() {
                 </Card>
 
                 {createStep === "model" && (
-                <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
-                  <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+                <Card className="ai-interviews-panel overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+                  <CardHeader className="ai-interviews-panel__header border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
@@ -1497,7 +1561,7 @@ export default function AIInterviewsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4 p-5">
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="ai-interviews-voice-grid grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                       {voiceOptions.map((voice) => {
                         const selected = form.voiceId === voice.id;
                         const previewing = previewingVoiceId === voice.id;
@@ -1505,7 +1569,7 @@ export default function AIInterviewsPage() {
                         return (
                           <div
                             key={voice.id}
-                            className={`group rounded-2xl border p-4 text-left transition-all ${
+                            className={`ai-interviews-voice-card ${selected ? "is-selected" : ""} group rounded-2xl border p-4 text-left transition-all ${
                               selected
                                 ? "border-slate-950 bg-slate-950 text-white shadow-lg dark:border-white dark:bg-white dark:text-slate-950"
                                 : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900"
@@ -1591,7 +1655,7 @@ export default function AIInterviewsPage() {
                       })}
                     </div>
 
-                    <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-sm dark:border-blue-900/60 dark:bg-blue-950/25">
+                    <div className="ai-interviews-cost-estimate rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-sm dark:border-blue-900/60 dark:bg-blue-950/25">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <div className="flex items-center gap-2 font-semibold text-slate-950 dark:text-white">
@@ -1609,7 +1673,7 @@ export default function AIInterviewsPage() {
                           Add candidates or guest recipients to calculate the real batch total. Showing a one-candidate preview for now.
                         </div>
                       )}
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="ai-interviews-cost-grid mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
                           <div className="text-xs text-muted-foreground">Per candidate</div>
                           <div className="mt-1 text-lg font-bold">{costEstimate?.creditCostPerCandidate ?? 8} credits</div>
@@ -1651,8 +1715,8 @@ export default function AIInterviewsPage() {
                 )}
 
                 {createStep === "questions" && (
-                <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
-                  <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+                <Card className="ai-interviews-panel overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+                  <CardHeader className="ai-interviews-panel__header border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
@@ -1683,9 +1747,9 @@ export default function AIInterviewsPage() {
                 {renderWizardFooter()}
               </div>
 
-              <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-                <Card className="overflow-hidden border-0 bg-slate-950 text-white shadow-xl shadow-slate-300/60 dark:shadow-none">
-                  <CardHeader className="border-b border-white/10 px-5 py-4">
+              <aside className="ai-interviews-summary-wrap space-y-6 xl:sticky xl:top-6 xl:self-start">
+                <Card className="ai-interviews-summary overflow-hidden border-0 bg-slate-950 text-white shadow-xl shadow-slate-300/60 dark:shadow-none">
+                  <CardHeader className="ai-interviews-summary__header border-b border-white/10 px-5 py-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <ShieldCheck className="h-4 w-4 text-emerald-300" />
                       Schedule Summary
@@ -1694,25 +1758,25 @@ export default function AIInterviewsPage() {
                   </CardHeader>
                   <CardContent className="space-y-4 p-5 text-sm">
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="ai-interviews-summary__metric rounded-xl border border-white/10 bg-white/5 p-3">
                         <div className="text-slate-400">Recipients</div>
                         <div className="mt-1 text-xl font-bold">{selectedRecipientCount}</div>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="ai-interviews-summary__metric rounded-xl border border-white/10 bg-white/5 p-3">
                         <div className="text-slate-400">Questions</div>
                         <div className="mt-1 text-xl font-bold">{selectedQuestionIds.length}</div>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="ai-interviews-summary__metric rounded-xl border border-white/10 bg-white/5 p-3">
                         <div className="text-slate-400">Per question</div>
                         <div className="mt-1 text-xl font-bold">{form.perQuestionMinutes}m</div>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="ai-interviews-summary__metric rounded-xl border border-white/10 bg-white/5 p-3">
                         <div className="text-slate-400">Credits</div>
                         <div className="mt-1 text-xl font-bold">{costEstimate?.totalCredits ?? estimateRecipientCount * 8}</div>
                       </div>
                     </div>
 
-                    <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                    <div className="ai-interviews-summary__section space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
                       <div className="flex items-start gap-3">
                         <Volume2 className="mt-0.5 h-4 w-4 text-emerald-300" />
                         <div className="min-w-0">
@@ -1745,7 +1809,7 @@ export default function AIInterviewsPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <div className="ai-interviews-summary__section rounded-xl border border-white/10 bg-white/5 p-4">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Estimated charge</div>
                         {estimatingCost && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-300" />}
@@ -1806,7 +1870,7 @@ export default function AIInterviewsPage() {
                     )}
 
                     <Button
-                      className="w-full bg-emerald-500 text-white hover:bg-emerald-600"
+                      className="ai-interviews-primary w-full bg-emerald-500 text-white hover:bg-emerald-600"
                       onClick={createStep === "review" ? submit : () => {
                         if (!openFirstScheduleIssue()) setCreateStep("review");
                       }}
@@ -1830,7 +1894,7 @@ export default function AIInterviewsPage() {
             ) : jobRankingGroups.length ? (
               selectedJobRanking ? (
                 <div className="space-y-5">
-                  <Card className="overflow-hidden border-0 bg-slate-950 text-white shadow-xl shadow-slate-200/70 dark:shadow-none">
+                  <Card className="ai-interviews-panel ai-interviews-ranking-header overflow-hidden border-0 bg-slate-950 text-white shadow-xl shadow-slate-200/70 dark:shadow-none">
                     <CardContent className="p-5">
                       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0 space-y-3">
@@ -1877,7 +1941,7 @@ export default function AIInterviewsPage() {
                   </Card>
 
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+                    <div className="ai-interviews-panel overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
                       <div className="flex flex-col gap-3 border-b bg-white p-5 dark:border-slate-800 dark:bg-slate-900 md:flex-row md:items-center md:justify-between">
                         <div>
                           <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Candidate ranking</h3>
@@ -1951,7 +2015,7 @@ export default function AIInterviewsPage() {
                     </div>
 
                     <div className="space-y-4">
-                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+                      <div className="ai-interviews-panel rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <h3 className="text-base font-semibold text-slate-950 dark:text-white">Interview details</h3>
@@ -2019,7 +2083,7 @@ export default function AIInterviewsPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-2xl border border-white/70 bg-white/90 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
+                      <div className="ai-interviews-panel rounded-2xl border border-white/70 bg-white/90 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <h3 className="text-base font-semibold text-slate-950 dark:text-white">Score distribution</h3>
@@ -2047,7 +2111,7 @@ export default function AIInterviewsPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+                      <div className="ai-interviews-panel rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
                         <h3 className="text-base font-semibold text-slate-950 dark:text-white">Interview activity</h3>
                         <div className="mt-4 space-y-3 text-sm">
                           <div className="flex items-center justify-between">
@@ -2105,7 +2169,7 @@ export default function AIInterviewsPage() {
                           className="w-full text-left"
                           onClick={() => setSelectedJobRankingId(group.jobId)}
                         >
-                          <Card className="h-full overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:bg-slate-900/90 dark:shadow-none">
+                          <Card className="ai-interviews-panel ai-interviews-batch-card h-full overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:bg-slate-900/90 dark:shadow-none">
                             <CardContent className="p-5">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -2283,27 +2347,53 @@ export default function AIInterviewsPage() {
                   </div>
                 )}
               </div>
-              <DialogFooter>
+              {scheduleDialog.interview.candidateLinks.length === 1 && (
+                <div className="rounded-md border bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-xs font-medium text-slate-950 dark:text-white">
+                    {scheduleDialog.interview.candidateLinks[0].candidateName}&apos;s interview link
+                  </div>
+                  <a
+                    href={scheduleDialog.interview.candidateLinks[0].url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 block truncate text-xs text-muted-foreground underline underline-offset-2"
+                  >
+                    {scheduleDialog.interview.candidateLinks[0].url}
+                  </a>
+                </div>
+              )}
+              <DialogFooter className="flex-wrap">
                 <Button type="button" variant="outline" onClick={() => setScheduleDialog(null)}>
                   Close
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setScheduleDialog(null);
-                    setSelectedInterviewId(scheduleDialog.interview.id);
-                    setActiveTab("interviews");
-                  }}
-                >
-                  Open interview
-                </Button>
-                <Button asChild className="bg-emerald-600 text-white hover:bg-emerald-700">
-                  <Link href={`/ai-interviews/${scheduleDialog.interview.id}`}>
-                    Open batch
-                    <ArrowUpRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
+                {scheduleDialog.interview.candidateLinks.length === 1 ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => copyInterviewLink(scheduleDialog.interview.candidateLinks[0].url)}
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copy link
+                    </Button>
+                    <Button asChild className="bg-emerald-600 text-white hover:bg-emerald-700">
+                      <a href={scheduleDialog.interview.candidateLinks[0].url} target="_blank" rel="noreferrer">
+                        Open interview
+                        <ArrowUpRight className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href={`/ai-interviews/${scheduleDialog.interview.id}`}>Open batch</Link>
+                    </Button>
+                  </>
+                ) : (
+                  <Button asChild className="bg-emerald-600 text-white hover:bg-emerald-700">
+                    <Link href={`/ai-interviews/${scheduleDialog.interview.id}`}>
+                      View candidate links
+                      <ArrowUpRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
               </DialogFooter>
             </>
           )}

@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  ExternalLink,
   FileText,
   Loader2,
   Mail,
@@ -40,6 +41,16 @@ import aiInterviewService, { type AIInterview, type AIInterviewSession } from "@
 function formatDate(value?: string) {
   if (!value) return "Not set";
   return new Date(value).toLocaleString();
+}
+
+function resolvePublicInterviewUrl(path?: string) {
+  if (!path) return "";
+  if (typeof window === "undefined") return path;
+  try {
+    return new URL(path, window.location.origin).toString();
+  } catch {
+    return path;
+  }
 }
 
 function formatCurrencyValue(amount?: number | null, currency = "USD") {
@@ -224,6 +235,7 @@ export default function AIInterviewDetailPage() {
     () => sessions.find((session) => session._id === selectedSessionId) || sessions[0],
     [sessions, selectedSessionId]
   );
+  const selectedInterviewUrl = resolvePublicInterviewUrl(selectedSession?.publicInterviewPath);
   const rankedSessions = useMemo(() => {
     return sessions
       .filter((session) => getSessionScore(session) !== null)
@@ -379,6 +391,16 @@ export default function AIInterviewDetailPage() {
     }
   };
 
+  const copyInterviewLink = async () => {
+    if (!selectedInterviewUrl) return;
+    try {
+      await navigator.clipboard.writeText(selectedInterviewUrl);
+      toast.success("Interview link copied");
+    } catch {
+      toast.error("Unable to copy the interview link");
+    }
+  };
+
   if (loading && !aiInterview) {
     return (
       <div className="container py-8">
@@ -401,8 +423,8 @@ export default function AIInterviewDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="container max-w-screen-2xl py-6 space-y-6">
+    <div className="ai-interview-detail min-h-screen bg-slate-50">
+      <div className="ai-interview-detail__inner container max-w-screen-2xl space-y-6 py-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="space-y-2">
             <Button variant="ghost" size="sm" asChild className="px-0">
@@ -564,6 +586,12 @@ export default function AIInterviewDetailPage() {
                                 <CheckCircle2 className="h-3 w-3" />
                                 {answeredCount(session)} answers
                               </span>
+                              {session.publicInterviewPath && (
+                                <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
+                                  <ExternalLink className="h-3 w-3" />
+                                  Link available
+                                </span>
+                              )}
                               {score !== null && (
                                 <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-950">
                                   <Star className="h-3 w-3 text-amber-500" />
@@ -672,6 +700,40 @@ export default function AIInterviewDetailPage() {
                       )}
                     </div>
                   </div>
+                  {selectedInterviewUrl && (
+                    <div className="border-t border-slate-200 bg-white px-5 py-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Candidate interview link
+                          </div>
+                          <a
+                            href={selectedInterviewUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 block truncate rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-950"
+                          >
+                            {selectedInterviewUrl}
+                          </a>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          <Button type="button" variant="outline" onClick={copyInterviewLink}>
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy link
+                          </Button>
+                          <Button asChild className="bg-slate-950 text-white hover:bg-slate-800">
+                            <a href={selectedInterviewUrl} target="_blank" rel="noreferrer">
+                              Open interview
+                              <ExternalLink className="ml-2 h-4 w-4" />
+                            </a>
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        This link opens the candidate experience. Anyone with the link can access this interview.
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

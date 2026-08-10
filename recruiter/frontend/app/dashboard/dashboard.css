@@ -1,49 +1,22 @@
 .recruiter-dashboard {
-  --rd-canvas: #f1efe9;
-  --rd-surface: #fffdfa;
-  --rd-surface-muted: #f7f4ee;
-  --rd-ink: #191816;
-  --rd-muted: #5d584f;
-  --rd-subtle: #8b857a;
-  --rd-line: #ddd8ce;
-  --rd-line-strong: #cbc5ba;
-  --rd-accent: #7047eb;
-  --rd-accent-soft: #f1edff;
-  --rd-positive: #087f5b;
-  --rd-attention: #a45a08;
-  --rd-shadow: 0 1px 2px rgba(40, 35, 25, 0.05), 0 16px 36px -28px rgba(40, 35, 25, 0.32);
-  --suite-canvas: var(--rd-canvas);
-  --suite-surface: var(--rd-surface);
-  --suite-surface-muted: var(--rd-surface-muted);
-  --suite-ink: var(--rd-ink);
-  --suite-muted: var(--rd-muted);
-  --suite-subtle: var(--rd-subtle);
-  --suite-line: var(--rd-line);
-  --suite-line-strong: var(--rd-line-strong);
-  --suite-accent: var(--rd-accent);
-  --suite-accent-soft: var(--rd-accent-soft);
-  --suite-shadow: var(--rd-shadow);
+  --rd-canvas: var(--suite-canvas);
+  --rd-surface: var(--suite-surface);
+  --rd-surface-muted: var(--suite-surface-muted);
+  --rd-ink: var(--suite-ink);
+  --rd-muted: var(--suite-muted);
+  --rd-subtle: var(--suite-subtle);
+  --rd-line: var(--suite-line);
+  --rd-line-strong: var(--suite-line-strong);
+  --rd-accent: var(--suite-accent);
+  --rd-accent-soft: var(--suite-accent-soft);
+  --rd-positive: var(--suite-positive);
+  --rd-attention: var(--suite-attention);
+  --rd-shadow: var(--suite-shadow);
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
   padding: 40px 32px 72px;
   color: var(--rd-ink);
-}
-
-.dark .recruiter-dashboard {
-  --rd-canvas: #0f0e13;
-  --rd-surface: #19171f;
-  --rd-surface-muted: #141219;
-  --rd-ink: #f7f5fa;
-  --rd-muted: #aaa4b3;
-  --rd-subtle: #817b89;
-  --rd-line: #302d38;
-  --rd-line-strong: #433e4d;
-  --rd-accent: #8b6cff;
-  --rd-accent-soft: #282039;
-  --rd-positive: #3dd9ac;
-  --rd-attention: #f5b14c;
-  --rd-shadow: none;
 }
 
 .recruiter-dashboard--loading {

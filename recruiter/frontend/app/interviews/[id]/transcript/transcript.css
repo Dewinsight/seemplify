@@ -1,0 +1,528 @@
+.interview-transcript-page {
+  min-height: 100%;
+  background: var(--suite-canvas);
+  color: var(--suite-ink);
+}
+
+.interview-transcript-shell {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 32px 64px;
+}
+
+.interview-transcript-header {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--suite-line);
+}
+
+.interview-transcript-back {
+  height: 34px !important;
+  margin: 0 0 18px !important;
+  padding: 0 6px !important;
+  color: var(--suite-muted) !important;
+}
+
+.interview-transcript-back:hover {
+  background: transparent !important;
+  color: var(--suite-ink) !important;
+}
+
+.interview-transcript-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+.interview-transcript-title {
+  min-width: 220px;
+}
+
+.interview-transcript-title h1 {
+  margin: 0;
+  color: var(--suite-ink);
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+
+.interview-transcript-title p {
+  margin-top: 7px;
+  color: var(--suite-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.interview-transcript-controls {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.interview-transcript-notetaker {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 9px;
+  margin-right: 4px;
+  padding: 7px 10px;
+  border: 1px solid var(--suite-line) !important;
+  border-radius: 8px !important;
+  background: var(--suite-surface-muted) !important;
+  color: var(--suite-ink) !important;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.interview-transcript-notetaker svg {
+  color: var(--suite-accent);
+}
+
+.interview-transcript-controls button {
+  height: 38px;
+  border-color: var(--suite-line) !important;
+  border-radius: 8px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+  box-shadow: none !important;
+}
+
+.interview-transcript-controls button:hover {
+  border-color: var(--suite-line-strong) !important;
+  background: var(--suite-surface-muted) !important;
+}
+
+.interview-transcript-controls .interview-transcript-danger {
+  border-color: color-mix(in srgb, var(--suite-danger) 35%, var(--suite-line)) !important;
+  color: var(--suite-danger) !important;
+}
+
+.interview-transcript-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.interview-transcript-card,
+.interview-transcript-page [data-transcript-surface="true"] {
+  border: 1px solid var(--suite-line) !important;
+  border-radius: 10px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+  box-shadow: var(--suite-shadow) !important;
+}
+
+.interview-transcript-card > div:first-child {
+  padding: 20px 22px 12px;
+}
+
+.interview-transcript-card > div:nth-child(2) {
+  padding: 12px 22px 20px;
+}
+
+.interview-transcript-card h2,
+.interview-transcript-card h3,
+.interview-transcript-card h4 {
+  color: var(--suite-ink) !important;
+}
+
+.interview-transcript-overview__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.interview-transcript-overview__heading > div:first-child {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.interview-transcript-time {
+  border-color: var(--suite-line-strong) !important;
+  border-radius: 7px !important;
+  background: var(--suite-surface-muted) !important;
+  color: var(--suite-muted) !important;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.interview-transcript-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 0.65fr);
+  gap: 0;
+  border-top: 1px solid var(--suite-line);
+  border-bottom: 1px solid var(--suite-line);
+}
+
+.interview-transcript-meta {
+  display: flex;
+  min-width: 0;
+  gap: 11px;
+  padding: 17px 18px;
+  border-right: 1px solid var(--suite-line);
+}
+
+.interview-transcript-meta:first-child {
+  padding-left: 0;
+}
+
+.interview-transcript-meta:last-child {
+  border-right: 0;
+}
+
+.interview-transcript-meta__icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--suite-accent);
+}
+
+.interview-transcript-meta p:first-child {
+  color: var(--suite-subtle) !important;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.interview-transcript-meta p:not(:first-child) {
+  color: var(--suite-ink) !important;
+}
+
+.interview-transcript-meeting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+}
+
+.interview-transcript-meeting__copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.interview-transcript-meeting__copy svg {
+  color: var(--suite-accent);
+}
+
+.interview-transcript-meeting__copy p:first-child {
+  color: var(--suite-ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.interview-transcript-meeting__copy p:last-child {
+  color: var(--suite-muted);
+  font-size: 12px;
+}
+
+.interview-transcript-meeting a {
+  height: 38px;
+  border-radius: 8px !important;
+  background: var(--suite-accent) !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+
+.interview-transcript-meeting a:hover {
+  background: var(--suite-accent-hover) !important;
+}
+
+.interview-transcript-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.interview-transcript-status-grid > *:only-child {
+  grid-column: 1 / -1;
+}
+
+.interview-transcript-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px !important;
+  font-weight: 650 !important;
+}
+
+.interview-transcript-section-title svg {
+  color: var(--suite-accent) !important;
+}
+
+.interview-transcript-analysis-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--suite-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.interview-transcript-analysis-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: var(--suite-surface-muted) !important;
+}
+
+.interview-transcript-analysis-row + .interview-transcript-analysis-row {
+  border-left: 1px solid var(--suite-line);
+}
+
+.interview-transcript-analysis-row svg {
+  color: var(--suite-muted) !important;
+}
+
+.interview-transcript-analysis-row [data-slot="badge"],
+.interview-transcript-analysis-row span:last-child {
+  border-radius: 6px !important;
+}
+
+.interview-transcript-analysis-note {
+  margin-top: 10px;
+  color: var(--suite-muted) !important;
+  font-size: 12px;
+}
+
+.interview-transcript-recording-state {
+  padding: 14px 0 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--suite-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--suite-ink) !important;
+}
+
+.interview-transcript-recording-state h3 {
+  font-size: 15px !important;
+}
+
+.interview-transcript-recording-state p {
+  color: var(--suite-muted) !important;
+}
+
+.interview-transcript-tabs {
+  margin-top: 2px;
+}
+
+.interview-transcript-tabs__list {
+  display: flex !important;
+  width: 100% !important;
+  height: 44px !important;
+  justify-content: flex-start !important;
+  gap: 24px;
+  overflow-x: auto;
+  padding: 0 !important;
+  border-bottom: 1px solid var(--suite-line);
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.interview-transcript-tabs__trigger {
+  position: relative;
+  flex: 0 0 auto;
+  height: 44px !important;
+  padding: 0 2px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--suite-muted) !important;
+  font-size: 14px !important;
+  font-weight: 550 !important;
+  box-shadow: none !important;
+}
+
+.interview-transcript-tabs__trigger[data-state="active"] {
+  color: var(--suite-ink) !important;
+}
+
+.interview-transcript-tabs__trigger[data-state="active"]::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--suite-accent);
+  content: "";
+}
+
+.interview-transcript-tabs [data-state="active"]:focus-visible {
+  outline: 2px solid var(--suite-accent);
+  outline-offset: -2px;
+}
+
+.interview-transcript-tabs [role="tabpanel"] {
+  margin-top: 12px;
+}
+
+.realtime-transcript-card {
+  border: 1px solid var(--suite-line) !important;
+  border-radius: 10px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+  box-shadow: var(--suite-shadow) !important;
+}
+
+.realtime-transcript-card > div:first-child {
+  padding: 20px 22px 12px;
+}
+
+.realtime-transcript-card > div:nth-child(2) {
+  padding: 12px 22px 22px;
+}
+
+.realtime-transcript-heading {
+  color: var(--suite-ink) !important;
+  font-size: 18px !important;
+  font-weight: 650 !important;
+}
+
+.realtime-transcript-heading svg {
+  color: var(--suite-accent);
+}
+
+.realtime-transcript-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--suite-danger) 30%, var(--suite-line));
+  border-left: 3px solid var(--suite-danger);
+  border-radius: 8px;
+  background: var(--suite-danger-soft);
+}
+
+.realtime-transcript-error__copy {
+  display: flex;
+  min-width: 0;
+  gap: 10px;
+}
+
+.realtime-transcript-error__copy svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--suite-danger);
+}
+
+.realtime-transcript-error__copy h3 {
+  color: var(--suite-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.realtime-transcript-error__copy p {
+  margin-top: 3px;
+  color: var(--suite-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.realtime-transcript-error button,
+.realtime-transcript-actions button {
+  border-color: var(--suite-line-strong) !important;
+  border-radius: 8px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+  box-shadow: none !important;
+}
+
+.realtime-transcript-empty {
+  min-height: 180px;
+  border: 1px dashed var(--suite-line-strong);
+  border-radius: 8px;
+  color: var(--suite-muted) !important;
+}
+
+.realtime-transcript-empty svg {
+  color: var(--suite-subtle);
+}
+
+@media (max-width: 1023px) {
+  .interview-transcript-heading {
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .interview-transcript-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 767px) {
+  .interview-transcript-shell {
+    padding: 20px 16px 48px;
+  }
+
+  .interview-transcript-title h1 {
+    font-size: 26px;
+  }
+
+  .interview-transcript-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interview-transcript-notetaker {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  .interview-transcript-controls button {
+    width: 100%;
+  }
+
+  .interview-transcript-overview__heading,
+  .interview-transcript-meeting,
+  .realtime-transcript-error {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .interview-transcript-overview-grid,
+  .interview-transcript-status-grid,
+  .interview-transcript-analysis-list {
+    grid-template-columns: 1fr;
+  }
+
+  .interview-transcript-meta {
+    padding: 14px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--suite-line);
+  }
+
+  .interview-transcript-meta:last-child {
+    border-bottom: 0;
+  }
+
+  .interview-transcript-meeting a,
+  .realtime-transcript-error button {
+    width: 100%;
+  }
+
+  .interview-transcript-analysis-row + .interview-transcript-analysis-row {
+    border-top: 1px solid var(--suite-line);
+    border-left: 0;
+  }
+
+  .interview-transcript-card > div:first-child,
+  .realtime-transcript-card > div:first-child {
+    padding: 18px 16px 10px;
+  }
+
+  .interview-transcript-card > div:nth-child(2),
+  .realtime-transcript-card > div:nth-child(2) {
+    padding: 10px 16px 18px;
+  }
+}

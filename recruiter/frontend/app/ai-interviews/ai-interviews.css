@@ -1,0 +1,471 @@
+.ai-interviews-workspace,
+.ai-interview-detail {
+  min-height: 100%;
+  background: var(--suite-canvas);
+  color: var(--suite-ink);
+}
+
+.ai-interviews-workspace__inner,
+.ai-interview-detail__inner {
+  width: 100%;
+  max-width: 1280px !important;
+  margin: 0 auto;
+  padding: 32px 32px 64px !important;
+}
+
+.ai-interviews-header {
+  padding: 0 0 24px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--suite-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.ai-interviews-header h1,
+.ai-interviews-panel h2,
+.ai-interviews-panel h3,
+.ai-interviews-panel h4,
+.ai-interviews-wizard__header h3,
+.ai-interviews-summary h3,
+.ai-interviews-voice-card {
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-header h1 {
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.ai-interviews-header p,
+.ai-interviews-panel p,
+.ai-interviews-wizard__header p,
+.ai-interviews-summary p {
+  color: var(--suite-muted) !important;
+}
+
+.ai-interviews-header button,
+.ai-interviews-header a[role="button"] {
+  border-color: var(--suite-line);
+  background: var(--suite-surface);
+  color: var(--suite-ink);
+  box-shadow: none;
+}
+
+.ai-interviews-header button:hover,
+.ai-interviews-header a[role="button"]:hover {
+  background: var(--suite-surface-muted);
+}
+
+.ai-interviews-metrics {
+  gap: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--suite-line);
+  border-radius: 12px;
+  background: var(--suite-surface);
+  box-shadow: var(--suite-shadow);
+}
+
+.ai-interviews-metric {
+  min-width: 0;
+  border: 0 !important;
+  border-right: 1px solid var(--suite-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.ai-interviews-metric:last-child {
+  border-right: 0 !important;
+}
+
+.ai-interviews-metric span,
+.ai-interviews-metric p {
+  color: var(--suite-muted) !important;
+}
+
+.ai-interviews-metric svg {
+  color: var(--suite-accent) !important;
+}
+
+.ai-interviews-metric > div:nth-child(2) {
+  color: var(--suite-ink) !important;
+  font-weight: 650;
+}
+
+.ai-interviews-success {
+  border-color: color-mix(in srgb, var(--suite-positive) 32%, var(--suite-line)) !important;
+  border-radius: 12px !important;
+  background: var(--suite-positive-soft) !important;
+  box-shadow: none !important;
+}
+
+.ai-interviews-tab-list {
+  width: min(100%, 320px) !important;
+  height: 42px !important;
+  padding: 0 !important;
+  gap: 18px;
+  border: 0 !important;
+  border-bottom: 1px solid var(--suite-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.ai-interviews-tab {
+  position: relative;
+  height: 42px;
+  padding: 0 2px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--suite-muted) !important;
+  box-shadow: none !important;
+}
+
+.ai-interviews-tab[data-state="active"] {
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-tab[data-state="active"]::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--suite-accent);
+  content: "";
+}
+
+.ai-interviews-create-grid {
+  grid-template-columns: minmax(0, 1fr) 360px !important;
+  gap: 20px !important;
+}
+
+.ai-interviews-panel,
+.ai-interviews-wizard-footer {
+  border: 1px solid var(--suite-line) !important;
+  border-radius: 12px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+  box-shadow: var(--suite-shadow) !important;
+}
+
+.ai-interviews-panel__header,
+.ai-interviews-wizard__header,
+.ai-interviews-summary__header {
+  border-color: var(--suite-line) !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-wizard__header {
+  padding-top: 18px !important;
+  padding-bottom: 18px !important;
+}
+
+.ai-interviews-wizard__header svg,
+.ai-interviews-panel__header svg,
+.ai-interviews-summary__header svg {
+  color: var(--suite-accent) !important;
+}
+
+.ai-interviews-wizard__header [class*="border-white"] {
+  border-color: var(--suite-line) !important;
+  background: var(--suite-surface-muted) !important;
+  color: var(--suite-muted) !important;
+}
+
+.ai-interviews-step-list {
+  gap: 8px !important;
+}
+
+.ai-interviews-step {
+  min-height: 72px !important;
+  padding: 11px !important;
+  border-color: var(--suite-line) !important;
+  border-radius: 9px !important;
+  background: var(--suite-surface-muted) !important;
+  color: var(--suite-muted) !important;
+  box-shadow: none !important;
+}
+
+.ai-interviews-step:hover {
+  border-color: var(--suite-line-strong) !important;
+}
+
+.ai-interviews-step.is-complete {
+  border-color: color-mix(in srgb, var(--suite-positive) 25%, var(--suite-line)) !important;
+  background: var(--suite-positive-soft) !important;
+}
+
+.ai-interviews-step.is-selected {
+  border-color: var(--suite-accent) !important;
+  background: var(--suite-accent-soft) !important;
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-step.is-selected * {
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-step > div:first-child {
+  border: 1px solid var(--suite-line) !important;
+  border-radius: 7px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-muted) !important;
+  box-shadow: none !important;
+}
+
+.ai-interviews-step.is-selected > div:first-child {
+  border-color: color-mix(in srgb, var(--suite-accent) 35%, var(--suite-line)) !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-accent) !important;
+}
+
+.ai-interviews-wizard [role="progressbar"],
+.ai-interviews-panel [role="progressbar"] {
+  background: var(--suite-line) !important;
+}
+
+.ai-interviews-wizard [role="progressbar"] > div,
+.ai-interviews-panel [role="progressbar"] > div {
+  background: var(--suite-accent) !important;
+}
+
+.ai-interviews-voice-grid {
+  gap: 10px !important;
+}
+
+.ai-interviews-voice-card {
+  border-color: var(--suite-line) !important;
+  border-radius: 10px !important;
+  background: var(--suite-surface) !important;
+  box-shadow: none !important;
+  transition: border-color 150ms ease, background-color 150ms ease !important;
+}
+
+.ai-interviews-voice-card:hover {
+  border-color: var(--suite-line-strong) !important;
+  background: var(--suite-surface-muted) !important;
+}
+
+.ai-interviews-voice-card.is-selected {
+  border-color: var(--suite-accent) !important;
+  background: var(--suite-accent-soft) !important;
+}
+
+.ai-interviews-voice-card.is-selected,
+.ai-interviews-voice-card.is-selected [class*="text-slate"],
+.ai-interviews-voice-card.is-selected [class*="text-white"] {
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-voice-card button {
+  border-radius: 8px !important;
+}
+
+.ai-interviews-voice-card.is-selected [class*="bg-white/10"],
+.ai-interviews-voice-card.is-selected [class*="dark:bg-slate"] {
+  border-color: var(--suite-line) !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-muted) !important;
+}
+
+.ai-interviews-cost-estimate {
+  border-color: var(--suite-line) !important;
+  border-radius: 10px !important;
+  background: var(--suite-surface-muted) !important;
+}
+
+.ai-interviews-cost-grid > div {
+  border: 1px solid var(--suite-line);
+  border-radius: 8px !important;
+  background: var(--suite-surface) !important;
+}
+
+.ai-interviews-summary {
+  border: 1px solid var(--suite-line) !important;
+  border-radius: 12px !important;
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+  box-shadow: var(--suite-shadow) !important;
+}
+
+.ai-interviews-summary [class*="text-slate-3"],
+.ai-interviews-summary [class*="text-slate-4"] {
+  color: var(--suite-muted) !important;
+}
+
+.ai-interviews-summary__metric,
+.ai-interviews-summary__section {
+  border-color: var(--suite-line) !important;
+  border-radius: 9px !important;
+  background: var(--suite-surface-muted) !important;
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-summary__metric > div:first-child,
+.ai-interviews-summary__section [class*="text-slate-4"] {
+  color: var(--suite-muted) !important;
+}
+
+.ai-interviews-summary__section svg {
+  color: var(--suite-accent) !important;
+}
+
+.ai-interviews-summary [class*="bg-emerald-400/10"] {
+  background: var(--suite-positive-soft) !important;
+  color: var(--suite-positive) !important;
+}
+
+.ai-interviews-summary [class*="bg-red-400/10"] {
+  background: var(--suite-danger-soft) !important;
+  color: var(--suite-danger) !important;
+}
+
+.ai-interviews-primary {
+  border-color: var(--suite-accent) !important;
+  background: var(--suite-accent) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.ai-interviews-primary:hover {
+  background: var(--suite-accent-hover) !important;
+}
+
+.ai-interviews-ranking-header {
+  background: var(--suite-surface) !important;
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-ranking-header [class*="text-slate-3"],
+.ai-interviews-ranking-header [class*="text-emerald"] {
+  color: var(--suite-muted) !important;
+}
+
+.ai-interviews-ranking-header [class*="border-white"],
+.ai-interviews-ranking-header [class*="bg-white/10"] {
+  border-color: var(--suite-line) !important;
+  background: var(--suite-surface-muted) !important;
+  color: var(--suite-ink) !important;
+}
+
+.ai-interviews-batch-card {
+  transition: border-color 150ms ease, background-color 150ms ease !important;
+}
+
+.ai-interviews-batch-card:hover {
+  border-color: var(--suite-line-strong) !important;
+  background: var(--suite-surface-muted) !important;
+  box-shadow: var(--suite-shadow) !important;
+  transform: none !important;
+}
+
+.ai-interviews-workspace input,
+.ai-interviews-workspace textarea,
+.ai-interviews-workspace button[role="combobox"] {
+  border-color: var(--suite-line);
+  background: var(--suite-surface);
+  color: var(--suite-ink);
+  box-shadow: none;
+}
+
+.ai-interviews-workspace input:focus,
+.ai-interviews-workspace textarea:focus,
+.ai-interviews-workspace button[role="combobox"]:focus {
+  border-color: var(--suite-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--suite-accent) 14%, transparent);
+}
+
+.ai-interview-detail .bg-white,
+.ai-interview-detail [class~="bg-card"] {
+  background: var(--suite-surface) !important;
+}
+
+.ai-interview-detail .bg-slate-50,
+.ai-interview-detail [class*="bg-slate-50/"] {
+  background: var(--suite-surface-muted) !important;
+}
+
+.ai-interview-detail .text-slate-950,
+.ai-interview-detail [class~="text-card-foreground"] {
+  color: var(--suite-ink) !important;
+}
+
+.ai-interview-detail .text-slate-700,
+.ai-interview-detail .text-muted-foreground {
+  color: var(--suite-muted) !important;
+}
+
+.ai-interview-detail .border-slate-200,
+.ai-interview-detail [class~="border"] {
+  border-color: var(--suite-line);
+}
+
+.ai-interview-detail .shadow-sm {
+  box-shadow: var(--suite-shadow) !important;
+}
+
+.ai-interview-detail .bg-slate-950 {
+  background: var(--suite-accent) !important;
+}
+
+.ai-interview-detail input {
+  border-color: var(--suite-line);
+  background: var(--suite-surface);
+  color: var(--suite-ink);
+  box-shadow: none;
+}
+
+@media (max-width: 1279px) {
+  .ai-interviews-create-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .ai-interviews-summary-wrap {
+    position: static !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .ai-interviews-metric {
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--suite-line) !important;
+  }
+
+  .ai-interviews-metric:last-child {
+    border-bottom: 0 !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  .ai-interviews-summary-wrap {
+    top: 92px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .ai-interviews-workspace__inner,
+  .ai-interview-detail__inner {
+    padding: 24px 16px 48px !important;
+  }
+
+  .ai-interviews-header h1 {
+    font-size: 26px;
+  }
+
+  .ai-interviews-tab-list {
+    width: 100% !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-interviews-step,
+  .ai-interviews-voice-card,
+  .ai-interviews-batch-card {
+    transition: none !important;
+  }
+}
