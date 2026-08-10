@@ -14,6 +14,10 @@ secrets/
 *.secret
 *credentials*
 *token*
+!experience-management/packages/journey-event-protocol/src/credentials.ts
+!experience-management/packages/journey-event-protocol/test/credentials.test.ts
+!experience-management/frontend/src/components/journey-events/CredentialSecretDialog.tsx
+!experience-management/frontend/src/components/journey-events/EventSourceCredentials.tsx
 !recruiter/frontend/app/public/ai-interview/\[token\]/
 !recruiter/frontend/app/public/ai-interview/\[token\]/page.tsx
 !ai-interview/frontend/app/public/ai-interview/\[token\]/

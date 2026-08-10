@@ -1,0 +1,10 @@
+.git
+.github
+.local-runtime
+node_modules
+**/node_modules
+**/dist
+**/playwright-report
+**/test-results
+*.log
+.env*
