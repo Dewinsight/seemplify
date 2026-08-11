@@ -28,6 +28,7 @@ interface Props {
   respondentRole: 'employee' | 'manager';
   readOnly?: boolean;
   onSaveError?: (message: string) => void;
+  onSaved?: () => void | Promise<void>;
 }
 
 type ValueMap = Record<string, unknown>;
@@ -62,7 +63,7 @@ function getDesign(appraisal: AppraisalLike): CycleDesign | null {
 }
 
 const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Props>(function CustomAssessmentSections(
-  { appraisal, respondentRole, readOnly = false, onSaveError },
+  { appraisal, respondentRole, readOnly = false, onSaveError, onSaved },
   ref
 ) {
   const design = getDesign(appraisal);
@@ -117,6 +118,7 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
       });
       dirty.current = false;
       setSaveState('saved');
+      await onSaved?.();
       return true;
     } catch (error: unknown) {
       const message = (error as { response?: { data?: { error?: string } } }).response?.data?.error || 'Cycle responses could not be saved.';
@@ -124,7 +126,7 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
       onSaveError?.(message);
       return false;
     }
-  }, [appraisal._id, onSaveError, readOnly, respondentRole, sections, validate, values]);
+  }, [appraisal._id, onSaveError, onSaved, readOnly, respondentRole, sections, validate, values]);
 
   useImperativeHandle(ref, () => ({ save, validate }));
 
@@ -148,10 +150,13 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
     if (question.responseType === 'rating') {
       const minimum = question.ratingMin || 1;
       const maximum = question.ratingMax || 5;
+      const labelId = `rating-${section.id}-${question.id}-label`;
       return (
         <FormControl fullWidth size="small">
-          <InputLabel>Rating</InputLabel>
+          <InputLabel id={labelId}>Rating</InputLabel>
           <Select
+            labelId={labelId}
+            id={`rating-${section.id}-${question.id}`}
             value={typeof value === 'number' ? value : ''}
             label="Rating"
             disabled={readOnly}
@@ -168,10 +173,13 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
     }
     if (['single_select', 'multi_select'].includes(question.responseType)) {
       const multiple = question.responseType === 'multi_select';
+      const labelId = `answer-${section.id}-${question.id}-label`;
       return (
         <FormControl fullWidth size="small">
-          <InputLabel>Answer</InputLabel>
+          <InputLabel id={labelId}>Answer</InputLabel>
           <Select
+            labelId={labelId}
+            id={`answer-${section.id}-${question.id}`}
             multiple={multiple}
             value={multiple ? (Array.isArray(value) ? value : []) : (value || '')}
             label="Answer"

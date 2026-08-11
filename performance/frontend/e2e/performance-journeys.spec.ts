@@ -50,7 +50,11 @@ interface MockApiState {
   updatedGoalBodies: Array<{ id: string; body: Record<string, unknown> }>;
   createdCheckInBodies: Array<Record<string, unknown>>;
   createdCycleBodies: Array<Record<string, unknown>>;
+  updatedCycleBodies: Array<Record<string, unknown>>;
+  createdTemplateBodies: Array<Record<string, unknown>>;
   customResponseBodies: Array<Record<string, unknown>>;
+  managerReviewBodies: Array<Record<string, unknown>>;
+  scoringRequestCount: number;
   analyticsRequestPaths: string[];
   appraisalEvidenceBodies: Array<Record<string, unknown>>;
   notificationPreferenceBodies: Array<Record<string, unknown>>;
@@ -237,7 +241,11 @@ function createState(): MockApiState {
     updatedGoalBodies: [],
     createdCheckInBodies: [],
     createdCycleBodies: [],
+    updatedCycleBodies: [],
+    createdTemplateBodies: [],
     customResponseBodies: [],
+    managerReviewBodies: [],
+    scoringRequestCount: 0,
     analyticsRequestPaths: [],
     appraisalEvidenceBodies: [],
     notificationPreferenceBodies: [],
@@ -588,10 +596,42 @@ async function installMockApi(page: Page, state: MockApiState) {
         }],
       });
     }
+    if (method === 'POST' && path === '/appraisals/cycle-templates') {
+      const body = await jsonBody(request);
+      state.createdTemplateBodies.push(body);
+      return fulfill({ success: true, data: { _id: 'template-created', version: 1, ...body } }, 201);
+    }
     if (method === 'POST' && path === '/appraisals/cycles') {
       const body = await jsonBody(request);
       state.createdCycleBodies.push(body);
       return fulfill({ success: true, data: { cycle: { _id: 'created-cycle', ...body }, launchSummary: { launched: 1, replayed: 0, errors: 0 } } }, 201);
+    }
+    if (method === 'PUT' && path === '/appraisals/cycles/cycle-1') {
+      const body = await jsonBody(request);
+      state.updatedCycleBodies.push(body);
+      return fulfill({ success: true, data: { _id: 'cycle-1', ...body } });
+    }
+    if (method === 'GET' && path === '/appraisals/cycles/cycle-1') {
+      return fulfill({
+        success: true,
+        data: {
+          _id: 'cycle-1', name: '2026 Annual Review', description: 'Annual review', cycleType: 'annual',
+          periodStart: '2026-01-01T00:00:00.000Z', periodEnd: '2026-12-31T23:59:59.999Z',
+          status: 'active', currentPhase: 'selfAssessment', phases: {}, okrWeight: 40,
+          sourceTemplate: { id: 'balanced_performance', name: 'Balanced performance review', version: 1 },
+          workflowDefinition: {
+            version: 1,
+            scoring: { goalsWeight: 40, competenciesWeight: 60 },
+            stages: { goalSetting: { enabled: true }, selfAssessment: { enabled: true }, managerReview: { enabled: true }, discussion: { enabled: true }, calibration: { enabled: false }, finalReview: { enabled: true }, acknowledgement: { enabled: true } },
+            sections: [
+              { id: 'goals', title: 'Goals and outcomes', description: 'Review goal evidence.', type: 'goals', respondent: 'both', required: true, scored: true, weight: 40, evidenceRequired: false, questions: [] },
+              { id: 'competencies', title: 'Competencies', description: 'Assess role behaviours.', type: 'competencies', respondent: 'both', required: true, scored: true, weight: 60, evidenceRequired: false, questions: [] },
+              { id: 'learning', title: 'Learning and application', description: 'Reflect on learning.', type: 'learning', respondent: 'employee', required: true, scored: false, weight: 0, evidenceRequired: false, questions: [{ id: 'learning_applied', prompt: 'What did you learn and apply?', helpText: '', responseType: 'long_text', required: true, options: [], ratingMin: 1, ratingMax: 5 }] },
+            ],
+          },
+          settings: { enableAiAssist: false, requireSignOff: true }, scope: { type: 'organization', targetIds: [] },
+        },
+      });
     }
     if (method === 'GET' && path === '/appraisals/team') {
       return fulfill({ success: true, data: [] });
@@ -610,6 +650,40 @@ async function installMockApi(page: Page, state: MockApiState) {
       const body = await jsonBody(request);
       state.customResponseBodies.push(body);
       return fulfill({ success: true, data: { customResponses: body.responses } });
+    }
+    if (method === 'POST' && /^\/appraisals\/[^/]+\/manager-review\/start$/.test(path)) {
+      return fulfill({ success: true });
+    }
+    if (method === 'POST' && /^\/appraisals\/[^/]+\/manager-review$/.test(path)) {
+      const body = await jsonBody(request);
+      state.managerReviewBodies.push(body);
+      return fulfill({ success: true, data: { saved: true } });
+    }
+    if (method === 'GET' && /^\/appraisals\/[^/]+\/scoring$/.test(path)) {
+      state.scoringRequestCount += 1;
+      const managerResponses = [...state.customResponseBodies].reverse().find((body) => body.respondentRole === 'manager');
+      const responses = Array.isArray(managerResponses?.responses) ? managerResponses.responses as Array<Record<string, unknown>> : [];
+      const customRating = Number(responses.find((response) => response.questionId === 'growth_rating')?.value);
+      const hasCustomRating = Number.isFinite(customRating) && customRating > 0;
+      return fulfill({
+        success: true,
+        data: {
+          okrScore: 3.5,
+          competencyScore: 3,
+          compositeScore: hasCustomRating ? 3.7 : 3.2,
+          ratingLabel: hasCustomRating ? 'Exceeds Expectations' : 'Meets Expectations',
+          breakdown: {
+            okrWeight: hasCustomRating ? 32 : 40,
+            okrContribution: hasCustomRating ? 1.12 : 1.4,
+            competencyWeight: hasCustomRating ? 48 : 60,
+            competencyContribution: hasCustomRating ? 1.44 : 1.8,
+            customSections: hasCustomRating ? [{ sectionId: 'growth_readiness', title: 'Growth readiness', score: customRating, weight: 20, contribution: customRating * 0.2 }] : [],
+          },
+        },
+      });
+    }
+    if (method === 'GET' && path === '/feedback/direct-reports') {
+      return fulfill({ success: true, data: {} });
     }
     if (method === 'GET' && path === '/analytics/performance') {
       state.analyticsRequestPaths.push(`${path}${url.search}`);
@@ -886,7 +960,7 @@ test('customizes an appraisal cycle flow, adds a question, selects people, and l
   await expect(page.getByLabel('Period End')).toHaveValue(`${currentYear}-12-31`);
   await page.getByLabel('Cycle Name').fill('Annual employee review');
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { name: 'Review design' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Review design', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Add section' }).click();
   await page.getByLabel('Section title').last().fill('Client learning evidence');
   await page.getByLabel('Question 1').last().fill('How did you apply your most important learning?');
@@ -909,6 +983,171 @@ test('customizes an appraisal cycle flow, adds a question, selects people, and l
   ]));
   expect(body.workflowDefinition.sections.find((section) => section.title === 'Client learning evidence')?.questions[0].prompt)
     .toBe('How did you apply your most important learning?');
+});
+
+test('validates a scored custom design, saves it as a template, and launches the exact configuration', async ({ page }) => {
+  const state = createState();
+  state.hrAdminMode = true;
+  state.managerMode = true;
+  await installMockApi(page, state);
+
+  await page.goto('/admin/appraisal-cycles/new');
+  await expect(page.getByText(/confirm the launch in four steps/i)).toBeVisible();
+  await page.getByLabel('Cycle Name').fill('Custom client review');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  await expect(page.getByRole('checkbox', { name: 'Employee assessment enabled' })).toBeDisabled();
+  await expect(page.getByRole('checkbox', { name: 'Manager assessment enabled' })).toBeDisabled();
+  await expect(page.getByRole('checkbox', { name: 'Final result enabled' })).toBeDisabled();
+
+  await page.getByRole('button', { name: 'Add section', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByText('Every question in New section needs prompt text.').first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Review design', exact: true })).toBeVisible();
+
+  await page.getByLabel('Section title').last().fill('Growth readiness');
+  await page.getByLabel('Question 1').last().fill('How ready is this employee for broader responsibility?');
+  await page.getByRole('checkbox', { name: 'Contributes to rating' }).last().check();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByText('Growth readiness needs a manager rating question.').first()).toBeVisible();
+
+  await page.getByRole('combobox', { name: 'Who responds' }).last().click();
+  await page.getByRole('option', { name: 'Manager', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Answer type' }).last().click();
+  await page.getByRole('option', { name: 'Rating', exact: true }).click();
+
+  const weights = page.getByRole('spinbutton', { name: 'Weight %' });
+  await weights.nth(0).fill('30');
+  await weights.nth(1).fill('50');
+  await weights.nth(2).fill('20');
+  await page.getByRole('checkbox', { name: 'Calibration enabled' }).check();
+  await expect(page.getByText('Scored weight 100%')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save as reusable template' }).click();
+  const templateDialog = page.getByRole('dialog', { name: 'Save reusable cycle template' });
+  await templateDialog.getByLabel('Template name').fill('Client leadership review');
+  await templateDialog.getByLabel('Description').fill('Reusable leadership and growth review.');
+  await templateDialog.getByRole('button', { name: 'Save template', exact: true }).click();
+  await expect.poll(() => state.createdTemplateBodies.length).toBe(1);
+
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByText('Jordan Lee', { exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Launch Review Cycle' }).click();
+  await expect.poll(() => state.createdCycleBodies.length).toBe(1);
+
+  const body = state.createdCycleBodies[0] as {
+    workflowDefinition: { stages: Record<string, { enabled: boolean }>; sections: Array<{ title: string; respondent: string; scored: boolean; weight: number; questions: Array<{ responseType: string }> }> };
+  };
+  expect(body.workflowDefinition.stages.calibration.enabled).toBe(true);
+  expect(body.workflowDefinition.sections).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      title: 'Growth readiness', respondent: 'manager', scored: true, weight: 20,
+      questions: [expect.objectContaining({ responseType: 'rating' })],
+    }),
+  ]));
+});
+
+test('keeps a launched cycle design frozen while allowing safe non-design updates', async ({ page }) => {
+  const state = createState();
+  state.hrAdminMode = true;
+  await installMockApi(page, state);
+
+  await page.goto('/admin/appraisal-cycles/cycle-1/edit');
+  await expect(page.getByText('This design is frozen because the cycle has launched.')).toBeVisible();
+  await expect(page.getByLabel('Section title').first()).toBeDisabled();
+  await expect.poll(() => page.getByLabel('Section title').first().evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(240);
+  await expect(page.getByText('Rating Configuration')).toHaveCount(0);
+
+  await page.getByRole('switch', { name: 'Allow Self Rating' }).check();
+  await page.getByRole('button', { name: 'Save Changes' }).click();
+  await expect.poll(() => state.updatedCycleBodies.length).toBe(1);
+  expect(state.updatedCycleBodies[0]).not.toHaveProperty('workflowDefinition');
+  expect(state.updatedCycleBodies[0]).not.toHaveProperty('sourceTemplate');
+  expect(state.updatedCycleBodies[0]).not.toHaveProperty('okrWeight');
+});
+
+test('refreshes manager scoring after a custom rating autosaves and submits the manager response', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  Object.assign(state.appraisals[0], {
+    status: 'manager_review_pending',
+    employee: { userId: 'member-1', name: 'Jordan Lee', email: 'jordan@example.com', jobTitle: 'Customer Success Manager', teamId: 'team-1', teamName: 'Customer Success' },
+    manager: { userId: currentUser.id, name: currentUser.name, email: currentUser.email },
+    cycleId: {
+      _id: 'cycle-1', name: '2026 Annual Review', settings: { enableAiAssist: false, allowSelfRating: true },
+      competencies: [{ id: 'customer_focus', name: 'Customer focus', description: 'Makes sound customer decisions.', weight: 100 }],
+    },
+    cycleConfigurationSnapshot: {
+      workflowDefinition: {
+        version: 1,
+        scoring: { goalsWeight: 32, competenciesWeight: 48 },
+        stages: { selfAssessment: { enabled: true }, managerReview: { enabled: true }, discussion: { enabled: true }, finalReview: { enabled: true } },
+        sections: [
+          { id: 'goals', title: 'Goals', description: '', type: 'goals', respondent: 'both', required: true, scored: true, weight: 32, evidenceRequired: false, questions: [] },
+          { id: 'competencies', title: 'Competencies', description: '', type: 'competencies', respondent: 'both', required: true, scored: true, weight: 48, evidenceRequired: false, questions: [] },
+          { id: 'learning', title: 'Learning and application', description: '', type: 'learning', respondent: 'employee', required: true, scored: false, weight: 0, evidenceRequired: false, questions: [{ id: 'learning_applied', prompt: 'What did you apply?', helpText: '', responseType: 'long_text', required: true, options: [], ratingMin: 1, ratingMax: 5 }] },
+          { id: 'growth_readiness', title: 'Growth readiness', description: 'Manager assessment of readiness.', type: 'custom', respondent: 'manager', required: true, scored: true, weight: 20, evidenceRequired: false, questions: [{ id: 'growth_rating', prompt: 'How ready is the employee?', helpText: '', responseType: 'rating', required: true, options: [], ratingMin: 1, ratingMax: 5 }] },
+        ],
+      },
+    },
+    customResponses: [{ sectionId: 'learning', questionId: 'learning_applied', respondentRole: 'employee', value: 'Applied structured customer discovery.' }],
+    selfAssessment: {
+      submittedAt: '2026-08-10T10:00:00.000Z',
+      overallSummary: { achievements: 'Improved response quality.', challenges: 'Complex launches.', learnings: 'Customer discovery.', improvements: 'Delegation.', goals: 'Scale the playbook.' },
+      competencyRatings: [{ competencyId: 'customer_focus', competencyName: 'Customer focus', selfRating: 4, selfComments: 'Used customer evidence.' }],
+      okrAssessment: [{ okrId: 'goal-1', okrTitle: 'Improve response quality', completionPercentage: 80, selfComments: 'Quality improved.' }],
+      overallSelfRating: 4,
+    },
+    managerReview: {},
+  });
+  await installMockApi(page, state);
+
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/manager-review');
+  await expect(page.getByRole('heading', { name: 'Manager Review: Jordan Lee' })).toBeVisible();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Cycle-specific questions' })).toBeVisible();
+
+  await page.getByRole('combobox', { name: 'Rating' }).click();
+  await page.getByRole('option', { name: '5 / 5' }).click();
+  await expect.poll(() => state.customResponseBodies.filter((body) => body.respondentRole === 'manager').length).toBeGreaterThan(0);
+  await expect(page.getByText('Growth readiness (20% weight)')).toBeVisible();
+  await expect(page.getByText('5.0/5')).toBeVisible();
+  expect(state.scoringRequestCount).toBeGreaterThan(1);
+
+  await page.getByRole('button', { name: 'Submit Review' }).click();
+  await expect.poll(() => state.managerReviewBodies.some((body) => body.submit === true)).toBe(true);
+  expect(state.customResponseBodies.some((body) => body.respondentRole === 'manager' && body.submit === true)).toBe(true);
+});
+
+test('keeps analytics and the cycle builder usable on a narrow mobile viewport', async ({ page }, testInfo) => {
+  const state = createState();
+  state.managerMode = true;
+  state.hrAdminMode = true;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMockApi(page, state);
+
+  await page.goto('/analytics');
+  await expect(page.getByRole('heading', { name: 'Performance analytics' })).toBeVisible();
+  await page.getByRole('tab', { name: /Top performers/ }).click();
+  await expect(page.getByTestId('top-performers-table')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await page.getByTestId('top-performers-table').evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('analytics-mobile.png'), fullPage: true });
+
+  await page.getByRole('tab', { name: 'Teams and departments' }).click();
+  await page.getByRole('button', { name: 'Product', exact: true }).click();
+  await expect.poll(() => state.analyticsRequestPaths.some((path) => path.includes('department=Product'))).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  await page.goto('/admin/appraisal-cycles/new');
+  await page.getByLabel('Cycle Name').fill('Mobile review');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Review design', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('cycle-builder-mobile.png'), fullPage: true });
 });
 
 test('renders frozen cycle questions in the employee appraisal and autosaves the response', async ({ page }) => {

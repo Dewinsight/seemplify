@@ -71,6 +71,40 @@ export interface CycleTemplateSummary {
   design: CycleDesign;
 }
 
+export function validateCycleDesign(design: CycleDesign): string[] {
+  const errors: string[] = [];
+  if (!design.sections.length) errors.push('Add at least one assessment section.');
+
+  design.sections.forEach((section) => {
+    if (!section.title.trim()) errors.push('Every assessment section needs a title.');
+    if (!['goals', 'competencies'].includes(section.type) && section.questions.length === 0) {
+      errors.push(`${section.title || 'Custom section'} needs at least one question.`);
+    }
+    section.questions.forEach((question) => {
+      if (!question.prompt.trim()) errors.push(`Every question in ${section.title || 'a custom section'} needs prompt text.`);
+      if (['single_select', 'multi_select'].includes(question.responseType) && question.options.length < 2) {
+        errors.push(`${question.prompt || 'Choice question'} needs at least two choices.`);
+      }
+      if (question.responseType === 'rating' && question.ratingMax <= question.ratingMin) {
+        errors.push(`${question.prompt || 'Rating question'} needs a maximum above its minimum.`);
+      }
+    });
+    if (section.scored && !['goals', 'competencies'].includes(section.type)) {
+      const hasManagerRating = ['manager', 'both'].includes(section.respondent)
+        && section.questions.some((question) => question.responseType === 'rating');
+      if (!hasManagerRating) errors.push(`${section.title || 'Scored section'} needs a manager rating question.`);
+    }
+  });
+
+  const scoredWeight = design.sections
+    .filter((section) => section.scored)
+    .reduce((sum, section) => sum + Number(section.weight || 0), 0);
+  if (Math.abs(scoredWeight - 100) >= 0.01) {
+    errors.push(`Scored assessment sections must total 100% (currently ${scoredWeight}%).`);
+  }
+  return Array.from(new Set(errors));
+}
+
 export const DEFAULT_CYCLE_DESIGN: CycleDesign = {
   version: 1,
   scoring: { goalsWeight: 40, competenciesWeight: 60 },
@@ -181,6 +215,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
     () => design.sections.filter((section) => section.scored).reduce((sum, section) => sum + Number(section.weight || 0), 0),
     [design.sections]
   );
+  const designErrors = useMemo(() => validateCycleDesign(design), [design]);
 
   const patchSection = (index: number, patch: Partial<CycleSection>) => {
     const next = cloneDesign(design);
@@ -248,8 +283,8 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
         <FormControl size="small" sx={{ minWidth: 300 }} disabled={loadingTemplates || readOnly}>
-          <InputLabel>Starting template</InputLabel>
-          <Select value={templates.some((template) => template.id === sourceTemplate?.id) ? sourceTemplate?.id : ''} label="Starting template" onChange={(event) => applyTemplate(event.target.value)}>
+          <InputLabel id="cycle-template-label">Starting template</InputLabel>
+          <Select labelId="cycle-template-label" id="cycle-template" value={templates.some((template) => template.id === sourceTemplate?.id) ? sourceTemplate?.id : ''} label="Starting template" onChange={(event) => applyTemplate(event.target.value)}>
             {templates.map((template) => (
               <MenuItem key={template.id} value={template.id}>{template.name}{template.system ? '' : ' · Organization'}</MenuItem>
             ))}
@@ -274,7 +309,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
               <Switch
                 checked={design.stages?.[key]?.enabled !== false}
                 disabled={readOnly || stage.locked}
-                inputProps={{ 'aria-label': `${stage.label} enabled` }}
+                slotProps={{ input: { 'aria-label': `${stage.label} enabled` } }}
                 onChange={(event) => onChange({
                   ...cloneDesign(design),
                   stages: { ...design.stages, [key]: { enabled: event.target.checked } }
@@ -297,8 +332,12 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
             variant="outlined"
           />
         </Stack>
-        {Math.abs(scoredWeight - 100) >= 0.01 && (
-          <Alert severity="warning" sx={{ mb: 1.5 }}>Scored section weights must total 100% before this cycle can be launched.</Alert>
+        {designErrors.length > 0 && (
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
+              {designErrors.slice(0, 4).map((error) => <Typography component="li" variant="body2" key={error}>{error}</Typography>)}
+            </Stack>
+          </Alert>
         )}
 
         <Stack spacing={1.5}>
@@ -322,14 +361,14 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(220px, 1fr) 180px 180px' }, gap: 1.5 }}>
                   <TextField size="small" label="Section title" value={section.title} disabled={readOnly} onChange={(event) => patchSection(sectionIndex, { title: event.target.value })} />
                   <FormControl size="small">
-                    <InputLabel>Section type</InputLabel>
-                    <Select value={section.type} label="Section type" disabled={readOnly || protectedSection} onChange={(event) => patchSection(sectionIndex, { type: event.target.value as SectionType })}>
+                    <InputLabel id={`section-type-${section.id}-label`}>Section type</InputLabel>
+                    <Select labelId={`section-type-${section.id}-label`} id={`section-type-${section.id}`} value={section.type} label="Section type" disabled={readOnly || protectedSection} onChange={(event) => patchSection(sectionIndex, { type: event.target.value as SectionType })}>
                       {Object.entries(sectionTypeLabels).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
                     </Select>
                   </FormControl>
                   <FormControl size="small">
-                    <InputLabel>Who responds</InputLabel>
-                    <Select value={section.respondent} label="Who responds" disabled={readOnly || protectedSection} onChange={(event) => patchSection(sectionIndex, { respondent: event.target.value as Respondent })}>
+                    <InputLabel id={`section-respondent-${section.id}-label`}>Who responds</InputLabel>
+                    <Select labelId={`section-respondent-${section.id}-label`} id={`section-respondent-${section.id}`} value={section.respondent} label="Who responds" disabled={readOnly || protectedSection} onChange={(event) => patchSection(sectionIndex, { respondent: event.target.value as Respondent })}>
                       <MenuItem value="employee">Employee</MenuItem>
                       <MenuItem value="manager">Manager</MenuItem>
                       <MenuItem value="both">Employee and manager</MenuItem>
@@ -353,8 +392,8 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
                         <Box key={item.id} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(240px, 1fr) 170px auto' }, gap: 1, alignItems: 'start' }}>
                           <TextField size="small" label={`Question ${questionIndex + 1}`} value={item.prompt} disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { prompt: event.target.value })} />
                           <FormControl size="small">
-                            <InputLabel>Answer type</InputLabel>
-                            <Select value={item.responseType} label="Answer type" disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { responseType: event.target.value as ResponseType })}>
+                            <InputLabel id={`question-type-${section.id}-${item.id}-label`}>Answer type</InputLabel>
+                            <Select labelId={`question-type-${section.id}-${item.id}-label`} id={`question-type-${section.id}-${item.id}`} value={item.responseType} label="Answer type" disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { responseType: event.target.value as ResponseType })}>
                               {Object.entries(responseTypeLabels).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
                             </Select>
                           </FormControl>
@@ -411,7 +450,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSaveTemplateOpen(false)}>Cancel</Button>
-          <Button variant="contained" disabled={savingTemplate || templateName.trim().length < 3 || Math.abs(scoredWeight - 100) >= 0.01} onClick={saveAsTemplate}>Save template</Button>
+          <Button variant="contained" disabled={savingTemplate || templateName.trim().length < 3 || designErrors.length > 0} onClick={saveAsTemplate}>Save template</Button>
         </DialogActions>
       </Dialog>
     </Stack>

@@ -489,7 +489,7 @@ const PAGE_GUIDES: GuideDefinition[] = [
     key: 'admin-cycle-create',
     matcher: /^\/admin\/appraisal-cycles\/new$/,
     title: 'Create Review Cycle',
-    summary: 'Set the review period, choose employees, and confirm the launch in three steps.',
+    summary: 'Set the review period, customize the review design, choose employees, and confirm the launch in four steps.',
     purpose: 'This flow starts a review without exposing internal workflow configuration. Targets are maintained before the review; employees then complete an AI-guided reflection before the line-manager review and discussion.',
     steps: [
       'Name the cycle and choose the performance period it covers.',

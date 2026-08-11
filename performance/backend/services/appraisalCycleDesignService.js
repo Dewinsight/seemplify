@@ -226,6 +226,9 @@ function validateDesign(raw = {}) {
   const sectionIds = new Set();
   for (const section of design.sections) {
     if (!section.title) errors.push('Every assessment section needs a title');
+    if (!['goals', 'competencies'].includes(section.type) && section.questions.length === 0) {
+      errors.push(`Section '${section.title || section.id}' needs at least one question`);
+    }
     if (sectionIds.has(section.id)) errors.push(`Section ID '${section.id}' is duplicated`);
     sectionIds.add(section.id);
     const questionIds = new Set();

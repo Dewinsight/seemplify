@@ -23,6 +23,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   Tabs,
@@ -89,22 +90,22 @@ export default function AnalyticsPage() {
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
           <FormControl size="small" sx={{ minWidth: 230 }}>
-            <InputLabel>Cycle</InputLabel>
-            <Select value={filters.cycleId} label="Cycle" onChange={(event) => setFilters((current) => ({ ...current, cycleId: event.target.value }))}>
+            <InputLabel id="analytics-cycle-label">Cycle</InputLabel>
+            <Select labelId="analytics-cycle-label" id="analytics-cycle" value={filters.cycleId} label="Cycle" onChange={(event) => setFilters((current) => ({ ...current, cycleId: event.target.value }))}>
               <MenuItem value="">All cycles</MenuItem>
               {(filterOptions.cycles || []).map((cycle: IdName) => <MenuItem key={cycle.id} value={cycle.id}>{cycle.name}</MenuItem>)}
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 220 }}>
-            <InputLabel>Team</InputLabel>
-            <Select value={filters.teamId} label="Team" onChange={(event) => setFilters((current) => ({ ...current, teamId: event.target.value }))}>
+            <InputLabel id="analytics-team-label">Team</InputLabel>
+            <Select labelId="analytics-team-label" id="analytics-team" value={filters.teamId} label="Team" onChange={(event) => setFilters((current) => ({ ...current, teamId: event.target.value }))}>
               <MenuItem value="">All accessible teams</MenuItem>
               {(filterOptions.teams || []).map((team: IdName) => <MenuItem key={team.id} value={team.id}>{team.name}</MenuItem>)}
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 220 }}>
-            <InputLabel>Department</InputLabel>
-            <Select value={filters.department} label="Department" onChange={(event) => setFilters((current) => ({ ...current, department: event.target.value }))}>
+            <InputLabel id="analytics-department-label">Department</InputLabel>
+            <Select labelId="analytics-department-label" id="analytics-department" value={filters.department} label="Department" onChange={(event) => setFilters((current) => ({ ...current, department: event.target.value }))}>
               <MenuItem value="">All departments</MenuItem>
               {(filterOptions.departments || []).map((department: string) => <MenuItem key={department} value={department}>{department}</MenuItem>)}
             </Select>
@@ -130,7 +131,15 @@ export default function AnalyticsPage() {
         ))}
       </Grid>
 
-      <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+      <Tabs
+        value={tab}
+        onChange={(_, value) => setTab(value)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        aria-label="Analytics views"
+        sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+      >
         <Tab label="Overview" />
         <Tab label={`Top performers (${analytics.topPerformers?.length || 0})`} />
         <Tab label="Teams and departments" />
@@ -184,7 +193,8 @@ export default function AnalyticsPage() {
             <Typography variant="body2" color="text.secondary">{analytics.definitions?.topPerformers}</Typography>
           </Box>
           {(analytics.topPerformers || []).length === 0 ? <Alert severity="info" sx={{ m: 2 }}>No completed, finalized appraisals match these filters.</Alert> : (
-            <Table size="small">
+            <TableContainer data-testid="top-performers-table" sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 760 }}>
               <TableHead><TableRow><TableCell>Rank</TableCell><TableCell>Employee</TableCell><TableCell>Team</TableCell><TableCell>Cycle</TableCell><TableCell align="right">Goal achievement</TableCell><TableCell align="right">Final rating</TableCell></TableRow></TableHead>
               <TableBody>
                 {analytics.topPerformers.map((person: Performer) => (
@@ -199,6 +209,7 @@ export default function AnalyticsPage() {
                 ))}
               </TableBody>
             </Table>
+            </TableContainer>
           )}
         </Paper>
       )}
@@ -208,20 +219,24 @@ export default function AnalyticsPage() {
           <Grid size={{ xs: 12, lg: 7 }}>
             <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
               <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}><Typography variant="h6">Team comparison</Typography></Box>
-              <Table size="small">
+              <TableContainer data-testid="team-comparison-table" sx={{ overflowX: 'auto' }}>
+              <Table size="small" sx={{ minWidth: 680 }}>
                 <TableHead><TableRow><TableCell>Team</TableCell><TableCell align="right">Participants</TableCell><TableCell align="right">Completion</TableCell><TableCell align="right">Avg rating</TableCell><TableCell align="right">Goals</TableCell><TableCell /></TableRow></TableHead>
                 <TableBody>{(analytics.teams || []).map((team: GroupInsight) => (
                   <TableRow key={team.id} hover><TableCell>{team.name}</TableCell><TableCell align="right">{team.participants}</TableCell><TableCell align="right">{team.completionRate}%</TableCell><TableCell align="right">{metricValue(team.averageRating, '/5')}</TableCell><TableCell align="right">{metricValue(team.averageGoalAchievement, '%')}</TableCell><TableCell align="right"><Button size="small" disabled={team.id === 'unassigned'} onClick={() => { setFilters((current) => ({ ...current, teamId: team.id })); setTab(0); }}>Drill down</Button></TableCell></TableRow>
                 ))}</TableBody>
               </Table>
+              </TableContainer>
             </Paper>
           </Grid>
           <Grid size={{ xs: 12, lg: 5 }}>
             <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
               <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}><Typography variant="h6">Department comparison</Typography></Box>
-              <Table size="small"><TableHead><TableRow><TableCell>Department</TableCell><TableCell align="right">Completion</TableCell><TableCell align="right">Avg rating</TableCell></TableRow></TableHead><TableBody>
-                {(analytics.departments || []).map((department: GroupInsight) => <TableRow key={department.id} hover onClick={() => setFilters((current) => ({ ...current, department: department.name === 'Unassigned' ? '' : department.name }))} sx={{ cursor: department.name === 'Unassigned' ? 'default' : 'pointer' }}><TableCell>{department.name}</TableCell><TableCell align="right">{department.completionRate}%</TableCell><TableCell align="right">{metricValue(department.averageRating, '/5')}</TableCell></TableRow>)}
+              <TableContainer data-testid="department-comparison-table" sx={{ overflowX: 'auto' }}>
+              <Table size="small" sx={{ minWidth: 440 }}><TableHead><TableRow><TableCell>Department</TableCell><TableCell align="right">Completion</TableCell><TableCell align="right">Avg rating</TableCell></TableRow></TableHead><TableBody>
+                {(analytics.departments || []).map((department: GroupInsight) => <TableRow key={department.id} hover><TableCell><Button size="small" disabled={department.name === 'Unassigned'} onClick={() => setFilters((current) => ({ ...current, department: department.name }))}>{department.name}</Button></TableCell><TableCell align="right">{department.completionRate}%</TableCell><TableCell align="right">{metricValue(department.averageRating, '/5')}</TableCell></TableRow>)}
               </TableBody></Table>
+              </TableContainer>
             </Paper>
           </Grid>
         </Grid>
@@ -234,9 +249,11 @@ export default function AnalyticsPage() {
             <Typography variant="body2" color="text.secondary">Shows whether the custom cycle content—such as learning reflection—was actually completed.</Typography>
           </Box>
           {(analytics.sectionInsights || []).length === 0 ? <Alert severity="info" sx={{ m: 2 }}>No configurable section data is available for this scope.</Alert> : (
-            <Table size="small"><TableHead><TableRow><TableCell>Section</TableCell><TableCell>Type</TableCell><TableCell align="right">Response rate</TableCell><TableCell align="right">Manager score</TableCell></TableRow></TableHead><TableBody>
+            <TableContainer data-testid="section-coverage-table" sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 560 }}><TableHead><TableRow><TableCell>Section</TableCell><TableCell>Type</TableCell><TableCell align="right">Response rate</TableCell><TableCell align="right">Manager score</TableCell></TableRow></TableHead><TableBody>
               {analytics.sectionInsights.map((section: SectionInsight) => <TableRow key={section.sectionId}><TableCell>{section.title}</TableCell><TableCell><Chip size="small" label={section.type} variant="outlined" /></TableCell><TableCell align="right">{section.responseRate}%</TableCell><TableCell align="right">{metricValue(section.averageManagerScore, '/5')}</TableCell></TableRow>)}
             </TableBody></Table>
+            </TableContainer>
           )}
         </Paper>
       )}

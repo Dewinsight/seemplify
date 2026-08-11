@@ -1379,6 +1379,15 @@ test('canonical analytics ranks finalized performers and supports team drilldown
       managerReview: { submittedAt: now, overallManagerRating: 4 },
       finalRating: { overall: 4, ratingLabel: 'Exceeds Expectations', finalizedAt: now },
       goalEvidenceSummary: { rated: true, score: 84, ratedGoals: 2, totalGoals: 2 }
+    },
+    {
+      organizationId: ORG_A,
+      cycleId: cycle._id,
+      employee: { userId: 'draft-1', name: 'Draft Rating', email: 'draft@example.com', teamId: 'team-a', teamName: 'Team A', department: 'Product' },
+      manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+      status: 'final_review_pending',
+      finalRating: { overall: 5, ratingLabel: 'Outstanding' },
+      goalEvidenceSummary: { rated: true, score: 100, ratedGoals: 1, totalGoals: 1 }
     }
   ]);
 
@@ -1386,7 +1395,7 @@ test('canonical analytics ranks finalized performers and supports team drilldown
     .get('/api/analytics/performance')
     .set('x-test-actor', 'hr')
     .expect(200);
-  expect(organization.body.data.summary).toMatchObject({ participants: 2, completed: 2, rated: 2, averageRating: 4.5 });
+  expect(organization.body.data.summary).toMatchObject({ participants: 3, completed: 2, rated: 2, averageRating: 4.5 });
   expect(organization.body.data.topPerformers[0]).toMatchObject({ rank: 1, employeeName: 'Ada Cole', finalRating: 5 });
   expect(organization.body.data.teams.map((team) => team.name)).toEqual(['Team A', 'Team B']);
 
@@ -1394,8 +1403,13 @@ test('canonical analytics ranks finalized performers and supports team drilldown
     .get('/api/analytics/performance?teamId=team-a')
     .set('x-test-actor', 'hr')
     .expect(200);
-  expect(team.body.data.summary).toMatchObject({ participants: 1, averageRating: 5 });
+  expect(team.body.data.summary).toMatchObject({ participants: 2, rated: 1, averageRating: 5 });
   expect(team.body.data.topPerformers).toHaveLength(1);
+
+  await request(app)
+    .get('/api/analytics/performance')
+    .set('x-test-actor', 'employee')
+    .expect(403);
 
   await request(app)
     .get('/api/analytics/performance')

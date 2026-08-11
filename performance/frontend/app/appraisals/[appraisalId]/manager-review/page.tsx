@@ -289,6 +289,7 @@ export default function ManagerReviewPage() {
         managerReview: { ...formData, competencyRatings: competenciesWithGaps },
         submit: false
       });
+      await fetchScoringData();
       mutate();
       if (showNotification) {
         setSnackbar({ open: true, message: 'Progress saved successfully!', severity: 'success' });
@@ -1355,6 +1356,7 @@ export default function ManagerReviewPage() {
               appraisal={appraisal}
               respondentRole="manager"
               onSaveError={(message) => setSnackbar({ open: true, message, severity: 'error' })}
+              onSaved={fetchScoringData}
             />
             {renderOverallAssessment()}
           </>

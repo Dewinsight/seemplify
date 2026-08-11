@@ -6,6 +6,7 @@ import { useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
 import CycleDesignBuilder, {
     DEFAULT_CYCLE_DESIGN,
+    validateCycleDesign,
     type CycleDesign
 } from '@/components/appraisals/CycleDesignBuilder';
 import {
@@ -23,9 +24,9 @@ import {
     Grid,
     InputAdornment,
     InputLabel,
+    LinearProgress,
     MenuItem,
     Select,
-    Slider,
     Step,
     StepLabel,
     Stepper,
@@ -90,6 +91,8 @@ const phaseLabels: Record<string, string> = {
     calibration: 'Calibration',
     finalReview: 'Final Review'
 };
+
+const setupStepLabels = ['Review period', 'Review design', 'People', 'Confirm'];
 
 function createDefaultFormData() {
     const currentYear = new Date().getUTCFullYear();
@@ -241,7 +244,10 @@ export default function EditAppraisalCyclePage() {
                             endDate: formatDateForInput(cycle.phases?.finalReview?.endDate)
                         }
                     },
-                    settings: cycle.settings
+                    settings: {
+                        ...createDefaultFormData().settings,
+                        ...(cycle.settings || {})
+                    }
                 });
             } catch (err: any) {
                 console.error('Fetch cycle error:', err);
@@ -381,11 +387,9 @@ export default function EditAppraisalCyclePage() {
             return;
         }
 
-        const scoredWeight = formData.workflowDefinition.sections
-            .filter((section) => section.scored)
-            .reduce((sum, section) => sum + Number(section.weight || 0), 0);
-        if (Math.abs(scoredWeight - 100) >= 0.01) {
-            setSaveError(`Scored assessment sections must total 100% (currently ${scoredWeight}%).`);
+        const designErrors = validateCycleDesign(formData.workflowDefinition);
+        if (designErrors.length > 0) {
+            setSaveError(designErrors[0]);
             return;
         }
 
@@ -416,7 +420,10 @@ export default function EditAppraisalCyclePage() {
                     }))
                 });
             } else {
-                await api.put(`/appraisals/cycles/${cycleId}`, formData);
+                const updatePayload = cycleStatus === 'draft'
+                    ? formData
+                    : Object.fromEntries(Object.entries(formData).filter(([key]) => !['workflowDefinition', 'sourceTemplate', 'okrWeight'].includes(key)));
+                await api.put(`/appraisals/cycles/${cycleId}`, updatePayload);
             }
 
             router.push('/admin/appraisal-cycles');
@@ -454,11 +461,9 @@ export default function EditAppraisalCyclePage() {
         }
 
         if (setupStep === 1) {
-            const scoredWeight = formData.workflowDefinition.sections
-                .filter((section) => section.scored)
-                .reduce((sum, section) => sum + Number(section.weight || 0), 0);
-            if (Math.abs(scoredWeight - 100) >= 0.01) {
-                setSaveError(`Scored assessment sections must total 100% (currently ${scoredWeight}%).`);
+            const designErrors = validateCycleDesign(formData.workflowDefinition);
+            if (designErrors.length > 0) {
+                setSaveError(designErrors[0]);
                 return;
             }
             setSetupStep(2);
@@ -536,11 +541,20 @@ export default function EditAppraisalCyclePage() {
 
             {isNewCycle && (
                 <Box sx={{ mb: 3, px: { xs: 0, md: 1 } }}>
-                    <Stepper activeStep={setupStep}>
-                        <Step><StepLabel>Review period</StepLabel></Step>
-                        <Step><StepLabel>Review design</StepLabel></Step>
-                        <Step><StepLabel>People</StepLabel></Step>
-                        <Step><StepLabel>Confirm</StepLabel></Step>
+                    <Box sx={{ display: { xs: 'block', sm: 'none' } }}>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                            Step {setupStep + 1} of {setupStepLabels.length} · {setupStepLabels[setupStep]}
+                        </Typography>
+                        <LinearProgress
+                            variant="determinate"
+                            value={((setupStep + 1) / setupStepLabels.length) * 100}
+                            aria-label={`Cycle setup progress: step ${setupStep + 1} of ${setupStepLabels.length}`}
+                        />
+                    </Box>
+                    <Stepper activeStep={setupStep} sx={{ display: { xs: 'none', sm: 'flex' } }}>
+                        {setupStepLabels.map((label) => (
+                            <Step key={label}><StepLabel>{label}</StepLabel></Step>
+                        ))}
                     </Stepper>
                 </Box>
             )}
@@ -552,7 +566,7 @@ export default function EditAppraisalCyclePage() {
             )}
 
             <Grid container spacing={3}>
-                <Grid size={{ xs: 12, lg: isNewCycle ? 12 : 8 }} sx={{ display: isNewCycle && setupStep === 3 ? 'none' : 'block' }}>
+                <Grid size={{ xs: 12 }} sx={{ display: isNewCycle && setupStep === 3 ? 'none' : 'block' }}>
                     {(!isNewCycle || setupStep === 0) && <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Typography variant="h6" gutterBottom>Cycle Details</Typography>
@@ -899,7 +913,7 @@ export default function EditAppraisalCyclePage() {
                     )}
                 </Grid>
 
-                {(!isNewCycle || setupStep === 3) && <Grid size={{ xs: 12, lg: isNewCycle ? 12 : 4 }}>
+                {(!isNewCycle || setupStep === 3) && <Grid size={{ xs: 12 }}>
                     {isNewCycle ? (
                         <Card sx={{ mb: 3 }}>
                             <CardContent>
@@ -1027,25 +1041,6 @@ export default function EditAppraisalCyclePage() {
                             </CardContent>
                         </Card>
                     )}
-
-                    {!isNewCycle && <Card sx={{ mb: 3 }}>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom>Rating Configuration</Typography>
-                            <Box sx={{ mt: 2 }}>
-                                <Typography variant="subtitle2" gutterBottom>OKR Weight: {formData.okrWeight}%</Typography>
-                                <Slider
-                                    value={formData.okrWeight}
-                                    onChange={(_, value) => setFormData({ ...formData, okrWeight: value as number })}
-                                    min={0}
-                                    max={100}
-                                    valueLabelDisplay="auto"
-                                />
-                                <Typography variant="caption" color="text.secondary">
-                                    Competency Weight: {100 - formData.okrWeight}%
-                                </Typography>
-                            </Box>
-                        </CardContent>
-                    </Card>}
 
                     {!isNewCycle && <Card sx={{ mb: 3 }}>
                         <CardContent>

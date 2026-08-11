@@ -4,7 +4,7 @@ const GoalCheckIn = require('../models/GoalCheckIn');
 const Appraisal = require('../models/Appraisal');
 const Feedback = require('../models/Feedback');
 const AppraisalCycle = require('../models/AppraisalCycle');
-const { requireAuth } = require('../middleware/rbac');
+const { requireAuth, requireManager } = require('../middleware/rbac');
 const {
   getActorId,
   requireOrganization
@@ -98,7 +98,7 @@ function performanceScopeQuery(req) {
 
 // Canonical performance intelligence for HR and managers. Every metric comes
 // from Appraisal/AppraisalCycle snapshots; no legacy review records are read.
-router.get('/performance', async (req, res) => {
+router.get('/performance', requireManager, async (req, res) => {
   try {
     const scopeQuery = performanceScopeQuery(req);
     const query = { ...scopeQuery };
@@ -132,7 +132,9 @@ router.get('/performance', async (req, res) => {
     const cycleMap = new Map(cycles.map((cycle) => [String(cycle._id), cycle]));
 
     const completedStatuses = new Set(['completed', 'employee_acknowledged']);
-    const finalized = appraisals.filter((item) => Number.isFinite(Number(item.finalRating?.overall)));
+    const finalized = appraisals.filter((item) => (
+      completedStatuses.has(item.status) && Number.isFinite(Number(item.finalRating?.overall))
+    ));
     const completed = appraisals.filter((item) => completedStatuses.has(item.status));
     const selfSubmitted = appraisals.filter((item) => item.selfAssessment?.submittedAt).length;
     const managerSubmitted = appraisals.filter((item) => item.managerReview?.submittedAt).length;
@@ -150,7 +152,6 @@ router.get('/performance', async (req, res) => {
     }
 
     const topPerformers = finalized
-      .filter((item) => completedStatuses.has(item.status))
       .sort((left, right) => (
         Number(right.finalRating.overall) - Number(left.finalRating.overall) ||
         Number(right.goalEvidenceSummary?.score ?? -1) - Number(left.goalEvidenceSummary?.score ?? -1) ||
