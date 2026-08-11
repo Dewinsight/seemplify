@@ -73,7 +73,7 @@ function statusColor(status: string) {
     case "in_progress":
     case "opened":
     case "sent":
-      return "bg-blue-100 text-blue-800";
+      return "bg-violet-100 text-violet-800";
     case "credit_blocked":
     case "credit_error":
     case "email_failed":
@@ -172,9 +172,9 @@ function scoreBand(score: number | null) {
   if (score >= 70) {
     return {
       label: "Strong review",
-      className: "border-blue-200 bg-blue-50 text-blue-700",
-      barClassName: "bg-blue-500",
-      dotClassName: "bg-blue-500"
+      className: "border-violet-200 bg-violet-50 text-violet-700",
+      barClassName: "bg-violet-500",
+      dotClassName: "bg-violet-500"
     };
   }
   if (score >= 55) {
@@ -425,7 +425,7 @@ export default function AIInterviewDetailPage() {
   return (
     <div className="ai-interview-detail min-h-screen bg-slate-50">
       <div className="ai-interview-detail__inner container max-w-screen-2xl space-y-6 py-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <header className="ai-interview-detail__header flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="space-y-2">
             <Button variant="ghost" size="sm" asChild className="px-0">
               <Link href="/ai-interviews">
@@ -453,9 +453,9 @@ export default function AIInterviewDetailPage() {
               </Button>
             )}
           </div>
-        </div>
+        </header>
 
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="ai-interview-detail__metrics grid gap-4 md:grid-cols-5">
           <Card>
             <CardContent className="p-4">
               <div className="text-sm text-muted-foreground">Status</div>
@@ -491,7 +491,7 @@ export default function AIInterviewDetailPage() {
           </Card>
         </div>
 
-        <Card>
+        <Card className="ai-interview-detail__schedule">
           <CardContent className="grid gap-3 p-5 text-sm md:grid-cols-5">
             <div>
               <div className="text-muted-foreground">Send time</div>
@@ -526,8 +526,8 @@ export default function AIInterviewDetailPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
-          <Card className="overflow-hidden border-0 bg-white shadow-sm">
+        <div className="ai-interview-detail__review-grid grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+          <Card className="ai-interview-detail__sessions overflow-hidden border-0 bg-white shadow-sm">
             <CardHeader className="border-b bg-white">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -634,7 +634,7 @@ export default function AIInterviewDetailPage() {
           </Card>
 
           {selectedSession ? (
-            <Tabs defaultValue="transcript" className="space-y-4">
+            <Tabs defaultValue="transcript" className="ai-interview-detail__candidate space-y-4">
               <Card className="overflow-hidden border-0 bg-white shadow-sm">
                 <CardContent className="p-0">
                   <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_260px]">

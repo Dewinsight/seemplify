@@ -94,7 +94,7 @@ function voiceTierClass(tier?: string) {
     case "multilingual":
       return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200";
     default:
-      return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200";
+      return "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-200";
   }
 }
 
@@ -103,7 +103,7 @@ function statusColor(status: string) {
     case "completed":
       return "bg-emerald-100 text-emerald-800 border-emerald-200";
     case "active":
-      return "bg-blue-100 text-blue-800 border-blue-200";
+      return "bg-violet-100 text-violet-800 border-violet-200";
     case "cancelled":
     case "expired":
       return "bg-slate-100 text-slate-700 border-slate-200";
@@ -174,9 +174,9 @@ function scoreBand(score?: number | null) {
   if (value >= 70) {
     return {
       label: "Strong review",
-      className: "border-blue-200 bg-blue-50 text-blue-700",
-      barClassName: "bg-blue-500",
-      textClassName: "text-blue-700"
+      className: "border-violet-200 bg-violet-50 text-violet-700",
+      barClassName: "bg-violet-500",
+      textClassName: "text-violet-700"
     };
   }
   if (value >= 55) {
@@ -198,7 +198,7 @@ function scoreBand(score?: number | null) {
 function buildRankingBands(rankings: Array<{ score: number }>) {
   return [
     { id: "priority", label: "Priority", count: rankings.filter((item) => item.score >= 85).length, className: "bg-emerald-500" },
-    { id: "strong", label: "Strong review", count: rankings.filter((item) => item.score >= 70 && item.score < 85).length, className: "bg-blue-500" },
+    { id: "strong", label: "Strong review", count: rankings.filter((item) => item.score >= 70 && item.score < 85).length, className: "bg-violet-500" },
     { id: "discussion", label: "Needs discussion", count: rankings.filter((item) => item.score >= 55 && item.score < 70).length, className: "bg-amber-500" },
     { id: "low", label: "Low fit", count: rankings.filter((item) => item.score < 55).length, className: "bg-rose-500" }
   ];

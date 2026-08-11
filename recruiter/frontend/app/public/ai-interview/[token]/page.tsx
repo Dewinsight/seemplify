@@ -1688,7 +1688,7 @@ function PublicAIInterviewExperience() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70 p-4 md:p-8">
+      <main className="candidate-interview-page candidate-interview-state min-h-screen p-4 md:p-8">
         <div className="mx-auto flex max-w-5xl items-center gap-3 rounded-2xl border bg-white/90 p-5 text-sm text-muted-foreground shadow-lg">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading interview...
@@ -1699,7 +1699,7 @@ function PublicAIInterviewExperience() {
 
   if (!state || !interview || !session) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70 p-4 md:p-8">
+      <main className="candidate-interview-page candidate-interview-state flex min-h-screen items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-2xl rounded-2xl border bg-white/95 p-8 shadow-xl">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -1712,7 +1712,7 @@ function PublicAIInterviewExperience() {
 
   if (session.status === "completed") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70 p-4 md:p-8">
+      <main className="candidate-interview-page candidate-interview-state flex min-h-screen items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-2xl rounded-2xl border bg-white/95 p-8 text-center shadow-xl">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
             <CheckCircle2 className="h-9 w-9" />
@@ -1742,7 +1742,7 @@ function PublicAIInterviewExperience() {
 
   if (session.status === "proctor_failed") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-amber-50/60 to-rose-50/70 p-4 md:p-8">
+      <main className="candidate-interview-page candidate-interview-state flex min-h-screen items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-2xl rounded-2xl border border-amber-200 bg-white/95 p-8 text-center shadow-xl">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
             <ShieldCheck className="h-9 w-9" />
@@ -1771,7 +1771,7 @@ function PublicAIInterviewExperience() {
 
   if (["expired", "cancelled"].includes(session.status)) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70 p-4 md:p-8">
+      <main className="candidate-interview-page candidate-interview-state flex min-h-screen items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-2xl rounded-2xl border bg-white/95 p-8 text-center shadow-xl">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
             <AlertCircle className="h-9 w-9" />
@@ -1784,7 +1784,7 @@ function PublicAIInterviewExperience() {
   }
 
   return (
-    <main className="min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.10),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.10),transparent_30%),linear-gradient(135deg,#f8fafc_0%,#eef6ff_54%,#f6f7fb_100%)]">
+    <main className="candidate-interview-page candidate-interview-page--live min-h-[100dvh] overflow-x-hidden">
       <audio ref={ttsAudioRef} preload="auto" className="hidden" />
       {renderProctoringModal()}
       {session.status !== "in_progress" && !chatgptReady && (
