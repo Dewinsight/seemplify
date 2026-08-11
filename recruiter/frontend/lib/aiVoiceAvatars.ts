@@ -20,6 +20,26 @@ const DEFAULT_AVATAR: AIInterviewVoiceAvatarProfile = {
 };
 
 const AVATARS_BY_KEY: Record<string, AIInterviewVoiceAvatarProfile> = {
+  "en-ng-ezinneneural": {
+    src: "/ai-voice-avatars/ezinne.png",
+    label: "Ezinne",
+    tone: "purple"
+  },
+  "ezinne": {
+    src: "/ai-voice-avatars/ezinne.png",
+    label: "Ezinne",
+    tone: "purple"
+  },
+  "en-ng-abeoneural": {
+    src: "/ai-voice-avatars/abeo.png",
+    label: "Abeo",
+    tone: "emerald"
+  },
+  "abeo": {
+    src: "/ai-voice-avatars/abeo.png",
+    label: "Abeo",
+    tone: "emerald"
+  },
   "en-us-jennymultilingualneural": {
     src: "/ai-voice-avatars/jenny.png",
     label: "Jenny",

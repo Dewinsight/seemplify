@@ -61,6 +61,7 @@
     "test:mail": "node --test tests/mailClient.test.js",
     "test:oidc-return-to": "node --test tests/oidcReturnTo.test.js",
     "test:admin-ai-interviews": "node --test tests/adminAIInterviewAnalytics.test.js",
+    "test:ai-interview-voices": "node --test tests/aiInterviewVoiceOptions.test.js",
     "test:platform-features": "node --test tests/platformFeatures.test.js",
     "test:admin-activity": "node --test tests/userActivityTracking.test.js tests/adminOrganizationActivity.test.js",
     "test:admin-activity-integration": "node --test tests/adminOrganizationActivity.integration.test.js",

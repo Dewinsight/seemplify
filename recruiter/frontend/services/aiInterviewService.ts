@@ -163,9 +163,11 @@ const FALLBACK_VOICE_TIERS = {
 const FALLBACK_VOICE_SEEDS: Array<
   Pick<AIInterviewVoiceOption, 'id' | 'name' | 'displayName' | 'tier' | 'gender' | 'avatarTone' | 'description' | 'samplePhrase' | 'isDefault'>
 > = [
+  { id: 'en-NG-EzinneNeural', name: 'Ezinne', displayName: 'Ezinne', tier: 'standard', gender: 'female', avatarTone: 'purple', isDefault: true, description: 'Warm Nigerian English voice with a clear, confident interview style.', samplePhrase: 'Welcome. I will guide you through this interview one question at a time.' },
+  { id: 'en-NG-AbeoNeural', name: 'Abeo', displayName: 'Abeo', tier: 'standard', gender: 'male', avatarTone: 'emerald', description: 'Calm Nigerian English voice with a composed, professional delivery.', samplePhrase: 'Take your time, and share a clear example when you are ready.' },
   { id: 'en-US-AriaNeural', name: 'Aria', displayName: 'Aria', tier: 'standard', gender: 'female', avatarTone: 'blue', description: 'Friendly and professional with a familiar Azure neural voice profile.', samplePhrase: 'Take your time, and use a specific example where possible.' },
   { id: 'en-US-GuyNeural', name: 'Guy', displayName: 'Guy', tier: 'standard', gender: 'male', avatarTone: 'slate', description: 'Direct and steady. Works well for structured technical interviews.', samplePhrase: 'I will ask each question clearly, and you can ask me to clarify.' },
-  { id: 'en-US-JennyMultilingualNeural', name: 'Jenny', displayName: 'Jenny', tier: 'multilingual', gender: 'female', avatarTone: 'emerald', isDefault: true, description: 'Warm, polished, and clear. Good default for candidate-facing interviews.', samplePhrase: 'Hello, I will guide you through this interview one question at a time.' },
+  { id: 'en-US-JennyMultilingualNeural', name: 'Jenny', displayName: 'Jenny', tier: 'multilingual', gender: 'female', avatarTone: 'emerald', description: 'Warm, polished, and clear. Good default for candidate-facing interviews.', samplePhrase: 'Hello, I will guide you through this interview one question at a time.' },
   { id: 'en-US-AndrewMultilingualNeural', name: 'Andrew', displayName: 'Andrew', tier: 'multilingual', gender: 'male', avatarTone: 'cyan', description: 'Calm and conversational with flexible pronunciation.', samplePhrase: 'When you are ready, share the context, your actions, and the outcome.' },
   { id: 'en-US-Ava:DragonHDLatestNeural', name: 'Ava', displayName: 'Ava HD', tier: 'hd', gender: 'female', avatarTone: 'violet', description: 'Expressive HD voice for a more natural interviewer presence.', samplePhrase: 'Thanks for joining. I will keep the interview focused and conversational.' },
   { id: 'en-US-Andrew:DragonHDLatestNeural', name: 'Andrew', displayName: 'Andrew HD', tier: 'hd', gender: 'male', avatarTone: 'indigo', description: 'Deep, composed HD voice with strong clarity for longer sessions.', samplePhrase: 'Let us move through the questions carefully and keep the timing clear.' },
@@ -182,7 +184,7 @@ export const FALLBACK_AI_INTERVIEW_VOICES: AIInterviewVoiceOption[] = FALLBACK_V
   ...voice,
   ...FALLBACK_VOICE_TIERS[voice.tier],
   provider: 'azure-speech',
-  language: 'en-US'
+  language: voice.id.startsWith('en-NG-') ? 'en-NG' : 'en-US'
 }));
 
 export interface AIInterviewCostEstimate {

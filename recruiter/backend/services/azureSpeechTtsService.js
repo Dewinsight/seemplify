@@ -22,8 +22,13 @@ function isEnglishAzureVoice(value) {
   return /^en-[A-Z]{2}[-:]/i.test(voice);
 }
 
-function pickSpeechLanguage(preferredLanguage) {
-  const configured = preferredLanguage || process.env.AZURE_AI_INTERVIEW_SPEECH_LANGUAGE || process.env.AZURE_SPEECH_LANGUAGE || 'en-US';
+function voiceLocale(voice) {
+  const match = String(voice || '').trim().match(/^([a-z]{2}-[A-Z]{2})-/i);
+  return match?.[1] || '';
+}
+
+function pickSpeechLanguage(preferredLanguage, preferredVoice) {
+  const configured = preferredLanguage || process.env.AZURE_AI_INTERVIEW_SPEECH_LANGUAGE || process.env.AZURE_SPEECH_LANGUAGE || voiceLocale(preferredVoice) || 'en-NG';
   return /^en(?:-|$)/i.test(String(configured).trim()) ? String(configured).trim() : 'en-US';
 }
 
@@ -45,7 +50,7 @@ function pickSpeechVoice(preferredVoice) {
     return voiceLiveVoice.trim();
   }
 
-  return 'en-US-JennyMultilingualNeural';
+  return 'en-NG-EzinneNeural';
 }
 
 class AzureSpeechTtsService {
@@ -58,13 +63,14 @@ class AzureSpeechTtsService {
     );
     const endpoint = normalizeEndpoint(process.env.AZURE_SPEECH_TTS_ENDPOINT);
     const apiKey = process.env.AZURE_SPEECH_KEY || process.env.AZURE_VOICELIVE_API_KEY;
-    const language = pickSpeechLanguage(overrides.language);
+    const voice = pickSpeechVoice(overrides.voice || overrides.voiceId);
+    const language = pickSpeechLanguage(overrides.language, voice);
 
     return {
       apiKey,
       region,
       endpoint: endpoint || (region ? `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1` : ''),
-      voice: pickSpeechVoice(overrides.voice || overrides.voiceId),
+      voice,
       language,
       outputFormat: process.env.AZURE_SPEECH_OUTPUT_FORMAT || 'audio-24khz-48kbitrate-mono-mp3',
       rate: process.env.AZURE_SPEECH_RATE || 'default',
