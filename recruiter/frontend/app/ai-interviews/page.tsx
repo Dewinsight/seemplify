@@ -646,20 +646,31 @@ export default function AIInterviewsPage() {
     setLoading(true);
     setLoadingCandidates(true);
     try {
-      const [interviewList, jobList, candidateList] = await Promise.all([
+      const [interviewsResult, jobsResult, candidatesResult, optionsResult] = await Promise.allSettled([
         aiInterviewService.list(),
         getAllJobs({ limit: 200 }),
-        getAllCandidates(1000)
+        getAllCandidates(1000),
+        aiInterviewService.getOptions()
       ]);
-      const options = await aiInterviewService.getOptions();
-      setInterviews(interviewList);
-      setJobs(jobList || []);
-      setCandidates(candidateList || []);
-      setVoiceOptions(options.voices || []);
-      setForm((current) => ({
-        ...current,
-        voiceId: current.voiceId || options.defaultVoiceId || options.voices?.find((voice) => voice.isDefault)?.id || ""
-      }));
+
+      if (interviewsResult.status === "fulfilled") setInterviews(interviewsResult.value);
+      if (jobsResult.status === "fulfilled") setJobs(jobsResult.value || []);
+      if (candidatesResult.status === "fulfilled") setCandidates(candidatesResult.value || []);
+
+      if (optionsResult.status === "fulfilled") {
+        const options = optionsResult.value;
+        setVoiceOptions(options.voices || []);
+        setForm((current) => ({
+          ...current,
+          voiceId: current.voiceId || options.defaultVoiceId || options.voices?.find((voice) => voice.isDefault)?.id || ""
+        }));
+      } else {
+        toast.error("Failed to load AI interviewer models. Please refresh to try again.");
+      }
+
+      if ([interviewsResult, jobsResult, candidatesResult].some((result) => result.status === "rejected")) {
+        toast.error("Some interview workspace data could not be loaded. Your interviewer models remain available.");
+      }
     } catch (error: any) {
       toast.error(error.message || "Failed to load AI interviews");
     } finally {
