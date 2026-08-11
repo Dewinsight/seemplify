@@ -39,6 +39,15 @@ export async function getCampaignConsoleSummary(limit = 20) {
   return campaigns
 }
 
+export async function getCampaignHomeSummary(limit = 12) {
+  return Campaign.find()
+    .sort({ updatedAt: -1 })
+    .limit(limit)
+    .select('name status sender.email sender.name sender.readinessBand audience updatedAt')
+    .populate('audience', 'name')
+    .lean()
+}
+
 export async function getCampaignAnalytics(campaignId) {
   const objectId = toObjectId(campaignId)
   if (!objectId) return null

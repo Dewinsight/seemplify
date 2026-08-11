@@ -3,8 +3,9 @@ import { requireAdminAuth, setAdminContext } from '../middleware/adminAuth.js'
 import Campaign from '../models/Campaign.js'
 import CampaignAudience from '../models/CampaignAudience.js'
 import CampaignTemplate from '../models/CampaignTemplate.js'
-import { getCampaignAnalytics, getCampaignConsoleSummary } from '../services/campaignAnalyticsService.js'
+import { getCampaignAnalytics, getCampaignConsoleSummary, getCampaignHomeSummary } from '../services/campaignAnalyticsService.js'
 import { CAMPAIGN_AUDIENCE_FIELDS } from '../services/campaignAudienceService.js'
+import { buildCampaignStats, loadCampaignHomeData } from '../services/campaignHomeService.js'
 import { ensureSystemCampaignTemplates, getSenderHealthSummary } from '../services/campaignOperationsService.js'
 
 const router = express.Router()
@@ -17,24 +18,6 @@ function mapAudiences(audiences = []) {
     ...audience,
     contactCount: Array.isArray(audience.contacts) ? audience.contacts.length : 0
   }))
-}
-
-function buildCampaignStats(campaigns = []) {
-  return campaigns.reduce((summary, campaign) => {
-    summary.total += 1
-    summary[String(campaign.status || 'draft')] = (summary[String(campaign.status || 'draft')] || 0) + 1
-    if (campaign?.sender?.readinessBand === 'green') {
-      summary.healthySenders += 1
-    }
-    return summary
-  }, {
-    total: 0,
-    draft: 0,
-    running: 0,
-    paused: 0,
-    completed: 0,
-    healthySenders: 0
-  })
 }
 
 function filterCampaigns(campaigns = [], { search = '', status = 'all' } = {}) {
@@ -83,15 +66,11 @@ async function loadCampaignWorkspaceData(limit = 50) {
 
 router.get('/', async (req, res) => {
   try {
-    const workspaceData = await loadCampaignWorkspaceData(12)
-    const recentCampaigns = workspaceData.campaigns.slice(0, 6)
+    const homeData = await loadCampaignHomeData(getCampaignHomeSummary)
 
     res.render('admin/campaigns-home', {
       activePage: 'campaigns',
-      stats: buildCampaignStats(workspaceData.campaigns),
-      recentCampaigns,
-      audienceCount: workspaceData.audiences.length,
-      templateCount: workspaceData.templates.length,
+      ...homeData,
       user: req.user
     })
   } catch (error) {
