@@ -1974,12 +1974,15 @@
       max-width: none;
       min-height: 200px;
       padding: 22px;
-      border: 1px solid var(--hub-line);
+      border: 1px solid transparent;
       border-radius: 24px;
       background: var(--hub-canvas-raised);
       color: var(--hub-ink);
       box-shadow: var(--hub-card-shadow);
+      transition: border-color .15s ease;
     }
+    .hub-organization:hover,
+    .hub-organization:focus-within { border-color: var(--hub-line); }
     .hub-organization__top {
       display: flex;
       align-items: center;
