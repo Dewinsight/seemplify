@@ -60,11 +60,11 @@ test('Performance both-enabled mode honors explicit choice and rejects ChatGPT w
   });
 });
 
-test('Performance ChatGPT mode binds the configured subject and never silently uses local inference', async () => {
+test('Performance ChatGPT mode binds an explicitly authorized request subject and never silently uses local inference', async () => {
   await withEnvironment({
     PERFORMANCE_AI_LOCAL_ENABLED: 'true', PERFORMANCE_AI_CHATGPT_ENABLED: 'true',
     PERFORMANCE_AI_DEFAULT_RUNTIME: 'local', CHATGPT_GATEWAY_BASE_URL: 'https://chatgpt.test',
-    CHATGPT_GATEWAY_SHARED_SECRET: 'secret', PERFORMANCE_CHATGPT_SUBJECT_ID: 'performance-user-9'
+    CHATGPT_GATEWAY_SHARED_SECRET: 'secret', PERFORMANCE_CHATGPT_SUBJECT_ID: null
   }, async () => {
     let captured;
     const service = new AIGatewayService({ fetchImpl: async (url, init) => {
@@ -76,7 +76,7 @@ test('Performance ChatGPT mode binds the configured subject and never silently u
     service.invalidatePolicyCache();
     const response = await service.getChatCompletions(
       [{ role: 'user', content: 'Coach this review' }],
-      { activity: 'performance.review', runtimePreference: 'chatgpt' }
+      { activity: 'performance.review', runtimePreference: 'chatgpt', chatgptSubjectId: 'performance-user-9' }
     );
     assert.equal(response.provider, 'chatgpt');
     assert.equal(captured.url, 'https://chatgpt.test/v1/complete');

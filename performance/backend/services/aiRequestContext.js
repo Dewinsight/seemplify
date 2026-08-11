@@ -7,11 +7,27 @@ const storage = new AsyncLocalStorage();
 function aiRequestContext(req, _res, next) {
   const preference = ['local', 'chatgpt'].includes(req.cookies?.performance_ai_runtime)
     ? req.cookies.performance_ai_runtime : 'default';
-  storage.run({
+  const context = {
     runtimePreference: preference,
-    actorId: req.session?.user?.sub || req.session?.user?.id || '',
     requestId: req.headers['x-request-id'] || ''
-  }, next);
+  };
+  // This middleware is mounted before route authentication. Resolve identity
+  // lazily so a session populated or refreshed by later middleware is the
+  // identity used by the AI gateway, never a stale pre-auth snapshot.
+  Object.defineProperties(context, {
+    actorId: {
+      enumerable: true,
+      get: () => req.session?.user?.sub || req.session?.user?.id || ''
+    },
+    identity: {
+      enumerable: true,
+      get: () => ({
+        sub: req.session?.user?.sub || req.session?.user?.userinfo?.sub || req.session?.user?.id || '',
+        email: String(req.session?.user?.email || '').trim().toLowerCase()
+      })
+    }
+  });
+  storage.run(context, next);
 }
 
 function withAIRequestContext(overrides, callback) {

@@ -9,7 +9,8 @@ const organizationFeaturesSchema = new mongoose.Schema({
   recognition: { type: Boolean },
   projectFeedback: { type: Boolean },
   managerPracticeInsights: { type: Boolean },
-  continuousCoachingAi: { type: Boolean }
+  continuousCoachingAi: { type: Boolean },
+  talentPlanning: { type: Boolean }
 }, { _id: false });
 
 const organizationFeatureConfigSchema = new mongoose.Schema({

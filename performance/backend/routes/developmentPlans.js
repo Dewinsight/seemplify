@@ -1,6 +1,7 @@
 const express = require('express');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
 const { requireAuth, requireManager } = require('../middleware/rbac');
+const { AI_ACTIVITIES } = require('../config/aiActivityCatalog');
 const { requireOrganization, getActorId } = require('../services/tenantPolicy');
 const AIPerformanceService = require('../services/aiPerformanceService');
 
@@ -228,7 +229,7 @@ router.post('/:id/ai-recommendations', async (req, res) => {
       const response = await azureService.getChatCompletions([
         { role: 'system', content: 'You advise on mentoring, stretch assignments, internal projects, books, and job shadowing. Never make employment decisions. Output valid JSON.' },
         { role: 'user', content: prompt }
-      ]);
+      ], { activity: AI_ACTIVITIES.DEVELOPMENT_PLAN_SUGGEST });
       return AIPerformanceService.parseAIResponse(response.choices[0].message.content);
     });
     if (!result.success) {

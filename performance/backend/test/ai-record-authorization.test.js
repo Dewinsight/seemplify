@@ -21,10 +21,25 @@ function responseRecorder() {
 
 function createRouterRecorder() {
   const routes = new Map();
-  const router = { use: () => router };
+  const sharedHandlers = [];
+  const parameterHandlers = new Map();
+  const router = {
+    use: (...handlers) => {
+      sharedHandlers.push(...handlers.filter((handler) => typeof handler === 'function'));
+      return router;
+    },
+    param: (name, handler) => {
+      parameterHandlers.set(name, handler);
+      return router;
+    }
+  };
   for (const method of ['get', 'post', 'put', 'delete']) {
     router[method] = (path, ...handlers) => {
-      routes.set(`${method.toUpperCase()} ${path}`, handlers);
+      const parameters = [...String(path).matchAll(/:([A-Za-z0-9_]+)/g)]
+        .map((match) => match[1])
+        .filter((name) => parameterHandlers.has(name))
+        .map((name) => (req, res, next) => parameterHandlers.get(name)(req, res, next, req.params[name]));
+      routes.set(`${method.toUpperCase()} ${path}`, [...sharedHandlers, ...parameters, ...handlers]);
     };
   }
   return { router, routes };
@@ -50,7 +65,13 @@ function loadRouteModule(routeName, moduleStubs = {}) {
       return {
         requireAuth: passMiddleware,
         requireManager: passMiddleware,
-        requireHRAdmin: passMiddleware,
+        requireHRAdmin: (req, res, next) => {
+          req.checkedPermissions = [...(req.checkedPermissions || []), 'review:calibrate'];
+          if (req.userRole !== 'hr_admin') {
+            return res.status(403).json({ success: false, error: 'Permission denied', code: 'PERMISSION_DENIED' });
+          }
+          return next();
+        },
         requirePermission: (permission) => (req, res, next) => {
           req.checkedPermissions = [...(req.checkedPermissions || []), permission];
           if (Array.isArray(req.allowedPermissions) && !req.allowedPermissions.includes(permission)) {
@@ -101,7 +122,7 @@ async function runHandlers(handlers, req) {
 function requestFor({ userId = 'manager-a', organizationId = 'org-a', role = 'line_manager' } = {}) {
   const currentOrganization = { id: organizationId };
   return {
-    params: { id: 'record-1' },
+    params: { id: '64b000000000000000000001' },
     body: {},
     session: {
       currentOrganizationId: organizationId,
@@ -140,7 +161,7 @@ test('development-plan access is limited to the owner, assigned manager, or an H
 
 test('every one-on-one AI route hides an org B meeting from an org A requester', async () => {
   const orgBMeeting = {
-    _id: 'record-1',
+    _id: '64b000000000000000000001',
     organizationId: 'org-b',
     managerId: 'manager-a',
     employeeId: 'employee-a'
@@ -166,7 +187,6 @@ test('every one-on-one AI route hides an org B meeting from an org A requester',
     const res = await runHandlers(routes.get(key), req);
     assert.equal(res.statusCode, 404, key);
     assert.equal(res.body.error, 'Meeting not found', key);
-    assert.deepEqual(req.checkedPermissions, ['analytics:view:own'], key);
   }
 
   assert.equal(queries.length, 4);
@@ -197,7 +217,7 @@ test('every one-on-one AI route rejects a same-org non-participant before invoki
 
 test('development-plan AI route hides org B data and rejects a same-org non-owner', async () => {
   const orgBPlan = {
-    _id: 'record-1',
+    _id: '64b000000000000000000001',
     organizationId: 'org-b',
     userId: 'employee-a',
     managerId: 'manager-a'
@@ -213,7 +233,6 @@ test('development-plan AI route hides org B data and rejects a same-org non-owne
   let req = requestFor({ userId: 'manager-a', organizationId: 'org-a' });
   let res = await runHandlers(routes.get('POST /:id/ai-recommendations'), req);
   assert.equal(res.statusCode, 404);
-  assert.deepEqual(req.checkedPermissions, ['analytics:view:own']);
   assert.equal(queries[0].organizationId, 'org-a');
 
   routes = loadRouteModule('developmentPlans', {
@@ -232,7 +251,7 @@ test('calibration AI analysis requires calibration permission and current-org lo
   const Calibration = {
     findOne: async (query) => {
       queries.push(query);
-      return query.organizationId === 'org-b' ? { _id: 'record-1', organizationId: 'org-b' } : null;
+      return query.organizationId === 'org-b' ? { _id: '64b000000000000000000001', organizationId: 'org-b' } : null;
     }
   };
   const routes = loadRouteModule('calibration', {

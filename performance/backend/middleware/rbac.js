@@ -135,6 +135,12 @@ const PERMISSIONS = {
   'manager_practice:view:team': ['team_lead', 'line_manager', 'hr_admin'],
   'manager_practice:view:organization': ['hr_admin'],
 
+  // Talent review and succession permissions
+  'talent_review:view:team': ['team_lead', 'line_manager', 'hr_admin'],
+  'talent_review:manage:team': ['team_lead', 'line_manager', 'hr_admin'],
+  'talent_review:manage:organization': ['hr_admin'],
+  'succession:manage': ['hr_admin'],
+
   // Analytics Permissions
   'analytics:view:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'analytics:view:team': ['team_lead', 'line_manager', 'hr_admin'],

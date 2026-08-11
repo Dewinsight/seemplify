@@ -6,12 +6,35 @@ const LOCAL = 'local';
 const CHATGPT = 'chatgpt';
 
 class PerformanceAIRuntimeError extends Error {
-  constructor(message, code, statusCode = 503) {
+  constructor(message, code, statusCode = 503, details = {}) {
     super(message);
     this.name = 'PerformanceAIRuntimeError';
     this.code = code;
     this.statusCode = statusCode;
+    this.retryable = details.retryable === true;
+    this.retryAfterSeconds = Number.isFinite(Number(details.retryAfterSeconds))
+      ? Number(details.retryAfterSeconds) : undefined;
+    this.cause = details.cause;
   }
+}
+
+function isPerformanceAIRuntimeError(error) {
+  return error instanceof PerformanceAIRuntimeError
+    || (error?.name === 'PerformanceAIRuntimeError' && typeof error?.code === 'string');
+}
+
+function sendPerformanceAIError(res, error, fallbackMessage = 'The AI request could not be completed.') {
+  const runtimeError = isPerformanceAIRuntimeError(error);
+  const body = {
+    success: false,
+    error: runtimeError ? error.message : fallbackMessage,
+    code: runtimeError ? error.code : 'AI_REQUEST_FAILED'
+  };
+  if (runtimeError && error.retryable === true) body.retryable = true;
+  if (runtimeError && error.retryAfterSeconds !== undefined) {
+    body.retryAfterSeconds = error.retryAfterSeconds;
+  }
+  return res.status(runtimeError ? Number(error.statusCode) || 503 : 500).json(body);
 }
 
 function enabled(name, fallback) {
@@ -115,7 +138,7 @@ class AIGatewayService {
     const requestId = String(options.requestId || context.requestId || crypto.randomUUID());
     const activity = String(options.activity || 'performance.general');
     const local = runtime === LOCAL;
-    let subjectId = String(options.chatgptSubjectId || process.env.PERFORMANCE_CHATGPT_SUBJECT_ID || '').trim();
+    let subjectId = String(options.chatgptSubjectId || '').trim();
     if (!local && !subjectId && context.actorId) {
       const subject = await require('./chatGptAccountService').resolveRoutableSubject(context.actorId);
       subjectId = String(subject?.subjectId || '').trim();
@@ -193,6 +216,9 @@ class AIGatewayService {
 
   policy(options) { return runtimePolicy(options); }
   invalidatePolicyCache() { policyCache = null; policyCacheUntil = 0; }
+  sendPerformanceAIError(res, error, fallbackMessage) {
+    return sendPerformanceAIError(res, error, fallbackMessage);
+  }
 }
 
 const aiGatewayService = new AIGatewayService();
@@ -200,5 +226,7 @@ const aiGatewayService = new AIGatewayService();
 module.exports = aiGatewayService;
 module.exports.AIGatewayService = AIGatewayService;
 module.exports.PerformanceAIRuntimeError = PerformanceAIRuntimeError;
+module.exports.isPerformanceAIRuntimeError = isPerformanceAIRuntimeError;
+module.exports.sendPerformanceAIError = sendPerformanceAIError;
 module.exports.runtimePolicy = runtimePolicy;
 module.exports.selectRuntime = selectRuntime;

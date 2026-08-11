@@ -1,5 +1,6 @@
 const aiGatewayService = require('./aiGatewayService');
 const { PerformanceAIRuntimeError } = require('./aiGatewayService');
+const { AI_ACTIVITIES } = require('../config/aiActivityCatalog');
 
 // Conversation phases in order
 const CONVERSATION_PHASES = [
@@ -38,7 +39,7 @@ class AppraisalAIService {
     if (this.initialized) return;
 
     try {
-      this.client = aiGatewayService.openAICompatibleClient('performance.appraisal');
+      this.client = aiGatewayService.openAICompatibleClient(AI_ACTIVITIES.GENERAL);
       this.provider = 'seemplify-ai-gateway';
       this.initialized = true;
       console.log(`Appraisal AI Service initialized (${this.provider})`);
@@ -100,6 +101,7 @@ Respond in JSON format:
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.DOCUMENT_ANALYSIS,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: 'You are an expert HR analyst specializing in performance management and talent development. Analyze documents objectively and provide actionable insights.' },
@@ -115,6 +117,7 @@ Respond in JSON format:
       return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Document analysis error:', error);
+      this.rethrowAccountPolicyError(error);
       if (requireChatGpt) throw error;
       return this.getFallbackDocumentAnalysis(documentText);
     }
@@ -165,6 +168,7 @@ Respond in JSON format:
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.SELF_ASSESSMENT_REPORT,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: 'You are an HR coach helping managers prepare for performance discussions. Be constructive, specific, and development-focused.' },
@@ -179,6 +183,7 @@ Respond in JSON format:
       return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Self-assessment analysis error:', error);
+      this.rethrowAccountPolicyError(error);
       return this.getFallbackSelfAssessmentAnalysis();
     }
   }
@@ -228,6 +233,7 @@ Respond in JSON format:
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.MANAGER_REVIEW_ASSIST,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: 'You are an experienced HR leader helping managers write fair, constructive, and development-focused performance reviews. Avoid generic statements and provide specific, actionable feedback.' },
@@ -239,10 +245,20 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return this.parseJsonResponse(content);
+      const result = this.parseJsonResponse(content);
+      this.requireAIResponse(
+        Number.isFinite(Number(result.suggestedRating))
+          && Number(result.suggestedRating) >= 1
+          && Number(result.suggestedRating) <= 5
+          && this.normalizeText(result.ratingJustification)
+          && this.normalizeText(result.draftSummary),
+        'Manager-review assistance was incomplete.'
+      );
+      return { ...result, overallSuggestion: result.draftSummary, success: true };
     } catch (error) {
       console.error('Manager review assist error:', error);
-      return { suggestions: ['AI assistance temporarily unavailable.'] };
+      this.rethrowAccountPolicyError(error);
+      throw this.asInvalidAIResponse(error, 'Manager-review assistance was invalid.');
     }
   }
 
@@ -293,6 +309,7 @@ Respond in JSON format:
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.REVIEW_BIAS,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: 'You are an HR expert specializing in fair performance evaluation. Identify potential biases objectively and provide constructive suggestions.' },
@@ -304,10 +321,17 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return this.parseJsonResponse(content);
+      const result = this.parseJsonResponse(content);
+      this.requireAIResponse(
+        typeof result.hasPotentialBias === 'boolean'
+          && ['low', 'medium', 'high'].includes(result.overallRisk),
+        'Bias-review output was incomplete.'
+      );
+      return result;
     } catch (error) {
       console.error('Bias check error:', error);
-      return { hasPotentialBias: false, error: 'Bias check failed' };
+      this.rethrowAccountPolicyError(error);
+      throw this.asInvalidAIResponse(error, 'Bias-review output was invalid.');
     }
   }
 
@@ -370,6 +394,7 @@ Respond in JSON format:
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.DEVELOPMENT_PLAN_SUGGEST,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: 'You are a career development coach creating personalized, actionable development plans. Focus on practical, achievable goals with clear milestones.' },
@@ -384,6 +409,7 @@ Respond in JSON format:
       return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Development plan suggestion error:', error);
+      this.rethrowAccountPolicyError(error);
       return { suggestions: [] };
     }
   }
@@ -423,6 +449,7 @@ Provide a helpful, concise response that:
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.APPRAISAL_CHAT,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -440,6 +467,7 @@ Provide a helpful, concise response that:
       };
     } catch (error) {
       console.error('Chat response error:', error);
+      this.rethrowAccountPolicyError(error);
       return { response: "I couldn't process that request. Please try again.", isAI: true, error: true };
     }
   }
@@ -538,6 +566,7 @@ Suggest SMART goals that are:
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.SELF_ASSESSMENT_COACH,
         model: this.deploymentName,
         messages: [
           {
@@ -553,6 +582,7 @@ Suggest SMART goals that are:
       return response.choices[0]?.message?.content || this.getFallbackSuggestion(field);
     } catch (error) {
       console.error('Self-assessment suggestion error:', error);
+      this.rethrowAccountPolicyError(error);
       return this.getFallbackSuggestion(field);
     }
   }
@@ -644,6 +674,7 @@ Format your response as natural conversation text (not JSON).`;
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.SELF_ASSESSMENT_CHAT,
         model: this.deploymentName,
         messages: [
           {
@@ -658,6 +689,7 @@ Format your response as natural conversation text (not JSON).`;
       });
 
       const greeting = response.choices[0]?.message?.content;
+      this.requireAIResponse(this.normalizeText(greeting), 'The self-assessment greeting was empty.');
       const tokensUsed = response.usage?.total_tokens || 0;
 
       return {
@@ -670,8 +702,8 @@ Format your response as natural conversation text (not JSON).`;
       };
     } catch (error) {
       console.error('Conversation start error:', error);
-      if (requireChatGpt) throw error;
-      return this.getFallbackConversationStart(employee, okrSummary);
+      this.rethrowAccountPolicyError(error);
+      throw this.asInvalidAIResponse(error, 'The self-assessment greeting was invalid.');
     }
   }
 
@@ -784,6 +816,7 @@ Respond to them and continue the conversation. If appropriate, extract any struc
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.SELF_ASSESSMENT_CHAT,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -798,6 +831,11 @@ Respond to them and continue the conversation. If appropriate, extract any struc
 
       const content = response.choices[0]?.message?.content;
       const parsed = this.parseJsonResponse(content);
+      this.requireAIResponse(
+        this.normalizeText(parsed.response)
+          && (!parsed.suggestedNextPhase || CONVERSATION_PHASES.includes(parsed.suggestedNextPhase)),
+        'The self-assessment response was incomplete.'
+      );
       const tokensUsed = response.usage?.total_tokens || 0;
 
       // Determine next phase
@@ -849,11 +887,8 @@ Respond to them and continue the conversation. If appropriate, extract any struc
       };
     } catch (error) {
       console.error('Conversation continue error:', error);
-      if (requireChatGpt) throw error;
-      return this.getFallbackConversationResponse(currentPhase, userMessage, {
-        currentOkrIndex,
-        okrCount: okrs?.length || 0
-      });
+      this.rethrowAccountPolicyError(error);
+      throw this.asInvalidAIResponse(error, 'The self-assessment response was invalid.');
     }
   }
 
@@ -902,6 +937,7 @@ Keep it to 2-3 sentences.`;
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.DOCUMENT_ANALYSIS,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: 'You are a supportive HR assistant. Acknowledge uploaded documents warmly and help connect them to the self-assessment.' },
@@ -920,6 +956,7 @@ Keep it to 2-3 sentences.`;
       };
     } catch (error) {
       console.error('Document incorporation error:', error);
+      this.rethrowAccountPolicyError(error);
       if (requireChatGpt) throw error;
       return {
         message: `I've reviewed "${document.originalName}". ${analysis.summary || 'How would you like to incorporate this into your self-assessment?'}`,
@@ -1040,6 +1077,13 @@ Keep it to 2-3 sentences.`;
         console.error('AI rating suggestion failed during report creation:', aiSuggestionResult.reason);
       }
 
+      if (aiInsightsResult.status === 'rejected' || aiSuggestionResult.status === 'rejected') {
+        const reason = aiInsightsResult.status === 'rejected'
+          ? aiInsightsResult.reason : aiSuggestionResult.reason;
+        this.rethrowAccountPolicyError(reason);
+        throw this.asInvalidAIResponse(reason, 'The self-assessment report could not be generated safely.');
+      }
+
       const suggestedRating = aiSuggestion?.suggestedRating ?? baseReport.suggestedOverallRating;
       const ratingJustification = aiSuggestion?.ratingJustification ?? baseReport.ratingJustification;
 
@@ -1067,6 +1111,7 @@ Keep it to 2-3 sentences.`;
       };
     } catch (error) {
       console.error('Report generation error:', error);
+      if (error instanceof PerformanceAIRuntimeError) throw error;
       if (requireChatGpt) throw error;
       return baseReport;
     }
@@ -1335,6 +1380,7 @@ Provide a recommendation in JSON format:
 
     try {
       const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.SELF_ASSESSMENT_REPORT,
         model: this.deploymentName,
         messages: [
           { role: 'system', content: 'You are an HR analytics expert providing objective rating recommendations. Base ratings on evidence and avoid bias. Be fair but honest.' },
@@ -1347,6 +1393,13 @@ Provide a recommendation in JSON format:
 
       const content = response.choices[0]?.message?.content;
       const result = this.parseJsonResponse(content);
+      this.requireAIResponse(
+        Number.isFinite(Number(result.suggestedRating))
+          && Number(result.suggestedRating) >= 1
+          && Number(result.suggestedRating) <= 5
+          && this.normalizeText(result.ratingJustification),
+        'The AI rating recommendation was incomplete.'
+      );
 
       return {
         ...result,
@@ -1355,15 +1408,8 @@ Provide a recommendation in JSON format:
       };
     } catch (error) {
       console.error('AI rating suggestion error:', error);
-      const score = this.calculateCompositeScore(appraisal, appraisal.cycleId);
-      return {
-        suggestedRating: score.suggestedRating,
-        ratingJustification: `Based on ${score.okrCompletion}% OKR completion and competency assessment.`,
-        keyStrengths: [],
-        developmentAreas: [],
-        calibrationNotes: 'AI analysis encountered an error. Using calculated composite score.',
-        success: false
-      };
+      this.rethrowAccountPolicyError(error);
+      throw this.asInvalidAIResponse(error, 'The AI rating recommendation was invalid.');
     }
   }
 
@@ -1393,6 +1439,22 @@ Provide a recommendation in JSON format:
         return JSON.parse(jsonSlice);
       }
       throw primaryError;
+    }
+  }
+
+  requireAIResponse(condition, message) {
+    if (condition) return;
+    throw new PerformanceAIRuntimeError(message, 'AI_RESPONSE_INVALID', 502);
+  }
+
+  asInvalidAIResponse(error, message) {
+    if (error instanceof PerformanceAIRuntimeError) return error;
+    return new PerformanceAIRuntimeError(message, 'AI_RESPONSE_INVALID', 502);
+  }
+
+  rethrowAccountPolicyError(error) {
+    if (error instanceof PerformanceAIRuntimeError && error.code !== 'AI_RESPONSE_INVALID') {
+      throw error;
     }
   }
 

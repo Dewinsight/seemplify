@@ -21,7 +21,8 @@ const AI_ACTIVITIES = Object.freeze({
   MEETING_ANALYSIS: 'performance.meeting.analysis',
   APPRAISAL_CHAT: 'performance.appraisal.chat',
   CALIBRATION_INSIGHTS: 'performance.calibration.insights',
-  SUPPORT_PLAN_DRAFT: 'performance.support_plan.draft'
+  SUPPORT_PLAN_DRAFT: 'performance.support_plan.draft',
+  TALENT_EVIDENCE_BRIEF: 'performance.talent.evidence_brief'
 });
 
 const ACTIVITY_CATALOG = Object.freeze([
@@ -39,7 +40,8 @@ const ACTIVITY_CATALOG = Object.freeze([
   { id: AI_ACTIVITIES.MEETING_ANALYSIS, label: 'One-to-one analysis', description: 'Analyze meetings, trends, and follow-up actions', defaultEffort: 'high' },
   { id: AI_ACTIVITIES.APPRAISAL_CHAT, label: 'Appraisal discussion assistant', description: 'Support appraisal conversations and questions', defaultEffort: 'medium' },
   { id: AI_ACTIVITIES.CALIBRATION_INSIGHTS, label: 'Calibration insights', description: 'Analyze rating distributions and calibration risk', defaultEffort: 'high' },
-  { id: AI_ACTIVITIES.SUPPORT_PLAN_DRAFT, label: 'Support-plan drafting', description: 'Draft measurable objectives and support commitments for human review', defaultEffort: 'high' }
+  { id: AI_ACTIVITIES.SUPPORT_PLAN_DRAFT, label: 'Support-plan drafting', description: 'Draft measurable objectives and support commitments for human review', defaultEffort: 'high' },
+  { id: AI_ACTIVITIES.TALENT_EVIDENCE_BRIEF, label: 'Talent evidence brief', description: 'Summarize authorized evidence without making talent or promotion decisions', defaultEffort: 'high' }
 ]);
 
 function activityDefinition(id) {

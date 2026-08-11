@@ -33,11 +33,12 @@ test('every appraisal and performance service completion has an explicit stable 
   assert.match(read('routes/calibration.js'), /activity:\s*AI_ACTIVITIES\.CALIBRATION_INSIGHTS/);
   assert.match(read('routes/developmentPlans.js'), /activity:\s*AI_ACTIVITIES\.DEVELOPMENT_PLAN_SUGGEST/);
   assert.match(read('routes/supportPlans.js'), /activity:\s*AI_ACTIVITIES\.SUPPORT_PLAN_DRAFT/);
+  assert.match(read('routes/talent.js'), /activity:\s*AI_ACTIVITIES\.TALENT_EVIDENCE_BRIEF/);
 });
 
 test('the Performance activity catalogue is stable, unique, and matches the shared action namespace', () => {
   const ids = ACTIVITY_CATALOG.map((item) => item.id);
-  assert.equal(ids.length, 15);
+  assert.equal(ids.length, 16);
   assert.equal(new Set(ids).size, ids.length);
   ids.forEach((id) => assert.match(id, /^performance\.[a-z0-9_.]+$/));
   assert.equal(AI_ACTIVITIES.GENERAL, 'performance.general');
@@ -69,13 +70,16 @@ test('shared account default precedence is preserved while Recruiter action rows
   assert.equal(scoped.activities[0].effective.reasoningEffort, 'high');
 });
 
-test('Performance production code no longer owns a separate connected-ChatGPT subject', () => {
+test('Performance resolves a connected ChatGPT subject per authenticated request, never from a static shared subject', () => {
   const files = [
     'services/aiGatewayService.js', 'services/appraisalAIService.js',
     'services/aiPerformanceService.js', 'routes/appraisals.js'
   ];
   const source = files.map(read).join('\n');
-  assert.doesNotMatch(source, /PERFORMANCE_CHATGPT_SUBJECT_ID|codexSubjectId|codexSourceApp/);
+  assert.doesNotMatch(source, /PERFORMANCE_CHATGPT_SUBJECT_ID/);
+  assert.match(source, /resolveRoutableSubject\(context\.actorId\)/);
+  assert.match(source, /codexSubjectId:\s*subjectId/);
+  assert.match(source, /codexSourceApp:\s*['"]performance-management['"]/);
   assert.doesNotMatch(source, /['"]performance\.(?:appraisal|meeting|okr)['"]/);
 });
 
@@ -99,12 +103,12 @@ test('OKR generation never reuses process-global responses across organizations'
   assert.match(prompts[1], /Organization Beta retention/);
 });
 
-test('deterministic appraisal fallbacks are never persisted as AI-generated output', () => {
+test('connected self-assessment conversations cannot persist deterministic fallback messages as AI output', () => {
   const routes = read('routes/appraisals.js');
-  assert.match(routes, /isAiGenerated:\s*result\.fallback !== true/g);
-  assert.match(routes, /isAiGenerated:\s*incorporationResult\.fallback !== true/);
-  assert.match(routes, /isAiGenerated:\s*report\.fallback !== true/);
-  assert.match(routes, /fallback:\s*report\.fallback === true/);
+  assert.ok(occurrences(routes, /requireChatGpt:\s*true/g) >= 4);
+  assert.doesNotMatch(routes, /guided-fallback/);
+  assert.match(routes, /fallback:\s*false/);
+  assert.match(routes, /aiAvailable:\s*true/);
   assert.match(read('models/Appraisal.js'), /fallback:\s*\{ type: Boolean, default: false \}/);
 });
 

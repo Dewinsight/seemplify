@@ -6,6 +6,7 @@ const AppraisalCycle = require('../models/AppraisalCycle');
 const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
 const AIPerformanceService = require('../services/aiPerformanceService');
 const { requireOrganization } = require('../services/tenantPolicy');
+const { AI_ACTIVITIES } = require('../config/aiActivityCatalog');
 
 router.use(requireAuth, requireOrganization);
 
@@ -301,7 +302,7 @@ Output JSON with keys: ratingDistributionAnalysis, potentialBiasFlags (array), r
         const response = await azureService.getChatCompletions([
           { role: 'system', content: 'You are an HR analytics expert. Analyze for bias and fairness. Output valid JSON.' },
           { role: 'user', content: prompt }
-        ]);
+        ], { activity: AI_ACTIVITIES.CALIBRATION_INSIGHTS });
         return AIPerformanceService.parseAIResponse(response.choices[0].message.content);
       }
     );

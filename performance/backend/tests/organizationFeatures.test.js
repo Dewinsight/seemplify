@@ -173,7 +173,8 @@ test('core route groups are mounted behind their organization rollout guards', (
     ["'/api/check-ins'", 'continuousPerformanceEnabled'],
     ["'/api/feedback'", 'continuousPerformanceEnabled'],
     ["'/api/one-on-ones'", 'continuousPerformanceEnabled'],
-    ["'/api/development-plans'", 'continuousPerformanceEnabled']
+    ["'/api/development-plans'", 'continuousPerformanceEnabled'],
+    ["'/api/talent'", 'canonicalAppraisalsEnabled']
   ];
 
   for (const [mount, guard] of expectedMounts) {

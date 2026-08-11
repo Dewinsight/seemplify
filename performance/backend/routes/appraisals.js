@@ -4550,7 +4550,7 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
       phase: result.phase,
       aiContext: {
         isAiGenerated: true,
-        modelUsed: result.fallback ? 'guided-fallback' : (result.model || 'seemplify-ai-gateway'),
+        modelUsed: result.model || 'seemplify-ai-gateway',
         tokensUsed: result.tokensUsed
       },
       createdAt: new Date()
@@ -4571,8 +4571,8 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
         okrSummary: result.okrSummary,
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread.slice(-20), // Last 20 messages
-        fallback: result.fallback === true,
-        aiAvailable: result.fallback !== true
+        fallback: false,
+        aiAvailable: true
       }
     });
   } catch (error) {
@@ -4666,7 +4666,7 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       phase: result.currentPhase,
       aiContext: {
         isAiGenerated: true,
-        modelUsed: result.fallback ? 'guided-fallback' : (result.model || 'seemplify-ai-gateway'),
+        modelUsed: result.model || 'seemplify-ai-gateway',
         tokensUsed: result.tokensUsed,
         confidence: result.confidence
       },
@@ -4747,8 +4747,8 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
         extractedData: normalizedExtractedData,
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread.slice(-20),
-        fallback: result.fallback === true,
-        aiAvailable: result.fallback !== true
+        fallback: false,
+        aiAvailable: true
       }
     });
   } catch (error) {

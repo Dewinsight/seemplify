@@ -16,6 +16,7 @@ const {
   isAppraisalManagerRole
 } = require('../services/appraisalAccessService');
 const { getOrganizationFeatureState } = require('../services/organizationFeatureService');
+const { filterPerformanceOrganizations, toOrganizationId } = require('../services/performanceOrganizationAccess');
 
 function normalizeEmail(value) {
   if (!value || typeof value !== 'string') return null;
@@ -611,32 +612,18 @@ router.post('/switch-organization', requireAuth, async (req, res) => {
     }
 
     // Get organizations from IDP session (NEVER from local database)
-    let organizations = sessionUser.organizations || sessionUser.userinfo?.organizations || [];
-
-    // Fallback: Extract from teams if no organizations
-    if (organizations.length === 0) {
-      const teams = sessionUser.teams || sessionUser.userinfo?.teams || [];
-      const orgMap = new Map();
-      teams.forEach(t => {
-        if (t.organizationId && !orgMap.has(t.organizationId)) {
-          orgMap.set(t.organizationId, {
-            id: t.organizationId,
-            name: t.organizationName || 'Organization'
-          });
-        }
-      });
-      organizations = Array.from(orgMap.values());
-    }
-
-    // Verify user has access to this organization (from IDP data)
-    const selectedOrg = organizations.find(org =>
-      (org.id || org._id || org.organizationId) === organizationId
+    const organizations = filterPerformanceOrganizations(
+      sessionUser.organizations || sessionUser.userinfo?.organizations || []
     );
 
-    if (!selectedOrg && organizations.length > 0) {
+    // Verify user has access to this organization (from IDP data)
+    const selectedOrg = organizations.find(org => toOrganizationId(org) === String(organizationId));
+
+    if (!selectedOrg) {
       return res.status(403).json({
         success: false,
-        error: 'You do not have access to this organization'
+        error: 'This organization has not granted access to Performance Management',
+        code: 'PERFORMANCE_APP_ACCESS_DENIED'
       });
     }
 

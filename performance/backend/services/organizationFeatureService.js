@@ -10,7 +10,8 @@ const ORGANIZATION_FEATURE_KEYS = Object.freeze([
   'recognition',
   'projectFeedback',
   'managerPracticeInsights',
-  'continuousCoachingAi'
+  'continuousCoachingAi',
+  'talentPlanning'
 ]);
 
 const DEFAULT_ORGANIZATION_FEATURES = Object.freeze(

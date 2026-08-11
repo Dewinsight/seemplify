@@ -31,6 +31,7 @@ import {
   Award,
   FolderKanban,
   Gauge,
+  GitBranch,
 } from 'lucide-react';
 import { useUserContext, useCurrentTeam } from '@/lib/hooks';
 import { authApi } from '@/lib/api';
@@ -44,6 +45,19 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   badge?: string;
   section: 'main' | 'manager' | 'admin' | 'analytics';
+};
+
+type OrganizationOption = {
+  id: string;
+  name?: string;
+  role?: string;
+};
+
+type TeamOption = {
+  id: string;
+  name?: string;
+  organizationId?: string;
+  role?: string;
 };
 
 function cn(...classes: (string | boolean | undefined)[]) {
@@ -62,7 +76,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, isLoading: authLoading } = useAuth();
   const {
     user,
-    role,
     isManager,
     isHRAdmin,
     teams,
@@ -71,11 +84,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     isLoading: contextLoading,
     isError: contextError,
   } = useUserContext();
-  const { currentTeam, availableTeams, mutate: mutateCurrentTeam } = useCurrentTeam();
+  const { currentTeam, mutate: mutateCurrentTeam } = useCurrentTeam();
   const { workspace, availableWorkspaces, setWorkspace, isReady: workspaceReady } = usePerformanceWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
-  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [growthDropdownOpen, setGrowthDropdownOpen] = useState(false);
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
@@ -86,18 +98,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const activeCurrentTeam = currentTeam || contextCurrentTeam;
 
   // Get organizations from auth user - includes IDP data
-  const orgs = authUser?.idpOrganizations || authUser?.organizations || [];
+  const orgs = (authUser?.idpOrganizations || authUser?.organizations || []) as OrganizationOption[];
 
   // Current organization from AuthContext (synced with IDP)
-  const currentOrganization = authCurrentOrg || orgs.find((o: any) => o.id === authCurrentOrg?.id) || orgs[0];
+  const currentOrganization = authCurrentOrg || orgs.find((organization) => organization.id === authCurrentOrg?.id) || orgs[0];
   const showOrgSwitcher = orgs.length > 1;
 
   // Filter teams by current organization
-  const orgTeams = teams.filter((t: any) => {
+  const orgTeams = (teams as TeamOption[]).filter((team) => {
     const orgId = authCurrentOrg?.id || authCurrentOrg?._id?.toString() || authCurrentOrg;
-    return t.organizationId === orgId;
+    return team.organizationId === orgId;
   });
-  const showTeamSwitcher = orgTeams.length > 1 && currentOrganization;
   const rolloutVisibilityReady = !contextLoading && !contextError;
 
   const navigation: NavItem[] = useMemo(() => {
@@ -108,6 +119,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     const recognitionEnabled = continuousEnabled && features.recognition !== false;
     const projectFeedbackEnabled = continuousEnabled && features.projectFeedback !== false;
     const managerPracticeEnabled = continuousEnabled && features.managerPracticeInsights !== false;
+    const talentPlanningEnabled = appraisalsEnabled && features.talentPlanning !== false;
 
     if (workspace === 'admin' && isHRAdmin) {
       return [
@@ -119,6 +131,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           { name: 'Reports', href: '/admin/reports', icon: BarChart3, section: 'main' as const },
         ] : []),
         { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'main' },
+        ...(talentPlanningEnabled ? [{ name: 'Talent Planning', href: '/talent', icon: GitBranch, section: 'main' as const }] : []),
         ...(supportPlansEnabled ? [{ name: 'Support Reviews', href: '/support-plans', icon: HeartHandshake, section: 'main' as const }] : []),
       ];
     }
@@ -140,6 +153,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { name: 'Team OKRs', href: '/okrs?view=team', icon: Target, section: 'main' },
         ...(appraisalsEnabled ? [{ name: 'Team Appraisals', href: '/appraisals?view=team', icon: FileText, section: 'main' as const }] : []),
         { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'main' },
+        ...(talentPlanningEnabled ? [{ name: 'Talent', href: '/talent', icon: GitBranch, section: 'main' as const }] : []),
         ...(managerPracticeEnabled ? [{ name: 'Coaching', href: '/coaching', icon: Gauge, section: 'main' as const }] : []),
         ...growthItems,
       ];
@@ -151,7 +165,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       ...(appraisalsEnabled ? [{ name: 'My Appraisals', href: '/appraisals?view=personal', icon: FileText, section: 'main' as const }] : []),
       ...growthItems,
     ];
-  }, [features.canonicalAppraisals, features.continuousPerformance, features.managerPracticeInsights, features.performanceSupportPlans, features.projectFeedback, features.recognition, isHRAdmin, isManager, rolloutVisibilityReady, workspace]);
+  }, [features.canonicalAppraisals, features.continuousPerformance, features.managerPracticeInsights, features.performanceSupportPlans, features.projectFeedback, features.recognition, features.talentPlanning, isHRAdmin, isManager, rolloutVisibilityReady, workspace]);
 
   const handleWorkspaceChange = (nextWorkspace: PerformanceWorkspace) => {
     if (nextWorkspace === workspace) return;
@@ -185,7 +199,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const handleSwitchTeam = async (teamId: string) => {
     if (switchingTeam) return;
     setSwitchingTeam(true);
-    setTeamDropdownOpen(false);
     try {
       await authApi.switchTeam(teamId);
       // Refresh current team data
@@ -293,7 +306,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </Link>
 
             {/* Desktop Navigation */}
-            <div className="hidden min-w-0 items-center gap-1 lg:flex" aria-label="Primary navigation">
+            <div className="hidden min-w-0 items-center gap-0.5 lg:flex" aria-label="Primary navigation" data-testid="desktop-primary-navigation">
               {navigation.filter(n => n.section === 'main').map((item) => {
                 const itemPath = item.href.split('?')[0];
                 const active = pathname === itemPath || (itemPath !== '/dashboard' && pathname.startsWith(`${itemPath}/`));
@@ -372,11 +385,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Right Side Actions */}
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2" data-testid="desktop-header-actions">
               {workspaceReady && availableWorkspaces.length > 1 && (
                 <div
                   className={cn(
-                    'hidden items-center rounded-lg border p-0.5 2xl:flex',
+                    'hidden items-center rounded-lg border p-0.5 min-[1900px]:flex',
                     isDarkMode ? 'border-zinc-800 bg-zinc-900/60' : 'border-gray-200 bg-white'
                   )}
                   role="group"
@@ -409,7 +422,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </div>
               )}
               {workspaceReady && availableWorkspaces.length > 1 && (
-                <div className="relative hidden lg:block 2xl:hidden">
+                <div className="relative hidden lg:block min-[1900px]:hidden">
                   <button
                     type="button"
                     aria-expanded={workspaceDropdownOpen}
@@ -461,7 +474,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <ThemePreferenceMenu />
 
               {/* Organization & Team Switcher */}
-              <div className="relative hidden 2xl:block">
+              <div className="relative hidden min-[1500px]:block">
                 <button
                   onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
                   className={cn(
@@ -518,7 +531,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           Teams
                         </div>
                         {orgTeams.length > 0 ? (
-                          orgTeams.map((team: any) => {
+                          orgTeams.map((team) => {
                             const isCurrentTeam = team.id === activeCurrentTeam?.id;
                             return (
                               <button
@@ -572,7 +585,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           <div className={cn("px-4 py-1 text-xs font-medium uppercase tracking-wider", isDarkMode ? "text-zinc-500" : "text-gray-400")}>
                             Switch Organization
                           </div>
-                          {orgs.filter((org: any) => org.id !== currentOrganization?.id).map((org: any) => (
+                          {orgs.filter((organization) => organization.id !== currentOrganization?.id).map((org) => (
                             <button
                               key={org.id}
                               onClick={() => handleSwitchOrganization(org.id)}
@@ -612,7 +625,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   )}>
                     <span className="text-sm font-semibold text-white">{user?.name?.charAt(0) || 'U'}</span>
                   </div>
-                  <div className="hidden max-w-[132px] text-left 2xl:block">
+                  <div className="hidden max-w-[132px] text-left min-[1900px]:block">
                     <div className={cn(
                       "truncate text-sm font-medium",
                       isDarkMode ? "text-white" : "text-gray-900"
@@ -832,7 +845,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       "mt-2 rounded-lg border overflow-hidden",
                       isDarkMode ? "border-white/[0.08] bg-zinc-950" : "border-gray-200 bg-white"
                     )}>
-                      {orgs.map((org: any) => {
+                      {orgs.map((org) => {
                         const isCurrentOrg = org.id === currentOrganization?.id;
                         return (
                           <button

@@ -160,6 +160,20 @@ const PAGE_GUIDES: GuideDefinition[] = [
     success: ['Manager-owned follow-ups are visible in one place.', 'Coverage definitions explain exactly how each signal is calculated.']
   },
   {
+    key: 'talent-planning',
+    matcher: /^\/talent$/,
+    title: 'Talent Planning',
+    summary: 'Use finalized appraisal evidence to run a governed talent review and maintain succession coverage.',
+    purpose: 'Managers propose potential and readiness for their own reports, HR calibrates the proposals, and HR maintains critical-role succession slates. The system records who made every decision.',
+    steps: [
+      'Choose a talent review and complete any assessment waiting in your scope.',
+      'Use the frozen appraisal evidence and add a clear rationale for potential and readiness.',
+      'HR moves the review into calibration, resolves proposals, and closes the review when decisions are complete.'
+    ],
+    success: ['Every talent decision has a named reviewer and audit trail.', 'Succession gaps are visible without an automated promotion or replacement decision.'],
+    tips: ['AI evidence briefs summarize source records only.', 'Explainable signals use workflow age; they do not score employees.']
+  },
+  {
     key: 'okr-alignment',
     matcher: /^\/okrs\/alignment$/,
     title: 'OKR Alignment',

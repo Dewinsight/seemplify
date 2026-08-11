@@ -295,7 +295,7 @@ function muiSelect(scope: Locator, label: string) {
 }
 
 async function switchPerformanceWorkspace(page: Page, workspace: 'Personal' | 'Manager' | 'Admin') {
-  if ((page.viewportSize()?.width || 0) >= 1536) {
+  if ((page.viewportSize()?.width || 0) >= 1900) {
     const wideButton = page.getByRole('button', { name: workspace, exact: true });
     await expect(wideButton).toBeVisible();
     await wideButton.click();
@@ -1462,6 +1462,29 @@ test('keeps the HR navigation on one line and renders page help as a compact uti
     expect(await item.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('nowrap');
     expect((await item.boundingBox())?.height).toBeLessThanOrEqual(42);
   }
+});
+
+test('keeps manager navigation and workspace controls separated at common desktop widths', async ({ page }) => {
+  const state = createState();
+  state.hrAdminMode = true;
+  state.managerMode = true;
+  await page.setViewportSize({ width: 1694, height: 768 });
+  await installMockApi(page, state);
+
+  await page.goto('/dashboard');
+  await switchPerformanceWorkspace(page, 'Manager');
+
+  const primary = page.getByTestId('desktop-primary-navigation');
+  const actions = page.getByTestId('desktop-header-actions');
+  await expect(primary).toBeVisible();
+  await expect(actions).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Coaching', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Manager', exact: true })).toBeVisible();
+
+  const primaryBox = await primary.boundingBox();
+  const actionsBox = await actions.boundingBox();
+  expect(primaryBox!.x + primaryBox!.width).toBeLessThanOrEqual(actionsBox!.x);
+  expect(await page.getByRole('navigation').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
 test('connects an employee ChatGPT account and records explicit consent before routing AI work', async ({ page }) => {

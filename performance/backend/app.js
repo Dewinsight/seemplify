@@ -42,6 +42,7 @@ const supportPlanRoutes = require('./routes/supportPlans');
 const recognitionRoutes = require('./routes/recognition');
 const performanceProjectRoutes = require('./routes/performanceProjects');
 const managerInsightRoutes = require('./routes/managerInsights');
+const talentRoutes = require('./routes/talent');
 
 // Import RBAC middleware
 const { getUserRole, getDirectReports, getManagedTeams, getCurrentOrganization, requireAuth } = require('./middleware/rbac');
@@ -49,6 +50,7 @@ const { claimsRefreshMiddleware } = require('./middleware/claimsRefresh');
 const { aiRequestContext } = require('./services/aiRequestContext');
 const { requireOrganization } = require('./services/tenantPolicy');
 const { requireOrganizationFeature } = require('./services/organizationFeatureService');
+const { filterPerformanceOrganizations, toOrganizationId } = require('./services/performanceOrganizationAccess');
 
 // Import services
 const websocketService = require('./services/websocketService');
@@ -66,6 +68,7 @@ const performanceSupportPlansEnabled = requireOrganizationFeature('performanceSu
 const recognitionEnabled = requireOrganizationFeature('recognition');
 const projectFeedbackEnabled = requireOrganizationFeature('projectFeedback');
 const managerPracticeInsightsEnabled = requireOrganizationFeature('managerPracticeInsights');
+const talentPlanningEnabled = requireOrganizationFeature('talentPlanning');
 
 const isProduction = process.env.NODE_ENV === 'production';
 const performanceRuntimeConfig = getPerformanceOidcClientConfig({
@@ -277,7 +280,7 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/feedback', requireAuth, requireOrganization, continuousPerformanceEnabled, feedbackRoutes);
 app.use('/api/teams', teamRoutes);
-app.use('/api/ai', aiRoutes);
+app.use('/api/ai', requireAuth, aiRoutes);
 app.use('/api/ai-runtime', aiRuntimeRoutes);
 app.use('/api/ai-account', aiAccountRoutes);
 app.use('/api/analytics', analyticsRoutes);
@@ -290,6 +293,7 @@ app.use('/api/support-plans', requireAuth, requireOrganization, continuousPerfor
 app.use('/api/recognition', requireAuth, requireOrganization, continuousPerformanceEnabled, recognitionEnabled, recognitionRoutes);
 app.use('/api/performance-projects', requireAuth, requireOrganization, continuousPerformanceEnabled, projectFeedbackEnabled, performanceProjectRoutes);
 app.use('/api/manager-insights', requireAuth, requireOrganization, continuousPerformanceEnabled, managerPracticeInsightsEnabled, managerInsightRoutes);
+app.use('/api/talent', requireAuth, requireOrganization, canonicalAppraisalsEnabled, talentPlanningEnabled, talentRoutes);
 app.use('/api/calibration', requireAuth, requireOrganization, canonicalAppraisalsEnabled, calibrationRoutes);
 app.use('/api/bulk', bulkRoutes);
 app.use('/api/reports', reportsRoutes);
@@ -670,14 +674,14 @@ app.post('/api/auth/switch-organization', requireAuth, async (req, res) => {
     const { organizationId } = req.body;
 
     // Verify user belongs to organization
-    const userOrgs = req.session.user.organizations || [];
-    const org = userOrgs.find(o => o.id === organizationId);
+    const userOrgs = filterPerformanceOrganizations(req.session.user.organizations || []);
+    const org = userOrgs.find(o => toOrganizationId(o) === String(organizationId));
 
     if (!org) {
       return res.status(403).json({
         success: false,
-        error: 'You are not a member of this organization',
-        code: 'ORG_ACCESS_DENIED',
+        error: 'This organization has not granted access to Performance Management',
+        code: 'PERFORMANCE_APP_ACCESS_DENIED',
       });
     }
 

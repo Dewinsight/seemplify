@@ -3,9 +3,14 @@ const express = require('express');
 const WebhookReceipt = require('../models/WebhookReceipt');
 const sessionStore = require('../services/sessionStore');
 const { internalServiceAuth } = require('../middleware/internalServiceAuth');
+const { configuredSecrets, verifyIdpWebhook } = require('../services/idpWebhookSecurity');
+const {
+  claimIdpWebhookEvent,
+  markIdpWebhookProcessed,
+  markIdpWebhookFailed
+} = require('../services/idpWebhookReceiptService');
 
 const router = express.Router();
-const MAX_CLOCK_SKEW_MS = 10 * 60 * 1000;
 
 let websocketService = null;
 try {
@@ -14,36 +19,23 @@ try {
   websocketService = null;
 }
 
-function webhookSecret() {
-  return process.env.IDP_WEBHOOK_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'development-webhook-secret');
-}
-
-function safeEqualHex(left, right) {
-  if (!/^[a-f0-9]{64}$/i.test(left) || !/^[a-f0-9]{64}$/i.test(right)) return false;
-  return crypto.timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
-}
-
 function verifyIdpSignature(req, res, next) {
-  const secret = webhookSecret();
-  if (!secret) return res.status(503).json({ success: false, error: 'IDP webhook authentication is not configured' });
-  const signature = String(req.get('x-idp-signature') || '').replace(/^sha256=/, '');
-  const headerEvent = String(req.get('x-idp-event') || '');
-  const event = String(req.body?.event || '');
-  const eventId = String(req.body?.eventId || '');
-  const occurredAt = Date.parse(req.body?.occurredAt || req.body?.timestamp || '');
-  if (!signature || !eventId || !event || headerEvent !== event) {
-    return res.status(401).json({ success: false, error: 'Webhook signature envelope is incomplete' });
+  const result = verifyIdpWebhook({
+    payload: req.body,
+    rawBody: req.rawBody,
+    eventHeader: req.get('x-idp-event'),
+    deliveryTimestamp: req.get('x-idp-delivery-timestamp'),
+    signature: req.get('x-idp-signature-v2'),
+    secret: configuredSecrets()
+  });
+  if (!result.ok) {
+    return res.status(result.status).json({ success: false, error: result.error, code: result.code });
   }
-  if (!Number.isFinite(occurredAt) || Math.abs(Date.now() - occurredAt) > MAX_CLOCK_SKEW_MS) {
-    return res.status(401).json({ success: false, error: 'Webhook timestamp is expired or invalid' });
-  }
-  const payloadBuffer = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
-  const expected = crypto.createHmac('sha256', secret).update(payloadBuffer).digest('hex');
-  if (!safeEqualHex(signature, expected)) {
-    return res.status(401).json({ success: false, error: 'Invalid webhook signature' });
-  }
-  req.webhookPayloadHash = crypto.createHash('sha256').update(payloadBuffer).digest('hex');
   next();
+}
+
+function stableSubject(data = {}) {
+  return data.subject || data.userId || data.accountId || data.memberId || null;
 }
 
 async function beginReceipt(body, payloadHash) {
@@ -123,7 +115,8 @@ async function createLifecycleGoalDraft(event, data) {
 }
 
 async function processEvent(event, data, envelope) {
-  const userId = data?.userId || envelope.subjectId;
+  const payloadData = data || {};
+  const userId = stableSubject(payloadData) || envelope.subjectId;
   switch (event) {
     case 'team.member.removed':
       await sessionStore.invalidateUserSessions(userId);
@@ -134,8 +127,8 @@ async function processEvent(event, data, envelope) {
       websocketService?.notifyUser(userId, 'team_added', { teamName: data.team?.name, message: 'Your team membership changed' });
       break;
     case 'team.member.role_changed':
-      await sessionStore.refreshUserClaims(userId);
-      websocketService?.notifyUser(userId, 'role_changed', { message: 'Your team role changed' });
+      await sessionStore.invalidateUserSessions(userId);
+      websocketService?.notifyUserLogout(userId, 'Your team role changed. Sign in again to refresh access.');
       break;
     case 'team.manager.changed':
       if (data.oldManagerId) await sessionStore.refreshUserClaims(data.oldManagerId);
@@ -143,6 +136,7 @@ async function processEvent(event, data, envelope) {
       break;
     case 'organization.member.removed':
     case 'organization.member.deactivated':
+    case 'organization.member.app_access_changed':
       await sessionStore.invalidateUserSessions(userId);
       websocketService?.notifyUserLogout(userId, 'Your organization access changed');
       break;
@@ -182,24 +176,19 @@ async function processEvent(event, data, envelope) {
 }
 
 router.post('/idp', verifyIdpSignature, async (req, res) => {
-  let receipt;
+  let claim;
   try {
-    const started = await beginReceipt(req.body, req.webhookPayloadHash);
-    receipt = started.receipt;
-    if (started.replay) return res.status(200).json({ received: true, event: req.body.event, idempotentReplay: true });
+    claim = await claimIdpWebhookEvent(req.body);
+    if (claim.duplicate) return res.status(200).json({ received: true, event: req.body.event, idempotentReplay: true });
+    if (!claim.claimed) return res.status(202).json({ received: true, event: req.body.event, processing: true });
     await processEvent(req.body.event, req.body.data || {}, req.body);
-    receipt.status = 'processed';
-    receipt.processedAt = new Date();
-    await receipt.save();
+    await markIdpWebhookProcessed(claim);
     res.status(200).json({ received: true, event: req.body.event });
   } catch (error) {
-    if (receipt) {
-      receipt.status = 'failed';
-      receipt.lastError = String(error.message || error).slice(0, 2000);
-      await receipt.save().catch(() => {});
-    }
+    if (claim?.claimed) await markIdpWebhookFailed(claim, error).catch(() => {});
     console.error('Webhook processing error:', error);
-    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Webhook processing failed' });
+    const status = error.code === 'IDP_EVENT_PAYLOAD_CONFLICT' ? 409 : (error.statusCode || 500);
+    res.status(status).json({ success: false, error: error.message || 'Webhook processing failed' });
   }
 });
 
