@@ -27,6 +27,10 @@ import {
   BriefcaseBusiness,
   ShieldCheck,
   BarChart3,
+  HeartHandshake,
+  Award,
+  FolderKanban,
+  Gauge,
 } from 'lucide-react';
 import { useUserContext, useCurrentTeam } from '@/lib/hooks';
 import { authApi } from '@/lib/api';
@@ -100,6 +104,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     const dashboard: NavItem = { name: 'Dashboard', href: '/dashboard', icon: TrendingUp, section: 'main' };
     const appraisalsEnabled = rolloutVisibilityReady && features.canonicalAppraisals !== false;
     const continuousEnabled = rolloutVisibilityReady && features.continuousPerformance !== false;
+    const supportPlansEnabled = continuousEnabled && features.performanceSupportPlans !== false;
+    const recognitionEnabled = continuousEnabled && features.recognition !== false;
+    const projectFeedbackEnabled = continuousEnabled && features.projectFeedback !== false;
+    const managerPracticeEnabled = continuousEnabled && features.managerPracticeInsights !== false;
 
     if (workspace === 'admin' && isHRAdmin) {
       return [
@@ -111,6 +119,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           { name: 'Reports', href: '/admin/reports', icon: BarChart3, section: 'main' as const },
         ] : []),
         { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'main' },
+        ...(supportPlansEnabled ? [{ name: 'Support Reviews', href: '/support-plans', icon: HeartHandshake, section: 'main' as const }] : []),
       ];
     }
 
@@ -119,6 +128,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       { name: '1:1s', href: '/one-on-ones', icon: CalendarDays, section: 'analytics' },
       { name: 'Check-ins', href: '/check-ins', icon: ClipboardCheck, section: 'analytics' },
       { name: 'Development', href: '/development', icon: Sprout, section: 'analytics' },
+      ...(supportPlansEnabled ? [{ name: 'Support Plans', href: '/support-plans', icon: HeartHandshake, section: 'analytics' as const }] : []),
+      ...(recognitionEnabled ? [{ name: 'Recognition', href: '/recognition', icon: Award, section: 'analytics' as const }] : []),
+      ...(projectFeedbackEnabled ? [{ name: 'Project Feedback', href: '/project-feedback', icon: FolderKanban, section: 'analytics' as const }] : []),
     ] : [];
 
     if (workspace === 'manager' && isManager) {
@@ -128,6 +140,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { name: 'Team OKRs', href: '/okrs?view=team', icon: Target, section: 'main' },
         ...(appraisalsEnabled ? [{ name: 'Team Appraisals', href: '/appraisals?view=team', icon: FileText, section: 'main' as const }] : []),
         { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'main' },
+        ...(managerPracticeEnabled ? [{ name: 'Coaching', href: '/coaching', icon: Gauge, section: 'main' as const }] : []),
         ...growthItems,
       ];
     }
@@ -138,7 +151,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       ...(appraisalsEnabled ? [{ name: 'My Appraisals', href: '/appraisals?view=personal', icon: FileText, section: 'main' as const }] : []),
       ...growthItems,
     ];
-  }, [features.canonicalAppraisals, features.continuousPerformance, isHRAdmin, isManager, rolloutVisibilityReady, workspace]);
+  }, [features.canonicalAppraisals, features.continuousPerformance, features.managerPracticeInsights, features.performanceSupportPlans, features.projectFeedback, features.recognition, isHRAdmin, isManager, rolloutVisibilityReady, workspace]);
 
   const handleWorkspaceChange = (nextWorkspace: PerformanceWorkspace) => {
     if (nextWorkspace === workspace) return;

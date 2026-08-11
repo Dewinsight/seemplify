@@ -10,12 +10,18 @@ const { EVENT_PRESENTATIONS } = require('../services/outboxService');
 const { isTargetComplete } = require('../services/reminderScheduler');
 
 function sessionUser(overrides = {}) {
+  const organization = {
+    id: 'org-1',
+    role: 'line_manager',
+    appAccess: { mode: 'all', appIds: [] }
+  };
   return {
     id: 'manager-1',
     sub: 'manager-1',
     email: 'manager@example.test',
     name: 'Manager',
-    currentOrganization: { id: 'org-1' },
+    currentOrganization: organization,
+    organizations: [organization],
     teams: [{
       id: 'team-1',
       organizationId: 'org-1',

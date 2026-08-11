@@ -504,30 +504,37 @@ router.get('/all-employees', requireAuth, async (req, res) => {
 router.get('/search', requireAuth, async (req, res) => {
   try {
     const { q, limit = 10 } = req.query;
+    const currentOrgId = resolveOrganizationId(req);
 
     if (!q || q.length < 2) {
       return res.json({ success: true, data: [] });
     }
+    if (!currentOrgId) return res.status(403).json({ success: false, error: 'Select an organization before searching for colleagues' });
 
     // Search by email or display name
     const users = await User.find({
-      $or: [
-        { email: { $regex: q, $options: 'i' } },
-        { 'profile.displayName': { $regex: q, $options: 'i' } },
-        { 'profile.firstName': { $regex: q, $options: 'i' } },
-        { 'profile.lastName': { $regex: q, $options: 'i' } }
+      $and: [
+        { $or: [{ 'idpTeams.organizationId': currentOrgId }, { organizationMemberships: { $elemMatch: { organization: currentOrgId, isActive: true } } }] },
+        { $or: [
+          { email: { $regex: q, $options: 'i' } },
+          { 'profile.displayName': { $regex: q, $options: 'i' } },
+          { 'profile.firstName': { $regex: q, $options: 'i' } },
+          { 'profile.lastName': { $regex: q, $options: 'i' } }
+        ] }
       ]
     })
-      .select('email profile')
-      .limit(parseInt(limit));
+      .select('idpSub email profile idpTeams')
+      .limit(Math.min(25, Math.max(1, parseInt(limit, 10) || 10)));
 
     res.json({
       success: true,
       data: users.map(u => ({
-        id: u._id?.toString(),
+        id: getPreferredUserId(u),
         email: u.email,
         name: u.profile?.displayName || `${u.profile?.firstName || ''} ${u.profile?.lastName || ''}`.trim() || u.email,
-        title: u.profile?.title
+        title: u.profile?.title,
+        teamId: u.idpTeams?.find(team => team.organizationId === currentOrgId)?.id,
+        teamName: u.idpTeams?.find(team => team.organizationId === currentOrgId)?.name
       }))
     });
   } catch (error) {

@@ -68,13 +68,18 @@ beforeAll(async () => {
   app.use(express.json());
   app.use((req, res, next) => {
     const organizationId = String(req.get('x-test-organization') || ORG_A);
+    const organization = {
+      id: organizationId,
+      role: 'employee',
+      appAccess: { mode: 'all', appIds: [] }
+    };
     const user = {
       id: USER_ID,
       sub: USER_ID,
       name: 'Chat User',
       email: 'chat-user@example.com',
-      currentOrganization: { id: organizationId, role: 'employee' },
-      organizations: [{ id: organizationId, role: 'employee' }]
+      currentOrganization: organization,
+      organizations: [organization]
     };
     req.session = { user, currentOrganizationId: organizationId };
     req.currentOrganization = user.currentOrganization;

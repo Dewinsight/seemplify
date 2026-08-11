@@ -125,6 +125,16 @@ const PERMISSIONS = {
   'feedback:view:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'feedback:view:all': ['hr_admin'],
 
+  // Continuous coaching permissions
+  'support_plan:view:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'support_plan:manage:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
+  'support_plan:review:hr': ['hr_admin'],
+  'recognition:create': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'recognition:moderate': ['hr_admin'],
+  'project_feedback:request': ['team_lead', 'line_manager', 'hr_admin'],
+  'manager_practice:view:team': ['team_lead', 'line_manager', 'hr_admin'],
+  'manager_practice:view:organization': ['hr_admin'],
+
   // Analytics Permissions
   'analytics:view:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'analytics:view:team': ['team_lead', 'line_manager', 'hr_admin'],

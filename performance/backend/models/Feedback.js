@@ -58,6 +58,10 @@ const FeedbackSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'OKR' 
   },
+  projectId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PerformanceProject'
+  },
   
   // AI Analysis
   aiAnalysis: {
@@ -90,6 +94,7 @@ const FeedbackSchema = new mongoose.Schema({
 FeedbackSchema.index({ organizationId: 1, receiverId: 1, createdAt: -1 });
 FeedbackSchema.index({ organizationId: 1, senderId: 1, createdAt: -1 });
 FeedbackSchema.index({ relatedOkrId: 1 });
+FeedbackSchema.index({ organizationId: 1, projectId: 1, receiverId: 1 });
 FeedbackSchema.index({ organizationId: 1, cohortId: 1, anonymity: 1, deletedAt: 1 });
 
 module.exports = mongoose.models.Feedback || mongoose.model('Feedback', FeedbackSchema);

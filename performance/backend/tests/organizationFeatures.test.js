@@ -22,12 +22,17 @@ const {
 } = require('../services/organizationFeatureService');
 
 function sessionUser({ hr = true } = {}) {
+  const organization = {
+    id: 'org-1',
+    role: hr ? 'hr_manager' : 'employee',
+    appAccess: { mode: 'all', appIds: [] }
+  };
   return {
     id: hr ? 'hr-1' : 'employee-1',
     sub: hr ? 'hr-1' : 'employee-1',
     email: hr ? 'hr@example.test' : 'employee@example.test',
-    currentOrganization: { id: 'org-1', role: hr ? 'hr_manager' : 'employee' },
-    organizations: [{ id: 'org-1', role: hr ? 'hr_manager' : 'employee' }],
+    currentOrganization: organization,
+    organizations: [organization],
     teams: []
   };
 }
@@ -71,10 +76,8 @@ test('organizations without configuration retain the backward-compatible enabled
 
 test('only an explicit false disables a feature', () => {
   assert.deepEqual(effectiveOrganizationFeatures({ notifications: false }), {
-    canonicalAppraisals: true,
-    goalPeriods: true,
-    notifications: false,
-    continuousPerformance: true
+    ...DEFAULT_ORGANIZATION_FEATURES,
+    notifications: false
   });
   assert.equal(effectiveOrganizationFeatures({ notifications: undefined }).notifications, true);
 });

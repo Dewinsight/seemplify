@@ -14,6 +14,7 @@ const feedbackRequestSchema = new mongoose.Schema({
     default: 'general'
   },
   contextLabel: String,
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'PerformanceProject' },
   questions: [{ type: String, trim: true }],
   dueDate: { type: Date, required: true },
   visibility: {
@@ -43,5 +44,6 @@ const feedbackRequestSchema = new mongoose.Schema({
 
 feedbackRequestSchema.index({ organizationId: 1, reviewerId: 1, state: 1, dueDate: 1 });
 feedbackRequestSchema.index({ organizationId: 1, subjectId: 1, contextType: 1 });
+feedbackRequestSchema.index({ organizationId: 1, projectId: 1, state: 1 });
 
 module.exports = mongoose.models.FeedbackRequest || mongoose.model('FeedbackRequest', feedbackRequestSchema);

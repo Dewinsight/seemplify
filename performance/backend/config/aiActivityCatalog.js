@@ -20,7 +20,8 @@ const AI_ACTIVITIES = Object.freeze({
   TEAM_INSIGHTS: 'performance.team.insights',
   MEETING_ANALYSIS: 'performance.meeting.analysis',
   APPRAISAL_CHAT: 'performance.appraisal.chat',
-  CALIBRATION_INSIGHTS: 'performance.calibration.insights'
+  CALIBRATION_INSIGHTS: 'performance.calibration.insights',
+  SUPPORT_PLAN_DRAFT: 'performance.support_plan.draft'
 });
 
 const ACTIVITY_CATALOG = Object.freeze([
@@ -37,7 +38,8 @@ const ACTIVITY_CATALOG = Object.freeze([
   { id: AI_ACTIVITIES.TEAM_INSIGHTS, label: 'Team insights', description: 'Summarize team performance patterns', defaultEffort: 'high' },
   { id: AI_ACTIVITIES.MEETING_ANALYSIS, label: 'One-to-one analysis', description: 'Analyze meetings, trends, and follow-up actions', defaultEffort: 'high' },
   { id: AI_ACTIVITIES.APPRAISAL_CHAT, label: 'Appraisal discussion assistant', description: 'Support appraisal conversations and questions', defaultEffort: 'medium' },
-  { id: AI_ACTIVITIES.CALIBRATION_INSIGHTS, label: 'Calibration insights', description: 'Analyze rating distributions and calibration risk', defaultEffort: 'high' }
+  { id: AI_ACTIVITIES.CALIBRATION_INSIGHTS, label: 'Calibration insights', description: 'Analyze rating distributions and calibration risk', defaultEffort: 'high' },
+  { id: AI_ACTIVITIES.SUPPORT_PLAN_DRAFT, label: 'Support-plan drafting', description: 'Draft measurable objectives and support commitments for human review', defaultEffort: 'high' }
 ]);
 
 function activityDefinition(id) {

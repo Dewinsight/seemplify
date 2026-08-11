@@ -113,6 +113,7 @@ function serializeFeedback(item, viewerId, role) {
     contextType: item.contextType,
     contextLabel: item.contextLabel,
     relatedOkrId: item.relatedOkrId,
+    projectId: item.projectId,
     requestId: item.requestId,
     appraisalEvidence: item.appraisalEvidence,
     acknowledgedAt: item.acknowledgedAt,
@@ -373,7 +374,8 @@ router.post('/', async (req, res) => {
       anonymity: request?.anonymity || 'named',
       cohortId: request?.cohortId,
       minimumCohortSize: request?.minimumCohortSize || 5,
-      relatedOkrId: req.body.relatedOkrId
+      relatedOkrId: req.body.relatedOkrId,
+      projectId: request?.projectId
     });
     if (request) {
       request.state = 'fulfilled';

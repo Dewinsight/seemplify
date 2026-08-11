@@ -4,7 +4,12 @@ const organizationFeaturesSchema = new mongoose.Schema({
   canonicalAppraisals: { type: Boolean },
   goalPeriods: { type: Boolean },
   notifications: { type: Boolean },
-  continuousPerformance: { type: Boolean }
+  continuousPerformance: { type: Boolean },
+  performanceSupportPlans: { type: Boolean },
+  recognition: { type: Boolean },
+  projectFeedback: { type: Boolean },
+  managerPracticeInsights: { type: Boolean },
+  continuousCoachingAi: { type: Boolean }
 }, { _id: false });
 
 const organizationFeatureConfigSchema = new mongoose.Schema({

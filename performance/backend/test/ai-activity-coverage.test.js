@@ -32,11 +32,12 @@ test('every appraisal and performance service completion has an explicit stable 
   assert.match(read('services/azureOpenAIService.js'), /openAICompatibleClient\(AI_ACTIVITIES\.MEETING_ANALYSIS\)/);
   assert.match(read('routes/calibration.js'), /activity:\s*AI_ACTIVITIES\.CALIBRATION_INSIGHTS/);
   assert.match(read('routes/developmentPlans.js'), /activity:\s*AI_ACTIVITIES\.DEVELOPMENT_PLAN_SUGGEST/);
+  assert.match(read('routes/supportPlans.js'), /activity:\s*AI_ACTIVITIES\.SUPPORT_PLAN_DRAFT/);
 });
 
 test('the Performance activity catalogue is stable, unique, and matches the shared action namespace', () => {
   const ids = ACTIVITY_CATALOG.map((item) => item.id);
-  assert.equal(ids.length, 14);
+  assert.equal(ids.length, 15);
   assert.equal(new Set(ids).size, ids.length);
   ids.forEach((id) => assert.match(id, /^performance\.[a-z0-9_.]+$/));
   assert.equal(AI_ACTIVITIES.GENERAL, 'performance.general');

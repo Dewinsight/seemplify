@@ -408,6 +408,59 @@ const EVENT_PRESENTATIONS = Object.freeze({
     category: 'goal',
     action: { kind: 'view', label: 'View goal' },
     isAction: false
+  },
+  'support_plan.hr_review_requested': {
+    title: 'Support plan awaiting HR review',
+    message: 'A support plan is ready for a secure HR review.',
+    category: 'support_plan',
+    targetType: 'support_plan_hr_review',
+    action: { kind: 'review', label: 'Review plan' }
+  },
+  'support_plan.employee_review_requested': {
+    title: 'Support plan ready to review',
+    message: 'A support plan is ready for your secure review and response.',
+    category: 'support_plan',
+    targetType: 'support_plan_employee_response',
+    action: { kind: 'acknowledge', label: 'Review plan' }
+  },
+  'support_plan.changes_requested': {
+    title: 'Support plan changes requested',
+    message: 'A support plan needs changes before it can proceed.',
+    category: 'support_plan',
+    action: { kind: 'review', label: 'Update plan' }
+  },
+  'support_plan.activated': {
+    title: 'Support plan activated',
+    message: 'A support plan acknowledgement has been recorded.',
+    category: 'support_plan',
+    action: { kind: 'view', label: 'View plan' },
+    isAction: false
+  },
+  'support_plan.check_in_added': {
+    title: 'Support-plan update available',
+    message: 'A new support-plan check-in is ready to review securely.',
+    category: 'support_plan',
+    action: { kind: 'view', label: 'View update' },
+    isAction: false
+  },
+  'support_plan.completed': {
+    title: 'Support plan completed',
+    message: 'A support-plan outcome is ready to view securely.',
+    category: 'support_plan',
+    action: { kind: 'view', label: 'View outcome' },
+    isAction: false
+  },
+  'recognition.received': {
+    title: 'Recognition received',
+    message: 'A colleague has recognized your contribution.',
+    category: 'recognition',
+    action: { kind: 'acknowledge', label: 'View recognition' }
+  },
+  'project_feedback.requested': {
+    title: 'Project feedback requested',
+    message: 'A project feedback request needs your response.',
+    category: 'feedback',
+    action: { kind: 'review', label: 'Give feedback' }
   }
 });
 
@@ -421,6 +474,9 @@ function fallbackDeepLink(eventType, aggregateId) {
   if (category === 'performance_check_in') return '/check-ins';
   if (category === 'one_on_one') return '/one-on-ones';
   if (category === 'appraisal') return '/appraisals';
+  if (category === 'support_plan') return '/support-plans';
+  if (category === 'recognition') return '/recognition';
+  if (category === 'project_feedback') return '/feedback';
   return '/dashboard';
 }
 

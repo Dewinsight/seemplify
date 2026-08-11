@@ -38,6 +38,10 @@ const notificationRoutes = require('./routes/notifications');
 const checkInRoutes = require('./routes/checkIns');
 const employeeRoutes = require('./routes/employees');
 const organizationFeatureRoutes = require('./routes/organizationFeatures');
+const supportPlanRoutes = require('./routes/supportPlans');
+const recognitionRoutes = require('./routes/recognition');
+const performanceProjectRoutes = require('./routes/performanceProjects');
+const managerInsightRoutes = require('./routes/managerInsights');
 
 // Import RBAC middleware
 const { getUserRole, getDirectReports, getManagedTeams, getCurrentOrganization, requireAuth } = require('./middleware/rbac');
@@ -58,6 +62,10 @@ const canonicalAppraisalsEnabled = requireOrganizationFeature('canonicalAppraisa
 const goalPeriodsEnabled = requireOrganizationFeature('goalPeriods');
 const notificationsEnabled = requireOrganizationFeature('notifications');
 const continuousPerformanceEnabled = requireOrganizationFeature('continuousPerformance');
+const performanceSupportPlansEnabled = requireOrganizationFeature('performanceSupportPlans');
+const recognitionEnabled = requireOrganizationFeature('recognition');
+const projectFeedbackEnabled = requireOrganizationFeature('projectFeedback');
+const managerPracticeInsightsEnabled = requireOrganizationFeature('managerPracticeInsights');
 
 const isProduction = process.env.NODE_ENV === 'production';
 const performanceRuntimeConfig = getPerformanceOidcClientConfig({
@@ -278,6 +286,10 @@ app.use('/api/organization-features', organizationFeatureRoutes);
 app.use('/api/hub', hubRoutes);
 app.use('/api/one-on-ones', requireAuth, requireOrganization, continuousPerformanceEnabled, oneOnOneRoutes);
 app.use('/api/development-plans', requireAuth, requireOrganization, continuousPerformanceEnabled, developmentPlanRoutes);
+app.use('/api/support-plans', requireAuth, requireOrganization, continuousPerformanceEnabled, performanceSupportPlansEnabled, supportPlanRoutes);
+app.use('/api/recognition', requireAuth, requireOrganization, continuousPerformanceEnabled, recognitionEnabled, recognitionRoutes);
+app.use('/api/performance-projects', requireAuth, requireOrganization, continuousPerformanceEnabled, projectFeedbackEnabled, performanceProjectRoutes);
+app.use('/api/manager-insights', requireAuth, requireOrganization, continuousPerformanceEnabled, managerPracticeInsightsEnabled, managerInsightRoutes);
 app.use('/api/calibration', requireAuth, requireOrganization, canonicalAppraisalsEnabled, calibrationRoutes);
 app.use('/api/bulk', bulkRoutes);
 app.use('/api/reports', reportsRoutes);

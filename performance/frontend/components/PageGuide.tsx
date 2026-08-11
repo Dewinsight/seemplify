@@ -119,6 +119,47 @@ const PAGE_GUIDES: GuideDefinition[] = [
     ]
   },
   {
+    key: 'support-plans',
+    matcher: /^\/support-plans$/,
+    title: 'Support Plans',
+    summary: 'Use this page to create, review, acknowledge, and track a fair support plan.',
+    purpose: 'Support plans make expectations and the help provided by the organization explicit. Managers draft, HR reviews, employees respond, and both sides record progress.',
+    steps: [
+      'Open the plan that is waiting for your role or create a draft for an authorized direct report.',
+      'Review measurable objectives, review dates, and organization support commitments.',
+      'Complete the action shown for your role and use check-ins while the plan is active.'
+    ],
+    success: ['Every participant can see the current state and next action.', 'The plan has a complete, auditable decision and progress history.'],
+    tips: ['Support plans do not calculate appraisal ratings.', 'AI drafting is optional and every suggestion requires human review.']
+  },
+  {
+    key: 'recognition',
+    matcher: /^\/recognition$/,
+    title: 'Recognition',
+    summary: 'Thank a colleague for a specific contribution and choose the right audience.',
+    purpose: 'Recognition reinforces valued contributions without turning appreciation into a performance score.',
+    steps: ['Search for a colleague in your active organization.', 'Describe the contribution and its impact.', 'Choose organization, team, or private visibility before sending.'],
+    success: ['The recipient receives recognition through the secure action centre.', 'The message is visible only to the selected audience.']
+  },
+  {
+    key: 'project-feedback',
+    matcher: /^\/project-feedback$/,
+    title: 'Project Feedback',
+    summary: 'Create a project membership record and request feedback between project participants.',
+    purpose: 'This page gives project leads a governed way to request feedback from people who worked together, including cross-functional work.',
+    steps: ['Open or create the project and confirm its participants.', 'Choose the project member receiving feedback and a different member as reviewer.', 'Set a due date and send the request.'],
+    success: ['Only a project lead can create a request.', 'Both subject and reviewer are verified project members.']
+  },
+  {
+    key: 'coaching',
+    matcher: /^\/coaching$/,
+    title: 'Manager Coaching',
+    summary: 'Use this queue to keep manager follow-ups consistent across the team.',
+    purpose: 'The coaching workspace highlights missed practices and open workflow items without scoring or ranking employees.',
+    steps: ['Filter by employee or priority.', 'Open the underlying goal, check-in, 1:1, feedback, or support-plan record.', 'Complete the work in its source page, then refresh the queue.'],
+    success: ['Manager-owned follow-ups are visible in one place.', 'Coverage definitions explain exactly how each signal is calculated.']
+  },
+  {
     key: 'okr-alignment',
     matcher: /^\/okrs\/alignment$/,
     title: 'OKR Alignment',
