@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAppraisal } from '@/lib/hooks';
 import api from '@/lib/api';
@@ -24,6 +24,7 @@ import { ArrowBack, AutoAwesome, EditNote, Save, Send } from '@mui/icons-materia
 import { alpha, useTheme } from '@mui/material/styles';
 import ConversationalAssessment from './conversational/ConversationalAssessment';
 import ChatGptConversationGate from './conversational/ChatGptConversationGate';
+import CustomAssessmentSections, { type CustomAssessmentSectionsHandle } from '@/components/appraisals/CustomAssessmentSections';
 
 type ManualSelfAssessmentForm = {
   overallSummary: {
@@ -116,6 +117,7 @@ export default function SelfAssessmentPage() {
   });
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const customSectionsRef = useRef<CustomAssessmentSectionsHandle>(null);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -198,6 +200,8 @@ export default function SelfAssessmentPage() {
     }
 
     try {
+      const customResponsesSaved = await customSectionsRef.current?.save(submit);
+      if (customResponsesSaved === false) return;
       const payload: any = {
         overallSummary: {
           achievements: manualForm.overallSummary.achievements.trim(),
@@ -301,6 +305,13 @@ export default function SelfAssessmentPage() {
           {new Date(appraisal.deadlines.selfAssessmentDue) < new Date() && ' (OVERDUE)'}
         </Alert>
       )}
+
+      <CustomAssessmentSections
+        ref={customSectionsRef}
+        appraisal={appraisal}
+        respondentRole="employee"
+        onSaveError={(message) => setSnackbar({ open: true, message, severity: 'error' })}
+      />
 
       {aiAssistEnabled ? (
         <Fade in>

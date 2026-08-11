@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAppraisal, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
@@ -17,6 +17,7 @@ import {
   TrendingUp, TrendingDown, Balance, EmojiObjects, Flag, Visibility, Comment,
   PieChart, Calculate, SmartToy
 } from '@mui/icons-material';
+import CustomAssessmentSections, { type CustomAssessmentSectionsHandle } from '@/components/appraisals/CustomAssessmentSections';
 
 interface ManagerReviewData {
   overallSummary: {
@@ -46,14 +47,21 @@ interface ManagerReviewData {
 }
 
 interface ScoringData {
-  okrScore: number;
-  competencyScore: number;
-  compositeScore: number;
+  okrScore: number | null;
+  competencyScore: number | null;
+  compositeScore: number | null;
   breakdown: {
     okrWeight: number;
     competencyWeight: number;
-    okrContribution: number;
-    competencyContribution: number;
+    okrContribution: number | null;
+    competencyContribution: number | null;
+    customSections?: Array<{
+      sectionId: string;
+      title: string;
+      score: number;
+      weight: number;
+      contribution: number;
+    }>;
   };
   ratingLabel: string;
 }
@@ -106,6 +114,7 @@ export default function ManagerReviewPage() {
   const [biasCheck, setBiasCheck] = useState<any>(null);
   const [biasAcknowledged, setBiasAcknowledged] = useState(false);
   const [managerReviewStarted, setManagerReviewStarted] = useState(false);
+  const customSectionsRef = useRef<CustomAssessmentSectionsHandle>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
 
   // Form data
@@ -268,6 +277,8 @@ export default function ManagerReviewPage() {
   const handleSave = async (showNotification = true) => {
     setSaving(true);
     try {
+      const customResponsesSaved = await customSectionsRef.current?.save(false);
+      if (customResponsesSaved === false) return false;
       // Calculate gaps
       const competenciesWithGaps = formData.competencyRatings.map(c => ({
         ...c,
@@ -316,12 +327,19 @@ export default function ManagerReviewPage() {
 
     setSubmitting(true);
     try {
+      const customResponsesSaved = await customSectionsRef.current?.save(true);
+      if (customResponsesSaved === false) return;
       await api.post(`/appraisals/${appraisalId}/manager-review`, {
         managerReview: formData,
         submit: true
       });
       mutate();
-      setSnackbar({ open: true, message: 'Review submitted. The performance discussion is next.', severity: 'success' });
+      const discussionEnabled = appraisal?.cycleConfigurationSnapshot?.workflowDefinition?.stages?.discussion?.enabled !== false;
+      setSnackbar({
+        open: true,
+        message: discussionEnabled ? 'Review submitted. The performance discussion is next.' : 'Review submitted. The cycle is ready for its next configured stage.',
+        severity: 'success'
+      });
       setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
     } catch (error) {
       console.error('Submit error:', error);
@@ -506,6 +524,8 @@ export default function ManagerReviewPage() {
           </Box>
         </Box>
       </Card>
+
+      <CustomAssessmentSections appraisal={appraisal} respondentRole="employee" readOnly />
 
       {/* AI Insights from Self-Assessment */}
       {selfAssessment.aiInsights && (
@@ -878,14 +898,14 @@ export default function ManagerReviewPage() {
               <Grid size={{ xs: 12, md: 4 }}>
                 <Paper sx={{ p: 3, textAlign: 'center', bgcolor: 'primary.lighter' }}>
                   <Typography variant="h2" fontWeight={700} color="primary.main">
-                    {scoringData.compositeScore.toFixed(1)}
+                    {scoringData.compositeScore === null ? '—' : scoringData.compositeScore.toFixed(1)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Composite Score (out of 5)
                   </Typography>
                   <Chip
                     label={scoringData.ratingLabel}
-                    color={scoringData.compositeScore >= 4 ? 'success' : scoringData.compositeScore >= 3 ? 'info' : 'warning'}
+                    color={scoringData.compositeScore === null ? 'default' : scoringData.compositeScore >= 4 ? 'success' : scoringData.compositeScore >= 3 ? 'info' : 'warning'}
                     sx={{ mt: 1 }}
                   />
                 </Paper>
@@ -893,6 +913,7 @@ export default function ManagerReviewPage() {
 
               {/* Score Components */}
               <Grid size={{ xs: 12, md: 8 }}>
+                {scoringData.okrScore !== null && (
                 <Box sx={{ mb: 2 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                     <Typography variant="body2" fontWeight={600}>
@@ -909,11 +930,13 @@ export default function ManagerReviewPage() {
                     sx={{ height: 10, borderRadius: 5, mb: 1 }}
                   />
                   <Typography variant="caption" color="text.secondary">
-                    Contributes {scoringData.breakdown.okrContribution.toFixed(2)} to composite score
+                    Contributes {scoringData.breakdown.okrContribution?.toFixed(2)} to composite score
                   </Typography>
                 </Box>
+                )}
 
-                <Box>
+                {scoringData.competencyScore !== null && (
+                <Box sx={{ mb: scoringData.breakdown.customSections?.length ? 2 : 0 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                     <Typography variant="body2" fontWeight={600}>
                       Competency Ratings ({scoringData.breakdown.competencyWeight}% weight)
@@ -929,9 +952,31 @@ export default function ManagerReviewPage() {
                     sx={{ height: 10, borderRadius: 5, mb: 1 }}
                   />
                   <Typography variant="caption" color="text.secondary">
-                    Contributes {scoringData.breakdown.competencyContribution.toFixed(2)} to composite score
+                    Contributes {scoringData.breakdown.competencyContribution?.toFixed(2)} to composite score
                   </Typography>
                 </Box>
+                )}
+
+                {scoringData.breakdown.customSections?.map((section) => (
+                  <Box key={section.sectionId} sx={{ mb: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="body2" fontWeight={600}>
+                        {section.title} ({section.weight}% weight)
+                      </Typography>
+                      <Typography variant="body2" fontWeight={600} color="primary.main">
+                        {section.score.toFixed(1)}/5
+                      </Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={(section.score / 5) * 100}
+                      sx={{ height: 10, borderRadius: 5, mb: 1 }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Contributes {section.contribution.toFixed(2)} to composite score
+                    </Typography>
+                  </Box>
+                ))}
               </Grid>
             </Grid>
 
@@ -940,7 +985,7 @@ export default function ManagerReviewPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Calculate fontSize="small" color="action" />
               <Typography variant="caption" color="text.secondary">
-                Formula: (OKR Score x {scoringData.breakdown.okrWeight}%) + (Competency Score x {scoringData.breakdown.competencyWeight}%) = {scoringData.compositeScore.toFixed(2)}
+                Available scored sections are weighted using this cycle's design. Sections without a rating are omitted and the remaining weights are normalized.
               </Typography>
             </Box>
           </CardContent>
@@ -1303,7 +1348,17 @@ export default function ManagerReviewPage() {
         {activeStep === 0 && renderSelfAssessmentReview()}
         {activeStep === 1 && renderCompetenciesStep()}
         {activeStep === 2 && renderOkrStep()}
-        {activeStep === 3 && renderOverallAssessment()}
+        {activeStep === 3 && (
+          <>
+            <CustomAssessmentSections
+              ref={customSectionsRef}
+              appraisal={appraisal}
+              respondentRole="manager"
+              onSaveError={(message) => setSnackbar({ open: true, message, severity: 'error' })}
+            />
+            {renderOverallAssessment()}
+          </>
+        )}
       </Paper>
 
       {/* Navigation */}

@@ -135,6 +135,19 @@ const appraisalCycleSchema = new mongoose.Schema({
     max: 100
   },
 
+  // Versioned, configurable assessment design. The protected workflow state
+  // machine remains canonical; this definition controls which optional stages,
+  // sections, questions, evidence rules, and scoring components appear.
+  workflowDefinition: {
+    type: mongoose.Schema.Types.Mixed,
+    default: undefined
+  },
+  sourceTemplate: {
+    id: String,
+    name: String,
+    version: { type: Number, default: 1 }
+  },
+
   // Settings
   settings: {
     allowSelfRating: { type: Boolean, default: true },

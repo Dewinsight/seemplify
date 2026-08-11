@@ -57,6 +57,23 @@ const appraisalSchema = new mongoose.Schema({
     cutoffAt: Date,
     unavailableReason: String
   },
+  // Frozen at launch so later cycle/template changes cannot alter the review
+  // questions, scoring, or evidence requirements for an active appraisal.
+  cycleConfigurationSnapshot: {
+    type: mongoose.Schema.Types.Mixed,
+    default: undefined
+  },
+  customResponses: [{
+    sectionId: { type: String, required: true },
+    questionId: { type: String, required: true },
+    respondentRole: { type: String, enum: ['employee', 'manager'], required: true },
+    respondentId: String,
+    value: mongoose.Schema.Types.Mixed,
+    evidence: [mongoose.Schema.Types.Mixed],
+    score: Number,
+    lastSavedAt: Date,
+    submittedAt: Date
+  }],
   feedbackEvidence: [{
     feedbackId: { type: mongoose.Schema.Types.ObjectId, ref: 'Feedback', required: true },
     type: String,
@@ -370,7 +387,8 @@ const appraisalSchema = new mongoose.Schema({
       okrWeight: Number,
       okrContribution: Number,
       competencyWeight: Number,
-      competencyContribution: Number
+      competencyContribution: Number,
+      customSections: [mongoose.Schema.Types.Mixed]
     },
 
     override: {

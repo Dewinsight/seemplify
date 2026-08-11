@@ -8,6 +8,7 @@ const feedbackRoutes = require('../routes/feedback');
 const bulkRoutes = require('../routes/bulk');
 const appraisalRoutes = require('../routes/appraisals');
 const reviewRoutes = require('../routes/reviews');
+const analyticsRoutes = require('../routes/analytics');
 const GoalPeriod = require('../models/GoalPeriod');
 const OKR = require('../models/OKR');
 const Feedback = require('../models/Feedback');
@@ -25,6 +26,7 @@ const { buildGoalSnapshots } = require('../services/appraisalGoalSnapshotService
 const { publishDomainEvent, recordEvent } = require('../services/outboxService');
 const { runNotificationWorkerOnce } = require('../services/notificationWorker');
 const chatGptAccountService = require('../services/chatGptAccountService');
+const appraisalAIService = require('../services/appraisalAIService');
 const {
   processReminder,
   scheduleReminderSequence
@@ -42,7 +44,8 @@ let period;
 function sessionUser(actor, organizationId) {
   const organization = {
     id: organizationId,
-    role: actor === 'hr' ? 'hr_manager' : 'employee'
+    role: actor === 'hr' ? 'hr_manager' : 'employee',
+    appAccess: { mode: 'all', appIds: [] }
   };
   if (actor === 'manager') {
     return {
@@ -116,6 +119,7 @@ beforeAll(async () => {
   app.use('/api/feedback', feedbackRoutes);
   app.use('/api/bulk', bulkRoutes);
   app.use('/api/appraisals', appraisalRoutes);
+  app.use('/api/analytics', analyticsRoutes);
   app.use('/api/reviews', reviewRoutes);
 });
 
@@ -1203,6 +1207,206 @@ test('1,000-person canonical appraisal launch snapshots tenant goals and replays
   expect(totalMs).toBeLessThan(120000);
   console.info(`[acceptance] 1,000 appraisal launches: create=${firstMs}ms replay=${replayMs}ms total=${totalMs}ms`);
 }, 150000);
+
+test('admin cycle design templates launch immutable questions and enforce employee and manager responses', async () => {
+  const templates = await request(app)
+    .get('/api/appraisals/cycle-templates')
+    .set('x-test-actor', 'hr')
+    .expect(200);
+  expect(templates.body.data.map((item) => item.id)).toEqual(expect.arrayContaining([
+    'balanced_performance', 'quarterly_checkpoint', 'probation_review'
+  ]));
+
+  const design = {
+    version: 1,
+    scoring: { goalsWeight: 40, competenciesWeight: 40 },
+    stages: {
+      goalSetting: { enabled: true }, selfAssessment: { enabled: true }, managerReview: { enabled: true },
+      discussion: { enabled: false }, calibration: { enabled: false }, finalReview: { enabled: true }, acknowledgement: { enabled: true }
+    },
+    sections: [
+      { id: 'goals', title: 'Goals', type: 'goals', respondent: 'both', required: true, scored: true, weight: 40, questions: [] },
+      { id: 'competencies', title: 'Competencies', type: 'competencies', respondent: 'both', required: true, scored: true, weight: 40, questions: [] },
+      {
+        id: 'learning', title: 'Learning and application', type: 'learning', respondent: 'employee', required: true, scored: false, weight: 0,
+        questions: [{ id: 'learning_applied', prompt: 'What did you learn and apply?', responseType: 'long_text', required: true }]
+      },
+      {
+        id: 'growth_readiness', title: 'Growth readiness', type: 'development', respondent: 'manager', required: true, scored: true, weight: 20,
+        questions: [{ id: 'growth_rating', prompt: 'Rate demonstrated growth', responseType: 'rating', required: true, ratingMin: 1, ratingMax: 5 }]
+      }
+    ]
+  };
+
+  const savedTemplate = await request(app)
+    .post('/api/appraisals/cycle-templates')
+    .set('x-test-actor', 'hr')
+    .send({ name: 'Client learning review', description: 'Configured client flow', design })
+    .expect(201);
+  expect(savedTemplate.body.data.name).toBe('Client learning review');
+
+  const now = new Date();
+  const created = await request(app)
+    .post('/api/appraisals/cycles')
+    .set('x-test-actor', 'hr')
+    .send({
+      name: 'Configured 2026 review',
+      periodStart: new Date(now.getTime() - (90 * 24 * 60 * 60 * 1000)),
+      periodEnd: new Date(now.getTime() - (24 * 60 * 60 * 1000)),
+      workflowDefinition: design,
+      settings: { requireOkrAlignment: false, enableAiAssist: false },
+      sourceTemplate: { id: savedTemplate.body.data._id, name: 'Client learning review', version: 1 },
+      launchNow: true,
+      employees: [{
+        userId: EMPLOYEE,
+        name: 'Employee One',
+        email: 'employee@example.com',
+        teamId: 'team-a',
+        teamName: 'Team A',
+        department: 'Product',
+        managerId: MANAGER,
+        managerName: 'Manager One',
+        managerEmail: 'manager@example.com'
+      }]
+    })
+    .expect(201);
+  expect(created.body.data.launchSummary.launched).toBe(1);
+
+  const appraisal = await Appraisal.findOne({ organizationId: ORG_A, 'employee.userId': EMPLOYEE }).sort({ createdAt: -1 }).lean();
+  expect(appraisal.cycleConfigurationSnapshot.workflowDefinition.sections.map((item) => item.id)).toEqual([
+    'goals', 'competencies', 'learning', 'growth_readiness'
+  ]);
+
+  const blocked = await request(app)
+    .post(`/api/appraisals/${appraisal._id}/self-assessment`)
+    .set('x-test-actor', 'employee')
+    .send({
+      submit: true,
+      selfAssessment: {
+        overallSummary: {
+          achievements: 'Delivered measurable customer value across the period.',
+          challenges: 'Managed a difficult dependency with the platform team.',
+          learnings: 'Learned a new discovery method and applied it in delivery.',
+          improvements: 'Will improve early stakeholder alignment next period.',
+          goals: 'Ship the next customer workflow with measurable adoption.'
+        },
+        overallSelfRating: 4
+      }
+    })
+    .expect(400);
+  expect(blocked.body.error).toMatch(/what did you learn and apply/i);
+
+  await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'employee')
+    .send({
+      respondentRole: 'employee',
+      submit: true,
+      responses: [{ sectionId: 'learning', questionId: 'learning_applied', value: 'I learned discovery interviewing and applied it to the launch decision.' }]
+    })
+    .expect(200);
+
+  await request(app)
+    .post(`/api/appraisals/${appraisal._id}/self-assessment`)
+    .set('x-test-actor', 'employee')
+    .send({
+      submit: true,
+      selfAssessment: {
+        overallSummary: {
+          achievements: 'Delivered measurable customer value across the period.',
+          challenges: 'Managed a difficult dependency with the platform team.',
+          learnings: 'Learned a new discovery method and applied it in delivery.',
+          improvements: 'Will improve early stakeholder alignment next period.',
+          goals: 'Ship the next customer workflow with measurable adoption.'
+        },
+        overallSelfRating: 4
+      }
+    })
+    .expect(200);
+
+  await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'manager')
+    .send({ respondentRole: 'manager', submit: true, responses: [{ sectionId: 'growth_readiness', questionId: 'growth_rating', value: 4 }] })
+    .expect(200);
+
+  const managerSubmitted = await request(app)
+    .post(`/api/appraisals/${appraisal._id}/manager-review`)
+    .set('x-test-actor', 'manager')
+    .send({ managerReview: { overallManagerRating: 4 }, submit: true })
+    .expect(200);
+  expect(managerSubmitted.body.data.status).toBe('final_review_pending');
+
+  const persisted = await Appraisal.findById(appraisal._id).lean();
+  expect(persisted.customResponses).toEqual(expect.arrayContaining([
+    expect.objectContaining({ sectionId: 'learning', respondentRole: 'employee' }),
+    expect.objectContaining({ sectionId: 'growth_readiness', respondentRole: 'manager', score: 4 })
+  ]));
+  const cycle = await AppraisalCycle.findById(persisted.cycleId).lean();
+  const calculated = appraisalAIService.calculateCompositeScore(persisted, cycle);
+  expect(calculated).toMatchObject({ compositeScore: 4, suggestedRating: 4 });
+  expect(calculated.breakdown.customSections[0]).toMatchObject({ sectionId: 'growth_readiness', score: 4 });
+});
+
+test('canonical analytics ranks finalized performers and supports team drilldown', async () => {
+  const now = new Date();
+  const cycle = await AppraisalCycle.create({
+    organizationId: ORG_A,
+    name: 'Analytics review',
+    periodStart: new Date(now.getTime() - (60 * 24 * 60 * 60 * 1000)),
+    periodEnd: now,
+    status: 'completed'
+  });
+  await Appraisal.create([
+    {
+      organizationId: ORG_A,
+      cycleId: cycle._id,
+      employee: { userId: 'top-1', name: 'Ada Cole', email: 'ada@example.com', teamId: 'team-a', teamName: 'Team A', department: 'Product' },
+      manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+      status: 'employee_acknowledged',
+      selfAssessment: { submittedAt: now, overallSelfRating: 4 },
+      managerReview: { submittedAt: now, overallManagerRating: 5 },
+      finalRating: { overall: 5, ratingLabel: 'Outstanding', finalizedAt: now },
+      goalEvidenceSummary: { rated: true, score: 96, ratedGoals: 2, totalGoals: 2 }
+    },
+    {
+      organizationId: ORG_A,
+      cycleId: cycle._id,
+      employee: { userId: 'top-2', name: 'Ben Moss', email: 'ben@example.com', teamId: 'team-b', teamName: 'Team B', department: 'Operations' },
+      manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+      status: 'completed',
+      selfAssessment: { submittedAt: now, overallSelfRating: 4 },
+      managerReview: { submittedAt: now, overallManagerRating: 4 },
+      finalRating: { overall: 4, ratingLabel: 'Exceeds Expectations', finalizedAt: now },
+      goalEvidenceSummary: { rated: true, score: 84, ratedGoals: 2, totalGoals: 2 }
+    }
+  ]);
+
+  const organization = await request(app)
+    .get('/api/analytics/performance')
+    .set('x-test-actor', 'hr')
+    .expect(200);
+  expect(organization.body.data.summary).toMatchObject({ participants: 2, completed: 2, rated: 2, averageRating: 4.5 });
+  expect(organization.body.data.topPerformers[0]).toMatchObject({ rank: 1, employeeName: 'Ada Cole', finalRating: 5 });
+  expect(organization.body.data.teams.map((team) => team.name)).toEqual(['Team A', 'Team B']);
+
+  const team = await request(app)
+    .get('/api/analytics/performance?teamId=team-a')
+    .set('x-test-actor', 'hr')
+    .expect(200);
+  expect(team.body.data.summary).toMatchObject({ participants: 1, averageRating: 5 });
+  expect(team.body.data.topPerformers).toHaveLength(1);
+
+  await request(app)
+    .get('/api/analytics/performance')
+    .set('x-test-actor', 'hr')
+    .set('x-test-organization', ORG_B)
+    .expect(200)
+    .expect((response) => {
+      expect(response.body.data.summary.participants).toBe(0);
+      expect(response.body.data.topPerformers).toEqual([]);
+    });
+});
 
 test('1,000-person goal assignment completes in bounded batches and replays idempotently', async () => {
   const outboxModule = require('../services/outboxService');

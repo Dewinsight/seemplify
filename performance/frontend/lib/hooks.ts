@@ -339,6 +339,16 @@ export function useTeamAnalytics(teamId: string) {
   };
 }
 
+export function usePerformanceAnalytics(filters?: { cycleId?: string; teamId?: string; department?: string }) {
+  const query = new URLSearchParams();
+  if (filters?.cycleId) query.set('cycleId', filters.cycleId);
+  if (filters?.teamId) query.set('teamId', filters.teamId);
+  if (filters?.department) query.set('department', filters.department);
+  const url = `/analytics/performance${query.toString() ? `?${query.toString()}` : ''}`;
+  const { data, error, isLoading, mutate } = useSWR(url, fetcher, defaultConfig);
+  return { analytics: data, isLoading, isError: error, mutate };
+}
+
 /**
  * Get dashboard analytics (for managers)
  */

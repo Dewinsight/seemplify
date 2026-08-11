@@ -49,6 +49,9 @@ interface MockApiState {
   createdGoalBodies: Array<Record<string, unknown>>;
   updatedGoalBodies: Array<{ id: string; body: Record<string, unknown> }>;
   createdCheckInBodies: Array<Record<string, unknown>>;
+  createdCycleBodies: Array<Record<string, unknown>>;
+  customResponseBodies: Array<Record<string, unknown>>;
+  analyticsRequestPaths: string[];
   appraisalEvidenceBodies: Array<Record<string, unknown>>;
   notificationPreferenceBodies: Array<Record<string, unknown>>;
   aiRuntimePreferenceBodies: Array<Record<string, unknown>>;
@@ -233,6 +236,9 @@ function createState(): MockApiState {
     createdGoalBodies: [],
     updatedGoalBodies: [],
     createdCheckInBodies: [],
+    createdCycleBodies: [],
+    customResponseBodies: [],
+    analyticsRequestPaths: [],
     appraisalEvidenceBodies: [],
     notificationPreferenceBodies: [],
     aiRuntimePreferenceBodies: [],
@@ -443,9 +449,7 @@ async function installMockApi(page: Page, state: MockApiState) {
       return fulfill({ success: true, runtimePreference: body.runtimePreference });
     }
     if (method === 'GET' && (path === '/user/employees-for-appraisal' || path === '/user/all-employees')) {
-      return fulfill({
-        success: true,
-        data: [{
+      const employees = [{
           userId: 'member-1',
           name: 'Jordan Lee',
           email: 'jordan@example.com',
@@ -456,8 +460,8 @@ async function installMockApi(page: Page, state: MockApiState) {
           managerName: currentUser.name,
           managerEmail: currentUser.email,
           isSelectableForAppraisal: true,
-        }],
-      });
+        }];
+      return fulfill({ success: true, data: path === '/user/employees-for-appraisal' ? { employees } : employees });
     }
     if (method === 'GET' && path === '/user/member-1/stats') {
       return fulfill({
@@ -558,6 +562,37 @@ async function installMockApi(page: Page, state: MockApiState) {
         }],
       });
     }
+    if (method === 'GET' && path === '/appraisals/cycle-templates') {
+      return fulfill({
+        success: true,
+        data: [{
+          id: 'balanced_performance',
+          name: 'Balanced performance review',
+          description: 'Goals, competencies, learning, and development.',
+          category: 'annual',
+          version: 1,
+          system: true,
+          design: {
+            version: 1,
+            scoring: { goalsWeight: 40, competenciesWeight: 60 },
+            stages: {
+              goalSetting: { enabled: true }, selfAssessment: { enabled: true }, managerReview: { enabled: true },
+              discussion: { enabled: true }, calibration: { enabled: false }, finalReview: { enabled: true }, acknowledgement: { enabled: true },
+            },
+            sections: [
+              { id: 'goals', title: 'Goals and outcomes', description: 'Review approved goal evidence.', type: 'goals', respondent: 'both', required: true, scored: true, weight: 40, evidenceRequired: false, questions: [] },
+              { id: 'competencies', title: 'Competencies', description: 'Assess expected behaviours.', type: 'competencies', respondent: 'both', required: true, scored: true, weight: 60, evidenceRequired: false, questions: [] },
+              { id: 'learning', title: 'Learning and application', description: 'Reflect on learning and application.', type: 'learning', respondent: 'employee', required: true, scored: false, weight: 0, evidenceRequired: false, questions: [{ id: 'learning_applied', prompt: 'What did you learn and apply?', helpText: '', responseType: 'long_text', required: true, options: [], ratingMin: 1, ratingMax: 5 }] },
+            ],
+          },
+        }],
+      });
+    }
+    if (method === 'POST' && path === '/appraisals/cycles') {
+      const body = await jsonBody(request);
+      state.createdCycleBodies.push(body);
+      return fulfill({ success: true, data: { cycle: { _id: 'created-cycle', ...body }, launchSummary: { launched: 1, replayed: 0, errors: 0 } } }, 201);
+    }
     if (method === 'GET' && path === '/appraisals/team') {
       return fulfill({ success: true, data: [] });
     }
@@ -570,6 +605,35 @@ async function installMockApi(page: Page, state: MockApiState) {
       return appraisal
         ? fulfill({ success: true, data: appraisal })
         : fulfill({ success: false, error: 'Appraisal not found' }, 404);
+    }
+    if (method === 'PUT' && /^\/appraisals\/[^/]+\/custom-responses$/.test(path)) {
+      const body = await jsonBody(request);
+      state.customResponseBodies.push(body);
+      return fulfill({ success: true, data: { customResponses: body.responses } });
+    }
+    if (method === 'GET' && path === '/analytics/performance') {
+      state.analyticsRequestPaths.push(`${path}${url.search}`);
+      const teamFiltered = url.searchParams.get('teamId') === 'team-1';
+      return fulfill({
+        success: true,
+        data: {
+          scope: { organization: true, teamId: teamFiltered ? 'team-1' : null, department: null },
+          filters: {
+            cycles: [{ id: 'cycle-1', name: '2026 Annual Review' }],
+            teams: [{ id: 'team-1', name: 'Customer Success' }, { id: 'team-2', name: 'Product' }],
+            departments: ['Customer Success', 'Product'],
+          },
+          summary: { participants: teamFiltered ? 4 : 12, completed: teamFiltered ? 3 : 9, completionRate: 75, selfAssessmentRate: 92, managerReviewRate: 83, rated: teamFiltered ? 3 : 9, averageRating: 4.2, overrideRate: 11.1, highRatingGaps: 1 },
+          distribution: [{ rating: 1, count: 0 }, { rating: 2, count: 1 }, { rating: 3, count: 2 }, { rating: 4, count: 4 }, { rating: 5, count: 2 }],
+          topPerformers: [{ rank: 1, appraisalId: 'appraisal-top-1', employeeId: 'member-1', employeeName: 'Jordan Lee', jobTitle: 'Customer Success Manager', department: 'Customer Success', teamId: 'team-1', teamName: 'Customer Success', cycleId: 'cycle-1', cycleName: '2026 Annual Review', finalRating: 5, ratingLabel: 'Outstanding', goalAchievement: 96 }],
+          teams: [{ id: 'team-1', name: 'Customer Success', participants: 4, completed: 3, completionRate: 75, rated: 3, averageRating: 4.5, averageGoalAchievement: 88 }, { id: 'team-2', name: 'Product', participants: 8, completed: 6, completionRate: 75, rated: 6, averageRating: 4, averageGoalAchievement: 81 }],
+          departments: [{ id: 'Customer Success', name: 'Customer Success', participants: 4, completionRate: 75, averageRating: 4.5 }, { id: 'Product', name: 'Product', participants: 8, completionRate: 75, averageRating: 4 }],
+          sectionInsights: [{ sectionId: 'learning', title: 'Learning and application', type: 'learning', responseRate: 91.7, averageManagerScore: null }],
+          trends: [{ cycleId: 'cycle-1', cycleName: '2026 Annual Review', periodEnd: '2026-12-31T00:00:00.000Z', participants: 12, completionRate: 75, averageRating: 4.2 }],
+          definitions: { topPerformers: 'Completed canonical appraisals ranked by final rating, then goal achievement.', completionRate: 'Completed appraisals divided by all appraisals.', averageRating: 'Mean finalized rating.', responseRate: 'Completed configured sections.' },
+          refreshedAt: '2026-08-11T00:00:00.000Z',
+        },
+      });
     }
     if (method === 'GET' && /^\/appraisals\/[^/]+\/conversation\/context$/.test(path)) {
       state.conversationContextCalls += 1;
@@ -810,7 +874,7 @@ test('initializes canonical goal periods for a manager when a new organization h
   await expect(muiSelect(dialog, 'Period')).toHaveText(state.futurePeriod.name);
 });
 
-test('prefills the current annual review period when creating an appraisal cycle', async ({ page }) => {
+test('customizes an appraisal cycle flow, adds a question, selects people, and launches the frozen design', async ({ page }) => {
   const state = createState();
   state.managerMode = true;
   await installMockApi(page, state);
@@ -822,7 +886,81 @@ test('prefills the current annual review period when creating an appraisal cycle
   await expect(page.getByLabel('Period End')).toHaveValue(`${currentYear}-12-31`);
   await page.getByLabel('Cycle Name').fill('Annual employee review');
   await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Review design' })).toBeVisible();
+  await page.getByRole('button', { name: 'Add section' }).click();
+  await page.getByLabel('Section title').last().fill('Client learning evidence');
+  await page.getByLabel('Question 1').last().fill('How did you apply your most important learning?');
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Choose Participants' })).toBeVisible();
+  await page.getByText('Jordan Lee', { exact: true }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Confirm and launch' })).toBeVisible();
+  await page.getByRole('button', { name: 'Launch Review Cycle' }).click();
+  await expect.poll(() => state.createdCycleBodies.length).toBe(1);
+  const body = state.createdCycleBodies[0] as {
+    launchNow: boolean;
+    employees: unknown[];
+    workflowDefinition: { sections: Array<{ title: string; respondent: string; questions: Array<{ prompt: string }> }> };
+  };
+  expect(body.launchNow).toBe(true);
+  expect(body.employees).toHaveLength(1);
+  expect(body.workflowDefinition.sections).toEqual(expect.arrayContaining([
+    expect.objectContaining({ title: 'Client learning evidence', respondent: 'employee' }),
+  ]));
+  expect(body.workflowDefinition.sections.find((section) => section.title === 'Client learning evidence')?.questions[0].prompt)
+    .toBe('How did you apply your most important learning?');
+});
+
+test('renders frozen cycle questions in the employee appraisal and autosaves the response', async ({ page }) => {
+  const state = createState();
+  state.chatGptAccount = {
+    status: 'connected', connectedEmail: 'alex@example.com', planType: 'plus', connectedAt: '2026-08-11T00:00:00.000Z',
+    lastVerifiedAt: '2026-08-11T00:00:00.000Z', dataSharingAcknowledgedAt: '2026-08-11T00:00:00.000Z', routable: true, lastError: null,
+  };
+  Object.assign(state.appraisals[0], {
+    customResponses: [],
+    cycleConfigurationSnapshot: {
+      workflowDefinition: {
+        version: 1,
+        scoring: { goalsWeight: 40, competenciesWeight: 60 },
+        stages: { selfAssessment: { enabled: true }, managerReview: { enabled: true }, finalReview: { enabled: true } },
+        sections: [{
+          id: 'learning', title: 'Learning and application', description: 'Capture learning from training, projects, mentoring, or work.',
+          type: 'learning', respondent: 'employee', required: true, scored: false, weight: 0, evidenceRequired: false,
+          questions: [{ id: 'learning_applied', prompt: 'How did you apply your most important learning?', helpText: '', responseType: 'long_text', required: true, options: [], ratingMin: 1, ratingMax: 5 }],
+        }],
+      },
+    },
+  });
+  await installMockApi(page, state);
+
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/self-assessment');
+  await expect(page.getByRole('heading', { name: 'Cycle-specific questions' })).toBeVisible();
+  await page.getByPlaceholder('Enter your response').fill('I applied discovery interviewing to improve the launch decision.');
+  await expect.poll(() => state.customResponseBodies.length, { timeout: 5000 }).toBeGreaterThan(0);
+  const saved = state.customResponseBodies.at(-1) as { respondentRole: string; responses: Array<Record<string, unknown>> };
+  expect(saved.respondentRole).toBe('employee');
+  expect(saved.responses).toEqual(expect.arrayContaining([
+    expect.objectContaining({ sectionId: 'learning', questionId: 'learning_applied', value: 'I applied discovery interviewing to improve the launch decision.' }),
+  ]));
+});
+
+test('drills from organization analytics into top performers and a selected team', async ({ page }) => {
+  const state = createState();
+  state.hrAdminMode = true;
+  await installMockApi(page, state);
+
+  await page.goto('/analytics');
+  await expect(page.getByRole('heading', { name: 'Performance analytics' })).toBeVisible();
+  await expect(page.getByText('4.2/5')).toBeVisible();
+  await page.getByRole('tab', { name: /Top performers/ }).click();
+  await expect(page.getByText('Jordan Lee', { exact: true })).toBeVisible();
+  await expect(page.getByText('96%')).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Teams and departments' }).click();
+  await page.getByRole('button', { name: 'Drill down' }).first().click();
+  await expect.poll(() => state.analyticsRequestPaths.some((path) => path.includes('teamId=team-1'))).toBe(true);
+  await expect(page.getByText('4', { exact: true }).first()).toBeVisible();
 });
 
 test('shows immutable appraisal goals with no save step and continues to self-assessment', async ({ page }) => {

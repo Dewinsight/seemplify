@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
+import CycleDesignBuilder, {
+    DEFAULT_CYCLE_DESIGN,
+    type CycleDesign
+} from '@/components/appraisals/CycleDesignBuilder';
 import {
     Alert,
     Box,
@@ -97,6 +101,8 @@ function createDefaultFormData() {
         periodStart: `${currentYear}-01-01`,
         periodEnd: `${currentYear}-12-31`,
         okrWeight: 40,
+        workflowDefinition: JSON.parse(JSON.stringify(DEFAULT_CYCLE_DESIGN)) as CycleDesign,
+        sourceTemplate: { id: 'balanced_performance', name: 'Balanced performance review', version: 1 },
         scope: {
             type: 'organization',
             targetIds: [] as string[]
@@ -193,6 +199,7 @@ export default function EditAppraisalCyclePage() {
     const [participantView, setParticipantView] = useState<'byManager' | 'list'>('byManager');
     const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
     const [setupStep, setSetupStep] = useState(0);
+    const [cycleStatus, setCycleStatus] = useState('draft');
 
     useEffect(() => {
         const fetchCycle = async () => {
@@ -204,6 +211,7 @@ export default function EditAppraisalCyclePage() {
             try {
                 const response = await api.get(`/appraisals/cycles/${cycleId}`);
                 const cycle = response.data.data;
+                setCycleStatus(cycle.status || 'draft');
 
                 setFormData({
                     name: cycle.name,
@@ -212,6 +220,8 @@ export default function EditAppraisalCyclePage() {
                     periodStart: formatDateForInput(cycle.periodStart),
                     periodEnd: formatDateForInput(cycle.periodEnd),
                     okrWeight: cycle.okrWeight,
+                    workflowDefinition: cycle.workflowDefinition || JSON.parse(JSON.stringify(DEFAULT_CYCLE_DESIGN)),
+                    sourceTemplate: cycle.sourceTemplate || { id: 'balanced_performance', name: 'Balanced performance review', version: 1 },
                     scope: cycle.scope || { type: 'organization', targetIds: [] },
                     phases: {
                         selfAssessment: {
@@ -371,6 +381,14 @@ export default function EditAppraisalCyclePage() {
             return;
         }
 
+        const scoredWeight = formData.workflowDefinition.sections
+            .filter((section) => section.scored)
+            .reduce((sum, section) => sum + Number(section.weight || 0), 0);
+        if (Math.abs(scoredWeight - 100) >= 0.01) {
+            setSaveError(`Scored assessment sections must total 100% (currently ${scoredWeight}%).`);
+            return;
+        }
+
         setSaving(true);
         try {
             if (isNewCycle) {
@@ -436,11 +454,23 @@ export default function EditAppraisalCyclePage() {
         }
 
         if (setupStep === 1) {
+            const scoredWeight = formData.workflowDefinition.sections
+                .filter((section) => section.scored)
+                .reduce((sum, section) => sum + Number(section.weight || 0), 0);
+            if (Math.abs(scoredWeight - 100) >= 0.01) {
+                setSaveError(`Scored assessment sections must total 100% (currently ${scoredWeight}%).`);
+                return;
+            }
+            setSetupStep(2);
+            return;
+        }
+
+        if (setupStep === 2) {
             if (selectedParticipants.length === 0) {
                 setSaveError('Choose at least one employee with an assigned line manager.');
                 return;
             }
-            setSetupStep(2);
+            setSetupStep(3);
             return;
         }
 
@@ -495,11 +525,11 @@ export default function EditAppraisalCyclePage() {
                     )}
                     <Button
                         variant="contained"
-                        startIcon={saving ? <CircularProgress size={18} color="inherit" /> : (isNewCycle && setupStep === 2 ? <RocketLaunch /> : (!isNewCycle ? <Save /> : undefined))}
+                        startIcon={saving ? <CircularProgress size={18} color="inherit" /> : (isNewCycle && setupStep === 3 ? <RocketLaunch /> : (!isNewCycle ? <Save /> : undefined))}
                         onClick={handlePrimaryAction}
                         disabled={saving || (isNewCycle && loadingEmployees)}
                     >
-                        {!isNewCycle ? 'Save Changes' : setupStep === 2 ? 'Launch Review Cycle' : 'Continue'}
+                        {!isNewCycle ? 'Save Changes' : setupStep === 3 ? 'Launch Review Cycle' : 'Continue'}
                     </Button>
                 </Stack>
             </Box>
@@ -508,6 +538,7 @@ export default function EditAppraisalCyclePage() {
                 <Box sx={{ mb: 3, px: { xs: 0, md: 1 } }}>
                     <Stepper activeStep={setupStep}>
                         <Step><StepLabel>Review period</StepLabel></Step>
+                        <Step><StepLabel>Review design</StepLabel></Step>
                         <Step><StepLabel>People</StepLabel></Step>
                         <Step><StepLabel>Confirm</StepLabel></Step>
                     </Stepper>
@@ -521,7 +552,7 @@ export default function EditAppraisalCyclePage() {
             )}
 
             <Grid container spacing={3}>
-                <Grid size={{ xs: 12, lg: isNewCycle ? 12 : 8 }} sx={{ display: isNewCycle && setupStep === 2 ? 'none' : 'block' }}>
+                <Grid size={{ xs: 12, lg: isNewCycle ? 12 : 8 }} sx={{ display: isNewCycle && setupStep === 3 ? 'none' : 'block' }}>
                     {(!isNewCycle || setupStep === 0) && <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Typography variant="h6" gutterBottom>Cycle Details</Typography>
@@ -642,31 +673,32 @@ export default function EditAppraisalCyclePage() {
                     </Card>}
 
                     {isNewCycle && setupStep === 0 && (
-                        <Card variant="outlined">
+                        <Alert severity="info">Next, you will choose a template and customize the stages, questions, evidence, and scoring before selecting participants.</Alert>
+                    )}
+
+                    {isNewCycle && setupStep === 1 && (
+                        <Card>
                             <CardContent>
-                                <Typography variant="h6" gutterBottom>How the review will run</Typography>
-                                <Stack divider={<Divider flexItem />}>
-                                    {[
-                                        ['1', 'Targets and expectations', 'Employees and managers maintain measurable OKRs before the review. This cycle assesses progress and evidence from that performance period.'],
-                                        ['2', 'AI-guided employee reflection', 'The AI coach asks about target outcomes, evidence, achievements, challenges, and development goals, then drafts a self-assessment for the employee to approve.'],
-                                        ['3', 'Line-manager review', 'The manager sees the employee reflection, target evidence, and AI-generated prompts before giving an independent rating and written review.'],
-                                        ['4', 'Performance discussion', 'Employee and manager meet, record agreed strengths, improvements, support, and next steps.'],
-                                        ['5', 'Calibration and final outcome', 'Calibration is completed when enabled, then the final rating and development actions are confirmed.']
-                                    ].map(([number, title, copy]) => (
-                                        <Box key={number} sx={{ display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', gap: 1.5, py: 1.5 }}>
-                                            <Typography color="text.secondary" fontWeight={700}>{number}</Typography>
-                                            <Box>
-                                                <Typography variant="body2" fontWeight={700}>{title}</Typography>
-                                                <Typography variant="body2" color="text.secondary">{copy}</Typography>
-                                            </Box>
-                                        </Box>
-                                    ))}
-                                </Stack>
+                                <CycleDesignBuilder
+                                    design={formData.workflowDefinition}
+                                    sourceTemplate={formData.sourceTemplate}
+                                    canSaveTemplate={isHRAdmin}
+                                    onChange={(workflowDefinition) => setFormData((current) => ({
+                                        ...current,
+                                        workflowDefinition,
+                                        okrWeight: workflowDefinition.scoring.goalsWeight,
+                                        settings: {
+                                            ...current.settings,
+                                            requireSignOff: workflowDefinition.stages.acknowledgement?.enabled !== false
+                                        }
+                                    }))}
+                                    onTemplateChange={(sourceTemplate) => setFormData((current) => ({ ...current, sourceTemplate }))}
+                                />
                             </CardContent>
                         </Card>
                     )}
 
-                    {isNewCycle && setupStep === 1 && (
+                    {isNewCycle && setupStep === 2 && (
                         <Card>
                             <CardContent>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 2 }}>
@@ -867,7 +899,7 @@ export default function EditAppraisalCyclePage() {
                     )}
                 </Grid>
 
-                {(!isNewCycle || setupStep === 2) && <Grid size={{ xs: 12, lg: isNewCycle ? 12 : 4 }}>
+                {(!isNewCycle || setupStep === 3) && <Grid size={{ xs: 12, lg: isNewCycle ? 12 : 4 }}>
                     {isNewCycle ? (
                         <Card sx={{ mb: 3 }}>
                             <CardContent>
@@ -888,6 +920,14 @@ export default function EditAppraisalCyclePage() {
                                             <Typography fontWeight={700}>{selectionSummary.selected} employee{selectionSummary.selected === 1 ? '' : 's'}</Typography>
                                         </Grid>
                                     </Grid>
+                                    <Divider />
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Review design</Typography>
+                                        <Typography fontWeight={700}>{formData.sourceTemplate.name}</Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            {formData.workflowDefinition.sections.length} sections · {formData.workflowDefinition.sections.reduce((sum, section) => sum + section.questions.length, 0)} custom questions
+                                        </Typography>
+                                    </Box>
                                     <Divider />
                                     <Box>
                                         <Typography variant="body2" fontWeight={700} gutterBottom>Selected employees</Typography>
@@ -988,7 +1028,7 @@ export default function EditAppraisalCyclePage() {
                         </Card>
                     )}
 
-                    <Card sx={{ mb: 3 }}>
+                    {!isNewCycle && <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Typography variant="h6" gutterBottom>Rating Configuration</Typography>
                             <Box sx={{ mt: 2 }}>
@@ -1005,7 +1045,21 @@ export default function EditAppraisalCyclePage() {
                                 </Typography>
                             </Box>
                         </CardContent>
-                    </Card>
+                    </Card>}
+
+                    {!isNewCycle && <Card sx={{ mb: 3 }}>
+                        <CardContent>
+                            <CycleDesignBuilder
+                                design={formData.workflowDefinition}
+                                sourceTemplate={formData.sourceTemplate}
+                                canSaveTemplate={false}
+                                readOnly={cycleStatus !== 'draft'}
+                                onChange={(workflowDefinition) => setFormData((current) => ({ ...current, workflowDefinition, okrWeight: workflowDefinition.scoring.goalsWeight }))}
+                                onTemplateChange={(sourceTemplate) => setFormData((current) => ({ ...current, sourceTemplate }))}
+                            />
+                            {cycleStatus !== 'draft' && <Alert severity="info" sx={{ mt: 2 }}>This design is frozen because the cycle has launched. Duplicate the cycle to create a revised version.</Alert>}
+                        </CardContent>
+                    </Card>}
 
                     <Card>
                         <CardContent>

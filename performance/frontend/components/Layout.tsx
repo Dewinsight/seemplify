@@ -127,6 +127,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { name: 'Team', href: '/team', icon: Users, section: 'main' },
         { name: 'Team OKRs', href: '/okrs?view=team', icon: Target, section: 'main' },
         ...(appraisalsEnabled ? [{ name: 'Team Appraisals', href: '/appraisals?view=team', icon: FileText, section: 'main' as const }] : []),
+        { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'main' },
         ...growthItems,
       ];
     }

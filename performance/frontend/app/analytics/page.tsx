@@ -1,121 +1,249 @@
 'use client';
 
-// Force dynamic rendering
 export const dynamic = 'force-dynamic';
 
-import { useTeamAnalytics, useUserContext } from '@/lib/hooks';
-import { Box, Typography, Card, CardContent, CircularProgress, Select, MenuItem, FormControl, InputLabel, SelectChangeEvent, Alert, Grid } from '@mui/material';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { useMemo, useState } from 'react';
+import { usePerformanceAnalytics, useUserContext } from '@/lib/hooks';
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  FormControl,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Tabs,
+  Typography
+} from '@mui/material';
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Refresh, TrendingUp } from '@mui/icons-material';
+
+type AnalyticsFilters = { cycleId: string; teamId: string; department: string };
+type IdName = { id: string; name: string };
+type RatingDistribution = { rating: number; count: number };
+type CycleTrend = { cycleName: string; averageRating: number | null; completionRate: number };
+type Performer = { rank: number; appraisalId: string; employeeName: string; jobTitle?: string; department?: string; teamId?: string; teamName: string; cycleName: string; goalAchievement: number | null; finalRating: number; ratingLabel?: string };
+type GroupInsight = { id: string; name: string; participants: number; completionRate: number; averageRating: number | null; averageGoalAchievement?: number | null };
+type SectionInsight = { sectionId: string; title: string; type: string; responseRate: number; averageManagerScore: number | null };
+
+function metricValue(value: number | null | undefined, suffix = '') {
+  return value === null || value === undefined ? 'Not available' : `${value}${suffix}`;
+}
 
 export default function AnalyticsPage() {
-    const { teams, currentTeam, isLoading: contextLoading } = useUserContext();
-    const teamOptions = useMemo(() => {
-        const byId = new Map<string, { id: string; name: string }>();
-        [...(teams || []), currentTeam].filter(Boolean).forEach((team: any) => {
-            const id = String(team.id || team.teamId || team._id || '');
-            if (id) byId.set(id, { id, name: team.name || team.teamName || 'My team' });
-        });
-        return [...byId.values()];
-    }, [currentTeam, teams]);
-    const [selectedTeamId, setSelectedTeamId] = useState('');
-    const preferredTeamId = String(currentTeam?.id || currentTeam?.teamId || currentTeam?._id || '');
-    const teamId = teamOptions.some((team) => team.id === selectedTeamId)
-        ? selectedTeamId
-        : teamOptions.find((team) => team.id === preferredTeamId)?.id || teamOptions[0]?.id || '';
-    const { analytics, isLoading, isError } = useTeamAnalytics(teamId);
+  const { isManager, isHRAdmin, isLoading: contextLoading } = useUserContext();
+  const [filters, setFilters] = useState<AnalyticsFilters>({ cycleId: '', teamId: '', department: '' });
+  const [tab, setTab] = useState(0);
+  const { analytics, isLoading, isError, mutate } = usePerformanceAnalytics(filters);
 
-    const handleTeamChange = (event: SelectChangeEvent) => {
-        setSelectedTeamId(event.target.value);
-    };
+  const distribution = useMemo(() => (analytics?.distribution || []).map((item: RatingDistribution) => ({
+    rating: `${item.rating}/5`, employees: item.count
+  })), [analytics?.distribution]);
+  const trend = useMemo(() => (analytics?.trends || []).map((item: CycleTrend) => ({
+    name: item.cycleName,
+    rating: item.averageRating,
+    completion: item.completionRate
+  })), [analytics?.trends]);
 
-    if (contextLoading || (teamId && isLoading)) return <CircularProgress />;
-    if (isError) return <Typography color="error">Failed to load analytics. Please try again.</Typography>;
+  if (contextLoading || isLoading) {
+    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
+  }
+  if (!isManager && !isHRAdmin) {
+    return <Alert severity="info">Analytics are available in Manager or Admin workspace.</Alert>;
+  }
+  if (isError || !analytics) {
+    return <Alert severity="error" action={<Button onClick={() => mutate()}>Retry</Button>}>Performance analytics could not be loaded.</Alert>;
+  }
 
-    // The shared fetcher unwraps { success, data }, while this fallback also
-    // tolerates a direct payload for local or older deployments.
-    const data = analytics?.data || analytics || {
-        performanceDistribution: [],
-        okrCompletionHistory: []
-    };
+  const summary = analytics.summary || {};
+  const filterOptions = analytics.filters || { cycles: [], teams: [], departments: [] };
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
-    return (
+  const clearFilters = () => setFilters({ cycleId: '', teamId: '', department: '' });
+
+  return (
+    <Box>
+      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'flex-start' }} gap={2} mb={3}>
         <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h4">Team Analytics</Typography>
-                <FormControl sx={{ minWidth: 220 }} disabled={!teamOptions.length}>
-                    <InputLabel>Team</InputLabel>
-                    <Select value={teamId} label="Team" onChange={handleTeamChange}>
-                        {teamOptions.map((team) => <MenuItem key={team.id} value={team.id}>{team.name}</MenuItem>)}
-                    </Select>
-                </FormControl>
-            </Box>
-
-            {!teamOptions.length ? (
-                <Alert severity="info" sx={{ mt: 2 }}>
-                    No team is available in your current organization. Join or select a team to view team analytics.
-                </Alert>
-            ) : data.performanceDistribution.length === 0 && data.okrCompletionHistory.length === 0 ? (
-                <Alert severity="info" sx={{ mt: 2 }}>
-                    No analytics data available yet. Data will appear once OKRs and reviews are created.
-                </Alert>
-            ) : (
-            <Grid container spacing={3}>
-                {/* Performance Distribution Chart */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                    <Card sx={{ height: '100%' }}>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom>Performance Rating Distribution</Typography>
-                            {data.performanceDistribution.length === 0 ? (
-                                <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Typography color="text.secondary">No performance data available</Typography>
-                                </Box>
-                            ) : (
-                            <Box sx={{ height: 300 }}>
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={data.performanceDistribution}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="name" />
-                                        <YAxis />
-                                        <Tooltip />
-                                        <Legend />
-                                        <Bar dataKey="count" fill="#2563eb" name="Employees" />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </Box>
-                            )}
-                        </CardContent>
-                    </Card>
-                </Grid>
-
-                {/* OKR Completion Trend */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                    <Card sx={{ height: '100%' }}>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom>OKR Completion Trend (%)</Typography>
-                            {data.okrCompletionHistory.length === 0 ? (
-                                <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Typography color="text.secondary">No OKR history available</Typography>
-                                </Box>
-                            ) : (
-                            <Box sx={{ height: 300 }}>
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={data.okrCompletionHistory}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="month" />
-                                        <YAxis domain={[0, 100]} />
-                                        <Tooltip />
-                                        <Legend />
-                                        <Line type="monotone" dataKey="avg" stroke="#dc004e" strokeWidth={2} name="Avg. Progress" />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </Box>
-                            )}
-                        </CardContent>
-                    </Card>
-                </Grid>
-            </Grid>
-            )}
+          <Typography variant="h4" fontWeight={700}>Performance analytics</Typography>
+          <Typography variant="body1" color="text.secondary">
+            Final ratings, completion, goal achievement, configured section coverage, and performer drilldowns from the canonical appraisal record.
+          </Typography>
         </Box>
-    );
+        <Button variant="outlined" startIcon={<Refresh />} onClick={() => mutate()}>Refresh</Button>
+      </Stack>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
+          <FormControl size="small" sx={{ minWidth: 230 }}>
+            <InputLabel>Cycle</InputLabel>
+            <Select value={filters.cycleId} label="Cycle" onChange={(event) => setFilters((current) => ({ ...current, cycleId: event.target.value }))}>
+              <MenuItem value="">All cycles</MenuItem>
+              {(filterOptions.cycles || []).map((cycle: IdName) => <MenuItem key={cycle.id} value={cycle.id}>{cycle.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel>Team</InputLabel>
+            <Select value={filters.teamId} label="Team" onChange={(event) => setFilters((current) => ({ ...current, teamId: event.target.value }))}>
+              <MenuItem value="">All accessible teams</MenuItem>
+              {(filterOptions.teams || []).map((team: IdName) => <MenuItem key={team.id} value={team.id}>{team.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel>Department</InputLabel>
+            <Select value={filters.department} label="Department" onChange={(event) => setFilters((current) => ({ ...current, department: event.target.value }))}>
+              <MenuItem value="">All departments</MenuItem>
+              {(filterOptions.departments || []).map((department: string) => <MenuItem key={department} value={department}>{department}</MenuItem>)}
+            </Select>
+          </FormControl>
+          {activeFilterCount > 0 && <Button onClick={clearFilters}>Clear filters ({activeFilterCount})</Button>}
+        </Stack>
+      </Paper>
+
+      <Grid container spacing={1.5} mb={3}>
+        {[
+          ['Participants', summary.participants ?? 0, 'Appraisals in this scope'],
+          ['Completion', metricValue(summary.completionRate, '%'), `${summary.completed || 0} completed`],
+          ['Average final rating', metricValue(summary.averageRating, '/5'), `${summary.rated || 0} finalized ratings`],
+          ['Manager review', metricValue(summary.managerReviewRate, '%'), `${summary.highRatingGaps || 0} rating gaps need attention`]
+        ].map(([label, value, detail]) => (
+          <Grid key={String(label)} size={{ xs: 12, sm: 6, lg: 3 }}>
+            <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
+              <Typography variant="body2" color="text.secondary">{label}</Typography>
+              <Typography variant="h5" fontWeight={700} sx={{ my: 0.5 }}>{value}</Typography>
+              <Typography variant="caption" color="text.secondary">{detail}</Typography>
+            </Paper>
+          </Grid>
+        ))}
+      </Grid>
+
+      <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tab label="Overview" />
+        <Tab label={`Top performers (${analytics.topPerformers?.length || 0})`} />
+        <Tab label="Teams and departments" />
+        <Tab label="Configured sections" />
+      </Tabs>
+
+      {tab === 0 && (
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, lg: 6 }}>
+            <Card variant="outlined" sx={{ height: '100%' }}>
+              <CardContent>
+                <Typography variant="h6">Final rating distribution</Typography>
+                <Typography variant="body2" color="text.secondary" mb={2}>Only finalized ratings are counted.</Typography>
+                {summary.rated > 0 ? (
+                  <Box sx={{ height: 300, minWidth: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={1} initialDimension={{ width: 600, height: 300 }}>
+                      <BarChart data={distribution}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="rating" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="employees" fill="#0f766e" /></BarChart>
+                    </ResponsiveContainer>
+                  </Box>
+                ) : <Alert severity="info">No finalized ratings exist in this scope yet.</Alert>}
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 12, lg: 6 }}>
+            <Card variant="outlined" sx={{ height: '100%' }}>
+              <CardContent>
+                <Typography variant="h6">Cycle trend</Typography>
+                <Typography variant="body2" color="text.secondary" mb={2}>Average final rating and completion by cycle.</Typography>
+                {trend.length > 0 ? (
+                  <Box sx={{ height: 300, minWidth: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={1} initialDimension={{ width: 600, height: 300 }}>
+                      <LineChart data={trend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" hide={trend.length > 6} /><YAxis yAxisId="rating" domain={[1, 5]} /><YAxis yAxisId="completion" orientation="right" domain={[0, 100]} /><Tooltip /><Line yAxisId="rating" type="monotone" dataKey="rating" stroke="#0f766e" strokeWidth={2} /><Line yAxisId="completion" type="monotone" dataKey="completion" stroke="#64748b" strokeWidth={2} /></LineChart>
+                    </ResponsiveContainer>
+                  </Box>
+                ) : <Alert severity="info">Cycle trends will appear after reviews are launched.</Alert>}
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={12}>
+            <Alert severity="info">
+              <strong>Metric rules:</strong> {analytics.definitions?.averageRating} {analytics.definitions?.completionRate}
+            </Alert>
+          </Grid>
+        </Grid>
+      )}
+
+      {tab === 1 && (
+        <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+            <Stack direction="row" spacing={1} alignItems="center"><TrendingUp color="primary" /><Typography variant="h6">Top performers</Typography></Stack>
+            <Typography variant="body2" color="text.secondary">{analytics.definitions?.topPerformers}</Typography>
+          </Box>
+          {(analytics.topPerformers || []).length === 0 ? <Alert severity="info" sx={{ m: 2 }}>No completed, finalized appraisals match these filters.</Alert> : (
+            <Table size="small">
+              <TableHead><TableRow><TableCell>Rank</TableCell><TableCell>Employee</TableCell><TableCell>Team</TableCell><TableCell>Cycle</TableCell><TableCell align="right">Goal achievement</TableCell><TableCell align="right">Final rating</TableCell></TableRow></TableHead>
+              <TableBody>
+                {analytics.topPerformers.map((person: Performer) => (
+                  <TableRow key={person.appraisalId} hover>
+                    <TableCell>{person.rank}</TableCell>
+                    <TableCell><Typography variant="body2" fontWeight={600}>{person.employeeName}</Typography><Typography variant="caption" color="text.secondary">{person.jobTitle || person.department}</Typography></TableCell>
+                    <TableCell><Button size="small" disabled={!person.teamId} onClick={() => { setFilters((current) => ({ ...current, teamId: person.teamId })); setTab(0); }}>{person.teamName}</Button></TableCell>
+                    <TableCell>{person.cycleName}</TableCell>
+                    <TableCell align="right">{metricValue(person.goalAchievement, '%')}</TableCell>
+                    <TableCell align="right"><Chip size="small" color="success" variant="outlined" label={`${person.finalRating}/5${person.ratingLabel ? ` · ${person.ratingLabel}` : ''}`} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Paper>
+      )}
+
+      {tab === 2 && (
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, lg: 7 }}>
+            <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}><Typography variant="h6">Team comparison</Typography></Box>
+              <Table size="small">
+                <TableHead><TableRow><TableCell>Team</TableCell><TableCell align="right">Participants</TableCell><TableCell align="right">Completion</TableCell><TableCell align="right">Avg rating</TableCell><TableCell align="right">Goals</TableCell><TableCell /></TableRow></TableHead>
+                <TableBody>{(analytics.teams || []).map((team: GroupInsight) => (
+                  <TableRow key={team.id} hover><TableCell>{team.name}</TableCell><TableCell align="right">{team.participants}</TableCell><TableCell align="right">{team.completionRate}%</TableCell><TableCell align="right">{metricValue(team.averageRating, '/5')}</TableCell><TableCell align="right">{metricValue(team.averageGoalAchievement, '%')}</TableCell><TableCell align="right"><Button size="small" disabled={team.id === 'unassigned'} onClick={() => { setFilters((current) => ({ ...current, teamId: team.id })); setTab(0); }}>Drill down</Button></TableCell></TableRow>
+                ))}</TableBody>
+              </Table>
+            </Paper>
+          </Grid>
+          <Grid size={{ xs: 12, lg: 5 }}>
+            <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}><Typography variant="h6">Department comparison</Typography></Box>
+              <Table size="small"><TableHead><TableRow><TableCell>Department</TableCell><TableCell align="right">Completion</TableCell><TableCell align="right">Avg rating</TableCell></TableRow></TableHead><TableBody>
+                {(analytics.departments || []).map((department: GroupInsight) => <TableRow key={department.id} hover onClick={() => setFilters((current) => ({ ...current, department: department.name === 'Unassigned' ? '' : department.name }))} sx={{ cursor: department.name === 'Unassigned' ? 'default' : 'pointer' }}><TableCell>{department.name}</TableCell><TableCell align="right">{department.completionRate}%</TableCell><TableCell align="right">{metricValue(department.averageRating, '/5')}</TableCell></TableRow>)}
+              </TableBody></Table>
+            </Paper>
+          </Grid>
+        </Grid>
+      )}
+
+      {tab === 3 && (
+        <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+            <Typography variant="h6">Configured section coverage</Typography>
+            <Typography variant="body2" color="text.secondary">Shows whether the custom cycle content—such as learning reflection—was actually completed.</Typography>
+          </Box>
+          {(analytics.sectionInsights || []).length === 0 ? <Alert severity="info" sx={{ m: 2 }}>No configurable section data is available for this scope.</Alert> : (
+            <Table size="small"><TableHead><TableRow><TableCell>Section</TableCell><TableCell>Type</TableCell><TableCell align="right">Response rate</TableCell><TableCell align="right">Manager score</TableCell></TableRow></TableHead><TableBody>
+              {analytics.sectionInsights.map((section: SectionInsight) => <TableRow key={section.sectionId}><TableCell>{section.title}</TableCell><TableCell><Chip size="small" label={section.type} variant="outlined" /></TableCell><TableCell align="right">{section.responseRate}%</TableCell><TableCell align="right">{metricValue(section.averageManagerScore, '/5')}</TableCell></TableRow>)}
+            </TableBody></Table>
+          )}
+        </Paper>
+      )}
+
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
+        Refreshed {new Date(analytics.refreshedAt).toLocaleString()}. Draft ratings and AI suggestions are excluded from top-performer ranking.
+      </Typography>
+    </Box>
+  );
 }

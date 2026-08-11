@@ -31,8 +31,9 @@ function getWorkflowStage(status) {
   return STATUS_STAGE[status] || 'self_assessment';
 }
 
-function getStatusAfterManagerReview() {
-  return 'discussion_scheduled';
+function getStatusAfterManagerReview({ discussionRequired = true, calibrationRequired = false } = {}) {
+  if (discussionRequired) return 'discussion_scheduled';
+  return calibrationRequired ? 'calibration_pending' : 'final_review_pending';
 }
 
 function getStatusAfterDiscussion({ calibrationRequired = false } = {}) {
@@ -41,6 +42,9 @@ function getStatusAfterDiscussion({ calibrationRequired = false } = {}) {
 
 function isCalibrationRequired(cycle) {
   if (!cycle) return false;
+  const configuredStage = cycle?.workflowDefinition?.stages?.calibration;
+  if (configuredStage && configuredStage.enabled === false) return false;
+  if (configuredStage?.enabled === true) return true;
   const calibration = cycle?.phases?.calibration;
   if (!calibration) return false;
 

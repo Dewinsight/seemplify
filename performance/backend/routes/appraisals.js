@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 
 const AppraisalCycle = require('../models/AppraisalCycle');
+const AppraisalCycleTemplate = require('../models/AppraisalCycleTemplate');
 const Appraisal = require('../models/Appraisal');
 const AppraisalDocument = require('../models/AppraisalDocument');
 const OKR = require('../models/OKR');
@@ -33,6 +34,13 @@ const {
   isAppraisalManagerRole,
   resolveAppraisalAccessScope
 } = require('../services/appraisalAccessService');
+const {
+  BUILT_IN_TEMPLATES,
+  cloneBuiltInTemplate,
+  normalizeDesign,
+  validateDesign,
+  templateSnapshot
+} = require('../services/appraisalCycleDesignService');
 
 function getRequesterIdentity(req) {
   const userIds = Array.from(
@@ -782,7 +790,84 @@ function validateCycleConfiguration(input = {}) {
   if (!Number.isFinite(okrWeight) || okrWeight < 0 || okrWeight > 100) {
     errors.push('OKR weight must be between 0 and 100');
   }
+  const designResult = validateDesign(input.workflowDefinition || cloneBuiltInTemplate().design);
+  errors.push(...designResult.errors);
   return errors;
+}
+
+function getCycleDesign(cycle) {
+  return normalizeDesign(cycle?.workflowDefinition || cloneBuiltInTemplate().design);
+}
+
+function getCustomQuestionMap(appraisal, respondentRole) {
+  const configuredDesign = appraisal?.cycleConfigurationSnapshot?.workflowDefinition || appraisal?.cycleId?.workflowDefinition;
+  const design = configuredDesign
+    ? normalizeDesign(configuredDesign)
+    : { version: 1, scoring: { goalsWeight: 40, competenciesWeight: 60 }, stages: {}, sections: [] };
+  const sections = design.sections.filter((section) => (
+    !['goals', 'competencies'].includes(section.type) &&
+    (section.respondent === respondentRole || section.respondent === 'both')
+  ));
+  const questionMap = new Map();
+  for (const section of sections) {
+    for (const item of section.questions) {
+      questionMap.set(`${section.id}:${item.id}`, { section, question: item });
+    }
+  }
+  return { design, sections, questionMap };
+}
+
+function sanitizeCustomResponseValue(value, question) {
+  switch (question.responseType) {
+    case 'rating': {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return null;
+      return Math.min(question.ratingMax, Math.max(question.ratingMin, numeric));
+    }
+    case 'number': {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    }
+    case 'boolean':
+      return value === true || value === 'true';
+    case 'single_select':
+      return question.options.includes(String(value)) ? String(value) : null;
+    case 'multi_select':
+      return Array.isArray(value)
+        ? value.map(String).filter((item) => question.options.includes(item)).slice(0, question.options.length)
+        : [];
+    case 'short_text':
+      return String(value || '').trim().slice(0, 500);
+    default:
+      return String(value || '').trim().slice(0, 10000);
+  }
+}
+
+function hasCustomResponseValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'boolean' || typeof value === 'number') return true;
+  return String(value || '').trim().length > 0;
+}
+
+function missingRequiredCustomResponses(appraisal, respondentRole) {
+  const { sections, questionMap } = getCustomQuestionMap(appraisal, respondentRole);
+  const responses = new Map(
+    (appraisal.customResponses || [])
+      .filter((item) => item.respondentRole === respondentRole)
+      .map((item) => [`${item.sectionId}:${item.questionId}`, item.value])
+  );
+  const missing = [];
+  for (const [key, definition] of questionMap.entries()) {
+    if (definition.section.required && definition.question.required && !hasCustomResponseValue(responses.get(key))) {
+      missing.push(definition.question.prompt);
+    }
+  }
+  for (const section of sections) {
+    if (section.required && section.evidenceRequired && (!appraisal.documents || appraisal.documents.length === 0)) {
+      missing.push(`${section.title}: attach supporting evidence`);
+    }
+  }
+  return missing;
 }
 
 function phaseHasOpened(cycle, phaseName) {
@@ -1196,6 +1281,19 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         goals: goalSnapshot.goalIds,
         goalSnapshots: goalSnapshot.snapshots,
         goalEvidenceSummary: goalSnapshot.evidenceSummary,
+        cycleConfigurationSnapshot: {
+          version: 1,
+          cycleId: String(cycle._id),
+          cycleName: cycle.name,
+          periodStart: cycle.periodStart,
+          periodEnd: cycle.periodEnd,
+          ratingScale: toPlainObject(cycle.ratingScale),
+          competencies: (cycle.competencies || []).map((item) => toPlainObject(item)),
+          settings: toPlainObject(cycle.settings),
+          workflowDefinition: getCycleDesign(cycle),
+          sourceTemplate: toPlainObject(cycle.sourceTemplate),
+          capturedAt: new Date()
+        },
         employee: {
           userId: employee.userId,
           name: employee.name,
@@ -1436,6 +1534,83 @@ const upload = multer({
 // APPRAISAL CYCLE ROUTES (HR Admin)
 // =============================================
 
+// Built-in templates are immutable. Organization templates are tenant-scoped
+// and can only be created or archived by HR administrators.
+router.get('/cycle-templates', requireAuth, requireManager, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    if (!organizationId) {
+      return res.status(403).json({ success: false, error: 'Organization context is required' });
+    }
+    const customTemplates = await AppraisalCycleTemplate.find({
+      organizationId: String(organizationId),
+      archivedAt: null
+    }).sort({ name: 1 }).lean();
+    return res.json({
+      success: true,
+      data: [
+        ...BUILT_IN_TEMPLATES.map((template) => ({ ...template, design: normalizeDesign(template.design) })),
+        ...customTemplates.map((template) => ({
+          id: String(template._id),
+          name: template.name,
+          description: template.description,
+          category: template.category,
+          version: template.version,
+          system: false,
+          design: normalizeDesign(template.design)
+        }))
+      ]
+    });
+  } catch (error) {
+    console.error('List appraisal cycle templates error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to load appraisal cycle templates' });
+  }
+});
+
+router.post('/cycle-templates', requireAuth, requireHRAdmin, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    const name = String(req.body?.name || '').trim();
+    if (!organizationId) return res.status(403).json({ success: false, error: 'Organization context is required' });
+    if (name.length < 3) return res.status(400).json({ success: false, error: 'Template name must contain at least 3 characters' });
+    const { design, errors } = validateDesign(req.body?.design);
+    if (errors.length > 0) return res.status(400).json({ success: false, error: errors[0], errors });
+    const actor = req.session?.user || {};
+    const template = await AppraisalCycleTemplate.create({
+      organizationId: String(organizationId),
+      name: name.slice(0, 160),
+      description: String(req.body?.description || '').trim().slice(0, 1000),
+      category: req.body?.category || 'custom',
+      design,
+      createdBy: { userId: actor.id || actor.sub, name: actor.name, email: actor.email },
+      updatedBy: { userId: actor.id || actor.sub, name: actor.name, email: actor.email }
+    });
+    return res.status(201).json({ success: true, data: template });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ success: false, error: 'A template with this name already exists' });
+    }
+    console.error('Create appraisal cycle template error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to save appraisal cycle template' });
+  }
+});
+
+router.delete('/cycle-templates/:templateId', requireAuth, requireHRAdmin, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    const template = await AppraisalCycleTemplate.findOneAndUpdate(
+      { _id: req.params.templateId, organizationId: String(organizationId), archivedAt: null },
+      { $set: { archivedAt: new Date() } },
+      { new: true }
+    );
+    if (!template) return res.status(404).json({ success: false, error: 'Template not found' });
+    return res.json({ success: true, data: { id: String(template._id), archived: true } });
+  } catch (error) {
+    console.error('Archive appraisal cycle template error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to archive appraisal cycle template' });
+  }
+});
+
 // Get all cycles for organization (Filtered for Managers)
 router.get('/cycles', requireAuth, async (req, res) => {
   try {
@@ -1513,7 +1688,8 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
       });
     }
 
-    const configurationErrors = validateCycleConfiguration(req.body);
+    const designResult = validateDesign(req.body?.workflowDefinition || cloneBuiltInTemplate().design);
+    const configurationErrors = validateCycleConfiguration({ ...req.body, workflowDefinition: designResult.design });
     if (configurationErrors.length > 0) {
       return res.status(400).json({ success: false, error: configurationErrors[0], errors: configurationErrors });
     }
@@ -1545,6 +1721,13 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
 
     const cycle = new AppraisalCycle({
       ...req.body,
+      workflowDefinition: designResult.design,
+      okrWeight: designResult.design.scoring.goalsWeight,
+      sourceTemplate: req.body?.sourceTemplate ? {
+        id: String(req.body.sourceTemplate.id || '').slice(0, 100),
+        name: String(req.body.sourceTemplate.name || '').slice(0, 160),
+        version: Number(req.body.sourceTemplate.version || 1)
+      } : templateSnapshot(cloneBuiltInTemplate()),
       scope: requestedScope || req.body?.scope,
       organizationId: orgId,
       createdBy: { userId, name: userName, role: userRole }
@@ -1616,7 +1799,7 @@ router.get('/cycles/:cycleId', requireAuth, async (req, res) => {
 // Update cycle (HR Admin or Owner Manager)
 router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => {
   try {
-    const { name, description, periodStart, periodEnd, phases, okrWeight, settings, cycleType, scope } = req.body;
+    const { name, description, periodStart, periodEnd, phases, okrWeight, settings, cycleType, scope, workflowDefinition, sourceTemplate } = req.body;
 
     const orgId = resolveOrganizationId(req);
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: orgId });
@@ -1640,11 +1823,30 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
       return res.status(400).json({ success: false, error: 'Cannot update completed or cancelled cycles' });
     }
 
+    let normalizedWorkflowDefinition = cycle.workflowDefinition ? getCycleDesign(cycle) : cloneBuiltInTemplate().design;
+    if (workflowDefinition !== undefined) {
+      const hasLaunchedAppraisals = await Appraisal.exists({ cycleId: cycle._id, organizationId: orgId });
+      if (cycle.status !== 'draft' || hasLaunchedAppraisals) {
+        return res.status(409).json({
+          success: false,
+          error: 'Assessment sections and scoring are frozen after a cycle launches. Duplicate this cycle to create a revised design.'
+        });
+      }
+      const designResult = validateDesign(workflowDefinition);
+      if (designResult.errors.length > 0) {
+        return res.status(400).json({ success: false, error: designResult.errors[0], errors: designResult.errors });
+      }
+      normalizedWorkflowDefinition = designResult.design;
+    }
+
     const proposedConfiguration = {
       periodStart: periodStart || cycle.periodStart,
       periodEnd: periodEnd || cycle.periodEnd,
       phases: phases || cycle.phases,
-      okrWeight: okrWeight !== undefined ? okrWeight : cycle.okrWeight
+      okrWeight: workflowDefinition !== undefined
+        ? normalizedWorkflowDefinition.scoring.goalsWeight
+        : (okrWeight !== undefined ? okrWeight : cycle.okrWeight),
+      workflowDefinition: normalizedWorkflowDefinition
     };
     const configurationErrors = validateCycleConfiguration(proposedConfiguration);
     if (configurationErrors.length > 0) {
@@ -1657,7 +1859,21 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
     if (cycleType) cycle.cycleType = cycleType;
     if (periodStart) cycle.periodStart = periodStart;
     if (periodEnd) cycle.periodEnd = periodEnd;
-    if (okrWeight !== undefined) cycle.okrWeight = okrWeight;
+    if (workflowDefinition !== undefined) {
+      cycle.workflowDefinition = normalizedWorkflowDefinition;
+      cycle.okrWeight = normalizedWorkflowDefinition.scoring.goalsWeight;
+      if (sourceTemplate) cycle.sourceTemplate = sourceTemplate;
+    } else if (okrWeight !== undefined) {
+      cycle.okrWeight = okrWeight;
+      const design = getCycleDesign(cycle);
+      design.scoring.goalsWeight = Number(okrWeight);
+      design.scoring.competenciesWeight = 100 - Number(okrWeight);
+      const goalsSection = design.sections.find((section) => section.type === 'goals');
+      const competenciesSection = design.sections.find((section) => section.type === 'competencies');
+      if (goalsSection) goalsSection.weight = Number(okrWeight);
+      if (competenciesSection) competenciesSection.weight = 100 - Number(okrWeight);
+      cycle.workflowDefinition = design;
+    }
 
     // Update Scope
     if (scope) {
@@ -2598,6 +2814,89 @@ router.post('/ai-suggest', requireAuth, async (req, res) => {
   }
 });
 
+router.put('/:appraisalId/custom-responses', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId)).populate(tenantCyclePopulate(req));
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+
+    const respondentRole = req.body?.respondentRole === 'manager' ? 'manager' : 'employee';
+    const isEmployee = isAppraisalEmployee(req, appraisal);
+    const canManage = await canManageAppraisal(req, appraisal);
+    if ((respondentRole === 'employee' && !isEmployee) || (respondentRole === 'manager' && !canManage)) {
+      return res.status(403).json({ success: false, error: `You cannot edit ${respondentRole} assessment responses` });
+    }
+    if (respondentRole === 'employee' && !isSelfAssessmentEditable(appraisal)) {
+      return res.status(409).json({ success: false, error: 'Employee assessment responses are locked' });
+    }
+    if (respondentRole === 'manager' && !MANAGER_REVIEW_EDITABLE_STATUSES.includes(appraisal.status)) {
+      return res.status(409).json({ success: false, error: 'Manager assessment responses are locked' });
+    }
+
+    const { questionMap } = getCustomQuestionMap(appraisal, respondentRole);
+    const incoming = Array.isArray(req.body?.responses) ? req.body.responses : [];
+    const actorId = req.session?.user?.id || req.session?.user?.sub;
+    const now = new Date();
+    const preserved = (appraisal.customResponses || [])
+      .filter((item) => item.respondentRole !== respondentRole)
+      .map((item) => toPlainObject(item));
+    const existing = new Map(
+      (appraisal.customResponses || [])
+        .filter((item) => item.respondentRole === respondentRole)
+        .map((item) => [`${item.sectionId}:${item.questionId}`, toPlainObject(item)])
+    );
+    const accepted = [];
+    for (const item of incoming) {
+      const key = `${String(item?.sectionId || '')}:${String(item?.questionId || '')}`;
+      const definition = questionMap.get(key);
+      if (!definition) continue;
+      const value = sanitizeCustomResponseValue(item.value, definition.question);
+      const prior = existing.get(key) || {};
+      accepted.push({
+        ...prior,
+        sectionId: definition.section.id,
+        questionId: definition.question.id,
+        respondentRole,
+        respondentId: String(actorId || ''),
+        value,
+        evidence: Array.isArray(item.evidence) ? item.evidence.slice(0, 20) : (prior.evidence || []),
+        score: ['rating', 'number'].includes(definition.question.responseType) && Number.isFinite(Number(value))
+          ? Number(value)
+          : undefined,
+        lastSavedAt: now,
+        submittedAt: req.body?.submit ? now : prior.submittedAt
+      });
+      existing.delete(key);
+    }
+    appraisal.customResponses = [...preserved, ...accepted, ...Array.from(existing.values())];
+
+    if (req.body?.submit) {
+      const missing = missingRequiredCustomResponses(appraisal, respondentRole);
+      if (missing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Complete the required cycle questions: ${missing.join('; ')}`,
+          missingQuestions: missing
+        });
+      }
+      appraisal.addAuditLog('custom_assessment_responses_submitted', req.session.user, {
+        respondentRole,
+        responseCount: appraisal.customResponses.filter((item) => item.respondentRole === respondentRole).length
+      });
+    }
+
+    await appraisal.save();
+    return res.json({
+      success: true,
+      data: {
+        customResponses: appraisal.customResponses.filter((item) => item.respondentRole === respondentRole)
+      }
+    });
+  } catch (error) {
+    console.error('Save custom assessment responses error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to save cycle responses' });
+  }
+});
+
 // Rebuild immutable goal evidence only while the appraisal is still in its
 // pre-assessment window. Once self-assessment opens, historical membership is
 // deliberately locked.
@@ -2991,6 +3290,14 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
 
     const normalizedSummary = normalizeSelfAssessmentSummary(selfAssessment.overallSummary || {});
     if (submit) {
+      const missingCustomResponses = missingRequiredCustomResponses(appraisal, 'employee');
+      if (missingCustomResponses.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Complete the required cycle questions: ${missingCustomResponses.join('; ')}`,
+          missingQuestions: missingCustomResponses
+        });
+      }
       const missingSections = getMissingSelfAssessmentSections(normalizedSummary);
       if (missingSections.length > 0) {
         return res.status(400).json({
@@ -3204,9 +3511,18 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
     };
 
     if (submit) {
+      const missingCustomResponses = missingRequiredCustomResponses(appraisal, 'manager');
+      if (missingCustomResponses.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Complete the required cycle questions: ${missingCustomResponses.join('; ')}`,
+          missingQuestions: missingCustomResponses
+        });
+      }
       appraisal.managerReview.submittedAt = new Date();
       const calibrationRequired = isCalibrationEnabledForCycle(appraisal.cycleId);
-      appraisal.status = getStatusAfterManagerReview();
+      const discussionRequired = getCycleDesign(appraisal.cycleId)?.stages?.discussion?.enabled !== false;
+      appraisal.status = getStatusAfterManagerReview({ discussionRequired, calibrationRequired });
 
       // Flag rating gaps for follow-up/arbitration in final review
       const selfRating = appraisal.selfAssessment?.overallSelfRating;
@@ -3905,7 +4221,8 @@ router.post('/:appraisalId/finalize', requireAuth, requireManager, async (req, r
       };
     }
 
-    appraisal.status = 'completed';
+    const acknowledgementRequired = getCycleDesign(cycle)?.stages?.acknowledgement?.enabled !== false;
+    appraisal.status = acknowledgementRequired ? 'completed' : 'employee_acknowledged';
     appraisal.addAuditLog('appraisal_finalized', req.session.user, {
       finalRating: appraisal.finalRating,
       calculatedRating: Number.isFinite(calculatedRating) ? calculatedRating : null,
@@ -3916,13 +4233,13 @@ router.post('/:appraisalId/finalize', requireAuth, requireManager, async (req, r
     await appraisal.save();
     await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId, appraisal.organizationId);
 
-    await recordAppraisalEvent(appraisal, 'appraisal.finalized', req.session.user, {
+    await recordAppraisalEvent(appraisal, acknowledgementRequired ? 'appraisal.finalized' : 'appraisal.finalized_no_ack', req.session.user, {
       recipients: appraisal.employee?.userId ? [{
         userId: appraisal.employee.userId,
         name: appraisal.employee.name,
         email: appraisal.employee.email
       }] : [],
-      dueAt: cycle?.phases?.finalReview?.endDate,
+      dueAt: acknowledgementRequired ? cycle?.phases?.finalReview?.endDate : null,
       reminderTargetType: 'appraisal_acknowledgement',
       reminderTitle: 'Appraisal acknowledgement due',
       reminderMessage: 'Your finalized appraisal is ready to review and acknowledge.',
@@ -4920,6 +5237,14 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
 
     const normalizedSummary = normalizeSelfAssessmentSummary(finalReport.overallSummary || {});
     const missingSummarySections = getMissingSelfAssessmentSections(normalizedSummary);
+    const missingCustomResponses = missingRequiredCustomResponses(appraisal, 'employee');
+    if (missingCustomResponses.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Complete the required cycle questions before submitting: ${missingCustomResponses.join('; ')}`,
+        missingQuestions: missingCustomResponses
+      });
+    }
 
     // Employee must provide their own self-rating. AI rating is stored separately.
     const allowSelfRating = appraisal.cycleId?.settings?.allowSelfRating !== false;

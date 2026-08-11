@@ -238,6 +238,13 @@ const EVENT_PRESENTATIONS = Object.freeze({
     targetType: 'appraisal_acknowledgement',
     action: { kind: 'acknowledge', label: 'Review outcome' }
   },
+  'appraisal.finalized_no_ack': {
+    title: 'Appraisal outcome ready',
+    message: 'A finalized appraisal outcome is ready to view securely.',
+    category: 'appraisal',
+    action: { kind: 'view', label: 'View outcome' },
+    isAction: false
+  },
   'appraisal.acknowledged': {
     title: 'Appraisal acknowledged',
     message: 'An appraisal acknowledgement has been recorded.',
@@ -439,6 +446,7 @@ const SINGLETON_EVENT_TYPES = new Set([
   'appraisal.manager_submitted',
   'appraisal.discussion_ready',
   'appraisal.finalized',
+  'appraisal.finalized_no_ack',
   'appraisal.acknowledged',
   'development_plan.draft_created',
   'feedback.requested',

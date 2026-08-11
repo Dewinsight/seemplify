@@ -1081,7 +1081,9 @@ Keep it to 2-3 sentences.`;
   calculateCompositeScore(appraisal, cycle) {
     const minRating = Number(cycle?.ratingScale?.min ?? 1);
     const maxRating = Number(cycle?.ratingScale?.max ?? 5);
-    const configuredOkrWeight = Math.min(100, Math.max(0, Number(cycle?.okrWeight ?? 40)));
+    const workflowDefinition = appraisal?.cycleConfigurationSnapshot?.workflowDefinition || cycle?.workflowDefinition || null;
+    const configuredOkrWeight = Math.min(100, Math.max(0, Number(workflowDefinition?.scoring?.goalsWeight ?? cycle?.okrWeight ?? 40)));
+    const configuredCompetencyWeight = Math.min(100, Math.max(0, Number(workflowDefinition?.scoring?.competenciesWeight ?? (100 - configuredOkrWeight))));
 
     // Prefer immutable launch-time evidence. Older appraisals retain a
     // compatibility fallback to their submitted OKR assessment.
@@ -1123,7 +1125,32 @@ Keep it to 2-3 sentences.`;
     // are renormalized, making the absence explicit in the returned breakdown.
     const components = [];
     if (okrScore !== null) components.push({ name: 'okr', score: okrScore, weight: configuredOkrWeight });
-    if (avgCompetencyScore !== null) components.push({ name: 'competency', score: avgCompetencyScore, weight: 100 - configuredOkrWeight });
+    if (avgCompetencyScore !== null) components.push({ name: 'competency', score: avgCompetencyScore, weight: configuredCompetencyWeight });
+
+    const customSectionComponents = [];
+    for (const section of workflowDefinition?.sections || []) {
+      if (!section?.scored || ['goals', 'competencies'].includes(section.type)) continue;
+      const ratingQuestions = new Map(
+        (section.questions || []).filter((item) => item.responseType === 'rating').map((item) => [item.id, item])
+      );
+      const scores = (appraisal.customResponses || [])
+        .filter((response) => response.respondentRole === 'manager' && response.sectionId === section.id && ratingQuestions.has(response.questionId))
+        .map((response) => {
+          const definition = ratingQuestions.get(response.questionId);
+          const value = Number(response.value);
+          if (!Number.isFinite(value)) return null;
+          const range = Number(definition.ratingMax) - Number(definition.ratingMin);
+          if (range <= 0) return null;
+          const normalized = (value - Number(definition.ratingMin)) / range;
+          return minRating + (Math.min(1, Math.max(0, normalized)) * (maxRating - minRating));
+        })
+        .filter((value) => value !== null);
+      if (scores.length === 0) continue;
+      const score = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+      const component = { name: section.id, label: section.title, score, weight: Number(section.weight || 0) };
+      components.push(component);
+      customSectionComponents.push(component);
+    }
     let totalWeight = components.reduce((sum, component) => sum + component.weight, 0);
     if (totalWeight === 0 && components.length > 0) {
       components.forEach((component) => { component.weight = 1; });
@@ -1153,7 +1180,18 @@ Keep it to 2-3 sentences.`;
         okrContribution: okrScore === null ? null : Math.round(okrScore * (okrEffectiveWeight / 100) * 10) / 10,
         competencyWeight: Math.round(competencyEffectiveWeight * 10) / 10,
         competencyContribution: avgCompetencyScore === null ? null : Math.round(avgCompetencyScore * (competencyEffectiveWeight / 100) * 10) / 10,
+        customSections: customSectionComponents.map((section) => {
+          const effectiveWeight = totalWeight > 0 ? (section.weight / totalWeight) * 100 : 0;
+          return {
+            sectionId: section.name,
+            title: section.label,
+            score: Math.round(section.score * 10) / 10,
+            weight: Math.round(effectiveWeight * 10) / 10,
+            contribution: Math.round(section.score * (effectiveWeight / 100) * 10) / 10
+          };
+        }),
         configuredOkrWeight,
+        configuredCompetencyWeight,
         unavailable: {
           okr: okrScore === null,
           competency: avgCompetencyScore === null
