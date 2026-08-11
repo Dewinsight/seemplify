@@ -57,6 +57,7 @@ import NotificationDropdown from "@/components/NotificationDropdown";
 import { OpenAILogo } from "@/components/ui/openai-logo";
 import { useFeatureFlags } from "@/context/FeatureFlagsContext";
 import type { PlatformFeatureKey } from "@/lib/platformFeatures";
+import { useBrandConfig } from "@/context/BrandContext";
 
 type NavigationLink = {
   title: string;
@@ -129,6 +130,13 @@ function isGroupActive(pathname: string | null, item: NavigationGroup) {
   return item.children.some((child) => isLinkActive(pathname, child.href));
 }
 
+const PeopleTransitionsLockup = () => (
+  <Link href="/people-transitions" className="people-transitions-lockup" aria-label="Seemplify People Transitions">
+    <img src="/seemplify-wordmark.svg" alt="Seemplify" className="people-transitions-lockup__wordmark" />
+    <span className="people-transitions-lockup__product">People Transitions</span>
+  </Link>
+);
+
 interface NavLinkProps {
   item: NavigationLink;
   pathname: string | null;
@@ -198,6 +206,7 @@ const TopNavbar = () => {
   const { state, getUserDisplayName, getUserAvatar } = useUser();
   const { user } = state;
   const { currentOrganization } = useOrganization();
+  const brand = useBrandConfig();
   const { isFeatureEnabled } = useFeatureFlags();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const isPeopleTransitionsWorkspace = Boolean(
@@ -233,7 +242,11 @@ const TopNavbar = () => {
   const availableThemes = getAvailableThemeOptions();
 
   return (
-    <header className="recruiter-topbar" data-tutorial="app-navbar">
+    <header
+      className={cn("recruiter-topbar", isPeopleTransitionsWorkspace && "recruiter-topbar--people-transitions")}
+      data-tutorial="app-navbar"
+      data-workspace={isPeopleTransitionsWorkspace ? "people-transitions" : "recruiter"}
+    >
       <div className="recruiter-topbar__inner">
         {/* Left Section - Logo and Mobile Menu */}
         <div className="recruiter-topbar__brand">
@@ -248,7 +261,7 @@ const TopNavbar = () => {
               <SheetContent side="left" className="w-[300px] sm:w-[340px]">
                 <SheetHeader className="mb-8">
                   <SheetTitle>
-                    <Logo size="sm" />
+                    {isPeopleTransitionsWorkspace && brand.id === "smarthr" ? <PeopleTransitionsLockup /> : <Logo size="sm" />}
                   </SheetTitle>
                 </SheetHeader>
                 <nav className="flex flex-col gap-4">
@@ -276,11 +289,17 @@ const TopNavbar = () => {
             </Sheet>
           </div>
           <div className="recruiter-topbar__logo-wrap">
-            <Logo size="sm" className="recruiter-topbar__logo" />
-            {isPeopleTransitionsWorkspace && (
-              <span className="hidden border-l border-border pl-3 text-sm font-semibold text-foreground sm:inline">
-                People Transitions
-              </span>
+            {isPeopleTransitionsWorkspace && brand.id === "smarthr" ? (
+              <PeopleTransitionsLockup />
+            ) : (
+              <>
+                <Logo size="sm" className="recruiter-topbar__logo" />
+                {isPeopleTransitionsWorkspace && (
+                  <span className="hidden border-l border-border pl-3 text-sm font-semibold text-foreground sm:inline">
+                    People Transitions
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>

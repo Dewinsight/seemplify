@@ -53,6 +53,38 @@
   gap: 12px;
 }
 
+.people-transitions-lockup {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  color: var(--suite-ink);
+  text-decoration: none;
+}
+
+.people-transitions-lockup__wordmark {
+  display: block;
+  width: 112px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.people-transitions-lockup__product {
+  border-left: 1px solid var(--suite-line-strong);
+  padding-left: 12px;
+  color: var(--suite-ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.recruiter-topbar--people-transitions .recruiter-nav-item.is-active {
+  background: var(--suite-accent-soft);
+  color: var(--suite-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--suite-accent) 22%, transparent);
+}
+
 .recruiter-topbar__logo > div > div:first-child {
   box-shadow: none;
   transition: none;
@@ -417,6 +449,16 @@
 
 @media (max-width: 560px) {
   .recruiter-topbar__logo-wrap {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .people-transitions-lockup__wordmark {
+    width: 100px;
+  }
+
+  .people-transitions-lockup__product {
     display: none;
   }
 }

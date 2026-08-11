@@ -2,7 +2,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { headers } from "next/headers"
-import { Inter } from "next/font/google"
+import { IBM_Plex_Sans, Inter, Space_Grotesk } from "next/font/google"
 import { detectBrandFromHostname } from "@/config/brands"
 import "./globals.css"
 import "./responsive-fixes.css"
@@ -27,6 +27,16 @@ import Script from 'next/script'
 import { themeInitScript } from '@/lib/theme-sync'
 
 const inter = Inter({ subsets: ["latin"] })
+const suiteSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-suite-sans",
+})
+const suiteDisplay = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-suite-display",
+})
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
@@ -66,7 +76,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} ${suiteSans.variable} ${suiteDisplay.variable}`}>
         <ErrorBoundary>
           <ConfigThemeProvider attribute="class" enableSystem disableTransitionOnChange>
             <MaintenanceMode />

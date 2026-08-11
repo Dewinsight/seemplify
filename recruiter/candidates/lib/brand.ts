@@ -18,7 +18,7 @@ export interface CandidateBrand {
   accentBorderClass: string
   focusRingClass: string
   primaryButtonClass: string
-  softGradientClass: string
+  canvasClass: string
   sidebarClass: string
   navActiveClass: string
   progressClass: string
@@ -38,15 +38,15 @@ export const CANDIDATE_BRANDS: Record<CandidateBrandId, CandidateBrand> = {
       "Your recruiter sends the packet. You complete it here with a separate candidate login, even if you also use Seemplify elsewhere.",
     signupEyebrow: "Candidate invitation",
     dashboardEyebrow: "Seemplify",
-    accentTextClass: "text-blue-700",
-    accentBgClass: "bg-blue-50",
-    accentBorderClass: "border-blue-200",
-    focusRingClass: "ring-blue-500",
-    primaryButtonClass: "bg-slate-950 hover:bg-slate-800",
-    softGradientClass: "from-blue-50 via-white to-emerald-50",
-    sidebarClass: "border-slate-200 bg-white/92",
-    navActiveClass: "bg-slate-950 text-white",
-    progressClass: "bg-blue-600",
+    accentTextClass: "text-[#7047eb]",
+    accentBgClass: "bg-[#f1edff]",
+    accentBorderClass: "border-[#d9cffb]",
+    focusRingClass: "ring-[#7047eb]",
+    primaryButtonClass: "bg-[#191816] hover:bg-[#302d38]",
+    canvasClass: "bg-[#f1efe9]",
+    sidebarClass: "border-[#ddd8ce] bg-[#fffdfa]",
+    navActiveClass: "bg-[#f1edff] text-[#5f37d7] shadow-[inset_0_0_0_1px_#d9cffb]",
+    progressClass: "bg-[#7047eb]",
   },
   "akwa-ibom": {
     id: "akwa-ibom",
@@ -67,7 +67,7 @@ export const CANDIDATE_BRANDS: Record<CandidateBrandId, CandidateBrand> = {
     accentBorderClass: "border-emerald-200",
     focusRingClass: "ring-emerald-600",
     primaryButtonClass: "bg-emerald-900 hover:bg-emerald-800",
-    softGradientClass: "from-emerald-50 via-white to-amber-50",
+    canvasClass: "bg-[#f4f7f3]",
     sidebarClass: "border-emerald-900/10 bg-white/94",
     navActiveClass: "bg-emerald-900 text-white",
     progressClass: "bg-emerald-700",

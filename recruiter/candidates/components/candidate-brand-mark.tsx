@@ -6,6 +6,16 @@ interface CandidateBrandMarkProps {
 }
 
 export function CandidateBrandMark({ brand, compact = false }: CandidateBrandMarkProps) {
+  if (brand.id === "seemplify") {
+    return (
+      <img
+        src="/logo.svg"
+        alt="Seemplify"
+        className={compact ? "h-9 w-auto max-w-[132px] object-contain" : "h-12 w-auto max-w-[190px] object-contain"}
+      />
+    )
+  }
+
   if (brand.logoUrl) {
     return (
       <img
@@ -20,8 +30,8 @@ export function CandidateBrandMark({ brand, compact = false }: CandidateBrandMar
     <div
       className={
         compact
-          ? "flex h-10 w-10 items-center justify-center rounded-md bg-slate-950 text-sm font-semibold text-white"
-          : "flex h-14 w-14 items-center justify-center rounded-md bg-slate-950 text-base font-semibold text-white"
+          ? "flex h-10 w-10 items-center justify-center rounded-md bg-[#191816] text-sm font-semibold text-white"
+          : "flex h-14 w-14 items-center justify-center rounded-md bg-[#191816] text-base font-semibold text-white"
       }
     >
       {brand.shortName}

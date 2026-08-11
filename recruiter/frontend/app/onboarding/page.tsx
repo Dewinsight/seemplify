@@ -123,7 +123,7 @@ export default function OnboardingDashboardPage() {
       detail: "Submitted information awaiting verification",
       value: dashboard?.formReviews || 0,
       icon: FileCheck2,
-      iconClass: "text-teal-700 dark:text-teal-400",
+      iconClass: "pt-accent",
     },
     {
       label: "Employee handoff issues",
@@ -147,10 +147,11 @@ export default function OnboardingDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-950 dark:bg-gray-950 dark:text-gray-100">
+    <div className="pt-dashboard min-h-screen bg-gray-50 text-gray-950 dark:bg-gray-950 dark:text-gray-100">
       <div className="mx-auto max-w-screen-2xl px-4 py-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-gray-200 pb-6 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
+        <header className="pt-dashboard__header flex flex-col gap-4 border-b border-gray-200 pb-6 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
           <div>
+            <div className="pt-dashboard__eyebrow">People operations workspace</div>
             <h1 className="text-2xl font-semibold tracking-tight">People Transitions</h1>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
               Manage onboarding, exits, retirement, documents, signatures, and employee handoffs.
@@ -183,7 +184,7 @@ export default function OnboardingDashboardPage() {
               type="button"
               className={`whitespace-nowrap border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${
                 processType === option.value
-                  ? "border-teal-700 text-gray-950 dark:border-teal-400 dark:text-white"
+                  ? "pt-tab-active border-teal-700 text-gray-950 dark:border-teal-400 dark:text-white"
                   : "border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
               }`}
               onClick={() => setProcessType(option.value)}
@@ -199,7 +200,7 @@ export default function OnboardingDashboardPage() {
               <dt className="text-sm text-gray-500 dark:text-gray-400">Active transitions</dt>
               <dd className="mt-2 flex items-center justify-between text-2xl font-semibold">
                 {loading ? "—" : stats.active}
-                <ArrowRight className="h-5 w-5 text-teal-700 dark:text-teal-400" />
+                <ArrowRight className="pt-accent h-5 w-5" />
               </dd>
             </div>
             <div className="p-4">

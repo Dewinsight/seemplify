@@ -1,0 +1,11 @@
+<svg viewBox="0 0 520 132" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wordmarkGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#b980ff" />
+      <stop offset="42%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#4c1d95" />
+    </linearGradient>
+  </defs>
+  <text x="10" y="60" fill="url(#wordmarkGradient)" font-family="'Space Grotesk', 'IBM Plex Sans', sans-serif" font-size="72" font-weight="700" letter-spacing="-4">seemplify</text>
+  <text x="115" y="106" fill="#6c6881" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="25" font-weight="500" letter-spacing="0.4">Run Simple, Run Smart</text>
+</svg>
