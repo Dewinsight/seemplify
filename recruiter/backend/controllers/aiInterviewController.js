@@ -493,6 +493,8 @@ async function findPublicSession(token) {
 }
 
 exports.getAIInterviewOptions = async (req, res) => {
+  const options = aiInterviewCostService.getOptionsPayload();
+
   try {
     const organizationId = getOrganizationId(req);
     const estimate = await aiInterviewCostService.buildAIInterviewEstimate({
@@ -504,7 +506,7 @@ exports.getAIInterviewOptions = async (req, res) => {
 
     res.json({
       success: true,
-      ...aiInterviewCostService.getOptionsPayload(),
+      ...options,
       currency: {
         displayCurrency: estimate.displayValue?.currency || 'USD',
         supportedCurrencies: estimate.supportedCurrencies,
@@ -514,8 +516,20 @@ exports.getAIInterviewOptions = async (req, res) => {
       creditRate: estimate.creditRate
     });
   } catch (error) {
-    console.error('AI interview options error:', error);
-    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+    console.warn('AI interview pricing metadata unavailable; returning interviewer options with fallback pricing:', error.message);
+    const creditRate = await aiInterviewCostService.getReferenceCreditRate();
+    res.json({
+      success: true,
+      ...options,
+      currency: {
+        displayCurrency: 'USD',
+        supportedCurrencies: ['USD'],
+        rateSource: 'fallback',
+        rateAsOf: null
+      },
+      creditRate,
+      pricingMetadataUnavailable: true
+    });
   }
 };
 
