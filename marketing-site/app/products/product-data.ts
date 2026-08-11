@@ -42,7 +42,7 @@ export const productPages: ProductPageData[] = [
     slug: 'recruiter',
     name: 'Recruiter',
     navigationName: 'Recruiter',
-    title: 'Move from an open role to a documented hiring decision.',
+    title: 'Run the whole recruiting journey—from open role to documented decision.',
     summary:
       'Create roles, receive applications, organise candidate records, schedule interviews and keep feedback together. Optional AI tools can assist with CV analysis, role content and evidence-led matching while recruiters retain the decision.',
     audience: 'For recruiting teams, hiring managers and interviewers',
@@ -55,8 +55,8 @@ export const productPages: ProductPageData[] = [
     },
     capabilities: [
       {
-        title: 'Roles and public applications',
-        description: 'Create and publish job records, define requirements and screening questions, and receive applications against the correct role.',
+        title: 'Roles, applications and candidate intake',
+        description: 'Create and publish job records, define requirements and screening questions, and receive or upload candidates against the correct role.',
       },
       {
         title: 'Candidate records and lists',

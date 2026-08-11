@@ -46,7 +46,7 @@ function LogoImage({
       aria-label={isAkwa ? "Akwa Ibom State" : "Seemplify"}
     >
       <Image
-        src={isAkwa ? "/logoakwa.png" : "/logo.svg"}
+        src={isAkwa ? "/logoakwa.png" : "/images/seemplifylogo.png"}
         alt={isAkwa ? "Akwa Ibom State" : "Seemplify"}
         width={1229}
         height={512}
