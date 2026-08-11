@@ -153,6 +153,38 @@ export interface AIInterviewVoiceOption {
   usdPerMillionCharacters: number;
 }
 
+const FALLBACK_VOICE_TIERS = {
+  standard: { tierLabel: 'Standard', surchargeCredits: 0, usdPerMillionCharacters: 15 },
+  multilingual: { tierLabel: 'Multilingual', surchargeCredits: 0, usdPerMillionCharacters: 15 },
+  hd: { tierLabel: 'HD', surchargeCredits: 1, usdPerMillionCharacters: 22 },
+  mai_premium: { tierLabel: 'MAI Premium', surchargeCredits: 2, usdPerMillionCharacters: 22 }
+} as const;
+
+const FALLBACK_VOICE_SEEDS: Array<
+  Pick<AIInterviewVoiceOption, 'id' | 'name' | 'displayName' | 'tier' | 'gender' | 'avatarTone' | 'description' | 'samplePhrase' | 'isDefault'>
+> = [
+  { id: 'en-US-AriaNeural', name: 'Aria', displayName: 'Aria', tier: 'standard', gender: 'female', avatarTone: 'blue', description: 'Friendly and professional with a familiar Azure neural voice profile.', samplePhrase: 'Take your time, and use a specific example where possible.' },
+  { id: 'en-US-GuyNeural', name: 'Guy', displayName: 'Guy', tier: 'standard', gender: 'male', avatarTone: 'slate', description: 'Direct and steady. Works well for structured technical interviews.', samplePhrase: 'I will ask each question clearly, and you can ask me to clarify.' },
+  { id: 'en-US-JennyMultilingualNeural', name: 'Jenny', displayName: 'Jenny', tier: 'multilingual', gender: 'female', avatarTone: 'emerald', isDefault: true, description: 'Warm, polished, and clear. Good default for candidate-facing interviews.', samplePhrase: 'Hello, I will guide you through this interview one question at a time.' },
+  { id: 'en-US-AndrewMultilingualNeural', name: 'Andrew', displayName: 'Andrew', tier: 'multilingual', gender: 'male', avatarTone: 'cyan', description: 'Calm and conversational with flexible pronunciation.', samplePhrase: 'When you are ready, share the context, your actions, and the outcome.' },
+  { id: 'en-US-Ava:DragonHDLatestNeural', name: 'Ava', displayName: 'Ava HD', tier: 'hd', gender: 'female', avatarTone: 'violet', description: 'Expressive HD voice for a more natural interviewer presence.', samplePhrase: 'Thanks for joining. I will keep the interview focused and conversational.' },
+  { id: 'en-US-Andrew:DragonHDLatestNeural', name: 'Andrew', displayName: 'Andrew HD', tier: 'hd', gender: 'male', avatarTone: 'indigo', description: 'Deep, composed HD voice with strong clarity for longer sessions.', samplePhrase: 'Let us move through the questions carefully and keep the timing clear.' },
+  { id: 'en-US-Emma:DragonHDLatestNeural', name: 'Emma', displayName: 'Emma HD', tier: 'hd', gender: 'female', avatarTone: 'rose', description: 'Bright HD voice with smoother phrasing for candidate guidance.', samplePhrase: 'You can ask for clarification before you answer any question.' },
+  { id: 'en-us-Jasper:MAI-Voice-1', name: 'Jasper', displayName: 'Jasper MAI', tier: 'mai_premium', gender: 'male', avatarTone: 'cyan', description: 'Premium preview voice with expressive general conversation and sales energy.', samplePhrase: 'I will keep this conversation natural while staying on the interview questions.' },
+  { id: 'en-us-June:MAI-Voice-1', name: 'June', displayName: 'June MAI', tier: 'mai_premium', gender: 'female', avatarTone: 'amber', description: 'Premium preview voice for polished professional conversation.', samplePhrase: 'I will listen for concrete examples and keep the interview moving.' },
+  { id: 'en-us-Grant:MAI-Voice-1', name: 'Grant', displayName: 'Grant MAI', tier: 'mai_premium', gender: 'male', avatarTone: 'orange', description: 'Premium preview voice with a grounded interview style.', samplePhrase: 'Please answer naturally. I will help keep the structure clear.' },
+  { id: 'en-us-Iris:MAI-Voice-1', name: 'Iris', displayName: 'Iris MAI', tier: 'mai_premium', gender: 'female', avatarTone: 'purple', description: 'Premium preview voice with a narrative, high-fidelity tone.', samplePhrase: 'Let us begin with the first question when you are ready.' },
+  { id: 'en-us-Reed:MAI-Voice-1', name: 'Reed', displayName: 'Reed MAI', tier: 'mai_premium', gender: 'male', avatarTone: 'slate', description: 'Premium preview voice for calm general conversation.', samplePhrase: 'We will move through each stage clearly and keep your answer focused.' },
+  { id: 'en-us-Joy:MAI-Voice-1', name: 'Joy', displayName: 'Joy MAI', tier: 'mai_premium', gender: 'female', avatarTone: 'rose', description: 'Premium preview voice with a warmer conversational feel.', samplePhrase: 'Please take a breath, then walk me through your example.' }
+];
+
+export const FALLBACK_AI_INTERVIEW_VOICES: AIInterviewVoiceOption[] = FALLBACK_VOICE_SEEDS.map((voice) => ({
+  ...voice,
+  ...FALLBACK_VOICE_TIERS[voice.tier],
+  provider: 'azure-speech',
+  language: 'en-US'
+}));
+
 export interface AIInterviewCostEstimate {
   baseCreditsPerCandidate: number;
   voiceSurchargeCredits: number;

@@ -47,7 +47,7 @@ import { InterviewQuestionSelector } from "@/components/ui/interview-question-se
 import { getAllJobs, type JobData } from "@/services/jobService";
 import { getAllCandidates } from "@/services/candidateService";
 import interviewService from "@/services/interviewService";
-import aiInterviewService, { type AIInterview, type AIInterviewCostEstimate, type AIInterviewVoiceOption } from "@/services/aiInterviewService";
+import aiInterviewService, { FALLBACK_AI_INTERVIEW_VOICES, type AIInterview, type AIInterviewCostEstimate, type AIInterviewVoiceOption } from "@/services/aiInterviewService";
 import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog";
 import { AIVoiceAvatar, AIVoiceWave } from "@/components/ai-voice-avatar";
 import { getAIInterviewVoiceAvatar } from "@/lib/aiVoiceAvatars";
@@ -659,13 +659,23 @@ export default function AIInterviewsPage() {
 
       if (optionsResult.status === "fulfilled") {
         const options = optionsResult.value;
-        setVoiceOptions(options.voices || []);
+        const voices = options.voices?.length ? options.voices : FALLBACK_AI_INTERVIEW_VOICES;
+        setVoiceOptions(voices);
         setForm((current) => ({
           ...current,
-          voiceId: current.voiceId || options.defaultVoiceId || options.voices?.find((voice) => voice.isDefault)?.id || ""
+          voiceId: current.voiceId || options.defaultVoiceId || voices.find((voice) => voice.isDefault)?.id || voices[0]?.id || ""
         }));
+
+        if (!options.voices?.length) {
+          toast.warning("Using the built-in Azure interviewer catalog while live model metadata refreshes.");
+        }
       } else {
-        toast.error("Failed to load AI interviewer models. Please refresh to try again.");
+        setVoiceOptions(FALLBACK_AI_INTERVIEW_VOICES);
+        setForm((current) => ({
+          ...current,
+          voiceId: current.voiceId || FALLBACK_AI_INTERVIEW_VOICES.find((voice) => voice.isDefault)?.id || FALLBACK_AI_INTERVIEW_VOICES[0]?.id || ""
+        }));
+        toast.warning("Using the built-in Azure interviewer catalog while live model metadata refreshes.");
       }
 
       if ([interviewsResult, jobsResult, candidatesResult].some((result) => result.status === "rejected")) {
