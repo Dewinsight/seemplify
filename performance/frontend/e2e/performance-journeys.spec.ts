@@ -312,6 +312,16 @@ async function switchPerformanceWorkspace(page: Page, workspace: 'Personal' | 'M
   await page.getByRole('menuitemradio', { name: new RegExp(`^${workspace}`) }).click();
 }
 
+async function openDesktopNavigationGroup(page: Page, group: 'Team' | 'Administration' | 'Insights' | 'Growth') {
+  const navigation = page.getByTestId('desktop-primary-navigation');
+  const trigger = navigation.getByRole('button', { name: group, exact: true });
+  await expect(trigger).toBeVisible();
+  if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click();
+  const menu = page.getByRole('menu', { name: `${group} navigation` });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
 async function installMockApi(page: Page, state: MockApiState) {
   await page.addInitScript(() => {
     localStorage.setItem('accessToken', 'playwright-access-token');
@@ -894,7 +904,8 @@ test('lets an authorised manager edit a team goal without losing recorded progre
 
   await page.goto('/dashboard');
   await switchPerformanceWorkspace(page, 'Manager');
-  await page.getByRole('link', { name: 'Team OKRs', exact: true }).click();
+  const teamMenu = await openDesktopNavigationGroup(page, 'Team');
+  await teamMenu.getByRole('menuitem', { name: 'Team OKRs', exact: true }).click();
   await page.getByRole('tab', { name: 'Upcoming' }).click();
   await page.getByRole('tab', { name: /Team & Department Goals/ }).click();
   await expect(page.getByText('Reduce customer response time')).toBeVisible();
@@ -938,7 +949,8 @@ test('initializes canonical goal periods for a manager when a new organization h
 
   await page.goto('/dashboard');
   await switchPerformanceWorkspace(page, 'Manager');
-  await page.getByRole('link', { name: 'Team OKRs', exact: true }).click();
+  const teamMenu = await openDesktopNavigationGroup(page, 'Team');
+  await teamMenu.getByRole('menuitem', { name: 'Team OKRs', exact: true }).click();
   await page.getByRole('tab', { name: 'Upcoming' }).click();
   await expect(page.getByText(state.futurePeriod.name).first()).toBeVisible();
   expect(state.generatedGoalPeriodCalls).toBe(1);
@@ -1382,9 +1394,13 @@ test('lets a line manager switch between personal and manager work without expos
 
   await switchPerformanceWorkspace(page, 'Manager');
   await expect(page.getByRole('heading', { name: 'Keep your team’s performance work moving.' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Team', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Team OKRs', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Team Appraisals', exact: true })).toBeVisible();
+  await expect(page.getByTestId('desktop-primary-navigation').getByRole('button', { name: 'Team', exact: true })).toBeVisible();
+  await expect(page.getByTestId('desktop-primary-navigation').getByRole('button', { name: 'Insights', exact: true })).toBeVisible();
+  await expect(page.getByTestId('desktop-primary-navigation').getByRole('button', { name: 'Growth', exact: true })).toBeVisible();
+  const teamMenu = await openDesktopNavigationGroup(page, 'Team');
+  await expect(teamMenu.getByRole('menuitem', { name: 'Team Members', exact: true })).toBeVisible();
+  await expect(teamMenu.getByRole('menuitem', { name: 'Team OKRs', exact: true })).toBeVisible();
+  await expect(teamMenu.getByRole('menuitem', { name: 'Team Appraisals', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'My OKRs', exact: true })).toHaveCount(0);
   expect(await page.getByRole('navigation').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
@@ -1392,7 +1408,8 @@ test('lets a line manager switch between personal and manager work without expos
   await expect(page.getByRole('button', { name: 'Manager', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Keep your team’s performance work moving.' })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Team Appraisals', exact: true }).click();
+  const reloadedTeamMenu = await openDesktopNavigationGroup(page, 'Team');
+  await reloadedTeamMenu.getByRole('menuitem', { name: 'Team Appraisals', exact: true }).click();
   await expect(page.getByText('Manager appraisal queue')).toBeVisible();
   await expect(page.getByText('Only direct-report appraisals and manager actions are shown in this workspace.')).toBeVisible();
 
@@ -1414,8 +1431,9 @@ test('shows admin separately and includes manager only when the HR admin also ma
   await expect(page.getByRole('menuitemradio', { name: /^Manager/ })).toHaveCount(0);
   await page.getByRole('menuitemradio', { name: /^Admin/ }).click();
   await expect(page.getByRole('heading', { name: 'Run a clear and consistent performance process.' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Cycles', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Calibration', exact: true })).toBeVisible();
+  const administrationMenu = await openDesktopNavigationGroup(page, 'Administration');
+  await expect(administrationMenu.getByRole('menuitem', { name: 'Cycles', exact: true })).toBeVisible();
+  await expect(administrationMenu.getByRole('menuitem', { name: 'Calibration', exact: true })).toBeVisible();
 
   const combinedState = createState();
   combinedState.hrAdminMode = true;
@@ -1444,7 +1462,8 @@ test('keeps the HR navigation on one line and renders page help as a compact uti
   const guide = page.getByTestId('page-guide-banner');
   const dashboardHeader = page.locator('.suite-dashboard-header');
   await expect(header).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Overview', exact: true })).toBeVisible();
+  await expect(page.getByTestId('desktop-primary-navigation').getByRole('button', { name: 'Administration', exact: true })).toBeVisible();
+  await expect(page.getByTestId('desktop-primary-navigation').getByRole('button', { name: 'Insights', exact: true })).toBeVisible();
   await expect(guide).toBeVisible();
   await expect(dashboardHeader).toBeVisible();
 
@@ -1456,12 +1475,18 @@ test('keeps the HR navigation on one line and renders page help as a compact uti
   expect(dashboardHeaderBox!.y).toBeGreaterThanOrEqual(guideBox!.y + guideBox!.height);
   expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
-  for (const name of ['Dashboard', 'Overview', 'Cycles', 'Calibration', 'Reports', 'Analytics']) {
-    const item = page.getByRole('link', { name, exact: true });
+  for (const name of ['Dashboard', 'Administration', 'Insights']) {
+    const item = page.getByTestId('desktop-primary-navigation').getByRole(name === 'Dashboard' ? 'link' : 'button', { name, exact: true });
     await expect(item).toBeVisible();
     expect(await item.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('nowrap');
     expect((await item.boundingBox())?.height).toBeLessThanOrEqual(42);
   }
+  const adminNavigationMenu = await openDesktopNavigationGroup(page, 'Administration');
+  for (const name of ['Overview', 'Cycles', 'Calibration', 'Reports']) {
+    await expect(adminNavigationMenu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+  }
+  const adminInsightsMenu = await openDesktopNavigationGroup(page, 'Insights');
+  await expect(adminInsightsMenu.getByRole('menuitem', { name: 'Analytics', exact: true })).toBeVisible();
 });
 
 test('keeps manager navigation and workspace controls separated at common desktop widths', async ({ page }) => {
@@ -1478,7 +1503,13 @@ test('keeps manager navigation and workspace controls separated at common deskto
   const actions = page.getByTestId('desktop-header-actions');
   await expect(primary).toBeVisible();
   await expect(actions).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Coaching', exact: true })).toBeVisible();
+  await expect(primary.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(primary.getByRole('button', { name: 'Team', exact: true })).toBeVisible();
+  await expect(primary.getByRole('button', { name: 'Insights', exact: true })).toBeVisible();
+  await expect(primary.getByRole('button', { name: 'Growth', exact: true })).toBeVisible();
+  await expect(primary.getByRole('link')).toHaveCount(1);
+  const managerInsightsMenu = await openDesktopNavigationGroup(page, 'Insights');
+  await expect(managerInsightsMenu.getByRole('menuitem', { name: 'Coaching', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Manager', exact: true })).toBeVisible();
 
   const primaryBox = await primary.boundingBox();

@@ -44,7 +44,13 @@ type NavItem = {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: string;
-  section: 'main' | 'manager' | 'admin' | 'analytics';
+  section: 'main' | 'team' | 'insights' | 'growth' | 'administration';
+};
+
+type NavGroup = {
+  section: Exclude<NavItem['section'], 'main'>;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
 };
 
 type OrganizationOption = {
@@ -70,6 +76,13 @@ const WORKSPACE_ICONS: Record<PerformanceWorkspace, React.ComponentType<{ classN
   admin: ShieldCheck,
 };
 
+const NAV_GROUPS: NavGroup[] = [
+  { section: 'team', label: 'Team', icon: Users },
+  { section: 'administration', label: 'Administration', icon: ShieldCheck },
+  { section: 'insights', label: 'Insights', icon: BarChart3 },
+  { section: 'growth', label: 'Growth', icon: Sprout },
+];
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -89,7 +102,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
-  const [growthDropdownOpen, setGrowthDropdownOpen] = useState(false);
+  const [openNavGroup, setOpenNavGroup] = useState<NavGroup['section'] | null>(null);
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
   const [switchingTeam, setSwitchingTeam] = useState(false);
@@ -124,37 +137,37 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     if (workspace === 'admin' && isHRAdmin) {
       return [
         dashboard,
-        { name: 'Overview', href: '/admin', icon: ShieldCheck, section: 'main' },
+        { name: 'Overview', href: '/admin', icon: ShieldCheck, section: 'administration' },
         ...(appraisalsEnabled ? [
-          { name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'main' as const },
-          { name: 'Calibration', href: '/admin/calibration', icon: ClipboardCheck, section: 'main' as const },
-          { name: 'Reports', href: '/admin/reports', icon: BarChart3, section: 'main' as const },
+          { name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'administration' as const },
+          { name: 'Calibration', href: '/admin/calibration', icon: ClipboardCheck, section: 'administration' as const },
+          { name: 'Reports', href: '/admin/reports', icon: BarChart3, section: 'administration' as const },
         ] : []),
-        { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'main' },
-        ...(talentPlanningEnabled ? [{ name: 'Talent Planning', href: '/talent', icon: GitBranch, section: 'main' as const }] : []),
-        ...(supportPlansEnabled ? [{ name: 'Support Reviews', href: '/support-plans', icon: HeartHandshake, section: 'main' as const }] : []),
+        ...(supportPlansEnabled ? [{ name: 'Support Reviews', href: '/support-plans', icon: HeartHandshake, section: 'administration' as const }] : []),
+        { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'insights' },
+        ...(talentPlanningEnabled ? [{ name: 'Talent Planning', href: '/talent', icon: GitBranch, section: 'insights' as const }] : []),
       ];
     }
 
     const growthItems: NavItem[] = continuousEnabled ? [
-      { name: 'Feedback', href: '/feedback', icon: MessageSquare, section: 'analytics' },
-      { name: '1:1s', href: '/one-on-ones', icon: CalendarDays, section: 'analytics' },
-      { name: 'Check-ins', href: '/check-ins', icon: ClipboardCheck, section: 'analytics' },
-      { name: 'Development', href: '/development', icon: Sprout, section: 'analytics' },
-      ...(supportPlansEnabled ? [{ name: 'Support Plans', href: '/support-plans', icon: HeartHandshake, section: 'analytics' as const }] : []),
-      ...(recognitionEnabled ? [{ name: 'Recognition', href: '/recognition', icon: Award, section: 'analytics' as const }] : []),
-      ...(projectFeedbackEnabled ? [{ name: 'Project Feedback', href: '/project-feedback', icon: FolderKanban, section: 'analytics' as const }] : []),
+      { name: 'Feedback', href: '/feedback', icon: MessageSquare, section: 'growth' },
+      { name: '1:1s', href: '/one-on-ones', icon: CalendarDays, section: 'growth' },
+      { name: 'Check-ins', href: '/check-ins', icon: ClipboardCheck, section: 'growth' },
+      { name: 'Development', href: '/development', icon: Sprout, section: 'growth' },
+      ...(supportPlansEnabled ? [{ name: 'Support Plans', href: '/support-plans', icon: HeartHandshake, section: 'growth' as const }] : []),
+      ...(recognitionEnabled ? [{ name: 'Recognition', href: '/recognition', icon: Award, section: 'growth' as const }] : []),
+      ...(projectFeedbackEnabled ? [{ name: 'Project Feedback', href: '/project-feedback', icon: FolderKanban, section: 'growth' as const }] : []),
     ] : [];
 
     if (workspace === 'manager' && isManager) {
       return [
         dashboard,
-        { name: 'Team', href: '/team', icon: Users, section: 'main' },
-        { name: 'Team OKRs', href: '/okrs?view=team', icon: Target, section: 'main' },
-        ...(appraisalsEnabled ? [{ name: 'Team Appraisals', href: '/appraisals?view=team', icon: FileText, section: 'main' as const }] : []),
-        { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'main' },
-        ...(talentPlanningEnabled ? [{ name: 'Talent', href: '/talent', icon: GitBranch, section: 'main' as const }] : []),
-        ...(managerPracticeEnabled ? [{ name: 'Coaching', href: '/coaching', icon: Gauge, section: 'main' as const }] : []),
+        { name: 'Team Members', href: '/team', icon: Users, section: 'team' },
+        { name: 'Team OKRs', href: '/okrs?view=team', icon: Target, section: 'team' },
+        ...(appraisalsEnabled ? [{ name: 'Team Appraisals', href: '/appraisals?view=team', icon: FileText, section: 'team' as const }] : []),
+        { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'insights' },
+        ...(talentPlanningEnabled ? [{ name: 'Talent Planning', href: '/talent', icon: GitBranch, section: 'insights' as const }] : []),
+        ...(managerPracticeEnabled ? [{ name: 'Coaching', href: '/coaching', icon: Gauge, section: 'insights' as const }] : []),
         ...growthItems,
       ];
     }
@@ -170,13 +183,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const handleWorkspaceChange = (nextWorkspace: PerformanceWorkspace) => {
     if (nextWorkspace === workspace) return;
     setWorkspace(nextWorkspace);
-    setGrowthDropdownOpen(false);
+    setOpenNavGroup(null);
     setMobileOpen(false);
     router.push('/dashboard');
   };
 
   const ActiveWorkspaceIcon = WORKSPACE_ICONS[workspace];
   const activeWorkspaceLabel = availableWorkspaces.find((option) => option.value === workspace)?.label || 'Personal';
+  const visibleNavGroups = NAV_GROUPS.filter((group) => navigation.some((item) => item.section === group.section));
+  const isNavItemActive = (item: NavItem) => {
+    const itemPath = item.href.split('?')[0];
+    return pathname === itemPath || (itemPath !== '/dashboard' && pathname.startsWith(`${itemPath}/`));
+  };
 
   // Handle organization switch
   const handleSwitchOrganization = async (orgId: string) => {
@@ -308,8 +326,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Desktop Navigation */}
             <div className="hidden min-w-0 items-center gap-0.5 lg:flex" aria-label="Primary navigation" data-testid="desktop-primary-navigation">
               {navigation.filter(n => n.section === 'main').map((item) => {
-                const itemPath = item.href.split('?')[0];
-                const active = pathname === itemPath || (itemPath !== '/dashboard' && pathname.startsWith(`${itemPath}/`));
+                const active = isNavItemActive(item);
                 return (
                   <Link
                     key={item.href}
@@ -335,41 +352,56 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   </Link>
                 );
               })}
-              {navigation.some((item) => item.section === 'analytics') && (
-                <div className="relative">
+              {visibleNavGroups.map((group) => {
+                const items = navigation.filter((item) => item.section === group.section);
+                const groupActive = items.some(isNavItemActive);
+                const groupOpen = openNavGroup === group.section;
+                const GroupIcon = group.icon;
+                return (
+                  <div className="relative" key={group.section}>
                   <button
                     type="button"
-                    onClick={() => setGrowthDropdownOpen((open) => !open)}
+                    onClick={() => setOpenNavGroup((open) => open === group.section ? null : group.section)}
                     className={cn(
-                      'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
-                      navigation.filter((item) => item.section === 'analytics').some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+                      'relative z-50 flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
+                      groupActive
                         ? isDarkMode ? 'bg-zinc-800/80 text-white' : 'bg-gray-100 text-gray-900'
                         : isDarkMode ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                     )}
-                    aria-expanded={growthDropdownOpen}
+                    aria-expanded={groupOpen}
                     aria-haspopup="menu"
                   >
-                    Growth
+                    <GroupIcon className="h-4 w-4" />
+                    {group.label}
                     <ChevronDown className="h-4 w-4" />
                   </button>
-                  {growthDropdownOpen && (
+                  {groupOpen && (
                     <>
-                      <div className="fixed inset-0 z-40" onClick={() => setGrowthDropdownOpen(false)} />
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        className="fixed inset-0 z-40 cursor-default"
+                        onClick={() => setOpenNavGroup(null)}
+                      />
                       <div
                         className={cn(
-                          'absolute left-0 top-11 z-50 w-52 overflow-hidden rounded-lg border py-1 shadow-lg',
+                          'absolute left-0 top-11 z-50 w-56 overflow-hidden rounded-lg border py-1 shadow-lg',
                           isDarkMode ? 'border-zinc-800 bg-zinc-950' : 'border-gray-200 bg-white'
                         )}
                         role="menu"
+                        aria-label={`${group.label} navigation`}
                       >
-                        {navigation.filter((item) => item.section === 'analytics').map((item) => (
+                        {items.map((item) => (
                           <Link
                             key={item.href}
                             href={item.href}
-                            onClick={() => setGrowthDropdownOpen(false)}
+                            onClick={() => setOpenNavGroup(null)}
                             className={cn(
-                              'flex items-center gap-2 px-3 py-2 text-sm transition-colors',
-                              isDarkMode ? 'text-zinc-300 hover:bg-zinc-800/70' : 'text-gray-700 hover:bg-gray-50'
+                              'flex items-center gap-2 px-3 py-2.5 text-sm transition-colors',
+                              isNavItemActive(item)
+                                ? isDarkMode ? 'bg-zinc-900 text-white' : 'bg-gray-100 text-gray-900'
+                                : isDarkMode ? 'text-zinc-300 hover:bg-zinc-900' : 'text-gray-700 hover:bg-gray-50'
                             )}
                             role="menuitem"
                           >
@@ -380,8 +412,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       </div>
                     </>
                   )}
-                </div>
-              )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Right Side Actions */}
@@ -881,14 +914,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               )}
 
               {/* Mobile Navigation */}
-              <div className="space-y-1 mb-6">
+              <div className="mb-6 space-y-1">
                 <div className={cn(
                   "text-xs font-semibold px-2 mb-2",
                   isDarkMode ? "text-zinc-500" : "text-gray-500"
                 )}>Navigation</div>
-                {navigation.map((item) => {
-                  const itemPath = item.href.split('?')[0];
-                  const active = pathname === itemPath || (itemPath !== '/dashboard' && pathname.startsWith(`${itemPath}/`));
+                {navigation.filter((item) => item.section === 'main').map((item) => {
+                  const active = isNavItemActive(item);
                   return (
                     <Link
                       key={item.href}
@@ -915,6 +947,36 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     </Link>
                   );
                 })}
+                {visibleNavGroups.map((group) => (
+                  <div key={group.section} className="pt-4 first:pt-0">
+                    <div className={cn('mb-1 px-3 text-xs font-semibold', isDarkMode ? 'text-zinc-500' : 'text-gray-500')}>
+                      {group.label}
+                    </div>
+                    {navigation.filter((item) => item.section === group.section).map((item) => {
+                      const active = isNavItemActive(item);
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setMobileOpen(false)}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                            active
+                              ? isDarkMode
+                                ? 'bg-zinc-800/80 text-white'
+                                : 'bg-gray-100 text-gray-900'
+                              : isDarkMode
+                                ? 'text-zinc-400 hover:bg-zinc-800/50 hover:text-white'
+                                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                          )}
+                        >
+                          <item.icon className="h-4 w-4" />
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
