@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
+import { Copy, ExternalLink, Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { OpenAiAttribution } from '@/components/brand/OpenAiAttribution';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,12 +19,13 @@ export type ChatGptConnectionGateProps = {
   exempt: boolean;
   onStateChange: (state: AiProviderState) => void;
   onRetry: () => void | Promise<void>;
+  onSignOut: () => void | Promise<void>;
 };
 
 type LoginResult = DeviceLogin | { connected: true };
 
 export function ChatGptConnectionGate({
-  state, loading, error, exempt, onStateChange, onRetry
+  state, loading, error, exempt, onStateChange, onRetry, onSignOut
 }: ChatGptConnectionGateProps) {
   const [deviceLogin, setDeviceLogin] = useState<DeviceLogin | null>(null);
   const [working, setWorking] = useState('');
@@ -160,6 +161,21 @@ export function ChatGptConnectionGate({
     await startLogin();
   }
 
+  async function signOut() {
+    if (working) return;
+    setWorking('signout');
+    setLocalError('');
+    if (loginPending) {
+      await api('/api/ai-provider/codex/device-login/cancel', json('POST', {})).catch(() => undefined);
+    }
+    try {
+      await onSignOut();
+    } catch (reason) {
+      setLocalError(reason instanceof Error ? reason.message : 'Could not sign out.');
+      setWorking('');
+    }
+  }
+
   if (!open) return null;
 
   const accountName = state?.codex.account.email || 'your ChatGPT account';
@@ -238,7 +254,10 @@ export function ChatGptConnectionGate({
         {displayedError && <div className="border border-destructive/35 bg-destructive/5 p-3 text-sm text-destructive" role="alert" data-testid="chatgpt-gate-error">{displayedError}</div>}
       </div>
 
-      <DialogFooter className="sm:justify-end">
+      <DialogFooter className="sm:justify-between">
+        <Button type="button" variant="ghost" disabled={busy} data-testid="chatgpt-gate-sign-out" onClick={() => void signOut()}>
+          {working === 'signout' ? <Loader2 className="animate-spin" /> : <LogOut />}Sign out
+        </Button>
         {deviceLogin
           ? <Button type="button" variant="ghost" disabled={busy} data-testid="chatgpt-gate-retry" onClick={() => void startLogin(true)}>{working === 'restart' ? <Loader2 className="animate-spin" /> : <RefreshCw />}Restart sign-in</Button>
           : connected && displayedError

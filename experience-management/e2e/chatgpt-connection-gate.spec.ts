@@ -179,6 +179,18 @@ test('a platform-disabled ChatGPT runtime never exposes an alternate AI provider
   await expect(page.getByRole('button', { name: /Use another provider/i })).toHaveCount(0);
 });
 
+test('the blocking ChatGPT gate lets the application user sign out', async ({ page }) => {
+  await installProviderMocks(page);
+  await login(page);
+
+  const gate = page.getByTestId('chatgpt-connection-gate');
+  await expect(gate).toBeVisible();
+  await gate.getByTestId('chatgpt-gate-sign-out').click();
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(gate).toHaveCount(0);
+});
+
 test('device sign-in activates ChatGPT, records acknowledgement, and reveals branded protected content', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop verifies the full device flow and visible top-bar attribution.');
   const mocks = await installProviderMocks(page);
