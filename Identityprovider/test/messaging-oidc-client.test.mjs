@@ -4,7 +4,7 @@ import test from 'node:test'
 import { applyOidcClientSecretOverrides } from '../src/config/oidcClients.js'
 import { getHubApps, getOidcLaunchApiUrl } from '../src/config/hubApps.js'
 
-test('Messaging is a launchable IDP app with a registered callback', async () => {
+test('Workspace is a launchable IDP app with the stable messaging callback', async () => {
   const clients = JSON.parse(await readFile(new URL('../clients.json', import.meta.url), 'utf8')).clients
   const client = clients.find(item => item.client_id === 'messaging')
   const app = getHubApps().find(item => item.appId === 'messaging')
@@ -15,12 +15,15 @@ test('Messaging is a launchable IDP app with a registered callback', async () =>
   ))
   assert.equal(client.token_endpoint_auth_method, 'client_secret_basic')
   assert.equal(app?.clientId, 'messaging')
+  assert.equal(app?.name, 'Seemplify Workspace')
+  assert.match(app?.description || '', /Messages, AI, boards, notes, pages, and meetings/)
+  assert.equal(app?.category, 'productivity')
   assert.equal(app?.isActive, true)
   assert.equal(getOidcLaunchApiUrl(app, 'https://api.seemplifyai.com'), app?.apiUrl)
   assert.notEqual(getOidcLaunchApiUrl(app, 'https://api.seemplifyai.com'), 'https://api.seemplifyai.com')
 })
 
-test('Messaging OIDC client secret is supplied by the deployment environment', () => {
+test('Workspace OIDC client secret is supplied by the deployment environment', () => {
   const clients = [
     { client_id: 'messaging', client_secret: 'development-placeholder' },
     { client_id: 'another-app', client_secret: 'unchanged' }

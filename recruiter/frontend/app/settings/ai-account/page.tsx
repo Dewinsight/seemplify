@@ -311,7 +311,7 @@ export default function AiAccountPage() {
       <div>
         <h3 className="text-lg font-medium">AI &amp; ChatGPT</h3>
         <p className="text-sm text-muted-foreground">
-          Manage the ChatGPT connection shared by Seemplify Recruiter, Performance, and Messaging.
+          Manage the ChatGPT connection shared by Seemplify Recruiter, Performance, and Workspace.
         </p>
       </div>
       <Separator />
@@ -457,7 +457,7 @@ export default function AiAccountPage() {
                   </Label>
                   <p className="text-xs leading-5 text-muted-foreground">
                     Candidate data, job descriptions, and interview content in the tasks you run will be sent to OpenAI
-                    using this connection. This consent applies only to Recruiter; Performance and Messaging ask separately.
+                    using this connection. This consent applies only to Recruiter; Performance and Workspace ask separately.
                     If you withdraw consent, Recruiter&apos;s ChatGPT-powered tasks pause until consent is restored.
                   </p>
                   {!account?.routable && (
@@ -497,7 +497,7 @@ export default function AiAccountPage() {
             <DialogTitle>Disconnect ChatGPT from Seemplify?</DialogTitle>
             <DialogDescription className="leading-relaxed">
               This is one shared connection. Disconnecting here also stops connected ChatGPT features in
-              Performance Management and Messaging until you sign in again. Local inference is not affected.
+              Performance Management and Workspace until you sign in again. Local inference is not affected.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

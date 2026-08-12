@@ -152,8 +152,8 @@ const developmentApps = [
   },
   {
     appId: 'messaging',
-    name: 'Seemplify Messaging',
-    description: 'Channels, direct messages, calls, notes, pages, and boards for your organization',
+    name: 'Seemplify Workspace',
+    description: 'Messages, AI, boards, notes, pages, and meetings in one connected team workspace',
     icon: 'chat-bubble-left-right',
     color: '#5f6654',
     url: process.env.MESSAGING_URL || 'http://localhost:4200',
@@ -161,7 +161,7 @@ const developmentApps = [
     clientId: 'messaging',
     isActive: true,
     isPublic: true,
-    category: 'communication',
+    category: 'productivity',
     order: 8
   },
   {
@@ -314,8 +314,8 @@ const productionApps = [
   },
   {
     appId: 'messaging',
-    name: 'Seemplify Messaging',
-    description: 'Channels, direct messages, calls, notes, pages, and boards for your organization',
+    name: 'Seemplify Workspace',
+    description: 'Messages, AI, boards, notes, pages, and meetings in one connected team workspace',
     icon: 'chat-bubble-left-right',
     color: '#5f6654',
     url: productionSafeUrl(process.env.MESSAGING_URL, 'https://messaging.seemplifyai.com'),
@@ -323,7 +323,7 @@ const productionApps = [
     clientId: 'messaging',
     isActive: true,
     isPublic: true,
-    category: 'communication',
+    category: 'productivity',
     order: 8
   },
   {

@@ -197,7 +197,7 @@ export default function AiAccountPage() {
       <Stack spacing={1} sx={{ mb: 3 }}>
         <Typography variant="h4" component="h1" fontWeight={700}>ChatGPT account</Typography>
         <Typography color="text.secondary" sx={{ maxWidth: 680 }}>
-          Connect once for Seemplify Recruiter, Performance, and Messaging. Each app asks separately before sending its content to OpenAI.
+          Connect once for Seemplify Recruiter, Performance, and Workspace. Each app asks separately before sending its content to OpenAI.
         </Typography>
       </Stack>
 
