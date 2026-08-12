@@ -17,7 +17,13 @@ import { OnboardingActivity } from './models/OnboardingActivity.js'
 import PerformanceEvaluation from './models/PerformanceEvaluation.js'
 import SimplePerformanceEvaluationConfig from './models/SimplePerformanceEvaluationConfig.js'
 import AppLaunchActivity from './models/AppLaunchActivity.js'
-import { getHubApps, getAppById, getAppApiUrl, getComingSoonCards } from './config/hubApps.js'
+import {
+  getHubApps,
+  getAppById,
+  getAppApiUrl,
+  getComingSoonCards,
+  getOidcLaunchApiUrl
+} from './config/hubApps.js'
 import bcrypt from 'bcryptjs'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
@@ -4564,7 +4570,10 @@ app.get('/launch/:appId', async (req, res) => {
         apiUrl = app.apiUrl || app.url
         break
       default:
-        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001'
+        apiUrl = getOidcLaunchApiUrl(
+          app,
+          process.env.SMARTHR_API_URL || 'http://localhost:5001'
+        )
     }
 
     const launchBrand = getIdpBrand(req)

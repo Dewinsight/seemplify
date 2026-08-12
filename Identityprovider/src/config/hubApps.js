@@ -385,6 +385,20 @@ export function getAppApiUrl(appId) {
 }
 
 /**
+ * Resolve the backend that should initiate OIDC for a hub app.
+ * Generic OIDC apps must use their own configured API instead of another
+ * product's backend fallback.
+ *
+ * @param {Object} app Hub application configuration
+ * @param {string} fallbackApiUrl Legacy fallback for apps without an API URL
+ * @returns {string|undefined} OIDC start backend URL
+ */
+export function getOidcLaunchApiUrl(app, fallbackApiUrl) {
+  const configuredApiUrl = String(app?.apiUrl || '').trim()
+  return configuredApiUrl || fallbackApiUrl
+}
+
+/**
  * Get all active apps by category
  * @param {string} category - Category name
  * @returns {Array} Filtered apps
