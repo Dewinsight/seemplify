@@ -6,6 +6,8 @@ const {
   configureMessagingOidc,
   deploymentEnvironment,
   deriveMessagingOidcSecret,
+  idpMessagingClientReady,
+  messagingOidcReady,
 } = require('./dokploy-configure.cjs');
 
 const master = '4P21x!smC9q#N7eL0uV6zB8dR5hK3wTf';
@@ -53,4 +55,24 @@ test('deployment registers the IdP before enabling the Messaging client', async 
   assert.equal(calls[1][0], 'messaging-app');
   assert.equal(calls[0][1].MESSAGING_OIDC_CLIENT_SECRET, calls[1][1].OIDC_CLIENT_SECRET);
   assert.deepEqual(calls[1][2], ['IDP_CLIENT_ID', 'IDP_CLIENT_SECRET']);
+  assert.equal(typeof calls[0][4].waitForDeploymentImpl, 'function');
+  assert.equal(typeof calls[1][4].waitForDeploymentImpl, 'function');
+});
+
+test('public readiness checks validate both ends of the OIDC trust', async () => {
+  assert.equal(await idpMessagingClientReady('https://auth.example.test', {
+    fetchImpl: async () => new Response(JSON.stringify([
+      { appId: 'messaging', clientId: 'messaging', isActive: true },
+    ]), { status: 200 }),
+  }), true);
+  assert.equal(await messagingOidcReady('https://api-messaging.example.test', {
+    fetchImpl: async () => new Response(JSON.stringify({ configured: true, required: true }), {
+      status: 200,
+    }),
+  }), true);
+  assert.equal(await messagingOidcReady('https://api-messaging.example.test', {
+    fetchImpl: async () => new Response(JSON.stringify({ configured: false, required: true }), {
+      status: 200,
+    }),
+  }), false);
 });

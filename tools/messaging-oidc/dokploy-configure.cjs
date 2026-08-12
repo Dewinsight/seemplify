@@ -39,6 +39,42 @@ function deploymentEnvironment(source = process.env) {
   };
 }
 
+async function waitForReadiness(label, probe, {
+  attempts = 120,
+  delayMs = 2_000,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      if (await probe()) return true;
+      lastError = new Error('service returned a non-ready response');
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < attempts) await wait(delayMs);
+  }
+  throw new Error(`${label} did not become ready: ${lastError?.message || 'timeout'}`);
+}
+
+async function idpMessagingClientReady(issuer, { fetchImpl = fetch } = {}) {
+  const response = await fetchImpl(`${issuer}/api/apps`, { headers: { accept: 'application/json' } });
+  if (!response.ok) throw new Error(`IDP app catalogue returned HTTP ${response.status}`);
+  const apps = await response.json();
+  return Array.isArray(apps) && apps.some((app) => (
+    app?.appId === 'messaging' && app?.clientId === 'messaging' && app?.isActive === true
+  ));
+}
+
+async function messagingOidcReady(apiUrl, { fetchImpl = fetch } = {}) {
+  const response = await fetchImpl(`${apiUrl}/api/auth/oidc/status`, {
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`Messaging OIDC status returned HTTP ${response.status}`);
+  const status = await response.json();
+  return status?.configured === true && status?.required === true;
+}
+
 async function configureMessagingOidc(source = process.env, {
   configureApplicationImpl = configureApplication,
   resolveMessagingConsumerImpl = resolveMessagingConsumer,
@@ -47,6 +83,8 @@ async function configureMessagingOidc(source = process.env, {
   if (!identityProviderId) throw new Error('IDENTITY_PROVIDER_APP_ID is required');
   const messaging = await resolveMessagingConsumerImpl(source);
   const environment = deploymentEnvironment(source);
+  const issuer = environment.messaging.IDP_ISSUER_URL;
+  const apiUrl = new URL(environment.messaging.OIDC_REDIRECT_URI).origin;
 
   // Register the provider first. Messaging stays fail-closed until that
   // deployment completes and only then receives the matching credential.
@@ -55,14 +93,26 @@ async function configureMessagingOidc(source = process.env, {
     environment.identityProvider,
     [],
     null,
-    { title: `Configure Messaging OIDC provider ${new Date().toISOString()}` },
+    {
+      title: `Configure Messaging OIDC provider ${new Date().toISOString()}`,
+      waitForDeploymentImpl: () => waitForReadiness(
+        'Identity Provider Messaging client',
+        () => idpMessagingClientReady(issuer),
+      ),
+    },
   );
   await configureApplicationImpl(
     messaging.applicationId,
     environment.messaging,
     ['IDP_CLIENT_ID', 'IDP_CLIENT_SECRET'],
     null,
-    { title: `Configure Messaging OIDC client ${new Date().toISOString()}` },
+    {
+      title: `Configure Messaging OIDC client ${new Date().toISOString()}`,
+      waitForDeploymentImpl: () => waitForReadiness(
+        'Messaging OIDC client',
+        () => messagingOidcReady(apiUrl),
+      ),
+    },
   );
   return { identityProviderId, messagingApplicationId: messaging.applicationId };
 }
@@ -79,4 +129,7 @@ module.exports = {
   configureMessagingOidc,
   deploymentEnvironment,
   deriveMessagingOidcSecret,
+  idpMessagingClientReady,
+  messagingOidcReady,
+  waitForReadiness,
 };
