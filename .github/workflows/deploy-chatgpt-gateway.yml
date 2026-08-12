@@ -19,6 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The release id is the last commit that changed runtime files. A
+          # shallow checkout makes HEAD look like it introduced every file and
+          # produces a false release id for workflow-only fixes.
+          fetch-depth: 0
       - name: Identify the immutable gateway runtime release
         id: gateway_release
         shell: bash
@@ -48,13 +53,11 @@ jobs:
           CHATGPT_GATEWAY_APP_ID: ${{ secrets.CHATGPT_GATEWAY_APP_ID }}
           DOKPLOY_BACKUP_DESTINATION_ID: ${{ secrets.DOKPLOY_BACKUP_DESTINATION_ID }}
           ALLOW_HOST_SNAPSHOT_FALLBACK: 'true'
-      - name: Load host snapshot SSH key
-        if: steps.gateway_backup.outputs.host_snapshot_required == 'true'
+      - name: Load deployment host SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Trust the deployment host
-        if: steps.gateway_backup.outputs.host_snapshot_required == 'true'
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts
@@ -130,9 +133,8 @@ jobs:
           expected_release="$2"
           for attempt in $(seq 1 600); do
             mapfile -t containers < <(docker ps --filter "volume=$volume_name" --format '{{.ID}}')
-            body=''
-            if [ "${#containers[@]}" -eq 1 ]; then
-              body="$(docker exec "${containers[0]}" node -e '
+            for container in "${containers[@]}"; do
+              body="$(docker exec "$container" node -e '
                 fetch("http://127.0.0.1:11435/health")
                   .then(async (response) => {
                     if (!response.ok) process.exit(1);
@@ -140,17 +142,17 @@ jobs:
                   })
                   .catch(() => process.exit(1));
               ' 2>/dev/null || true)"
-            fi
-            compact="$(printf '%s' "$body" | tr -d '\r\n ')"
-            if printf '%s' "$compact" | grep -Fq '"ok":true' \
-              && printf '%s' "$compact" | grep -Fq '"service":"seemplify-ai-gateway"' \
-              && printf '%s' "$compact" | grep -Fq '"runtime":"codex-app-server"' \
-              && printf '%s' "$compact" | grep -Fq '"ownership":"seemplify-platform"' \
-              && printf '%s' "$compact" | grep -Fq '"messaging"' \
-              && printf '%s' "$compact" | grep -Fq "\"release\":\"$expected_release\""; then
-              printf '%s' "$body"
-              exit 0
-            fi
+              compact="$(printf '%s' "$body" | tr -d '\r\n ')"
+              if printf '%s' "$compact" | grep -Fq '"ok":true' \
+                && printf '%s' "$compact" | grep -Fq '"service":"seemplify-ai-gateway"' \
+                && printf '%s' "$compact" | grep -Fq '"runtime":"codex-app-server"' \
+                && printf '%s' "$compact" | grep -Fq '"ownership":"seemplify-platform"' \
+                && printf '%s' "$compact" | grep -Fq '"messaging"' \
+                && printf '%s' "$compact" | grep -Fq "\"release\":\"$expected_release\""; then
+                printf '%s' "$body"
+                exit 0
+              fi
+            done
             sleep 2
           done
           echo 'The exact gateway release did not become ready in its running data-volume container' >&2
