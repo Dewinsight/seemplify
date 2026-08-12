@@ -151,6 +151,20 @@ const developmentApps = [
     order: 7.5
   },
   {
+    appId: 'messaging',
+    name: 'Seemplify Messaging',
+    description: 'Channels, direct messages, calls, notes, pages, and boards for your organization',
+    icon: 'chat-bubble-left-right',
+    color: '#5f6654',
+    url: process.env.MESSAGING_URL || 'http://localhost:4200',
+    apiUrl: process.env.MESSAGING_API_URL || 'http://localhost:3333',
+    clientId: 'messaging',
+    isActive: true,
+    isPublic: true,
+    category: 'communication',
+    order: 8
+  },
+  {
     appId: 'zulip',
     name: 'Seemplify Chat',
     description: 'Thread-based team messaging and collaboration',
@@ -162,7 +176,7 @@ const developmentApps = [
     isActive: true,
     isPublic: true,
     category: 'communication',
-    order: 8
+    order: 8.5
   }
 ]
 
@@ -299,6 +313,20 @@ const productionApps = [
     order: 7.5
   },
   {
+    appId: 'messaging',
+    name: 'Seemplify Messaging',
+    description: 'Channels, direct messages, calls, notes, pages, and boards for your organization',
+    icon: 'chat-bubble-left-right',
+    color: '#5f6654',
+    url: productionSafeUrl(process.env.MESSAGING_URL, 'https://messaging.seemplifyai.com'),
+    apiUrl: productionSafeUrl(process.env.MESSAGING_API_URL, 'https://api-messaging.seemplifyai.com'),
+    clientId: 'messaging',
+    isActive: true,
+    isPublic: true,
+    category: 'communication',
+    order: 8
+  },
+  {
     appId: 'zulip',
     name: 'Seemplify Chat',
     description: 'Thread-based team messaging and collaboration',
@@ -310,7 +338,7 @@ const productionApps = [
     isActive: true,
     isPublic: true,
     category: 'communication',
-    order: 8
+    order: 8.5
   }
 ]
 
@@ -370,14 +398,6 @@ export function getAppsByCategory(category) {
  * These are separate from normal hub apps (e.g. payroll, performance-management have both live and coming-soon variants)
  */
 const COMING_SOON_CARDS = [
-  {
-    cardId: 'messaging',
-    name: 'Simplified Messaging',
-    description: 'Streamlined team messaging and collaboration, wired into every app above.',
-    icon: 'chat-bubble-left-right',
-    color: '#64748b',
-    order: 1
-  },
   {
     cardId: 'payroll',
     name: 'Payroll',

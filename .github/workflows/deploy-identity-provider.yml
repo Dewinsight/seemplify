@@ -1,4 +1,4 @@
-# Deploy Identity Provider to Dokploy
+# Deploy Identity Provider and provision its Messaging OIDC trust.
 name: Deploy Identity Provider
 
 on:
@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - 'Identityprovider/**'
+      - 'tools/messaging-oidc/**'
+      - 'tools/chatgpt-gateway/dokploy-configure.cjs'
       - '.github/workflows/deploy-identity-provider.yml'
   workflow_dispatch:
 
@@ -17,24 +19,19 @@ jobs:
   deploy:
     name: Deploy to Dokploy
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Trigger Dokploy Deployment
-        run: |
-          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
-            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -H "accept: application/json" \
-            -d '{"applicationId": "${{ secrets.IDENTITY_PROVIDER_APP_ID }}"}')
-          
-          if [ "$response" -eq 200 ]; then
-            echo "✅ ${{ env.APP_NAME }} deployment triggered successfully (HTTP $response)"
-            cat /tmp/response.txt 2>/dev/null || true
-          else
-            echo "❌ Deployment failed with HTTP status code: $response"
-            cat /tmp/response.txt 2>/dev/null || true
-            exit 1
-          fi
+      - name: Verify Messaging OIDC contracts
+        run: node --test Identityprovider/test/messaging-oidc-client.test.mjs tools/messaging-oidc/dokploy-configure.test.cjs
+
+      - name: Configure and deploy Messaging OIDC trust
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          IDENTITY_PROVIDER_APP_ID: ${{ secrets.IDENTITY_PROVIDER_APP_ID }}
+          MESSAGING_BACKEND_APP_ID: ${{ secrets.MESSAGING_BACKEND_APP_ID }}
+          IDP_WEBHOOK_MASTER_SECRET: ${{ secrets.IDP_WEBHOOK_MASTER_SECRET }}
+        run: node tools/messaging-oidc/dokploy-configure.cjs
