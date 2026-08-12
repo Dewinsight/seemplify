@@ -28,7 +28,10 @@ jobs:
   configure:
     name: Configure central account consumers
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Three sequential application builds may each legitimately exceed ten
+    # minutes. Keep this above the script's 3 x 30-minute deployment ceiling,
+    # plus its interrupted-authority readiness recovery window.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - name: Verify proxy configuration contract
@@ -43,3 +46,7 @@ jobs:
           MESSAGING_BACKEND_APP_ID: ${{ secrets.MESSAGING_BACKEND_APP_ID }}
           CHATGPT_GATEWAY_SHARED_SECRET: ${{ secrets.CHATGPT_GATEWAY_SHARED_SECRET }}
           SEEMPLIFY_SHARED_AI_URL: https://api.seemplifyai.com
+          SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS: ${{ vars.SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS || '900' }}
+          SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_DELAY_MS: ${{ vars.SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_DELAY_MS || '2000' }}
+          SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS: ${{ vars.SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS || '600' }}
+          SEEMPLIFY_PROXY_READINESS_WAIT_DELAY_MS: ${{ vars.SEEMPLIFY_PROXY_READINESS_WAIT_DELAY_MS || '2000' }}

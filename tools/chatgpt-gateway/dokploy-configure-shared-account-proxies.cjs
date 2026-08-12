@@ -10,14 +10,20 @@
 const crypto = require('node:crypto');
 const {
   configureApplication,
+  configureEnvironment,
   deriveMessagingProxySecret,
   derivePerformanceProxySecret,
   resolveMessagingConsumer,
+  waitForDeploymentCompletion,
   waitForReadiness
 } = require('./dokploy-configure.cjs');
 
 const SHARED_ACCOUNT_HEALTH_PATH = '/api/internal/ai/v1/health';
 const PROXY_SERVICE_IDS = new Set(['performance-management', 'messaging']);
+const DEFAULT_DEPLOYMENT_WAIT_ATTEMPTS = 900;
+const DEFAULT_DEPLOYMENT_WAIT_DELAY_MS = 2_000;
+const DEFAULT_READINESS_WAIT_ATTEMPTS = 600;
+const DEFAULT_READINESS_WAIT_DELAY_MS = 2_000;
 
 function apiBase(value) {
   const root = String(value || '').replace(/\/+$/, '');
@@ -63,6 +69,44 @@ function requiredSource(source = process.env) {
   };
 }
 
+function boundedInteger(source, key, fallback, { minimum, maximum }) {
+  const raw = String(source[key] ?? '').trim();
+  const value = raw ? Number(raw) : fallback;
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${key} must be an integer from ${minimum} to ${maximum}`);
+  }
+  return value;
+}
+
+function proxyRolloutTiming(source = process.env) {
+  return {
+    deploymentAttempts: boundedInteger(
+      source,
+      'SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS',
+      DEFAULT_DEPLOYMENT_WAIT_ATTEMPTS,
+      { minimum: 300, maximum: 3_600 }
+    ),
+    deploymentDelayMs: boundedInteger(
+      source,
+      'SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_DELAY_MS',
+      DEFAULT_DEPLOYMENT_WAIT_DELAY_MS,
+      { minimum: 500, maximum: 10_000 }
+    ),
+    readinessAttempts: boundedInteger(
+      source,
+      'SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS',
+      DEFAULT_READINESS_WAIT_ATTEMPTS,
+      { minimum: 60, maximum: 3_600 }
+    ),
+    readinessDelayMs: boundedInteger(
+      source,
+      'SEEMPLIFY_PROXY_READINESS_WAIT_DELAY_MS',
+      DEFAULT_READINESS_WAIT_DELAY_MS,
+      { minimum: 500, maximum: 10_000 }
+    )
+  };
+}
+
 function proxySecret(serviceId, source) {
   if (serviceId === 'performance-management') {
     return derivePerformanceProxySecret(source.CHATGPT_GATEWAY_SHARED_SECRET);
@@ -103,6 +147,15 @@ function sharedProxyRemovedKeys(id) {
         'RECRUITER_CHATGPT_GATEWAY_PREVIOUS_SECRET',
         'CHATGPT_GATEWAY_STORAGE_SECRET'
       ];
+}
+
+function sharedProxyEnvironmentMatches(application, id, source) {
+  if (!application || typeof application !== 'object' || Array.isArray(application)) return false;
+  return configureEnvironment(
+    application.env,
+    sharedProxyEnvironment(id, source),
+    sharedProxyRemovedKeys(id)
+  ).changed.length === 0;
 }
 
 async function sharedAccountProxyReadinessProbe(serviceId, source = process.env, {
@@ -157,11 +210,16 @@ async function sharedAccountProxyReadinessProbe(serviceId, source = process.env,
 
 async function waitForSharedAccountProxyReadiness(serviceId, source = process.env, {
   probeImpl = sharedAccountProxyReadinessProbe,
-  waitForReadinessImpl = waitForReadiness
+  waitForReadinessImpl = waitForReadiness,
+  timing = proxyRolloutTiming(source)
 } = {}) {
   return waitForReadinessImpl(
     `${serviceId} shared ChatGPT account proxy`,
-    () => probeImpl(serviceId, source)
+    () => probeImpl(serviceId, source),
+    {
+      attempts: timing.readinessAttempts,
+      delayMs: timing.readinessDelayMs
+    }
   );
 }
 
@@ -175,8 +233,10 @@ async function configureSharedAccountProxies(source = process.env, options = {})
       options.fetchImpl || fetch
     ));
   const configureImpl = options.configureImpl || configureApplication;
+  const deploymentWaitImpl = options.deploymentWaitImpl || waitForDeploymentCompletion;
   const resolveMessagingImpl = options.resolveMessagingImpl || resolveMessagingConsumer;
   const readinessImpl = options.readinessImpl || waitForSharedAccountProxyReadiness;
+  const timing = proxyRolloutTiming(deploymentSource);
   const messaging = await resolveMessagingImpl(deploymentSource, { requestImpl });
   const targets = [
     { id: 'recruiter', applicationId: deploymentSource.RECRUITER_BACKEND_APP_ID },
@@ -215,24 +275,60 @@ async function configureSharedAccountProxies(source = process.env, options = {})
   })));
 
   const releaseId = new Date().toISOString();
-  for (const target of targets) {
-    await configureImpl(
-      target.applicationId,
-      sharedProxyEnvironment(target.id, deploymentSource),
-      sharedProxyRemovedKeys(target.id),
+  const plans = targets.map((target) => ({
+    ...target,
+    application: applications.get(target.applicationId),
+    environmentMatches: sharedProxyEnvironmentMatches(
       applications.get(target.applicationId),
-      {
-        requestImpl,
-        title: `Shared ChatGPT ${target.id} proxy ${releaseId}`
-      }
-    );
-    if (PROXY_SERVICE_IDS.has(target.id)) {
-      // configureApplication waits for the target deployment record to finish;
-      // this signed probe then proves Recruiter loaded and accepts that exact
-      // target-bound key. Together they cover both sides without exposing the
-      // gateway credential or requiring product-specific diagnostic routes.
-      await readinessImpl(target.id, deploymentSource);
+      target.id,
+      deploymentSource
+    )
+  }));
+  const waitForDeploymentImpl = (applicationId, title, waitOptions = {}) => deploymentWaitImpl(
+    applicationId,
+    title,
+    {
+      ...waitOptions,
+      attempts: timing.deploymentAttempts,
+      delayMs: timing.deploymentDelayMs
     }
+  );
+  const deploy = async (target) => configureImpl(
+    target.applicationId,
+    sharedProxyEnvironment(target.id, deploymentSource),
+    sharedProxyRemovedKeys(target.id),
+    target.application,
+    {
+      requestImpl,
+      waitForDeploymentImpl,
+      title: `Shared ChatGPT ${target.id} proxy ${releaseId}`
+    }
+  );
+
+  const authority = plans.find((target) => target.id === 'recruiter');
+  if (authority.environmentMatches) {
+    // A previous run can be interrupted after saveEnvironment and deploy. Do
+    // not enqueue a second deployment for those same authority keys. The long
+    // signed probes wait for that in-flight revision to reach the load balancer.
+    console.log('Recruiter shared-account proxy keys already match; waiting for signed readiness without redeploying.');
+  } else {
+    await deploy(authority);
+  }
+  await Promise.all([...PROXY_SERVICE_IDS].map((serviceId) => (
+    readinessImpl(serviceId, deploymentSource, { timing })
+  )));
+
+  for (const target of plans.filter((candidate) => candidate.id !== 'recruiter')) {
+    if (target.environmentMatches) {
+      // Authority readiness above proves the exact target-bound key is live.
+      // The matching saved consumer environment means a retry must not create
+      // a duplicate deployment while Dokploy may still be finishing that app.
+      console.log(`${target.id} shared-account proxy environment already matches; skipping redeploy.`);
+      continue;
+    }
+    await deploy(target);
+    // Preserve a fail-closed post-deployment check for each changed consumer.
+    await readinessImpl(target.id, deploymentSource, { timing });
   }
   return targets;
 }
@@ -253,9 +349,11 @@ module.exports = {
   configureSharedAccountProxies,
   dokployRequest,
   proxySecret,
+  proxyRolloutTiming,
   requiredSource,
   sharedAccountProxyReadinessProbe,
   sharedProxyEnvironment,
+  sharedProxyEnvironmentMatches,
   sharedProxyRemovedKeys,
   waitForSharedAccountProxyReadiness
 };

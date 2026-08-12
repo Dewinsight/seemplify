@@ -12,9 +12,11 @@ const {
   configureSharedAccountProxies,
   dokployRequest,
   proxySecret,
+  proxyRolloutTiming,
   requiredSource,
   sharedAccountProxyReadinessProbe,
   sharedProxyEnvironment,
+  sharedProxyEnvironmentMatches,
   sharedProxyRemovedKeys,
   waitForSharedAccountProxyReadiness
 } = require('./dokploy-configure-shared-account-proxies.cjs');
@@ -31,9 +33,11 @@ const source = {
 test('central configurator exports the narrow rollout dependencies', () => {
   for (const name of [
     'configureApplication',
+    'configureEnvironment',
     'deriveMessagingProxySecret',
     'derivePerformanceProxySecret',
     'resolveMessagingConsumer',
+    'waitForDeploymentCompletion',
     'waitForReadiness'
   ]) {
     assert.equal(typeof centralConfigurator[name], 'function', `${name} must remain exported`);
@@ -113,6 +117,38 @@ test('non-authority apps remove every direct gateway credential while Recruiter 
   assert.deepEqual(sharedProxyRemovedKeys('recruiter'), []);
 });
 
+test('environment matching requires every desired value and every credential removal', () => {
+  const configured = requiredSource(source);
+  const desired = sharedProxyEnvironment('messaging', configured);
+  const exact = centralConfigurator.configureEnvironment('', desired).env;
+  assert.equal(sharedProxyEnvironmentMatches({ env: exact }, 'messaging', configured), true);
+  assert.equal(sharedProxyEnvironmentMatches({ env: `${exact}\nCHATGPT_GATEWAY_SHARED_SECRET=stale` }, 'messaging', configured), false);
+  assert.equal(sharedProxyEnvironmentMatches({ env: exact.replace('SEEMPLIFY_AI_SOURCE_APP=messaging', 'SEEMPLIFY_AI_SOURCE_APP=wrong') }, 'messaging', configured), false);
+  assert.equal(sharedProxyEnvironmentMatches(null, 'messaging', configured), false);
+});
+
+test('rollout timing defaults exceed ten minutes and accept bounded operator overrides', () => {
+  const defaults = proxyRolloutTiming(source);
+  assert.equal(defaults.deploymentAttempts * defaults.deploymentDelayMs, 1_800_000);
+  assert.equal(defaults.readinessAttempts * defaults.readinessDelayMs, 1_200_000);
+  assert.deepEqual(proxyRolloutTiming({
+    ...source,
+    SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS: '1000',
+    SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_DELAY_MS: '1500',
+    SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS: '700',
+    SEEMPLIFY_PROXY_READINESS_WAIT_DELAY_MS: '1000'
+  }), {
+    deploymentAttempts: 1000,
+    deploymentDelayMs: 1500,
+    readinessAttempts: 700,
+    readinessDelayMs: 1000
+  });
+  assert.throws(
+    () => proxyRolloutTiming({ ...source, SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS: '299' }),
+    /SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS/
+  );
+});
+
 test('Messaging discovery uses the production API domain and rejects ambiguity', async () => {
   const discovered = await centralConfigurator.resolveMessagingConsumer(source, {
     requestImpl: async (pathname) => {
@@ -185,6 +221,8 @@ test('proxy repair preflights all targets, deploys no gateway, and verifies both
   ]);
   assert.deepEqual(events.slice(3), [
     'configure:recruiter-app',
+    'ready:performance-management',
+    'ready:messaging',
     'configure:performance-app',
     'ready:performance-management',
     'configure:messaging-app',
@@ -213,7 +251,127 @@ test('proxy repair preflights all targets, deploys no gateway, and verifies both
   );
   assert.equal(configured.every(({ application }) => application.env === 'EXISTING_VALUE=preserved'), true);
   assert.equal(configured.every(({ options }) => /Shared ChatGPT .* proxy/.test(options.title)), true);
-  assert.deepEqual(readiness.map(({ serviceId }) => serviceId), ['performance-management', 'messaging']);
+  assert.deepEqual(readiness.map(({ serviceId }) => serviceId), [
+    'performance-management', 'messaging', 'performance-management', 'messaging'
+  ]);
+  assert.equal(configured.every(({ options }) => typeof options.waitForDeploymentImpl === 'function'), true);
+});
+
+test('a rerun with exact environments and signed authority readiness creates no duplicate deployments', async () => {
+  const configured = requiredSource(source);
+  const applications = new Map([
+    ['recruiter-app', { env: centralConfigurator.configureEnvironment(
+      '', sharedProxyEnvironment('recruiter', configured)
+    ).env }],
+    ['performance-app', { env: centralConfigurator.configureEnvironment(
+      '', sharedProxyEnvironment('performance-management', configured)
+    ).env }],
+    ['messaging-app', { env: centralConfigurator.configureEnvironment(
+      '', sharedProxyEnvironment('messaging', configured)
+    ).env }]
+  ]);
+  const readiness = [];
+  let deployments = 0;
+  await configureSharedAccountProxies(source, {
+    resolveMessagingImpl: async () => ({ id: 'messaging', applicationId: 'messaging-app' }),
+    requestImpl: async (pathname) => applications.get(
+      new URL(`https://dokploy.test${pathname}`).searchParams.get('applicationId')
+    ),
+    configureImpl: async () => { deployments += 1; },
+    readinessImpl: async (serviceId, deploymentSource, { timing }) => {
+      readiness.push({ serviceId, deploymentSource, timing });
+    }
+  });
+  assert.equal(deployments, 0);
+  assert.deepEqual(readiness.map(({ serviceId }) => serviceId), [
+    'performance-management', 'messaging'
+  ]);
+  assert.equal(readiness.every(({ timing }) => timing.readinessAttempts === 600), true);
+});
+
+test('an interrupted Recruiter deployment waits for both signed keys and never redeploys the authority', async () => {
+  const configured = requiredSource(source);
+  const authorityEnv = centralConfigurator.configureEnvironment(
+    '', sharedProxyEnvironment('recruiter', configured)
+  ).env;
+  const deployments = [];
+  const events = [];
+  const probeAttempts = new Map();
+  await configureSharedAccountProxies(source, {
+    resolveMessagingImpl: async () => ({ id: 'messaging', applicationId: 'messaging-app' }),
+    requestImpl: async (pathname) => {
+      const applicationId = new URL(`https://dokploy.test${pathname}`).searchParams.get('applicationId');
+      return { env: applicationId === 'recruiter-app' ? authorityEnv : '' };
+    },
+    configureImpl: async (applicationId) => {
+      deployments.push(applicationId);
+      events.push(`deploy:${applicationId}`);
+    },
+    readinessImpl: async (serviceId, deploymentSource, { timing }) => {
+      events.push(`wait:${serviceId}`);
+      return waitForSharedAccountProxyReadiness(serviceId, deploymentSource, {
+        timing,
+        probeImpl: async (candidateId) => {
+          const attempt = (probeAttempts.get(candidateId) || 0) + 1;
+          probeAttempts.set(candidateId, attempt);
+          if (attempt < 3) throw new Error('in-flight authority revision is not live yet');
+          return true;
+        },
+        waitForReadinessImpl: async (label, probe, waitOptions) => {
+          assert.equal(waitOptions.attempts, 600);
+          assert.equal(waitOptions.delayMs, 2000);
+          let lastError;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+              return await probe();
+            } catch (error) {
+              lastError = error;
+            }
+          }
+          throw lastError;
+        }
+      });
+    }
+  });
+  assert.deepEqual(deployments, ['performance-app', 'messaging-app']);
+  assert.deepEqual(events.slice(0, 2), [
+    'wait:performance-management', 'wait:messaging'
+  ]);
+  assert.equal(events.includes('deploy:recruiter-app'), false);
+  assert.deepEqual(Object.fromEntries(probeAttempts), {
+    // Three attempts wait for the interrupted authority revision; the fourth
+    // is the post-deployment fail-closed check for each changed consumer.
+    'performance-management': 4,
+    messaging: 4
+  });
+});
+
+test('changed deployments receive the configurable long deployment poll contract', async () => {
+  const waits = [];
+  await configureSharedAccountProxies({
+    ...source,
+    SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS: '1000',
+    SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_DELAY_MS: '1500'
+  }, {
+    resolveMessagingImpl: async () => ({ id: 'messaging', applicationId: 'messaging-app' }),
+    requestImpl: async () => ({ env: '' }),
+    configureImpl: async (applicationId, required, removed, application, options) => {
+      await options.waitForDeploymentImpl(applicationId, `test-${applicationId}`, {
+        requestImpl: async () => ({})
+      });
+    },
+    deploymentWaitImpl: async (applicationId, title, waitOptions) => {
+      waits.push({ applicationId, title, waitOptions });
+      return { status: 'done' };
+    },
+    readinessImpl: async () => true
+  });
+  assert.deepEqual(waits.map(({ applicationId }) => applicationId), [
+    'recruiter-app', 'performance-app', 'messaging-app'
+  ]);
+  assert.equal(waits.every(({ waitOptions }) => waitOptions.attempts === 1000), true);
+  assert.equal(waits.every(({ waitOptions }) => waitOptions.delayMs === 1500), true);
+  assert.equal(waits.every(({ waitOptions }) => typeof waitOptions.requestImpl === 'function'), true);
 });
 
 test('duplicate or inaccessible targets abort before the first environment mutation', async () => {
@@ -314,14 +472,21 @@ test('readiness waits through the shared retry helper without changing the probe
     calls.push({ serviceId, candidate });
     return true;
   };
-  const waitForReadinessImpl = async (label, probe) => {
+  const waitForReadinessImpl = async (label, probe, options) => {
     assert.equal(label, 'messaging shared ChatGPT account proxy');
+    assert.deepEqual(options, { attempts: 700, delayMs: 1000 });
     return probe();
   };
-  assert.equal(await waitForSharedAccountProxyReadiness('messaging', source, {
-    probeImpl, waitForReadinessImpl
+  assert.equal(await waitForSharedAccountProxyReadiness('messaging', {
+    ...source,
+    SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS: '700',
+    SEEMPLIFY_PROXY_READINESS_WAIT_DELAY_MS: '1000'
+  }, {
+    probeImpl,
+    waitForReadinessImpl
   }), true);
-  assert.deepEqual(calls, [{ serviceId: 'messaging', candidate: source }]);
+  assert.equal(calls[0].serviceId, 'messaging');
+  assert.equal(calls[0].candidate.SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS, '700');
 });
 
 test('Dokploy request handling authenticates without leaking unrelated settings', async () => {
@@ -352,6 +517,9 @@ test('workflow stays proxy-only and runs its contract test before rollout', () =
   assert.match(workflow, /PERFORMANCE_BACKEND_APP_ID/);
   assert.match(workflow, /MESSAGING_BACKEND_APP_ID/);
   assert.match(workflow, /CHATGPT_GATEWAY_SHARED_SECRET/);
+  assert.match(workflow, /timeout-minutes: 150/);
+  assert.match(workflow, /SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS/);
+  assert.match(workflow, /SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS/);
   assert.doesNotMatch(workflow, /CHATGPT_GATEWAY_APP_ID/);
   assert.doesNotMatch(workflow, /DOKPLOY_BACKUP_DESTINATION_ID/);
   assert.doesNotMatch(workflow, /Dockerfile/);
