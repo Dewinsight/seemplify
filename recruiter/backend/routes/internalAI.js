@@ -1,5 +1,5 @@
 const express = require('express');
-const { ACTIVITY_DEFINITIONS } = require('../config/aiRuntimeCatalog');
+const { ACTIVITY_DEFINITIONS, isCandidateInterviewActivity } = require('../config/aiRuntimeCatalog');
 const { createInternalServiceAuth } = require('../middleware/internalServiceAuth');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const {
@@ -44,6 +44,12 @@ function requireServiceActivity(service, activity) {
   }
   if (service === 'messaging' && definition.app !== 'messaging') {
     const error = new Error('Messaging may only invoke Messaging AI activities.');
+    error.code = 'SHARED_AI_ACTIVITY_FORBIDDEN';
+    error.statusCode = 403;
+    throw error;
+  }
+  if (service === 'ai-interview' && !String(activity).startsWith('ai_interview.')) {
+    const error = new Error('AI Interview may only invoke AI Interview activities.');
     error.code = 'SHARED_AI_ACTIVITY_FORBIDDEN';
     error.statusCode = 403;
     throw error;
@@ -257,8 +263,19 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
     const principal = ['performance-management', 'messaging'].includes(req.internalService)
       ? await sharedPrincipal(req) : null;
     const user = principal?.user || null;
+    const suppliedContext = req.body?.context || {};
     const context = {
-      ...(req.body?.context || {}),
+      ...suppliedContext,
+      // The standalone AI Interview service predates the central runtime's
+      // explicit field name. Normalise its signed session identity so a live
+      // candidate turn can resolve only that candidate-owned ChatGPT account;
+      // it must never fall back to the recruiter's connected account.
+      ...(req.internalService === 'ai-interview'
+        && isCandidateInterviewActivity(activity)
+        && !suppliedContext.interviewSessionId
+        && suppliedContext.sessionId
+        ? { interviewSessionId: String(suppliedContext.sessionId) }
+        : {}),
       sourceApp: req.internalService,
       ...(user ? {
         // Meter both Local and ChatGPT against the stable cross-product IdP

@@ -25,17 +25,38 @@ function accountView(response) {
   return new SharedAccountView(response?.account || response || {});
 }
 
-async function readAccount(user, options = {}) {
+function performancePreferences(response) {
+  if (!response || typeof response !== 'object') return undefined;
+  return {
+    ...response,
+    activities: Array.isArray(response.activities)
+      ? response.activities.filter((activity) => activity?.app === 'performance')
+      : []
+  };
+}
+
+async function readAccountState(user, options = {}) {
   const identity = identityFromUser(user);
   try {
-    return accountView(await sharedAIAccountService.status(identity, options));
+    const response = await sharedAIAccountService.status(identity, options);
+    return {
+      account: accountView(response),
+      preferences: performancePreferences(response?.preferences)
+    };
   } catch (error) {
     if (options.strict === true) throw error;
-    return new SharedAccountView({
-      status: 'error', routable: false, connectedEmail: null,
-      lastError: String(error.message || 'The shared ChatGPT account is unavailable.')
-    });
+    return {
+      account: new SharedAccountView({
+        status: 'error', routable: false, connectedEmail: null,
+        lastError: String(error.message || 'The shared ChatGPT account is unavailable.')
+      }),
+      preferences: undefined
+    };
   }
+}
+
+async function readAccount(user, options = {}) {
+  return (await readAccountState(user, options)).account;
 }
 
 async function startLogin(user, options = {}) {
@@ -63,6 +84,22 @@ async function disconnect(user, options = {}) {
   return accountView(await sharedAIAccountService.disconnect(identityFromUser(user), options));
 }
 
+async function readPreferences(user, options = {}) {
+  return performancePreferences(await sharedAIAccountService.preferences(identityFromUser(user), options));
+}
+
+async function writePreference(user, preference, options = {}) {
+  return performancePreferences(await sharedAIAccountService.writePreference(
+    identityFromUser(user), preference, options
+  ));
+}
+
+async function deletePreference(user, preference, options = {}) {
+  return performancePreferences(await sharedAIAccountService.deletePreference(
+    identityFromUser(user), preference, options
+  ));
+}
+
 async function resolveRoutableSubject(userId, options = {}) {
   const identity = options.identity || { sub: String(userId || ''), email: options.email };
   if (!identity.sub || !identity.email) return null;
@@ -76,10 +113,14 @@ module.exports = {
   accountForUser: readAccount,
   cancelLogin,
   disconnect,
+  deletePreference,
   readAccount,
+  readAccountState,
+  readPreferences,
   resetLogin,
   resolveRoutableSubject,
   setConsent,
   startLogin,
-  subjectKeyForUser
+  subjectKeyForUser,
+  writePreference
 };

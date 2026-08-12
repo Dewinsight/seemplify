@@ -4,11 +4,18 @@ const express = require('express');
 const { requireAuth } = require('../middleware/rbac');
 const aiGatewayService = require('../services/aiGatewayService');
 const chatGptAccountService = require('../services/chatGptAccountService');
+const { identityFromRequest } = require('../services/sharedAIAccountService');
 
 const router = express.Router();
 
 function userFor(req) {
   return req.session?.user || {};
+}
+
+function runtimePreferenceFor(req) {
+  return ['local', 'chatgpt'].includes(req.cookies?.performance_ai_runtime)
+    ? req.cookies.performance_ai_runtime
+    : 'default';
 }
 
 function sendError(res, error) {
@@ -26,8 +33,20 @@ function sendError(res, error) {
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const account = await chatGptAccountService.readAccount(userFor(req));
-    return res.json({ success: true, data: { account: account.toPublicJSON(), policy: await aiGatewayService.policy() } });
+    const organizationId = identityFromRequest(req).organizationId;
+    const [{ account, preferences }, policy] = await Promise.all([
+      chatGptAccountService.readAccountState(userFor(req)),
+      aiGatewayService.policy({ organizationId })
+    ]);
+    return res.json({
+      success: true,
+      data: {
+        account: account.toPublicJSON(),
+        policy,
+        runtimePreference: runtimePreferenceFor(req),
+        ...(preferences ? { preferences } : {})
+      }
+    });
   } catch (error) { return sendError(res, error); }
 });
 
@@ -56,6 +75,27 @@ router.post('/consent', requireAuth, async (req, res) => {
   try {
     const account = await chatGptAccountService.setConsent(userFor(req), req.body?.acknowledged === true);
     return res.json({ success: true, data: { account: account.toPublicJSON() } });
+  } catch (error) { return sendError(res, error); }
+});
+
+router.get('/preferences', requireAuth, async (req, res) => {
+  try {
+    const preferences = await chatGptAccountService.readPreferences(userFor(req));
+    return res.json({ success: true, data: preferences });
+  } catch (error) { return sendError(res, error); }
+});
+
+router.put('/preferences', requireAuth, async (req, res) => {
+  try {
+    const preferences = await chatGptAccountService.writePreference(userFor(req), req.body || {});
+    return res.json({ success: true, data: preferences });
+  } catch (error) { return sendError(res, error); }
+});
+
+router.delete('/preferences', requireAuth, async (req, res) => {
+  try {
+    const preferences = await chatGptAccountService.deletePreference(userFor(req), req.body || {});
+    return res.json({ success: true, data: preferences });
   } catch (error) { return sendError(res, error); }
 });
 

@@ -63,7 +63,7 @@ test('signed gateway routes activity and context but ignores caller provider con
       activity: 'ai_interview.chat.clarification',
       promptVersion: 'clarification-v2',
       messages: [{ role: 'user', content: 'Please clarify.' }],
-      context: { organizationId: 'org-1', actorId: 'user-1' },
+      context: { organizationId: 'org-1', actorId: 'user-1', sessionId: 'candidate-session-1' },
       model: 'caller-controlled-model',
       credentialId: 'caller-controlled-key'
     });
@@ -85,6 +85,7 @@ test('signed gateway routes activity and context but ignores caller provider con
     assert.equal(captured.input.promptVersion, 'clarification-v2');
     assert.equal(captured.input.context.sourceApp, 'ai-interview');
     assert.equal(captured.input.context.organizationId, 'org-1');
+    assert.equal(captured.input.context.interviewSessionId, 'candidate-session-1');
     assert.equal(captured.input.model, undefined);
     assert.equal(captured.input.credentialId, undefined);
     assert.ok(captured.options.signal);
@@ -252,5 +253,40 @@ test('Messaging service signatures cannot invoke Performance activities', async 
     InternalServiceNonce.create = originalCreate;
     if (originalSecret === undefined) delete process.env.MESSAGING_AI_SHARED_SECRET;
     else process.env.MESSAGING_AI_SHARED_SECRET = originalSecret;
+  }
+});
+
+test('AI Interview service cannot invoke another product activity', async () => {
+  const originalSecret = process.env.AI_GATEWAY_HMAC_SECRET;
+  const originalAllowed = process.env.AI_GATEWAY_ALLOWED_SERVICES;
+  const secret = 'activity-bound-hmac-secret';
+  process.env.AI_GATEWAY_HMAC_SECRET = secret;
+  process.env.AI_GATEWAY_ALLOWED_SERVICES = 'ai-interview';
+  const gateway = await startGateway();
+  try {
+    const body = JSON.stringify({
+      activity: 'performance.general',
+      messages: [{ role: 'user', content: 'Cross-product request' }]
+    });
+    const timestamp = String(Date.now());
+    const response = await fetch(gateway.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-seemplify-service': 'ai-interview',
+        'x-seemplify-timestamp': timestamp,
+        'x-seemplify-signature': sign({ body, secret, timestamp })
+      },
+      body
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, 'SHARED_AI_ACTIVITY_FORBIDDEN');
+  } finally {
+    await gateway.close();
+    if (originalSecret === undefined) delete process.env.AI_GATEWAY_HMAC_SECRET;
+    else process.env.AI_GATEWAY_HMAC_SECRET = originalSecret;
+    if (originalAllowed === undefined) delete process.env.AI_GATEWAY_ALLOWED_SERVICES;
+    else process.env.AI_GATEWAY_ALLOWED_SERVICES = originalAllowed;
   }
 });

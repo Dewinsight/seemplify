@@ -86,15 +86,16 @@ function messageFrom(error: unknown, fallback: string) {
   const value = error as {
     message?: string;
     response?: {
-      data?: { message?: string; code?: string; retryAfterSeconds?: number | string };
+      data?: { error?: string; message?: string; msg?: string; code?: string; retryAfterSeconds?: number | string };
       headers?: Record<string, string | number | undefined>;
     };
   };
-  const wrapped = new Error(value?.response?.data?.message || value?.message || fallback) as Error & {
+  const payload = value?.response?.data;
+  const wrapped = new Error(payload?.error || payload?.message || payload?.msg || value?.message || fallback) as Error & {
     code?: string; retryAfterSeconds?: number;
   };
-  wrapped.code = value?.response?.data?.code;
-  wrapped.retryAfterSeconds = Number(value?.response?.data?.retryAfterSeconds)
+  wrapped.code = payload?.code;
+  wrapped.retryAfterSeconds = Number(payload?.retryAfterSeconds)
     || Number(value?.response?.headers?.['retry-after']) || 0;
   return wrapped;
 }
@@ -103,13 +104,43 @@ export function aiErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-async function request<T>(operation: () => Promise<{ data: T }>, fallback: string): Promise<T> {
-  try { return (await operation()).data; }
+type SuccessEnvelope<T> = { success: true; data: T };
+
+function responseData<T>(response: { data: T | SuccessEnvelope<T> }): T {
+  const payload = response.data;
+  if (payload && typeof payload === 'object' && 'success' in payload && payload.success === true && 'data' in payload) {
+    return payload.data;
+  }
+  return payload as T;
+}
+
+async function request<T>(operation: () => Promise<{ data: T | SuccessEnvelope<T> }>, fallback: string): Promise<T> {
+  try { return responseData(await operation()); }
   catch (error) { throw messageFrom(error, fallback); }
 }
 
+function runtimePreference(value: unknown): AIRuntimePreference {
+  return value === 'local' || value === 'chatgpt' ? value : 'default';
+}
+
+type AIAccountPayload = {
+  account: AIAccount;
+  policy: AIRuntimePolicy;
+  runtimePreference?: AIRuntimePreference;
+  preferences?: AIPreferences;
+};
+
 export const aiAccount = {
-  read: () => request<AIAccountState>(() => api.get('/ai-account'), 'Your AI account could not be checked.'),
+  read: async (): Promise<AIAccountState> => {
+    const result = await request<AIAccountPayload>(() => api.get('/ai-account'), 'Your AI account could not be checked.');
+    const preference = runtimePreference(result.runtimePreference);
+    return {
+      account: { ...result.account, runtimePreference: preference },
+      runtimePolicy: result.policy,
+      runtimePreference: preference,
+      ...(result.preferences ? { preferences: result.preferences } : {})
+    };
+  },
   startLogin: () => request<{ login: AIDeviceLogin; account: AIAccount }>(() => api.post('/ai-account/login'), 'ChatGPT sign-in could not be started.'),
   cancelLogin: () => request<{ account: AIAccount }>(() => api.post('/ai-account/login/cancel'), 'The pending sign-in could not be cancelled.'),
   resetLogin: () => request<{ account: AIAccount }>(() => api.post('/ai-account/login/reset'), 'ChatGPT sign-in could not be reset.'),
