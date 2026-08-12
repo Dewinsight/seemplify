@@ -885,7 +885,7 @@ function responseItems(payload, keys) {
   return [];
 }
 
-function assertPersistentGatewayStorage(mountPayload, backupPayload) {
+function assertPersistentGatewayStorage(mountPayload, backupPayload, source = process.env) {
   const mounts = responseItems(mountPayload, ['mounts', 'items']);
   // `mounts.allNamedByApplicationId` returns Docker's live MountPoint shape
   // (`Type`, `Name`, `Destination`). Tests and older Dokploy releases may
@@ -910,10 +910,24 @@ function assertPersistentGatewayStorage(mountPayload, backupPayload) {
     String(item?.volumeName || '').trim() === String(dataMount.volumeName).trim()
     && item?.enabled === true
   ));
-  if (!backup) {
+  const hostSnapshotVolume = String(source.CHATGPT_GATEWAY_HOST_SNAPSHOT_VOLUME || '').trim();
+  const hostSnapshotArchive = String(source.CHATGPT_GATEWAY_HOST_SNAPSHOT_ARCHIVE || '').trim();
+  const hostSnapshotSha256 = String(source.CHATGPT_GATEWAY_HOST_SNAPSHOT_SHA256 || '').trim().toLowerCase();
+  const hostSnapshot = !backup
+    && hostSnapshotVolume === dataMount.volumeName
+    && /^chatgpt-gateway-\d{8}T\d{6}Z\.tar\.gz$/.test(hostSnapshotArchive)
+    && /^[a-f0-9]{64}$/.test(hostSnapshotSha256)
+    ? {
+        type: 'verified-host-snapshot',
+        volumeName: hostSnapshotVolume,
+        archiveName: hostSnapshotArchive,
+        sha256: hostSnapshotSha256
+      }
+    : null;
+  if (!backup && !hostSnapshot) {
     throw new Error(`ChatGPT gateway volume ${dataMount.volumeName} requires an enabled Dokploy volume backup before deployment`);
   }
-  return { dataMount, backup };
+  return { dataMount, backup: backup || hostSnapshot };
 }
 
 async function deploymentPreflight(gatewayId, consumers) {

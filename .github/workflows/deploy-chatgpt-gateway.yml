@@ -41,6 +41,7 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts
       - name: Snapshot the ChatGPT session volume on the host
+        id: host_snapshot
         if: steps.gateway_backup.outputs.host_snapshot_required == 'true'
         env:
           VOLUME_NAME: ${{ steps.gateway_backup.outputs.volume_name }}
@@ -50,7 +51,7 @@ jobs:
             exit 1
           fi
           archive="chatgpt-gateway-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-          ssh seemplify@4.180.153.209 bash -s -- "$VOLUME_NAME" "$archive" <<'REMOTE'
+          snapshot_log="$(ssh seemplify@4.180.153.209 bash -s -- "$VOLUME_NAME" "$archive" <<'REMOTE'
           set -euo pipefail
           volume_name="$1"
           archive_name="$2"
@@ -66,10 +67,26 @@ jobs:
               test -s "/backup/$ARCHIVE_NAME"
               cd /backup
               ls -1t chatgpt-gateway-*.tar.gz | tail -n +15 | xargs -r rm -f
-            '
+          '
           test -s "$backup_root/$archive_name"
-          echo "Retained ChatGPT gateway host snapshot: $archive_name"
+          archive_sha256="$(sha256sum "$backup_root/$archive_name" | awk '{print $1}')"
+          echo "SNAPSHOT_METADATA=$volume_name|$archive_name|$archive_sha256"
           REMOTE
+          )"
+          printf '%s\n' "$snapshot_log"
+          snapshot_metadata="$(printf '%s\n' "$snapshot_log" | sed -n 's/^SNAPSHOT_METADATA=//p' | tail -n 1)"
+          IFS='|' read -r snapshot_volume snapshot_archive snapshot_sha256 <<EOF
+          $snapshot_metadata
+          EOF
+          if [ "$snapshot_volume" != "$VOLUME_NAME" ] \
+            || ! printf '%s' "$snapshot_archive" | grep -Eq '^chatgpt-gateway-[0-9]{8}T[0-9]{6}Z\.tar\.gz$' \
+            || ! printf '%s' "$snapshot_sha256" | grep -Eq '^[a-f0-9]{64}$'; then
+            echo 'Host snapshot did not return valid deployment evidence'
+            exit 1
+          fi
+          echo "snapshot_volume=$snapshot_volume" >> "$GITHUB_OUTPUT"
+          echo "snapshot_archive=$snapshot_archive" >> "$GITHUB_OUTPUT"
+          echo "snapshot_sha256=$snapshot_sha256" >> "$GITHUB_OUTPUT"
       - name: Configure shared Seemplify AI gateway and consumers
         run: node tools/chatgpt-gateway/dokploy-configure.cjs
         env:
@@ -90,3 +107,6 @@ jobs:
           IDP_WEBHOOK_MASTER_SECRET: ${{ secrets.IDP_WEBHOOK_MASTER_SECRET }}
           CV_STATUS_TOKEN_SECRET: ${{ secrets.CV_STATUS_TOKEN_SECRET }}
           OIDC_CLIENT_SECRET: ${{ secrets.RECRUITER_OIDC_CLIENT_SECRET }}
+          CHATGPT_GATEWAY_HOST_SNAPSHOT_VOLUME: ${{ steps.host_snapshot.outputs.snapshot_volume }}
+          CHATGPT_GATEWAY_HOST_SNAPSHOT_ARCHIVE: ${{ steps.host_snapshot.outputs.snapshot_archive }}
+          CHATGPT_GATEWAY_HOST_SNAPSHOT_SHA256: ${{ steps.host_snapshot.outputs.snapshot_sha256 }}

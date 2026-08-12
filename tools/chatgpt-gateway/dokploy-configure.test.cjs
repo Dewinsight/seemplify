@@ -108,6 +108,23 @@ test('gateway deployment requires a named /data volume and an enabled matching b
   assert.throws(() => assertPersistentGatewayStorage([
     { type: 'volume', mountPath: '/data', volumeName: 'chatgpt_gateway_data' }
   ], [{ volumeName: 'chatgpt_gateway_data', enabled: null }]), /requires an enabled Dokploy volume backup/);
+  assert.throws(() => assertPersistentGatewayStorage([
+    { type: 'volume', mountPath: '/data', volumeName: 'chatgpt_gateway_data' }
+  ], [], {
+    CHATGPT_GATEWAY_HOST_SNAPSHOT_VOLUME: 'another_volume',
+    CHATGPT_GATEWAY_HOST_SNAPSHOT_ARCHIVE: 'chatgpt-gateway-20260812T154901Z.tar.gz',
+    CHATGPT_GATEWAY_HOST_SNAPSHOT_SHA256: 'a'.repeat(64)
+  }), /requires an enabled Dokploy volume backup/);
+  const hostSnapshotResult = assertPersistentGatewayStorage([
+    { type: 'volume', mountPath: '/data', volumeName: 'chatgpt_gateway_data' }
+  ], [], {
+    CHATGPT_GATEWAY_HOST_SNAPSHOT_VOLUME: 'chatgpt_gateway_data',
+    CHATGPT_GATEWAY_HOST_SNAPSHOT_ARCHIVE: 'chatgpt-gateway-20260812T154901Z.tar.gz',
+    CHATGPT_GATEWAY_HOST_SNAPSHOT_SHA256: 'a'.repeat(64)
+  });
+  assert.equal(hostSnapshotResult.backup.type, 'verified-host-snapshot');
+  assert.equal(hostSnapshotResult.backup.volumeName, 'chatgpt_gateway_data');
+  assert.equal(hostSnapshotResult.backup.sha256, 'a'.repeat(64));
   const dockerMountResult = assertPersistentGatewayStorage([
     {
       Type: 'volume',
