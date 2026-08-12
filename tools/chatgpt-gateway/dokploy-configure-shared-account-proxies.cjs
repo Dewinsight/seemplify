@@ -20,6 +20,10 @@ const {
 
 const SHARED_ACCOUNT_HEALTH_PATH = '/api/internal/ai/v1/health';
 const PROXY_SERVICE_IDS = new Set(['performance-management', 'messaging']);
+const CONSUMER_DEPLOYMENT_PATHS = Object.freeze({
+  'performance-management': '/api/ai-account/deployment-health',
+  messaging: '/api/workspace-ai/deployment-health'
+});
 const DEFAULT_DEPLOYMENT_WAIT_ATTEMPTS = 900;
 const DEFAULT_DEPLOYMENT_WAIT_DELAY_MS = 2_000;
 const DEFAULT_READINESS_WAIT_ATTEMPTS = 600;
@@ -158,6 +162,99 @@ function sharedProxyEnvironmentMatches(application, id, source) {
   ).changed.length === 0;
 }
 
+function consumerDeploymentEndpoint(serviceId, source = process.env) {
+  const base = serviceId === 'performance-management'
+    ? source.PERFORMANCE_MANAGEMENT_API_URL
+      || source.PERFORMANCE_API_URL
+      || 'https://api-performance.seemplifyai.com'
+    : serviceId === 'messaging'
+      ? source.MESSAGING_API_URL || 'https://api-messaging.seemplifyai.com'
+      : '';
+  const pathname = CONSUMER_DEPLOYMENT_PATHS[serviceId];
+  if (!base || !pathname) {
+    throw new Error(`Unsupported shared-account proxy service: ${serviceId || '(empty)'}`);
+  }
+  const url = new URL(pathname, `${String(base).replace(/\/+$/, '')}/`);
+  if (String(source.NODE_ENV || '').toLowerCase() === 'production' && url.protocol !== 'https:') {
+    throw new Error(`${serviceId} deployment readiness URL must use HTTPS in production`);
+  }
+  return url.toString();
+}
+
+async function consumerDeploymentReadinessProbe(serviceId, source = process.env, {
+  fetchImpl = fetch,
+  now = Date.now,
+  randomBytes = crypto.randomBytes
+} = {}) {
+  if (!PROXY_SERVICE_IDS.has(serviceId)) {
+    throw new Error(`Unsupported shared-account proxy service: ${serviceId || '(empty)'}`);
+  }
+  const endpoint = new URL(consumerDeploymentEndpoint(serviceId, source));
+  const pathname = endpoint.pathname;
+  const timestamp = String(now());
+  const nonce = randomBytes(24).toString('base64url');
+  const body = '{}';
+  const signature = crypto.createHmac('sha256', proxySecret(serviceId, source))
+    .update([timestamp, nonce, serviceId, 'POST', pathname, body].join('\n'))
+    .digest('hex');
+  const response = await fetchImpl(endpoint, {
+    method: 'POST',
+    redirect: 'error',
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+      connection: 'close',
+      'x-seemplify-service': serviceId,
+      'x-seemplify-signature-version': '2',
+      'x-seemplify-timestamp': timestamp,
+      'x-seemplify-nonce': nonce,
+      'x-seemplify-signature': signature
+    },
+    body
+  });
+  if (!response.ok) {
+    throw new Error(`${serviceId} end-to-end deployment readiness probe failed with HTTP ${response.status}`);
+  }
+  if (!/^application\/json(?:\s*;|$)/i.test(String(response.headers?.get?.('content-type') || ''))) {
+    throw new Error(`${serviceId} end-to-end deployment readiness probe returned a non-JSON response`);
+  }
+  const result = await response.json().catch(() => ({}));
+  const shared = result?.shared;
+  if (result?.ok !== true
+      || result.service !== 'seemplify-shared-ai-consumer-deployment'
+      || result.consumer !== serviceId
+      || result.signatureVersion !== '2'
+      || shared?.ok !== true
+      || shared.service !== 'seemplify-shared-ai-account'
+      || shared.consumer !== serviceId
+      || shared.signatureVersion !== '2') {
+    throw new Error(`${serviceId} end-to-end deployment readiness probe returned an invalid service identity`);
+  }
+  return true;
+}
+
+async function waitForConsumerDeploymentReadiness(serviceId, source = process.env, {
+  probeImpl = consumerDeploymentReadinessProbe,
+  waitForReadinessImpl = waitForReadiness,
+  timing = proxyRolloutTiming(source)
+} = {}) {
+  return waitForReadinessImpl(
+    `${serviceId} end-to-end deployment fallback`,
+    () => probeImpl(serviceId, source),
+    {
+      attempts: timing.readinessAttempts,
+      delayMs: timing.readinessDelayMs
+    }
+  );
+}
+
+function isStaleDeploymentTimeout(error, title) {
+  const escapedTitle = String(title).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    `^Dokploy deployment ${escapedTitle} did not complete \\(last status: (?:running|queued)\\)$`
+  ).test(String(error?.message || ''));
+}
+
 async function sharedAccountProxyReadinessProbe(serviceId, source = process.env, {
   fetchImpl = fetch,
   now = Date.now,
@@ -236,6 +333,8 @@ async function configureSharedAccountProxies(source = process.env, options = {})
   const deploymentWaitImpl = options.deploymentWaitImpl || waitForDeploymentCompletion;
   const resolveMessagingImpl = options.resolveMessagingImpl || resolveMessagingConsumer;
   const readinessImpl = options.readinessImpl || waitForSharedAccountProxyReadiness;
+  const consumerDeploymentReadinessImpl = options.consumerDeploymentReadinessImpl
+    || waitForConsumerDeploymentReadiness;
   const timing = proxyRolloutTiming(deploymentSource);
   const messaging = await resolveMessagingImpl(deploymentSource, { requestImpl });
   const targets = [
@@ -293,17 +392,28 @@ async function configureSharedAccountProxies(source = process.env, options = {})
       delayMs: timing.deploymentDelayMs
     }
   );
-  const deploy = async (target) => configureImpl(
-    target.applicationId,
-    sharedProxyEnvironment(target.id, deploymentSource),
-    sharedProxyRemovedKeys(target.id),
-    target.application,
-    {
-      requestImpl,
-      waitForDeploymentImpl,
-      title: `Shared ChatGPT ${target.id} proxy ${releaseId}`
+  const deploy = async (target) => {
+    const title = `Shared ChatGPT ${target.id} proxy ${releaseId}`;
+    try {
+      return await configureImpl(
+        target.applicationId,
+        sharedProxyEnvironment(target.id, deploymentSource),
+        sharedProxyRemovedKeys(target.id),
+        target.application,
+        { requestImpl, waitForDeploymentImpl, title }
+      );
+    } catch (error) {
+      // Dokploy can leave a successfully promoted revision labelled running.
+      // Never trust that label alone: only a consumer-originated request signed
+      // by the exact target key and carrying Recruiter's exact nested identity
+      // can prove a timed-out consumer deployment complete.
+      if (!PROXY_SERVICE_IDS.has(target.id) || !isStaleDeploymentTimeout(error, title)) throw error;
+      console.warn(`${target.id} Dokploy deployment remained in progress; verifying exact end-to-end readiness.`);
+      await consumerDeploymentReadinessImpl(target.id, deploymentSource, { timing });
+      console.log(`${target.id} deployment accepted after exact end-to-end readiness verification.`);
+      return { status: 'verified-ready', title };
     }
-  );
+  };
 
   const authority = plans.find((target) => target.id === 'recruiter');
   if (authority.environmentMatches) {
@@ -347,7 +457,10 @@ module.exports = {
   SHARED_ACCOUNT_HEALTH_PATH,
   apiBase,
   configureSharedAccountProxies,
+  consumerDeploymentEndpoint,
+  consumerDeploymentReadinessProbe,
   dokployRequest,
+  isStaleDeploymentTimeout,
   proxySecret,
   proxyRolloutTiming,
   requiredSource,
@@ -355,5 +468,6 @@ module.exports = {
   sharedProxyEnvironment,
   sharedProxyEnvironmentMatches,
   sharedProxyRemovedKeys,
+  waitForConsumerDeploymentReadiness,
   waitForSharedAccountProxyReadiness
 };

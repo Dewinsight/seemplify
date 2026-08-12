@@ -4,9 +4,58 @@ const express = require('express');
 const { requireAuth } = require('../middleware/rbac');
 const aiGatewayService = require('../services/aiGatewayService');
 const chatGptAccountService = require('../services/chatGptAccountService');
-const { identityFromRequest } = require('../services/sharedAIAccountService');
+const sharedAIAccountService = require('../services/sharedAIAccountService');
+const { identityFromRequest } = sharedAIAccountService;
+const {
+  DEPLOYMENT_HEALTH_SERVICE,
+  SIGNATURE_VERSION,
+  createDeploymentHealthVerifier
+} = require('../services/deploymentHealthSecurity');
 
 const router = express.Router();
+
+const DEPLOYMENT_HEALTH_RESPONSE_SERVICE = 'seemplify-shared-ai-consumer-deployment';
+const SHARED_AUTHORITY_SERVICE = 'seemplify-shared-ai-account';
+
+/**
+ * Deployment automation signs this request with the same service-bound secret
+ * that Performance must use when it calls Recruiter's shared AI authority.
+ * Keeping the probe ahead of every user-authenticated route lets a deployment
+ * prove the complete secret path without creating or exposing a user account.
+ */
+router.post('/deployment-health', createDeploymentHealthVerifier(), async (_req, res) => {
+  try {
+    const shared = await sharedAIAccountService.health();
+    if (shared?.ok !== true
+        || shared.service !== SHARED_AUTHORITY_SERVICE
+        || shared.consumer !== DEPLOYMENT_HEALTH_SERVICE
+        || shared.signatureVersion !== SIGNATURE_VERSION) {
+      return res.status(503).json({
+        ok: false,
+        code: 'DEPLOYMENT_HEALTH_AUTHORITY_IDENTITY_INVALID',
+        message: 'The shared AI authority returned an unexpected service identity'
+      });
+    }
+    return res.json({
+      ok: true,
+      service: DEPLOYMENT_HEALTH_RESPONSE_SERVICE,
+      consumer: DEPLOYMENT_HEALTH_SERVICE,
+      signatureVersion: SIGNATURE_VERSION,
+      shared: {
+        ok: true,
+        service: shared.service,
+        consumer: shared.consumer,
+        signatureVersion: shared.signatureVersion
+      }
+    });
+  } catch (_error) {
+    return res.status(503).json({
+      ok: false,
+      code: 'DEPLOYMENT_HEALTH_SHARED_AUTHORITY_UNAVAILABLE',
+      message: 'Performance could not verify the shared AI authority'
+    });
+  }
+});
 
 function userFor(req) {
   return req.session?.user || {};

@@ -10,7 +10,10 @@ const {
   SHARED_ACCOUNT_HEALTH_PATH,
   apiBase,
   configureSharedAccountProxies,
+  consumerDeploymentEndpoint,
+  consumerDeploymentReadinessProbe,
   dokployRequest,
+  isStaleDeploymentTimeout,
   proxySecret,
   proxyRolloutTiming,
   requiredSource,
@@ -18,6 +21,7 @@ const {
   sharedProxyEnvironment,
   sharedProxyEnvironmentMatches,
   sharedProxyRemovedKeys,
+  waitForConsumerDeploymentReadiness,
   waitForSharedAccountProxyReadiness
 } = require('./dokploy-configure-shared-account-proxies.cjs');
 
@@ -29,6 +33,21 @@ const source = {
   PERFORMANCE_BACKEND_APP_ID: 'performance-app',
   SEEMPLIFY_SHARED_AI_URL: 'https://recruiter.example.test/'
 };
+
+function consumerDeploymentPayload(serviceId) {
+  return {
+    ok: true,
+    service: 'seemplify-shared-ai-consumer-deployment',
+    consumer: serviceId,
+    signatureVersion: '2',
+    shared: {
+      ok: true,
+      service: 'seemplify-shared-ai-account',
+      consumer: serviceId,
+      signatureVersion: '2'
+    }
+  };
+}
 
 test('central configurator exports the narrow rollout dependencies', () => {
   for (const name of [
@@ -125,6 +144,139 @@ test('environment matching requires every desired value and every credential rem
   assert.equal(sharedProxyEnvironmentMatches({ env: `${exact}\nCHATGPT_GATEWAY_SHARED_SECRET=stale` }, 'messaging', configured), false);
   assert.equal(sharedProxyEnvironmentMatches({ env: exact.replace('SEEMPLIFY_AI_SOURCE_APP=messaging', 'SEEMPLIFY_AI_SOURCE_APP=wrong') }, 'messaging', configured), false);
   assert.equal(sharedProxyEnvironmentMatches(null, 'messaging', configured), false);
+});
+
+test('consumer deployment endpoints use configurable bases and fail closed on insecure production URLs', () => {
+  assert.equal(
+    consumerDeploymentEndpoint('performance-management', source),
+    'https://api-performance.seemplifyai.com/api/ai-account/deployment-health'
+  );
+  assert.equal(
+    consumerDeploymentEndpoint('messaging', source),
+    'https://api-messaging.seemplifyai.com/api/workspace-ai/deployment-health'
+  );
+  assert.equal(
+    consumerDeploymentEndpoint('performance-management', {
+      ...source, PERFORMANCE_MANAGEMENT_API_URL: 'https://performance.example.test/root/'
+    }),
+    'https://performance.example.test/api/ai-account/deployment-health'
+  );
+  assert.equal(
+    consumerDeploymentEndpoint('messaging', {
+      ...source, MESSAGING_API_URL: 'https://messaging.example.test/root/'
+    }),
+    'https://messaging.example.test/api/workspace-ai/deployment-health'
+  );
+  assert.throws(
+    () => consumerDeploymentEndpoint('messaging', {
+      ...source, NODE_ENV: 'production', MESSAGING_API_URL: 'http://messaging.internal'
+    }),
+    /must use HTTPS/
+  );
+  assert.throws(
+    () => consumerDeploymentEndpoint('unknown', source),
+    /Unsupported shared-account proxy service/
+  );
+});
+
+test('consumer deployment probes bind the exact target key and require both exact identities', async () => {
+  const requests = [];
+  const now = () => 1_786_500_000_000;
+  const randomBytes = () => Buffer.alloc(24, 9);
+  const fetchImpl = async (url, init) => {
+    const serviceId = init.headers['x-seemplify-service'];
+    const pathname = new URL(url).pathname;
+    const expected = crypto.createHmac('sha256', proxySecret(serviceId, source))
+      .update([
+        init.headers['x-seemplify-timestamp'],
+        init.headers['x-seemplify-nonce'],
+        serviceId,
+        'POST',
+        pathname,
+        init.body
+      ].join('\n'))
+      .digest('hex');
+    assert.equal(init.headers['x-seemplify-signature'], expected);
+    requests.push({ url: String(url), init });
+    return new Response(JSON.stringify(consumerDeploymentPayload(serviceId)), {
+      status: 200, headers: { 'content-type': 'application/json' }
+    });
+  };
+  for (const serviceId of ['performance-management', 'messaging']) {
+    assert.equal(await consumerDeploymentReadinessProbe(serviceId, source, {
+      fetchImpl, now, randomBytes
+    }), true);
+  }
+  assert.deepEqual(requests.map(({ url }) => url), [
+    'https://api-performance.seemplifyai.com/api/ai-account/deployment-health',
+    'https://api-messaging.seemplifyai.com/api/workspace-ai/deployment-health'
+  ]);
+  for (const { init } of requests) {
+    assert.equal(init.method, 'POST');
+    assert.equal(init.redirect, 'error');
+    assert.equal(init.body, '{}');
+    assert.equal(init.headers['x-seemplify-signature-version'], '2');
+    assert.equal(init.headers['x-seemplify-nonce'], Buffer.alloc(24, 9).toString('base64url'));
+  }
+});
+
+test('consumer deployment probes reject false outer or nested identities and HTTP failures', async () => {
+  const invalidPayload = (mutate) => async (url, init) => {
+    const valid = consumerDeploymentPayload('messaging');
+    return new Response(JSON.stringify(mutate(valid)), {
+      status: 200, headers: { 'content-type': 'application/json' }
+    });
+  };
+  for (const mutate of [
+    (valid) => ({ ...valid, ok: false }),
+    (valid) => ({ ...valid, consumer: 'performance-management' }),
+    (valid) => ({ ...valid, signatureVersion: '1' }),
+    (valid) => ({ ...valid, service: 'unrelated-service' }),
+    (valid) => ({ ...valid, shared: { ...valid.shared, ok: false } }),
+    (valid) => ({ ...valid, shared: { ...valid.shared, consumer: 'performance-management' } }),
+    (valid) => ({ ...valid, shared: { ...valid.shared, signatureVersion: '1' } }),
+    (valid) => ({ ...valid, shared: { ...valid.shared, service: 'unrelated-service' } })
+  ]) {
+    await assert.rejects(
+      consumerDeploymentReadinessProbe('messaging', source, {
+        fetchImpl: invalidPayload(mutate)
+      }),
+      /invalid service identity/
+    );
+  }
+  await assert.rejects(
+    consumerDeploymentReadinessProbe('messaging', source, {
+      fetchImpl: async () => new Response(JSON.stringify({}), {
+        status: 200, headers: { 'content-type': 'text/html' }
+      })
+    }),
+    /non-JSON response/
+  );
+  await assert.rejects(
+    consumerDeploymentReadinessProbe('messaging', source, {
+      fetchImpl: async () => new Response('{}', { status: 404 })
+    }),
+    /failed with HTTP 404/
+  );
+});
+
+test('only an exact running or queued timeout for the same deployment title is fallback eligible', () => {
+  const title = 'Shared ChatGPT messaging proxy 2026-08-12T12:00:00.000Z [safe]';
+  for (const status of ['running', 'queued']) {
+    assert.equal(isStaleDeploymentTimeout(
+      new Error(`Dokploy deployment ${title} did not complete (last status: ${status})`),
+      title
+    ), true);
+  }
+  for (const message of [
+    `Dokploy deployment ${title} did not complete (last status: error)`,
+    `Dokploy deployment ${title} did not complete (last status: cancelled)`,
+    `Dokploy deployment another title did not complete (last status: running)`,
+    `prefix Dokploy deployment ${title} did not complete (last status: running)`,
+    `Dokploy deployment ${title} did not complete (last status: running) suffix`
+  ]) {
+    assert.equal(isStaleDeploymentTimeout(new Error(message), title), false, message);
+  }
 });
 
 test('rollout timing defaults exceed ten minutes and accept bounded operator overrides', () => {
@@ -374,6 +526,75 @@ test('changed deployments receive the configurable long deployment poll contract
   assert.equal(waits.every(({ waitOptions }) => typeof waitOptions.requestImpl === 'function'), true);
 });
 
+test('a stale consumer deployment is accepted only after its exact end-to-end readiness succeeds', async () => {
+  const fallbacks = [];
+  const deployments = [];
+  await configureSharedAccountProxies(source, {
+    resolveMessagingImpl: async () => ({ id: 'messaging', applicationId: 'messaging-app' }),
+    requestImpl: async () => ({ env: '' }),
+    configureImpl: async (applicationId, required, removed, application, options) => {
+      deployments.push(applicationId);
+      if (applicationId === 'messaging-app') {
+        throw new Error(
+          `Dokploy deployment ${options.title} did not complete (last status: running)`
+        );
+      }
+    },
+    readinessImpl: async () => true,
+    consumerDeploymentReadinessImpl: async (serviceId, deploymentSource, { timing }) => {
+      fallbacks.push({ serviceId, deploymentSource, timing });
+      return true;
+    }
+  });
+  assert.deepEqual(deployments, ['recruiter-app', 'performance-app', 'messaging-app']);
+  assert.deepEqual(fallbacks.map(({ serviceId }) => serviceId), ['messaging']);
+  assert.equal(fallbacks[0].deploymentSource.CHATGPT_GATEWAY_SHARED_SECRET, source.CHATGPT_GATEWAY_SHARED_SECRET);
+  assert.equal(fallbacks[0].timing.readinessAttempts, 600);
+});
+
+test('fallback never masks consumer proof failure, non-stale status, mismatched title, or authority timeout', async () => {
+  async function runFailure({ failApplicationId, messageFor, fallbackImpl }) {
+    let fallbackCalls = 0;
+    await assert.rejects(
+      configureSharedAccountProxies(source, {
+        resolveMessagingImpl: async () => ({ id: 'messaging', applicationId: 'messaging-app' }),
+        requestImpl: async () => ({ env: '' }),
+        configureImpl: async (applicationId, required, removed, application, options) => {
+          if (applicationId === failApplicationId) throw new Error(messageFor(options.title));
+        },
+        readinessImpl: async () => true,
+        consumerDeploymentReadinessImpl: async () => {
+          fallbackCalls += 1;
+          return fallbackImpl();
+        }
+      }),
+      /proof failed|last status: error|another title|last status: running/
+    );
+    return fallbackCalls;
+  }
+
+  assert.equal(await runFailure({
+    failApplicationId: 'messaging-app',
+    messageFor: (title) => `Dokploy deployment ${title} did not complete (last status: running)`,
+    fallbackImpl: () => { throw new Error('consumer proof failed'); }
+  }), 1);
+  assert.equal(await runFailure({
+    failApplicationId: 'messaging-app',
+    messageFor: (title) => `Dokploy deployment ${title} did not complete (last status: error)`,
+    fallbackImpl: () => true
+  }), 0);
+  assert.equal(await runFailure({
+    failApplicationId: 'messaging-app',
+    messageFor: () => 'Dokploy deployment another title did not complete (last status: running)',
+    fallbackImpl: () => true
+  }), 0);
+  assert.equal(await runFailure({
+    failApplicationId: 'recruiter-app',
+    messageFor: (title) => `Dokploy deployment ${title} did not complete (last status: running)`,
+    fallbackImpl: () => true
+  }), 0);
+});
+
 test('duplicate or inaccessible targets abort before the first environment mutation', async () => {
   let configured = 0;
   await assert.rejects(
@@ -489,6 +710,25 @@ test('readiness waits through the shared retry helper without changing the probe
   assert.equal(calls[0].candidate.SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS, '700');
 });
 
+test('consumer deployment fallback uses the bounded readiness retry contract', async () => {
+  const calls = [];
+  const probeImpl = async (serviceId, candidate) => {
+    calls.push({ serviceId, candidate });
+    return true;
+  };
+  const waitForReadinessImpl = async (label, probe, options) => {
+    assert.equal(label, 'performance-management end-to-end deployment fallback');
+    assert.deepEqual(options, { attempts: 700, delayMs: 1000 });
+    return probe();
+  };
+  assert.equal(await waitForConsumerDeploymentReadiness('performance-management', {
+    ...source,
+    SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS: '700',
+    SEEMPLIFY_PROXY_READINESS_WAIT_DELAY_MS: '1000'
+  }, { probeImpl, waitForReadinessImpl }), true);
+  assert.equal(calls[0].serviceId, 'performance-management');
+});
+
 test('Dokploy request handling authenticates without leaking unrelated settings', async () => {
   assert.equal(apiBase('https://dokploy.example.test/'), 'https://dokploy.example.test/api');
   let captured;
@@ -517,9 +757,13 @@ test('workflow stays proxy-only and runs its contract test before rollout', () =
   assert.match(workflow, /PERFORMANCE_BACKEND_APP_ID/);
   assert.match(workflow, /MESSAGING_BACKEND_APP_ID/);
   assert.match(workflow, /CHATGPT_GATEWAY_SHARED_SECRET/);
-  assert.match(workflow, /timeout-minutes: 150/);
+  assert.match(workflow, /timeout-minutes: 240/);
   assert.match(workflow, /SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS/);
   assert.match(workflow, /SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS/);
+  assert.match(workflow, /PERFORMANCE_MANAGEMENT_API_URL/);
+  assert.match(workflow, /MESSAGING_API_URL/);
+  assert.match(workflow, /performance\/backend\/routes\/aiAccount\.js/);
+  assert.match(workflow, /performance\/backend\/services\/deploymentHealthSecurity\.js/);
   assert.doesNotMatch(workflow, /CHATGPT_GATEWAY_APP_ID/);
   assert.doesNotMatch(workflow, /DOKPLOY_BACKUP_DESTINATION_ID/);
   assert.doesNotMatch(workflow, /Dockerfile/);
