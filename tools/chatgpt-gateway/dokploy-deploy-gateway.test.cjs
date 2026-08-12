@@ -61,6 +61,7 @@ test('narrow gateway deployment changes only the release marker and proves the e
   assert.deepEqual(configured[2], []);
   assert.equal(configured[4].acceptRunningDeploymentWhenReady, true);
   assert.equal(configured[4].skipDeploymentWhenEnvironmentExact, true);
+  assert.deepEqual(await configured[4].waitForDeploymentImpl(), { status: 'triggered-for-container-proof' });
 });
 
 test('exact readiness retries transient cutover failures and rejects the wrong release', async () => {

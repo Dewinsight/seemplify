@@ -90,7 +90,11 @@ async function deployGateway(source = process.env, {
       title: `Seemplify ChatGPT gateway release ${release}`,
       readinessProbe,
       acceptRunningDeploymentWhenReady: true,
-      skipDeploymentWhenEnvironmentExact: true
+      skipDeploymentWhenEnvironmentExact: true,
+      // Dokploy's deployment records can remain `running` long after the
+      // container has cut over. The workflow's container-local health proof
+      // is the authoritative completion gate for this narrow release path.
+      waitForDeploymentImpl: async () => ({ status: 'triggered-for-container-proof' })
     }
   );
 }
