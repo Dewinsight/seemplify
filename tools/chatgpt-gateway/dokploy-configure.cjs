@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { configuredConsumers } = require('./consumer-registry.cjs');
 
 const PERFORMANCE_PROXY_KEY_CONTEXT = 'seemplify-internal-ai-v1:performance-management';
+const MESSAGING_PROXY_KEY_CONTEXT = 'seemplify-internal-ai-v1:messaging';
 const IDP_WEBHOOK_KEY_CONTEXT = 'seemplify-idp-webhook-v2';
 const IDP_WEBHOOK_TARGET_KEY_CONTEXT = 'seemplify-idp-webhook-target-v1';
 const LOCAL_LLM_SERVICE_KEY_CONTEXT = 'seemplify-local-llm-service-v2';
@@ -220,6 +221,12 @@ function derivePerformanceProxySecret(gatewayMaster) {
   const master = String(gatewayMaster || '').trim();
   if (!master) throw new Error('CHATGPT_GATEWAY_SHARED_SECRET is required');
   return crypto.createHmac('sha256', master).update(PERFORMANCE_PROXY_KEY_CONTEXT).digest('hex');
+}
+
+function deriveMessagingProxySecret(gatewayMaster) {
+  const master = String(gatewayMaster || '').trim();
+  if (!master) throw new Error('CHATGPT_GATEWAY_SHARED_SECRET is required');
+  return crypto.createHmac('sha256', master).update(MESSAGING_PROXY_KEY_CONTEXT).digest('hex');
 }
 
 function deriveIdpWebhookSecret(webhookMasterSecret) {
@@ -818,6 +825,58 @@ function requiredConsumerIds(source = process.env) {
   }));
 }
 
+function collectApplications(payload, applications = new Map()) {
+  if (!payload || typeof payload !== 'object') return [...applications.values()];
+  if (Array.isArray(payload)) {
+    for (const item of payload) collectApplications(item, applications);
+    return [...applications.values()];
+  }
+  const applicationId = String(payload.applicationId || '').trim();
+  if (applicationId) applications.set(applicationId, payload);
+  for (const value of Object.values(payload)) collectApplications(value, applications);
+  return [...applications.values()];
+}
+
+function normalizedApplicationHost(value) {
+  const candidate = String(value || '').trim().toLowerCase();
+  if (!candidate) return '';
+  try {
+    return new URL(candidate.includes('://') ? candidate : `https://${candidate}`).hostname;
+  } catch {
+    return candidate.split('/')[0].split(':')[0];
+  }
+}
+
+function applicationHosts(application) {
+  const values = [application?.domain, application?.domainName, application?.url];
+  for (const domain of Array.isArray(application?.domains) ? application.domains : []) {
+    if (typeof domain === 'string') values.push(domain);
+    else values.push(domain?.host, domain?.domain, domain?.domainName, domain?.url);
+  }
+  return new Set(values.map(normalizedApplicationHost).filter(Boolean));
+}
+
+async function resolveMessagingConsumer(source = process.env, { requestImpl = request } = {}) {
+  const explicit = String(source.MESSAGING_BACKEND_APP_ID || '').trim();
+  if (explicit) return { id: 'messaging', applicationId: explicit };
+
+  const applications = collectApplications(await requestImpl('/project.all'));
+  const domainMatches = applications.filter((application) => (
+    applicationHosts(application).has('api-messaging.seemplifyai.com')
+  ));
+  const nameMatches = applications.filter((application) => (
+    ['name', 'appName'].some((key) => (
+      String(application?.[key] || '').trim().toLowerCase() === 'messaging-backend'
+    ))
+  ));
+  const matches = domainMatches.length ? domainMatches : nameMatches;
+  if (matches.length !== 1) {
+    const reason = matches.length ? 'matched more than one application' : 'was not found';
+    throw new Error(`Messaging backend ${reason}; set MESSAGING_BACKEND_APP_ID explicitly`);
+  }
+  return { id: 'messaging', applicationId: String(matches[0].applicationId).trim() };
+}
+
 function responseItems(payload, keys) {
   if (Array.isArray(payload)) return payload;
   for (const key of keys) if (Array.isArray(payload?.[key])) return payload[key];
@@ -882,6 +941,13 @@ async function deploymentPreflight(gatewayId, consumers) {
 }
 
 function consumerEnvironment(id, source = process.env, { previousWebhookSecret = '' } = {}) {
+  if (id === 'messaging') {
+    return {
+      SEEMPLIFY_AI_SOURCE_APP: id,
+      SEEMPLIFY_SHARED_AI_URL: source.SEEMPLIFY_SHARED_AI_URL || 'https://api.seemplifyai.com',
+      MESSAGING_AI_SHARED_SECRET: deriveMessagingProxySecret(source.CHATGPT_GATEWAY_SHARED_SECRET)
+    };
+  }
   const webhookRootSecret = deriveIdpWebhookSecret(source.IDP_WEBHOOK_MASTER_SECRET);
   const targetWebhookSecret = deriveIdpWebhookTargetSecret(webhookRootSecret, id);
   const localRuntime = {
@@ -920,6 +986,7 @@ function consumerEnvironment(id, source = process.env, { previousWebhookSecret =
     CHATGPT_GATEWAY_BASE_URL: source.CHATGPT_GATEWAY_BASE_URL,
     CHATGPT_GATEWAY_SHARED_SECRET: source.CHATGPT_GATEWAY_SHARED_SECRET,
     PERFORMANCE_AI_SHARED_SECRET: derivePerformanceProxySecret(source.CHATGPT_GATEWAY_SHARED_SECRET),
+    MESSAGING_AI_SHARED_SECRET: deriveMessagingProxySecret(source.CHATGPT_GATEWAY_SHARED_SECRET),
     CV_STATUS_TOKEN_SECRET: source.CV_STATUS_TOKEN_SECRET,
     CV_ANALYSIS_QUEUE_CONCURRENCY: source.CV_ANALYSIS_QUEUE_CONCURRENCY || '4',
     // AI matching is a shipped Recruiter capability. Keep the legacy alias
@@ -971,10 +1038,11 @@ function assertRotationFinalizationReady({ gatewayId, consumers, applications, d
 function orderedConsumersForRotation(consumers) {
   const priority = new Map([
     ['recruiter', 0],
-    ['performance-management', 1],
-    ['leave-management', 2],
-    ['payroll', 3],
-    ['time-attendance', 4],
+    ['messaging', 1],
+    ['performance-management', 2],
+    ['leave-management', 3],
+    ['payroll', 4],
+    ['time-attendance', 5],
     ['identity-provider', 100]
   ]);
   return [...consumers].sort((left, right) => (
@@ -1005,7 +1073,11 @@ async function main() {
   // mutation. Optional Local-only consumers may still be added, but the IdP
   // and all of its current webhook targets form one rotation set.
   const mandatoryConsumers = requiredConsumerIds(process.env);
-  const configured = configuredConsumers(process.env);
+  const messagingConsumer = await resolveMessagingConsumer(process.env);
+  const configured = configuredConsumers({
+    ...process.env,
+    MESSAGING_BACKEND_APP_ID: messagingConsumer.applicationId
+  });
   const consumers = [...new Map(
     [...mandatoryConsumers, ...configured].map((consumer) => [consumer.id, consumer])
   ).values()];
@@ -1172,6 +1244,7 @@ async function main() {
       : [
         'AZURE_OPENAI_API_KEY', 'OPENAI_API_KEY', 'CHATGPT_GATEWAY_BASE_URL',
         'CHATGPT_GATEWAY_SHARED_SECRET', 'LOCAL_LLM_SHARED_SECRET',
+        ...(consumer.id === 'messaging' ? ['IDP_WEBHOOK_SECRET'] : []),
         ...forbiddenWebhookKeysForTarget(consumer.id),
         ...(rotationPhase === 'finalize' || !required.IDP_WEBHOOK_SECRET_PREVIOUS
           ? ['IDP_WEBHOOK_SECRET_PREVIOUS', IDP_WEBHOOK_PREVIOUS_PROOF_KEY] : [])
@@ -1253,6 +1326,7 @@ module.exports = {
   deploymentSourceWithIdpWebhookDestinations,
   captureRetiredKeys,
   derivePerformanceProxySecret,
+  deriveMessagingProxySecret,
   deriveIdpWebhookSecret,
   deriveIdpWebhookTargetSecret,
   deriveLocalLlmServiceSecret,
@@ -1280,6 +1354,7 @@ module.exports = {
   webhookReceiverUrl,
   waitForGatewayReadiness,
   requiredConsumerIds,
+  resolveMessagingConsumer,
   saveApplicationEnvironment,
   serializeEnv
 };

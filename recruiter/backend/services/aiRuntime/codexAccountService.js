@@ -14,6 +14,7 @@ const { AIRuntimeError, signGatewayRequest } = require('./aiRuntimeService');
  */
 
 const SOURCE_APP = 'recruiter';
+const CREDENTIAL_NAMESPACE_VERSION = 2;
 
 function gatewayBaseUrl() {
   const baseUrl = String(process.env.CHATGPT_GATEWAY_BASE_URL || '').replace(/\/+$/, '');
@@ -37,8 +38,8 @@ function gatewaySecret() {
 
 /** Mirrors the gateway's own derivation so the stored key and the key the
  * gateway computes can be compared rather than assumed equal. */
-function subjectKeyForUser(userId) {
-  const subjectId = String(userId || '').trim();
+function subjectKeyForUser(idpSubject) {
+  const subjectId = String(idpSubject || '').trim();
   if (!subjectId) {
     throw new AIRuntimeError('A ChatGPT connection requires an authenticated user', {
       code: 'CHATGPT_SUBJECT_UNRESOLVED', statusCode: 401, retryable: false
@@ -50,10 +51,12 @@ function subjectKeyForUser(userId) {
   return crypto.createHash('sha256').update(`${SOURCE_APP}\x1f${subjectId}`).digest('hex');
 }
 
-async function callGateway(operation, userId, { timeoutMs = 30_000, fetchImpl = fetch } = {}) {
+async function callGateway(operation, idpSubject, {
+  timeoutMs = 30_000, fetchImpl = fetch, payload = {}, signal
+} = {}) {
   const secret = gatewaySecret();
   const requestPath = `/v1/codex/${operation}`;
-  const body = JSON.stringify({ sourceApp: SOURCE_APP, subjectId: String(userId) });
+  const body = JSON.stringify({ sourceApp: SOURCE_APP, subjectId: String(idpSubject), ...payload });
   const signed = signGatewayRequest(secret, body, { method: 'POST', path: requestPath });
   let response;
   try {
@@ -66,28 +69,30 @@ async function callGateway(operation, userId, { timeoutMs = 30_000, fetchImpl = 
         'x-seemplify-signature': signed.signature
       },
       body,
-      signal: AbortSignal.timeout(timeoutMs)
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs)
     });
   } catch (error) {
     throw new AIRuntimeError(`The ChatGPT gateway is unreachable: ${error.message}`, {
       code: 'CHATGPT_GATEWAY_UNAVAILABLE', statusCode: 503, retryable: true
     });
   }
-  const payload = await response.json().catch(() => ({}));
+  const responsePayload = await response.json().catch(() => ({}));
   if (!response.ok) {
     // A rate-limited sign-in is only actionable if the wait travels with it,
     // so it is carried as data rather than buried in the message text.
-    const retryAfterSeconds = Number(payload.retryAfterSeconds)
+    const retryAfterSeconds = Number(responsePayload.retryAfterSeconds)
       || Number(response.headers?.get?.('retry-after')) || 0;
-    const error = new AIRuntimeError(payload.message || `ChatGPT ${operation} failed`, {
-      code: String(payload.code || 'CHATGPT_CONTROL_FAILED'),
+    const error = new AIRuntimeError(responsePayload.message || `ChatGPT ${operation} failed`, {
+      code: String(responsePayload.code || 'CHATGPT_CONTROL_FAILED'),
       statusCode: response.status,
-      retryable: payload.retryable === true
+      retryable: responsePayload.retryable === true
     });
     if (retryAfterSeconds > 0) error.retryAfterSeconds = retryAfterSeconds;
     throw error;
   }
-  return payload;
+  return responsePayload;
 }
 
 /** The auth token only carries a user id, so the organization is resolved
@@ -103,28 +108,60 @@ async function organizationForUser(user, userId) {
 
 async function accountForUser(user) {
   const userId = String(user?.id || user?._id || '');
+  const hydrated = user?.idpSubject
+    ? user
+    : await User.findById(userId).select('idpSubject currentOrganization').lean();
+  const idpSubject = String(hydrated?.idpSubject || '').trim();
+  if (!idpSubject) {
+    throw new AIRuntimeError('A connected Seemplify identity is required for ChatGPT.', {
+      code: 'CHATGPT_IDP_IDENTITY_REQUIRED', statusCode: 409, retryable: false
+    });
+  }
   const existing = await AIUserRuntimeAccount.findOne({ user: userId });
   if (existing) {
-    const expectedSubjectKey = subjectKeyForUser(userId);
+    let changed = false;
+    const expectedSubjectKey = subjectKeyForUser(idpSubject);
     if (existing.subjectKey !== expectedSubjectKey) {
       existing.subjectKey = expectedSubjectKey;
-      await existing.save();
+      changed = true;
+    }
+    if (existing.idpSubject !== idpSubject) {
+      existing.idpSubject = idpSubject;
+      changed = true;
     }
     if (!existing.organization) {
       const organization = await organizationForUser(user, userId);
       if (organization) {
         existing.organization = organization;
-        await existing.save();
+        changed = true;
       }
     }
+    if (changed) await existing.save();
     return existing;
   }
   return AIUserRuntimeAccount.create({
     user: userId,
     organization: await organizationForUser(user, userId),
-    subjectKey: subjectKeyForUser(userId),
-    status: 'disconnected'
+    idpSubject,
+    subjectKey: subjectKeyForUser(idpSubject),
+    status: 'disconnected',
+    credentialNamespaceVersion: 1
   });
+}
+
+async function ensureCanonicalCredential(account, options = {}) {
+  if (Number(account.credentialNamespaceVersion || 1) >= CREDENTIAL_NAMESPACE_VERSION) return;
+  await callGateway('account/adopt', account.idpSubject, {
+    ...options,
+    payload: {
+      legacySubjects: [
+        { sourceApp: 'recruiter', subjectId: String(account.user) },
+        { sourceApp: 'performance-management', subjectId: account.idpSubject }
+      ]
+    }
+  });
+  account.credentialNamespaceVersion = CREDENTIAL_NAMESPACE_VERSION;
+  await account.save();
 }
 
 function applyStatus(account, status) {
@@ -159,7 +196,8 @@ function applyStatus(account, status) {
 async function readAccount(user, options = {}) {
   const account = await accountForUser(user);
   try {
-    applyStatus(account, await callGateway('account', account.user, options));
+    await ensureCanonicalCredential(account, options);
+    applyStatus(account, await callGateway('account', account.idpSubject, options));
   } catch (error) {
     // A rolling deployment or short network interruption does not mean the
     // user's durable credential disappeared. Marking a connected row as
@@ -176,7 +214,8 @@ async function readAccount(user, options = {}) {
 
 async function startLogin(user, options = {}) {
   const account = await accountForUser(user);
-  const login = await callGateway('login/start', account.user, options);
+  await ensureCanonicalCredential(account, options);
+  const login = await callGateway('login/start', account.idpSubject, options);
   if (login.connected) {
     applyStatus(account, login);
   } else {
@@ -189,7 +228,8 @@ async function startLogin(user, options = {}) {
 
 async function cancelLogin(user, options = {}) {
   const account = await accountForUser(user);
-  const result = await callGateway('login/cancel', account.user, options);
+  await ensureCanonicalCredential(account, options);
+  const result = await callGateway('login/cancel', account.idpSubject, options);
   account.status = account.status === 'connected' ? account.status : 'disconnected';
   account.lastError = '';
   await account.save();
@@ -198,7 +238,8 @@ async function cancelLogin(user, options = {}) {
 
 async function resetLogin(user, options = {}) {
   const account = await accountForUser(user);
-  const result = await callGateway('login/reset', account.user, options);
+  await ensureCanonicalCredential(account, options);
+  const result = await callGateway('login/reset', account.idpSubject, options);
   account.status = account.status === 'connected' ? account.status : 'disconnected';
   account.lastError = '';
   await account.save();
@@ -214,6 +255,8 @@ async function setConsent(user, acknowledged, { app = 'recruiter' } = {}) {
   const account = await accountForUser(user);
   if (app === 'performance') {
     account.performanceDataSharingAcknowledgedAt = acknowledged ? new Date() : null;
+  } else if (app === 'messaging') {
+    account.messagingDataSharingAcknowledgedAt = acknowledged ? new Date() : null;
   } else {
     account.dataSharingAcknowledgedAt = acknowledged ? new Date() : null;
   }
@@ -227,6 +270,7 @@ async function disconnect(user, options = {}) {
   // the account routable.
   account.dataSharingAcknowledgedAt = null;
   account.performanceDataSharingAcknowledgedAt = null;
+  account.messagingDataSharingAcknowledgedAt = null;
   account.status = 'disconnected';
   account.connectedEmail = '';
   account.planType = '';
@@ -235,7 +279,8 @@ async function disconnect(user, options = {}) {
   account.rateLimits = null;
   account.usageLimit = null;
   await account.save();
-  await callGateway('logout', account.user, options);
+  await ensureCanonicalCredential(account, options);
+  await callGateway('logout', account.idpSubject, options);
   return account;
 }
 
@@ -246,7 +291,8 @@ async function listModels(user, options = {}) {
       code: 'CHATGPT_NOT_CONNECTED', statusCode: 409, retryable: false
     });
   }
-  const payload = await callGateway('models', account.user, options);
+  await ensureCanonicalCredential(account, options);
+  const payload = await callGateway('models', account.idpSubject, options);
   return Array.isArray(payload.models) ? payload.models : [];
 }
 
@@ -256,7 +302,8 @@ async function listModels(user, options = {}) {
  * decision in the caller, which owns the failover policy.
  */
 async function resolveRoutableSubject(userId, options = {}) {
-  const consentApp = options.consentApp === 'performance' ? 'performance' : 'recruiter';
+  const consentApp = ['performance', 'messaging'].includes(options.consentApp)
+    ? options.consentApp : 'recruiter';
   const organizationId = String(options.organizationId || '').trim();
   const explainUnavailable = options.explainUnavailable === true;
   const unavailable = (reason, message) => {
@@ -328,7 +375,7 @@ async function resolveRoutableSubject(userId, options = {}) {
     // on demand so queues recover by themselves instead of requiring the user
     // to open Settings and press Refresh before every retry.
     try {
-      account = await readAccount({ id: subjectId }, gatewayOptions);
+      account = await readAccount({ id: subjectId, idpSubject: account?.idpSubject }, gatewayOptions);
     } catch (error) {
       console.warn('ChatGPT subject refresh failed:', error.message);
     }
@@ -339,7 +386,7 @@ async function resolveRoutableSubject(userId, options = {}) {
       'Refresh your ChatGPT connection and confirm data-sharing consent before retrying.'
     );
   }
-  return { subjectId, subjectKey: account.subjectKey, sourceApp: SOURCE_APP };
+  return { subjectId: account.idpSubject, subjectKey: account.subjectKey, sourceApp: SOURCE_APP };
 }
 
 module.exports = {

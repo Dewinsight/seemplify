@@ -54,7 +54,7 @@ function createInternalServiceAuth({ env = process.env, now = () => Date.now(), 
     // remains allowed even when an older deployment explicitly configures an
     // allow-list containing only ai-interview. Arbitrary additional services
     // still require an explicit entry.
-    const allowedServices = new Set(['performance-management', ...String(env.AI_GATEWAY_ALLOWED_SERVICES || 'ai-interview')
+    const allowedServices = new Set(['performance-management', 'messaging', ...String(env.AI_GATEWAY_ALLOWED_SERVICES || 'ai-interview')
       .split(',').map((item) => item.trim()).filter(Boolean)]);
     if (!allowedServices.has(service)) {
       return res.status(403).json({ code: 'AI_GATEWAY_SERVICE_FORBIDDEN', message: 'Internal service is not authorized for the AI gateway' });
@@ -63,10 +63,13 @@ function createInternalServiceAuth({ env = process.env, now = () => Date.now(), 
     // Performance receives only this service-bound proxy key. It never holds
     // the hosted ChatGPT gateway master, so it cannot mint a Recruiter gateway
     // subject or call another gateway namespace directly.
-    const secrets = service === 'performance-management'
+    const sharedAccountSecrets = {
+      'performance-management': [env.PERFORMANCE_AI_SHARED_SECRET, env.PERFORMANCE_AI_SHARED_SECRET_PREVIOUS],
+      messaging: [env.MESSAGING_AI_SHARED_SECRET, env.MESSAGING_AI_SHARED_SECRET_PREVIOUS]
+    };
+    const secrets = Object.prototype.hasOwnProperty.call(sharedAccountSecrets, service)
       ? [...new Set([
-        env.PERFORMANCE_AI_SHARED_SECRET,
-        env.PERFORMANCE_AI_SHARED_SECRET_PREVIOUS
+        ...sharedAccountSecrets[service]
       ].map((value) => String(value || '').trim()).filter(Boolean))]
       : [String(env.AI_GATEWAY_HMAC_SECRET || '').trim()].filter(Boolean);
     if (!secrets.length) {
@@ -84,7 +87,7 @@ function createInternalServiceAuth({ env = process.env, now = () => Date.now(), 
     // Version 1 is retained for the existing AI Interview worker. New shared
     // account consumers use v2, which binds a nonce into the signature and
     // rejects replay during the timestamp window.
-    if (service === 'performance-management' && signatureVersion !== '2') {
+    if (Object.prototype.hasOwnProperty.call(sharedAccountSecrets, service) && signatureVersion !== '2') {
       return res.status(401).json({ code: 'AI_GATEWAY_AUTH_VERSION_REQUIRED', message: 'Signature version 2 is required' });
     }
     if (signatureVersion === '2' && !/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) {

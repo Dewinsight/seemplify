@@ -78,6 +78,28 @@ test('Performance v2 uses its service-specific proxy secret and rejects replay',
   assert.equal(replay.result.payload.code, 'AI_GATEWAY_REPLAY_REJECTED');
 });
 
+test('Messaging uses a distinct v2 proxy secret and cannot use the Performance key', async () => {
+  const middleware = createInternalServiceAuth({
+    env: {
+      PERFORMANCE_AI_SHARED_SECRET: 'performance-secret',
+      MESSAGING_AI_SHARED_SECRET: 'messaging-secret'
+    },
+    now: () => 1786291200000,
+    nonceStore: new Map()
+  });
+  const accepted = await invoke({
+    middleware, service: 'messaging', secret: 'messaging-secret', nonce: 'messagingNonce01'
+  });
+  assert.equal(accepted.result.next, true);
+  assert.equal(accepted.req.internalService, 'messaging');
+
+  const isolated = await invoke({
+    middleware, service: 'messaging', secret: 'performance-secret', nonce: 'messagingNonce02'
+  });
+  assert.equal(isolated.result.statusCode, 401);
+  assert.equal(isolated.result.payload.code, 'AI_GATEWAY_AUTH_INVALID');
+});
+
 test('Performance never accepts gateway/AI Interview keys or signature version', async () => {
   const middleware = createInternalServiceAuth({
     env: {

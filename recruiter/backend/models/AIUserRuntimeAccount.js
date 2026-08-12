@@ -22,6 +22,9 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true
   },
   organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', index: true },
+  /** Immutable Seemplify OIDC subject. This is the credential owner shared by
+   * every first-party IDP-connected application. */
+  idpSubject: { type: String, trim: true, sparse: true, unique: true, index: true },
   // The opaque handle the gateway derives its CODEX_HOME from. Stored so a
   // rename or re-key is visible rather than silently orphaning a session.
   subjectKey: { type: String, required: true, unique: true, index: true },
@@ -43,6 +46,10 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
    * but approving Performance content must not implicitly approve Recruiter
    * CVs or other Recruiter workloads. */
   performanceDataSharingAcknowledgedAt: { type: Date, default: null },
+  /** Messaging content has an independent disclosure even though the OpenAI
+   * login itself is shared across Seemplify. */
+  messagingDataSharingAcknowledgedAt: { type: Date, default: null },
+  credentialNamespaceVersion: { type: Number, default: 1 },
   /** What the connected plan currently allows, as last reported by Codex. Kept
    * so the account screen can show it even when the gateway is unreachable —
    * a stale number with its timestamp beats no answer to "why has AI stopped".
@@ -66,9 +73,9 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 AIUserRuntimeAccountSchema.methods.consentAt = function consentAt(app = 'recruiter') {
-  return app === 'performance'
-    ? this.performanceDataSharingAcknowledgedAt
-    : this.dataSharingAcknowledgedAt;
+  if (app === 'performance') return this.performanceDataSharingAcknowledgedAt;
+  if (app === 'messaging') return this.messagingDataSharingAcknowledgedAt;
+  return this.dataSharingAcknowledgedAt;
 };
 
 AIUserRuntimeAccountSchema.methods.isRoutable = function isRoutable(app = 'recruiter') {
@@ -76,7 +83,7 @@ AIUserRuntimeAccountSchema.methods.isRoutable = function isRoutable(app = 'recru
 };
 
 AIUserRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON(options = {}) {
-  const app = options.app === 'performance' ? 'performance' : 'recruiter';
+  const app = ['performance', 'messaging'].includes(options.app) ? options.app : 'recruiter';
   const scopedConsent = this.consentAt(app);
   return {
     status: this.status,
@@ -89,7 +96,8 @@ AIUserRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON(options 
     consentScope: app,
     consents: {
       recruiter: this.dataSharingAcknowledgedAt || null,
-      performance: this.performanceDataSharingAcknowledgedAt || null
+      performance: this.performanceDataSharingAcknowledgedAt || null,
+      messaging: this.messagingDataSharingAcknowledgedAt || null
     },
     routable: this.isRoutable(app),
     rateLimits: this.rateLimits || null,

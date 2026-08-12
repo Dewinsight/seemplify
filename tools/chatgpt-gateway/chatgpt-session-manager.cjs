@@ -68,6 +68,16 @@ function subjectKeyFor(sourceApp, subjectId) {
   return crypto.createHash('sha256').update(`${app}${subject}`).digest('hex');
 }
 
+const CREDENTIAL_MIGRATION_SOURCE_APPS = new Set(['recruiter', 'performance-management']);
+
+function legacySubjectKeyFor(sourceApp, subjectId) {
+  const app = String(sourceApp || '').trim().toLowerCase();
+  if (!CREDENTIAL_MIGRATION_SOURCE_APPS.has(app)) {
+    throw codexError('The legacy Codex credential namespace is not migratable.', 'CODEX_LEGACY_SOURCE_FORBIDDEN');
+  }
+  return subjectKeyFor(app, subjectId);
+}
+
 /**
  * `sourceApp` is asserted by the caller, not proved: every product signs with
  * the same shared gateway secret, so this namespace stops two products
@@ -670,7 +680,10 @@ class CodexSubjectSession {
       runtimeWorkspaceRoots: [this.workDir],
       approvalPolicy: 'never',
       permissions: PERMISSION_PROFILE,
-      serviceName: 'seemplify_gateway'
+      serviceName: 'seemplify_gateway',
+      config: input.webSearchEnabled === true
+        ? { web_search: 'live', tools: { web_search: { context_size: 'medium' } } }
+        : { web_search: 'disabled' }
     }, 30_000);
     const threadId = String(threadResult?.thread?.id || '');
     if (!threadId) throw codexError('Codex could not create a thread.', 'CODEX_THREAD_FAILED');
@@ -840,6 +853,51 @@ async function forgetSubject(subjectKey) {
   return { forgotten: true };
 }
 
+/**
+ * Atomically adopts the first existing legacy auth cache into the canonical
+ * Seemplify-user subject. Only auth.json moves; workspaces, logs, and model
+ * output remain app-scoped and are never merged. Once the canonical copy is
+ * durable, the legacy cache is removed so logout/revocation has one authority.
+ */
+const credentialAdoptions = new Map();
+
+async function adoptSubjectCredentialOnce(subjectKey, legacySubjectKeys = []) {
+  assertSubjectKey(subjectKey);
+  const targetHome = path.join(resolveSubjectsDir(), subjectKey);
+  const targetAuth = path.join(targetHome, 'auth.json');
+  if (fs.existsSync(targetAuth)) return { adopted: false, alreadyCanonical: true };
+
+  const candidates = [...new Set(legacySubjectKeys.map(String))]
+    .filter((key) => key && key !== subjectKey);
+  for (const legacyKey of candidates) {
+    assertSubjectKey(legacyKey);
+    const legacyAuth = path.join(resolveSubjectsDir(), legacyKey, 'auth.json');
+    if (!fs.existsSync(legacyAuth)) continue;
+
+    const legacySession = sessions.get(legacyKey);
+    if (legacySession) await legacySession.stop().catch(() => undefined);
+    await fs.promises.mkdir(targetHome, { recursive: true, mode: 0o700 });
+    protectSubjectDirectory(targetHome);
+    const temporary = path.join(targetHome, `.auth.${process.pid}.${crypto.randomUUID()}.tmp`);
+    await fs.promises.copyFile(legacyAuth, temporary, fs.constants.COPYFILE_EXCL);
+    await fs.promises.chmod(temporary, 0o600).catch(() => undefined);
+    await fs.promises.rename(temporary, targetAuth);
+    await fs.promises.rm(legacyAuth, { force: true });
+    sessions.delete(legacyKey);
+    return { adopted: true, alreadyCanonical: false };
+  }
+  return { adopted: false, alreadyCanonical: false };
+}
+
+async function adoptSubjectCredential(subjectKey, legacySubjectKeys = []) {
+  assertSubjectKey(subjectKey);
+  if (credentialAdoptions.has(subjectKey)) return credentialAdoptions.get(subjectKey);
+  const adoption = adoptSubjectCredentialOnce(subjectKey, legacySubjectKeys);
+  credentialAdoptions.set(subjectKey, adoption);
+  try { return await adoption; }
+  finally { credentialAdoptions.delete(subjectKey); }
+}
+
 const accountStatusForSubject = (subjectKey) => sessionForSubject(subjectKey).accountStatus();
 const hasPendingDeviceLogin = (subjectKey) => sessionForSubject(subjectKey).hasPendingDeviceLogin();
 const startDeviceLogin = (subjectKey) => sessionForSubject(subjectKey).startDeviceLogin();
@@ -857,10 +915,12 @@ module.exports = {
   allowedSourceApps,
   resolveSubjectRequest,
   accountStatusForSubject,
+  adoptSubjectCredential,
   cancelDeviceLogin,
   codexError,
   forgetSubject,
   hasPendingDeviceLogin,
+  legacySubjectKeyFor,
   modelsForSubject,
   perUserSessionsEnabled,
   resolveCodexConfiguration,

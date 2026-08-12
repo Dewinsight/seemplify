@@ -24,7 +24,7 @@ const LOCAL_LLM_SERVICE_KEY_CONTEXT = 'seemplify-local-llm-service-v2';
 // metering and authorization must always use the product identity.
 const PLATFORM_SOURCE_APP = 'recruiter';
 const METERING_SOURCE_APPS = new Set([
-  'recruiter', 'performance-management', 'identity-provider',
+  'recruiter', 'performance-management', 'messaging', 'identity-provider',
   'leave-management', 'payroll', 'time-attendance'
 ]);
 
@@ -355,6 +355,7 @@ class AIRuntimeService {
       jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema,
       schemaName: input.schemaName,
       schemaStrict: input.schemaStrict === true,
+      webSearchEnabled: input.webSearchEnabled === true,
       frequencyPenalty: input.frequencyPenalty ?? input.frequency_penalty,
       presencePenalty: input.presencePenalty ?? input.presence_penalty
     };
@@ -452,6 +453,8 @@ class AIRuntimeService {
     const runtimeActorId = String(baseContext.runtimeActorId || baseContext.actorId || '').trim();
     if (route.provider === CHATGPT_PROVIDER) {
       route = await this.resolveUserRoute(runtimeActorId, activity, route);
+      if (String(options.codexModel || '').trim()) route.codexModel = String(options.codexModel).trim();
+      if (String(options.reasoningEffort || '').trim()) route.reasoningEffort = String(options.reasoningEffort).trim();
     }
     if (route.provider === CHATGPT_PROVIDER) {
       route = await this.attachChatGptSubject(route, baseContext, { consentApp: options.consentApp });

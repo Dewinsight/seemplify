@@ -21,10 +21,14 @@ function aiRequestContext(req, _res, next) {
     },
     identity: {
       enumerable: true,
-      get: () => ({
-        sub: req.session?.user?.sub || req.session?.user?.userinfo?.sub || req.session?.user?.id || '',
-        email: String(req.session?.user?.email || '').trim().toLowerCase()
-      })
+      get: () => {
+        const organizationId = String(req.session?.currentOrganizationId || '').trim();
+        return {
+          sub: req.session?.user?.sub || req.session?.user?.userinfo?.sub || req.session?.user?.id || '',
+          email: String(req.session?.user?.email || req.session?.user?.userinfo?.email || '').trim().toLowerCase(),
+          ...(organizationId ? { organizationId } : {})
+        };
+      }
     }
   });
   storage.run(context, next);

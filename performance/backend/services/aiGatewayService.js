@@ -87,17 +87,18 @@ async function selectRuntime(preference = 'default') {
 }
 
 function gatewayConfiguration(runtime) {
-  const local = runtime === LOCAL;
-  const baseUrl = String(local
-    ? process.env.LOCAL_LLM_BASE_URL || ''
-    : process.env.CHATGPT_GATEWAY_BASE_URL || '').replace(/\/+$/, '');
-  const secret = String(local
-    ? process.env.LOCAL_LLM_SHARED_SECRET || ''
-    : process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
+  if (runtime !== LOCAL) {
+    throw new PerformanceAIRuntimeError(
+      'Connected ChatGPT must use the central Seemplify account service.',
+      'SHARED_AI_ROUTE_REQUIRED'
+    );
+  }
+  const baseUrl = String(process.env.LOCAL_LLM_BASE_URL || '').replace(/\/+$/, '');
+  const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
   if (!baseUrl || !secret) {
     throw new PerformanceAIRuntimeError(
-      `${local ? 'Local inference' : 'ChatGPT Connect'} is not configured for Performance Management.`,
-      local ? 'AI_LOCAL_NOT_CONFIGURED' : 'CHATGPT_GATEWAY_NOT_CONFIGURED'
+      'Local inference is not configured for Performance Management.',
+      'AI_LOCAL_NOT_CONFIGURED'
     );
   }
   return { baseUrl, secret };
@@ -133,35 +134,45 @@ class AIGatewayService {
   async getChatCompletions(messages, options = {}) {
     const context = require('./aiRequestContext').getAIRequestContext();
     const runtime = await selectRuntime(options.runtimePreference || context.runtimePreference || process.env.PERFORMANCE_AI_RUNTIME_PREFERENCE || 'default');
-    const { baseUrl, secret } = gatewayConfiguration(runtime);
     const requestPath = '/v1/complete';
     const requestId = String(options.requestId || context.requestId || crypto.randomUUID());
     const activity = String(options.activity || 'performance.general');
     const local = runtime === LOCAL;
-    let subjectId = String(options.chatgptSubjectId || '').trim();
-    if (!local && !subjectId && context.actorId) {
-      const subject = await require('./chatGptAccountService').resolveRoutableSubject(context.actorId);
-      subjectId = String(subject?.subjectId || '').trim();
+    if (!local) {
+      const identity = options.identity || context.identity;
+      if (!identity?.sub || !identity?.email) {
+        throw new PerformanceAIRuntimeError(
+          'A signed-in Seemplify identity is required for connected ChatGPT.',
+          'SHARED_AI_IDENTITY_REQUIRED', 401
+        );
+      }
+      try {
+        const payload = await require('./sharedAIAccountService').complete(identity, {
+          activity,
+          messages: Array.isArray(messages) ? messages.map(({ role, content }) => ({ role, content })) : [],
+          promptVersion: String(options.promptVersion || '1'),
+          maxTokens: options.maxTokens || options.max_tokens,
+          jsonSchema: options.jsonSchema || options.response_format?.json_schema?.schema,
+          codexModel: options.codexModel || process.env.PERFORMANCE_CHATGPT_MODEL || 'gpt-5.6-sol',
+          reasoningEffort: options.reasoningEffort || 'medium',
+          context: { requestId, sourceApp: 'performance-management' }
+        }, { timeoutMs: options.timeoutMs || 240_000 });
+        return completionResponse(payload, runtime);
+      } catch (error) {
+        throw new PerformanceAIRuntimeError(
+          error.message || 'The shared ChatGPT request failed.',
+          error.code || 'SHARED_AI_REQUEST_FAILED',
+          error.statusCode || 503,
+          { retryable: error.retryable, retryAfterSeconds: error.retryAfterSeconds, cause: error }
+        );
+      }
     }
-    if (!local && !subjectId) {
-      throw new PerformanceAIRuntimeError(
-        'Connect a ChatGPT account for Performance Management or select local inference.',
-        'AI_RUNTIME_ACCOUNT_REQUIRED',
-        409
-      );
-    }
+    const { baseUrl, secret } = gatewayConfiguration(runtime);
     const eventId = `usage_${crypto.createHash('sha256').update(`${requestId}:${activity}:${runtime}`).digest('hex').slice(0, 48)}`;
-    const gatewayExecutionPrefix = local ? 'localexec' : 'chatgptexec';
+    const gatewayExecutionPrefix = 'localexec';
     const body = JSON.stringify({
       activity,
-      executionMode: local ? 'local-only' : 'codex-only',
-      ...(!local ? {
-        codexSourceApp: 'performance-management',
-        codexSubjectId: subjectId,
-        requiredEngine: 'codex',
-        codexModelCandidates: [{ value: process.env.PERFORMANCE_CHATGPT_MODEL || 'gpt-5.6-sol', source: 'application_default' }],
-        codexEffortCandidates: [{ value: options.reasoningEffort || 'medium', source: 'activity' }]
-      } : {}),
+      executionMode: 'local-only',
       messages: Array.isArray(messages) ? messages.map(({ role, content }) => ({ role, content })) : [],
       temperature: options.temperature,
       maxTokens: options.maxTokens || options.max_tokens,

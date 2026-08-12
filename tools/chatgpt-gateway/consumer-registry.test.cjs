@@ -13,6 +13,7 @@ test('shared registry includes the Seemplify suite and deliberately excludes Exp
   assert.deepEqual(allowedConsumerIds(), [
     'identity-provider',
     'leave-management',
+    'messaging',
     'payroll',
     'performance-management',
     'recruiter',
@@ -41,8 +42,9 @@ test('shared registry includes the Seemplify suite and deliberately excludes Exp
 test('deployment consumers are discovered from optional platform application IDs', () => {
   const consumers = configuredConsumers({
     RECRUITER_BACKEND_APP_ID: 'recruiter-id',
+    MESSAGING_BACKEND_APP_ID: 'messaging-id',
     PERFORMANCE_BACKEND_APP_ID: 'performance-id',
     EXPERIENCE_BACKEND_APP_ID: 'must-not-be-used'
   });
-  assert.deepEqual(consumers.map(({ id }) => id), ['performance-management', 'recruiter']);
+  assert.deepEqual(consumers.map(({ id }) => id), ['messaging', 'performance-management', 'recruiter']);
 });

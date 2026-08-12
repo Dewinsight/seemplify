@@ -421,7 +421,7 @@ export default function AISettingsPage() {
             <div className="suite-icon flex items-center justify-center border"><Bot className="h-5 w-5" /></div>
             <div>
               <h2 id="connection-heading" className="suite-card-title">ChatGPT connection</h2>
-              <p className="mt-1 text-sm text-[var(--suite-muted)]">{connected ? `${account?.connectedEmail || 'Your account'}${account?.planType ? ` - ${account.planType}` : ''}` : 'Use the same OpenAI account across Performance Management and Recruiter.'}</p>
+              <p className="mt-1 text-sm text-[var(--suite-muted)]">{connected ? `${account?.connectedEmail || 'Your account'}${account?.planType ? ` - ${account.planType}` : ''}` : 'Connect once for Seemplify Recruiter, Performance, and Messaging.'}</p>
             </div>
           </div>
           <span className="suite-status border px-2.5 py-1 text-xs font-medium">{loading ? 'Checking' : connected && !consented ? 'Review required' : connected ? 'Connected' : account?.status === 'pending' ? 'Waiting for sign-in' : 'Not connected'}</span>
@@ -436,7 +436,7 @@ export default function AISettingsPage() {
         {connected && (
           <label className="mt-5 flex max-w-3xl items-start gap-3 border-t border-[var(--suite-line)] pt-5 text-sm text-[var(--suite-ink)]">
             <input className="mt-1 h-4 w-4 accent-[var(--suite-accent)]" type="checkbox" checked={Boolean(account?.dataSharingAcknowledgedAt)} disabled={working === 'consent'} onChange={(event) => void setConsent(event.target.checked)} />
-            <span>Allow Performance Management AI task content to be processed by OpenAI on my connected account.<span className="mt-1 block text-xs leading-5 text-[var(--suite-muted)]">This acknowledgement applies only to Performance Management. Recruiter manages its consent separately. Content is sent only when you run an AI action.</span></span>
+            <span>Allow Performance Management AI task content to be processed by OpenAI on my connected account.<span className="mt-1 block text-xs leading-5 text-[var(--suite-muted)]">This acknowledgement applies only to Performance Management. Recruiter and Messaging ask separately. Content is sent only when you run an AI action.</span></span>
           </label>
         )}
         {connected && !consented && (

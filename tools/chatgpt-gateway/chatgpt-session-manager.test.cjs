@@ -72,9 +72,58 @@ test('subject keys are namespaced per source application and never collide', () 
   assert.throws(() => sessions.sessionForSubject('not-a-digest'), /sha256 digest/u);
 });
 
+test('a legacy product credential is adopted into the canonical IDP subject exactly once', async () => {
+  const idpSubject = 'idp-shared-user';
+  const canonical = sessions.subjectKeyFor('recruiter', idpSubject);
+  const legacy = sessions.legacySubjectKeyFor('performance-management', idpSubject);
+  const legacyHome = path.join(subjectsRoot, legacy);
+  fs.mkdirSync(legacyHome, { recursive: true });
+  fs.writeFileSync(path.join(legacyHome, 'auth.json'), '{"tokens":"legacy-performance"}');
+
+  assert.deepEqual(await sessions.adoptSubjectCredential(canonical, [legacy]), {
+    adopted: true, alreadyCanonical: false,
+  });
+  assert.equal(
+    fs.readFileSync(path.join(subjectsRoot, canonical, 'auth.json'), 'utf8'),
+    '{"tokens":"legacy-performance"}',
+  );
+  assert.equal(fs.existsSync(path.join(legacyHome, 'auth.json')), false);
+  assert.deepEqual(await sessions.adoptSubjectCredential(canonical, [legacy]), {
+    adopted: false, alreadyCanonical: true,
+  });
+  assert.throws(
+    () => sessions.legacySubjectKeyFor('messaging', idpSubject),
+    (error) => error.code === 'CODEX_LEGACY_SOURCE_FORBIDDEN',
+  );
+});
+
+test('concurrent legacy adoption requests share one atomic migration', async () => {
+  const idpSubject = 'idp-concurrent-user';
+  const canonical = sessions.subjectKeyFor('recruiter', idpSubject);
+  const legacy = sessions.legacySubjectKeyFor('performance-management', idpSubject);
+  const legacyHome = path.join(subjectsRoot, legacy);
+  fs.mkdirSync(legacyHome, { recursive: true });
+  fs.writeFileSync(path.join(legacyHome, 'auth.json'), '{"tokens":"legacy-concurrent"}');
+
+  const results = await Promise.all([
+    sessions.adoptSubjectCredential(canonical, [legacy]),
+    sessions.adoptSubjectCredential(canonical, [legacy]),
+  ]);
+
+  assert.deepEqual(results, [
+    { adopted: true, alreadyCanonical: false },
+    { adopted: true, alreadyCanonical: false },
+  ]);
+  assert.equal(
+    fs.readFileSync(path.join(subjectsRoot, canonical, 'auth.json'), 'utf8'),
+    '{"tokens":"legacy-concurrent"}',
+  );
+  assert.equal(fs.existsSync(path.join(legacyHome, 'auth.json')), false);
+});
+
 test('a subject claim is validated against a closed source-app allowlist', () => {
   assert.deepEqual([...sessions.allowedSourceApps({})], [
-    'identity-provider', 'leave-management', 'payroll',
+    'identity-provider', 'leave-management', 'messaging', 'payroll',
     'performance-management', 'recruiter', 'time-attendance'
   ]);
   assert.deepEqual(

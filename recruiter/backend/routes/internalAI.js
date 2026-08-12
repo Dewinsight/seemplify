@@ -42,6 +42,12 @@ function requireServiceActivity(service, activity) {
     error.statusCode = 403;
     throw error;
   }
+  if (service === 'messaging' && definition.app !== 'messaging') {
+    const error = new Error('Messaging may only invoke Messaging AI activities.');
+    error.code = 'SHARED_AI_ACTIVITY_FORBIDDEN';
+    error.statusCode = 403;
+    throw error;
+  }
   return definition;
 }
 
@@ -58,13 +64,17 @@ function internalError(res, error, fallback = 'The shared AI account request fai
 }
 
 async function sharedPrincipal(req) {
-  if (req.internalService !== 'performance-management') {
+  if (!['performance-management', 'messaging'].includes(req.internalService)) {
     const error = new Error('This service is not authorized to manage shared ChatGPT accounts.');
     error.code = 'SHARED_AI_SERVICE_FORBIDDEN';
     error.statusCode = 403;
     throw error;
   }
   return resolveSharedPrincipal(req.body?.identity);
+}
+
+function accountScope(req) {
+  return req.internalService === 'performance-management' ? 'performance' : 'messaging';
 }
 
 async function sharedUser(req) {
@@ -84,7 +94,7 @@ router.post('/v1/account/status', internalAuth, async (req, res) => {
     const account = await codexAccountService.readAccount(user);
     const preferences = await userAISettingsService.readPreferences(user);
     return res.json({
-      account: account.toPublicJSON({ app: 'performance' }),
+      account: account.toPublicJSON({ app: accountScope(req) }),
       // This describes the shared account proxy, not Recruiter's product
       // runtime switches. Performance combines it with its own local policy.
       runtimePolicy: {
@@ -103,7 +113,7 @@ router.post('/v1/account/login/start', internalAuth, async (req, res) => {
   try {
     const user = await sharedUser(req);
     const { login, account } = await codexAccountService.startLogin(user);
-    return res.json({ login, account: account.toPublicJSON({ app: 'performance' }) });
+    return res.json({ login, account: account.toPublicJSON({ app: accountScope(req) }) });
   } catch (error) { return internalError(res, error, 'ChatGPT sign-in could not be started'); }
 });
 
@@ -111,7 +121,7 @@ router.post('/v1/account/login/cancel', internalAuth, async (req, res) => {
   try {
     const user = await sharedUser(req);
     const { result, account } = await codexAccountService.cancelLogin(user);
-    return res.json({ ...result, account: account.toPublicJSON({ app: 'performance' }) });
+    return res.json({ ...result, account: account.toPublicJSON({ app: accountScope(req) }) });
   } catch (error) { return internalError(res, error, 'ChatGPT sign-in could not be cancelled'); }
 });
 
@@ -119,7 +129,7 @@ router.post('/v1/account/login/reset', internalAuth, async (req, res) => {
   try {
     const user = await sharedUser(req);
     const { result, account } = await codexAccountService.resetLogin(user);
-    return res.json({ ...result, account: account.toPublicJSON({ app: 'performance' }) });
+    return res.json({ ...result, account: account.toPublicJSON({ app: accountScope(req) }) });
   } catch (error) { return internalError(res, error, 'ChatGPT sign-in could not be reset'); }
 });
 
@@ -129,9 +139,9 @@ router.post('/v1/account/consent', internalAuth, async (req, res) => {
     const account = await codexAccountService.setConsent(
       user,
       req.body?.acknowledged === true,
-      { app: 'performance' }
+      { app: accountScope(req) }
     );
-    return res.json({ account: account.toPublicJSON({ app: 'performance' }) });
+    return res.json({ account: account.toPublicJSON({ app: accountScope(req) }) });
   } catch (error) { return internalError(res, error, 'ChatGPT data-sharing consent could not be saved'); }
 });
 
@@ -139,7 +149,7 @@ router.post('/v1/account/disconnect', internalAuth, async (req, res) => {
   try {
     const user = await sharedUser(req);
     const account = await codexAccountService.disconnect(user);
-    return res.json({ account: account.toPublicJSON({ app: 'performance' }) });
+    return res.json({ account: account.toPublicJSON({ app: accountScope(req) }) });
   } catch (error) { return internalError(res, error, 'ChatGPT could not be disconnected'); }
 });
 
@@ -244,7 +254,7 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
     const activity = String(req.body?.activity || '');
     requireServiceActivity(req.internalService, activity);
     const messages = validateMessages(req.body?.messages);
-    const principal = req.internalService === 'performance-management'
+    const principal = ['performance-management', 'messaging'].includes(req.internalService)
       ? await sharedPrincipal(req) : null;
     const user = principal?.user || null;
     const context = {
@@ -280,6 +290,7 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
       top_p: req.body?.topP,
       max_tokens: Math.min(8000, Math.max(1, Number(req.body?.maxTokens || 500))),
       response_format: req.body?.responseFormat,
+      webSearchEnabled: req.body?.webSearchEnabled === true,
       context
     };
     const result = await runWithAIRequestContext(context, () => (
@@ -290,15 +301,19 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
           schemaName: req.body.schemaName
         }, {
           signal: controller.signal,
-          requiredRuntime: req.internalService === 'performance-management' ? 'chatgpt' : undefined,
-          sharedAccountRuntime: req.internalService === 'performance-management',
-          consentApp: req.internalService === 'performance-management' ? 'performance' : 'recruiter'
+          requiredRuntime: principal ? 'chatgpt' : undefined,
+          sharedAccountRuntime: Boolean(principal),
+          consentApp: principal ? accountScope(req) : 'recruiter',
+          codexModel: req.body?.codexModel,
+          reasoningEffort: req.body?.reasoningEffort
         })
         : aiRuntimeService.complete(activity, completionInput, {
           signal: controller.signal,
-          requiredRuntime: req.internalService === 'performance-management' ? 'chatgpt' : undefined,
-          sharedAccountRuntime: req.internalService === 'performance-management',
-          consentApp: req.internalService === 'performance-management' ? 'performance' : 'recruiter'
+          requiredRuntime: principal ? 'chatgpt' : undefined,
+          sharedAccountRuntime: Boolean(principal),
+          consentApp: principal ? accountScope(req) : 'recruiter',
+          codexModel: req.body?.codexModel,
+          reasoningEffort: req.body?.reasoningEffort
         })
     ));
     res.json({

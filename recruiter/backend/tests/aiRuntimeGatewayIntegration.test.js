@@ -210,3 +210,47 @@ test('Performance service signatures cannot invoke Recruiter activities', async 
     else process.env.PERFORMANCE_AI_SHARED_SECRET = originalSecret;
   }
 });
+
+test('Messaging service signatures cannot invoke Performance activities', async () => {
+  const originalSecret = process.env.MESSAGING_AI_SHARED_SECRET;
+  const InternalServiceNonce = require('../models/InternalServiceNonce');
+  const originalInit = InternalServiceNonce.init;
+  const originalCreate = InternalServiceNonce.create;
+  const secret = 'messaging-bound-proxy-secret';
+  process.env.MESSAGING_AI_SHARED_SECRET = secret;
+  InternalServiceNonce.init = async () => InternalServiceNonce;
+  InternalServiceNonce.create = async () => ({ acknowledged: true });
+  const gateway = await startGateway();
+  try {
+    const body = JSON.stringify({
+      activity: 'performance.okr.generate',
+      messages: [{ role: 'user', content: 'Attempt a cross-product activity' }],
+      identity: { sub: 'idp-user', email: 'person@example.test' }
+    });
+    const timestamp = String(Date.now());
+    const nonce = 'messagingNonce1234';
+    const response = await fetch(gateway.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-seemplify-service': 'messaging',
+        'x-seemplify-timestamp': timestamp,
+        'x-seemplify-signature-version': '2',
+        'x-seemplify-nonce': nonce,
+        'x-seemplify-signature': signV2({
+          body, secret, service: 'messaging', timestamp, nonce
+        })
+      },
+      body
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, 'SHARED_AI_ACTIVITY_FORBIDDEN');
+  } finally {
+    await gateway.close();
+    InternalServiceNonce.init = originalInit;
+    InternalServiceNonce.create = originalCreate;
+    if (originalSecret === undefined) delete process.env.MESSAGING_AI_SHARED_SECRET;
+    else process.env.MESSAGING_AI_SHARED_SECRET = originalSecret;
+  }
+});

@@ -174,7 +174,7 @@ export default function AiAccountPage() {
       await api.put('/ai-runtime/preference', { runtimePreference: 'default' });
       setAccount(result.account);
       setLogin(null);
-      setNotice('ChatGPT has been disconnected from Performance Management.');
+      setNotice('ChatGPT has been disconnected from every Seemplify app.');
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -197,7 +197,7 @@ export default function AiAccountPage() {
       <Stack spacing={1} sx={{ mb: 3 }}>
         <Typography variant="h4" component="h1" fontWeight={700}>ChatGPT account</Typography>
         <Typography color="text.secondary" sx={{ maxWidth: 680 }}>
-          Connect your own ChatGPT account for appraisal guidance and AI-assisted performance work. Your connection is private to you.
+          Connect once for Seemplify Recruiter, Performance, and Messaging. Each app asks separately before sending its content to OpenAI.
         </Typography>
       </Stack>
 
@@ -296,7 +296,7 @@ export default function AiAccountPage() {
                 )}
                 {connected && (
                   <Button color="inherit" startIcon={<LinkOff />} disabled={Boolean(working)} onClick={() => void disconnect()}>
-                    Disconnect
+                    Disconnect everywhere
                   </Button>
                 )}
               </Stack>

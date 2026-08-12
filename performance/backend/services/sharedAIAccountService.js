@@ -38,15 +38,13 @@ function signingSecret() {
   return secret;
 }
 
-function identityFromRequest(req) {
-  const user = req?.session?.user || {};
+function identityFromUser(user = {}, organization = null) {
   const userinfo = user.userinfo || {};
-  const organization = req?.currentOrganization
+  const selectedOrganization = organization
     || user.currentOrganization
     || userinfo.currentOrganization
     || userinfo.current_organization
     || (user.organizations || userinfo.organizations || [])[0]
-    || (req?.session?.currentOrganizationId ? { id: req.session.currentOrganizationId } : null)
     || null;
   // Keep the cross-app account keyed to the stable OIDC subject. Never fall
   // back to a product-local database identifier.
@@ -57,8 +55,8 @@ function identityFromRequest(req) {
       code: 'SHARED_AI_IDENTITY_REQUIRED', statusCode: 401
     });
   }
-  const organizationId = String(organization?.id || organization?._id || organization?.organizationId || '').trim();
-  const organizationName = String(organization?.name || '').trim();
+  const organizationId = String(selectedOrganization?.id || selectedOrganization?._id || selectedOrganization?.organizationId || '').trim();
+  const organizationName = String(selectedOrganization?.name || '').trim();
   return {
     sub,
     email,
@@ -66,6 +64,13 @@ function identityFromRequest(req) {
     ...(organizationName ? { organizationName } : {}),
     ...(user.name || userinfo.name ? { displayName: String(user.name || userinfo.name) } : {})
   };
+}
+
+function identityFromRequest(req) {
+  const user = req?.session?.user || {};
+  const organization = req?.currentOrganization
+    || (req?.session?.currentOrganizationId ? { id: req.session.currentOrganizationId } : null);
+  return identityFromUser(user, organization);
 }
 
 function signedHeaders(secret, pathname, rawBody) {
@@ -164,6 +169,7 @@ module.exports = sharedAIAccountService;
 module.exports.SharedAIAccountService = SharedAIAccountService;
 module.exports.SharedAIAccountError = SharedAIAccountError;
 module.exports.identityFromRequest = identityFromRequest;
+module.exports.identityFromUser = identityFromUser;
 module.exports.signedHeaders = signedHeaders;
 module.exports.INTERNAL_PATH = INTERNAL_PATH;
 module.exports.SERVICE_ID = SERVICE_ID;

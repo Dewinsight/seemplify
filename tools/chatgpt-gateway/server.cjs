@@ -184,9 +184,22 @@ async function handleAccountOperation(request, response, operation, requestPath,
   const verified = await verifySignature(request.headers, 'POST', requestPath, raw);
   if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
   if (!sessions.perUserSessionsEnabled()) return sendJson(response, 503, { code: 'CHATGPT_SESSIONS_DISABLED' });
-  const resolved = subjectFrom(parseJson(raw));
+  const input = parseJson(raw);
+  const resolved = subjectFrom(input);
   if (resolved.error) return sendJson(response, resolved.error.status, { code: resolved.error.code });
   const key = resolved.subjectKey;
+  if (operation === 'account/adopt') {
+    try {
+      const legacySubjectKeys = (Array.isArray(input.legacySubjects) ? input.legacySubjects : [])
+        .slice(0, 8)
+        .map((legacy) => sessions.legacySubjectKeyFor(legacy?.sourceApp, legacy?.subjectId));
+      return sendJson(response, 200, await sessions.adoptSubjectCredential(key, legacySubjectKeys));
+    } catch (error) {
+      return sendJson(response, error.status || 400, {
+        code: error.code || 'CODEX_CREDENTIAL_ADOPTION_FAILED', message: error.message, retryable: false
+      });
+    }
+  }
   const resume = operation === 'login/start' && sessions.hasPendingDeviceLogin(key);
   const reserved = operation === 'login/start' && !resume ? loginLimiter.consume(key) : false;
   if (operation === 'login/start' && !resume && !reserved) {

@@ -70,16 +70,17 @@ test('shared account default precedence is preserved while Recruiter action rows
   assert.equal(scoped.activities[0].effective.reasoningEffort, 'high');
 });
 
-test('Performance resolves a connected ChatGPT subject per authenticated request, never from a static shared subject', () => {
+test('Performance sends the authenticated IDP identity through the central shared account service', () => {
   const files = [
     'services/aiGatewayService.js', 'services/appraisalAIService.js',
     'services/aiPerformanceService.js', 'routes/appraisals.js'
   ];
   const source = files.map(read).join('\n');
   assert.doesNotMatch(source, /PERFORMANCE_CHATGPT_SUBJECT_ID/);
-  assert.match(source, /resolveRoutableSubject\(context\.actorId\)/);
-  assert.match(source, /codexSubjectId:\s*subjectId/);
-  assert.match(source, /codexSourceApp:\s*['"]performance-management['"]/);
+  assert.match(source, /const identity = options\.identity \|\| context\.identity/);
+  assert.match(source, /sharedAIAccountService'\)\.complete\(identity/);
+  assert.match(source, /SHARED_AI_IDENTITY_REQUIRED/);
+  assert.doesNotMatch(source, /codexSubjectId:\s*subjectId/);
   assert.doesNotMatch(source, /['"]performance\.(?:appraisal|meeting|okr)['"]/);
 });
 

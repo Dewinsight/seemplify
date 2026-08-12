@@ -5,6 +5,7 @@ const test = require('node:test');
 const { AIGatewayService, selectRuntime } = require('../services/aiGatewayService');
 const { aiRequestContext } = require('../services/aiRequestContext');
 const chatGptAccountService = require('../services/chatGptAccountService');
+const sharedAIAccountService = require('../services/sharedAIAccountService');
 
 function withEnvironment(values, fn) {
   const prior = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
@@ -44,7 +45,7 @@ test('Performance local-only mode uses the selected Control Center runtime witho
   });
 });
 
-test('Performance both-enabled mode honors explicit choice and rejects ChatGPT without a connected subject', async () => {
+test('Performance both-enabled mode honors explicit choice and rejects ChatGPT without an IDP identity', async () => {
   await withEnvironment({
     PERFORMANCE_AI_LOCAL_ENABLED: 'true', PERFORMANCE_AI_CHATGPT_ENABLED: 'true',
     PERFORMANCE_AI_DEFAULT_RUNTIME: 'local', CHATGPT_GATEWAY_BASE_URL: 'https://chatgpt.test',
@@ -55,92 +56,84 @@ test('Performance both-enabled mode honors explicit choice and rejects ChatGPT w
     assert.equal(await selectRuntime('local'), 'local');
     await assert.rejects(
       service.getChatCompletions([{ role: 'user', content: 'Review this' }], { runtimePreference: 'chatgpt' }),
-      (error) => error.code === 'AI_RUNTIME_ACCOUNT_REQUIRED' && error.statusCode === 409
+      (error) => error.code === 'SHARED_AI_IDENTITY_REQUIRED' && error.statusCode === 401
     );
   });
 });
 
-test('Performance ChatGPT mode binds an explicitly authorized request subject and never silently uses local inference', async () => {
+test('Performance ChatGPT mode uses the central shared account and never calls the gateway directly', async () => {
   await withEnvironment({
     PERFORMANCE_AI_LOCAL_ENABLED: 'true', PERFORMANCE_AI_CHATGPT_ENABLED: 'true',
     PERFORMANCE_AI_DEFAULT_RUNTIME: 'local', CHATGPT_GATEWAY_BASE_URL: 'https://chatgpt.test',
     CHATGPT_GATEWAY_SHARED_SECRET: 'secret', PERFORMANCE_CHATGPT_SUBJECT_ID: null
   }, async () => {
     let captured;
-    const service = new AIGatewayService({ fetchImpl: async (url, init) => {
-      captured = { url, body: JSON.parse(init.body) };
-      return new Response(JSON.stringify({ content: 'Coaching draft', model: 'gpt-5.6-sol' }), {
-        status: 200, headers: { 'content-type': 'application/json' }
-      });
-    } });
-    service.invalidatePolicyCache();
-    const response = await service.getChatCompletions(
-      [{ role: 'user', content: 'Coach this review' }],
-      { activity: 'performance.review', runtimePreference: 'chatgpt', chatgptSubjectId: 'performance-user-9' }
-    );
-    assert.equal(response.provider, 'chatgpt');
-    assert.equal(captured.url, 'https://chatgpt.test/v1/complete');
-    assert.equal(captured.body.codexSourceApp, 'performance-management');
-    assert.equal(captured.body.codexSubjectId, 'performance-user-9');
-    assert.equal(captured.body.executionMode, 'codex-only');
-    assert.equal(captured.body.requiredEngine, 'codex');
-    assert.match(captured.body.metering.eventId, /^usage_[a-f0-9]{48}$/);
-    assert.match(captured.body.metering.gatewayExecutionId, /^chatgptexec_[a-f0-9]{48}$/);
-  });
-});
-
-test('Performance ChatGPT mode resolves the authenticated employee connection when no shared subject is configured', async () => {
-  await withEnvironment({
-    PERFORMANCE_AI_LOCAL_ENABLED: 'true', PERFORMANCE_AI_CHATGPT_ENABLED: 'true',
-    PERFORMANCE_AI_DEFAULT_RUNTIME: 'local', CHATGPT_GATEWAY_BASE_URL: 'https://chatgpt.test',
-    CHATGPT_GATEWAY_SHARED_SECRET: 'secret', PERFORMANCE_CHATGPT_SUBJECT_ID: null
-  }, async () => {
-    const originalResolver = chatGptAccountService.resolveRoutableSubject;
-    let captured;
-    chatGptAccountService.resolveRoutableSubject = async (userId) => ({ subjectId: userId, sourceApp: 'performance-management' });
+    const originalComplete = sharedAIAccountService.complete;
+    sharedAIAccountService.complete = async (identity, input) => {
+      captured = { identity, input };
+      return { content: 'Coaching draft', model: 'gpt-5.6-sol' };
+    };
     try {
-      const service = new AIGatewayService({ fetchImpl: async (_url, init) => {
-        captured = JSON.parse(init.body);
-        return new Response(JSON.stringify({ content: 'Connected coaching' }), {
-          status: 200, headers: { 'content-type': 'application/json' }
-        });
-      } });
+      const service = new AIGatewayService({ fetchImpl: async () => { throw new Error('direct gateway must not be called'); } });
+      service.invalidatePolicyCache();
+      const response = await service.getChatCompletions(
+        [{ role: 'user', content: 'Coach this review' }],
+        {
+          activity: 'performance.review', runtimePreference: 'chatgpt',
+          identity: { sub: 'idp-performance-user-9', email: 'person@example.com' }
+        }
+      );
+      assert.equal(response.provider, 'chatgpt');
+      assert.deepEqual(captured.identity, { sub: 'idp-performance-user-9', email: 'person@example.com' });
+      assert.equal(captured.input.activity, 'performance.review');
+      assert.equal(captured.input.context.sourceApp, 'performance-management');
+    } finally {
+      sharedAIAccountService.complete = originalComplete;
+    }
+  });
+});
+
+test('Performance ChatGPT mode forwards the authenticated employee IDP identity from request context', async () => {
+  await withEnvironment({
+    PERFORMANCE_AI_LOCAL_ENABLED: 'true', PERFORMANCE_AI_CHATGPT_ENABLED: 'true',
+    PERFORMANCE_AI_DEFAULT_RUNTIME: 'local', CHATGPT_GATEWAY_BASE_URL: 'https://chatgpt.test',
+    CHATGPT_GATEWAY_SHARED_SECRET: 'secret', PERFORMANCE_CHATGPT_SUBJECT_ID: null
+  }, async () => {
+    const originalComplete = sharedAIAccountService.complete;
+    let captured;
+    sharedAIAccountService.complete = async (identity, input) => {
+      captured = { identity, input };
+      return { content: 'Connected coaching' };
+    };
+    try {
+      const service = new AIGatewayService({ fetchImpl: async () => { throw new Error('direct gateway must not be called'); } });
       service.invalidatePolicyCache();
       const response = await new Promise((resolve, reject) => {
         aiRequestContext(
-          { cookies: { performance_ai_runtime: 'chatgpt' }, session: { user: { sub: 'employee-42' } }, headers: {} },
+          {
+            cookies: { performance_ai_runtime: 'chatgpt' },
+            session: { user: { sub: 'idp-employee-42', email: 'employee@example.com' } },
+            headers: {}
+          },
           {},
           () => service.getChatCompletions([{ role: 'user', content: 'Coach me' }])
             .then(resolve, reject)
         );
       });
       assert.equal(response.choices[0].message.content, 'Connected coaching');
-      assert.equal(captured.codexSubjectId, 'employee-42');
-      assert.equal(captured.codexSourceApp, 'performance-management');
+      assert.deepEqual(captured.identity, {
+        sub: 'idp-employee-42', email: 'employee@example.com'
+      });
+      assert.equal(captured.input.context.sourceApp, 'performance-management');
     } finally {
-      chatGptAccountService.resolveRoutableSubject = originalResolver;
+      sharedAIAccountService.complete = originalComplete;
     }
   });
 });
 
-test('Performance account control requests are signed and isolated to the Performance namespace', async () => {
-  await withEnvironment({
-    CHATGPT_GATEWAY_BASE_URL: 'https://chatgpt.test',
-    CHATGPT_GATEWAY_SHARED_SECRET: 'secret'
-  }, async () => {
-    let captured;
-    const result = await chatGptAccountService.callGateway('login/start', 'employee-42', {
-      fetchImpl: async (url, init) => {
-        captured = { url, init, body: JSON.parse(init.body) };
-        return new Response(JSON.stringify({ userCode: 'ABCD-EFGH', verificationUrl: 'https://chatgpt.com/device' }), {
-          status: 200, headers: { 'content-type': 'application/json' }
-        });
-      }
-    });
-    assert.equal(result.userCode, 'ABCD-EFGH');
-    assert.equal(captured.url, 'https://chatgpt.test/v1/codex/login/start');
-    assert.deepEqual(captured.body, { sourceApp: 'performance-management', subjectId: 'employee-42' });
-    assert.ok(captured.init.headers['x-seemplify-signature']);
-    assert.ok(captured.init.headers['x-seemplify-nonce']);
-  });
+test('Performance resolves the same canonical credential key as Recruiter for one IDP subject', () => {
+  const subject = 'idp-employee-42';
+  const expected = require('node:crypto').createHash('sha256')
+    .update(`recruiter\u001f${subject}`).digest('hex');
+  assert.equal(chatGptAccountService.subjectKeyForUser(subject), expected);
 });

@@ -15,6 +15,7 @@ const {
   deriveIdpWebhookSecret,
   deriveIdpWebhookTargetSecret,
   deriveLocalLlmServiceSecret,
+  deriveMessagingProxySecret,
   derivePerformanceProxySecret,
   deploymentPreflight,
   encryptRetirementLedger,
@@ -25,6 +26,7 @@ const {
   previousWebhookSecretProof,
   prepareRetirementLedger,
   requiredConsumerIds,
+  resolveMessagingConsumer,
   recruiterProxyReadinessProbe,
   rotationReadinessSmoke,
   ROTATION_RETIREMENT_LEDGER_KEY,
@@ -63,6 +65,36 @@ test('deployment preflight requires the IdP and every current webhook receiver',
     { id: 'performance-management', applicationId: 'performance-app' },
     { id: 'recruiter', applicationId: 'recruiter-app' }
   ]);
+});
+
+test('Messaging deployment uses an explicit app id or discovers one exact Dokploy backend', async () => {
+  const explicit = await resolveMessagingConsumer({ MESSAGING_BACKEND_APP_ID: 'messaging-explicit' }, {
+    requestImpl: async () => { throw new Error('discovery must not run'); }
+  });
+  assert.deepEqual(explicit, { id: 'messaging', applicationId: 'messaging-explicit' });
+
+  const discovered = await resolveMessagingConsumer({}, {
+    requestImpl: async (path) => {
+      assert.equal(path, '/project.all');
+      return [{ environments: [{ applications: [
+        { applicationId: 'frontend-app', name: 'messaging-frontend', domains: [{ host: 'messaging.seemplifyai.com' }] },
+        { applicationId: 'backend-app', name: 'legacy-name', domains: [{ host: 'api-messaging.seemplifyai.com' }] }
+      ] }] }];
+    }
+  });
+  assert.deepEqual(discovered, { id: 'messaging', applicationId: 'backend-app' });
+
+  await assert.rejects(
+    resolveMessagingConsumer({}, { requestImpl: async () => [{ applications: [] }] }),
+    /set MESSAGING_BACKEND_APP_ID explicitly/
+  );
+  await assert.rejects(
+    resolveMessagingConsumer({}, { requestImpl: async () => [{ applications: [
+      { applicationId: 'first', name: 'messaging-backend' },
+      { applicationId: 'second', appName: 'messaging-backend' }
+    ] }] }),
+    /matched more than one application/
+  );
 });
 
 test('gateway deployment requires a named /data volume and an enabled matching backup', () => {
@@ -129,7 +161,7 @@ test('hosted gateway usage sink is pinned to the signed Recruiter ingestion rout
   }), /HTTPS/);
 });
 
-test('only Recruiter receives the gateway master and Performance receives a service-bound derived proxy key', () => {
+test('only Recruiter receives the gateway master and connected apps receive distinct proxy keys', () => {
   const source = {
     CHATGPT_GATEWAY_BASE_URL: 'https://chatgpt.test', CHATGPT_GATEWAY_SHARED_SECRET: 'chatgpt-secret',
     LOCAL_LLM_BASE_URL: 'https://local.test', LOCAL_LLM_SHARED_SECRET: 'local-secret',
@@ -152,8 +184,10 @@ test('only Recruiter receives the gateway master and Performance receives a serv
     }
   }
   const recruiter = consumerEnvironment('recruiter', source);
+  const messaging = consumerEnvironment('messaging', source);
   const performance = consumerEnvironment('performance-management', source);
   const derived = derivePerformanceProxySecret('chatgpt-secret');
+  const messagingDerived = deriveMessagingProxySecret('chatgpt-secret');
   assert.equal(recruiter.PERFORMANCE_AI_SHARED_SECRET, derived);
   assert.equal(performance.PERFORMANCE_AI_SHARED_SECRET, derived);
   assert.equal(performance.CHATGPT_GATEWAY_SHARED_SECRET, undefined);
@@ -162,6 +196,12 @@ test('only Recruiter receives the gateway master and Performance receives a serv
   assert.equal(performance.LOCAL_LLM_SHARED_SECRET, undefined);
   assert.notEqual(derived, 'chatgpt-secret');
   assert.equal(performance.SEEMPLIFY_SHARED_AI_URL, 'https://api.seemplifyai.com');
+  assert.equal(recruiter.MESSAGING_AI_SHARED_SECRET, messagingDerived);
+  assert.equal(messaging.MESSAGING_AI_SHARED_SECRET, messagingDerived);
+  assert.equal(messaging.SEEMPLIFY_SHARED_AI_URL, 'https://api.seemplifyai.com');
+  assert.equal(messaging.CHATGPT_GATEWAY_SHARED_SECRET, undefined);
+  assert.equal(messaging.LOCAL_LLM_SHARED_SECRET, undefined);
+  assert.notEqual(messagingDerived, derived);
   assert.equal(
     consumerEnvironment('recruiter', { ...source, ENABLE_LLM_MATCHING: 'false' }).ENABLE_LLM_MATCHING,
     'false'

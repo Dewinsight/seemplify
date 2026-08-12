@@ -48,7 +48,9 @@ const activities = {
   'performance.team.insights': ['Team performance insights', 'Team insights', 'high', 'performance'],
   'performance.meeting.analysis': ['Performance meeting analysis', 'Meetings', 'high', 'performance'],
   'performance.appraisal.chat': ['Appraisal assistant', 'Appraisals', 'medium', 'performance'],
-  'performance.calibration.insights': ['Calibration insights', 'Calibration', 'high', 'performance']
+  'performance.calibration.insights': ['Calibration insights', 'Calibration', 'high', 'performance'],
+  'messaging.chat': ['Messaging AI chat', 'Messaging', 'medium', 'messaging'],
+  'messaging.workspace': ['Messaging notes and pages', 'Messaging', 'medium', 'messaging']
 };
 
 const ACTIVITY_DEFINITIONS = Object.freeze(Object.fromEntries(

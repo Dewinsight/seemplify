@@ -19,6 +19,7 @@ test('legacy subject metadata is healed without replacing the user-backed gatewa
   const originalFindOne = AIUserRuntimeAccount.findOne;
   const account = {
     user: '507f191e810c19729de860e8',
+    idpSubject: 'idp-legacy-user',
     organization: '507f191e810c19729de860e7',
     subjectKey: 'legacy-wrong-hash',
     saves: 0,
@@ -26,9 +27,9 @@ test('legacy subject metadata is healed without replacing the user-backed gatewa
   };
   AIUserRuntimeAccount.findOne = async () => account;
   try {
-    const result = await codexAccountService.accountForUser({ id: account.user });
+    const result = await codexAccountService.accountForUser({ id: account.user, idpSubject: account.idpSubject });
     assert.equal(result.user, '507f191e810c19729de860e8');
-    assert.equal(result.subjectKey, codexAccountService.subjectKeyForUser(account.user));
+    assert.equal(result.subjectKey, codexAccountService.subjectKeyForUser(account.idpSubject));
     assert.equal(result.saves, 1);
   } finally {
     AIUserRuntimeAccount.findOne = originalFindOne;
@@ -41,19 +42,21 @@ test('an already-connected login response does not erase account details it omit
   const originalSecret = process.env.CHATGPT_GATEWAY_SHARED_SECRET;
   const account = {
     user: '507f191e810c19729de860e6',
+    idpSubject: 'idp-connected-user',
     organization: '507f191e810c19729de860e5',
     subjectKey: codexAccountService.subjectKeyForUser('507f191e810c19729de860e6'),
     status: 'connected',
     connectedEmail: 'person@example.test',
     planType: 'pro',
     connectedAt: new Date('2026-08-01T00:00:00Z'),
+    credentialNamespaceVersion: 2,
     async save() { return this; }
   };
   AIUserRuntimeAccount.findOne = async () => account;
   process.env.CHATGPT_GATEWAY_BASE_URL = 'http://hosted-gateway.test:11435';
   process.env.CHATGPT_GATEWAY_SHARED_SECRET = 'hosted-test-secret';
   try {
-    const result = await codexAccountService.startLogin({ id: account.user }, {
+    const result = await codexAccountService.startLogin({ id: account.user, idpSubject: account.idpSubject }, {
       fetchImpl: async () => new Response(JSON.stringify({ connected: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' }
@@ -76,9 +79,11 @@ test('a transient hosted-gateway outage never disconnects a verified account', a
   const originalSecret = process.env.CHATGPT_GATEWAY_SHARED_SECRET;
   const account = {
     user: '507f191e810c19729de860ea',
+    idpSubject: 'idp-outage-user',
     organization: '507f191e810c19729de860eb',
     status: 'connected',
     lastError: '',
+    credentialNamespaceVersion: 2,
     isRoutable() { return this.status === 'connected'; },
     async save() { return this; }
   };
@@ -88,7 +93,7 @@ test('a transient hosted-gateway outage never disconnects a verified account', a
 
   try {
     const result = await codexAccountService.readAccount(
-      { id: account.user },
+      { id: account.user, idpSubject: account.idpSubject },
       { fetchImpl: async () => { throw new Error('rolling deployment'); } }
     );
     assert.equal(result.status, 'connected');
@@ -109,11 +114,13 @@ test('background subject resolution heals a stale account from the hosted gatewa
   const originalSecret = process.env.CHATGPT_GATEWAY_SHARED_SECRET;
   const account = {
     user: '507f191e810c19729de860ec',
+    idpSubject: 'idp-background-user',
     organization: '507f191e810c19729de860ed',
     subjectKey: 'hosted-subject-key',
     status: 'error',
     dataSharingAcknowledgedAt: new Date(),
     lastError: 'temporary outage',
+    credentialNamespaceVersion: 2,
     isRoutable() { return this.status === 'connected' && Boolean(this.dataSharingAcknowledgedAt); },
     async save() { return this; }
   };
@@ -137,8 +144,8 @@ test('background subject resolution heals a stale account from the hosted gatewa
       }), { status: 200, headers: { 'content-type': 'application/json' } })
     });
     assert.deepEqual(subject, {
-      subjectId: account.user,
-      subjectKey: account.subjectKey,
+      subjectId: account.idpSubject,
+      subjectKey: codexAccountService.subjectKeyForUser(account.idpSubject),
       sourceApp: 'recruiter'
     });
     assert.equal(account.status, 'connected');
@@ -159,6 +166,7 @@ test('foreground subject resolution rechecks exact Recruiter organization author
   const orgB = '507f191e810c19729de860f5';
   const account = {
     user: actorId,
+    idpSubject: 'idp-foreground-user',
     subjectKey: 'exact-org-subject',
     status: 'connected',
     dataSharingAcknowledgedAt: new Date(),
@@ -179,7 +187,7 @@ test('foreground subject resolution rechecks exact Recruiter organization author
       organizationId: orgA,
       findUser: async () => actor
     });
-    assert.equal(allowed.subjectId, actorId);
+    assert.equal(allowed.subjectId, account.idpSubject);
     const denied = await codexAccountService.resolveRoutableSubject(actorId, {
       organizationId: orgB,
       findUser: async () => actor

@@ -3,6 +3,7 @@
 const SHARED_CONSUMERS = Object.freeze([
   Object.freeze({ id: 'identity-provider', applicationIdEnv: 'IDENTITY_PROVIDER_APP_ID' }),
   Object.freeze({ id: 'leave-management', applicationIdEnv: 'LEAVE_BACKEND_APP_ID' }),
+  Object.freeze({ id: 'messaging', applicationIdEnv: 'MESSAGING_BACKEND_APP_ID' }),
   Object.freeze({ id: 'payroll', applicationIdEnv: 'PAYROLL_BACKEND_APP_ID' }),
   Object.freeze({ id: 'performance-management', applicationIdEnv: 'PERFORMANCE_BACKEND_APP_ID' }),
   Object.freeze({ id: 'recruiter', applicationIdEnv: 'RECRUITER_BACKEND_APP_ID' }),
