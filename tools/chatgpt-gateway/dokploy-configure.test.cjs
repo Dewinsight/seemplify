@@ -737,6 +737,19 @@ test('readiness probes reject HTML or unrelated 200 responses', async () => {
       }), { status: 200 });
     }
   }), true);
+  await assert.rejects(gatewayConsumerRegistrationProbe({
+    ...source,
+    SEEMPLIFY_GATEWAY_RELEASE_SHA: 'a'.repeat(40)
+  }, {
+    fetchImpl: async () => new Response(JSON.stringify({
+      ok: true,
+      service: 'seemplify-ai-gateway',
+      runtime: 'codex-app-server',
+      ownership: 'seemplify-platform',
+      consumers: ['recruiter', 'messaging'],
+      release: 'b'.repeat(40)
+    }), { status: 200 })
+  }), /did not register Messaging/);
   await assert.rejects(recruiterProxyReadinessProbe(source, {
     fetchImpl: async () => new Response('<html>ok</html>', { status: 200 })
   }), /invalid JSON response/);

@@ -40,6 +40,9 @@ const storageSecret = String(
   || requestSecret
 ).trim();
 const usageSinkUrl = String(process.env.PLATFORM_AI_USAGE_SINK_URL || '').trim();
+const releaseSha = /^[a-f0-9]{40}$/i.test(String(process.env.SEEMPLIFY_GATEWAY_RELEASE_SHA || '').trim())
+  ? String(process.env.SEEMPLIFY_GATEWAY_RELEASE_SHA).trim().toLowerCase()
+  : '';
 const maxBodyBytes = Math.max(1024, Number(process.env.CHATGPT_GATEWAY_MAX_BODY_BYTES || 8 * 1024 * 1024));
 const signatureSkewMs = Number(process.env.CHATGPT_GATEWAY_SIGNATURE_SKEW_MS || 5 * 60_000);
 const nonceTtlMs = Number(process.env.CHATGPT_GATEWAY_NONCE_TTL_MS || 10 * 60_000);
@@ -396,6 +399,7 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, ready ? 200 : 503, {
         ok: ready, service: 'seemplify-ai-gateway', runtime: 'codex-app-server',
         ownership: 'seemplify-platform', consumers: [...sessions.allowedSourceApps()],
+        release: releaseSha,
         telemetry: usageLedger.status(), telemetryMirrorConfigured: Boolean(usageOutbox), persistence: 'server-volume'
       });
     }

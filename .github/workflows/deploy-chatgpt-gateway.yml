@@ -87,26 +87,13 @@ jobs:
           echo "snapshot_volume=$snapshot_volume" >> "$GITHUB_OUTPUT"
           echo "snapshot_archive=$snapshot_archive" >> "$GITHUB_OUTPUT"
           echo "snapshot_sha256=$snapshot_sha256" >> "$GITHUB_OUTPUT"
-      - name: Configure shared Seemplify AI gateway and consumers
-        run: node tools/chatgpt-gateway/dokploy-configure.cjs
+      - name: Deploy and verify the exact ChatGPT gateway release
+        run: node tools/chatgpt-gateway/dokploy-deploy-gateway.cjs
         env:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
           DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
           CHATGPT_GATEWAY_APP_ID: ${{ secrets.CHATGPT_GATEWAY_APP_ID }}
-          RECRUITER_BACKEND_APP_ID: ${{ secrets.RECRUITER_BACKEND_APP_ID }}
-          PERFORMANCE_BACKEND_APP_ID: ${{ secrets.PERFORMANCE_BACKEND_APP_ID }}
-          MESSAGING_BACKEND_APP_ID: ${{ secrets.MESSAGING_BACKEND_APP_ID }}
-          IDENTITY_PROVIDER_APP_ID: ${{ secrets.IDENTITY_PROVIDER_APP_ID }}
-          LEAVE_BACKEND_APP_ID: ${{ secrets.LEAVE_BACKEND_APP_ID }}
-          PAYROLL_BACKEND_APP_ID: ${{ secrets.PAYROLL_BACKEND_APP_ID }}
-          TIME_ATTENDANCE_BACKEND_APP_ID: ${{ secrets.TIME_ATTENDANCE_BACKEND_APP_ID }}
           CHATGPT_GATEWAY_BASE_URL: ${{ secrets.CHATGPT_GATEWAY_BASE_URL }}
-          CHATGPT_GATEWAY_SHARED_SECRET: ${{ secrets.CHATGPT_GATEWAY_SHARED_SECRET }}
-          LOCAL_LLM_BASE_URL: ${{ secrets.LOCAL_LLM_BASE_URL }}
-          LOCAL_LLM_SHARED_SECRET: ${{ secrets.LOCAL_LLM_SHARED_SECRET }}
-          IDP_WEBHOOK_MASTER_SECRET: ${{ secrets.IDP_WEBHOOK_MASTER_SECRET }}
-          CV_STATUS_TOKEN_SECRET: ${{ secrets.CV_STATUS_TOKEN_SECRET }}
-          OIDC_CLIENT_SECRET: ${{ secrets.RECRUITER_OIDC_CLIENT_SECRET }}
           CHATGPT_GATEWAY_HOST_SNAPSHOT_VOLUME: ${{ steps.host_snapshot.outputs.snapshot_volume }}
           CHATGPT_GATEWAY_HOST_SNAPSHOT_ARCHIVE: ${{ steps.host_snapshot.outputs.snapshot_archive }}
           CHATGPT_GATEWAY_HOST_SNAPSHOT_SHA256: ${{ steps.host_snapshot.outputs.snapshot_sha256 }}

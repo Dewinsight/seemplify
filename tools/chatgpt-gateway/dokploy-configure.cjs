@@ -356,7 +356,9 @@ async function gatewayConsumerRegistrationProbe(source = process.env, { fetchImp
       || status.runtime !== 'codex-app-server'
       || status.ownership !== 'seemplify-platform'
       || !Array.isArray(status.consumers)
-      || !status.consumers.includes('messaging')) {
+      || !status.consumers.includes('messaging')
+      || (String(source.SEEMPLIFY_GATEWAY_RELEASE_SHA || '').trim()
+        && status.release !== String(source.SEEMPLIFY_GATEWAY_RELEASE_SHA).trim().toLowerCase())) {
     throw new Error('Gateway consumer readiness probe did not register Messaging');
   }
   return true;
