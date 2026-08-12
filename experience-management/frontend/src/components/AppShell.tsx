@@ -91,6 +91,11 @@ function PendingInvitationBar({ invitations, acceptingId, error, onAccept }: {
 
 type RuntimeState = 'checking' | 'ready' | 'unavailable';
 
+async function signOutOfApplication() {
+  try { await api('/api/auth/logout', { method: 'POST' }); }
+  finally { storeActiveSpaceId(null); window.location.assign('/login'); }
+}
+
 function runtimeSummary(label: string) {
   const match = label.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
   return match ? `${match[1].trim()} · ${match[2].trim()}` : label;
@@ -100,10 +105,6 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
   close?: () => void; runtimeState: RuntimeState; runtimeLabel: string; session: AuthSession | null;
   switching: boolean; onSwitch: (spaceId: string) => void; selectorId: string;
 }) {
-  async function signOut() {
-    try { await api('/api/auth/logout', { method: 'POST' }); }
-    finally { storeActiveSpaceId(null); window.location.assign('/login'); }
-  }
   const status = runtimeState === 'ready' ? 'Ready' : runtimeState === 'checking' ? 'Checking' : 'Unavailable';
   const StatusIcon = runtimeState === 'ready' ? CircleCheck : runtimeState === 'checking' ? LoaderCircle : CircleAlert;
   return <>
@@ -167,7 +168,7 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
           <span data-testid="sidebar-runtime-provider" className="mt-0.5 block truncate text-[11px] text-muted-foreground" title={runtimeLabel}>{runtimeSummary(runtimeLabel)}</span>
         </span>
       </Link>}
-      <button onClick={signOut} className="mt-1 flex h-9 w-full items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><LogOut className="h-4 w-4" />Sign out</button>
+      <button onClick={() => void signOutOfApplication()} className="mt-1 flex h-9 w-full items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><LogOut className="h-4 w-4" />Sign out</button>
       <div className="flex gap-3 px-2 pt-1 text-[11px] text-muted-foreground"><Link className="hover:text-foreground hover:underline" to="/legal/terms">Terms</Link><Link className="hover:text-foreground hover:underline" to="/legal/privacy">Privacy</Link></div>
     </div>
   </>;
@@ -333,6 +334,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       void loadRuntime();
     }}
     onRetry={() => void loadProviderState()}
+    onSignOut={signOutOfApplication}
   />;
   if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span><ThemePreferenceMenu />{providerExperienceReady && <SectionTutorial tutorial={tutorial} />}</div></header><main>{sessionChildren}</main>{providerGate}</div>;
   return <div className="min-h-screen bg-background">
