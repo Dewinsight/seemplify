@@ -2,7 +2,12 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { deployGateway, releaseSha, waitForExactGatewayReadiness } = require('./dokploy-deploy-gateway.cjs');
+const {
+  deployGateway,
+  releaseSha,
+  waitForExactGatewayReadiness,
+  waitForGatewayDeployment
+} = require('./dokploy-deploy-gateway.cjs');
 
 const RELEASE = 'a'.repeat(40);
 
@@ -14,6 +19,7 @@ test('gateway releases require an immutable commit identity', () => {
 test('narrow gateway deployment changes only the release marker and proves the exact live build', async () => {
   const requests = [];
   let configured;
+  let readinessCalls = 0;
   const result = await deployGateway({
     CHATGPT_GATEWAY_APP_ID: 'gateway-app',
     CHATGPT_GATEWAY_BASE_URL: 'https://gateway.example.test',
@@ -36,6 +42,7 @@ test('narrow gateway deployment changes only the release marker and proves the e
     },
     readinessAttempts: 1,
     fetchImpl: async (url, init) => {
+      readinessCalls += 1;
       if (url.endsWith('/health')) {
         return new Response(JSON.stringify({
           ok: true,
@@ -60,8 +67,24 @@ test('narrow gateway deployment changes only the release marker and proves the e
   assert.deepEqual(configured[1], { SEEMPLIFY_GATEWAY_RELEASE_SHA: RELEASE });
   assert.deepEqual(configured[2], []);
   assert.equal(configured[4].acceptRunningDeploymentWhenReady, true);
-  assert.equal(configured[4].skipDeploymentWhenEnvironmentExact, true);
-  assert.deepEqual(await configured[4].waitForDeploymentImpl(), { status: 'triggered-for-container-proof' });
+  assert.equal(configured[4].skipDeploymentWhenEnvironmentExact, undefined);
+  assert.equal(typeof configured[4].waitForDeploymentImpl, 'function');
+  assert.equal(readinessCalls, 4);
+});
+
+test('gateway deployment polling rejects build failures and accepts exact readiness while Dokploy is running', async () => {
+  const running = await waitForGatewayDeployment('gateway-app', 'release-title', async () => true, {
+    attempts: 1,
+    requestImpl: async () => [{ title: 'release-title', status: 'running' }]
+  });
+  assert.deepEqual(running, { status: 'exact-readiness-passed', deploymentStatus: 'running' });
+
+  await assert.rejects(waitForGatewayDeployment('gateway-app', 'release-title', async () => true, {
+    attempts: 1,
+    requestImpl: async () => ({
+      data: { deployments: [{ title: 'release-title', status: 'error', errorMessage: 'image build failed' }] }
+    })
+  }), /image build failed/);
 });
 
 test('exact readiness retries transient cutover failures and rejects the wrong release', async () => {

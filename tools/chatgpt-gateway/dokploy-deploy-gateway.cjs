@@ -15,6 +15,18 @@ function releaseSha(source = process.env) {
   return value;
 }
 
+function deploymentItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  for (const key of ['deployments', 'items', 'data']) {
+    const value = payload[key];
+    if (Array.isArray(value)) return value;
+    const nested = deploymentItems(value);
+    if (nested.length) return nested;
+  }
+  return [];
+}
+
 async function request(path, options = {}, source = process.env) {
   const token = String(source.DOKPLOY_TOKEN || '').trim();
   if (!token) throw new Error('DOKPLOY_TOKEN is required');
@@ -50,13 +62,52 @@ async function waitForExactGatewayReadiness(source, {
   throw new Error(`Exact gateway release did not become ready: ${lastError?.message || 'readiness timeout'}`);
 }
 
+async function waitForGatewayDeployment(applicationId, title, readinessProbe, {
+  requestImpl,
+  attempts = 900,
+  delayMs = 2_000,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+} = {}) {
+  let lastStatus = 'queued';
+  let lastReadinessError = 'not checked';
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const payload = await requestImpl(`/deployment.all?applicationId=${encodeURIComponent(applicationId)}`);
+    const deployment = deploymentItems(payload).find((item) => String(item?.title || '') === title);
+    if (deployment) {
+      lastStatus = String(deployment.status || 'running').toLowerCase();
+      if (lastStatus === 'error' || lastStatus === 'cancelled') {
+        throw new Error(
+          `Dokploy deployment ${title} ${lastStatus}: ${deployment.errorMessage || 'no error detail'}`
+        );
+      }
+    }
+
+    try {
+      await readinessProbe();
+      return { status: 'exact-readiness-passed', deploymentStatus: lastStatus };
+    } catch (error) {
+      lastReadinessError = error?.message || 'readiness failed';
+    }
+
+    if (attempt < attempts) await wait(delayMs);
+  }
+
+  throw new Error(
+    `Dokploy deployment ${title} did not reach exact readiness `
+      + `(last status: ${lastStatus}; readiness: ${lastReadinessError})`
+  );
+}
+
 async function deployGateway(source = process.env, {
   requestImpl = (path, options) => request(path, options, source),
   configureApplicationImpl = configureApplication,
   fetchImpl = fetch,
   wait = undefined,
   readinessAttempts = 90,
-  readinessDelayMs = 2_000
+  readinessDelayMs = 2_000,
+  deploymentAttempts = 900,
+  deploymentDelayMs = 2_000
 } = {}) {
   const applicationId = String(source.CHATGPT_GATEWAY_APP_ID || '').trim();
   if (!applicationId) throw new Error('CHATGPT_GATEWAY_APP_ID is required');
@@ -74,13 +125,16 @@ async function deployGateway(source = process.env, {
     CHATGPT_GATEWAY_SHARED_SECRET: currentSecret,
     SEEMPLIFY_GATEWAY_RELEASE_SHA: release
   };
-  const readinessProbe = () => waitForExactGatewayReadiness(readinessSource, {
-    fetchImpl,
-    attempts: readinessAttempts,
-    delayMs: readinessDelayMs,
-    ...(wait ? { wait } : {})
-  });
-  return configureApplicationImpl(
+  const readinessProbe = (attempts = readinessAttempts, delayMs = readinessDelayMs) => (
+    waitForExactGatewayReadiness(readinessSource, {
+      fetchImpl,
+      attempts,
+      delayMs,
+      ...(wait ? { wait } : {})
+    })
+  );
+  const deploymentReadinessProbe = () => readinessProbe(1, 0);
+  const result = await configureApplicationImpl(
     applicationId,
     { SEEMPLIFY_GATEWAY_RELEASE_SHA: release },
     [],
@@ -88,15 +142,23 @@ async function deployGateway(source = process.env, {
     {
       requestImpl,
       title: `Seemplify ChatGPT gateway release ${release}`,
-      readinessProbe,
+      readinessProbe: deploymentReadinessProbe,
       acceptRunningDeploymentWhenReady: true,
-      skipDeploymentWhenEnvironmentExact: true,
-      // Dokploy's deployment records can remain `running` long after the
-      // container has cut over. The workflow's container-local health proof
-      // is the authoritative completion gate for this narrow release path.
-      waitForDeploymentImpl: async () => ({ status: 'triggered-for-container-proof' })
+      waitForDeploymentImpl: (id, title) => waitForGatewayDeployment(
+        id,
+        title,
+        deploymentReadinessProbe,
+        {
+          requestImpl,
+          attempts: deploymentAttempts,
+          delayMs: deploymentDelayMs,
+          ...(wait ? { wait } : {})
+        }
+      )
     }
   );
+  await readinessProbe();
+  return result;
 }
 
 async function main() {
@@ -106,4 +168,9 @@ async function main() {
 
 if (require.main === module) main().catch((error) => { console.error(error.message); process.exitCode = 1; });
 
-module.exports = { deployGateway, releaseSha, waitForExactGatewayReadiness };
+module.exports = {
+  deployGateway,
+  releaseSha,
+  waitForExactGatewayReadiness,
+  waitForGatewayDeployment
+};
