@@ -14,8 +14,42 @@ const router = express.Router()
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 const VALID_ROLES = new Set(['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'])
 
+export function serializeReconciliationTeams(teams = [], organization = {}) {
+  const accountById = new Map((organization.members || []).map((member) => {
+    const account = member.account || {}
+    return [String(account._id || account), account]
+  }))
+
+  return teams.map((team) => ({
+    id: String(team._id),
+    teamId: String(team._id),
+    name: team.name,
+    description: team.description || '',
+    parentTeamId: team.parentTeam ? String(team.parentTeam) : null,
+    departmentId: team.department ? String(team.department) : null,
+    departmentName: organization.getDepartmentById?.(team.department)?.name || null,
+    managerId: team.manager ? String(team.manager) : null,
+    members: (team.members || [])
+      .filter((member) => member.status === 'active')
+      .map((member) => {
+        const account = accountById.get(String(member.account)) || {}
+        return {
+          idpSubject: account.sub || null,
+          subjectId: account.sub || null,
+          email: account.email || null,
+          role: member.role || 'member',
+          status: member.status
+        }
+      })
+      .filter((member) => member.idpSubject)
+  }))
+}
+
 function configuredSecret() {
-  return process.env.INTERNAL_SERVICE_SECRET || process.env.RECRUITER_IDP_SERVICE_SECRET || ''
+  return process.env.MESSAGING_IDP_SERVICE_SECRET
+    || process.env.INTERNAL_SERVICE_SECRET
+    || process.env.RECRUITER_IDP_SERVICE_SECRET
+    || ''
 }
 
 function requestHash(body) {
@@ -51,7 +85,9 @@ router.post('/reconcile', async (req, res) => {
     .populate('members.account', 'sub email profile')
   if (!organization) return res.status(404).json({ error: 'Organization not found' })
   const [teams, scheduledDeactivations] = await Promise.all([
-    Team.find({ organization: organization._id }).select('name department manager members').lean(),
+    Team.find({ organization: organization._id })
+      .select('name description parentTeam department manager members')
+      .lean(),
     ScheduledMembershipAction.find({
       organizationId: organization._id,
       operation: 'deactivate',
@@ -78,7 +114,14 @@ router.post('/reconcile', async (req, res) => {
       reconciledAt: new Date().toISOString(),
     })
   })
-  res.json({ schemaVersion: '1.0', organizationId: organization._id, generatedAt: new Date(), memberships })
+  res.json({
+    schemaVersion: '1.0',
+    organizationId: organization._id,
+    organization: { id: organization._id.toString(), name: organization.name },
+    generatedAt: new Date(),
+    memberships,
+    teams: serializeReconciliationTeams(teams, organization)
+  })
 })
 
 function memberData(account, organization, member, extra = {}) {

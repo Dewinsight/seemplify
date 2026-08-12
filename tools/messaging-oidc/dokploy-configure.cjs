@@ -8,6 +8,7 @@ const {
 } = require('../chatgpt-gateway/dokploy-configure.cjs');
 
 const MESSAGING_OIDC_KEY_CONTEXT = 'seemplify-oidc-client-v1:messaging';
+const MESSAGING_MEMBERSHIP_KEY_CONTEXT = 'seemplify-idp-membership-v1:messaging';
 
 function deriveMessagingOidcSecret(operatorMaster) {
   const master = String(operatorMaster || '').trim();
@@ -17,16 +18,27 @@ function deriveMessagingOidcSecret(operatorMaster) {
     .digest('base64url');
 }
 
+function deriveMessagingMembershipSecret(operatorMaster) {
+  const master = String(operatorMaster || '').trim();
+  deriveIdpWebhookSecret(master);
+  return crypto.createHmac('sha256', master)
+    .update(MESSAGING_MEMBERSHIP_KEY_CONTEXT)
+    .digest('base64url');
+}
+
 function deploymentEnvironment(source = process.env) {
   const issuer = String(source.IDP_ISSUER_URL || 'https://auth.seemplifyai.com').replace(/\/+$/, '');
-  const frontendUrl = String(source.MESSAGING_URL || 'https://messaging.seemplifyai.com').replace(/\/+$/, '');
-  const apiUrl = String(source.MESSAGING_API_URL || 'https://api-messaging.seemplifyai.com').replace(/\/+$/, '');
+  const frontendUrl = String(source.MESSAGING_URL || 'https://workspace.seemplifyai.com').replace(/\/+$/, '');
+  const apiUrl = String(source.MESSAGING_API_URL || 'https://api-workspace.seemplifyai.com').replace(/\/+$/, '');
   const clientSecret = deriveMessagingOidcSecret(source.IDP_WEBHOOK_MASTER_SECRET);
+  const membershipSecret = deriveMessagingMembershipSecret(source.IDP_WEBHOOK_MASTER_SECRET);
   return {
     identityProvider: {
       MESSAGING_OIDC_CLIENT_SECRET: clientSecret,
       MESSAGING_URL: frontendUrl,
       MESSAGING_API_URL: apiUrl,
+      MESSAGING_WEBHOOK_URL: `${apiUrl}/api/webhooks/idp`,
+      MESSAGING_IDP_SERVICE_SECRET: membershipSecret,
     },
     messaging: {
       IDP_AUTH_REQUIRED: 'true',
@@ -35,6 +47,8 @@ function deploymentEnvironment(source = process.env) {
       OIDC_CLIENT_SECRET: clientSecret,
       OIDC_REDIRECT_URI: `${apiUrl}/api/auth/oidc/callback`,
       FRONTEND_URL: frontendUrl,
+      APP_URL: frontendUrl,
+      MESSAGING_IDP_SERVICE_SECRET: membershipSecret,
     },
   };
 }
@@ -129,6 +143,7 @@ module.exports = {
   configureMessagingOidc,
   deploymentEnvironment,
   deriveMessagingOidcSecret,
+  deriveMessagingMembershipSecret,
   idpMessagingClientReady,
   messagingOidcReady,
   waitForReadiness,

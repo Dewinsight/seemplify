@@ -24,8 +24,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Verify Messaging OIDC contracts
-        run: node --test Identityprovider/test/messaging-oidc-client.test.mjs tools/messaging-oidc/dokploy-configure.test.cjs
+      - name: Verify Workspace identity and team contracts
+        run: node --test Identityprovider/test/messaging-oidc-client.test.mjs Identityprovider/test/internal-membership-teams.test.mjs tools/messaging-oidc/dokploy-configure.test.cjs
 
       - name: Configure and deploy Messaging OIDC trust
         env:

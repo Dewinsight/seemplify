@@ -5,6 +5,7 @@ const test = require('node:test');
 const {
   configureMessagingOidc,
   deploymentEnvironment,
+  deriveMessagingMembershipSecret,
   deriveMessagingOidcSecret,
   idpMessagingClientReady,
   messagingOidcReady,
@@ -20,6 +21,15 @@ test('Messaging OIDC uses a stable key separated from the operator master', () =
   assert.throws(() => deriveMessagingOidcSecret('change-me'), /32 high-entropy bytes/);
 });
 
+test('membership reconciliation uses a dedicated matching service secret', () => {
+  const environment = deploymentEnvironment({ IDP_WEBHOOK_MASTER_SECRET: master });
+  const secret = deriveMessagingMembershipSecret(master);
+  assert.equal(environment.identityProvider.MESSAGING_IDP_SERVICE_SECRET, secret);
+  assert.equal(environment.messaging.MESSAGING_IDP_SERVICE_SECRET, secret);
+  assert.notEqual(secret, deriveMessagingOidcSecret(master));
+  assert.notEqual(secret, master);
+});
+
 test('the IdP and Messaging receive one matching production OIDC contract', () => {
   const environment = deploymentEnvironment({ IDP_WEBHOOK_MASTER_SECRET: master });
   assert.equal(
@@ -31,8 +41,10 @@ test('the IdP and Messaging receive one matching production OIDC contract', () =
     IDP_ISSUER_URL: 'https://auth.seemplifyai.com',
     OIDC_CLIENT_ID: 'messaging',
     OIDC_CLIENT_SECRET: environment.identityProvider.MESSAGING_OIDC_CLIENT_SECRET,
-    OIDC_REDIRECT_URI: 'https://api-messaging.seemplifyai.com/api/auth/oidc/callback',
-    FRONTEND_URL: 'https://messaging.seemplifyai.com',
+    OIDC_REDIRECT_URI: 'https://api-workspace.seemplifyai.com/api/auth/oidc/callback',
+    FRONTEND_URL: 'https://workspace.seemplifyai.com',
+    APP_URL: 'https://workspace.seemplifyai.com',
+    MESSAGING_IDP_SERVICE_SECRET: deriveMessagingMembershipSecret(master),
   });
 });
 

@@ -168,7 +168,7 @@ function consumerDeploymentEndpoint(serviceId, source = process.env) {
       || source.PERFORMANCE_API_URL
       || 'https://api-performance.seemplifyai.com'
     : serviceId === 'messaging'
-      ? source.MESSAGING_API_URL || 'https://api-messaging.seemplifyai.com'
+      ? source.MESSAGING_API_URL || 'https://api-workspace.seemplifyai.com'
       : '';
   const pathname = CONSUMER_DEPLOYMENT_PATHS[serviceId];
   if (!base || !pathname) {

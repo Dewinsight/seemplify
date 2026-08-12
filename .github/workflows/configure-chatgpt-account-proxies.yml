@@ -50,7 +50,7 @@ jobs:
           CHATGPT_GATEWAY_SHARED_SECRET: ${{ secrets.CHATGPT_GATEWAY_SHARED_SECRET }}
           SEEMPLIFY_SHARED_AI_URL: https://api.seemplifyai.com
           PERFORMANCE_MANAGEMENT_API_URL: ${{ vars.PERFORMANCE_MANAGEMENT_API_URL || 'https://api-performance.seemplifyai.com' }}
-          MESSAGING_API_URL: ${{ vars.MESSAGING_API_URL || 'https://api-messaging.seemplifyai.com' }}
+          MESSAGING_API_URL: ${{ vars.MESSAGING_API_URL || 'https://api-workspace.seemplifyai.com' }}
           SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS: ${{ vars.SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_ATTEMPTS || '900' }}
           SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_DELAY_MS: ${{ vars.SEEMPLIFY_PROXY_DEPLOYMENT_WAIT_DELAY_MS || '2000' }}
           SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS: ${{ vars.SEEMPLIFY_PROXY_READINESS_WAIT_ATTEMPTS || '600' }}

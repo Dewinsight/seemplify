@@ -913,7 +913,8 @@ async function resolveMessagingConsumer(source = process.env, { requestImpl = re
 
   const applications = collectApplications(await requestImpl('/project.all'));
   const domainMatches = applications.filter((application) => (
-    applicationHosts(application).has('api-messaging.seemplifyai.com')
+    applicationHosts(application).has('api-workspace.seemplifyai.com')
+      || applicationHosts(application).has('api-messaging.seemplifyai.com')
   ));
   const nameMatches = applications.filter((application) => (
     ['name', 'appName'].some((key) => (

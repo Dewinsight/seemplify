@@ -142,6 +142,12 @@ router.post('/organizations/:orgId/teams',
 
       console.log('✅ Team created:', team.name, 'in', req.organization.name, 'by', req.user.email)
 
+      await webhookService.sendWebhook('team.created', {
+        organizationId: req.params.orgId,
+        teamId: team._id.toString(),
+        action: 'created'
+      })
+
       res.status(201).json({
         id: team._id,
         name: team.name,
@@ -329,6 +335,12 @@ router.put('/:teamId',
 
       console.log('✅ Team updated:', team.name, 'by', req.user.email)
 
+      await webhookService.sendWebhook('team.updated', {
+        organizationId: team.organization.toString(),
+        teamId: team._id.toString(),
+        action: 'updated'
+      })
+
       res.json({
         id: team._id,
         name: team.name,
@@ -385,6 +397,12 @@ router.delete('/:teamId',
 
       await Team.findByIdAndDelete(req.params.teamId)
       await organization.syncMemberDepartmentsFromTeams(memberIds)
+
+      await webhookService.sendWebhook('team.deleted', {
+        organizationId: organization._id.toString(),
+        teamId: team._id.toString(),
+        action: 'deleted'
+      })
 
       console.log('✅ Team deleted:', team.name, 'by', req.user.email)
 

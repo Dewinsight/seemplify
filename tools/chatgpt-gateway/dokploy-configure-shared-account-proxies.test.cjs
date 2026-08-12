@@ -153,7 +153,7 @@ test('consumer deployment endpoints use configurable bases and fail closed on in
   );
   assert.equal(
     consumerDeploymentEndpoint('messaging', source),
-    'https://api-messaging.seemplifyai.com/api/workspace-ai/deployment-health'
+    'https://api-workspace.seemplifyai.com/api/workspace-ai/deployment-health'
   );
   assert.equal(
     consumerDeploymentEndpoint('performance-management', {
@@ -209,7 +209,7 @@ test('consumer deployment probes bind the exact target key and require both exac
   }
   assert.deepEqual(requests.map(({ url }) => url), [
     'https://api-performance.seemplifyai.com/api/ai-account/deployment-health',
-    'https://api-messaging.seemplifyai.com/api/workspace-ai/deployment-health'
+    'https://api-workspace.seemplifyai.com/api/workspace-ai/deployment-health'
   ]);
   for (const { init } of requests) {
     assert.equal(init.method, 'POST');

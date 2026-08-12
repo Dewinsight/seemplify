@@ -11,11 +11,11 @@ test('Workspace is a launchable IDP app with the stable messaging callback', asy
 
   assert.ok(client)
   assert.ok(client.redirect_uri_patterns.includes(
-    'https://api-messaging.seemplifyai.com/api/auth/oidc/callback'
+    'https://api-workspace.seemplifyai.com/api/auth/oidc/callback'
   ))
   assert.equal(client.token_endpoint_auth_method, 'client_secret_basic')
   assert.equal(app?.clientId, 'messaging')
-  assert.equal(app?.name, 'Seemplify Workspace')
+  assert.equal(app?.name, 'Workspace')
   assert.match(app?.description || '', /Messages, AI, boards, notes, pages, and meetings/)
   assert.equal(app?.category, 'productivity')
   assert.equal(app?.isActive, true)
