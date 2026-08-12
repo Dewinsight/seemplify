@@ -25,21 +25,21 @@
       --input-bg: #ffffff;
     }
     [data-theme="dark"] {
-      --player-hero-start: rgba(56, 189, 248, 0.16);
-      --player-hero-end: rgba(255, 255, 255, 0.92);
-      --player-surface: #ffffff;
-      --player-surface-strong: #f8fafc;
-      --player-pill-bg: #f8fafc;
-      --player-link: #0c4a6e;
-      --border: #e5e7eb;
-      --text: #0f172a;
-      --muted: #64748b;
-      --panel-solid: #ffffff;
-      --card-bg: #ffffff;
-      --input-bg: #ffffff;
+      --player-hero-start: rgba(155, 124, 255, 0.14);
+      --player-hero-end: var(--seem-surface-soft, #211e29);
+      --player-surface: var(--seem-surface, #18161f);
+      --player-surface-strong: var(--seem-surface-soft, #211e29);
+      --player-pill-bg: var(--seem-surface-soft, #211e29);
+      --player-link: var(--seem-brand-strong, #b8a4ff);
+      --border: var(--seem-line, #312d39);
+      --text: var(--seem-text, #f7f5fa);
+      --muted: var(--seem-muted, #bbb5c2);
+      --panel-solid: var(--seem-surface, #18161f);
+      --card-bg: var(--seem-surface, #18161f);
+      --input-bg: var(--seem-surface, #18161f);
     }
     body.public-site.lmsv-player-page {
-      background: #ffffff;
+      background: var(--seem-canvas, #ffffff);
     }
     .player-shell {
       width: min(1320px, 100%);
@@ -243,8 +243,8 @@
     }
     .curriculum-lesson.active {
       border-color: rgba(8, 145, 178, 0.5);
-      background: rgba(8, 145, 178, 0.12);
-      color: #0c4a6e;
+      background: var(--seem-brand-soft, rgba(8, 145, 178, 0.12));
+      color: var(--player-link);
     }
     .curriculum-lesson-label {
       display: inline-flex;
@@ -340,7 +340,7 @@
     .quiz-celebration {
       border: 1px solid rgba(37, 99, 235, 0.16);
       border-radius: 14px;
-      background: #f8fbff;
+      background: var(--player-surface-strong);
       padding: 12px;
       display: grid;
       grid-template-columns: 82px minmax(0, 1fr);
@@ -350,7 +350,7 @@
     }
     .quiz-celebration.is-retry {
       border-color: rgba(245, 158, 11, 0.24);
-      background: #fffaf0;
+      background: color-mix(in srgb, var(--seem-warning, #f59e0b) 10%, var(--player-surface));
     }
     .quiz-celebration img {
       width: 82px;

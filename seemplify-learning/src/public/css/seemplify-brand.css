@@ -1289,6 +1289,97 @@ html[data-brand="seemplify"] body.admin-page .metric-card {
   box-shadow: var(--seem-shadow) !important;
 }
 
+/* Keep legacy administration surfaces inside the active theme. These views
+   predate the shared tokens and otherwise retain light cards in dark mode. */
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .admin-tab-bar,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .page-header,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .table,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .quick-link,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-mgmt-chip,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-compose-shell,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-mode-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-overview-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-filter-shell,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-record-panel,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-record-stat,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-record-chapter,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-review-manage-item,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .creator-detail-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .creator-kpi-tile,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .creator-detail-grid article,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .withdrawal-trace,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .pulse-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .overview-badges .pill,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .analytics-panel,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .analytics-stat,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-lane-context-main,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-nav-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-nav-card-metric,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-view-shell,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-subnav-link,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-record-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-detail-shell,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-preview-shell,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-detail-shell .stack-metric,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-detail-note,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-panel.is-emphasis,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .role-account-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .partner-org-status-row,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .platform-admin-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .analytics-table-shell,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .audit-summary-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .audit-entry,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .audit-entry-summary,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .audit-detail-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .audit-meta-grid div,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .audit-log-empty,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .approval-summary-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .approval-lane,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .approval-history-card,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .approval-history-meta span,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .approval-empty,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .ops-column,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="background: #fff"] {
+  border-color: var(--seem-line) !important;
+  background: var(--seem-surface) !important;
+  color: var(--seem-text) !important;
+  box-shadow: none !important;
+}
+
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-management-table td,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .admin-data-table td,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .withdrawal-row-main td,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .withdrawal-row-actions td,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page th,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page td {
+  border-color: var(--seem-line) !important;
+  background: var(--seem-surface) !important;
+  color: var(--seem-text-secondary) !important;
+}
+
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page th,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .course-management-table .course-action-row td,
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page .withdrawal-row-actions td {
+  background: var(--seem-surface-soft) !important;
+  color: var(--seem-muted) !important;
+}
+
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color: #0f172a"],
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color:#0f172a"],
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color: #1e293b"],
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color:#1e293b"],
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color: #334155"],
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color:#334155"] {
+  color: var(--seem-text) !important;
+}
+
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color: #475569"],
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color:#475569"],
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color: #64748b"],
+html[data-brand="seemplify"][data-theme="dark"] body.admin-page [style*="color:#64748b"] {
+  color: var(--seem-muted) !important;
+}
+
 /* Footer */
 html[data-brand="seemplify"] .lmsv-footer {
   margin-top: 72px;

@@ -102,6 +102,7 @@ const findValidAgentInvite = async (inviteToken) => {
 }
 
 const createResetToken = () => crypto.randomBytes(32).toString('hex')
+const DEFAULT_LEARNING_DESTINATION = '/simple-lms?view=my-learning'
 
 const hashResetToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex')
 const hashOtpCode = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex')
@@ -131,7 +132,7 @@ const resolveLoginDestination = async (account, returnTo) => {
   if (shouldUseWorkspaceChooser(accessProfile, sanitizedReturnTo)) {
     return '/choose-workspace'
   }
-  return getDefaultDashboardPath(accessProfile, '/simple-lms')
+  return getDefaultDashboardPath(accessProfile, DEFAULT_LEARNING_DESTINATION)
 }
 
 const oidcStateMatches = (expected, received) => {
@@ -145,7 +146,7 @@ const beginSeemplifyLogin = async (req, res) => {
     if (!isIdpOidcConfigured()) {
       return res.redirect('/login?error=Seemplify%20sign-in%20is%20not%20configured')
     }
-    const returnTo = sanitizeReturnTo(req.query.return_to || req.query.returnTo || '/simple-lms')
+    const returnTo = sanitizeReturnTo(req.query.return_to || req.query.returnTo || DEFAULT_LEARNING_DESTINATION)
     const transaction = createOidcTransaction(returnTo)
     req.session.seemplifyOidc = transaction
     const authorizationUrl = await buildIdpAuthorizationUrl({
@@ -172,7 +173,7 @@ router.get('/api/auth/oidc/start', beginSeemplifyLogin)
 
 router.get('/auth/seemplify/callback', async (req, res) => {
   const transaction = req.session?.seemplifyOidc || null
-  const fallbackReturnTo = sanitizeReturnTo(transaction?.returnTo || '/simple-lms')
+  const fallbackReturnTo = sanitizeReturnTo(transaction?.returnTo || DEFAULT_LEARNING_DESTINATION)
   try {
     if (req.query.error) {
       const message = String(req.query.error_description || req.query.error || 'Seemplify sign-in was cancelled.')
@@ -609,7 +610,7 @@ const createAccountFromRegistration = async ({
     if (intent === 'teach') {
       destination = '/teach/get-started'
     } else {
-      destination = '/simple-lms'
+      destination = DEFAULT_LEARNING_DESTINATION
     }
   }
 
@@ -627,7 +628,7 @@ router.get('/login', optionalAuth, async (req, res) => {
   const returnTo = sanitizeReturnTo(req.query.return_to)
   const loginMode = String(req.query.mode || '').trim().toLowerCase() === 'admin' ? 'admin' : 'workspace'
   if (req.user) {
-    return res.redirect(await resolveLoginDestination(req.user, returnTo || '/simple-lms'))
+    return res.redirect(await resolveLoginDestination(req.user, returnTo || DEFAULT_LEARNING_DESTINATION))
   }
 
   const registerIntent = sanitizeIntent(
@@ -771,7 +772,7 @@ router.get('/register', optionalAuth, async (req, res) => {
     req.query.return_to || pendingIntent?.returnTo || (
       invite
         ? '/agent-dashboard'
-        : (adminInvite ? '/admin' : (intent === 'teach' ? '/teach/get-started' : '/simple-lms'))
+        : (adminInvite ? '/admin' : (intent === 'teach' ? '/teach/get-started' : DEFAULT_LEARNING_DESTINATION))
     )
   )
 
@@ -780,7 +781,7 @@ router.get('/register', optionalAuth, async (req, res) => {
   }
 
   if (req.user) {
-    return res.redirect(await resolveLoginDestination(req.user, returnTo || '/simple-lms'))
+    return res.redirect(await resolveLoginDestination(req.user, returnTo || DEFAULT_LEARNING_DESTINATION))
   }
 
   res.render('register', {
@@ -977,7 +978,7 @@ router.post('/api/users/register', async (req, res) => {
       req.body.source || (invite ? 'agent_invite_api' : (adminInvite ? 'admin_invite_api' : 'api')),
       invite ? 'agent_invite_api' : (adminInvite ? 'admin_invite_api' : 'api')
     )
-    const returnTo = sanitizeReturnTo(req.body.return_to || (invite ? '/agent-dashboard' : (adminInvite ? '/admin' : '/simple-lms')))
+    const returnTo = sanitizeReturnTo(req.body.return_to || (invite ? '/agent-dashboard' : (adminInvite ? '/admin' : DEFAULT_LEARNING_DESTINATION)))
     const name = String(req.body.name || '').trim()
     const email = normalizeEmail(req.body.email)
     const password = String(req.body.password || '')

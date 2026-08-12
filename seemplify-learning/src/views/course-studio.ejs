@@ -24,6 +24,19 @@
       --studio-shadow-soft: 0 18px 42px -34px rgba(15, 23, 42, 0.42);
       --studio-shadow-card: 0 26px 50px -38px rgba(15, 23, 42, 0.4);
     }
+    [data-theme="dark"] {
+      --studio-bg: var(--seem-canvas, #0f0e13);
+      --studio-surface: var(--seem-surface, #18161f);
+      --studio-soft: var(--seem-surface-soft, #211e29);
+      --studio-border: var(--seem-line, #312d39);
+      --studio-border-strong: var(--seem-line-strong, #46404f);
+      --studio-text: var(--seem-text, #f7f5fa);
+      --studio-muted: var(--seem-muted, #bbb5c2);
+      --studio-primary: var(--seem-brand-strong, #b8a4ff);
+      --studio-accent: var(--seem-warning, #f3bd58);
+      --studio-shadow-soft: none;
+      --studio-shadow-card: none;
+    }
     body.public-site.lmsv-course-studio-page {
       background:
         radial-gradient(920px 340px at 5% -12%, rgba(14, 116, 144, 0.16), transparent 70%),
@@ -1102,6 +1115,122 @@
         opacity: 1;
         transform: translateY(0);
       }
+    }
+    [data-theme="dark"] body.public-site.lmsv-course-studio-page,
+    [data-theme="dark"] body.lmsv-course-studio-page.studio-admin {
+      background: var(--studio-bg);
+      color: var(--studio-text);
+    }
+    [data-theme="dark"] .studio-rail,
+    [data-theme="dark"] .studio-card,
+    [data-theme="dark"] .studio-main > .studio-card:first-of-type,
+    [data-theme="dark"] .rail-link,
+    [data-theme="dark"] .rail-link:hover,
+    [data-theme="dark"] .rail-pill,
+    [data-theme="dark"] .hero-metric,
+    [data-theme="dark"] .pill,
+    [data-theme="dark"] .form-grid > .banner-upload-section,
+    [data-theme="dark"] .input,
+    [data-theme="dark"] textarea.input,
+    [data-theme="dark"] select.input,
+    [data-theme="dark"] .builder,
+    [data-theme="dark"] .builder-chapter,
+    [data-theme="dark"] .builder-lesson,
+    [data-theme="dark"] .builder-preview,
+    [data-theme="dark"] .studio-lane-card,
+    [data-theme="dark"] .course-item,
+    [data-theme="dark"] .course-item-stat,
+    [data-theme="dark"] .course-review-feedback,
+    [data-theme="dark"] .course-feedback-item,
+    [data-theme="dark"] .course-feedback-reply,
+    [data-theme="dark"] .course-feedback-empty,
+    [data-theme="dark"] .empty,
+    [data-theme="dark"] .wizard-shell,
+    [data-theme="dark"] .wizard-step,
+    [data-theme="dark"] .wizard-review-card,
+    [data-theme="dark"] .checkbox-field {
+      border-color: var(--studio-border);
+      background: var(--studio-surface);
+      color: var(--studio-text);
+      box-shadow: none;
+    }
+    [data-theme="dark"] .builder,
+    [data-theme="dark"] .builder-lesson,
+    [data-theme="dark"] .course-item-stat,
+    [data-theme="dark"] .course-feedback-reply,
+    [data-theme="dark"] .course-feedback-empty,
+    [data-theme="dark"] .empty,
+    [data-theme="dark"] .wizard-shell {
+      background: var(--studio-soft);
+    }
+    [data-theme="dark"] .rail-link.active,
+    [data-theme="dark"] .wizard-step.active,
+    [data-theme="dark"] .wizard-step.complete {
+      border-color: var(--seem-brand, #9b7cff);
+      background: var(--seem-brand-soft, rgba(112, 71, 235, 0.18));
+      color: var(--studio-text);
+    }
+    [data-theme="dark"] .rail-head h1,
+    [data-theme="dark"] .rail-pill strong,
+    [data-theme="dark"] .hero-head h2,
+    [data-theme="dark"] .section-head h3,
+    [data-theme="dark"] .subsection-title,
+    [data-theme="dark"] .hero-metric strong,
+    [data-theme="dark"] .builder-chapter-head strong,
+    [data-theme="dark"] .builder-lesson-head strong,
+    [data-theme="dark"] .studio-lane-card strong,
+    [data-theme="dark"] .course-item-title,
+    [data-theme="dark"] .course-item-meta strong,
+    [data-theme="dark"] .course-item-stat strong,
+    [data-theme="dark"] .course-review-feedback-head h4,
+    [data-theme="dark"] .course-feedback-head strong,
+    [data-theme="dark"] .course-feedback-reply strong,
+    [data-theme="dark"] .course-feedback-empty strong,
+    [data-theme="dark"] details summary,
+    [data-theme="dark"] .wizard-pane-head h4,
+    [data-theme="dark"] .wizard-review-card strong,
+    [data-theme="dark"] .checkbox-field {
+      color: var(--studio-text);
+    }
+    [data-theme="dark"] .rail-head p,
+    [data-theme="dark"] .rail-pill small,
+    [data-theme="dark"] .hero-metric small,
+    [data-theme="dark"] .subtle-note,
+    [data-theme="dark"] .banner-upload-placeholder span,
+    [data-theme="dark"] .builder-preview,
+    [data-theme="dark"] .builder-preview-note,
+    [data-theme="dark"] .builder-legacy-note,
+    [data-theme="dark"] .studio-lane-card span,
+    [data-theme="dark"] .course-item-meta,
+    [data-theme="dark"] .course-item-stat small,
+    [data-theme="dark"] .course-review-feedback-note,
+    [data-theme="dark"] .course-review-feedback-copy,
+    [data-theme="dark"] .course-feedback-copy,
+    [data-theme="dark"] .course-feedback-reply-copy,
+    [data-theme="dark"] .course-feedback-empty p,
+    [data-theme="dark"] .wizard-pane-head p,
+    [data-theme="dark"] .wizard-review-card small,
+    [data-theme="dark"] .wizard-step,
+    [data-theme="dark"] .wizard-step small {
+      color: var(--studio-muted);
+    }
+    [data-theme="dark"] .banner-upload-area {
+      border-color: var(--studio-border-strong);
+      background: var(--studio-soft);
+    }
+    [data-theme="dark"] .banner-upload-placeholder p,
+    [data-theme="dark"] .banner-upload-section > label,
+    [data-theme="dark"] label {
+      color: var(--studio-text);
+    }
+    [data-theme="dark"] .wizard-step span {
+      background: var(--studio-soft);
+      color: var(--studio-muted);
+    }
+    [data-theme="dark"] .wizard-step.active span,
+    [data-theme="dark"] .wizard-step.complete span {
+      background: var(--seem-brand, #9b7cff);
+      color: #ffffff;
     }
     @media (max-width: 1240px) {
       .studio-shell {

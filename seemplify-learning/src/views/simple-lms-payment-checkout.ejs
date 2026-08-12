@@ -10,8 +10,8 @@
   <script src="/js/theme.js?v=3"></script>
   <style>
     body.public-site.checkout-page {
-      background: #f4f7fb;
-      color: #0f172a;
+      background: var(--seem-canvas, #f4f7fb);
+      color: var(--seem-text, #0f172a);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -25,13 +25,13 @@
       flex: 1 0 auto;
     }
     .checkout-card {
-      border: 1px solid #d8e2ef;
+      border: 1px solid var(--seem-line, #d8e2ef);
       border-radius: 18px;
-      background: #fff;
+      background: var(--seem-surface, #fff);
       padding: 20px;
       display: grid;
       gap: 12px;
-      box-shadow: 0 18px 36px -30px rgba(15, 23, 42, 0.4);
+      box-shadow: var(--seem-shadow, 0 18px 36px -30px rgba(15, 23, 42, 0.4));
     }
     .checkout-card h1 {
       margin: 0;
@@ -41,13 +41,13 @@
     }
     .checkout-sub {
       margin: 0;
-      color: #5b708d;
+      color: var(--seem-muted, #5b708d);
       font-size: 15px;
     }
     .checkout-summary {
-      border: 1px solid #d8e2ef;
+      border: 1px solid var(--seem-line, #d8e2ef);
       border-radius: 14px;
-      background: #f8fbff;
+      background: var(--seem-surface-soft, #f8fbff);
       padding: 12px;
       display: grid;
       gap: 6px;
@@ -62,9 +62,9 @@
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
     .provider-option {
-      border: 1px solid #d8e2ef;
+      border: 1px solid var(--seem-line, #d8e2ef);
       border-radius: 14px;
-      background: #fff;
+      background: var(--seem-surface, #fff);
       padding: 12px;
       display: grid;
       gap: 8px;
@@ -76,11 +76,11 @@
     .provider-option.disabled {
       opacity: 0.6;
       cursor: not-allowed;
-      background: #f8fafc;
+      background: var(--seem-surface-soft, #f8fafc);
     }
     .provider-option p {
       margin: 0;
-      color: #64748b;
+      color: var(--seem-muted, #64748b);
       font-size: 13px;
       line-height: 1.45;
     }
@@ -89,15 +89,15 @@
       align-items: center;
       gap: 6px;
       width: fit-content;
-      border: 1px solid #c5d7ef;
+      border: 1px solid var(--seem-line-strong, #c5d7ef);
       border-radius: 999px;
       padding: 2px 8px;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.07em;
       font-weight: 700;
-      color: #3f5f8a;
-      background: #edf4ff;
+      color: var(--seem-brand-strong, #3f5f8a);
+      background: var(--seem-brand-soft, #edf4ff);
     }
     .checkout-actions {
       display: flex;

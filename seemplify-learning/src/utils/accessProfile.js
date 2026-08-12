@@ -240,7 +240,7 @@ export function isPrivilegedDashboardRoot(path) {
   return ['/admin', '/partner-dashboard', '/agent-dashboard'].includes(pathname)
 }
 
-export function getDefaultDashboardPath(accessProfile, fallback = '/simple-lms') {
+export function getDefaultDashboardPath(accessProfile, fallback = '/simple-lms?view=my-learning') {
   if (accessProfile?.platformRole) return '/admin'
   if (accessProfile?.partnerAccess) return '/partner-dashboard'
   if (accessProfile?.agentAccess) return '/agent-dashboard'

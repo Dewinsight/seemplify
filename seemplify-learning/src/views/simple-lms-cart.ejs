@@ -11,8 +11,8 @@
   <script src="/js/theme.js?v=3"></script>
   <style>
     body.public-site.lmsv-cart-page {
-      background: #f6f6f7;
-      color: #111827;
+      background: var(--seem-canvas, #f6f6f7);
+      color: var(--seem-text, #111827);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -26,10 +26,10 @@
       flex: 1 0 auto;
     }
     .cart-panel {
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--seem-line, #e5e7eb);
       border-radius: 18px;
-      background: #fff;
-      box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.36);
+      background: var(--seem-surface, #fff);
+      box-shadow: var(--seem-shadow, 0 14px 30px -24px rgba(15, 23, 42, 0.36));
       padding: 20px 24px;
     }
     .cart-head {
@@ -43,12 +43,12 @@
       margin: 0;
       font-size: clamp(28px, 4vw, 44px);
       line-height: 1.05;
-      color: #0f172a;
+      color: var(--seem-text, #0f172a);
       letter-spacing: -0.03em;
     }
     .cart-head p {
       margin: 6px 0 0;
-      color: #64748b;
+      color: var(--seem-muted, #64748b);
       font-size: 15px;
     }
     .cart-actions {
@@ -63,10 +63,10 @@
       margin-top: 14px;
     }
     .cart-summary-card {
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--seem-line, #e5e7eb);
       border-radius: 14px;
       padding: 12px 14px;
-      background: #fff;
+      background: var(--seem-surface-soft, #fff);
       display: grid;
       gap: 8px;
     }
@@ -75,19 +75,19 @@
       font-weight: 800;
       letter-spacing: 0.09em;
       text-transform: uppercase;
-      color: #64748b;
+      color: var(--seem-muted, #64748b);
     }
     .cart-summary-card strong {
       font-size: 36px;
       line-height: 1;
       letter-spacing: -0.03em;
-      color: #0f172a;
+      color: var(--seem-text, #0f172a);
     }
     .cart-total-chip {
-      border: 1px solid #cbd5e1;
+      border: 1px solid var(--seem-line-strong, #cbd5e1);
       border-radius: 999px;
-      background: #fff;
-      color: #0f172a;
+      background: var(--seem-surface, #fff);
+      color: var(--seem-text, #0f172a);
       padding: 7px 12px;
       font-size: 14px;
       font-weight: 800;
@@ -103,7 +103,7 @@
     }
     .cart-toolbar p {
       margin: 0;
-      color: #64748b;
+      color: var(--seem-muted, #64748b);
       font-size: 14px;
     }
     .cart-list {
@@ -112,9 +112,9 @@
       margin-top: 14px;
     }
     .cart-item {
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--seem-line, #e5e7eb);
       border-radius: 16px;
-      background: #fff;
+      background: var(--seem-surface, #fff);
       display: grid;
       grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
       overflow: hidden;
@@ -140,11 +140,11 @@
       font-size: 24px;
       line-height: 1.14;
       letter-spacing: -0.02em;
-      color: #0f172a;
+      color: var(--seem-text, #0f172a);
     }
     .cart-item-body p {
       margin: 0;
-      color: #64748b;
+      color: var(--seem-muted, #64748b);
       font-size: 14px;
       line-height: 1.5;
     }
@@ -154,11 +154,11 @@
       gap: 8px;
     }
     .pill {
-      border: 1px solid #cbd5e1;
+      border: 1px solid var(--seem-line, #cbd5e1);
       border-radius: 999px;
       padding: 4px 9px;
-      background: #f8fafc;
-      color: #334155;
+      background: var(--seem-surface-soft, #f8fafc);
+      color: var(--seem-muted, #334155);
       font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
@@ -176,7 +176,7 @@
       font-size: 22px;
       font-weight: 800;
       letter-spacing: -0.02em;
-      color: #0f172a;
+      color: var(--seem-text, #0f172a);
     }
     .cart-item-actions {
       display: inline-flex;
@@ -184,14 +184,14 @@
       gap: 8px;
     }
     .empty-cart {
-      border: 1px dashed #cbd5e1;
+      border: 1px dashed var(--seem-line-strong, #cbd5e1);
       border-radius: 14px;
-      background: #fff;
+      background: var(--seem-surface-soft, #fff);
       padding: 20px;
       display: grid;
       gap: 10px;
       text-align: center;
-      color: #64748b;
+      color: var(--seem-muted, #64748b);
     }
     @media (max-width: 960px) {
       .cart-summary-grid {

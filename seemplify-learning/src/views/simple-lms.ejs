@@ -26,178 +26,104 @@
       --input-bg: #ffffff;
     }
     [data-theme="dark"] {
-      --lms-surface: #ffffff;
-      --lms-surface-soft: #f8fafc;
-      --lms-media-start: rgba(14, 165, 233, 0.14);
-      --lms-media-end: rgba(226, 232, 240, 0.9);
-      --lms-tab-active: rgba(8, 145, 178, 0.12);
-      --lms-tab-active-border: rgba(8, 145, 178, 0.45);
-      --lms-price: #b45309;
-      --border: #e5e7eb;
-      --text: #0f172a;
-      --muted: #64748b;
-      --panel-solid: #ffffff;
-      --card-bg: #ffffff;
-      --input-bg: #ffffff;
+      --lms-surface: var(--seem-surface, #18161f);
+      --lms-surface-soft: var(--seem-surface-soft, #211e29);
+      --lms-media-start: rgba(155, 124, 255, 0.14);
+      --lms-media-end: var(--seem-surface-soft, #211e29);
+      --lms-tab-active: var(--seem-brand-soft, rgba(112, 71, 235, 0.18));
+      --lms-tab-active-border: var(--seem-brand, #9b7cff);
+      --lms-price: var(--seem-warning, #f3bd58);
+      --border: var(--seem-line, #312d39);
+      --text: var(--seem-text, #f7f5fa);
+      --muted: var(--seem-muted, #bbb5c2);
+      --panel-solid: var(--seem-surface, #18161f);
+      --card-bg: var(--seem-surface, #18161f);
+      --input-bg: var(--seem-surface, #18161f);
     }
-    body.public-site.lmsv-workspace-page { background: #f8fafc; }
-    .shell {
-      max-width: 1320px;
+    body.public-site.lmsv-workspace-page { background: var(--seem-canvas, #f8fafc); }
+    body.public-site.lmsv-workspace-page .shell {
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 0 24px 56px;
+      padding: 0 24px 64px;
       display: grid;
       grid-template-columns: minmax(0, 1fr);
-      gap: 14px;
+      gap: 24px;
       align-content: start;
       flex: 1 0 auto;
     }
     .shell > * {
       min-width: 0;
     }
-    .hero,
     .panel {
       border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #ffffff;
+      border-radius: 8px;
+      background: var(--lms-surface);
       box-shadow: none;
-      padding: clamp(20px, 2.7vw, 30px);
+      padding: clamp(20px, 2.4vw, 28px);
       display: grid;
-      gap: 14px;
+      gap: 20px;
     }
-    .hero {
-      margin-top: clamp(18px, 2.7vw, 26px);
-      gap: 18px;
-    }
-    .hero-layout {
-      display: grid;
-      gap: 14px;
-      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-      align-items: start;
-    }
-    .hero-main {
-      display: grid;
-      gap: 12px;
-      align-content: start;
-    }
-    .hero-kicker { margin: 0; color: #0f766e; font-size: 14px; font-weight: 700; }
-    .hero-pulse {
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      background: linear-gradient(165deg, #ffffff, #f8fafc);
-      padding: 14px;
-      display: grid;
-      gap: 10px;
-    }
-    .hero-pulse h2 {
-      margin: 0;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.09em;
-      color: var(--muted);
-    }
-    .hero-pulse-list {
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      display: grid;
-      gap: 8px;
-    }
-    .hero-pulse-list li {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 11px;
-      background: var(--lms-surface-soft);
+    .workspace-header {
+      margin-top: clamp(28px, 4vw, 48px);
       display: flex;
-      align-items: baseline;
+      align-items: end;
       justify-content: space-between;
-      gap: 8px;
+      gap: 24px;
     }
-    .hero-pulse-list span {
-      color: var(--muted);
-      font-size: 12px;
+    .workspace-heading { min-width: 0; }
+    .workspace-label {
+      margin: 0 0 7px;
+      color: var(--seem-brand, #7047eb);
+      font-size: 13px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
     }
-    .hero-pulse-list strong {
-      font-size: 24px;
-      line-height: 1;
-      letter-spacing: -0.03em;
-    }
-    .hero-pulse-note {
+    .workspace-title {
       margin: 0;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .title {
-      margin: 0;
-      font-size: clamp(28px, 3vw, 40px);
+      font-size: clamp(27px, 3vw, 34px);
       letter-spacing: -.025em;
-      line-height: 1.08;
+      line-height: 1.15;
       color: var(--text);
     }
-    .subtitle {
-      margin: 0;
+    .workspace-subtitle {
+      margin: 8px 0 0;
       color: var(--muted);
-      font-size: 16px;
+      font-size: 15px;
       line-height: 1.55;
-      max-width: 62ch;
+      max-width: 68ch;
     }
-    .hero-actions {
-      display: flex;
-      gap: 9px;
-      flex-wrap: wrap;
-    }
-    .hero-actions .btn { border-radius: 8px; padding: 10px 16px; }
-    .workspace-view {
-      display: grid;
-      gap: 14px;
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .chips {
-      display: grid;
-      gap: 8px;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    }
+    .workspace-header-action { flex: 0 0 auto; }
     .tabs, .actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
     }
-    .chip,
-    .tab {
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 8px 12px;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      font-weight: 700;
-      background: #ffffff;
+    .tabs {
+      gap: 26px;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border);
+      scrollbar-width: none;
     }
-    .chip {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      color: #334155;
-      min-height: 36px;
-    }
+    .tabs::-webkit-scrollbar { display: none; }
     .tab {
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
       text-decoration: none;
-      color: #334155;
-      padding: 10px 15px;
-      transition: all 0.2s ease;
+      color: var(--muted);
+      padding: 0 0 12px;
+      font-size: 14px;
+      font-weight: 650;
+      white-space: nowrap;
+      background: transparent;
+      transition: color 0.16s ease, border-color 0.16s ease;
     }
     .tab:hover {
-      border-color: rgba(8, 145, 178, 0.35);
-      background: rgba(8, 145, 178, 0.08);
-      color: #0e7490;
+      color: var(--text);
     }
     .tab.active {
-      border-color: var(--lms-tab-active-border);
-      background: var(--lms-tab-active);
-      color: #0369a1;
+      border-bottom-color: var(--seem-brand, #7047eb);
+      color: var(--text);
     }
     .head {
       display: flex;
@@ -228,7 +154,7 @@
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 12px;
-      background: #ffffff;
+      background: var(--lms-surface);
       box-shadow: 0 8px 20px -16px rgba(15, 23, 42, 0.35);
     }
     .kpi small {
@@ -251,18 +177,19 @@
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     }
     .card {
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--border);
       border-radius: 16px;
       overflow: hidden;
-      background: #ffffff;
+      background: var(--lms-surface);
       display: grid;
       align-content: start;
       box-shadow: 0 12px 30px -20px rgba(15, 23, 42, 0.45);
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      transition: border-color 0.16s ease, background-color 0.16s ease;
     }
     .card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 20px 36px -24px rgba(15, 23, 42, 0.55);
+      border-color: var(--seem-line-strong, var(--border));
+      background: var(--lms-surface-soft);
+      box-shadow: none;
     }
     .media {
       height: 150px;
@@ -273,69 +200,110 @@
       justify-content: center;
     }
     .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .learning-logo-lockup {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      color: #0f172a;
-      font-weight: 800;
-      letter-spacing: 0;
-    }
-    .learning-logo-lockup img {
-      width: 36px;
-      height: 36px;
-      object-fit: contain;
-      flex: 0 0 auto;
-    }
-    .learning-summary {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #f8fafc;
-      padding: 14px;
-      display: grid;
-      gap: 12px;
-      min-height: 100%;
-    }
-    .learning-summary h2 { margin: 0; font-size: 16px; }
-    .learning-program-list {
-      display: grid;
-      gap: 8px;
-    }
-    .learning-program-row {
+    body.public-site.lmsv-workspace-page .overview-section,
+    body.public-site.lmsv-workspace-page .learning-list-panel {
+      border: 0;
+      border-radius: 0;
       border-bottom: 1px solid var(--border);
-      background: #ffffff;
-      padding: 10px 4px;
+      background: transparent;
+      padding: 8px 0 30px;
+      box-shadow: none;
+    }
+    body.public-site.lmsv-workspace-page .overview-section:last-child { border-bottom: 0; }
+    .section-heading {
       display: flex;
-      align-items: center;
+      align-items: end;
       justify-content: space-between;
-      gap: 10px;
+      gap: 20px;
     }
-    .learning-program-row:last-child { border-bottom: 0; }
-    .learning-program-row span {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .learning-overview {
-      display: grid;
-      gap: 14px;
-    }
-    .learning-overview-copy {
-      display: grid;
-      gap: 12px;
-      align-content: center;
-    }
-    .learning-overview-copy h2 {
+    .section-heading h2 {
       margin: 0;
       color: var(--text);
-      font-size: clamp(24px, 2.4vw, 32px);
-      line-height: 1.15;
-      letter-spacing: -.02em;
+      font-size: 20px;
+      line-height: 1.25;
+      letter-spacing: -.015em;
     }
-    .learning-overview-copy p {
-      margin: 0;
+    .section-heading p {
+      margin: 5px 0 0;
       color: var(--muted);
-      line-height: 1.6;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .section-link {
+      color: var(--seem-brand, #7047eb);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .section-link:hover { text-decoration: underline; }
+    .overview-list {
+      border-top: 1px solid var(--border);
+    }
+    .overview-item {
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 16px;
+      padding: 17px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .overview-item:last-child { border-bottom: 0; }
+    .overview-artwork {
+      width: 56px;
+      height: 56px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      background: var(--lms-surface-soft);
+      color: var(--seem-brand, #7047eb);
+      font-size: 17px;
+      font-weight: 750;
+    }
+    .overview-artwork img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .overview-item-copy { min-width: 0; }
+    .overview-item-copy h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.35;
+    }
+    .overview-item-copy p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .overview-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px 12px;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .overview-progress {
+      width: min(280px, 100%);
+      margin-top: 9px;
+    }
+    .overview-item-action {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .overview-price {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
     }
     .learning-program-grid {
       display: grid;
@@ -359,7 +327,7 @@
     .price { color: var(--lms-price); font-weight: 800; }
     .progress { height: 8px; border-radius: 999px; overflow: hidden; background: rgba(148,163,184,.25); }
     .progress span { display: block; height: 100%; width: var(--progress,0%); background: linear-gradient(90deg,#22d3ee,#14b8a6); }
-    .empty { border: 1px dashed #d1d5db; border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); background: #f8fafc; }
+    .empty { border: 1px dashed var(--border); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); background: var(--lms-surface-soft); }
     .form-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); }
     .studio { display: grid; gap: 12px; grid-template-columns: minmax(0,1.4fr) minmax(300px,1fr); align-items: start; }
     .stack { display: grid; gap: 8px; }
@@ -368,7 +336,7 @@
       overflow: auto;
       border: 1px solid var(--border);
       border-radius: 14px;
-      background: #ffffff;
+      background: var(--lms-surface);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
     }
     table { width: 100%; border-collapse: collapse; min-width: 740px; }
@@ -591,7 +559,7 @@
       padding: 12px;
       background:
         radial-gradient(120% 120% at 100% 0%, rgba(8, 145, 178, 0.08), transparent 72%),
-        #f8fafc;
+        var(--lms-surface-soft);
     }
     .program-wizard-progress {
       height: 8px;
@@ -615,12 +583,12 @@
     .program-wizard-step {
       border: 1px solid var(--border);
       border-radius: 12px;
-      background: #ffffff;
+      background: var(--lms-surface);
       padding: 8px 10px;
       text-align: left;
       display: grid;
       gap: 2px;
-      color: #334155;
+      color: var(--muted);
       font-size: 12px;
       font-weight: 700;
       cursor: pointer;
@@ -637,8 +605,8 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: #e2e8f0;
-      color: #334155;
+      background: var(--lms-surface-soft);
+      color: var(--muted);
       font-size: 11px;
       font-weight: 800;
     }
@@ -702,7 +670,7 @@
     .program-path-item {
       border: 1px solid var(--border);
       border-radius: 12px;
-      background: #ffffff;
+      background: var(--lms-surface);
       padding: 10px;
       display: grid;
       gap: 8px;
@@ -732,7 +700,7 @@
     .program-review-card {
       border: 1px solid var(--border);
       border-radius: 11px;
-      background: #ffffff;
+      background: var(--lms-surface);
       padding: 10px;
       display: grid;
       gap: 4px;
@@ -779,7 +747,7 @@
     .approval-review-card {
       border: 1px solid var(--border);
       border-radius: 18px;
-      background: linear-gradient(180deg, #ffffff, #fcfbff);
+      background: linear-gradient(180deg, var(--lms-surface), var(--lms-surface-soft));
       padding: 16px;
       display: grid;
       gap: 14px;
@@ -814,7 +782,7 @@
     .approval-review-meta article {
       border: 1px solid var(--border);
       border-radius: 12px;
-      background: #faf7ff;
+      background: var(--lms-surface-soft);
       padding: 10px 11px;
       display: grid;
       gap: 4px;
@@ -834,7 +802,7 @@
     .approval-review-copy,
     .approval-history-note {
       margin: 0;
-      color: #475569;
+      color: var(--muted);
       font-size: 14px;
       line-height: 1.65;
       white-space: pre-line;
@@ -863,7 +831,7 @@
     .approval-history-card {
       border: 1px solid var(--border);
       border-radius: 16px;
-      background: #ffffff;
+      background: var(--lms-surface);
       padding: 14px;
       display: grid;
       gap: 10px;
@@ -887,9 +855,48 @@
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @media (max-width: 1080px) {
-      .hero-layout { grid-template-columns: 1fr; }
-      .learning-overview { grid-template-columns: 1fr; }
+    [data-theme="dark"] .panel,
+    [data-theme="dark"] .kpi,
+    [data-theme="dark"] .card,
+    [data-theme="dark"] .table-wrap,
+    [data-theme="dark"] .program-wizard-shell,
+    [data-theme="dark"] .program-wizard-step,
+    [data-theme="dark"] .program-path-item,
+    [data-theme="dark"] .program-review-card,
+    [data-theme="dark"] .approval-review-card,
+    [data-theme="dark"] .approval-review-meta article,
+    [data-theme="dark"] .approval-history-card {
+      border-color: var(--border);
+      background: var(--lms-surface);
+      color: var(--text);
+      box-shadow: none;
+    }
+    [data-theme="dark"] .program-wizard-shell,
+    [data-theme="dark"] .approval-review-meta article {
+      background: var(--lms-surface-soft);
+    }
+    [data-theme="dark"] .tab.active,
+    [data-theme="dark"] .tab:hover {
+      color: var(--text);
+    }
+    [data-theme="dark"] .program-review-card strong,
+    [data-theme="dark"] .approval-review-meta strong {
+      color: var(--text);
+    }
+    [data-theme="dark"] .program-wizard-step,
+    [data-theme="dark"] .program-wizard-step small,
+    [data-theme="dark"] .approval-review-copy,
+    [data-theme="dark"] .approval-history-note {
+      color: var(--muted);
+    }
+    [data-theme="dark"] .program-wizard-step span {
+      background: var(--lms-surface-soft);
+      color: var(--muted);
+    }
+    [data-theme="dark"] .program-wizard-step.active span,
+    [data-theme="dark"] .program-wizard-step.complete span {
+      background: var(--seem-brand, #9b7cff);
+      color: #ffffff;
     }
     @media (max-width: 1040px) { .studio { grid-template-columns: 1fr; } }
     @media (max-width: 760px) {
@@ -898,12 +905,20 @@
         margin-bottom: 0;
         padding: 0 14px 24px;
       }
-      .hero, .panel {
-        border-radius: 16px;
+      .panel {
+        border-radius: 8px;
         padding: 14px;
       }
-      .title { font-size: clamp(26px, 8vw, 36px); }
-      .subtitle { font-size: 13px; }
+      .workspace-header {
+        margin-top: 24px;
+        align-items: start;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .workspace-header-action { width: 100%; }
+      .workspace-header-action .btn { width: 100%; justify-content: center; }
+      .workspace-title { font-size: clamp(25px, 8vw, 32px); }
+      .workspace-subtitle { font-size: 13px; }
       .tabs {
         flex-wrap: nowrap;
         overflow-x: auto;
@@ -911,11 +926,16 @@
         -webkit-overflow-scrolling: touch;
       }
       .tab { white-space: nowrap; }
-      .chips {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+      body.public-site.lmsv-workspace-page .overview-section { padding: 4px 0 24px; }
+      .section-heading { align-items: start; }
+      .overview-item {
+        grid-template-columns: 48px minmax(0, 1fr);
+        gap: 12px;
       }
-      .hero-pulse-list li strong {
-        font-size: 20px;
+      .overview-artwork { width: 48px; height: 48px; }
+      .overview-item-action {
+        grid-column: 2;
+        justify-content: flex-start;
       }
       .grid { grid-template-columns: 1fr; }
       .learning-program-card .media,
@@ -936,7 +956,6 @@
   <%- include('./partials/nav', { user, activePage, activeLmsView: viewMode === 'settings' ? 'settings' : 'workspace' }) %>
   <% const tab = (mode) => `/simple-lms?view=${mode}` %>
   <% const learningName = brandLearningName || 'Seemplify Learning' %>
-  <% const roleLabel = String(role || 'learner').replace(/_/g, ' ') %>
   <% const nice = (value) => String(value || '').replace(/_/g, ' ') %>
   <% const dateText = (value) => { try { return value ? new Date(value).toLocaleString('en-GB') : '-' } catch { return '-' } } %>
   <% const creatorDefaults = creatorSettings || {} %>
@@ -947,61 +966,55 @@
   <% const defaultCurrency = selectCurrency(defaultCurrencyCode || platformDefaults.defaultCurrency || 'NGN', 'NGN') %>
   <% const minorToMajorInput = (value) => { const minor = Number(value || 0); const safeMinor = Number.isFinite(minor) ? Math.max(0, minor) : 0; const major = safeMinor / 100; if (Number.isInteger(major)) return String(major); return major.toFixed(2).replace(/\.?0+$/, '') } %>
   <% const learningPrograms = (Array.isArray(stanbicProgramCards) ? stanbicProgramCards : []).filter((track) => Boolean(track.program)) %>
+  <% const overviewEnrollments = (Array.isArray(myEnrollments) ? myEnrollments : []).slice(0, 3) %>
+  <% const overviewCourses = (Array.isArray(catalogCourses) ? catalogCourses : []).slice(0, 4) %>
+  <% const firstName = user?.profile?.name?.split(' ')[0] || 'learner' %>
+  <% const workspaceCopy = ({
+    overview: { label: 'Learning workspace', title: `Welcome back, ${firstName}`, description: 'Continue where you left off or find the next course for your development.' },
+    programs: { label: 'Learning workspace', title: 'Programs', description: 'Follow structured learning paths available to you.' },
+    catalog: { label: 'Learning workspace', title: 'Course catalogue', description: 'Browse approved courses available through your organisation.' },
+    cart: { label: 'Learning workspace', title: 'Your cart', description: 'Review your selected courses and continue to checkout.' },
+    'my-learning': { label: 'Learning workspace', title: 'My learning', description: 'Track active courses, progress, and completed learning.' },
+    'course-studio': { label: 'Creator workspace', title: 'Course studio', description: 'Create and manage learning content for your organisation.' },
+    'program-studio': { label: 'Creator workspace', title: 'Program studio', description: 'Build structured learning paths from your course library.' },
+    settings: { label: 'Learning workspace', title: 'Learning settings', description: 'Manage your learning preferences and account defaults.' },
+    admin: { label: 'Administration', title: 'Learning administration', description: 'Manage the platform catalogue, access, and learning operations.' }
+  })[viewMode] || { label: 'Learning workspace', title: learningName, description: 'Manage learning and development in one place.' } %>
 
   <main class="shell">
-    <section class="hero">
-      <div class="hero-layout">
-        <div class="hero-main">
-          <div class="learning-logo-lockup">
-            <img src="/images/seemplify-favicon.svg" alt="">
-            <span><%= learningName %></span>
-          </div>
-          <p class="hero-kicker">Learning workspace</p>
-          <h1 class="title">Welcome back, <%= user?.profile?.name?.split(' ')[0] || 'learner' %>.</h1>
-          <p class="subtitle">Discover courses available to you, continue assigned learning, or build training for your organisation.</p>
-          <div class="hero-actions">
-            <a class="btn btn-primary btn-sm" href="<%= tab('programs') %>">Start Learning</a>
-            <a class="btn btn-secondary btn-sm" href="<%= tab('my-learning') %>">Continue Learning</a>
-            <a class="btn btn-secondary btn-sm" href="<%= tab('catalog') %>">All Courses</a>
-            <% if (canCreateCourses) { %>
-              <a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses">Open Course Studio</a>
-            <% } %>
-          </div>
-          <div class="chips">
-            <span class="chip">Role: <%= roleLabel %></span>
-            <span class="chip">Courses: <%= stats.publishedCourseCount %></span>
-            <span class="chip">Programs: <%= stats.publishedProgramCount %></span>
-            <span class="chip">Course Authors: <%= stats.creatorCount %></span>
-            <span class="chip">My Enrollments: <%= stats.myEnrollmentCount %></span>
-            <span class="chip">Paid Courses: <%= stats.myPaidCourseCount %></span>
-            <span class="chip">Cart: <%= stats.cartItemCount %></span>
-          </div>
-        </div>
-        <aside class="learning-summary">
-          <h2>Your learning</h2>
-          <div class="learning-program-list">
-            <div class="learning-program-row"><strong>Available courses</strong><span><%= stats.publishedCourseCount %></span></div>
-            <div class="learning-program-row"><strong>Active programmes</strong><span><%= stats.publishedProgramCount %></span></div>
-            <div class="learning-program-row"><strong>My enrolments</strong><span><%= stats.myEnrollmentCount %></span></div>
-          </div>
-          <p class="hero-pulse-note">Your catalogue follows the access rules set by your organisation.</p>
-        </aside>
+    <header class="workspace-header">
+      <div class="workspace-heading">
+        <p class="workspace-label"><%= workspaceCopy.label %></p>
+        <h1 class="workspace-title"><%= workspaceCopy.title %></h1>
+        <p class="workspace-subtitle"><%= workspaceCopy.description %></p>
       </div>
-      <div class="tabs">
-        <a class="tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= tab('overview') %>">Overview</a>
-        <a class="tab <%= viewMode === 'programs' ? 'active' : '' %>" href="<%= tab('programs') %>">Programs</a>
-        <a class="tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= tab('catalog') %>">All Courses</a>
-        <a class="tab <%= viewMode === 'cart' ? 'active' : '' %>" href="/simple-lms/cart">Cart <%= stats.cartItemCount > 0 ? `(${stats.cartItemCount})` : '' %></a>
-        <a class="tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= tab('my-learning') %>">My Learning</a>
-        <% if (canCreateCourses) { %>
-          <a class="tab <%= viewMode === 'course-studio' ? 'active' : '' %>" href="/simple-lms/studio/courses">Course Studio</a>
-          <a class="tab <%= viewMode === 'program-studio' ? 'active' : '' %>" href="<%= tab('program-studio') %>">Program Studio</a>
-        <% } %>
-        <% if (canManagePlatform) { %>
-          <a class="tab" href="/admin">Admin</a>
+      <div class="workspace-header-action">
+        <% if (viewMode === 'catalog') { %>
+          <a class="btn btn-secondary btn-sm" href="<%= tab('my-learning') %>">My learning</a>
+        <% } else if (viewMode === 'my-learning') { %>
+          <a class="btn btn-secondary btn-sm" href="<%= tab('catalog') %>">Browse courses</a>
+        <% } else if (overviewEnrollments.length > 0) { %>
+          <a class="btn btn-primary btn-sm" href="<%= tab('my-learning') %>">Continue learning</a>
+        <% } else { %>
+          <a class="btn btn-primary btn-sm" href="<%= tab('catalog') %>">Browse courses</a>
         <% } %>
       </div>
-    </section>
+    </header>
+
+    <nav class="tabs" aria-label="Learning workspace">
+      <a class="tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= tab('overview') %>">Overview</a>
+      <a class="tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= tab('my-learning') %>">My learning</a>
+      <a class="tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= tab('catalog') %>">Courses</a>
+      <a class="tab <%= viewMode === 'programs' ? 'active' : '' %>" href="<%= tab('programs') %>">Programs</a>
+      <a class="tab <%= viewMode === 'cart' ? 'active' : '' %>" href="/simple-lms/cart">Cart <%= stats.cartItemCount > 0 ? `(${stats.cartItemCount})` : '' %></a>
+      <% if (canCreateCourses) { %>
+        <a class="tab <%= viewMode === 'course-studio' ? 'active' : '' %>" href="/simple-lms/studio/courses">Course studio</a>
+        <a class="tab <%= viewMode === 'program-studio' ? 'active' : '' %>" href="<%= tab('program-studio') %>">Program studio</a>
+      <% } %>
+      <% if (canManagePlatform) { %>
+        <a class="tab" href="/admin">Admin</a>
+      <% } %>
+    </nav>
 
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
@@ -1011,19 +1024,70 @@
     <% } %>
 
     <% if (viewMode === 'overview') { %>
-      <section class="panel">
-        <div class="learning-overview">
-          <div class="learning-overview-copy">
-            <h2>Everything you can learn, in one place.</h2>
-            <p>Browse approved courses, follow structured programmes, and return to assigned learning without leaving your organisation workspace.</p>
-            <div class="actions">
-              <a class="btn btn-primary" href="<%= tab('catalog') %>">Explore courses</a>
-              <a class="btn btn-secondary" href="<%= tab('my-learning') %>">Continue Learning</a>
-            </div>
+      <section class="panel overview-section">
+        <div class="section-heading">
+          <div>
+            <h2>Continue learning</h2>
+            <p>Your active courses and latest progress.</p>
           </div>
+          <a class="section-link" href="<%= tab('my-learning') %>">View all</a>
         </div>
+        <% if (overviewEnrollments.length === 0) { %>
+          <div class="empty">You have no active courses yet. Browse the catalogue when you are ready to start.</div>
+        <% } else { %>
+          <div class="overview-list">
+            <% overviewEnrollments.forEach((item) => { %>
+              <article class="overview-item">
+                <div class="overview-artwork" aria-hidden="true"><%= String(item.course?.title || 'Course').charAt(0).toUpperCase() %></div>
+                <div class="overview-item-copy">
+                  <h3><%= item.course.title %></h3>
+                  <div class="overview-meta"><span><%= item.completedCount %> of <%= item.lessonCount %> lessons</span><span><%= item.progressPercent %>% complete</span></div>
+                  <div class="progress overview-progress" style="--progress:<%= Math.max(0, Math.min(100, Number(item.progressPercent || 0))) %>%"><span></span></div>
+                </div>
+                <div class="overview-item-action">
+                  <a class="btn btn-primary btn-sm" href="/simple-lms/learn/<%= item._id %>/<%= encodeURIComponent(item.nextLessonKey || '') %>"><%= item.isCompleted ? 'Review' : 'Continue' %></a>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
       </section>
 
+      <section class="panel overview-section">
+        <div class="section-heading">
+          <div>
+            <h2>Available courses</h2>
+            <p>Courses selected for you and your organisation.</p>
+          </div>
+          <a class="section-link" href="<%= tab('catalog') %>">Browse catalogue</a>
+        </div>
+        <% if (overviewCourses.length === 0) { %>
+          <div class="empty">No courses are available to you yet.</div>
+        <% } else { %>
+          <div class="overview-list">
+            <% overviewCourses.forEach((course) => { %>
+              <article class="overview-item">
+                <div class="overview-artwork" aria-hidden="true">
+                  <% if (course.displayBannerUrl) { %><img src="<%= course.displayBannerUrl %>" alt=""><% } else { %><%= String(course.title || 'Course').charAt(0).toUpperCase() %><% } %>
+                </div>
+                <div class="overview-item-copy">
+                  <h3><%= course.title %></h3>
+                  <p><%= course.summaryText %></p>
+                  <div class="overview-meta"><span><%= course.levelLabel %></span><span><%= course.lessonCount %> lessons</span><span><%= course.authorName %></span></div>
+                </div>
+                <div class="overview-item-action">
+                  <span class="overview-price"><%= course.displayPrice %></span>
+                  <% if (course.canStart) { %>
+                    <a class="btn btn-primary btn-sm" href="/simple-lms/take/<%= course._id %>"><%= course.isEnrolled ? 'Continue' : 'Start' %></a>
+                  <% } else { %>
+                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>">View course</a>
+                  <% } %>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
     <% } %>
 
     <% if (viewMode === 'programs') { %>
@@ -1272,20 +1336,21 @@
     <% } %>
 
     <% if (viewMode === 'my-learning') { %>
-      <section class="panel">
-        <div class="head"><div><h2>My Learning</h2><p>Progress, payments, and active enrollments.</p></div></div>
+      <section class="panel learning-list-panel">
+        <div class="section-heading"><div><h2>Active courses</h2><p>Pick up where you left off and track your progress.</p></div></div>
         <% if (!myEnrollments || myEnrollments.length === 0) { %><div class="empty">No enrollments yet.</div><% } else { %>
-          <div class="grid">
+          <div class="overview-list">
             <% myEnrollments.forEach((item) => { %>
-              <article class="card">
-                <div class="body">
+              <article class="overview-item">
+                <div class="overview-artwork" aria-hidden="true"><%= String(item.course?.title || 'Course').charAt(0).toUpperCase() %></div>
+                <div class="overview-item-copy">
                   <h3><%= item.course.title %></h3>
-                  <div class="progress" style="--progress:<%= Math.max(0, Math.min(100, Number(item.progressPercent || 0))) %>%"><span></span></div>
-                  <p><strong><%= item.progressPercent %>%</strong> complete &middot; <%= item.completedCount %>/<%= item.lessonCount %> lessons</p>
-                  <div class="actions">
-                    <a class="btn btn-primary btn-sm" href="/simple-lms/learn/<%= item._id %>/<%= encodeURIComponent(item.nextLessonKey || '') %>"><%= item.isCompleted ? 'Review' : 'Continue' %></a>
-                    <a class="btn btn-secondary btn-sm" href="<%= item.course.courseUrl %>">Preview</a>
-                  </div>
+                  <div class="overview-meta"><span><%= item.completedCount %> of <%= item.lessonCount %> lessons</span><span><%= item.progressPercent %>% complete</span></div>
+                  <div class="progress overview-progress" style="--progress:<%= Math.max(0, Math.min(100, Number(item.progressPercent || 0))) %>%"><span></span></div>
+                </div>
+                <div class="overview-item-action">
+                  <a class="btn btn-primary btn-sm" href="/simple-lms/learn/<%= item._id %>/<%= encodeURIComponent(item.nextLessonKey || '') %>"><%= item.isCompleted ? 'Review' : 'Continue' %></a>
+                  <a class="btn btn-secondary btn-sm" href="<%= item.course.courseUrl %>">Preview</a>
                 </div>
               </article>
             <% }) %>
