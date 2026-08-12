@@ -812,7 +812,8 @@ async function configureApplication(
     waitForDeploymentImpl = waitForDeploymentCompletion,
     title = `Seemplify secret rotation ${new Date().toISOString()} ${crypto.randomBytes(6).toString('hex')}`,
     readinessProbe = null,
-    acceptRunningDeploymentWhenReady = false
+    acceptRunningDeploymentWhenReady = false,
+    skipDeploymentWhenEnvironmentExact = false
   } = {}
 ) {
   const { application: app, changed } = await saveApplicationEnvironment(
@@ -822,6 +823,10 @@ async function configureApplication(
     currentApplication,
     { requestImpl }
   );
+  if (!changed.length && skipDeploymentWhenEnvironmentExact) {
+    console.log(`Application ${applicationId} already has the exact release environment; deferring live proof to the deployment boundary.`);
+    return { status: 'environment-exact' };
+  }
   if (!changed.length && readinessProbe) {
     try {
       await readinessProbe();

@@ -60,6 +60,7 @@ test('narrow gateway deployment changes only the release marker and proves the e
   assert.deepEqual(configured[1], { SEEMPLIFY_GATEWAY_RELEASE_SHA: RELEASE });
   assert.deepEqual(configured[2], []);
   assert.equal(configured[4].acceptRunningDeploymentWhenReady, true);
+  assert.equal(configured[4].skipDeploymentWhenEnvironmentExact, true);
 });
 
 test('exact readiness retries transient cutover failures and rejects the wrong release', async () => {

@@ -832,6 +832,17 @@ test('application configuration skips an exact live revision and accepts only pr
   assert.equal(alreadyReady.status, 'already-ready');
   assert.deepEqual(exactCalls, []);
 
+  const boundaryCalls = [];
+  const environmentExact = await configureApplication('gateway-app', { RELEASE: 'same' }, [], {
+    env: 'RELEASE=same'
+  }, {
+    requestImpl: async (path) => { boundaryCalls.push(path); return {}; },
+    readinessProbe: async () => { throw new Error('must be verified at the deployment boundary'); },
+    skipDeploymentWhenEnvironmentExact: true
+  });
+  assert.equal(environmentExact.status, 'environment-exact');
+  assert.deepEqual(boundaryCalls, []);
+
   let readinessChecks = 0;
   const accepted = await configureApplication('gateway-app', { CURRENT_KEY: 'new' }, [], {
     env: 'CURRENT_KEY=old'

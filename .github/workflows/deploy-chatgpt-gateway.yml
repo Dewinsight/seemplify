@@ -19,6 +19,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Identify the immutable gateway runtime release
+        id: gateway_release
+        shell: bash
+        run: |
+          mapfile -t runtime_files < <(
+            git ls-files 'tools/chatgpt-gateway/*' \
+              | grep -Ev '(\.test\.cjs$|/dokploy-[^/]+\.cjs$)'
+          )
+          if [ "${#runtime_files[@]}" -eq 0 ]; then
+            echo 'No gateway runtime files were found'
+            exit 1
+          fi
+          release_sha="$(git log -1 --format=%H -- "${runtime_files[@]}")"
+          if ! printf '%s' "$release_sha" | grep -Eq '^[a-f0-9]{40}$'; then
+            echo 'Unable to resolve the gateway runtime release'
+            exit 1
+          fi
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
       - name: Run ChatGPT gateway contract tests
         run: node --test tools/chatgpt-gateway/*.test.cjs
       - name: Ensure durable ChatGPT session-volume backups
@@ -88,12 +106,57 @@ jobs:
           echo "snapshot_archive=$snapshot_archive" >> "$GITHUB_OUTPUT"
           echo "snapshot_sha256=$snapshot_sha256" >> "$GITHUB_OUTPUT"
       - name: Deploy and verify the exact ChatGPT gateway release
+        id: gateway_deploy
+        continue-on-error: true
         run: node tools/chatgpt-gateway/dokploy-deploy-gateway.cjs
         env:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
           DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
           CHATGPT_GATEWAY_APP_ID: ${{ secrets.CHATGPT_GATEWAY_APP_ID }}
           CHATGPT_GATEWAY_BASE_URL: ${{ secrets.CHATGPT_GATEWAY_BASE_URL }}
+          SEEMPLIFY_GATEWAY_RELEASE_SHA: ${{ steps.gateway_release.outputs.sha }}
           CHATGPT_GATEWAY_HOST_SNAPSHOT_VOLUME: ${{ steps.host_snapshot.outputs.snapshot_volume }}
           CHATGPT_GATEWAY_HOST_SNAPSHOT_ARCHIVE: ${{ steps.host_snapshot.outputs.snapshot_archive }}
           CHATGPT_GATEWAY_HOST_SNAPSHOT_SHA256: ${{ steps.host_snapshot.outputs.snapshot_sha256 }}
+      - name: Verify the exact gateway release from the deployment host
+        env:
+          GATEWAY_BASE_URL: ${{ secrets.CHATGPT_GATEWAY_BASE_URL }}
+          EXPECTED_RELEASE: ${{ steps.gateway_release.outputs.sha }}
+        shell: bash
+        run: |
+          health_json="$(ssh seemplify@4.180.153.209 bash -s -- "$GATEWAY_BASE_URL" "$EXPECTED_RELEASE" <<'REMOTE'
+          set -euo pipefail
+          gateway_url="${1%/}"
+          expected_release="$2"
+          for attempt in $(seq 1 600); do
+            body="$(curl --fail --silent --show-error --max-time 10 "$gateway_url/health" 2>/dev/null || true)"
+            compact="$(printf '%s' "$body" | tr -d '\r\n ')"
+            if printf '%s' "$compact" | grep -Fq '"ok":true' \
+              && printf '%s' "$compact" | grep -Fq '"service":"seemplify-ai-gateway"' \
+              && printf '%s' "$compact" | grep -Fq '"runtime":"codex-app-server"' \
+              && printf '%s' "$compact" | grep -Fq '"ownership":"seemplify-platform"' \
+              && printf '%s' "$compact" | grep -Fq '"messaging"' \
+              && printf '%s' "$compact" | grep -Fq "\"release\":\"$expected_release\""; then
+              printf '%s' "$body"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'The exact gateway release did not become reachable on the deployment network' >&2
+          exit 1
+          REMOTE
+          )"
+          HEALTH_JSON="$health_json" node - <<'NODE'
+          const health = JSON.parse(process.env.HEALTH_JSON || '{}');
+          const expected = process.env.EXPECTED_RELEASE;
+          if (health.ok !== true
+              || health.service !== 'seemplify-ai-gateway'
+              || health.runtime !== 'codex-app-server'
+              || health.ownership !== 'seemplify-platform'
+              || health.release !== expected
+              || !Array.isArray(health.consumers)
+              || !health.consumers.includes('messaging')) {
+            throw new Error('Gateway deployment-host readiness returned an invalid identity');
+          }
+          console.log(`Verified ChatGPT gateway release ${expected} with Messaging registered.`);
+          NODE

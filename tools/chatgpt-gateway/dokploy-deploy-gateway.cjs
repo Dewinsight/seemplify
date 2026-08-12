@@ -10,7 +10,7 @@ const {
 } = require('./dokploy-configure.cjs');
 
 function releaseSha(source = process.env) {
-  const value = String(source.GITHUB_SHA || source.SEEMPLIFY_GATEWAY_RELEASE_SHA || '').trim().toLowerCase();
+  const value = String(source.SEEMPLIFY_GATEWAY_RELEASE_SHA || source.GITHUB_SHA || '').trim().toLowerCase();
   if (!/^[a-f0-9]{40}$/.test(value)) throw new Error('GITHUB_SHA must be an exact 40-character commit SHA');
   return value;
 }
@@ -89,7 +89,8 @@ async function deployGateway(source = process.env, {
       requestImpl,
       title: `Seemplify ChatGPT gateway release ${release}`,
       readinessProbe,
-      acceptRunningDeploymentWhenReady: true
+      acceptRunningDeploymentWhenReady: true,
+      skipDeploymentWhenEnvironmentExact: true
     }
   );
 }
