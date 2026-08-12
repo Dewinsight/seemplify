@@ -44,10 +44,15 @@ Add repository secrets:
 - `DOKPLOY_URL`
 - `DOKPLOY_TOKEN`
 - `SEEMPLIFY_LEARNING_APP_ID`
+- `IDENTITY_PROVIDER_APP_ID`
+- `PERFORMANCE_BACKEND_APP_ID`
+- `SEEMPLIFY_LEARNING_OIDC_CLIENT_SECRET`
+- `PERFORMANCE_MANAGEMENT_WEBHOOK_SECRET`
 
 ## 5. Workflow
 Workflow file:
 - `.github/workflows/deploy-seemplify-learning.yml`
+- `.github/workflows/configure-learning-integrations.yml` configures the shared secrets in Dokploy, redeploys Identity, Learning, and Performance, and verifies the live SSO redirect.
 
 Trigger conditions:
 - push to `main` affecting `seemplify-learning/**`

@@ -1,0 +1,51 @@
+name: Configure Learning Integrations
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure OIDC and Performance synchronization
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          IDENTITY_PROVIDER_APP_ID: ${{ secrets.IDENTITY_PROVIDER_APP_ID }}
+          SEEMPLIFY_LEARNING_APP_ID: ${{ secrets.SEEMPLIFY_LEARNING_APP_ID }}
+          PERFORMANCE_BACKEND_APP_ID: ${{ secrets.PERFORMANCE_BACKEND_APP_ID }}
+          SEEMPLIFY_LEARNING_OIDC_CLIENT_SECRET: ${{ secrets.SEEMPLIFY_LEARNING_OIDC_CLIENT_SECRET }}
+          PERFORMANCE_MANAGEMENT_WEBHOOK_SECRET: ${{ secrets.PERFORMANCE_MANAGEMENT_WEBHOOK_SECRET }}
+        run: node scripts/configure-learning-integrations.mjs
+
+      - name: Verify Learning SSO and service health
+        run: |
+          for attempt in $(seq 1 60); do
+            learning_health=$(curl -sS -o /tmp/learning-health.txt -w "%{http_code}" https://learning.seemplifyai.com/health || true)
+            performance_health=$(curl -sS -o /tmp/performance-health.txt -w "%{http_code}" https://api-performance.seemplifyai.com/health || true)
+            sso_status=$(curl -sS -o /dev/null -D /tmp/learning-sso-headers.txt -w "%{http_code}" \
+              'https://learning.seemplifyai.com/auth/seemplify?return_to=%2Fsimple-lms' || true)
+            sso_location=$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { gsub("\\r", ""); print $2; exit }' /tmp/learning-sso-headers.txt)
+
+            if [ "$learning_health" = "200" ] \
+              && [ "$performance_health" = "200" ] \
+              && [ "$sso_status" = "302" ] \
+              && echo "$sso_location" | grep -q '^https://auth.seemplifyai.com/'; then
+              echo "Learning SSO and connected services are healthy."
+              exit 0
+            fi
+
+            echo "Attempt ${attempt}/60: learning=${learning_health}, performance=${performance_health}, sso=${sso_status}"
+            sleep 10
+          done
+
+          echo "Learning integration did not become healthy."
+          cat /tmp/learning-health.txt 2>/dev/null || true
+          cat /tmp/performance-health.txt 2>/dev/null || true
+          exit 1

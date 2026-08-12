@@ -699,6 +699,8 @@ const getProductionSafeUrl = (value, fallback) => {
 // Load clients configuration
 const clientsConfigPath = process.env.CLIENTS_CONFIG || join(__dirname, '../clients.json')
 const clientsData = JSON.parse(readFileSync(clientsConfigPath, 'utf-8'))
+const { applyOidcClientSecretOverrides } = await import('./config/oidcClients.js')
+const configuredOidcClients = applyOidcClientSecretOverrides(clientsData.clients)
 
 // Helper function to validate redirect URI against patterns
 function validateRedirectUri(uri, patterns) {
@@ -826,7 +828,7 @@ async function buildSignupAttributionState(req, email = '') {
 
 // Store clients metadata for later use (CORS, validation)
 const clientsMetadata = new Map()
-clientsData.clients.forEach(client => {
+configuredOidcClients.forEach(client => {
   clientsMetadata.set(client.client_id, {
     redirect_uri_patterns: client.redirect_uri_patterns,
     allowed_origins: client.allowed_origins
@@ -869,7 +871,7 @@ try {
 const config = {
   adapter: MongoAdapter,
   proxy: true, // Enable proxy support for Azure Web Apps
-  clients: clientsData.clients.map(client => ({
+  clients: configuredOidcClients.map(client => ({
     client_id: client.client_id,
     client_secret: client.client_secret,
     redirect_uris: client.redirect_uri_patterns,
