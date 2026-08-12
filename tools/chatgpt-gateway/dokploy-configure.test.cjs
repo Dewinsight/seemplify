@@ -20,6 +20,7 @@ const {
   deploymentPreflight,
   encryptRetirementLedger,
   forbiddenWebhookKeysForTarget,
+  gatewayConsumerRegistrationProbe,
   gatewayReadinessProbe,
   parseEnv,
   platformUsageSinkUrl,
@@ -714,6 +715,28 @@ test('readiness probes reject HTML or unrelated 200 responses', async () => {
   await assert.rejects(gatewayReadinessProbe(source, {
     fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
   }), /invalid account status/);
+  await assert.rejects(gatewayConsumerRegistrationProbe(source, {
+    fetchImpl: async () => new Response(JSON.stringify({
+      ok: true,
+      service: 'seemplify-ai-gateway',
+      runtime: 'codex-app-server',
+      ownership: 'seemplify-platform',
+      consumers: ['recruiter']
+    }), { status: 200 })
+  }), /did not register Messaging/);
+  assert.equal(await gatewayConsumerRegistrationProbe(source, {
+    fetchImpl: async (url, init) => {
+      assert.equal(url, 'https://chatgpt.example.test/health');
+      assert.equal(init.redirect, 'error');
+      return new Response(JSON.stringify({
+        ok: true,
+        service: 'seemplify-ai-gateway',
+        runtime: 'codex-app-server',
+        ownership: 'seemplify-platform',
+        consumers: ['recruiter', 'messaging']
+      }), { status: 200 });
+    }
+  }), true);
   await assert.rejects(recruiterProxyReadinessProbe(source, {
     fetchImpl: async () => new Response('<html>ok</html>', { status: 200 })
   }), /invalid JSON response/);
@@ -782,6 +805,46 @@ test('application configuration does not resolve until its exact deployment comp
     '/application.deploy',
     'wait:app-1:rotation-exact'
   ]);
+});
+
+test('application configuration skips an exact live revision and accepts only proven running timeouts', async () => {
+  const exactCalls = [];
+  const alreadyReady = await configureApplication('gateway-app', { CURRENT_KEY: 'same' }, [], {
+    env: 'CURRENT_KEY=same'
+  }, {
+    title: 'rotation-ready',
+    requestImpl: async (path) => { exactCalls.push(path); return {}; },
+    readinessProbe: async () => true
+  });
+  assert.equal(alreadyReady.status, 'already-ready');
+  assert.deepEqual(exactCalls, []);
+
+  let readinessChecks = 0;
+  const accepted = await configureApplication('gateway-app', { CURRENT_KEY: 'new' }, [], {
+    env: 'CURRENT_KEY=old'
+  }, {
+    title: 'rotation-running',
+    requestImpl: async () => ({}),
+    waitForDeploymentImpl: async () => {
+      throw new Error('Dokploy deployment rotation-running did not complete (last status: running)');
+    },
+    readinessProbe: async () => { readinessChecks += 1; return true; },
+    acceptRunningDeploymentWhenReady: true
+  });
+  assert.equal(accepted.status, 'ready-after-running-timeout');
+  assert.equal(readinessChecks, 1);
+
+  await assert.rejects(configureApplication('gateway-app', { CURRENT_KEY: 'new' }, [], {
+    env: 'CURRENT_KEY=old'
+  }, {
+    title: 'rotation-error',
+    requestImpl: async () => ({}),
+    waitForDeploymentImpl: async () => {
+      throw new Error('Dokploy deployment rotation-error error: build failed');
+    },
+    readinessProbe: async () => true,
+    acceptRunningDeploymentWhenReady: true
+  }), /build failed/);
 });
 
 test('finalization proves every previous credential is rejected repeatedly', async () => {

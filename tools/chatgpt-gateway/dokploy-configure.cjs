@@ -341,6 +341,27 @@ async function gatewayReadinessProbe(source = process.env, { fetchImpl = fetch, 
   return true;
 }
 
+async function gatewayConsumerRegistrationProbe(source = process.env, { fetchImpl = fetch } = {}) {
+  const gatewayBase = String(source.CHATGPT_GATEWAY_BASE_URL || '').replace(/\/+$/, '');
+  if (!gatewayBase) throw new Error('Current gateway URL is required for consumer readiness verification');
+  const response = await fetchImpl(`${gatewayBase}/health`, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+    redirect: 'error'
+  });
+  if (!response.ok) throw new Error(`Gateway consumer readiness probe failed with HTTP ${response.status}`);
+  const status = await requireJsonResponse(response, 'Gateway consumer readiness probe');
+  if (status?.ok !== true
+      || status.service !== 'seemplify-ai-gateway'
+      || status.runtime !== 'codex-app-server'
+      || status.ownership !== 'seemplify-platform'
+      || !Array.isArray(status.consumers)
+      || !status.consumers.includes('messaging')) {
+    throw new Error('Gateway consumer readiness probe did not register Messaging');
+  }
+  return true;
+}
+
 async function waitForGatewayReadiness(source = process.env, {
   fetchImpl = fetch,
   now = Date.now,
@@ -787,22 +808,45 @@ async function configureApplication(
   {
     requestImpl = request,
     waitForDeploymentImpl = waitForDeploymentCompletion,
-    title = `Seemplify secret rotation ${new Date().toISOString()} ${crypto.randomBytes(6).toString('hex')}`
+    title = `Seemplify secret rotation ${new Date().toISOString()} ${crypto.randomBytes(6).toString('hex')}`,
+    readinessProbe = null,
+    acceptRunningDeploymentWhenReady = false
   } = {}
 ) {
-  const { application: app } = await saveApplicationEnvironment(
+  const { application: app, changed } = await saveApplicationEnvironment(
     applicationId,
     required,
     removed,
     currentApplication,
     { requestImpl }
   );
+  if (!changed.length && readinessProbe) {
+    try {
+      await readinessProbe();
+      console.log(`Application ${applicationId} already has the exact environment and is ready; skipping redeploy.`);
+      return { status: 'already-ready' };
+    } catch {
+      // Exact saved configuration is not sufficient: deploy when the live
+      // revision cannot prove the required behavior.
+    }
+  }
   await requestImpl('/application.deploy', {
     method: 'POST',
     body: JSON.stringify({ applicationId, title, description: 'Staged Seemplify service credential rotation' })
   });
   console.log(`Deployment triggered for application ${applicationId}.`);
-  const deployment = await waitForDeploymentImpl(applicationId, title, { requestImpl });
+  let deployment;
+  try {
+    deployment = await waitForDeploymentImpl(applicationId, title, { requestImpl });
+  } catch (error) {
+    const staleRunningStatus = new RegExp(
+      `^Dokploy deployment ${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} did not complete \\(last status: (?:running|queued)\\)$`
+    ).test(String(error?.message || ''));
+    if (!acceptRunningDeploymentWhenReady || !readinessProbe || !staleRunningStatus) throw error;
+    await readinessProbe();
+    console.log(`Dokploy still reports ${applicationId} in progress, but exact application readiness passed.`);
+    return { status: 'ready-after-running-timeout' };
+  }
   console.log(`Deployment completed for application ${applicationId}.`);
   return deployment;
 }
@@ -1215,11 +1259,20 @@ async function main() {
   // Recruiter remains compatible. Finalization removes the overlap only after
   // an explicit, separately run approval verifies every staged environment.
   if (rotationPhase === 'stage') {
-    await configureApplication(gatewayId, gatewayRequired, gatewayRemoved, gatewayApplication);
+    const gatewayApplicationReadiness = async () => {
+      await gatewayReadinessProbe(deploymentSource);
+      await gatewayConsumerRegistrationProbe(deploymentSource);
+      return true;
+    };
+    await configureApplication(gatewayId, gatewayRequired, gatewayRemoved, gatewayApplication, {
+      readinessProbe: gatewayApplicationReadiness,
+      acceptRunningDeploymentWhenReady: true
+    });
     // Dokploy deploy is asynchronous. Do not start rotating Recruiter until
     // the live gateway proves it accepts the new current key (while also
     // retaining the previous key for the still-running Recruiter).
     await waitForGatewayReadiness(deploymentSource);
+    await gatewayConsumerRegistrationProbe(deploymentSource);
     if (gatewaySecrets.previousRequestSecret
         && gatewaySecrets.previousRequestSecret !== gatewaySecrets.requestSecret) {
       await waitForReadiness('Gateway previous-key compatibility', () => (
@@ -1358,6 +1411,7 @@ module.exports = {
   ROTATION_RETIREMENT_LEDGER_KEY,
   rotationReadinessSmoke,
   gatewayReadinessProbe,
+  gatewayConsumerRegistrationProbe,
   idpWebhookReadinessProbe,
   performanceDeploymentReadinessProbe,
   publicHealthProbe,
