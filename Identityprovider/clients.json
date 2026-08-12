@@ -250,6 +250,32 @@
         "refresh_token"
       ],
       "token_endpoint_auth_method": "client_secret_basic"
+    },
+    {
+      "client_id": "seemplify-learning",
+      "client_secret": "seemplify-learning-secret",
+      "redirect_uri_patterns": [
+        "http://localhost:5012/auth/seemplify/callback",
+        "http://127.0.0.1:5012/auth/seemplify/callback",
+        "https://learning.seemplifyai.com/auth/seemplify/callback",
+        "https://learning-dev.seemplifyai.com/auth/seemplify/callback"
+      ],
+      "allowed_origins": [
+        "http://localhost:5012",
+        "http://127.0.0.1:5012",
+        "https://learning.seemplifyai.com",
+        "https://learning-dev.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "token_endpoint_auth_method": "client_secret_basic"
     }
   ]
 }

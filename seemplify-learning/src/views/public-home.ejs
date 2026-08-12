@@ -9,9 +9,11 @@
   <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
   <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260318-12">
   <script src="/js/theme.js?v=3"></script>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <body class="public-site public-home-page">
-  <%- include('./partials/nav', { user, activePage, activeLmsView: '', brandKey: 'aiin', brandLearningName: 'AIIN Learning', teachBrand: 'AIIN Nigeria' }) %>
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '', brandKey, brandLearningName, teachBrand }) %>
 
   <%
     const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
@@ -55,108 +57,45 @@
     }
   %>
 
-  <div class="lmsv-home-hero-band">
-  
-    <!-- Right Side Img Full Height with Fade -->
-    <div class="lmsv-home-hero-image-panel">
-      <!-- Gradient overlay to fade left side to #090B19 -->
-      <div class="lmsv-home-hero-image-fade"></div>
-      <!-- Mask image fading bottom to match dark overlapping bottom, but actually overlap card is just above -->
-      <img src="<%= heroGraphicImage %>" alt="Learners collaborating" class="lmsv-home-hero-image">
-      
-      <!-- Floating Widgets -->
-      <div class="lmsv-home-hero-widget lmsv-home-hero-widget-growth">
-        <div class="lmsv-home-hero-widget-icon">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="4" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="20" y1="20" x2="20" y2="13"></line></svg>
-        </div>
-        <div class="lmsv-home-hero-widget-copy">
-          <div class="lmsv-home-hero-widget-title">Progress +24%</div>
-          <div class="lmsv-home-hero-widget-note">Learning growth this month</div>
-        </div>
-      </div>
-  
-      <div class="lmsv-home-hero-widget lmsv-home-hero-widget-cert">
-        <div class="lmsv-home-hero-widget-icon">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4-8 4-8-4 8-4z"></path><path d="M4 11l8 4 8-4"></path><path d="M10 15v4l2 2 2-2v-4"></path></svg>
-        </div>
-        <div class="lmsv-home-hero-widget-copy">
-          <div class="lmsv-home-hero-widget-title">Certificate Ready</div>
-          <div class="lmsv-home-hero-widget-note">Career credentials in view</div>
-        </div>
-      </div>
-    </div>
-  
-    <main class="lmsv-home-hero-copy-shell">
+  <section class="lmsv-home-hero-band">
+    <div class="lmsv-home-hero-copy-shell">
       <div class="lmsv-home-hero-copy">
-        <div class="lmsv-home-hero-tags">
-          <span class="lmsv-home-hero-tag">LAUNCH</span>
-          <span class="lmsv-home-hero-tag">CAREER</span>
-          <span class="lmsv-home-hero-tag">CREATOR</span>
-        </div>
-        <h1 class="lmsv-home-hero-title">
-          Learn with clarity.<br>
-          <span>Build with confidence.</span>
-        </h1>
+        <p class="lmsv-home-hero-kicker"><%= brandLearningName || 'Seemplify Learning' %></p>
+        <h1 class="lmsv-home-hero-title">Build practical skills. <span>Keep growing.</span></h1>
         <p class="lmsv-home-hero-description">
-          Nigeria's premier platform for practical skill development.<br>
-          Launch your career, grow your expertise, or create courses<br>
-          that impact thousands.
+          Learn at your own pace, develop the skills your work needs, and keep every course and credential in one connected workspace.
         </p>
         <div class="lmsv-home-hero-actions">
-          <a href="/courses" class="lmsv-home-hero-btn lmsv-home-hero-btn-primary">Explore Courses <span aria-hidden="true">&rarr;</span></a>
-          <a href="/teach" class="lmsv-home-hero-btn lmsv-home-hero-btn-secondary">Start Teaching</a>
+          <a href="/courses" class="lmsv-home-hero-btn lmsv-home-hero-btn-primary">Explore courses <span aria-hidden="true">&rarr;</span></a>
+          <a href="/teach" class="lmsv-home-hero-btn lmsv-home-hero-btn-secondary">Create a course</a>
         </div>
-      </div>
-    </main>
-  </div>
-
-<main class="lmsv-shell">
-  <div class="lmsv-hero-overlap-wrapper">
-      <div class="lmsv-surface-card lmsv-hero-overlap-card lmsv-fade-up lmsv-delay-3">
-        <div class="lmsv-overlap-stats">
-          <div class="lmsv-pulse-row">
-            <span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#a855f7" stroke-width="1.5" style="margin-right:8px;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg> PUBLISHED COURSES</span>
-            <strong><%= totalCourses %></strong>
-          </div>
-          <div class="lmsv-overlap-divider"></div>
-          <div class="lmsv-pulse-row">
-            <span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#a855f7" stroke-width="1.5" style="margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> TOTAL LESSONS</span>
-            <strong><%= totalLessons %></strong>
-          </div>
-          <div class="lmsv-overlap-divider"></div>
-          <div class="lmsv-pulse-row">
-            <span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#a855f7" stroke-width="1.5" style="margin-right:8px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> LEARNING HOURS</span>
-            <strong><%= totalDurationHours %></strong>
-          </div>
-        </div>
-        
-        <div class="lmsv-overlap-featured">
-          <% if (leadCourse) { %>
-            <div class="lmsv-featured-header">
-              <span class="lmsv-kicker-pill lmsv-kicker-start">START HERE</span>
-              <span class="lmsv-kicker-pill lmsv-kicker-hot">MOST POPULAR</span>
-            </div>
-            <h3 style="font-size: 18px; line-height: 1.3; margin: 12px 0 16px;"><%= leadCourse.title %></h3>
-            <div class="lmsv-featured-footer">
-              <div class="lmsv-pill-row lmsv-pill-row-muted" style="gap: 8px; margin-bottom: 24px;">
-                <span style="font-size: 11px; padding: 4px 10px; border-radius: 99px; background: #f3e8ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;"><%= leadCourse.levelLabel %></span>
-                <span style="font-size: 11px; padding: 4px 10px; border-radius: 99px; background: transparent; color: #475569; border: 1px solid #e2e8f0; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;"><%= leadCourse.lessonCount %> LESSONS</span>
-                <span style="font-size: 11px; padding: 4px 10px; border-radius: 99px; background: transparent; color: #475569; border: 1px solid #e2e8f0; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;"><%= formatDuration(leadCourse.estimatedDurationMinutes) %></span>
-              </div>
-              <a href="<%= courseHref(leadCourse) %>" style="display: inline-block; border: 1px solid #cbd5e1; border-radius: 999px; padding: 6px 14px; color: #0f172a; font-weight: 600; font-size: 13px; text-decoration: none;">View Course &rarr;</a>
-            </div>
-          <% } else { %>
-            <div class="lmsv-featured-header">
-              <span class="lmsv-kicker-pill lmsv-kicker-start">START HERE</span>
-            </div>
-            <h3>New courses publishing soon</h3>
-            <div class="lmsv-featured-footer">
-              <a href="/courses" class="lmsv-btn-link">Browse Catalog &rarr;</a>
-            </div>
-          <% } %>
-        </div>
+        <ul class="lmsv-home-hero-points" aria-label="Learning platform highlights">
+          <li>Self-paced learning</li>
+          <li>Practical course paths</li>
+          <li>Connected progress</li>
+        </ul>
       </div>
     </div>
+    <figure class="lmsv-home-hero-image-panel">
+      <img src="<%= heroGraphicImage %>" alt="Learners working together" class="lmsv-home-hero-image">
+      <figcaption>
+        <span>Learning that moves with your work</span>
+        <strong>One place for courses, progress, and credentials.</strong>
+      </figcaption>
+    </figure>
+  </section>
+
+<main class="lmsv-shell">
+  <section class="lmsv-learning-summary" aria-label="Learning catalogue summary">
+    <p><strong><%= totalCourses %></strong> published courses</p>
+    <p><strong><%= totalLessons %></strong> practical lessons</p>
+    <p><strong><%= totalDurationHours %></strong> learning hours</p>
+    <% if (leadCourse) { %>
+      <a href="<%= courseHref(leadCourse) %>">Start with <strong><%= leadCourse.title %></strong> <span aria-hidden="true">&rarr;</span></a>
+    <% } else { %>
+      <a href="/courses">Browse the catalogue <span aria-hidden="true">&rarr;</span></a>
+    <% } %>
+  </section>
 
     <section class="lmsv-section" style="padding-top: 64px;">
       <header class="lmsv-section-head lmsv-section-head-center" style="margin-bottom: 48px;">
@@ -193,7 +132,7 @@
             <h3 style="font-size: 28px; line-height: 1.2; margin: 8px 0 16px;">Publish polished courses and grow your audience.</h3>
             <p style="color: #475569; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">Build chapters, lessons, and quizzes with guided onboarding from day one.</p>
             <div class="lmsv-actions">
-              <a href="<%= teachCtaHref %>" class="btn btn-primary" style="background:#8b5cf6; border:1px solid #8b5cf6; color:white; border-radius: 8px; padding: 12px 20px;">Teach on AIIN Nigeria</a>
+              <a href="<%= teachCtaHref %>" class="btn btn-primary">Teach on <%= teachBrand %></a>
               <a href="/teach" class="btn btn-outline" style="border:1px solid #e2e8f0; color:#0f172a; border-radius: 8px; padding: 12px 20px;">Creator Guide</a>
             </div>
           </div>
@@ -240,7 +179,7 @@
     </section>
   </main>
 
-  <%- include('./partials/public-footer', { brandKey: 'aiin', brandLearningName: 'AIIN Learning', teachBrand: 'AIIN Nigeria' }) %>
+  <%- include('./partials/public-footer', { brandKey, brandLearningName, teachBrand }) %>
 </body>
 </html>
 

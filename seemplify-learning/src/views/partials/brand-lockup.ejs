@@ -1,0 +1,16 @@
+<%
+  const lockupBrandKey = typeof brandKey === 'string' && brandKey.trim() ? brandKey.trim() : 'seemplify'
+  const lockupIsAiin = lockupBrandKey === 'aiin'
+  const lockupLearningName = typeof brandLearningName === 'string' && brandLearningName.trim()
+    ? brandLearningName.trim()
+    : (lockupIsAiin ? 'AIIN Learning' : 'Seemplify Learning')
+%>
+<span class="brand-lockup brand-lockup--<%= lockupIsAiin ? 'aiin' : 'seemplify' %>" role="img" aria-label="<%= lockupLearningName %>">
+  <% if (lockupIsAiin) { %>
+    <img src="/images/aiin_logo.png" alt="" class="brand-lockup-image">
+  <% } else { %>
+    <span class="brand-lockup-wordmark">seemplify</span>
+    <span class="brand-lockup-rule" aria-hidden="true"></span>
+    <span class="brand-lockup-product">Learning</span>
+  <% } %>
+</span>

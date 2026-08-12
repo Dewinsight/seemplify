@@ -1,17 +1,17 @@
 <svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bgLearner" x1="0" y1="0" x2="1200" y2="900" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0C4A6E"/>
-      <stop offset="1" stop-color="#1E293B"/>
+      <stop stop-color="#5E35D3"/>
+      <stop offset="1" stop-color="#17151B"/>
     </linearGradient>
   </defs>
   <rect width="1200" height="900" fill="url(#bgLearner)"/>
-  <rect x="150" y="120" width="900" height="660" rx="34" fill="#0F172A" fill-opacity="0.72" stroke="#38BDF8" stroke-opacity="0.44"/>
-  <circle cx="330" cy="270" r="95" fill="#22D3EE" fill-opacity="0.35"/>
+  <rect x="150" y="120" width="900" height="660" rx="34" fill="#18161F" fill-opacity="0.76" stroke="#A98EFF" stroke-opacity="0.44"/>
+  <circle cx="330" cy="270" r="95" fill="#A98EFF" fill-opacity="0.34"/>
   <rect x="470" y="210" width="460" height="74" rx="16" fill="#E2E8F0" fill-opacity="0.18"/>
   <rect x="470" y="320" width="300" height="44" rx="12" fill="#E2E8F0" fill-opacity="0.15"/>
-  <rect x="240" y="430" width="720" height="230" rx="24" fill="#0B1126" fill-opacity="0.7" stroke="#60A5FA" stroke-opacity="0.3"/>
-  <rect x="290" y="490" width="180" height="120" rx="16" fill="#0EA5E9" fill-opacity="0.35"/>
-  <rect x="510" y="490" width="180" height="120" rx="16" fill="#14B8A6" fill-opacity="0.35"/>
-  <rect x="730" y="490" width="180" height="120" rx="16" fill="#A855F7" fill-opacity="0.32"/>
+  <rect x="240" y="430" width="720" height="230" rx="24" fill="#0F0E13" fill-opacity="0.74" stroke="#8B63FF" stroke-opacity="0.34"/>
+  <rect x="290" y="490" width="180" height="120" rx="16" fill="#7047EB" fill-opacity="0.38"/>
+  <rect x="510" y="490" width="180" height="120" rx="16" fill="#8B63FF" fill-opacity="0.35"/>
+  <rect x="730" y="490" width="180" height="120" rx="16" fill="#A98EFF" fill-opacity="0.32"/>
 </svg>

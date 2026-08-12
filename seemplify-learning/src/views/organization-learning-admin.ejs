@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=3"></script>
+  <style>
+    .org-learning-shell {
+      width: min(1240px, calc(100% - 32px));
+      margin: 28px auto 56px;
+      display: grid;
+      gap: 24px;
+    }
+    .org-learning-shell > *,
+    .org-learning-header > *,
+    .org-learning-section {
+      min-width: 0;
+    }
+    .org-learning-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .org-learning-header h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      letter-spacing: -0.025em;
+      color: var(--text);
+    }
+    .org-learning-header p,
+    .org-learning-copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .org-learning-actions,
+    .org-learning-inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .org-learning-summary {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin: 0;
+      padding: 0;
+    }
+    .org-learning-summary div {
+      display: grid;
+      gap: 2px;
+    }
+    .org-learning-summary dt {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .org-learning-summary dd {
+      margin: 0;
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 650;
+    }
+    .org-learning-section {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card-bg);
+    }
+    .org-learning-section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .org-learning-section-head h2 {
+      margin: 0 0 4px;
+      color: var(--text);
+      font-size: 18px;
+    }
+    .org-learning-section-body {
+      padding: 20px;
+    }
+    .org-learning-settings {
+      display: grid;
+      gap: 16px;
+      max-width: 720px;
+    }
+    .org-learning-check {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 10px;
+      align-items: flex-start;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .org-learning-check span span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .org-learning-field {
+      display: grid;
+      gap: 6px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .org-learning-table-wrap {
+      overflow-x: auto;
+    }
+    .org-learning-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .org-learning-table th,
+    .org-learning-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    .org-learning-table th {
+      color: var(--muted);
+      font-weight: 600;
+      background: var(--field-bg);
+    }
+    .org-learning-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    .org-learning-person {
+      display: grid;
+      gap: 2px;
+      min-width: 180px;
+    }
+    .org-learning-person strong {
+      color: var(--text);
+    }
+    .org-learning-person span,
+    .org-learning-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .org-learning-member-form {
+      display: grid;
+      grid-template-columns: minmax(150px, 1fr) minmax(160px, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+      min-width: 430px;
+    }
+    .org-learning-course-list {
+      display: grid;
+    }
+    .org-learning-course {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .org-learning-course:last-child {
+      border-bottom: 0;
+    }
+    .org-learning-course summary {
+      cursor: pointer;
+      list-style: none;
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+    }
+    .org-learning-course summary::-webkit-details-marker { display: none; }
+    .org-learning-course-title {
+      display: grid;
+      gap: 4px;
+    }
+    .org-learning-course-title strong {
+      color: var(--text);
+      font-size: 15px;
+    }
+    .org-learning-course-controls {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      display: grid;
+      gap: 18px;
+    }
+    .org-learning-course-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .org-learning-course-form {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .org-learning-course-form h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .org-learning-options {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .org-learning-options label {
+      color: var(--text);
+      font-size: 12px;
+    }
+    .org-learning-empty {
+      padding: 26px 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    @media (max-width: 800px) {
+      .org-learning-shell { width: min(100% - 20px, 1240px); margin-top: 18px; }
+      .org-learning-header,
+      .org-learning-section-head { flex-direction: column; }
+      .org-learning-course-grid { grid-template-columns: 1fr; }
+      .org-learning-course summary { grid-template-columns: 1fr; }
+      .org-learning-member-form {
+        min-width: 0;
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+</head>
+<body>
+  <%- include('partials/nav', { activePage: 'organization-learning', user }) %>
+
+  <main class="org-learning-shell">
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (info) { %><div class="alert"><%= info %></div><% } %>
+
+    <% if (organization) { %>
+      <header class="org-learning-header">
+        <div>
+          <h1><%= organization.name %> Learning</h1>
+          <p>Manage staff access, private training, assignments, and public course submissions.</p>
+        </div>
+        <div class="org-learning-actions">
+          <% if ((organizations || []).length > 1) { %>
+            <form method="post" action="/organization-learning/switch" class="org-learning-inline">
+              <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+              <select class="input" name="organizationId" aria-label="Learning organisation">
+                <% organizations.forEach((item) => { %>
+                  <option value="<%= item._id %>" <%= String(item._id) === String(organization._id) ? 'selected' : '' %>><%= item.name %></option>
+                <% }) %>
+              </select>
+              <button class="btn btn-secondary btn-sm" type="submit">Switch</button>
+            </form>
+          <% } %>
+          <% if (organizationLearningAccess.canCreateCourses) { %>
+            <a class="btn btn-primary btn-sm" href="/simple-lms/studio/courses?compose=create">Create course</a>
+          <% } %>
+        </div>
+      </header>
+
+      <dl class="org-learning-summary">
+        <div><dt>Staff</dt><dd><%= stats.memberCount || 0 %></dd></div>
+        <div><dt>Learning enabled</dt><dd><%= stats.enabledMemberCount || 0 %></dd></div>
+        <div><dt>Organisation courses</dt><dd><%= stats.courseCount || 0 %></dd></div>
+        <div><dt>Awaiting review</dt><dd><%= stats.pendingReviewCount || 0 %></dd></div>
+      </dl>
+
+      <% if (organizationLearningAccess.canManageLearning) { %>
+        <section class="org-learning-section">
+          <div class="org-learning-section-head">
+            <div>
+              <h2>Catalogue policy</h2>
+              <p class="org-learning-copy">Set the default catalogue available to staff in this organisation.</p>
+            </div>
+          </div>
+          <div class="org-learning-section-body">
+            <form method="post" action="/organization-learning/settings" class="org-learning-settings">
+              <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+              <label class="org-learning-check">
+                <input type="checkbox" name="allowSystemCourses" <%= settings?.allowSystemCourses !== false ? 'checked' : '' %>>
+                <span>Show Seemplify system courses<span>Turn this off to remove centrally published courses from your staff catalogue.</span></span>
+              </label>
+              <label class="org-learning-check">
+                <input type="checkbox" name="allowExternalPublicCourses" <%= settings?.allowExternalPublicCourses !== false ? 'checked' : '' %>>
+                <span>Show public courses from other organisations<span>Your own approved public courses remain available even when this is off.</span></span>
+              </label>
+              <label class="org-learning-field">Default audience for new organisation courses
+                <select class="input" name="defaultCourseAudience">
+                  <option value="all_members" <%= (settings?.defaultCourseAudience || 'all_members') === 'all_members' ? 'selected' : '' %>>All staff</option>
+                  <option value="learning_roles" <%= settings?.defaultCourseAudience === 'learning_roles' ? 'selected' : '' %>>Selected Learning roles</option>
+                  <option value="selected_members" <%= settings?.defaultCourseAudience === 'selected_members' ? 'selected' : '' %>>Selected staff</option>
+                </select>
+              </label>
+              <div><button class="btn btn-primary btn-sm" type="submit">Save policy</button></div>
+            </form>
+          </div>
+        </section>
+      <% } %>
+
+      <section class="org-learning-section">
+        <div class="org-learning-section-head">
+          <div>
+            <h2>Staff access</h2>
+            <p class="org-learning-copy">IdP membership and HR roles stay authoritative. Learning roles only control courses and training.</p>
+          </div>
+          <% if (organizationLearningAccess.canManageLearning && organization.idpOrganizationId) { %>
+            <form method="post" action="/organization-learning/sync">
+              <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+              <button class="btn btn-secondary btn-sm" type="submit">Sync from Seemplify</button>
+            </form>
+          <% } %>
+        </div>
+        <% if (!members || members.length === 0) { %>
+          <div class="org-learning-empty">No staff records are available yet.</div>
+        <% } else { %>
+          <div class="org-learning-table-wrap">
+            <table class="org-learning-table">
+              <thead><tr><th>Staff member</th><th>IdP role</th><th>Learning access</th></tr></thead>
+              <tbody>
+                <% members.forEach((member) => { %>
+                  <tr>
+                    <td>
+                      <div class="org-learning-person">
+                        <strong><%= member.name %><%= member.isCurrentUser ? ' (you)' : '' %></strong>
+                        <span><%= member.email %></span>
+                        <% if (member.designation || member.departmentName || member.teamNames.length) { %>
+                          <span><%= [member.designation, member.departmentName, member.teamNames.join(', ')].filter(Boolean).join(' · ') %></span>
+                        <% } %>
+                      </div>
+                    </td>
+                    <td><%= String(member.organizationRole || 'staff').replace(/_/g, ' ') %></td>
+                    <td>
+                      <% if (!member.learningAccess.enabled) { %>
+                        <span class="org-learning-meta">Not assigned to Learning in the IdP</span>
+                      <% } else if (organizationLearningAccess.canManageLearning) { %>
+                        <form method="post" action="/organization-learning/members/<%= member.accountId %>" class="org-learning-member-form">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+                          <label class="org-learning-field">Role
+                            <select class="input" name="learningRole">
+                              <% learningRoles.forEach((roleOption) => { %>
+                                <option value="<%= roleOption %>" <%= member.learningAccess.role === roleOption ? 'selected' : '' %>><%= formatOrganizationLearningRole(roleOption) %></option>
+                              <% }) %>
+                            </select>
+                          </label>
+                          <label class="org-learning-field">Catalogue
+                            <select class="input" name="catalogAccess">
+                              <option value="all_available" <%= member.learningAccess.catalogAccess === 'all_available' ? 'selected' : '' %>>All available</option>
+                              <option value="organization_only" <%= member.learningAccess.catalogAccess === 'organization_only' ? 'selected' : '' %>>Organisation only</option>
+                              <option value="assigned_only" <%= member.learningAccess.catalogAccess === 'assigned_only' ? 'selected' : '' %>>Assigned only</option>
+                            </select>
+                          </label>
+                          <button class="btn btn-secondary btn-sm" type="submit">Save</button>
+                        </form>
+                      <% } else { %>
+                        <span><%= formatOrganizationLearningRole(member.learningAccess.role) %></span>
+                        <span class="org-learning-meta"> · <%= String(member.learningAccess.catalogAccess).replace(/_/g, ' ') %></span>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="org-learning-section">
+        <div class="org-learning-section-head">
+          <div>
+            <h2>Organisation courses</h2>
+            <p class="org-learning-copy">Private courses stay inside <%= organization.name %>. Public submissions enter the Seemplify review queue.</p>
+          </div>
+        </div>
+        <% if (!courses || courses.length === 0) { %>
+          <div class="org-learning-empty">No organisation courses yet. <% if (organizationLearningAccess.canCreateCourses) { %><a href="/simple-lms/studio/courses?compose=create">Create the first course</a>.<% } %></div>
+        <% } else { %>
+          <div class="org-learning-course-list">
+            <% courses.forEach((course) => { %>
+              <details class="org-learning-course">
+                <summary>
+                  <span class="org-learning-course-title">
+                    <strong><%= course.title %></strong>
+                    <span class="org-learning-meta"><%= course.creatorName %> · <%= course.enrollmentCount %> assigned · <%= course.audienceMode.replace(/_/g, ' ') %></span>
+                  </span>
+                  <span class="org-learning-inline">
+                    <span class="lms-chip"><%= String(course.status || 'draft').replace(/_/g, ' ') %></span>
+                    <span class="lms-chip"><%= course.visibility === 'organization_public' ? 'public submission' : 'organisation only' %></span>
+                  </span>
+                </summary>
+
+                <% if (organizationLearningAccess.canManageLearning) { %>
+                  <div class="org-learning-course-controls">
+                    <div class="org-learning-actions">
+                      <a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses?editCourse=<%= course._id %>">Edit course</a>
+                      <a class="btn btn-secondary btn-sm" href="/simple-lms/courses/<%= course._id %>/preview?returnTo=<%= encodeURIComponent('/organization-learning') %>">Preview</a>
+                      <form method="post" action="/organization-learning/courses/<%= course._id %>/lifecycle" class="org-learning-inline">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+                        <button class="btn btn-secondary btn-sm" name="action" value="draft" type="submit">Keep draft</button>
+                        <button class="btn btn-primary btn-sm" name="action" value="publish_internal" type="submit">Publish internally</button>
+                        <button class="btn btn-secondary btn-sm" name="action" value="submit_public" type="submit">Submit for public review</button>
+                        <button class="btn btn-danger btn-sm" name="action" value="archive" type="submit">Archive</button>
+                      </form>
+                    </div>
+
+                    <div class="org-learning-course-grid">
+                      <form method="post" action="/organization-learning/courses/<%= course._id %>/access" class="org-learning-course-form">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+                        <h3>Who can find this course</h3>
+                        <label class="org-learning-field">Audience
+                          <select class="input" name="audienceMode">
+                            <option value="all_members" <%= course.audienceMode === 'all_members' ? 'selected' : '' %>>All staff</option>
+                            <option value="learning_roles" <%= course.audienceMode === 'learning_roles' ? 'selected' : '' %>>Selected Learning roles</option>
+                            <option value="selected_members" <%= course.audienceMode === 'selected_members' ? 'selected' : '' %>>Selected staff</option>
+                          </select>
+                        </label>
+                        <div class="org-learning-options">
+                          <% learningRoles.forEach((roleOption) => { %>
+                            <label><input type="checkbox" name="audienceLearningRoles" value="<%= roleOption %>" <%= course.audienceLearningRoles.includes(roleOption) ? 'checked' : '' %>> <%= formatOrganizationLearningRole(roleOption) %></label>
+                          <% }) %>
+                        </div>
+                        <label class="org-learning-field">Selected staff
+                          <select class="input" name="audienceMembers" multiple size="5">
+                            <% members.filter((member) => member.learningAccess.enabled).forEach((member) => { %>
+                              <option value="<%= member.accountId %>" <%= course.audienceMembers.includes(member.accountId) ? 'selected' : '' %>><%= member.name %> — <%= member.email %></option>
+                            <% }) %>
+                          </select>
+                        </label>
+                        <div><button class="btn btn-secondary btn-sm" type="submit">Save audience</button></div>
+                      </form>
+
+                      <form method="post" action="/organization-learning/courses/<%= course._id %>/assign" class="org-learning-course-form">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+                        <h3>Assign to staff</h3>
+                        <p class="org-learning-copy">Assignments place the course in My Learning, including for staff whose catalogue is assigned-only.</p>
+                        <label class="org-learning-field">Staff
+                          <select class="input" name="memberIds" multiple size="8" required>
+                            <% members.filter((member) => member.learningAccess.enabled).forEach((member) => { %>
+                              <option value="<%= member.accountId %>"><%= member.name %> — <%= formatOrganizationLearningRole(member.learningAccess.role) %></option>
+                            <% }) %>
+                          </select>
+                        </label>
+                        <div><button class="btn btn-primary btn-sm" type="submit">Assign course</button></div>
+                      </form>
+                    </div>
+                  </div>
+                <% } %>
+              </details>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+    <% } else { %>
+      <section class="org-learning-section"><div class="org-learning-empty">Connect with Seemplify or choose an organisation to use organisation Learning administration.</div></section>
+    <% } %>
+  </main>
+</body>
+</html>

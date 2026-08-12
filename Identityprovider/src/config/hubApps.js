@@ -137,6 +137,20 @@ const developmentApps = [
     order: 7
   },
   {
+    appId: 'seemplify-learning',
+    name: 'Seemplify Learning',
+    description: 'Organisation learning, internal courses, and staff development',
+    icon: 'academic-cap',
+    color: '#0f766e',
+    url: process.env.SEEMPLIFY_LEARNING_URL || 'http://localhost:5012',
+    apiUrl: process.env.SEEMPLIFY_LEARNING_URL || 'http://localhost:5012',
+    clientId: 'seemplify-learning',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 7.5
+  },
+  {
     appId: 'zulip',
     name: 'Seemplify Chat',
     description: 'Thread-based team messaging and collaboration',
@@ -269,6 +283,20 @@ const productionApps = [
     isPublic: true,
     category: 'productivity',
     order: 7
+  },
+  {
+    appId: 'seemplify-learning',
+    name: 'Seemplify Learning',
+    description: 'Organisation learning, internal courses, and staff development',
+    icon: 'academic-cap',
+    color: '#0f766e',
+    url: productionSafeUrl(process.env.SEEMPLIFY_LEARNING_URL, 'https://learning.seemplifyai.com'),
+    apiUrl: productionSafeUrl(process.env.SEEMPLIFY_LEARNING_URL, 'https://learning.seemplifyai.com'),
+    clientId: 'seemplify-learning',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 7.5
   },
   {
     appId: 'zulip',

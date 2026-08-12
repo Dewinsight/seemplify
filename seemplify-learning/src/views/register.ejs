@@ -120,6 +120,8 @@
       }
     }
   </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <body>
   <% const selectedIntent = typeof intent === 'string' ? intent : 'learn' %>
@@ -130,6 +132,7 @@
   <% const adminInviteActive = hasAdminInviteToken && !adminInviteExpired && typeof adminInviteEmail === 'string' && adminInviteEmail.trim().length > 0 %>
   <% const forcedInviteIntent = inviteActive || adminInviteActive ? 'learn' : selectedIntent %>
   <div class="auth-wrap">
+    <a href="/" class="auth-brand"><%- include('./partials/brand-lockup', { brandKey, brandLearningName }) %></a>
     <div class="auth-card">
       <h1 class="auth-title"><%= `Create ${brandLearningName || 'Seemplify Learning'} Account` %></h1>
       <p class="auth-subtitle">

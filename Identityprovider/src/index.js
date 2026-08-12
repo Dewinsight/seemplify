@@ -4348,7 +4348,8 @@ app.get('/launch/:appId', async (req, res) => {
       'time-attendance': 'timeAttendance',
       'outline': 'outlineDocs',
       'openwebui': 'aiChat',
-      'lms': 'lms'
+      'lms': 'lms',
+      'seemplify-learning': 'lms'
     }
 
     const featureKey = appFeatureMap[appId]
@@ -4556,6 +4557,9 @@ app.get('/launch/:appId', async (req, res) => {
         break
       case 'time-attendance':
         apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'https://api-time.seemplifyai.com'
+        break
+      case 'seemplify-learning':
+        apiUrl = app.apiUrl || app.url
         break
       default:
         apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001'

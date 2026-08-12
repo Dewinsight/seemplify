@@ -2871,6 +2871,8 @@
       }
     }
   </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <body class="admin-page">
 <%
@@ -3270,7 +3272,7 @@
   <div class="layout">
     <aside class="side">
       <div class="side-head">
-        <p class="side-kicker">Seemplify Learning</p>
+        <p class="side-kicker"><%= brandLearningName || 'Seemplify Learning' %></p>
         <h1>Admin Console</h1>
         <p>Control courses, creators, approvals, and payouts from one admin rail.</p>
       </div>
@@ -5236,7 +5238,7 @@
                   <input type="hidden" name="returnTo" value="/admin/super-users">
                   <button class="btn btn-primary btn-sm" type="submit">Send Invite</button>
                 </form>
-                <p class="mini">The invitee receives a transactional email from the Seemplify platform mailer, registers with the invite link, verifies a one-time code, and then lands in the admin dashboard.</p>
+                <p class="mini">The invitee receives a transactional email from the <%= brandName || 'Seemplify' %> platform mailer, registers with the invite link, verifies a one-time code, and then lands in the admin dashboard.</p>
               </article>
             </div>
 

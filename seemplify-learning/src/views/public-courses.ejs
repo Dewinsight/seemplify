@@ -383,6 +383,8 @@
       }
     }
   </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <body class="public-site public-courses-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
@@ -612,7 +614,7 @@
       <div class="lmsv-teach-cta-banner">
         <div class="lmsv-teach-cta-content">
           <h3>Share your expertise with thousands of learners</h3>
-          <p>Create and publish courses on AIIN Learning. Reach learners across Nigeria and build your teaching brand.</p>
+          <p>Create and publish courses on <%= brandLearningName || 'Seemplify Learning' %>. Reach learners and build your teaching brand.</p>
         </div>
         <a href="<%= typeof teachCtaHref === 'string' ? teachCtaHref : '/teach' %>" class="lmsv-teach-cta-btn">Start Teaching</a>
       </div>

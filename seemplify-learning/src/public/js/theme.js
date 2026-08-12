@@ -3,6 +3,9 @@
  * The non-sensitive preference is shared by first-party Seemplify subdomains.
  */
 (function () {
+  const hostname = String(window.location.hostname || '').toLowerCase()
+  document.documentElement.setAttribute('data-brand', hostname.indexOf('aiinnigeria.com') >= 0 ? 'aiin' : 'seemplify')
+
   const STORAGE_KEY = 'seemplify_theme'
   const LEGACY_STORAGE_KEY = 'seemplify-theme'
   const COOKIE_KEY = 'seemplify_theme'

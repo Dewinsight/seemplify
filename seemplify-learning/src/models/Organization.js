@@ -14,6 +14,14 @@ const OrganizationSchema = new mongoose.Schema({
     trim: true,
     maxLength: 500
   },
+  idpOrganizationId: {
+    type: String,
+    trim: true,
+    sparse: true,
+    unique: true,
+    index: true,
+    default: undefined
+  },
   partnerType: {
     type: String,
     enum: PARTNER_TYPES,
@@ -36,6 +44,76 @@ const OrganizationSchema = new mongoose.Schema({
       enum: ORGANIZATION_MEMBER_ROLES,
       default: 'recruiter'
     },
+    designation: {
+      type: String,
+      trim: true,
+      maxlength: 120
+    },
+    employeeId: {
+      type: String,
+      trim: true,
+      maxlength: 80
+    },
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
+    },
+    branch: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
+    },
+    learningAccess: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      role: {
+        type: String,
+        enum: ['learner', 'instructor', 'learning_manager', 'learning_admin'],
+        default: 'learner'
+      },
+      catalogAccess: {
+        type: String,
+        enum: ['all_available', 'organization_only', 'assigned_only'],
+        default: 'all_available'
+      },
+      managedBy: {
+        type: String,
+        enum: ['idp_default', 'organization_admin'],
+        default: 'idp_default'
+      },
+      updatedAt: Date,
+      updatedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinAccount',
+        default: null
+      }
+    },
+    idpProfile: {
+      designation: {
+        type: String,
+        trim: true,
+        maxlength: 120,
+        default: ''
+      },
+      employeeId: {
+        type: String,
+        trim: true,
+        maxlength: 80,
+        default: ''
+      },
+      departmentName: {
+        type: String,
+        trim: true,
+        maxlength: 160,
+        default: ''
+      },
+      teamNames: {
+        type: [String],
+        default: []
+      },
+      lastSyncedAt: Date
+    },
     appAccess: {
       mode: {
         type: String,
@@ -52,6 +130,16 @@ const OrganizationSchema = new mongoose.Schema({
       default: Date.now
     },
     invitedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount'
+    },
+    onboardingStatusOverride: {
+      type: String,
+      enum: ['not_started', 'pending', 'in_progress', 'completed', 'cancelled'],
+      default: undefined
+    },
+    onboardingStatusUpdatedAt: Date,
+    onboardingStatusUpdatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'AiinAccount'
     },
@@ -93,6 +181,19 @@ const OrganizationSchema = new mongoose.Schema({
       allowedCurrencies: {
         type: [String],
         default: ['NGN']
+      },
+      allowSystemCourses: {
+        type: Boolean,
+        default: true
+      },
+      allowExternalPublicCourses: {
+        type: Boolean,
+        default: true
+      },
+      defaultCourseAudience: {
+        type: String,
+        enum: ['all_members', 'learning_roles', 'selected_members'],
+        default: 'all_members'
       }
     }
   },

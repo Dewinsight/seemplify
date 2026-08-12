@@ -3,7 +3,8 @@
 Standalone Simple LMS application with its own authentication, organization/team hierarchy setup, and LMS workspace.
 
 ## Features
-- Independent login and registration flow (no IDP login dependency)
+- Seemplify IdP sign-in with organization and staff synchronization
+- Independent email/password login and registration remains available
 - Organization + team hierarchy setup workspace
 - Full Simple LMS workspace (courses, programs, assignments, requests)
 - Banner uploads via Cloudinary
@@ -28,6 +29,10 @@ Standalone Simple LMS application with its own authentication, organization/team
 - `MAIL_FROM_EMAIL`
 - `MAIL_FROM_NAME`
 - `APP_BASE_URL`
+- `IDP_ISSUER_URL`
+- `OIDC_CLIENT_ID`
+- `OIDC_CLIENT_SECRET`
+- `OIDC_REDIRECT_URI` (optional when request host/proxy headers are authoritative)
 - `CLOUDINARY_URL` (required for banner uploads)
 
 ## Deployment

@@ -108,6 +108,8 @@
       margin-top: 4px;
     }
   </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <body class="public-site checkout-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView }) %>

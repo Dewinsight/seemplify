@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "test": "node --test",
     "seed:stanbic-learner": "node scripts/createStanbicLearnerReviewUser.js"
   },
   "dependencies": {

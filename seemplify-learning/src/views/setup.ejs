@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Workspace Setup - Seemplify Learning</title>
+  <title><%= title || `Workspace Setup - ${brandLearningName || 'Seemplify Learning'}` %></title>
   <style><%- include('../public/css/idp-theme.css') %></style>
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=3"></script>
@@ -83,6 +83,8 @@
       flex-wrap: wrap;
     }
   </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <body>
   <%- include('partials/nav', { activePage: 'setup', user }) %>
@@ -97,7 +99,7 @@
 
     <section class="setup-card">
       <h2>Workspace Overview</h2>
-      <p>Manage organizations, members, and team hierarchy for Seemplify Learning.</p>
+      <p>Manage organizations, members, and team hierarchy for <%= brandLearningName || 'Seemplify Learning' %>.</p>
       <div class="setup-inline">
         <span class="lms-chip">Organizations: <%= (organizations || []).length %></span>
         <span class="lms-chip">Members: <%= (members || []).length %></span>

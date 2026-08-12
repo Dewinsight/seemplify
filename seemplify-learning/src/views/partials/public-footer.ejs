@@ -1,7 +1,7 @@
 <%
   const footerBrandKey = typeof brandKey === 'string' && brandKey.trim()
     ? brandKey.trim()
-    : 'aiin'
+    : 'seemplify'
   const isAiinFooter = footerBrandKey === 'aiin'
   const footerBrandName = typeof brandName === 'string' && brandName.trim()
     ? brandName.trim()
@@ -12,14 +12,16 @@
   const footerTeachBrand = typeof teachBrand === 'string' && teachBrand.trim()
     ? teachBrand.trim()
     : (isAiinFooter ? 'AIIN Nigeria' : footerBrandName)
-  const aiinLogoUrl = '/images/aiin_logo.png'
 %>
 <footer class="lmsv-footer">
-  <div class="lmsv-footer-accent" aria-hidden="true"></div>
   <div class="lmsv-footer-inner">
     <div class="lmsv-footer-brand">
-      <img src="<%= aiinLogoUrl %>" alt="AIIN Learning" class="lmsv-footer-wordmark">
-      <p>Learn with clarity. Build with confidence. The premier platform for practical skill development in Nigeria.</p>
+      <a href="/" class="lmsv-footer-wordmark">
+        <%- include('./brand-lockup', { brandKey: footerBrandKey, brandLearningName: footerLearningName }) %>
+      </a>
+      <p><%= isAiinFooter
+        ? 'Learn with clarity. Build with confidence through practical, accessible course paths.'
+        : 'Practical learning for teams and individuals, connected to the Seemplify people platform.' %></p>
       <div class="lmsv-footer-social">
         <a href="#" aria-label="Twitter">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/></svg>
@@ -37,7 +39,7 @@
       <div>
         <h3>Platform</h3>
         <a href="/courses">Explore Courses</a>
-        <a href="/teach">Teach on AIIN Nigeria</a>
+        <a href="/teach">Teach on <%= footerTeachBrand %></a>
         <a href="/simple-lms">Workspace</a>
       </div>
       <div>
@@ -54,7 +56,7 @@
     </div>
   </div>
   <div class="lmsv-footer-bottom">
-    <span>&copy; <%= new Date().getFullYear() %> AIIN Learning. All rights reserved.</span>
-    <span>Designed with <span class="lmsv-footer-heart">&hearts;</span> for learners everywhere.</span>
+    <span>&copy; <%= new Date().getFullYear() %> <%= footerLearningName %>. All rights reserved.</span>
+    <span><%= isAiinFooter ? 'Built for practical learning and lasting progress.' : 'Part of the Seemplify connected people platform.' %></span>
   </div>
 </footer>

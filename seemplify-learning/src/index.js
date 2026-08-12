@@ -13,6 +13,7 @@ import partnerRouter from './routes/partner.js'
 import agentRouter from './routes/agent.js'
 import superUserApiRouter from './routes/superUser.js'
 import partnerApiRouter from './routes/partnerApi.js'
+import organizationLearningRouter from './routes/organizationLearning.js'
 import { optionalAuth, requireAuth } from './middleware/auth.js'
 import { csrfGuard } from './middleware/csrf.js'
 import { SimpleLmsCourse } from './models/SimpleLmsCourse.js'
@@ -27,6 +28,7 @@ import { getSessionCartCourseIds } from './utils/simpleLmsCart.js'
 import { normalizeAgentReferralCode } from './utils/agentReferral.js'
 import { resolveCourseSaleContext } from './utils/courseSelling.js'
 import { resolveLearningRole as resolveLearningRoleFromAccount } from './utils/learningRoles.js'
+import { resolveAccountOrganizationLearningAccess } from './utils/organizationLearning.js'
 
 dotenv.config()
 
@@ -102,6 +104,7 @@ app.use((req, res, next) => {
   res.locals.teachLabel = branding.teachLabel
   const cartCourseIds = getSessionCartCourseIds(req)
   res.locals.simpleLmsCartCount = cartCourseIds.length
+  res.locals.organizationLearningAccess = resolveAccountOrganizationLearningAccess(req.user)
   next()
 })
 
@@ -799,6 +802,7 @@ app.use('/api/simple-lms', simpleLmsApiRouter)
 app.use('/api/reports', simpleLmsReportsApiRouter)
 app.use('/partner-dashboard', requireAuth, partnerRouter)
 app.use('/agent-dashboard', requireAuth, agentRouter)
+app.use('/organization-learning', organizationLearningRouter)
 app.use('/api/super-users', requireAuth, superUserApiRouter)
 app.use('/api/partners', requireAuth, partnerApiRouter)
 

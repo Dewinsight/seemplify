@@ -8,6 +8,20 @@ import { AdminInvite } from '../models/AdminInvite.js'
 import { optionalAuth, requireAuth } from '../middleware/auth.js'
 import { resolveBranding } from '../utils/branding.js'
 import { emailService } from '../services/emailService.js'
+import {
+  buildIdpAuthorizationUrl,
+  createOidcTransaction,
+  exchangeAuthorizationCode,
+  fetchIdpOrganizationMembers,
+  fetchIdpUserInfo,
+  getFreshSessionAccessToken,
+  isIdpOidcConfigured,
+  toSessionTokenSet
+} from '../services/idpOidcService.js'
+import {
+  syncIdpOrganizationMembers,
+  syncIdpUserAndOrganizations
+} from '../services/idpLearningSyncService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import {
   canAccessReturnPath,
@@ -118,6 +132,113 @@ const resolveLoginDestination = async (account, returnTo) => {
   }
   return getDefaultDashboardPath(accessProfile, '/simple-lms')
 }
+
+const oidcStateMatches = (expected, received) => {
+  const left = Buffer.from(String(expected || ''))
+  const right = Buffer.from(String(received || ''))
+  return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right)
+}
+
+const beginSeemplifyLogin = async (req, res) => {
+  try {
+    if (!isIdpOidcConfigured()) {
+      return res.redirect('/login?error=Seemplify%20sign-in%20is%20not%20configured')
+    }
+    const returnTo = sanitizeReturnTo(req.query.return_to || req.query.returnTo || '/simple-lms')
+    const transaction = createOidcTransaction(returnTo)
+    req.session.seemplifyOidc = transaction
+    const authorizationUrl = await buildIdpAuthorizationUrl({
+      req,
+      transaction,
+      hubToken: req.query.hub_token || ''
+    })
+    return req.session.save((sessionError) => {
+      if (sessionError) {
+        console.error('Seemplify OIDC session save error:', sessionError)
+        return res.redirect('/login?error=Failed%20to%20start%20Seemplify%20sign-in')
+      }
+      return res.redirect(authorizationUrl)
+    })
+  } catch (error) {
+    console.error('Seemplify OIDC start error:', error)
+    return res.redirect(`/login?error=${encodeURIComponent('The Seemplify identity service is temporarily unavailable')}`)
+  }
+}
+
+router.get('/auth/seemplify', beginSeemplifyLogin)
+router.get('/oidc/start', beginSeemplifyLogin)
+router.get('/api/auth/oidc/start', beginSeemplifyLogin)
+
+router.get('/auth/seemplify/callback', async (req, res) => {
+  const transaction = req.session?.seemplifyOidc || null
+  const fallbackReturnTo = sanitizeReturnTo(transaction?.returnTo || '/simple-lms')
+  try {
+    if (req.query.error) {
+      const message = String(req.query.error_description || req.query.error || 'Seemplify sign-in was cancelled.')
+      return res.redirect(`/login?error=${encodeURIComponent(message)}&return_to=${encodeURIComponent(fallbackReturnTo)}`)
+    }
+    if (!transaction || (Date.now() - Number(transaction.createdAt || 0)) > 10 * 60 * 1000) {
+      return res.redirect('/login?error=Seemplify%20sign-in%20expired.%20Please%20try%20again.')
+    }
+    if (!oidcStateMatches(transaction.state, req.query.state)) {
+      return res.redirect('/login?error=Seemplify%20sign-in%20could%20not%20be%20verified')
+    }
+    const code = String(req.query.code || '').trim()
+    if (!code) return res.redirect('/login?error=Seemplify%20did%20not%20return%20an%20authorization%20code')
+
+    const tokenSet = await exchangeAuthorizationCode({
+      req,
+      code,
+      codeVerifier: transaction.codeVerifier
+    })
+    const sessionTokenSet = toSessionTokenSet(tokenSet)
+    const userinfo = await fetchIdpUserInfo(sessionTokenSet.accessToken)
+    const synchronized = await syncIdpUserAndOrganizations(userinfo)
+
+    req.session.accountId = resolveSessionAccountIdentifier(synchronized.account)
+    req.session.idpTokens = sessionTokenSet
+    req.session.idpIdentity = {
+      sub: String(userinfo.sub || '').trim(),
+      email: normalizeEmail(userinfo.email),
+      currentOrganizationId: String(
+        userinfo.current_organization?.id
+        || userinfo.currentOrganization?.id
+        || ''
+      ).trim(),
+      linkedAt: Date.now()
+    }
+    delete req.session.seemplifyOidc
+
+    if (synchronized.currentOrganization?.idpOrganizationId) {
+      try {
+        const accessToken = await getFreshSessionAccessToken(req.session)
+        const memberPayload = await fetchIdpOrganizationMembers({
+          accessToken,
+          organizationId: synchronized.currentOrganization.idpOrganizationId
+        })
+        await syncIdpOrganizationMembers({
+          organization: synchronized.currentOrganization,
+          remoteMembers: memberPayload.members || []
+        })
+      } catch (syncError) {
+        console.warn('Seemplify staff sync deferred:', syncError.message)
+      }
+    }
+
+    const destination = await resolveLoginDestination(synchronized.account, fallbackReturnTo)
+    return req.session.save((sessionError) => {
+      if (sessionError) {
+        console.error('Seemplify OIDC callback session save error:', sessionError)
+        return res.redirect('/login?error=Failed%20to%20start%20Learning%20session')
+      }
+      return res.redirect(destination)
+    })
+  } catch (error) {
+    console.error('Seemplify OIDC callback error:', error)
+    if (req.session) delete req.session.seemplifyOidc
+    return res.redirect(`/login?error=${encodeURIComponent(error.message || 'Seemplify sign-in failed')}&return_to=${encodeURIComponent(fallbackReturnTo)}`)
+  }
+})
 
 const findAdminInviteByToken = async (inviteToken, {
   allowedStatuses = ['pending', 'registered'],
@@ -522,6 +643,8 @@ router.get('/login', optionalAuth, async (req, res) => {
       source: registerSource
     }),
     forgotPasswordUrl: '/forgot-password',
+    idpLoginEnabled: branding.brandKey !== 'aiin' && isIdpOidcConfigured(),
+    idpLoginUrl: appendQuery('/auth/seemplify', { return_to: returnTo }),
     error: String(req.query.error || ''),
     success: String(req.query.success || '')
   })
@@ -544,6 +667,8 @@ router.get('/admin/login', optionalAuth, async (req, res) => {
       source: 'admin_login'
     }),
     forgotPasswordUrl: '/forgot-password',
+    idpLoginEnabled: branding.brandKey !== 'aiin' && isIdpOidcConfigured(),
+    idpLoginUrl: appendQuery('/auth/seemplify', { return_to: returnTo }),
     error: String(req.query.error || ''),
     success: String(req.query.success || '')
   })

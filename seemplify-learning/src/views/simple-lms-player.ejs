@@ -522,6 +522,8 @@
       }
     }
   </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <body class="public-site lmsv-player-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
@@ -866,7 +868,7 @@
           : `You scored ${score}/${maxScore} (${percent}%). Review the feedback below, then try the quiz again.`
         return `
           <div class="quiz-celebration ${passed ? 'is-pass' : 'is-retry'}" role="status" aria-live="polite">
-            <img src="/images/stanbic/stanbic-quiz-trophy.png" alt="Quiz achievement trophy">
+            <img src="/images/seemplify-favicon.svg" alt="">
             <div>
               <h3>${title}</h3>
               <p>${escapeHtml(message)}</p>
@@ -877,7 +879,7 @@
 
       const launchQuizConfetti = () => {
         if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-        const colors = ['#053c86', '#0ea5e9', '#f4b400', '#22c55e', '#ffffff']
+        const colors = ['#0f766e', '#14b8a6', '#d97706', '#22c55e', '#ffffff']
         for (let index = 0; index < 28; index += 1) {
           const piece = document.createElement('span')
           piece.className = 'quiz-confetti'

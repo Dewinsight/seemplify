@@ -79,6 +79,12 @@ import {
   isPlatformAdminRole,
   resolveLearningRole as resolveLearningRoleFromAccount
 } from '../utils/learningRoles.js'
+import {
+  courseIsAvailableToOrganizationMember,
+  normalizeOrganizationLearningAccess,
+  resolveAccountOrganizationLearningAccess,
+  sanitizeCourseAudience
+} from '../utils/organizationLearning.js'
 
 const pageRouter = express.Router()
 const adminPageRouter = express.Router()
@@ -639,6 +645,41 @@ const isPartnerDashboardRole = (role) => PARTNER_DASHBOARD_ROLES.includes(String
 const isPartnerSuperRole = (role) => PARTNER_SUPER_ROLES.includes(String(role || '').trim().toLowerCase())
 const isPartnerUserRole = (role) => PARTNER_USER_ROLES.includes(String(role || '').trim().toLowerCase())
 
+const resolveOrganizationLearningContext = async (account) => {
+  const accountAccess = resolveAccountOrganizationLearningAccess(account)
+  if (!accountAccess?.organizationId || !mongoose.Types.ObjectId.isValid(accountAccess.organizationId)) return null
+  const organization = await Organization.findById(accountAccess.organizationId)
+    .select('_id name members settings.simpleLms idpOrganizationId')
+    .lean()
+  if (!organization) return null
+  const member = (organization.members || []).find((entry) => (
+    entry.status === 'active' && toIdString(entry.account) === toIdString(account?._id)
+  ))
+  if (!member) return null
+  const learningAccess = normalizeOrganizationLearningAccess(member.learningAccess, member.role)
+  return {
+    organization,
+    organizationId: toIdString(organization._id),
+    organizationRole: String(member.role || 'staff').trim().toLowerCase(),
+    learningAccess,
+    settings: organization.settings?.simpleLms || {}
+  }
+}
+
+const canCreateCoursesForActor = (role, organizationLearningContext = null) => {
+  if (canManagePlatform(role)) return true
+  if (organizationLearningContext) {
+    return organizationLearningContext.learningAccess?.enabled !== false
+      && organizationLearningContext.learningAccess?.canCreateCourses === true
+  }
+  return canCreateCourses(role)
+}
+
+const courseBelongsToOrganizationLearningContext = ({ course, organizationLearningContext }) => (
+  Boolean(organizationLearningContext?.organizationId)
+  && toIdString(course?.organization) === toIdString(organizationLearningContext.organizationId)
+)
+
 const getReferralSessionStore = (req, { create = false } = {}) => {
   if (!req.session) return {}
   const current = req.session.simpleLmsAgentReferrals
@@ -898,7 +939,8 @@ const markPaymentSuccessful = async ({ payment, course, paidAt = new Date() }) =
     learnerId: payment.account,
     actorId: payment.account,
     assignmentType: 'self',
-    source: 'self_enroll'
+    source: 'self_enroll',
+    organizationId: course.organization || null
   })
 
   await createOrUpdateAgentAttributionForPayment({
@@ -1724,9 +1766,11 @@ const requirePageAuth = async (req, res, next) => {
   req.user = account
   req.learningRole = resolveRole(account)
   req.accessProfile = await resolveAccessProfile(account)
+  req.organizationLearningContext = await resolveOrganizationLearningContext(account)
   res.locals.user = account
   res.locals.learningRole = req.learningRole
   res.locals.accessProfile = req.accessProfile
+  res.locals.organizationLearningContext = req.organizationLearningContext
   return next()
 }
 
@@ -1764,9 +1808,11 @@ const requireApiAuth = async (req, res, next) => {
   req.user = account
   req.learningRole = resolveRole(account)
   req.accessProfile = await resolveAccessProfile(account)
+  req.organizationLearningContext = await resolveOrganizationLearningContext(account)
   res.locals.user = account
   res.locals.learningRole = req.learningRole
   res.locals.accessProfile = req.accessProfile
+  res.locals.organizationLearningContext = req.organizationLearningContext
   return next()
 }
 
@@ -1881,10 +1927,17 @@ const courseBelongsToPartnerOrganization = ({ course, partnerOrganizationId = nu
   return Boolean(normalizedPartnerOrg) && normalizedPartnerOrg === courseOrgId
 }
 
-const canManageCourse = ({ role, accountId, course, partnerOrganizationId = null }) => {
+const canManageCourse = ({ role, accountId, course, partnerOrganizationId = null, organizationLearningContext = null }) => {
   if (!course) return false
   if (canManagePlatform(role)) return true
   if (ownsCourseRecord({ accountId, course })) return true
+
+  if (
+    organizationLearningContext?.learningAccess?.canManageLearning
+    && courseBelongsToOrganizationLearningContext({ course, organizationLearningContext })
+  ) {
+    return true
+  }
 
   const normalizedRole = String(role || '').trim().toLowerCase()
   if (isPartnerSuperRole(normalizedRole)) {
@@ -1894,16 +1947,31 @@ const canManageCourse = ({ role, accountId, course, partnerOrganizationId = null
   return false
 }
 
-const canEditCourse = ({ accountId, course }) => ownsCourseRecord({ accountId, course })
-
-const canDuplicateCourse = ({ role, accountId, course }) => (
-  canCreateCourses(role) && canEditCourse({ accountId, course })
+const canEditCourse = ({ role, accountId, course, organizationLearningContext = null }) => (
+  ownsCourseRecord({ accountId, course })
+  || (
+    !canManagePlatform(role)
+    && organizationLearningContext?.learningAccess?.canManageLearning
+    && courseBelongsToOrganizationLearningContext({ course, organizationLearningContext })
+  )
 )
 
-const canArchiveCourse = ({ role, accountId, course, partnerOrganizationId = null }) => {
+const canDuplicateCourse = ({ role, accountId, course, organizationLearningContext = null }) => (
+  canCreateCoursesForActor(role, organizationLearningContext)
+  && canEditCourse({ role, accountId, course, organizationLearningContext })
+)
+
+const canArchiveCourse = ({ role, accountId, course, partnerOrganizationId = null, organizationLearningContext = null }) => {
   if (!course) return false
   if (canManagePlatform(role)) return true
   if (ownsCourseRecord({ accountId, course })) return true
+
+  if (
+    organizationLearningContext?.learningAccess?.canManageLearning
+    && courseBelongsToOrganizationLearningContext({ course, organizationLearningContext })
+  ) {
+    return true
+  }
 
   const normalizedRole = String(role || '').trim().toLowerCase()
   if (isPartnerSuperRole(normalizedRole)) {
@@ -1913,13 +1981,19 @@ const canArchiveCourse = ({ role, accountId, course, partnerOrganizationId = nul
   return false
 }
 
-const canRestoreCourse = ({ role, accountId, course, partnerOrganizationId = null }) => (
-  canArchiveCourse({ role, accountId, course, partnerOrganizationId })
+const canRestoreCourse = ({ role, accountId, course, partnerOrganizationId = null, organizationLearningContext = null }) => (
+  canArchiveCourse({ role, accountId, course, partnerOrganizationId, organizationLearningContext })
 )
 
-const canAssignCourse = ({ role, accountId, course, partnerOrganizationId = null }) => (
-  canArchiveCourse({ role, accountId, course, partnerOrganizationId })
-)
+const canAssignCourse = ({ role, accountId, course, partnerOrganizationId = null, organizationLearningContext = null }) => {
+  if (
+    organizationLearningContext
+    && courseBelongsToOrganizationLearningContext({ course, organizationLearningContext })
+  ) {
+    return organizationLearningContext.learningAccess?.canAssignCourses === true
+  }
+  return canArchiveCourse({ role, accountId, course, partnerOrganizationId, organizationLearningContext })
+}
 
 const canDeleteCourse = ({ role }) => isSuperAdminRole(role)
 
@@ -1928,6 +2002,7 @@ const buildCourseActionPermissions = ({
   accountId,
   course,
   partnerOrganizationId = null,
+  organizationLearningContext = null,
   programReferenceCount = 0,
   successfulPaymentCount = 0
 }) => {
@@ -1948,11 +2023,11 @@ const buildCourseActionPermissions = ({
 
   return {
     isOwnedByCurrentUser: ownsCourseRecord({ accountId, course }),
-    canEdit: canEditCourse({ accountId, course }),
-    canDuplicate: canDuplicateCourse({ role, accountId, course }),
-    canArchive: !isArchived && canArchiveCourse({ role, accountId, course, partnerOrganizationId }),
-    canRestore: isArchived && canRestoreCourse({ role, accountId, course, partnerOrganizationId }),
-    canAssign: canAssignCourse({ role, accountId, course, partnerOrganizationId }),
+    canEdit: canEditCourse({ role, accountId, course, organizationLearningContext }),
+    canDuplicate: canDuplicateCourse({ role, accountId, course, organizationLearningContext }),
+    canArchive: !isArchived && canArchiveCourse({ role, accountId, course, partnerOrganizationId, organizationLearningContext }),
+    canRestore: isArchived && canRestoreCourse({ role, accountId, course, partnerOrganizationId, organizationLearningContext }),
+    canAssign: canAssignCourse({ role, accountId, course, partnerOrganizationId, organizationLearningContext }),
     canDelete: baseDeleteAccess && deleteRestrictions.length === 0,
     deleteBlockedReason: baseDeleteAccess && deleteRestrictions.length > 0
       ? `Permanent delete is blocked because this course has ${deleteRestrictions.join(' and ')}.`
@@ -2862,9 +2937,14 @@ const buildAdminCoursesReturnTo = ({
   return queryString ? `${basePath}${basePath.includes('?') ? '&' : '?'}${queryString}` : basePath
 }
 
-const canManageProgram = ({ role, accountId, program }) => {
+const canManageProgram = ({ role, accountId, program, organizationLearningContext = null }) => {
   if (!program) return false
   if (canManagePlatform(role)) return true
+  if (
+    organizationLearningContext
+    && toIdString(program.organization) === toIdString(organizationLearningContext.organizationId)
+    && organizationLearningContext.learningAccess?.canManageLearning
+  ) return true
   return toIdString(program.createdBy) === toIdString(accountId)
 }
 
@@ -3487,7 +3567,8 @@ const createOrUpdateEnrollment = async ({
   actorId,
   assignmentType = 'self',
   source = 'self_enroll',
-  programId = null
+  programId = null,
+  organizationId = null
 }) => {
   const filter = {
     course: courseId,
@@ -3497,6 +3578,10 @@ const createOrUpdateEnrollment = async ({
   const existing = await SimpleLmsEnrollment.findOne(filter)
   if (existing) {
     let hasChange = false
+    if (organizationId && !existing.organization) {
+      existing.organization = organizationId
+      hasChange = true
+    }
     if (programId && !existing.program) {
       existing.program = programId
       hasChange = true
@@ -3520,7 +3605,7 @@ const createOrUpdateEnrollment = async ({
   }
 
   const enrollment = await SimpleLmsEnrollment.create({
-    organization: null,
+    organization: organizationId || null,
     course: courseId,
     program: programId || null,
     enrolledMember: learnerId,
@@ -3702,7 +3787,8 @@ const parseCoursePayload = ({
   studioContext = '',
   creatorSettings = CREATOR_SETTING_DEFAULTS,
   platformSettings = PLATFORM_SETTING_DEFAULTS,
-  currencyCodes = activeSimpleLmsCurrencyCodes
+  currencyCodes = activeSimpleLmsCurrencyCodes,
+  organizationLearningContext = null
 }) => {
   const title = String(body.title || '').trim()
   if (!title) {
@@ -3740,6 +3826,9 @@ const parseCoursePayload = ({
     || normalizedCreatorSettings.defaultVisibility
     || normalizedPlatformSettings.defaultCourseVisibility
   const visibility = normalizeVisibility(visibilityInput, role)
+  if (organizationLearningContext && !canManagePlatform(role) && requestedStatus === 'published') {
+    status = visibility === 'organization_private' ? 'published' : 'pending_public_review'
+  }
   const chapters = sanitizeChaptersInput(parseJsonInput(body.chaptersJson, []), {
     allowExternalLessonMedia: Boolean(existingCourse)
   })
@@ -3834,6 +3923,13 @@ const parseCoursePayload = ({
     tags: parseTags(body.tags),
     status,
     visibility,
+    audience: sanitizeCourseAudience({
+      mode: body.audienceMode || existingCourse?.audience?.mode || organizationLearningContext?.settings?.defaultCourseAudience || 'all_members',
+      learningRoles: body.audienceLearningRoles || existingCourse?.audience?.learningRoles || [],
+      members: body.audienceMembers || existingCourse?.audience?.members || []
+    }, (organizationLearningContext?.organization?.members || [])
+      .filter((member) => member.status === 'active' && member.learningAccess?.enabled !== false)
+      .map((member) => toIdString(member.account))),
     chapters: limitedChapters,
     pricing: {
       paymentMode,
@@ -4092,14 +4188,41 @@ const sendCourseReviewNotification = async ({
   }
 }
 
-const findPublicCourseForLearning = async (courseId) => {
+const findCourseForLearning = async (courseId, account = null) => {
   if (!mongoose.Types.ObjectId.isValid(courseId)) return null
-  return SimpleLmsCourse.findOne({
+  const course = await SimpleLmsCourse.findOne({
     _id: courseId,
     isActive: true,
-    status: 'published',
-    visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+    status: 'published'
   }).lean()
+  if (!course) return null
+
+  const organizationLearningContext = account
+    ? await resolveOrganizationLearningContext(account)
+    : null
+  if (!organizationLearningContext) {
+    return PUBLIC_VISIBILITY_VALUES.includes(String(course.visibility || '').trim().toLowerCase())
+      ? course
+      : null
+  }
+
+  const visibility = String(course.visibility || '').trim().toLowerCase()
+  if (visibility === 'system_public' && organizationLearningContext.settings?.allowSystemCourses === false) {
+    return null
+  }
+  const enrollment = await SimpleLmsEnrollment.exists({
+    organization: organizationLearningContext.organizationId,
+    course: course._id,
+    enrolledMember: account._id
+  })
+  if (enrollment) return course
+
+  return courseIsAvailableToOrganizationMember(course, {
+    accountId: account._id,
+    organizationId: organizationLearningContext.organizationId,
+    learningAccess: organizationLearningContext.learningAccess,
+    organizationSettings: organizationLearningContext.settings
+  }) ? course : null
 }
 
 const resolveRequestedSellingOrganizationId = (req, courseId) => {
@@ -4529,7 +4652,7 @@ pageRouter.get('/take/:courseId', requirePageAuth, async (req, res) => {
       return res.redirect('/courses')
     }
 
-    const course = await findPublicCourseForLearning(courseId)
+    const course = await findCourseForLearning(courseId, req.user)
 
     if (!course) return res.redirect('/courses')
 
@@ -4551,7 +4674,8 @@ pageRouter.get('/take/:courseId', requirePageAuth, async (req, res) => {
       learnerId: req.user._id,
       actorId: req.user._id,
       assignmentType: 'self',
-      source: 'self_enroll'
+      source: 'self_enroll',
+      organizationId: course.organization || req.organizationLearningContext?.organizationId || null
     })
     const enrollment = enrollmentResult.enrollment
 
@@ -4579,7 +4703,7 @@ pageRouter.get('/take/:courseId', requirePageAuth, async (req, res) => {
 const handleCoursePayRequest = async (req, res) => {
   try {
     const courseId = String(req.params.courseId || '').trim()
-    const course = await findPublicCourseForLearning(courseId)
+    const course = await findCourseForLearning(courseId, req.user)
     const referralCode = normalizeAgentReferralCode(req.body?.ref || req.query?.ref || '')
     const sellingOrganizationId = toIdString(req.body?.org || req.query?.org || '')
     if (course?._id && referralCode) {
@@ -4658,7 +4782,8 @@ pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) =
       role,
       accountId: req.user._id,
       course,
-      partnerOrganizationId: req.user.partnerOrganization
+      partnerOrganizationId: req.user.partnerOrganization,
+      organizationLearningContext: req.organizationLearningContext || null
     })
 
     const enrollmentExists = managesCourse
@@ -4690,8 +4815,10 @@ pageRouter.get('/courses/:courseId/preview', requirePageAuth, async (req, res) =
     const previewCourse = buildCourseDetailViewModel(course)
 
     const previewEditUrl = canEditCourse({
+      role,
       accountId: req.user._id,
-      course
+      course,
+      organizationLearningContext: req.organizationLearningContext || null
     })
       ? (canManagePlatform(role)
           ? `/admin/courses/${encodeURIComponent(String(course._id || '').trim())}/edit`
@@ -4865,7 +4992,12 @@ pageRouter.post('/courses/:courseId/reviews/:reviewId/reply', requirePageAuth, a
       })
     }
 
-    if (!canEditCourse({ accountId: req.user._id, course })) {
+    if (!canEditCourse({
+      role: resolveRole(req.user),
+      accountId: req.user._id,
+      course,
+      organizationLearningContext: req.organizationLearningContext || null
+    })) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -5108,7 +5240,7 @@ pageRouter.post('/cart/add', requirePageAuth, async (req, res) => {
       })
     }
 
-    const course = await findPublicCourseForLearning(courseId)
+    const course = await findCourseForLearning(courseId, req.user)
     if (!course) {
       return redirectWithMessage({
         res,
@@ -5770,7 +5902,8 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
   const returnTo = resolveCourseStudioReturnPath(req)
   try {
     const role = resolveRole(req.user)
-    if (!canCreateCourses(role)) {
+    const organizationLearningContext = req.organizationLearningContext || null
+    if (!canCreateCoursesForActor(role, organizationLearningContext)) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -5788,6 +5921,8 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
         error: 'Partner organization context is required before creating courses.'
       })
     }
+    const ownerOrganizationId = organizationLearningContext?.organizationId
+      || (partnerOwnedCourse ? partnerOrganizationId : null)
 
     const currencyCatalog = await getActiveCurrencyCatalog()
     const platformSettings = await getPlatformSettings(currencyCatalog.codes)
@@ -5797,13 +5932,14 @@ pageRouter.post('/courses/create', requirePageAuth, async (req, res) => {
       studioContext: req.body?.studioContext || '',
       creatorSettings: req.user.creatorSettings || CREATOR_SETTING_DEFAULTS,
       platformSettings,
-      currencyCodes: currencyCatalog.codes
+      currencyCodes: currencyCatalog.codes,
+      organizationLearningContext
     })
     const studioContext = String(req.body?.studioContext || '').trim().toLowerCase()
     const createAsSystemCourse = canManagePlatform(role) && studioContext === 'admin'
     const createdCourse = await SimpleLmsCourse.create({
       ...payload,
-      organization: partnerOwnedCourse ? partnerOrganizationId : null,
+      organization: ownerOrganizationId,
       createdBy: req.user._id,
       createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
       createdByEmail: req.user.email || '',
@@ -5858,6 +5994,7 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
     }
 
     const role = resolveRole(req.user)
+    const organizationLearningContext = req.organizationLearningContext || null
     const course = await SimpleLmsCourse.findById(courseId)
     if (!course) {
       return redirectWithMessage({
@@ -5870,7 +6007,8 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
     if (!canEditCourse({
       role,
       accountId: req.user._id,
-      course
+      course,
+      organizationLearningContext
     })) {
       return redirectWithMessage({
         res,
@@ -5888,7 +6026,8 @@ pageRouter.post('/courses/:courseId/update', requirePageAuth, async (req, res) =
       studioContext: req.body?.studioContext || '',
       creatorSettings: req.user.creatorSettings || CREATOR_SETTING_DEFAULTS,
       platformSettings,
-      currencyCodes: currencyCatalog.codes
+      currencyCodes: currencyCatalog.codes,
+      organizationLearningContext
     })
 
     Object.assign(course, payload)
@@ -5915,10 +6054,11 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
   const returnTo = resolveCourseStudioReturnPath(req)
   try {
     const role = resolveRole(req.user)
+    const organizationLearningContext = req.organizationLearningContext || null
     const normalizedRole = String(role || '').trim().toLowerCase()
     const partnerOwnedCourse = isPartnerDashboardRole(normalizedRole)
     const partnerOrganizationId = toIdString(req.user?.partnerOrganization)
-    if (!canCreateCourses(role)) {
+    if (!canCreateCoursesForActor(role, organizationLearningContext)) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -5954,7 +6094,8 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
     if (!canDuplicateCourse({
       role,
       accountId: req.user._id,
-      course: sourceCourse
+      course: sourceCourse,
+      organizationLearningContext
     })) {
       return redirectWithMessage({
         res,
@@ -5981,7 +6122,7 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
       return normalizeVisibility(sourceCourse.visibility, role)
     })()
     const duplicatePayload = {
-      organization: partnerOwnedCourse ? partnerOrganizationId : null,
+      organization: organizationLearningContext?.organizationId || (partnerOwnedCourse ? partnerOrganizationId : null),
       createdBy: req.user._id,
       createdByName: req.user.profile?.name || req.user.email || 'Course Creator',
       createdByEmail: req.user.email || '',
@@ -6007,6 +6148,7 @@ pageRouter.post('/courses/:courseId/duplicate', requirePageAuth, async (req, res
         currency: normalizeCurrencyCode(sourceCourse?.pricing?.currency || 'NGN')
       },
       visibility: duplicateVisibility,
+      audience: sourceCourse.audience || { mode: 'all_members', learningRoles: [], members: [] },
       status: 'draft',
       isSystemCourse: duplicateAsSystemCourse,
       requiresPublicReview: sourceCourse.requiresPublicReview !== false,
@@ -6070,7 +6212,8 @@ pageRouter.post('/courses/:courseId/archive', requirePageAuth, async (req, res) 
       role,
       accountId: req.user._id,
       course,
-      partnerOrganizationId: req.user.partnerOrganization
+      partnerOrganizationId: req.user.partnerOrganization,
+      organizationLearningContext: req.organizationLearningContext || null
     })) {
       return redirectWithMessage({
         res,
@@ -6125,7 +6268,8 @@ pageRouter.post('/courses/:courseId/restore', requirePageAuth, async (req, res) 
       role,
       accountId: req.user._id,
       course,
-      partnerOrganizationId: req.user.partnerOrganization
+      partnerOrganizationId: req.user.partnerOrganization,
+      organizationLearningContext: req.organizationLearningContext || null
     })) {
       return redirectWithMessage({
         res,
@@ -6804,7 +6948,8 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
     }
 
     const role = resolveRole(req.user)
-    if (!canCreateCourses(role)) {
+    const organizationLearningContext = req.organizationLearningContext || null
+    if (!canCreateCoursesForActor(role, organizationLearningContext)) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -6817,7 +6962,8 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
       role,
       accountId: req.user._id,
       course,
-      partnerOrganizationId: req.user.partnerOrganization
+      partnerOrganizationId: req.user.partnerOrganization,
+      organizationLearningContext
     })) {
       return redirectWithMessage({
         res,
@@ -6844,12 +6990,28 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
       })
     }
 
+    if (organizationLearningContext) {
+      const eligibleMember = (organizationLearningContext.organization?.members || []).find((member) => (
+        member.status === 'active'
+        && member.learningAccess?.enabled !== false
+        && toIdString(member.account) === toIdString(targetAccount._id)
+      ))
+      if (!eligibleMember) {
+        return redirectWithMessage({
+          res,
+          path: returnTo,
+          error: 'Courses can only be assigned to Learning-enabled staff in your organisation.'
+        })
+      }
+    }
+
     await createOrUpdateEnrollment({
       courseId: course._id,
       learnerId: targetAccount._id,
       actorId: req.user._id,
       assignmentType: 'member',
-      source: 'manual'
+      source: 'manual',
+      organizationId: organizationLearningContext?.organizationId || null
     })
 
     return redirectWithMessage({
@@ -6870,7 +7032,8 @@ pageRouter.post('/courses/:courseId/assign', requirePageAuth, async (req, res) =
 pageRouter.post('/programs/create', requirePageAuth, async (req, res) => {
   try {
     const role = resolveRole(req.user)
-    if (!canCreateCourses(role)) {
+    const organizationLearningContext = req.organizationLearningContext || null
+    if (!canCreateCoursesForActor(role, organizationLearningContext)) {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=program-studio',
@@ -6879,6 +7042,7 @@ pageRouter.post('/programs/create', requirePageAuth, async (req, res) => {
     }
 
     const payload = parseProgramPayload({ body: req.body })
+    if (organizationLearningContext) payload.visibility = 'organization_private'
     const stepCourseIds = payload.steps.map(step => step.course)
     const courses = await SimpleLmsCourse.find({ _id: { $in: stepCourseIds } })
       .select('_id title')
@@ -6900,7 +7064,7 @@ pageRouter.post('/programs/create', requirePageAuth, async (req, res) => {
 
     await SimpleLmsProgram.create({
       ...payload,
-      organization: null,
+      organization: organizationLearningContext?.organizationId || null,
       createdBy: req.user._id,
       createdByName: req.user.profile?.name || req.user.email || 'Program Creator'
     })
@@ -6932,6 +7096,7 @@ pageRouter.post('/programs/:programId/update', requirePageAuth, async (req, res)
     }
 
     const role = resolveRole(req.user)
+    const organizationLearningContext = req.organizationLearningContext || null
     const program = await SimpleLmsProgram.findById(programId)
     if (!program) {
       return redirectWithMessage({
@@ -6941,7 +7106,7 @@ pageRouter.post('/programs/:programId/update', requirePageAuth, async (req, res)
       })
     }
 
-    if (!canManageProgram({ role, accountId: req.user._id, program })) {
+    if (!canManageProgram({ role, accountId: req.user._id, program, organizationLearningContext })) {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=program-studio',
@@ -6950,6 +7115,7 @@ pageRouter.post('/programs/:programId/update', requirePageAuth, async (req, res)
     }
 
     const payload = parseProgramPayload({ body: req.body, existingProgram: program })
+    if (organizationLearningContext) payload.visibility = 'organization_private'
     const stepCourseIds = payload.steps.map(step => step.course)
     const courses = await SimpleLmsCourse.find({ _id: { $in: stepCourseIds } })
       .select('_id title')
@@ -6999,6 +7165,7 @@ pageRouter.post('/programs/:programId/archive', requirePageAuth, async (req, res
     }
 
     const role = resolveRole(req.user)
+    const organizationLearningContext = req.organizationLearningContext || null
     const program = await SimpleLmsProgram.findById(programId)
     if (!program) {
       return redirectWithMessage({
@@ -7008,7 +7175,7 @@ pageRouter.post('/programs/:programId/archive', requirePageAuth, async (req, res
       })
     }
 
-    if (!canManageProgram({ role, accountId: req.user._id, program })) {
+    if (!canManageProgram({ role, accountId: req.user._id, program, organizationLearningContext })) {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=program-studio',
@@ -7046,6 +7213,7 @@ pageRouter.post('/programs/:programId/restore', requirePageAuth, async (req, res
     }
 
     const role = resolveRole(req.user)
+    const organizationLearningContext = req.organizationLearningContext || null
     const program = await SimpleLmsProgram.findById(programId)
     if (!program) {
       return redirectWithMessage({
@@ -7055,7 +7223,7 @@ pageRouter.post('/programs/:programId/restore', requirePageAuth, async (req, res
       })
     }
 
-    if (!canManageProgram({ role, accountId: req.user._id, program })) {
+    if (!canManageProgram({ role, accountId: req.user._id, program, organizationLearningContext })) {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=program-studio',
@@ -7093,10 +7261,22 @@ pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res)
       })
     }
 
+    const organizationLearningContext = req.organizationLearningContext || null
+    const programVisibilityFilter = organizationLearningContext
+      ? {
+          $or: [
+            { visibility: { $in: PROGRAM_VISIBILITY_VALUES } },
+            {
+              visibility: 'organization_private',
+              organization: organizationLearningContext.organizationId
+            }
+          ]
+        }
+      : { visibility: { $in: PROGRAM_VISIBILITY_VALUES } }
     const program = await SimpleLmsProgram.findOne({
       _id: programId,
       status: 'published',
-      visibility: { $in: PROGRAM_VISIBILITY_VALUES }
+      ...programVisibilityFilter
     })
       .lean()
     if (!program) {
@@ -7133,7 +7313,17 @@ pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res)
 
     const availableCourseIds = new Set(
       courses
-        .filter((course) => course.status === 'published' && PUBLIC_VISIBILITY_VALUES.includes(course.visibility))
+        .filter((course) => {
+          if (!organizationLearningContext) {
+            return course.status === 'published' && PUBLIC_VISIBILITY_VALUES.includes(course.visibility)
+          }
+          return courseIsAvailableToOrganizationMember(course, {
+            accountId: req.user._id,
+            organizationId: organizationLearningContext.organizationId,
+            learningAccess: organizationLearningContext.learningAccess,
+            organizationSettings: organizationLearningContext.settings
+          })
+        })
         .map((course) => toIdString(course._id))
     )
 
@@ -7146,7 +7336,8 @@ pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res)
         actorId: req.user._id,
         assignmentType: 'program',
         source: 'program_assignment',
-        programId: program._id
+        programId: program._id,
+        organizationId: organizationLearningContext?.organizationId || null
       })
       if (result.created) createdCount += 1
     }
@@ -7180,7 +7371,11 @@ pageRouter.post('/programs/:programId/assign', requirePageAuth, async (req, res)
     }
 
     const role = resolveRole(req.user)
-    if (!canCreateCourses(role)) {
+    const organizationLearningContext = req.organizationLearningContext || null
+    const canAssignPrograms = organizationLearningContext
+      ? organizationLearningContext.learningAccess?.canAssignCourses === true
+      : canCreateCourses(role)
+    if (!canAssignPrograms) {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=program-studio',
@@ -7189,7 +7384,7 @@ pageRouter.post('/programs/:programId/assign', requirePageAuth, async (req, res)
     }
 
     const program = await SimpleLmsProgram.findById(programId).lean()
-    if (!program || !canManageProgram({ role, accountId: req.user._id, program })) {
+    if (!program || !canManageProgram({ role, accountId: req.user._id, program, organizationLearningContext })) {
       return redirectWithMessage({
         res,
         path: '/simple-lms?view=program-studio',
@@ -7215,6 +7410,21 @@ pageRouter.post('/programs/:programId/assign', requirePageAuth, async (req, res)
       })
     }
 
+    if (organizationLearningContext) {
+      const eligibleMember = (organizationLearningContext.organization?.members || []).find((member) => (
+        member.status === 'active'
+        && member.learningAccess?.enabled !== false
+        && toIdString(member.account) === toIdString(targetAccount._id)
+      ))
+      if (!eligibleMember) {
+        return redirectWithMessage({
+          res,
+          path: '/simple-lms?view=program-studio',
+          error: 'Programs can only be assigned to Learning-enabled staff in your organisation.'
+        })
+      }
+    }
+
     const orderedSteps = (program.steps || [])
       .map((step) => ({
         courseId: toIdString(step.course),
@@ -7231,7 +7441,8 @@ pageRouter.post('/programs/:programId/assign', requirePageAuth, async (req, res)
         actorId: req.user._id,
         assignmentType: 'program',
         source: 'program_assignment',
-        programId: program._id
+        programId: program._id,
+        organizationId: organizationLearningContext?.organizationId || null
       })
       if (result.created) assignedCount += 1
     }
@@ -9142,7 +9353,7 @@ pageRouter.post('/settings/creator', requirePageAuth, async (req, res) => {
   )
   try {
     const role = resolveRole(req.user)
-    if (!canCreateCourses(role)) {
+    if (!canCreateCoursesForActor(role, req.organizationLearningContext || null)) {
       return redirectWithMessage({
         res,
         path: returnTo,
@@ -9431,7 +9642,7 @@ pageRouter.get('/cart', requirePageAuth, async (req, res) => {
 pageRouter.get('/checkout/course/:courseId', requirePageAuth, async (req, res) => {
   try {
     const courseId = String(req.params.courseId || '').trim()
-    const course = await findPublicCourseForLearning(courseId)
+    const course = await findCourseForLearning(courseId, req.user)
     if (!course) {
       return redirectWithMessage({
         res,
@@ -9481,6 +9692,8 @@ const renderWorkspacePage = async (
 ) => {
   try {
     const role = resolveRole(req.user)
+    const organizationLearningContext = req.organizationLearningContext || await resolveOrganizationLearningContext(req.user)
+    const actorCanCreateCourses = canCreateCoursesForActor(role, organizationLearningContext)
     const currencyCatalog = await getActiveCurrencyCatalog()
     const viewMode = forcedViewMode || parseViewMode(req.query.view)
     const normalizedStudioMode = parseStudioMode(
@@ -9632,8 +9845,20 @@ const renderWorkspacePage = async (
 
     const catalogFilter = {
       isActive: true,
-      status: 'published',
-      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
+      status: 'published'
+    }
+    if (organizationLearningContext) {
+      catalogFilter.$and = [{
+        $or: [
+          { visibility: { $in: PUBLIC_VISIBILITY_VALUES } },
+          {
+            visibility: 'organization_private',
+            organization: organizationLearningContext.organizationId
+          }
+        ]
+      }]
+    } else {
+      catalogFilter.visibility = { $in: PUBLIC_VISIBILITY_VALUES }
     }
     if (query) {
       const safeQuery = escapeRegExp(query)
@@ -9647,9 +9872,28 @@ const renderWorkspacePage = async (
     if (categoryFilter) catalogFilter.category = categoryFilter
     if (LEVELS.includes(levelFilter)) catalogFilter.level = levelFilter
 
-    const programCatalogFilter = {
-      status: 'published',
-      visibility: { $in: PROGRAM_VISIBILITY_VALUES }
+    const programCatalogFilter = { status: 'published' }
+    if (organizationLearningContext) {
+      const learningAccess = organizationLearningContext.learningAccess || {}
+      const organizationId = organizationLearningContext.organizationId
+      if (learningAccess.catalogAccess === 'assigned_only') {
+        programCatalogFilter._id = null
+      } else if (
+        learningAccess.catalogAccess === 'organization_only'
+        || organizationLearningContext.settings?.allowExternalPublicCourses === false
+      ) {
+        programCatalogFilter.organization = organizationId
+        programCatalogFilter.visibility = { $in: ['organization_private', 'organization_public'] }
+      } else {
+        programCatalogFilter.$and = [{
+          $or: [
+            { visibility: { $in: PROGRAM_VISIBILITY_VALUES } },
+            { visibility: 'organization_private', organization: organizationId }
+          ]
+        }]
+      }
+    } else {
+      programCatalogFilter.visibility = { $in: PROGRAM_VISIBILITY_VALUES }
     }
     if (query) {
       const safeQuery = escapeRegExp(query)
@@ -9671,17 +9915,42 @@ const renderWorkspacePage = async (
 
     const managedFilter = canManagePlatform(role) && !isCreatorStudioContext
       ? {}
-      : partnerScopedFilter({})
+      : (organizationLearningContext
+          ? (
+              organizationLearningContext.learningAccess?.canManageLearning
+                ? { organization: organizationLearningContext.organizationId }
+                : { organization: organizationLearningContext.organizationId, createdBy: req.user._id }
+            )
+          : partnerScopedFilter({}))
     const managedProgramFilter = canManagePlatform(role) && !isCreatorStudioContext
       ? {}
-      : partnerScopedFilter({})
+      : (organizationLearningContext
+          ? (
+              organizationLearningContext.learningAccess?.canManageLearning
+                ? { organization: organizationLearningContext.organizationId }
+                : { organization: organizationLearningContext.organizationId, createdBy: req.user._id }
+            )
+          : partnerScopedFilter({}))
+
+    const organizationAssignableMemberIds = organizationLearningContext
+      ? (organizationLearningContext.organization?.members || [])
+        .filter((member) => (
+          member?.status === 'active'
+          && normalizeOrganizationLearningAccess(member.learningAccess, member.role).enabled !== false
+        ))
+        .map((member) => toIdString(member.account))
+        .filter((accountId) => mongoose.Types.ObjectId.isValid(accountId))
+      : []
+    const assignableAccountFilter = organizationLearningContext
+      ? { _id: { $in: organizationAssignableMemberIds } }
+      : {}
 
     const [catalogRaw, managedRaw, myEnrollmentsRaw, categoriesRaw, totalAccounts, totalCreators, completedEnrollments, adminAccountsRaw, totalPublishedCourses, catalogProgramsRaw, managedProgramsRaw, totalPublishedPrograms, assignableAccountsRaw, myPaymentsRaw, adminPaymentsRaw, pendingReviewCoursesRaw, commissionSettingsRaw, platformSettingsRaw, paymentGatewaySettingsRaw, creatorEarningsAggregateRaw, creatorWithdrawalAggregateRaw, creatorWithdrawalRequestsRaw, adminWithdrawalRequestsRaw, partnerOrganizationsRaw, roleApprovalRequestsRaw, superUsersRaw, adminInvitesRaw, auditLogEntriesRaw, agentPayoutRowsRaw] = await Promise.all([
       SimpleLmsCourse.find(catalogFilter)
         .sort(mapSortToMongo(sortFilter))
         .limit(240)
         .lean(),
-      canCreateCourses(role)
+      actorCanCreateCourses
         ? SimpleLmsCourse.find({ ...managedFilter })
           .populate('reviewedBy', 'email profile.name')
           .sort({ updatedAt: -1 })
@@ -9720,7 +9989,7 @@ const renderWorkspacePage = async (
         .sort({ updatedAt: -1 })
         .limit(180)
         .lean(),
-      canCreateCourses(role)
+      actorCanCreateCourses
         ? SimpleLmsProgram.find(managedProgramFilter)
           .sort({ updatedAt: -1 })
           .limit(180)
@@ -9730,8 +9999,8 @@ const renderWorkspacePage = async (
         status: 'published',
         visibility: { $in: PROGRAM_VISIBILITY_VALUES }
       }),
-      canCreateCourses(role)
-        ? Account.find({})
+      actorCanCreateCourses
+        ? Account.find(assignableAccountFilter)
           .select('email profile.name')
           .sort({ createdAt: -1 })
           .limit(300)
@@ -9766,7 +10035,7 @@ const renderWorkspacePage = async (
       getCommissionSettings(),
       getPlatformSettings(currencyCatalog.codes),
       buildPaymentGatewaySettingsResponse({ req, includeCredentialMeta: isSuperAdminRole(role) }),
-      canCreateCourses(role)
+      actorCanCreateCourses
         ? SimpleLmsPayment.aggregate([
           {
             $match: canManagePlatform(role)
@@ -9784,7 +10053,7 @@ const renderWorkspacePage = async (
           }
         ])
         : Promise.resolve([]),
-      canCreateCourses(role)
+      actorCanCreateCourses
         ? SimpleLmsWithdrawal.aggregate([
           {
             $match: canManagePlatform(role)
@@ -9806,7 +10075,7 @@ const renderWorkspacePage = async (
           }
         ])
         : Promise.resolve([]),
-      canCreateCourses(role)
+      actorCanCreateCourses
         ? SimpleLmsWithdrawal.find({ creatorAccount: req.user._id })
           .populate('reviewedBy', 'email profile.name')
           .populate('paidBy', 'email profile.name')
@@ -10033,7 +10302,19 @@ const renderWorkspacePage = async (
       hasItems: cartCoursesBase.length > 0
     }
 
-    const catalogCourses = catalogRaw.map((course) => {
+    const visibleCatalogRaw = organizationLearningContext
+      ? catalogRaw.filter((course) => (
+          enrolledCourseIds.has(toIdString(course._id))
+          || courseIsAvailableToOrganizationMember(course, {
+            accountId: req.user._id,
+            organizationId: organizationLearningContext.organizationId,
+            learningAccess: organizationLearningContext.learningAccess,
+            organizationSettings: organizationLearningContext.settings
+          })
+        ))
+      : catalogRaw
+
+    const catalogCourses = visibleCatalogRaw.map((course) => {
       const decoratedCourse = decorateCourse(course)
       const courseId = toIdString(course._id)
       const requiresPayment = isCoursePaidContent(course)
@@ -10169,6 +10450,7 @@ const renderWorkspacePage = async (
           accountId: req.user._id,
           course: decoratedCourse,
           partnerOrganizationId: req.user.partnerOrganization,
+          organizationLearningContext,
           programReferenceCount: programReferenceCountByCourseId.get(toIdString(decoratedCourse._id)) || 0,
           successfulPaymentCount: successfulPaymentCountByCourseId.get(toIdString(decoratedCourse._id)) || 0
         })
@@ -10179,7 +10461,7 @@ const renderWorkspacePage = async (
     const managedPrograms = managedProgramsRaw.map(program => decorateProgram(program, programCourseMap))
 
     let editingCourse = null
-    if (editCourseId && mongoose.Types.ObjectId.isValid(editCourseId) && canCreateCourses(role)) {
+    if (editCourseId && mongoose.Types.ObjectId.isValid(editCourseId) && actorCanCreateCourses) {
       const candidate = managedCourses.find((course) => toIdString(course._id) === editCourseId)
       if (candidate?.canEdit) {
         editingCourse = candidate
@@ -10225,7 +10507,7 @@ const renderWorkspacePage = async (
     const focusedAdminCourseReviewStats = buildCourseReviewManagementStats(focusedAdminCourseReviews)
 
     let editingProgram = null
-    if (editProgramId && mongoose.Types.ObjectId.isValid(editProgramId) && canCreateCourses(role)) {
+    if (editProgramId && mongoose.Types.ObjectId.isValid(editProgramId) && actorCanCreateCourses) {
       const candidate = managedProgramsRaw.find(program => toIdString(program._id) === editProgramId)
       if (candidate) {
         editingProgram = decorateProgram(candidate, programCourseMap)
@@ -11621,8 +11903,9 @@ const renderWorkspacePage = async (
       courseStudioReturnTo: resolvedStudioContext === 'admin' ? '/admin/courses' : '/simple-lms/studio/courses',
       settingsTab,
       creatorSection,
-      canCreateCourses: canCreateCourses(role),
+      canCreateCourses: actorCanCreateCourses,
       canManagePlatform: canManagePlatform(role),
+      organizationLearningContext,
       filters: {
         query,
         category: categoryFilter,
@@ -12437,7 +12720,7 @@ apiRouter.put('/admin/payment-settings', async (req, res) => {
 apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
   try {
     const role = resolveRole(req.user)
-    if (!canCreateCourses(role)) {
+    if (!canCreateCoursesForActor(role, req.organizationLearningContext || null)) {
       return res.status(403).json({ error: 'You do not have permission to upload banners.' })
     }
 
@@ -12472,7 +12755,7 @@ apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
 apiRouter.post('/upload/lesson-media', lessonMediaUpload.single('media'), async (req, res) => {
   try {
     const role = resolveRole(req.user)
-    if (!canCreateCourses(role)) {
+    if (!canCreateCoursesForActor(role, req.organizationLearningContext || null)) {
       return res.status(403).json({ error: 'You do not have permission to upload lesson media.' })
     }
 
@@ -12531,12 +12814,7 @@ apiRouter.post('/courses/:courseId/enroll', async (req, res) => {
       return res.status(400).json({ error: 'Invalid course id.' })
     }
 
-    const course = await SimpleLmsCourse.findOne({
-      _id: courseId,
-      isActive: true,
-      status: 'published',
-      visibility: { $in: PUBLIC_VISIBILITY_VALUES }
-    }).lean()
+    const course = await findCourseForLearning(courseId, req.user)
 
     if (!course) {
       return res.status(404).json({ error: 'Course not found or unavailable.' })
@@ -12561,7 +12839,8 @@ apiRouter.post('/courses/:courseId/enroll', async (req, res) => {
       learnerId: req.user._id,
       actorId: req.user._id,
       assignmentType: 'self',
-      source: 'self_enroll'
+      source: 'self_enroll',
+      organizationId: course.organization || req.organizationLearningContext?.organizationId || null
     })
     const enrollment = enrollmentResult.enrollment
 

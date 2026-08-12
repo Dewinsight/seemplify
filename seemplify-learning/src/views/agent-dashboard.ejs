@@ -422,6 +422,8 @@
       }
     }
   </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <body>
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
@@ -545,7 +547,7 @@
             </div>
           </div>
           <div class="dashboard-hero-media">
-            <img src="/images/aiin-learning-hero-graphic-new.png" alt="AIIN Learning agent workspace">
+            <img src="/images/aiin-learning-hero-graphic-new.png" alt="<%= brandLearningName || 'Seemplify Learning' %> agent workspace">
           </div>
         </article>
 

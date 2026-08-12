@@ -16,6 +16,14 @@ const organizationMembershipSchema = new mongoose.Schema({
     enum: ORGANIZATION_MEMBER_ROLES,
     default: 'staff'
   },
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
+  branch: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
   appAccess: {
     mode: {
       type: String,
@@ -25,6 +33,33 @@ const organizationMembershipSchema = new mongoose.Schema({
     appIds: {
       type: [String],
       default: []
+    }
+  },
+  learningAccess: {
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    role: {
+      type: String,
+      enum: ['learner', 'instructor', 'learning_manager', 'learning_admin'],
+      default: 'learner'
+    },
+    catalogAccess: {
+      type: String,
+      enum: ['all_available', 'organization_only', 'assigned_only'],
+      default: 'all_available'
+    },
+    managedBy: {
+      type: String,
+      enum: ['idp_default', 'organization_admin'],
+      default: 'idp_default'
+    },
+    updatedAt: Date,
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount',
+      default: null
     }
   },
   joinedAt: {
@@ -63,8 +98,28 @@ const teamMembershipSchema = new mongoose.Schema({
 
 const AccountSchema = new mongoose.Schema({
   sub: { type: String, unique: true, index: true, required: true },
+  idpSubject: {
+    type: String,
+    trim: true,
+    sparse: true,
+    unique: true,
+    index: true,
+    default: undefined
+  },
   email: { type: String, unique: true, lowercase: true, trim: true, required: true },
-  passwordHash: { type: String, required: true },
+  passwordHash: { type: String, default: undefined },
+  authentication: {
+    passwordEnabled: {
+      type: Boolean,
+      default: true
+    },
+    seemplifyEnabled: {
+      type: Boolean,
+      default: false
+    },
+    seemplifyLinkedAt: Date,
+    lastSeemplifyLoginAt: Date
+  },
   emailVerified: { type: Boolean, default: true },
   profile: {
     name: { type: String, trim: true },

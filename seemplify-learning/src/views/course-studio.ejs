@@ -1177,9 +1177,16 @@
       }
     }
   </style>
+  <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
 </head>
 <%
   const isAdminStudio = studioContext === 'admin'
+  const safeOrganizationLearningContext = typeof organizationLearningContext !== 'undefined'
+    ? organizationLearningContext
+    : null
+  const isOrganizationStudio = !isAdminStudio && Boolean(safeOrganizationLearningContext?.organizationId)
+  const organizationStudioName = safeOrganizationLearningContext?.organization?.name || 'your organisation'
   const currentStudioMode = ['create', 'edit'].includes(String(studioMode || '').trim().toLowerCase())
     ? String(studioMode || '').trim().toLowerCase()
     : 'overview'
@@ -1280,17 +1287,22 @@
   <main class="studio-shell">
     <aside class="studio-rail">
       <header class="rail-head">
-        <p class="rail-kicker"><%= isAdminStudio ? 'Platform Control' : 'Creator Workspace' %></p>
+        <p class="rail-kicker"><%= isAdminStudio ? 'Platform Control' : (isOrganizationStudio ? 'Organisation Learning' : 'Creator Workspace') %></p>
         <h1><%= isAdminStudio ? 'Admin Studio' : 'Course Studio' %></h1>
         <p><%= isAdminStudio
           ? 'System-level course authoring and lifecycle management.'
-          : 'Create and manage your own courses with a dedicated studio workflow.' %></p>
+          : (isOrganizationStudio
+              ? `Create and manage courses for ${organizationStudioName}. Internal courses stay within the organisation; public submissions go through Seemplify review.`
+              : 'Create and manage your own courses with a dedicated studio workflow.') %></p>
       </header>
 
       <nav class="rail-links">
         <a class="rail-link" href="<%= homePath %>"><span><%= isAdminStudio ? 'Admin Dashboard' : 'Learning Workspace' %></span></a>
         <a class="rail-link active" href="<%= studioOverviewPath %>"><span><%= isAdminStudio ? 'Admin Course Studio' : 'Creator Course Studio' %></span></a>
         <% if (!isAdminStudio) { %>
+          <% if (isOrganizationStudio) { %>
+            <a class="rail-link" href="/organization-learning"><span>Organisation Learning Admin</span></a>
+          <% } %>
           <a class="rail-link" href="/simple-lms?view=program-studio"><span>Program Studio</span></a>
           <a class="rail-link" href="/simple-lms?view=settings&settingsTab=creator"><span>Creator Settings</span></a>
           <% if (canManagePlatform) { %>
@@ -1408,8 +1420,8 @@
               </label>
               <label>Visibility
                 <select class="input" name="visibility">
-                  <option value="private" <%= visibilityFormValue(editingCourse.visibility) === 'private' ? 'selected' : '' %>>private</option>
-                  <option value="public" <%= visibilityFormValue(editingCourse.visibility) === 'public' ? 'selected' : '' %>>public</option>
+                  <option value="private" <%= visibilityFormValue(editingCourse.visibility) === 'private' ? 'selected' : '' %>><%= isOrganizationStudio ? 'Organisation only' : 'private' %></option>
+                  <option value="public" <%= visibilityFormValue(editingCourse.visibility) === 'public' ? 'selected' : '' %>><%= isOrganizationStudio ? 'Submit for public review' : 'public' %></option>
                   <% if (canManagePlatform) { %><option value="marketplace" <%= visibilityFormValue(editingCourse.visibility) === 'marketplace' ? 'selected' : '' %>>marketplace</option><% } %>
                 </select>
               </label>
@@ -1578,9 +1590,11 @@
             <h3>Create New Course</h3>
             <p><%= isAdminStudio
               ? 'Admin studio creates system courses by default.'
-              : 'Creator studio creates personal creator-owned courses.' %></p>
+              : (isOrganizationStudio
+                  ? `New courses belong to ${organizationStudioName}. Publish internally now or submit them for public review.`
+                  : 'Creator studio creates personal creator-owned courses.') %></p>
           </div>
-          <span class="pill <%= isAdminStudio ? 'system' : 'creator' %>"><%= isAdminStudio ? 'System Course Flow' : 'Creator Course Flow' %></span>
+          <span class="pill <%= isAdminStudio ? 'system' : 'creator' %>"><%= isAdminStudio ? 'System Course Flow' : (isOrganizationStudio ? 'Organisation Course Flow' : 'Creator Course Flow') %></span>
         </div>
         <form method="post" action="/simple-lms/courses/create" class="studio-form" id="createCourseWizardForm" data-wizard-flow="course-create">
           <input type="hidden" name="returnTo" value="<%= isAdminStudio ? studioCreatePath : studioOverviewPath %>">
@@ -1635,8 +1649,8 @@
                 </label>
                 <label>Visibility
                   <select class="input" name="visibility">
-                    <option value="private" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option>
-                    <option value="public" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility) === 'public' ? 'selected' : '' %>>public</option>
+                    <option value="private" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>><%= isOrganizationStudio ? 'Organisation only' : 'private' %></option>
+                    <option value="public" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility) === 'public' ? 'selected' : '' %>><%= isOrganizationStudio ? 'Submit for public review' : 'public' %></option>
                     <% if (canManagePlatform) { %><option value="marketplace" <%= platformSettings.defaultCourseVisibility === 'marketplace' ? 'selected' : '' %>>marketplace</option><% } %>
                   </select>
                 </label>

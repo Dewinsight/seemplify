@@ -293,6 +293,23 @@ const slugify = (value) => String(value || '')
   .replace(/^-+|-+$/g, '')
   .slice(0, 80)
 
+const courseAudienceSchema = new mongoose.Schema({
+  mode: {
+    type: String,
+    enum: ['all_members', 'learning_roles', 'selected_members'],
+    default: 'all_members'
+  },
+  learningRoles: {
+    type: [String],
+    enum: ['learner', 'instructor', 'learning_manager', 'learning_admin'],
+    default: []
+  },
+  members: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinAccount'
+  }]
+}, { _id: false })
+
 const SimpleLmsCourseSchema = new mongoose.Schema({
   organization: {
     type: mongoose.Schema.Types.ObjectId,
@@ -373,6 +390,10 @@ const SimpleLmsCourseSchema = new mongoose.Schema({
     enum: ['organization_private', 'organization_public', 'system_public'],
     default: 'organization_private',
     index: true
+  },
+  audience: {
+    type: courseAudienceSchema,
+    default: () => ({ mode: 'all_members', learningRoles: [], members: [] })
   },
   status: {
     type: String,
