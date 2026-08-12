@@ -428,6 +428,33 @@ export function useDevelopmentPlan(planId?: string) {
   };
 }
 
+/** Get the Seemplify Learning transcript synchronized for an employee. */
+export function useLearningRecords(employeeId?: string) {
+  const query = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : '';
+  const { data, error, isLoading, mutate } = useSWR(`/learning/records${query}`, fetcher, defaultConfig);
+
+  return {
+    records: data?.records || [],
+    summary: data?.summary || { total: 0, assigned: 0, inProgress: 0, completed: 0, overdue: 0 },
+    learningUrl: data?.learningUrl || 'https://learning.seemplifyai.com',
+    isLoading,
+    isError: error,
+    mutate,
+  };
+}
+
+/** Get the staff Learning summary available to a manager or HR administrator. */
+export function useTeamLearningRecords(enabled: boolean) {
+  const { data, error, isLoading, mutate } = useSWR(enabled ? '/learning/team' : null, fetcher, defaultConfig);
+  return {
+    learners: data?.learners || [],
+    totalLearners: data?.totalLearners || 0,
+    isLoading,
+    isError: error,
+    mutate,
+  };
+}
+
 // ============== CALIBRATION HOOKS ==============
 
 /**

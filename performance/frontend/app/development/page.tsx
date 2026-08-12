@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useDevelopmentPlans, useUserContext, useDirectReports } from '@/lib/hooks';
+import { useDevelopmentPlans, useUserContext, useDirectReports, useLearningRecords, useTeamLearningRecords } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
   Typography, Box, CircularProgress, Button, Card, CardContent, Chip,
@@ -12,13 +12,22 @@ import {
 } from '@mui/material';
 import {
   Add, TrendingUp, School, EmojiEvents, ExpandMore, CheckCircle,
-  RadioButtonUnchecked, Star, Work, MenuBook, Person
+  RadioButtonUnchecked, Star, MenuBook, Person
 } from '@mui/icons-material';
 
 export default function DevelopmentPlansPage() {
   const { isManager, user, isLoading: userLoading } = useUserContext();
   const { directReports } = useDirectReports();
   const { plans, isLoading, isError, mutate } = useDevelopmentPlans();
+  const [learningEmployeeId, setLearningEmployeeId] = useState('');
+  const {
+    records: learningRecords,
+    summary: learningSummary,
+    learningUrl,
+    isLoading: learningLoading,
+    isError: learningError,
+  } = useLearningRecords(learningEmployeeId || undefined);
+  const { learners: teamLearners } = useTeamLearningRecords(isManager);
   
   const [tabValue, setTabValue] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -29,6 +38,8 @@ export default function DevelopmentPlansPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [linkingRecord, setLinkingRecord] = useState<{ _id: string; courseTitle: string } | null>(null);
+  const [linkPlanId, setLinkPlanId] = useState('');
   const [checkIn, setCheckIn] = useState({ notes: '', progressUpdate: 0, blockers: '' });
   const [newPlan, setNewPlan] = useState({
     userId: '',
@@ -67,6 +78,11 @@ export default function DevelopmentPlansPage() {
     String(report.id || report._id || report.userId),
     report.name || report.email || 'Team member',
   ]));
+  const selectedLearner = teamLearners.find((learner: { employeeId: string }) => learner.employeeId === learningEmployeeId);
+  const selectedLearnerIds = new Set((selectedLearner?.identifiers || [learningEmployeeId]).map(String));
+  const learningPlans = learningEmployeeId
+    ? plans?.filter((plan) => selectedLearnerIds.has(String(plan.userId))) || []
+    : myPlans;
 
   const handleCreatePlan = async () => {
     setSaving(true);
@@ -143,6 +159,28 @@ export default function DevelopmentPlansPage() {
       setNotice('Activity marked complete.');
     } catch (requestError: any) {
       setError(requestError?.response?.data?.error || 'Could not update this activity.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const linkCourseToPlan = async () => {
+    if (!linkingRecord || !linkPlanId) return;
+    setSaving(true);
+    setError('');
+    try {
+      const response = await api.post(`/learning/records/${linkingRecord._id}/link-plan`, { planId: linkPlanId });
+      const updatedPlan = response.data?.data || response.data;
+      if (selectedPlan?._id === updatedPlan?._id) setSelectedPlan(updatedPlan);
+      setLinkingRecord(null);
+      setLinkPlanId('');
+      await mutate();
+      setNotice(response.data?.alreadyLinked
+        ? 'This course is already in the development plan.'
+        : 'Course added to the development plan. Its progress will stay synchronized.');
+    } catch (requestError) {
+      const responseError = requestError as { response?: { data?: { error?: string } } };
+      setError(responseError.response?.data?.error || 'Could not add this course to the development plan.');
     } finally {
       setSaving(false);
     }
@@ -281,6 +319,98 @@ export default function DevelopmentPlansPage() {
           {error || 'Development plans could not be loaded. Try refreshing the page.'}
         </Alert>
       )}
+
+      <Paper variant="outlined" sx={{ mb: 3, borderRadius: 1, overflow: 'hidden' }}>
+        <Box sx={{ px: 2.5, py: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+          <Box>
+            <Typography variant="h6" fontWeight={650}>
+              {selectedLearner ? `${selectedLearner.name}'s Learning record` : 'Seemplify Learning record'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              {selectedLearner
+                ? 'Review assigned training and connect relevant courses to this employee’s development plan.'
+                : 'Courses completed with your Seemplify account are recorded here and can support a development plan.'}
+            </Typography>
+            <Stack direction="row" spacing={2.5} sx={{ mt: 1.25, flexWrap: 'wrap', rowGap: 0.5 }}>
+              <Typography variant="body2"><strong>{learningSummary.inProgress}</strong> in progress</Typography>
+              <Typography variant="body2"><strong>{learningSummary.completed}</strong> completed</Typography>
+              {learningSummary.overdue > 0 && (
+                <Typography variant="body2" color="warning.main"><strong>{learningSummary.overdue}</strong> overdue</Typography>
+              )}
+            </Stack>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center">
+            {isManager && teamLearners.length > 0 && (
+              <FormControl size="small" sx={{ minWidth: 210 }}>
+                <InputLabel id="learning-person-label">Learning record</InputLabel>
+                <Select
+                  labelId="learning-person-label"
+                  label="Learning record"
+                  value={learningEmployeeId}
+                  onChange={(event) => setLearningEmployeeId(String(event.target.value))}
+                >
+                  <MenuItem value="">My learning</MenuItem>
+                  {teamLearners.map((learner: { employeeId: string; name: string }) => (
+                    <MenuItem key={learner.employeeId} value={learner.employeeId}>{learner.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+            <Button href={learningUrl} target="_blank" rel="noopener noreferrer" variant="outlined" startIcon={<School />}>
+              Open Learning
+            </Button>
+          </Stack>
+        </Box>
+        <Divider />
+        {learningLoading && <LinearProgress />}
+        {learningError ? (
+          <Alert severity="warning" sx={{ borderRadius: 0 }}>
+            Your Learning record is temporarily unavailable. Your development plans are unaffected.
+          </Alert>
+        ) : learningRecords.length === 0 && !learningLoading ? (
+          <Box sx={{ px: 2.5, py: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              No synchronized courses yet. Open Learning with your Seemplify account to connect future activity.
+            </Typography>
+          </Box>
+        ) : (
+          <List disablePadding>
+            {learningRecords.slice(0, 8).map((record, index: number) => (
+              <ListItem
+                key={record._id}
+                divider={index < Math.min(learningRecords.length, 8) - 1}
+                sx={{ px: 2.5, py: 1.5, alignItems: 'flex-start', gap: 2 }}
+                secondaryAction={learningPlans.length > 0 ? (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setLinkingRecord(record);
+                      setLinkPlanId(learningPlans[0]?._id || '');
+                    }}
+                  >
+                    Add to plan
+                  </Button>
+                ) : undefined}
+              >
+                <ListItemText
+                  sx={{ pr: learningPlans.length > 0 ? 14 : 0 }}
+                  primary={record.courseTitle}
+                  secondary={
+                    <Box component="span" sx={{ display: 'block', mt: 0.5 }}>
+                      <Typography component="span" variant="caption" color="text.secondary">
+                        {record.status === 'completed' ? 'Completed' : record.status === 'in_progress' ? 'In progress' : 'Assigned'}
+                        {' · '}{record.progressPercent || 0}%
+                        {record.completedAt ? ` · ${new Date(record.completedAt).toLocaleDateString()}` : ''}
+                      </Typography>
+                      <LinearProgress variant="determinate" value={record.progressPercent || 0} sx={{ mt: 0.75, maxWidth: 360, height: 5, borderRadius: 0.5 }} />
+                    </Box>
+                  }
+                />
+              </ListItem>
+            ))}
+          </List>
+        )}
+      </Paper>
 
       <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
         <Tab label={`My Plans (${myPlans.length})`} />
@@ -535,7 +665,7 @@ export default function DevelopmentPlansPage() {
                       {selectedPlan.learningActivities.map((activity: any, idx: number) => (
                         <ListItem
                           key={idx}
-                          secondaryAction={activity.status !== 'completed' ? (
+                          secondaryAction={activity.status !== 'completed' && activity.source !== 'seemplify_learning' ? (
                             <Button size="small" onClick={() => void completeActivity(idx)} disabled={saving}>Mark complete</Button>
                           ) : undefined}
                         >
@@ -545,9 +675,11 @@ export default function DevelopmentPlansPage() {
                               <RadioButtonUnchecked color="action" />
                             }
                           </ListItemIcon>
-                          <ListItemText 
+                          <ListItemText
                             primary={activity.title}
-                            secondary={`${activity.type} • Due: ${activity.dueDate ? new Date(activity.dueDate).toLocaleDateString() : 'No date'}`}
+                            secondary={activity.source === 'seemplify_learning'
+                              ? `Synced from Seemplify Learning · ${activity.progressPercent || 0}% complete`
+                              : `${activity.type} · Due: ${activity.dueDate ? new Date(activity.dueDate).toLocaleDateString() : 'No date'}`}
                           />
                         </ListItem>
                       ))}
@@ -609,6 +741,39 @@ export default function DevelopmentPlansPage() {
             </DialogActions>
           </>
         )}
+      </Dialog>
+
+      <Dialog
+        open={Boolean(linkingRecord)}
+        onClose={() => { if (!saving) { setLinkingRecord(null); setLinkPlanId(''); } }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Add course to a development plan</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {linkingRecord?.courseTitle} will stay synchronized as the learner makes progress in Seemplify Learning.
+          </Typography>
+          <FormControl fullWidth>
+            <InputLabel id="learning-plan-label">Development plan</InputLabel>
+            <Select
+              labelId="learning-plan-label"
+              label="Development plan"
+              value={linkPlanId}
+              onChange={(event) => setLinkPlanId(String(event.target.value))}
+            >
+              {learningPlans.map((plan) => (
+                <MenuItem key={plan._id} value={plan._id}>{plan.title}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setLinkingRecord(null); setLinkPlanId(''); }} disabled={saving}>Cancel</Button>
+          <Button variant="contained" onClick={() => void linkCourseToPlan()} disabled={saving || !linkPlanId}>
+            {saving ? 'Adding…' : 'Add to plan'}
+          </Button>
+        </DialogActions>
       </Dialog>
 
       <Dialog

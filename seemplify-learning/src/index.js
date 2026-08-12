@@ -29,6 +29,7 @@ import { normalizeAgentReferralCode } from './utils/agentReferral.js'
 import { resolveCourseSaleContext } from './utils/courseSelling.js'
 import { resolveLearningRole as resolveLearningRoleFromAccount } from './utils/learningRoles.js'
 import { resolveAccountOrganizationLearningAccess } from './utils/organizationLearning.js'
+import { startPerformanceLearningSyncWorker } from './services/performanceLearningSyncService.js'
 
 dotenv.config()
 
@@ -822,6 +823,7 @@ mongoose.connect(mongoUri)
     } catch (currencyError) {
       console.error('Simple LMS currency seed failed:', currencyError) // eslint-disable-line no-console
     }
+    startPerformanceLearningSyncWorker()
     app.listen(port, () => {
       console.log(`Seemplify Learning running on port ${port}`) // eslint-disable-line no-console
     })

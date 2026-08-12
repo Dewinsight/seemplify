@@ -5,6 +5,7 @@ import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
+import { queueEnrollmentSync } from '../services/performanceLearningSyncService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import {
   COURSE_AUDIENCE_MODES,
@@ -411,6 +412,21 @@ router.post('/courses/:courseId/assign', requireOrganizationLearning({ manage: t
         upsert: true
       }
     })))
+    const assignedEnrollments = await SimpleLmsEnrollment.find({
+      organization: organization._id,
+      course: course._id,
+      enrolledMember: { $in: memberIds }
+    }).select('_id').lean()
+    for (const enrollment of assignedEnrollments) {
+      try {
+        await queueEnrollmentSync({
+          enrollment: enrollment._id,
+          eventType: 'learning.enrollment.assigned'
+        })
+      } catch (syncError) {
+        console.warn('Performance Learning assignment update was deferred:', syncError.message)
+      }
+    }
     return redirectWithMessage(res, {
       success: `${course.title} assigned to ${memberIds.length} staff member${memberIds.length === 1 ? '' : 's'}.`
     })

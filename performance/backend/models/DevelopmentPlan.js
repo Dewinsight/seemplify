@@ -97,7 +97,18 @@ const DevelopmentPlanSchema = new mongoose.Schema({
     },
     completedAt: Date,
     evidence: String, // Link or description of completion evidence
-    feedback: String
+    feedback: String,
+    source: {
+      type: String,
+      enum: ['manual', 'seemplify_learning'],
+      default: 'manual'
+    },
+    provider: String,
+    learningCourseId: String,
+    learningEnrollmentId: String,
+    progressPercent: { type: Number, min: 0, max: 100, default: 0 },
+    courseUrl: String,
+    lastSyncedAt: Date
   }],
   
   // Stretch assignments

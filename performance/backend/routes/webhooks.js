@@ -9,6 +9,7 @@ const {
   markIdpWebhookProcessed,
   markIdpWebhookFailed
 } = require('../services/idpWebhookReceiptService');
+const { isLearningEvent, upsertLearningRecordFromEvent } = require('../services/learningRecordService');
 
 const router = express.Router();
 
@@ -117,6 +118,10 @@ async function createLifecycleGoalDraft(event, data) {
 async function processEvent(event, data, envelope) {
   const payloadData = data || {};
   const userId = stableSubject(payloadData) || envelope.subjectId;
+  if (isLearningEvent(event)) {
+    await upsertLearningRecordFromEvent(event, payloadData, envelope);
+    return;
+  }
   switch (event) {
     case 'team.member.removed':
       await sessionStore.invalidateUserSessions(userId);

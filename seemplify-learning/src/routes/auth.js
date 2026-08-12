@@ -22,6 +22,7 @@ import {
   syncIdpOrganizationMembers,
   syncIdpUserAndOrganizations
 } from '../services/idpLearningSyncService.js'
+import { queueAccountLearningSnapshot } from '../services/performanceLearningSyncService.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import {
   canAccessReturnPath,
@@ -226,6 +227,11 @@ router.get('/auth/seemplify/callback', async (req, res) => {
     }
 
     const destination = await resolveLoginDestination(synchronized.account, fallbackReturnTo)
+    setImmediate(() => {
+      queueAccountLearningSnapshot(synchronized.account).catch((syncError) => {
+        console.warn('Performance Learning history backfill was deferred:', syncError.message)
+      })
+    })
     return req.session.save((sessionError) => {
       if (sessionError) {
         console.error('Seemplify OIDC callback session save error:', sessionError)

@@ -22,6 +22,7 @@ import { AdminInvite } from '../models/AdminInvite.js'
 import { logAuditEvent } from '../utils/auditLog.js'
 import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
 import { emailService } from '../services/emailService.js'
+import { queueEnrollmentSync } from '../services/performanceLearningSyncService.js'
 import {
   createFlutterwavePaymentLink,
   getFlutterwavePublicKey,
@@ -90,6 +91,14 @@ const pageRouter = express.Router()
 const adminPageRouter = express.Router()
 const apiRouter = express.Router()
 const reportsApiRouter = express.Router()
+
+const queuePerformanceLearningUpdate = async (enrollment, eventType = '') => {
+  try {
+    await queueEnrollmentSync({ enrollment, eventType })
+  } catch (error) {
+    console.warn('Performance Learning update was deferred:', error.message)
+  }
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -3597,6 +3606,7 @@ const createOrUpdateEnrollment = async ({
     if (hasChange) {
       existing.lastActivityAt = new Date()
       await existing.save()
+      await queuePerformanceLearningUpdate(existing)
     }
     return {
       enrollment: existing,
@@ -3617,6 +3627,7 @@ const createOrUpdateEnrollment = async ({
   })
 
   await refreshCourseMetrics(courseId)
+  await queuePerformanceLearningUpdate(enrollment, 'learning.enrollment.assigned')
   return {
     enrollment,
     created: true
@@ -5726,6 +5737,10 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/complete', requir
     }
     await enrollment.save()
     await refreshCourseMetrics(enrollment.course._id)
+    await queuePerformanceLearningUpdate(
+      enrollment,
+      progress.isCompleted ? 'learning.enrollment.completed' : 'learning.enrollment.progressed'
+    )
 
     const shouldAutoplayNextLesson = req.body.next === '1'
       && req.body.auto === '1'
@@ -5862,6 +5877,7 @@ pageRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/quiz', requirePag
       enrollment.status = 'in_progress'
     }
     await enrollment.save()
+    await queuePerformanceLearningUpdate(enrollment, 'learning.enrollment.progressed')
 
     if (expectsJson) {
       return res.json({

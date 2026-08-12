@@ -204,6 +204,9 @@ router.put('/:id/activities/:activityIndex', async (req, res) => {
     if (!canAccessPlan(req, plan)) return forbidden(res);
     const activity = plan.learningActivities[Number(req.params.activityIndex)];
     if (!activity) return res.status(404).json({ success: false, error: 'Activity not found' });
+    if (activity.source === 'seemplify_learning') {
+      return res.status(409).json({ success: false, error: 'Synced Learning activities are updated from Seemplify Learning' });
+    }
     if (req.body.status) {
       activity.status = req.body.status;
       activity.completedAt = req.body.status === 'completed' ? new Date() : undefined;
