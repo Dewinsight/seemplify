@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { serializeReconciliationTeams } from '../src/routes/internalMemberships.js'
+import { serializeReconciliationTeams } from '../src/utils/reconciliationTeams.js'
 
 test('membership reconciliation exposes the authoritative IdP team hierarchy and active roster', () => {
   const organization = {
