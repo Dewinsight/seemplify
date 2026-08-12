@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+
 function apiBase(value) {
   const normalized = String(value || '').trim().replace(/\/+$/, '');
   if (!normalized) throw new Error('DOKPLOY_URL is required');
@@ -38,6 +40,18 @@ function selectDestination(destinationPayload, configuredId = '') {
   return destinations[0];
 }
 
+function requestHostSnapshot(volumeName, outputFile) {
+  const safeVolumeName = String(volumeName || '').trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(safeVolumeName)) {
+    throw new Error('ChatGPT gateway volume name is not safe for the host snapshot fallback');
+  }
+  if (!String(outputFile || '').trim()) {
+    throw new Error('GITHUB_OUTPUT is required for the host snapshot fallback');
+  }
+  fs.appendFileSync(outputFile, `host_snapshot_required=true\nvolume_name=${safeVolumeName}\n`, 'utf8');
+  return { hostSnapshotRequired: true, volumeName: safeVolumeName };
+}
+
 async function main({ fetchImpl = fetch, source = process.env } = {}) {
   const token = String(source.DOKPLOY_TOKEN || '').trim();
   const applicationId = String(source.CHATGPT_GATEWAY_APP_ID || '').trim();
@@ -72,10 +86,25 @@ async function main({ fetchImpl = fetch, source = process.env } = {}) {
     return existing;
   }
 
-  const destination = selectDestination(
-    await request('/destination.all'),
-    source.DOKPLOY_BACKUP_DESTINATION_ID
-  );
+  let destination;
+  try {
+    destination = selectDestination(
+      await request('/destination.all'),
+      source.DOKPLOY_BACKUP_DESTINATION_ID
+    );
+  } catch (error) {
+    const noDestination = error?.message === (
+      'Exactly one Dokploy backup destination is required when DOKPLOY_BACKUP_DESTINATION_ID is unset; found 0'
+    );
+    if (noDestination && source.ALLOW_HOST_SNAPSHOT_FALLBACK === 'true') {
+      const fallback = requestHostSnapshot(volume.volumeName, source.GITHUB_OUTPUT);
+      process.stdout.write(
+        `No S3 destination is configured; requiring a retained host snapshot for ${volume.volumeName}\n`
+      );
+      return fallback;
+    }
+    throw error;
+  }
   const destinationId = String(destination?.destinationId || destination?.id || '').trim();
   if (!destinationId) throw new Error('Selected Dokploy backup destination has no identifier');
   const payload = {
@@ -110,4 +139,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { apiBase, responseItems, gatewayDataVolume, selectDestination, main };
+module.exports = {
+  apiBase,
+  responseItems,
+  gatewayDataVolume,
+  selectDestination,
+  requestHostSnapshot,
+  main
+};

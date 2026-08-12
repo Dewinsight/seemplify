@@ -19,13 +19,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Run ChatGPT gateway contract tests
+        run: node --test tools/chatgpt-gateway/*.test.cjs
       - name: Ensure durable ChatGPT session-volume backups
+        id: gateway_backup
         run: node tools/chatgpt-gateway/dokploy-ensure-volume-backup.cjs
         env:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
           DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
           CHATGPT_GATEWAY_APP_ID: ${{ secrets.CHATGPT_GATEWAY_APP_ID }}
           DOKPLOY_BACKUP_DESTINATION_ID: ${{ secrets.DOKPLOY_BACKUP_DESTINATION_ID }}
+          ALLOW_HOST_SNAPSHOT_FALLBACK: 'true'
+      - name: Load host snapshot SSH key
+        if: steps.gateway_backup.outputs.host_snapshot_required == 'true'
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Trust the deployment host
+        if: steps.gateway_backup.outputs.host_snapshot_required == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts
+      - name: Snapshot the ChatGPT session volume on the host
+        if: steps.gateway_backup.outputs.host_snapshot_required == 'true'
+        env:
+          VOLUME_NAME: ${{ steps.gateway_backup.outputs.volume_name }}
+        run: |
+          if ! printf '%s' "$VOLUME_NAME" | grep -Eq '^[a-zA-Z0-9][a-zA-Z0-9_.-]*$'; then
+            echo 'Unsafe ChatGPT gateway volume name'
+            exit 1
+          fi
+          archive="chatgpt-gateway-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+          ssh seemplify@4.180.153.209 bash -s -- "$VOLUME_NAME" "$archive" <<'REMOTE'
+          set -euo pipefail
+          volume_name="$1"
+          archive_name="$2"
+          backup_root="$HOME/backups/chatgpt-gateway"
+          mkdir -p "$backup_root"
+          docker volume inspect "$volume_name" >/dev/null
+          docker run --rm \
+            -e ARCHIVE_NAME="$archive_name" \
+            -v "$volume_name:/source:ro" \
+            -v "$backup_root:/backup" \
+            alpine:3.20 sh -euc '
+              tar -C /source -czf "/backup/$ARCHIVE_NAME" .
+              test -s "/backup/$ARCHIVE_NAME"
+              cd /backup
+              ls -1t chatgpt-gateway-*.tar.gz | tail -n +15 | xargs -r rm -f
+            '
+          test -s "$backup_root/$archive_name"
+          echo "Retained ChatGPT gateway host snapshot: $archive_name"
+          REMOTE
       - name: Configure shared Seemplify AI gateway and consumers
         run: node tools/chatgpt-gateway/dokploy-configure.cjs
         env:
