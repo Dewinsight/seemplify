@@ -15,7 +15,7 @@ test('stored subject metadata mirrors the hosted gateway separator exactly', () 
   );
 });
 
-test('legacy subject metadata is healed without replacing the user-backed gateway identity', async () => {
+test('a pre-migration account retains its proven Recruiter gateway identity', async () => {
   const originalFindOne = AIUserRuntimeAccount.findOne;
   const account = {
     user: '507f191e810c19729de860e8',
@@ -29,10 +29,86 @@ test('legacy subject metadata is healed without replacing the user-backed gatewa
   try {
     const result = await codexAccountService.accountForUser({ id: account.user, idpSubject: account.idpSubject });
     assert.equal(result.user, '507f191e810c19729de860e8');
-    assert.equal(result.subjectKey, codexAccountService.subjectKeyForUser(account.idpSubject));
+    assert.equal(result.subjectKey, codexAccountService.subjectKeyForUser(account.user));
     assert.equal(result.saves, 1);
   } finally {
     AIUserRuntimeAccount.findOne = originalFindOne;
+  }
+});
+
+test('an older gateway without account adoption keeps status and disconnect on the legacy credential', async () => {
+  const originalFindOne = AIUserRuntimeAccount.findOne;
+  const originalUrl = process.env.CHATGPT_GATEWAY_BASE_URL;
+  const originalSecret = process.env.CHATGPT_GATEWAY_SHARED_SECRET;
+  const account = {
+    user: '507f191e810c19729de86101',
+    idpSubject: 'idp-rolling-upgrade-user',
+    organization: '507f191e810c19729de86102',
+    subjectKey: codexAccountService.subjectKeyForUser('idp-rolling-upgrade-user'),
+    status: 'connected',
+    connectedEmail: 'person@example.test',
+    dataSharingAcknowledgedAt: new Date(),
+    performanceDataSharingAcknowledgedAt: new Date(),
+    messagingDataSharingAcknowledgedAt: new Date(),
+    credentialNamespaceVersion: 1,
+    lastError: 'ChatGPT account/adopt failed',
+    async save() { return this; }
+  };
+  const operations = [];
+  const fetchImpl = async (url, init) => {
+    const operation = new URL(url).pathname.split('/').pop();
+    const body = JSON.parse(init.body);
+    operations.push({ operation, subjectId: body.subjectId });
+    if (url.endsWith('/account/adopt')) {
+      return new Response(JSON.stringify({ code: 'CHATGPT_OPERATION_UNKNOWN' }), {
+        status: 404, headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (url.endsWith('/account')) {
+      return new Response(JSON.stringify({
+        connected: true, email: 'person@example.test', planType: 'pro'
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.endsWith('/logout')) {
+      return new Response(JSON.stringify({ forgotten: true }), {
+        status: 200, headers: { 'content-type': 'application/json' }
+      });
+    }
+    throw new Error(`Unexpected gateway operation: ${url}`);
+  };
+  AIUserRuntimeAccount.findOne = async () => account;
+  process.env.CHATGPT_GATEWAY_BASE_URL = 'http://hosted-gateway.test:11435';
+  process.env.CHATGPT_GATEWAY_SHARED_SECRET = 'hosted-test-secret';
+  try {
+    const refreshed = await codexAccountService.readAccount(
+      { id: account.user, idpSubject: account.idpSubject }, { fetchImpl }
+    );
+    assert.equal(refreshed.status, 'connected');
+    assert.equal(refreshed.lastError, '');
+    assert.equal(refreshed.credentialNamespaceVersion, 1);
+    assert.equal(refreshed.subjectKey, codexAccountService.subjectKeyForUser(account.user));
+    assert.deepEqual(operations.slice(0, 2), [
+      { operation: 'adopt', subjectId: account.idpSubject },
+      { operation: 'account', subjectId: account.user }
+    ]);
+
+    const disconnected = await codexAccountService.disconnect(
+      { id: account.user, idpSubject: account.idpSubject }, { fetchImpl }
+    );
+    assert.equal(disconnected.status, 'disconnected');
+    assert.equal(disconnected.dataSharingAcknowledgedAt, null);
+    assert.equal(disconnected.performanceDataSharingAcknowledgedAt, null);
+    assert.equal(disconnected.messagingDataSharingAcknowledgedAt, null);
+    assert.deepEqual(operations.slice(-2), [
+      { operation: 'adopt', subjectId: account.idpSubject },
+      { operation: 'logout', subjectId: account.user }
+    ]);
+  } finally {
+    AIUserRuntimeAccount.findOne = originalFindOne;
+    if (originalUrl === undefined) delete process.env.CHATGPT_GATEWAY_BASE_URL;
+    else process.env.CHATGPT_GATEWAY_BASE_URL = originalUrl;
+    if (originalSecret === undefined) delete process.env.CHATGPT_GATEWAY_SHARED_SECRET;
+    else process.env.CHATGPT_GATEWAY_SHARED_SECRET = originalSecret;
   }
 });
 
@@ -170,6 +246,7 @@ test('foreground subject resolution rechecks exact Recruiter organization author
     subjectKey: 'exact-org-subject',
     status: 'connected',
     dataSharingAcknowledgedAt: new Date(),
+    credentialNamespaceVersion: 2,
     isRoutable(app) { return app === 'recruiter' && Boolean(this.dataSharingAcknowledgedAt); }
   };
   const actor = {

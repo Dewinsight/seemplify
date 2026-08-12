@@ -51,6 +51,25 @@ function subjectKeyForUser(idpSubject) {
   return crypto.createHash('sha256').update(`${SOURCE_APP}\x1f${subjectId}`).digest('hex');
 }
 
+function credentialNamespaceVersion(account) {
+  return Number(account?.credentialNamespaceVersion || 1);
+}
+
+function credentialSubjectForAccount(account) {
+  return credentialNamespaceVersion(account) >= CREDENTIAL_NAMESPACE_VERSION
+    ? String(account.idpSubject || '').trim()
+    : String(account.user || '').trim();
+}
+
+function gatewayDoesNotSupportAdoption(error) {
+  // `account/adopt` was added after the original per-user account endpoints.
+  // During a rolling upgrade an older gateway returns its normal 404 for the
+  // unknown operation. Keep using the existing Recruiter-owned credential
+  // until that gateway is upgraded; every first-party app still reaches it
+  // through this central service rather than owning a second OpenAI login.
+  return Number(error?.statusCode) === 404;
+}
+
 async function callGateway(operation, idpSubject, {
   timeoutMs = 30_000, fetchImpl = fetch, payload = {}, signal
 } = {}) {
@@ -120,7 +139,11 @@ async function accountForUser(user) {
   const existing = await AIUserRuntimeAccount.findOne({ user: userId });
   if (existing) {
     let changed = false;
-    const expectedSubjectKey = subjectKeyForUser(idpSubject);
+    const expectedSubjectKey = subjectKeyForUser(
+      credentialNamespaceVersion(existing) >= CREDENTIAL_NAMESPACE_VERSION
+        ? idpSubject
+        : userId
+    );
     if (existing.subjectKey !== expectedSubjectKey) {
       existing.subjectKey = expectedSubjectKey;
       changed = true;
@@ -143,25 +166,37 @@ async function accountForUser(user) {
     user: userId,
     organization: await organizationForUser(user, userId),
     idpSubject,
-    subjectKey: subjectKeyForUser(idpSubject),
+    subjectKey: subjectKeyForUser(userId),
     status: 'disconnected',
     credentialNamespaceVersion: 1
   });
 }
 
 async function ensureCanonicalCredential(account, options = {}) {
-  if (Number(account.credentialNamespaceVersion || 1) >= CREDENTIAL_NAMESPACE_VERSION) return;
-  await callGateway('account/adopt', account.idpSubject, {
-    ...options,
-    payload: {
-      legacySubjects: [
-        { sourceApp: 'recruiter', subjectId: String(account.user) },
-        { sourceApp: 'performance-management', subjectId: account.idpSubject }
-      ]
+  if (credentialNamespaceVersion(account) >= CREDENTIAL_NAMESPACE_VERSION) return true;
+  try {
+    await callGateway('account/adopt', account.idpSubject, {
+      ...options,
+      payload: {
+        legacySubjects: [
+          { sourceApp: 'recruiter', subjectId: String(account.user) },
+          { sourceApp: 'performance-management', subjectId: account.idpSubject }
+        ]
+      }
+    });
+  } catch (error) {
+    if (!gatewayDoesNotSupportAdoption(error)) throw error;
+    const legacySubjectKey = subjectKeyForUser(String(account.user));
+    if (account.subjectKey !== legacySubjectKey) {
+      account.subjectKey = legacySubjectKey;
+      await account.save();
     }
-  });
+    return false;
+  }
   account.credentialNamespaceVersion = CREDENTIAL_NAMESPACE_VERSION;
+  account.subjectKey = subjectKeyForUser(account.idpSubject);
   await account.save();
+  return true;
 }
 
 function applyStatus(account, status) {
@@ -197,7 +232,7 @@ async function readAccount(user, options = {}) {
   const account = await accountForUser(user);
   try {
     await ensureCanonicalCredential(account, options);
-    applyStatus(account, await callGateway('account', account.idpSubject, options));
+    applyStatus(account, await callGateway('account', credentialSubjectForAccount(account), options));
   } catch (error) {
     // A rolling deployment or short network interruption does not mean the
     // user's durable credential disappeared. Marking a connected row as
@@ -215,7 +250,7 @@ async function readAccount(user, options = {}) {
 async function startLogin(user, options = {}) {
   const account = await accountForUser(user);
   await ensureCanonicalCredential(account, options);
-  const login = await callGateway('login/start', account.idpSubject, options);
+  const login = await callGateway('login/start', credentialSubjectForAccount(account), options);
   if (login.connected) {
     applyStatus(account, login);
   } else {
@@ -229,7 +264,7 @@ async function startLogin(user, options = {}) {
 async function cancelLogin(user, options = {}) {
   const account = await accountForUser(user);
   await ensureCanonicalCredential(account, options);
-  const result = await callGateway('login/cancel', account.idpSubject, options);
+  const result = await callGateway('login/cancel', credentialSubjectForAccount(account), options);
   account.status = account.status === 'connected' ? account.status : 'disconnected';
   account.lastError = '';
   await account.save();
@@ -239,7 +274,7 @@ async function cancelLogin(user, options = {}) {
 async function resetLogin(user, options = {}) {
   const account = await accountForUser(user);
   await ensureCanonicalCredential(account, options);
-  const result = await callGateway('login/reset', account.idpSubject, options);
+  const result = await callGateway('login/reset', credentialSubjectForAccount(account), options);
   account.status = account.status === 'connected' ? account.status : 'disconnected';
   account.lastError = '';
   await account.save();
@@ -280,7 +315,7 @@ async function disconnect(user, options = {}) {
   account.usageLimit = null;
   await account.save();
   await ensureCanonicalCredential(account, options);
-  await callGateway('logout', account.idpSubject, options);
+  await callGateway('logout', credentialSubjectForAccount(account), options);
   return account;
 }
 
@@ -292,7 +327,7 @@ async function listModels(user, options = {}) {
     });
   }
   await ensureCanonicalCredential(account, options);
-  const payload = await callGateway('models', account.idpSubject, options);
+  const payload = await callGateway('models', credentialSubjectForAccount(account), options);
   return Array.isArray(payload.models) ? payload.models : [];
 }
 
@@ -386,7 +421,11 @@ async function resolveRoutableSubject(userId, options = {}) {
       'Refresh your ChatGPT connection and confirm data-sharing consent before retrying.'
     );
   }
-  return { subjectId: account.idpSubject, subjectKey: account.subjectKey, sourceApp: SOURCE_APP };
+  return {
+    subjectId: credentialSubjectForAccount(account),
+    subjectKey: account.subjectKey,
+    sourceApp: SOURCE_APP
+  };
 }
 
 module.exports = {
