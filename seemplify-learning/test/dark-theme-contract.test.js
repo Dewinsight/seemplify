@@ -33,6 +33,23 @@ test('learner overview keeps navigation compact and puts course work first', asy
   assert.doesNotMatch(workspace, /Everything you can learn, in one place/)
 })
 
+test('public home uses theme-safe actions and balanced course rows', async () => {
+  const [home, brand] = await Promise.all([
+    readView('public-home.ejs'),
+    readFile(new URL('../src/public/css/seemplify-brand.css', import.meta.url), 'utf8')
+  ])
+
+  assert.match(home, /class="btn btn-secondary">My learning<\/a>/)
+  assert.match(home, /class="btn btn-secondary">Creator guide<\/a>/)
+  assert.match(home, /class="lmsv-course-meta"/)
+  assert.doesNotMatch(home, /color:\s*#0f172a/)
+  assert.doesNotMatch(home, /style="[^"]*(?:border|background|color)/)
+
+  assert.match(brand, /body\.public-home-page \.lmsv-course-grid-4\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/)
+  assert.match(brand, /body\.public-home-page \.lmsv-persona-body \.btn-secondary\s*\{[\s\S]*color:\s*var\(--seem-text\)/)
+  assert.match(brand, /\.lmsv-persona-body\s*\{[^}]*grid-template-rows:/)
+})
+
 test('signed-in utility pages use shared canvas and surface tokens', async () => {
   const pages = await Promise.all([
     'simple-lms-cart.ejs',

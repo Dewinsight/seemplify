@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260318-12">
   <script src="/js/theme.js?v=3"></script>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
-  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260812-2">
 </head>
 <body class="public-site public-home-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '', brandKey, brandLearningName, teachBrand }) %>
@@ -97,10 +97,9 @@
     <% } %>
   </section>
 
-    <section class="lmsv-section" style="padding-top: 64px;">
-      <header class="lmsv-section-head lmsv-section-head-center" style="margin-bottom: 48px;">
-        <h2 style="font-size: 32px; letter-spacing: -0.02em; color: #0f172a;">Built for every learning journey</h2>
-        <div style="width: 40px; height: 3px; background: #8b5cf6; margin: 16px auto 0;"></div>
+    <section class="lmsv-section lmsv-journey-section">
+      <header class="lmsv-section-head lmsv-journey-head">
+        <h2>Built for every learning journey</h2>
       </header>
 
       <div class="lmsv-persona-grid">
@@ -108,16 +107,16 @@
           <div class="lmsv-persona-media">
             <img src="<%= learnerImage %>" alt="Learner collaborating on a laptop">
           </div>
-          <div class="lmsv-persona-body" style="padding: 32px 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px;">
-            <p class="lmsv-kicker" style="color: #a855f7; font-weight: 700; font-size: 13px; letter-spacing: 0.05em;">FOR LEARNERS</p>
-            <h3 style="font-size: 28px; line-height: 1.2; margin: 8px 0 16px;">Find a course path and start at your own pace.</h3>
-            <p style="color: #475569; font-size: 16px; line-height: 1.6;  margin-bottom: 24px;">Browse courses publicly, compare details, and enroll only when you are ready.</p>
+          <div class="lmsv-persona-body">
+            <p class="lmsv-persona-label">For learners</p>
+            <h3>Find a course path and start at your own pace.</h3>
+            <p>Browse courses publicly, compare details, and enroll only when you are ready.</p>
             <div class="lmsv-actions">
-              <a href="/courses" class="btn btn-primary" style="background:#8b5cf6; border:1px solid #8b5cf6; color:white; border-radius: 8px; padding: 12px 20px;">Browse Courses</a>
+              <a href="/courses" class="btn btn-primary">Browse courses</a>
               <% if (!user) { %>
-                <a href="<%= learnRegisterHref %>" class="btn btn-outline" style="border:1px solid #e2e8f0; color:#0f172a; border-radius: 8px; padding: 12px 20px;">My Learning</a>
+                <a href="<%= learnRegisterHref %>" class="btn btn-secondary">My learning</a>
               <% } else { %>
-                <a href="/simple-lms?view=my-learning" class="btn btn-outline" style="border:1px solid #e2e8f0; color:#0f172a; border-radius: 8px; padding: 12px 20px;">My Learning</a>
+                <a href="/simple-lms?view=my-learning" class="btn btn-secondary">My learning</a>
               <% } %>
             </div>
           </div>
@@ -127,13 +126,13 @@
           <div class="lmsv-persona-media">
             <img src="<%= creatorImage %>" alt="Course creators planning content together">
           </div>
-          <div class="lmsv-persona-body" style="padding: 32px 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 16px 16px;">
-            <p class="lmsv-kicker" style="color: #a855f7; font-weight: 700; font-size: 13px; letter-spacing: 0.05em;">FOR CREATORS</p>
-            <h3 style="font-size: 28px; line-height: 1.2; margin: 8px 0 16px;">Publish polished courses and grow your audience.</h3>
-            <p style="color: #475569; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">Build chapters, lessons, and quizzes with guided onboarding from day one.</p>
+          <div class="lmsv-persona-body">
+            <p class="lmsv-persona-label">For creators</p>
+            <h3>Publish polished courses and grow your audience.</h3>
+            <p>Build chapters, lessons, and quizzes with guided onboarding from day one.</p>
             <div class="lmsv-actions">
               <a href="<%= teachCtaHref %>" class="btn btn-primary">Teach on <%= teachBrand %></a>
-              <a href="/teach" class="btn btn-outline" style="border:1px solid #e2e8f0; color:#0f172a; border-radius: 8px; padding: 12px 20px;">Creator Guide</a>
+              <a href="/teach" class="btn btn-secondary">Creator guide</a>
             </div>
           </div>
         </article>
@@ -143,10 +142,10 @@
     <section class="lmsv-section lmsv-catalog-strip">
       <header class="lmsv-section-head">
         <div>
-          <h2>Available Courses</h2>
+          <h2>Available courses</h2>
           <p>Explore our curated selection of high-impact learning paths.</p>
         </div>
-        <span class="lmsv-count-pill"><%= `${highlightCourses.length} courses found` %></span>
+        <span class="lmsv-course-count"><%= `${highlightCourses.length} courses` %></span>
       </header>
 
       <% if (!highlightCourses || highlightCourses.length === 0) { %>
@@ -160,7 +159,7 @@
                 <span class="lmsv-level-pill"><%= course.levelLabel %></span>
               </a>
               <div class="lmsv-course-body">
-                <div class="lmsv-pill-row lmsv-pill-row-muted">
+                <div class="lmsv-course-meta">
                   <% if (course.category) { %><span><%= course.category %></span><% } %>
                   <span><%= `${course.lessonCount} lessons` %></span>
                   <span><%= formatDuration(course.estimatedDurationMinutes) %></span>
@@ -169,7 +168,7 @@
                 <p><%= course.previewSummary %></p>
                 <div class="lmsv-course-foot">
                   <span class="lmsv-price-tag"><%= course.displayPrice %></span>
-                  <a href="<%= courseHref(course) %>" class="lmsv-inline-link">View Details &rarr;</a>
+                  <a href="<%= courseHref(course) %>" class="lmsv-inline-link">View details &rarr;</a>
                 </div>
               </div>
             </article>
