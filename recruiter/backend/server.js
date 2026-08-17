@@ -146,6 +146,16 @@ app.use('/api/internal/ai', express.raw({ type: 'application/json', limit: '2mb'
   }
 });
 
+app.use('/api/internal/ai-admin', express.raw({ type: 'application/json', limit: '128kb' }), (req, res, next) => {
+  try {
+    req.rawBody = req.body;
+    req.body = JSON.parse(req.body.toString('utf8'));
+    next();
+  } catch (_error) {
+    return res.status(400).json({ code: 'AI_GATEWAY_INVALID_JSON', message: 'Invalid JSON payload' });
+  }
+});
+
 // Debug middleware for file uploads
 app.use((req, res, next) => {
   if (req.path.includes('/upload-cv')) {
@@ -288,6 +298,7 @@ app.use('/api/admin', require('./routes/admin')); // Admin management routes
 app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant management routes (NEW: Nylas grant management)
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management
 app.use('/api/internal/ai', require('./routes/internalAI')); // Signed service-to-service AI gateway
+app.use('/api/internal/ai-admin', require('./routes/internalAIAdmin')); // Read-only signed analytics for IDP admins
 app.use('/api/internal/v1/people-transitions', require('./routes/internalPeopleTransitions'));
 
 // Serve static files from the "uploads" directory (if needed for direct access, though Cloudinary is primary)

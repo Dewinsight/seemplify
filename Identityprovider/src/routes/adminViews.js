@@ -15,6 +15,7 @@ import { buildRecruiterAdminLaunchUrl } from '../services/recruiterAdminSsoServi
 import { buildExperienceAdminLaunchUrl } from '../services/experienceAdminSsoService.js'
 import { getWorkforceOperationsAnalytics } from '../services/adminAnalyticsService.js'
 import { emailService } from '../services/emailService.js'
+import { getSharedAIGatewayAdminDashboard } from '../services/sharedAIGatewayAdminService.js'
 import {
   ADMIN_ORGANIZATION_ACTIONS,
   deleteOrganizationAccounts,
@@ -454,6 +455,48 @@ router.get('/recruiter-admin', async (req, res) => {
     res.status(500).render('error', {
       title: 'Error',
       message: 'Failed to open recruiter admin'
+    })
+  }
+})
+
+router.get('/shared-ai', async (req, res) => {
+  const filters = {
+    days: req.query.days,
+    page: req.query.page,
+    limit: req.query.limit,
+    sourceApp: req.query.sourceApp,
+    activity: req.query.activity,
+    provider: req.query.provider,
+    model: req.query.model,
+    organizationId: req.query.organizationId,
+    status: req.query.status,
+    runtimeOwner: req.query.runtimeOwner,
+    search: req.query.q
+  }
+
+  try {
+    const dashboard = await getSharedAIGatewayAdminDashboard(filters)
+    res.render('admin/shared-ai', {
+      dashboard,
+      analyticsError: '',
+      user: req.user
+    })
+  } catch (error) {
+    console.error('Error loading shared AI admin analytics:', error)
+    res.render('admin/shared-ai', {
+      dashboard: {
+        filters: { days: Number.parseInt(String(req.query.days || '30'), 10) || 30, page: 1, limit: 50 },
+        totals: {},
+        breakdowns: {},
+        history: { events: [], total: 0, page: 1, pages: 1 },
+        connectedAccounts: { statuses: {}, consents: {}, recent: [] },
+        audit: [],
+        health: { gateway: {}, queue: {} }
+      },
+      analyticsError: error.code === 'SHARED_AI_ADMIN_NOT_CONFIGURED'
+        ? 'Shared AI analytics has not been configured on this deployment.'
+        : 'The shared AI telemetry service is temporarily unavailable. Refresh this page after the gateway recovers.',
+      user: req.user
     })
   }
 })

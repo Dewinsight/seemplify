@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Shared AI Gateway - <%= brand.name %> IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+
+    .gateway-page-intro { color: var(--muted); font-size: 14px; margin: -14px 0 22px; max-width: 820px; line-height: 1.55; }
+    .gateway-filter-grid { display: grid; grid-template-columns: 140px minmax(180px, 1fr) repeat(4, minmax(140px, .65fr)) auto; gap: 12px; align-items: end; }
+    .gateway-filter-grid .admin-form-group { margin-bottom: 0; }
+    .gateway-health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .gateway-health-item { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--panel-strong); }
+    .gateway-health-label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .gateway-health-value { color: var(--text); font-weight: 650; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .gateway-health-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex: 0 0 auto; }
+    .gateway-health-dot.is-healthy { background: #22c55e; }
+    .gateway-health-meta { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.45; }
+    .gateway-section-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(300px, .7fr); gap: 24px; }
+    .gateway-table-scroll { overflow-x: auto; }
+    .gateway-table-secondary { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+    .gateway-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .gateway-pagination { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 16px; color: var(--muted); font-size: 13px; }
+    .gateway-pagination-actions { display: flex; gap: 8px; }
+    .gateway-pagination .btn { padding: 7px 14px; }
+    .gateway-consent-list { display: grid; gap: 10px; }
+    .gateway-consent-row { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding-bottom: 10px; font-size: 13px; }
+    .gateway-consent-row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .gateway-inline-status { display: flex; gap: 8px; flex-wrap: wrap; }
+    .gateway-error { margin-bottom: 20px; }
+    @media (max-width: 1100px) { .gateway-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .gateway-section-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .gateway-filter-grid, .gateway-health-grid { grid-template-columns: 1fr; } }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=3"></script>
+</head>
+
+<body>
+  <%
+    const totals = dashboard?.totals || {};
+    const breakdowns = dashboard?.breakdowns || {};
+    const history = dashboard?.history || { events: [], page: 1, pages: 1, total: 0 };
+    const accounts = dashboard?.connectedAccounts || { statuses: {}, consents: {}, recent: [] };
+    const gateway = dashboard?.health?.gateway || {};
+    const queue = dashboard?.health?.queue || {};
+    const filters = dashboard?.filters || {};
+    const number = (value) => Number(value || 0).toLocaleString('en-GB');
+    const money = (value) => '$' + Number(value || 0).toFixed(4);
+    const duration = (value) => Number(value || 0) >= 1000 ? (Number(value || 0) / 1000).toFixed(1) + 's' : number(value) + 'ms';
+    const dateTime = (value) => value ? new Date(value).toLocaleString('en-GB') : '—';
+    const currentQuery = new URLSearchParams();
+    for (const [key, value] of Object.entries({ days: filters.days, sourceApp: filters.sourceApp, provider: filters.provider, status: filters.status, runtimeOwner: filters.runtimeOwner, q: filters.search })) {
+      if (value) currentQuery.set(key, value);
+    }
+    const pageUrl = (page) => { const query = new URLSearchParams(currentQuery); query.set('page', String(page)); return '/admin/shared-ai?' + query.toString(); };
+  %>
+
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'shared-ai' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <h1>Shared AI Gateway</h1>
+        <div class="admin-header-actions">
+          <a href="/admin/shared-ai?<%= currentQuery.toString() %>" class="btn btn-secondary">Refresh telemetry</a>
+        </div>
+      </div>
+      <p class="gateway-page-intro">Platform-wide AI operations across Recruiter, AI Interview, Performance, Messaging, Experience Management, and other connected apps. Request content and credentials are deliberately excluded.</p>
+
+      <% if (analyticsError) { %>
+        <div class="alert alert-danger gateway-error"><span><%= analyticsError %></span></div>
+      <% } %>
+
+      <div class="admin-card">
+        <form method="get" action="/admin/shared-ai" class="gateway-filter-grid">
+          <div class="admin-form-group">
+            <label class="admin-form-label" for="gateway-days">Period</label>
+            <select class="admin-form-select" id="gateway-days" name="days">
+              <% for (const days of [1, 7, 30, 60, 90]) { %><option value="<%= days %>" <%= Number(filters.days) === days ? 'selected' : '' %>><%= days === 1 ? 'Last 24 hours' : `Last ${days} days` %></option><% } %>
+            </select>
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label" for="gateway-search">Search history</label>
+            <input class="admin-form-input" id="gateway-search" name="q" value="<%= filters.search || '' %>" placeholder="App, user, org, request, model">
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label" for="gateway-app">App</label>
+            <input class="admin-form-input" id="gateway-app" name="sourceApp" value="<%= filters.sourceApp || '' %>" placeholder="All apps">
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label" for="gateway-provider">Provider</label>
+            <input class="admin-form-input" id="gateway-provider" name="provider" value="<%= filters.provider || '' %>" placeholder="All providers">
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label" for="gateway-status">Status</label>
+            <select class="admin-form-select" id="gateway-status" name="status">
+              <option value="">All statuses</option>
+              <option value="success" <%= filters.status === 'success' ? 'selected' : '' %>>Successful</option>
+              <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
+            </select>
+          </div>
+          <div class="admin-form-group">
+            <label class="admin-form-label" for="gateway-owner">Paid by</label>
+            <select class="admin-form-select" id="gateway-owner" name="runtimeOwner">
+              <option value="">All runtimes</option>
+              <option value="platform" <%= filters.runtimeOwner === 'platform' ? 'selected' : '' %>>Platform</option>
+              <option value="user" <%= filters.runtimeOwner === 'user' ? 'selected' : '' %>>User account</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" type="submit">Apply filters</button>
+        </form>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <div>
+            <div class="admin-card-title">Live operational status</div>
+            <div class="admin-card-subtitle">Gateway reachability and shared CV-processing queue</div>
+          </div>
+        </div>
+        <div class="gateway-health-grid">
+          <% for (const provider of [{ name: 'Local gateway', value: gateway.local || {} }, { name: 'ChatGPT gateway', value: gateway.chatgpt || {} }]) { %>
+            <div class="gateway-health-item">
+              <div class="gateway-health-label"><%= provider.name %></div>
+              <div class="gateway-health-value"><span class="gateway-health-dot <%= provider.value.reachable ? 'is-healthy' : '' %>"></span><%= provider.value.reachable ? 'Reachable' : 'Unavailable' %></div>
+              <div class="gateway-health-meta"><%= provider.value.status || provider.value.error || (provider.value.configured ? 'Configured' : 'Not configured') %><%= provider.value.version ? ` · ${provider.value.version}` : '' %></div>
+            </div>
+          <% } %>
+          <div class="gateway-health-item">
+            <div class="gateway-health-label">AI processing queue</div>
+            <div class="gateway-health-value"><span class="gateway-health-dot <%= queue.available && !queue.paused ? 'is-healthy' : '' %>"></span><%= queue.paused ? 'Paused' : queue.available ? 'Running' : 'Degraded' %></div>
+            <div class="gateway-health-meta"><%= number(queue.counts?.waiting) %> waiting · <%= number(queue.counts?.active) %> active · <%= number(queue.rates?.completedLastHour) %> completed in the last hour</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card"><div class="admin-stat-label">Logical requests</div><div class="admin-stat-value"><%= number(totals.logicalRequests) %></div><div class="admin-stat-change"><%= number(totals.executions) %> provider executions</div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Success rate</div><div class="admin-stat-value"><%= Number(totals.successRate || 0).toFixed(1) %>%</div><div class="admin-stat-change"><%= number(totals.failures) %> failed executions</div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Tokens</div><div class="admin-stat-value"><%= number(totals.tokens) %></div><div class="admin-stat-change"><%= number(totals.cachedInputTokens) %> cached input</div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Estimated cost</div><div class="admin-stat-value"><%= money(totals.costUsd) %></div><div class="admin-stat-change">Reported provider usage</div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Average latency</div><div class="admin-stat-value"><%= duration(totals.averageLatencyMs) %></div><div class="admin-stat-change">Maximum <%= duration(totals.maxLatencyMs) %></div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Failovers</div><div class="admin-stat-value"><%= number(totals.failovers) %></div><div class="admin-stat-change">Across all provider attempts</div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Connected accounts</div><div class="admin-stat-value"><%= number(accounts.statuses?.connected) %></div><div class="admin-stat-change"><%= number(accounts.total) %> tracked accounts</div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Queue throughput</div><div class="admin-stat-value"><%= number(queue.rates?.completedLastHour) %></div><div class="admin-stat-change">Completed in the last hour</div></div>
+      </div>
+
+      <div class="gateway-section-grid">
+        <div class="admin-card">
+          <div class="admin-card-header"><div><div class="admin-card-title">Usage by app</div><div class="admin-card-subtitle">Every application observed in the selected period</div></div></div>
+          <div class="gateway-table-scroll"><table class="admin-table"><thead><tr><th>App</th><th>Executions</th><th>Success</th><th>Tokens</th><th>Cost</th><th>Avg latency</th></tr></thead><tbody>
+            <% for (const app of (breakdowns.sourceApps || [])) { %><tr><td><strong><%= app.sourceApp %></strong></td><td class="gateway-number"><%= number(app.executions) %></td><td class="gateway-number"><%= app.executions ? ((app.successes / app.executions) * 100).toFixed(1) : '0.0' %>%</td><td class="gateway-number"><%= number(app.tokens) %></td><td class="gateway-number"><%= money(app.costUsd) %></td><td class="gateway-number"><%= duration(app.averageLatencyMs) %></td></tr><% } %>
+            <% if (!(breakdowns.sourceApps || []).length) { %><tr><td colspan="6">No usage was recorded for this filter.</td></tr><% } %>
+          </tbody></table></div>
+        </div>
+        <div class="admin-card">
+          <div class="admin-card-header"><div><div class="admin-card-title">Connected account consent</div><div class="admin-card-subtitle">Accounts permitted to route work by app</div></div></div>
+          <div class="gateway-consent-list">
+            <% for (const entry of [['Recruiter', accounts.consents?.recruiter], ['Performance', accounts.consents?.performance], ['Messaging', accounts.consents?.messaging], ['Experience', accounts.consents?.experience]]) { %><div class="gateway-consent-row"><span><%= entry[0] %></span><strong><%= number(entry[1]) %></strong></div><% } %>
+          </div>
+          <div class="gateway-inline-status" style="margin-top: 18px;">
+            <% for (const status of ['connected', 'pending', 'disconnected', 'error']) { %><span class="status-badge status-badge--<%= status === 'connected' ? 'active' : status === 'error' ? 'rejected' : status %>"><%= status %>: <%= number(accounts.statuses?.[status]) %></span><% } %>
+          </div>
+        </div>
+      </div>
+
+      <div class="gateway-section-grid">
+        <div class="admin-card">
+          <div class="admin-card-header"><div><div class="admin-card-title">Daily usage</div><div class="admin-card-subtitle">Execution volume, reliability, tokens, and cost over time</div></div></div>
+          <div class="gateway-table-scroll"><table class="admin-table"><thead><tr><th>Day</th><th>Executions</th><th>Success</th><th>Failed</th><th>Tokens</th><th>Cost</th></tr></thead><tbody>
+            <% for (const day of (breakdowns.timeline || [])) { %><tr><td><strong><%= day.day %></strong></td><td class="gateway-number"><%= number(day.executions) %></td><td class="gateway-number"><%= number(day.successes) %></td><td class="gateway-number"><%= number(day.failures) %></td><td class="gateway-number"><%= number(day.tokens) %></td><td class="gateway-number"><%= money(day.costUsd) %></td></tr><% } %>
+            <% if (!(breakdowns.timeline || []).length) { %><tr><td colspan="6">No daily usage is available for this filter.</td></tr><% } %>
+          </tbody></table></div>
+        </div>
+        <div class="admin-card">
+          <div class="admin-card-header"><div><div class="admin-card-title">Metering coverage</div><div class="admin-card-subtitle">Whether token and cost usage came from the runtime</div></div></div>
+          <div class="gateway-consent-list">
+            <div class="gateway-consent-row"><span>Provider reported</span><strong><%= number(totals.metered) %></strong></div>
+            <div class="gateway-consent-row"><span>Explicitly unmetered</span><strong><%= number(totals.unmetered) %></strong></div>
+            <div class="gateway-consent-row"><span>Historical / unknown</span><strong><%= number(totals.unknownMetering) %></strong></div>
+            <div class="gateway-consent-row"><span>Input tokens</span><strong><%= number(totals.inputTokens) %></strong></div>
+            <div class="gateway-consent-row"><span>Output tokens</span><strong><%= number(totals.outputTokens) %></strong></div>
+            <div class="gateway-consent-row"><span>Reasoning tokens</span><strong><%= number(totals.reasoningTokens) %></strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="gateway-section-grid">
+        <div class="admin-card">
+          <div class="admin-card-header"><div><div class="admin-card-title">Providers and models</div><div class="admin-card-subtitle">Where gateway executions ran</div></div></div>
+          <div class="gateway-table-scroll"><table class="admin-table"><thead><tr><th>Provider / model</th><th>Executions</th><th>Failed</th><th>Tokens</th><th>Cost</th></tr></thead><tbody>
+            <% for (const provider of (breakdowns.providers || [])) { %><tr><td><strong><%= provider.provider %></strong><span class="gateway-table-secondary">Provider</span></td><td class="gateway-number"><%= number(provider.executions) %></td><td class="gateway-number"><%= number(provider.failures) %></td><td class="gateway-number"><%= number(provider.tokens) %></td><td class="gateway-number"><%= money(provider.costUsd) %></td></tr><% } %>
+            <% for (const modelRow of (breakdowns.models || [])) { %><tr><td><%= modelRow.model %><span class="gateway-table-secondary">Model</span></td><td class="gateway-number"><%= number(modelRow.executions) %></td><td class="gateway-number"><%= number(modelRow.failures) %></td><td class="gateway-number"><%= number(modelRow.tokens) %></td><td class="gateway-number"><%= money(modelRow.costUsd) %></td></tr><% } %>
+            <% if (!(breakdowns.providers || []).length && !(breakdowns.models || []).length) { %><tr><td colspan="5">No provider or model usage is available.</td></tr><% } %>
+          </tbody></table></div>
+        </div>
+        <div class="admin-card">
+          <div class="admin-card-header"><div><div class="admin-card-title">Top activities</div><div class="admin-card-subtitle">The gateway operations generating the most work</div></div></div>
+          <div class="gateway-table-scroll"><table class="admin-table"><thead><tr><th>Activity</th><th>Executions</th><th>Failed</th><th>Avg latency</th></tr></thead><tbody>
+            <% for (const activity of (breakdowns.activities || [])) { %><tr><td><strong><%= activity.activity %></strong></td><td class="gateway-number"><%= number(activity.executions) %></td><td class="gateway-number"><%= number(activity.failures) %></td><td class="gateway-number"><%= duration(activity.averageLatencyMs) %></td></tr><% } %>
+            <% if (!(breakdowns.activities || []).length) { %><tr><td colspan="4">No activity usage is available.</td></tr><% } %>
+          </tbody></table></div>
+        </div>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-header"><div><div class="admin-card-title">Top organisations</div><div class="admin-card-subtitle">Organisation-level use of the shared gateway</div></div></div>
+        <div class="gateway-table-scroll"><table class="admin-table"><thead><tr><th>Organisation</th><th>Executions</th><th>Success</th><th>Failed</th><th>Tokens</th><th>Cost</th><th>Avg latency</th></tr></thead><tbody>
+          <% for (const org of (breakdowns.organizations || [])) { %><tr><td><strong><%= org.organizationName %></strong></td><td class="gateway-number"><%= number(org.executions) %></td><td class="gateway-number"><%= number(org.successes) %></td><td class="gateway-number"><%= number(org.failures) %></td><td class="gateway-number"><%= number(org.tokens) %></td><td class="gateway-number"><%= money(org.costUsd) %></td><td class="gateway-number"><%= duration(org.averageLatencyMs) %></td></tr><% } %>
+          <% if (!(breakdowns.organizations || []).length) { %><tr><td colspan="7">No organisation-level usage is available.</td></tr><% } %>
+        </tbody></table></div>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-header"><div><div class="admin-card-title">Request history</div><div class="admin-card-subtitle"><%= number(history.total) %> matching provider executions; content is never shown here</div></div></div>
+        <div class="gateway-table-scroll"><table class="admin-table"><thead><tr><th>When</th><th>App / activity</th><th>Organisation / user</th><th>Runtime</th><th>Status</th><th>Latency</th><th>Tokens</th><th>Cost</th></tr></thead><tbody>
+          <% for (const event of (history.events || [])) { %><tr>
+            <td class="gateway-number"><%= dateTime(event.recordedAt) %><span class="gateway-table-secondary"><%= event.requestId %></span></td>
+            <td><strong><%= event.sourceApp || 'unknown' %></strong><span class="gateway-table-secondary"><%= event.activity || 'unknown activity' %></span></td>
+            <td><%= event.organizationName || event.organizationId || 'No organisation' %><span class="gateway-table-secondary"><%= event.actorName || event.actorEmail || 'System' %></span></td>
+            <td><%= event.provider %><span class="gateway-table-secondary"><%= event.model %> · <%= event.runtimeOwner %></span></td>
+            <td><span class="status-badge status-badge--<%= event.status === 'success' ? 'active' : 'rejected' %>"><%= event.status %></span><% if (event.errorCode) { %><span class="gateway-table-secondary"><%= event.errorCode %></span><% } %></td>
+            <td class="gateway-number"><%= duration(event.latencyMs) %></td><td class="gateway-number"><%= number(event.totalTokens) %></td><td class="gateway-number"><%= money(event.estimatedCostUsd) %></td>
+          </tr><% } %>
+          <% if (!(history.events || []).length) { %><tr><td colspan="8">No request history was recorded for this filter.</td></tr><% } %>
+        </tbody></table></div>
+        <div class="gateway-pagination"><span>Page <%= history.page %> of <%= history.pages %></span><div class="gateway-pagination-actions"><% if (history.page > 1) { %><a class="btn btn-secondary" href="<%= pageUrl(history.page - 1) %>">Previous</a><% } %><% if (history.page < history.pages) { %><a class="btn btn-secondary" href="<%= pageUrl(history.page + 1) %>">Next</a><% } %></div></div>
+      </div>
+
+      <div class="gateway-section-grid">
+        <div class="admin-card">
+          <div class="admin-card-header"><div><div class="admin-card-title">Recent connected accounts</div><div class="admin-card-subtitle">Connection state and app-specific data-sharing consent</div></div></div>
+          <div class="gateway-table-scroll"><table class="admin-table"><thead><tr><th>User</th><th>Organisation</th><th>Plan</th><th>Status</th><th>Last verified</th></tr></thead><tbody>
+            <% for (const account of (accounts.recent || [])) { %><tr><td><%= account.userName || account.connectedEmail || account.userEmail || 'Unknown user' %><span class="gateway-table-secondary"><%= account.connectedEmail || account.userEmail %></span></td><td><%= account.organizationName || '—' %></td><td><%= account.planType || '—' %></td><td><span class="status-badge status-badge--<%= account.status === 'connected' ? 'active' : account.status === 'error' ? 'rejected' : account.status %>"><%= account.status %></span></td><td class="gateway-number"><%= dateTime(account.lastVerifiedAt || account.updatedAt) %></td></tr><% } %>
+            <% if (!(accounts.recent || []).length) { %><tr><td colspan="5">No connected account records are available.</td></tr><% } %>
+          </tbody></table></div>
+        </div>
+        <div class="admin-card">
+          <div class="admin-card-header"><div><div class="admin-card-title">Gateway audit history</div><div class="admin-card-subtitle">Configuration, health, credential, alert, and operational events</div></div></div>
+          <div class="gateway-table-scroll"><table class="admin-table"><thead><tr><th>When</th><th>Event</th><th>Status</th></tr></thead><tbody>
+            <% for (const event of (dashboard.audit || [])) { %><tr><td class="gateway-number"><%= dateTime(event.createdAt) %></td><td><strong><%= event.action %></strong><span class="gateway-table-secondary"><%= event.message || event.category %><%= event.actorEmail ? ` · ${event.actorEmail}` : '' %></span></td><td><span class="status-badge status-badge--<%= ['success', 'sent'].includes(event.status) ? 'active' : event.status === 'failed' ? 'rejected' : 'pending' %>"><%= event.status %></span></td></tr><% } %>
+            <% if (!(dashboard.audit || []).length) { %><tr><td colspan="3">No gateway audit events are available.</td></tr><% } %>
+          </tbody></table></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

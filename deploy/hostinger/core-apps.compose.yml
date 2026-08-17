@@ -62,6 +62,8 @@ services:
       TIME_ATTENDANCE_WEBHOOK_URL: http://time-backend:5010/api/webhooks/idp
       MESSAGING_WEBHOOK_URL: http://workspace-backend:5009/api/webhooks/idp
       APPROVER_WEBHOOK_URL: http://approver:80/api/webhooks/idp
+      SHARED_AI_ADMIN_BASE_URL: http://recruiter-backend:5001
+      AI_GATEWAY_ADMIN_ANALYTICS_SECRET: ${AI_GATEWAY_ADMIN_ANALYTICS_SECRET:?required}
     volumes:
       - /opt/seemplify/secrets/idp-clients.json:/run/seemplify/idp-clients.json:ro
     healthcheck:
@@ -121,6 +123,7 @@ services:
       PERFORMANCE_AI_SHARED_SECRET: ${PERFORMANCE_AI_SHARED_SECRET:?required}
       MESSAGING_AI_SHARED_SECRET: ${MESSAGING_AI_SHARED_SECRET:?required}
       EXPERIENCE_AI_SHARED_SECRET: ${EXPERIENCE_AI_SHARED_SECRET:?required}
+      AI_GATEWAY_ADMIN_ANALYTICS_SECRET: ${AI_GATEWAY_ADMIN_ANALYTICS_SECRET:?required}
       MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com

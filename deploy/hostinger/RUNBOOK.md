@@ -163,6 +163,27 @@ Do not use only container status as an acceptance test. The smoke script now
 checks the OIDC launches and browser-facing API dependencies that previously
 allowed a healthy container to mask a broken user journey.
 
+## Shared AI administration
+
+IdP system administrators can inspect platform-wide shared gateway operations
+at `https://auth.seemplifyai.com/admin/shared-ai`. The page reports gateway and
+queue health, logical requests and provider executions, success/failure rates,
+latency, token and cost metering, failovers, app/provider/model/activity and
+organisation breakdowns, request history, connected-account consent, and
+gateway audit history.
+
+The IdP calls Recruiter's read-only internal endpoint with a replay-protected
+HMAC v2 signature. Both containers receive the dedicated
+`AI_GATEWAY_ADMIN_ANALYTICS_SECRET` from the root-only
+`/opt/seemplify/secrets/core-apps.env`. This key authorizes analytics only and
+must not be added to the normal inference service allow-list.
+
+Prompt text, generated content, CV contents, credentials, raw provider errors,
+IP addresses, user agents, per-user runtime subjects, and queue job documents
+are excluded from the analytics response. After changing this integration,
+verify the focused contract tests, the signed internal endpoint, an
+authenticated browser view, and the complete production smoke suite.
+
 ## Backups and restore testing
 
 `seemplify-backup.timer` runs daily at 02:15 Africa/Lagos with up to 15 minutes
