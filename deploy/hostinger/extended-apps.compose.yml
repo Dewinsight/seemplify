@@ -30,11 +30,19 @@ services:
 
   experience:
     <<: *defaults
-    image: seemplify/experience:hostinger
+    image: ${EXPERIENCE_IMAGE:-seemplify/experience:hostinger}
     environment:
       HOST: 0.0.0.0
       PORT: "3000"
       PUBLIC_URL: https://experience.seemplifyai.com
+      LOCAL_AUTH_ENABLED: "false"
+      IDP_ISSUER_URL: https://auth.seemplifyai.com
+      OIDC_CLIENT_ID: experience-management
+      OIDC_CLIENT_SECRET: ${OIDC_EXPERIENCE_SECRET:?required}
+      OIDC_REDIRECT_URI: https://experience.seemplifyai.com/api/auth/oidc/callback
+      EXPERIENCE_ADMIN_SSO_SECRET: ${EXPERIENCE_ADMIN_SSO_SECRET:?required}
+      SEEMPLIFY_SHARED_AI_URL: http://recruiter-backend:5001
+      EXPERIENCE_AI_SHARED_SECRET: ${EXPERIENCE_AI_SHARED_SECRET:?required}
       DATABASE_PROVIDER: postgres
       POSTGRES_HOST: experience-postgres
       POSTGRES_PORT: "5432"
@@ -47,7 +55,6 @@ services:
       POSTGRES_SCHEMA_VERSION: "1"
       POSTGRES_RUNTIME_SCHEMA_VERSION: "30"
       ADMIN_EMAIL: michael.egbo@dewinsight.com
-      ADMIN_PASSWORD: ${EXPERIENCE_ADMIN_PASSWORD:?required}
       SESSION_SECRET: ${EXPERIENCE_SESSION_SECRET:?required}
       ESIGN_ENCRYPTION_KEY: ${EXPERIENCE_ESIGN_KEY:?required}
       NYLAS_CREDENTIAL_ENCRYPTION_KEY: ${EXPERIENCE_NYLAS_ENCRYPTION_KEY:?required}

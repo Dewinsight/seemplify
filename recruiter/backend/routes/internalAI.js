@@ -48,6 +48,12 @@ function requireServiceActivity(service, activity) {
     error.statusCode = 403;
     throw error;
   }
+  if (service === 'experience-management' && definition.app !== 'experience') {
+    const error = new Error('Experience Management may only invoke Experience AI activities.');
+    error.code = 'SHARED_AI_ACTIVITY_FORBIDDEN';
+    error.statusCode = 403;
+    throw error;
+  }
   if (service === 'ai-interview' && !String(activity).startsWith('ai_interview.')) {
     const error = new Error('AI Interview may only invoke AI Interview activities.');
     error.code = 'SHARED_AI_ACTIVITY_FORBIDDEN';
@@ -70,7 +76,7 @@ function internalError(res, error, fallback = 'The shared AI account request fai
 }
 
 async function sharedPrincipal(req) {
-  if (!['performance-management', 'messaging'].includes(req.internalService)) {
+  if (!['performance-management', 'messaging', 'experience-management'].includes(req.internalService)) {
     const error = new Error('This service is not authorized to manage shared ChatGPT accounts.');
     error.code = 'SHARED_AI_SERVICE_FORBIDDEN';
     error.statusCode = 403;
@@ -80,7 +86,9 @@ async function sharedPrincipal(req) {
 }
 
 function accountScope(req) {
-  return req.internalService === 'performance-management' ? 'performance' : 'messaging';
+  if (req.internalService === 'performance-management') return 'performance';
+  if (req.internalService === 'experience-management') return 'experience';
+  return 'messaging';
 }
 
 async function sharedUser(req) {
@@ -260,7 +268,7 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
     const activity = String(req.body?.activity || '');
     requireServiceActivity(req.internalService, activity);
     const messages = validateMessages(req.body?.messages);
-    const principal = ['performance-management', 'messaging'].includes(req.internalService)
+    const principal = ['performance-management', 'messaging', 'experience-management'].includes(req.internalService)
       ? await sharedPrincipal(req) : null;
     const user = principal?.user || null;
     const suppliedContext = req.body?.context || {};

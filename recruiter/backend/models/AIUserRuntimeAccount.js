@@ -49,6 +49,8 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
   /** Messaging content has an independent disclosure even though the OpenAI
    * login itself is shared across Seemplify. */
   messagingDataSharingAcknowledgedAt: { type: Date, default: null },
+  /** Experience Management has its own explicit content-sharing consent. */
+  experienceDataSharingAcknowledgedAt: { type: Date, default: null },
   credentialNamespaceVersion: { type: Number, default: 1 },
   /** What the connected plan currently allows, as last reported by Codex. Kept
    * so the account screen can show it even when the gateway is unreachable —
@@ -75,6 +77,7 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
 AIUserRuntimeAccountSchema.methods.consentAt = function consentAt(app = 'recruiter') {
   if (app === 'performance') return this.performanceDataSharingAcknowledgedAt;
   if (app === 'messaging') return this.messagingDataSharingAcknowledgedAt;
+  if (app === 'experience') return this.experienceDataSharingAcknowledgedAt;
   return this.dataSharingAcknowledgedAt;
 };
 
@@ -83,7 +86,7 @@ AIUserRuntimeAccountSchema.methods.isRoutable = function isRoutable(app = 'recru
 };
 
 AIUserRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON(options = {}) {
-  const app = ['performance', 'messaging'].includes(options.app) ? options.app : 'recruiter';
+  const app = ['performance', 'messaging', 'experience'].includes(options.app) ? options.app : 'recruiter';
   const scopedConsent = this.consentAt(app);
   return {
     status: this.status,
@@ -97,7 +100,8 @@ AIUserRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON(options 
     consents: {
       recruiter: this.dataSharingAcknowledgedAt || null,
       performance: this.performanceDataSharingAcknowledgedAt || null,
-      messaging: this.messagingDataSharingAcknowledgedAt || null
+      messaging: this.messagingDataSharingAcknowledgedAt || null,
+      experience: this.experienceDataSharingAcknowledgedAt || null
     },
     routable: this.isRoutable(app),
     rateLimits: this.rateLimits || null,

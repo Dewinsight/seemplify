@@ -16,12 +16,13 @@ import {
 const knownAppIds = buildKnownHubPinAppIdSet([
   { appId: 'smarthr' },
   { appId: 'leave-management' },
-  { appId: 'payroll-management' }
+  { appId: 'payroll-management' },
+  { appId: 'experience-management' }
 ])
 
-test('known pin targets include the external experience app', () => {
+test('known pin targets include the configured Experience app', () => {
   assert.equal(knownAppIds.has('experience-management'), true)
-  assert.deepEqual(EXTERNAL_HUB_PINNED_APP_IDS, ['experience-management'])
+  assert.deepEqual(EXTERNAL_HUB_PINNED_APP_IDS, [])
 })
 
 test('sanitizes duplicates, unknown apps, non-strings, and unavailable apps', () => {

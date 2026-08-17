@@ -100,6 +100,28 @@ test('Messaging uses a distinct v2 proxy secret and cannot use the Performance k
   assert.equal(isolated.result.payload.code, 'AI_GATEWAY_AUTH_INVALID');
 });
 
+test('Experience uses its own v2 shared gateway key', async () => {
+  const middleware = createInternalServiceAuth({
+    env: {
+      PERFORMANCE_AI_SHARED_SECRET: 'performance-secret',
+      EXPERIENCE_AI_SHARED_SECRET: 'experience-secret'
+    },
+    now: () => 1786291200000,
+    nonceStore: new Map()
+  });
+  const accepted = await invoke({
+    middleware, service: 'experience-management', secret: 'experience-secret', nonce: 'experienceNonce1'
+  });
+  assert.equal(accepted.result.next, true);
+  assert.equal(accepted.req.internalService, 'experience-management');
+
+  const isolated = await invoke({
+    middleware, service: 'experience-management', secret: 'performance-secret', nonce: 'experienceNonce2'
+  });
+  assert.equal(isolated.result.statusCode, 401);
+  assert.equal(isolated.result.payload.code, 'AI_GATEWAY_AUTH_INVALID');
+});
+
 test('Performance never accepts gateway/AI Interview keys or signature version', async () => {
   const middleware = createInternalServiceAuth({
     env: {

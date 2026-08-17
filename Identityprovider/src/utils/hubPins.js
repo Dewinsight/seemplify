@@ -3,9 +3,9 @@ export const DEFAULT_HUB_PINNED_APP_IDS = Object.freeze([
   'leave-management'
 ])
 
-export const EXTERNAL_HUB_PINNED_APP_IDS = Object.freeze([
-  'experience-management'
-])
+// Kept as an extension point for non-OIDC cards. Experience Management is a
+// first-class Hub app now, so it is discovered from the configured app list.
+export const EXTERNAL_HUB_PINNED_APP_IDS = Object.freeze([])
 
 export const MAX_HUB_PINNED_APP_IDS = 24
 

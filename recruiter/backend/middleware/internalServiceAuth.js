@@ -54,7 +54,7 @@ function createInternalServiceAuth({ env = process.env, now = () => Date.now(), 
     // remains allowed even when an older deployment explicitly configures an
     // allow-list containing only ai-interview. Arbitrary additional services
     // still require an explicit entry.
-    const allowedServices = new Set(['performance-management', 'messaging', ...String(env.AI_GATEWAY_ALLOWED_SERVICES || 'ai-interview')
+    const allowedServices = new Set(['performance-management', 'messaging', 'experience-management', ...String(env.AI_GATEWAY_ALLOWED_SERVICES || 'ai-interview')
       .split(',').map((item) => item.trim()).filter(Boolean)]);
     if (!allowedServices.has(service)) {
       return res.status(403).json({ code: 'AI_GATEWAY_SERVICE_FORBIDDEN', message: 'Internal service is not authorized for the AI gateway' });
@@ -65,7 +65,8 @@ function createInternalServiceAuth({ env = process.env, now = () => Date.now(), 
     // subject or call another gateway namespace directly.
     const sharedAccountSecrets = {
       'performance-management': [env.PERFORMANCE_AI_SHARED_SECRET, env.PERFORMANCE_AI_SHARED_SECRET_PREVIOUS],
-      messaging: [env.MESSAGING_AI_SHARED_SECRET, env.MESSAGING_AI_SHARED_SECRET_PREVIOUS]
+      messaging: [env.MESSAGING_AI_SHARED_SECRET, env.MESSAGING_AI_SHARED_SECRET_PREVIOUS],
+      'experience-management': [env.EXPERIENCE_AI_SHARED_SECRET, env.EXPERIENCE_AI_SHARED_SECRET_PREVIOUS]
     };
     const secrets = Object.prototype.hasOwnProperty.call(sharedAccountSecrets, service)
       ? [...new Set([

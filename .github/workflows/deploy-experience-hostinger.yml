@@ -1,0 +1,134 @@
+name: Deploy Experience to Hostinger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'experience-management/**'
+      - 'Identityprovider/**'
+      - 'recruiter/backend/config/aiRuntimeCatalog.js'
+      - 'recruiter/backend/middleware/internalServiceAuth.js'
+      - 'recruiter/backend/models/AIUserRuntimeAccount.js'
+      - 'recruiter/backend/routes/internalAI.js'
+      - 'recruiter/backend/services/aiRuntime/codexAccountService.js'
+      - 'deploy/hostinger/core-apps.compose.yml'
+      - 'deploy/hostinger/extended-apps.compose.yml'
+      - 'deploy/hostinger/generate-idp-clients.sh'
+      - 'deploy/hostinger/smoke-hostinger.sh'
+      - '.github/workflows/deploy-experience-hostinger.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-experience-hostinger-production
+  cancel-in-progress: false
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: experience-management/package-lock.json
+      - name: Build and test Experience OIDC provisioning
+        working-directory: experience-management
+        run: |
+          npm ci
+          npm run build
+          npx tsx --test backend/test/idp-provisioning.test.ts
+      - name: Test IdP Hub contracts
+        working-directory: Identityprovider
+        run: |
+          npm install --ignore-scripts
+          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs
+      - name: Test shared gateway authentication
+        working-directory: recruiter/backend
+        run: node --test tests/internalServiceAuth.test.js
+
+  deploy:
+    needs: qa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Package release
+        run: |
+          tar -czf experience-release.tgz \
+            experience-management Identityprovider recruiter/backend \
+            deploy/hostinger/core-apps.compose.yml \
+            deploy/hostinger/extended-apps.compose.yml \
+            deploy/hostinger/generate-idp-clients.sh \
+            deploy/hostinger/smoke-hostinger.sh
+      - name: Upload release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: scp experience-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/experience-release-${GITHUB_SHA}.tgz"
+      - name: Build and deploy immutable release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          release_root="/opt/seemplify/releases/$RELEASE_SHA"
+          archive="/opt/seemplify/build/experience-release-$RELEASE_SHA.tgz"
+          install -d -m 700 "$release_root"
+          tar -xzf "$archive" -C "$release_root"
+
+          experience_image="seemplify/experience:hostinger-$RELEASE_SHA"
+          identity_image="seemplify/identity-provider:hostinger-$RELEASE_SHA"
+          recruiter_image="seemplify/recruiter-backend:hostinger-$RELEASE_SHA"
+          docker build --pull -t "$experience_image" "$release_root/experience-management"
+          docker build --pull -t "$identity_image" "$release_root/Identityprovider"
+          docker build --pull -t "$recruiter_image" "$release_root/recruiter/backend"
+
+          cp -a "$release_root/experience-management/." /opt/seemplify/source/experience-management/
+          cp -a "$release_root/Identityprovider/." /opt/seemplify/source/Identityprovider/
+          cp -a "$release_root/recruiter/backend/." /opt/seemplify/source/recruiter/backend/
+          install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
+          install -m 644 "$release_root/deploy/hostinger/extended-apps.compose.yml" /opt/seemplify/deploy/hostinger/extended-apps.compose.yml
+          install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
+          install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
+          install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /usr/local/sbin/seemplify-smoke
+          /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
+
+          export EXPERIENCE_IMAGE="$experience_image"
+          export IDENTITY_PROVIDER_IMAGE="$identity_image"
+          export RECRUITER_BACKEND_IMAGE="$recruiter_image"
+          core=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/core-apps.compose.yml)
+          extended=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/extended-apps.compose.yml)
+          wait_healthy() {
+            local container="$1"
+            for _ in $(seq 1 60); do
+              state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
+              [[ "$state" == healthy ]] && return 0
+              [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && break
+              sleep 2
+            done
+            docker logs --tail 120 "$container" >&2 || true
+            return 1
+          }
+          "${core[@]}" up -d --no-deps --force-recreate recruiter-backend
+          wait_healthy seemplify-core-recruiter-backend-1
+          "${extended[@]}" up -d --no-deps --force-recreate experience
+          wait_healthy seemplify-extended-experience-1
+          "${core[@]}" up -d --no-deps --force-recreate identity-provider
+          wait_healthy seemplify-core-identity-provider-1
+          /usr/local/sbin/seemplify-smoke
+          rm -f "$archive"
+          REMOTE

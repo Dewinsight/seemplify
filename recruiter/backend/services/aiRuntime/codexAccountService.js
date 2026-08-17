@@ -292,6 +292,8 @@ async function setConsent(user, acknowledged, { app = 'recruiter' } = {}) {
     account.performanceDataSharingAcknowledgedAt = acknowledged ? new Date() : null;
   } else if (app === 'messaging') {
     account.messagingDataSharingAcknowledgedAt = acknowledged ? new Date() : null;
+  } else if (app === 'experience') {
+    account.experienceDataSharingAcknowledgedAt = acknowledged ? new Date() : null;
   } else {
     account.dataSharingAcknowledgedAt = acknowledged ? new Date() : null;
   }
@@ -306,6 +308,7 @@ async function disconnect(user, options = {}) {
   account.dataSharingAcknowledgedAt = null;
   account.performanceDataSharingAcknowledgedAt = null;
   account.messagingDataSharingAcknowledgedAt = null;
+  account.experienceDataSharingAcknowledgedAt = null;
   account.status = 'disconnected';
   account.connectedEmail = '';
   account.planType = '';
@@ -337,7 +340,7 @@ async function listModels(user, options = {}) {
  * decision in the caller, which owns the failover policy.
  */
 async function resolveRoutableSubject(userId, options = {}) {
-  const consentApp = ['performance', 'messaging'].includes(options.consentApp)
+  const consentApp = ['performance', 'messaging', 'experience'].includes(options.consentApp)
     ? options.consentApp : 'recruiter';
   const organizationId = String(options.organizationId || '').trim();
   const explainUnavailable = options.explainUnavailable === true;

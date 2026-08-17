@@ -312,6 +312,32 @@
         "refresh_token"
       ],
       "token_endpoint_auth_method": "client_secret_basic"
+    },
+    {
+      "client_id": "experience-management",
+      "client_secret": "experience-management-development-secret",
+      "redirect_uri_patterns": [
+        "http://localhost:5410/api/auth/oidc/callback",
+        "http://127.0.0.1:5410/api/auth/oidc/callback",
+        "https://experience.seemplifyai.com/api/auth/oidc/callback",
+        "https://experience-dev.seemplifyai.com/api/auth/oidc/callback"
+      ],
+      "allowed_origins": [
+        "http://localhost:5410",
+        "http://127.0.0.1:5410",
+        "https://experience.seemplifyai.com",
+        "https://experience-dev.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "token_endpoint_auth_method": "client_secret_basic"
     }
   ]
 }

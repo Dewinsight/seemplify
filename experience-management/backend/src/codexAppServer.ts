@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { config } from './config.js';
+import { sharedAiGatewayClientForUser } from './sharedAiGateway.js';
 
 type JsonObject = Record<string, any>;
 type NotificationListener = (message: JsonObject) => void;
@@ -344,6 +345,11 @@ export class CodexAppServerClient {
     this.loginState = null;
   }
 
+  async setConsent(_acknowledged: boolean) {
+    // Local development keeps consent in Experience's own preference store.
+    // Production's shared gateway overrides this with an app-scoped consent.
+  }
+
   async models(): Promise<CodexModel[]> {
     const models: CodexModel[] = [];
     const seenCursors = new Set<string>();
@@ -520,6 +526,7 @@ const idleSweep = setInterval(() => {
 idleSweep.unref();
 
 export function codexClientForUser(userId: string) {
+  if (config.sharedAiSecret) return sharedAiGatewayClientForUser(userId);
   let client = clients.get(userId);
   if (!client) {
     if (clients.size >= maximumClients) {

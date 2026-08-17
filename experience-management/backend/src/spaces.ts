@@ -27,6 +27,12 @@ export type SpaceContext = SpaceSummary & {
   userId: string;
 };
 
+export type IdpOrganizationClaim = {
+  id: string;
+  name: string;
+  role?: string | null;
+};
+
 export class SpaceError extends Error {
   status: number;
   code: string;
@@ -84,6 +90,97 @@ function cleanSpaceName(value: unknown, fallback: string) {
 function personalSpaceName(name: string) {
   const firstName = String(name || '').trim().split(/\s+/)[0] || 'My';
   return `${firstName}'s space`;
+}
+
+function idpSpaceSlug(organizationId: string) {
+  const encoded = Buffer.from(organizationId, 'utf8').toString('base64url');
+  if (!encoded || encoded.length > 44) {
+    throw new SpaceError('The identity provider returned an unsupported organization identifier.', 400,
+      'IDP_ORGANIZATION_ID_INVALID');
+  }
+  return `idp-${encoded}`;
+}
+
+export function idpOrganizationIdForSpace(spaceId: string | null | undefined) {
+  if (!spaceId) return null;
+  const row = db.prepare('SELECT slug FROM spaces WHERE id=?').get(spaceId) as { slug?: string } | undefined;
+  const slug = String(row?.slug || '');
+  if (!slug.startsWith('idp-')) return null;
+  try {
+    const decoded = Buffer.from(slug.slice(4), 'base64url').toString('utf8').trim();
+    return decoded || null;
+  } catch { return null; }
+}
+
+function idpSpaceRole(value: unknown): SpaceRole {
+  const role = String(value || '').trim().toLowerCase();
+  if (role === 'owner') return 'owner';
+  if (role === 'admin') return 'admin';
+  return 'member';
+}
+
+/**
+ * Mirrors IdP organization membership without making Experience the identity
+ * authority. Product-local spaces remain untouched; only the `idp-*` namespace
+ * is added, updated, or removed by this synchronization boundary.
+ */
+export function syncIdpOrganizationsForUser(input: {
+  user: { id: string; name: string };
+  organizations: IdpOrganizationClaim[];
+  currentOrganizationId?: string | null;
+}) {
+  const now = new Date().toISOString();
+  const entitled = input.organizations.map((organization) => ({
+    id: String(organization.id || '').trim(),
+    name: cleanSpaceName(organization.name, 'Seemplify organization'),
+    role: idpSpaceRole(organization.role)
+  })).filter((organization) => organization.id);
+  if (!entitled.length) {
+    throw new SpaceError('No Experience Management organization was supplied by the identity provider.', 403,
+      'EXPERIENCE_ACCESS_DENIED');
+  }
+
+  const selectedIds = new Set(entitled.map((organization) => organization.id));
+  const localByOrganization = new Map<string, string>();
+  db.transaction(() => {
+    for (const organization of entitled) {
+      const slug = idpSpaceSlug(organization.id);
+      let row = db.prepare('SELECT id FROM spaces WHERE slug=?').get(slug) as { id: string } | undefined;
+      if (!row) {
+        const id = crypto.randomUUID();
+        db.prepare(`INSERT INTO spaces (id,name,slug,created_by_user_id,personal_for_user_id,created_at,updated_at)
+          VALUES (?,?,?,?,NULL,?,?)`).run(id, organization.name, slug, input.user.id, now, now);
+        ensureDefaultSubscriptionForSpace(id, input.user.id);
+        row = { id };
+      } else {
+        db.prepare('UPDATE spaces SET name=?,updated_at=? WHERE id=?').run(organization.name, now, row.id);
+      }
+      db.prepare(`INSERT INTO space_memberships (space_id,user_id,role,joined_at,updated_at)
+        VALUES (?,?,?,?,?)
+        ON CONFLICT(space_id,user_id) DO UPDATE SET role=excluded.role,updated_at=excluded.updated_at`)
+        .run(row.id, input.user.id, organization.role, now, now);
+      localByOrganization.set(organization.id, row.id);
+    }
+
+    const managedMemberships = db.prepare(`SELECT membership.space_id,space.slug FROM space_memberships membership
+      JOIN spaces space ON space.id=membership.space_id
+      WHERE membership.user_id=? AND space.slug LIKE 'idp-%'`).all(input.user.id) as Array<{ space_id: string; slug: string }>;
+    for (const membership of managedMemberships) {
+      let organizationId = '';
+      try { organizationId = Buffer.from(membership.slug.slice(4), 'base64url').toString('utf8'); } catch { /* remove invalid managed link */ }
+      if (!selectedIds.has(organizationId)) {
+        db.prepare('DELETE FROM space_memberships WHERE space_id=? AND user_id=?').run(membership.space_id, input.user.id);
+      }
+    }
+
+    const activeSpaceId = localByOrganization.get(String(input.currentOrganizationId || '').trim())
+      || localByOrganization.values().next().value;
+    db.prepare('UPDATE users SET active_space_id=?,updated_at=? WHERE id=?').run(activeSpaceId, now, input.user.id);
+  })();
+
+  const activeSpaceId = localByOrganization.get(String(input.currentOrganizationId || '').trim())
+    || localByOrganization.values().next().value || null;
+  return { activeSpaceId, localByOrganization };
 }
 
 function createSpaceRecord(userId: string, name: string, personalForUserId: string | null) {

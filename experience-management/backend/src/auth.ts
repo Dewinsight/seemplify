@@ -9,7 +9,7 @@ import { sendEmailVerificationEmail, sendExistingAccountSignupNotice, sendPasswo
 import { EsignError, getRecipientAccountInvitation } from './esign.js';
 import {
   ensureDefaultSpaceForUser, listPendingSpaceInvitationsForAccount, pendingSpaceInvitationForSignup,
-  renamePersonalSpaceForUser, spaceSession
+  renamePersonalSpaceForUser, spaceSession, syncIdpOrganizationsForUser, type IdpOrganizationClaim
 } from './spaces.js';
 import { ensureConfiguredRootPlatformRole } from './platformSchema.js';
 import {
@@ -206,6 +206,14 @@ function authenticatedResponse(response: Response, user: SessionUser, status = 2
   return response.status(status).json(sessionPayload(user));
 }
 
+export function setAuthenticatedSessionCookie(response: Response, user: SessionUser) {
+  response.setHeader('Set-Cookie', cookie(makeSession(user), config.sessionHours * 3600));
+}
+
+export function clearAuthenticatedSessionCookie(response: Response) {
+  response.setHeader('Set-Cookie', cookie('', 0));
+}
+
 const limits = new Map<string, number[]>();
 function rateLimitKey(request: Request, bucket: string, discriminator = '') {
   const identity = discriminator
@@ -231,6 +239,125 @@ function rateLimited(
 function userByEmail(email: string) {
   return db.prepare(`SELECT id,email,name,password_hash,role,session_version,email_verified_at,password_claim_required,account_status
     FROM users WHERE email=?`).get(email) as UserRow | undefined;
+}
+
+const idpPasswordMarker = 'oidc$';
+
+function idpSubjectFromPasswordHash(value: unknown) {
+  const marker = String(value || '');
+  if (!marker.startsWith(idpPasswordMarker)) return null;
+  try { return Buffer.from(marker.slice(idpPasswordMarker.length), 'base64url').toString('utf8').trim() || null; }
+  catch { return null; }
+}
+
+function idpPasswordHash(subject: string) {
+  return `${idpPasswordMarker}${Buffer.from(subject, 'utf8').toString('base64url')}`;
+}
+
+export function idpSubjectForUser(userId: string) {
+  const row = db.prepare('SELECT password_hash FROM users WHERE id=?').get(userId) as { password_hash?: string } | undefined;
+  return idpSubjectFromPasswordHash(row?.password_hash);
+}
+
+type IdpClaims = {
+  sub?: unknown;
+  email?: unknown;
+  email_verified?: unknown;
+  name?: unknown;
+  preferred_username?: unknown;
+  organizations?: unknown;
+  current_organization?: unknown;
+  currentOrganization?: unknown;
+};
+
+function normalizedIdpIdentity(claims: IdpClaims) {
+  const subject = String(claims.sub || '').trim();
+  const email = normalizeEmail(claims.email);
+  const name = String(claims.name || claims.preferred_username || email).trim().replace(/\s+/g, ' ').slice(0, 100);
+  if (!subject || !email || claims.email_verified !== true) {
+    throw new AccountProvisionError('The identity provider did not return a verified email and stable subject.', 400,
+      'OIDC_IDENTITY_INCOMPLETE');
+  }
+  return { subject, email, name: name.length >= 2 ? name : email };
+}
+
+function findOrLinkIdpUser(claims: IdpClaims) {
+  const identity = normalizedIdpIdentity(claims);
+  let user = userByEmail(identity.email);
+  const linkedSubject = idpSubjectFromPasswordHash(user?.password_hash);
+  if (linkedSubject && linkedSubject !== identity.subject) {
+    throw new AccountProvisionError('This email is already linked to another Seemplify identity.', 409,
+      'OIDC_ACCOUNT_CONFLICT');
+  }
+  if (!user) {
+    const unusablePassword = `Idp-${crypto.randomBytes(36).toString('base64url')}-7aA`;
+    createUser(identity.email, identity.name, unusablePassword, undefined, { verified: true, onboarded: true });
+    user = userByEmail(identity.email);
+  }
+  if (!user) throw new AccountProvisionError('The Experience account could not be provisioned.', 500);
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE users SET name=?,password_hash=?,email_verified_at=COALESCE(email_verified_at,?),
+    password_claim_required=0,account_status='active',last_login_at=?,updated_at=? WHERE id=?`)
+    .run(identity.name, idpPasswordHash(identity.subject), now, now, now, user.id);
+  markBootstrapAccountReady(user.id);
+  const linked = userByEmail(identity.email)!;
+  return {
+    id: linked.id, email: linked.email, name: identity.name, role: linked.role,
+    sessionVersion: Number(linked.session_version), emailVerifiedAt: linked.email_verified_at
+  } satisfies SessionUser;
+}
+
+function experienceOrganizationClaims(claims: IdpClaims) {
+  const organizations = Array.isArray(claims.organizations) ? claims.organizations : [];
+  return organizations.flatMap((candidate): IdpOrganizationClaim[] => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
+    const value = candidate as Record<string, unknown>;
+    const id = String(value.id || '').trim();
+    const name = String(value.name || '').trim();
+    const access = value.appAccess && typeof value.appAccess === 'object' && !Array.isArray(value.appAccess)
+      ? value.appAccess as Record<string, unknown> : null;
+    const selected = String(access?.mode || '').toLowerCase() === 'selected';
+    const appIds = Array.isArray(access?.appIds) ? access.appIds.map(String) : [];
+    if (!id || !name || (selected && !appIds.includes('experience-management'))) return [];
+    return [{ id, name, role: String(value.role || 'member') }];
+  });
+}
+
+export function provisionIdpIdentity(claims: IdpClaims) {
+  const organizations = experienceOrganizationClaims(claims);
+  if (!organizations.length) {
+    throw new AccountProvisionError('Your Seemplify organization has not granted access to Experience Management.', 403,
+      'EXPERIENCE_ACCESS_DENIED');
+  }
+  const user = findOrLinkIdpUser(claims);
+  const current = (claims.current_organization || claims.currentOrganization) as Record<string, unknown> | null;
+  syncIdpOrganizationsForUser({
+    user,
+    organizations,
+    currentOrganizationId: String(current?.id || '').trim() || null
+  });
+  return user;
+}
+
+function ensureActivePlatformRole(userId: string, role: PlatformRole, reason: string) {
+  const existing = db.prepare(`SELECT id FROM platform_role_assignments
+    WHERE user_id=? AND role=? AND revoked_at IS NULL LIMIT 1`).get(userId, role);
+  if (existing) return;
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO platform_role_assignments
+    (id,user_id,role,granted_by_user_id,granted_at,revoked_by_user_id,revoked_at,reason)
+    VALUES (?,?,?,?,?,NULL,NULL,?)`).run(crypto.randomUUID(), userId, role, userId, now, reason);
+}
+
+export function provisionIdpAdminIdentity(claims: IdpClaims & { isSuperAdmin?: unknown; isSystemAdmin?: unknown }) {
+  if (claims.isSuperAdmin !== true && claims.isSystemAdmin !== true) {
+    throw new AccountProvisionError('Seemplify administrator access is required.', 403, 'IDP_ADMIN_REQUIRED');
+  }
+  const user = findOrLinkIdpUser({ ...claims, email_verified: true });
+  ensureDefaultSpaceForUser(user);
+  ensureActivePlatformRole(user.id, claims.isSuperAdmin === true ? 'superadmin' : 'support',
+    'Managed by Seemplify IdP administrator SSO');
+  return user;
 }
 
 export function platformRolesForUser(userId: string): PlatformRole[] {
@@ -342,8 +469,8 @@ export function bootstrapAdminAccount() {
     ensureConfiguredAdministratorEnterprise(existing.id);
     return existing.id;
   }
-  const password = readRequired(config.adminPasswordFile, 'Admin password');
-  const created = createUser(config.adminEmail, 'Workspace admin', password, undefined, { verified: true, onboarded: true });
+  const unusablePassword = `Idp-bootstrap-${crypto.randomBytes(36).toString('base64url')}-7aA`;
+  const created = createUser(config.adminEmail, 'Workspace admin', unusablePassword, undefined, { verified: true, onboarded: true });
   if (created.role !== 'owner') db.prepare("UPDATE users SET role='owner',updated_at=? WHERE id=?").run(new Date().toISOString(), created.id);
   ensureConfiguredRootPlatformRole(created.id);
   ensureExistingSubscriptionsGrandfathered();

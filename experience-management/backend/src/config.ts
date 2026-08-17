@@ -274,6 +274,18 @@ export const config = {
   host: process.env.HOST || '127.0.0.1',
   port: Math.max(1, Number(process.env.PORT || 5410)),
   publicUrl: String(process.env.PUBLIC_URL || 'http://127.0.0.1:5410').replace(/\/+$/, ''),
+  localAuthEnabled: enabled(process.env.LOCAL_AUTH_ENABLED, !isProduction),
+  oidc: {
+    issuerUrl: String(process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER
+      || (isProduction ? 'https://auth.seemplifyai.com' : 'http://localhost:4000')).replace(/\/+$/, ''),
+    clientId: String(process.env.OIDC_CLIENT_ID || 'experience-management').trim(),
+    clientSecret: String(process.env.OIDC_CLIENT_SECRET || '').trim(),
+    redirectUri: String(process.env.OIDC_REDIRECT_URI
+      || `${String(process.env.PUBLIC_URL || 'http://127.0.0.1:5410').replace(/\/+$/, '')}/api/auth/oidc/callback`).trim()
+  },
+  sharedAiBaseUrl: String(process.env.SEEMPLIFY_SHARED_AI_URL || process.env.SEEMPLIFY_PLATFORM_API_URL
+    || (isProduction ? 'http://recruiter-backend:5001' : 'http://localhost:5001')).replace(/\/+$/, ''),
+  sharedAiSecret: String(process.env.EXPERIENCE_AI_SHARED_SECRET || '').trim(),
   databasePath: resolveFromBackend(
     process.env.DATABASE_PATH || '../../.local-runtime/experience-management/experience.sqlite'
   ),

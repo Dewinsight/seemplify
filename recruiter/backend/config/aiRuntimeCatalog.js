@@ -50,7 +50,27 @@ const activities = {
   'performance.appraisal.chat': ['Appraisal assistant', 'Appraisals', 'medium', 'performance'],
   'performance.calibration.insights': ['Calibration insights', 'Calibration', 'high', 'performance'],
   'messaging.chat': ['Messaging AI chat', 'Messaging', 'medium', 'messaging'],
-  'messaging.workspace': ['Messaging notes and pages', 'Messaging', 'medium', 'messaging']
+  'messaging.workspace': ['Messaging notes and pages', 'Messaging', 'medium', 'messaging'],
+  'experience.general': ['Experience general', 'Experience', 'medium', 'experience'],
+  'experience.survey.generate': ['Survey generation', 'Experience', 'medium', 'experience'],
+  'experience.survey.improve': ['Survey quality review', 'Experience', 'medium', 'experience'],
+  'experience.survey.translate': ['Survey translation', 'Experience', 'medium', 'experience'],
+  'experience.response.analyze': ['Response analysis', 'Experience', 'medium', 'experience'],
+  'experience.insights.generate': ['Insight generation', 'Experience', 'high', 'experience'],
+  'experience.analyst.chat': ['Experience analyst chat', 'Experience', 'medium', 'experience'],
+  'experience.report.generate': ['Experience executive report', 'Experience', 'high', 'experience'],
+  'experience.intelligence.synthesize': ['Cross-source intelligence', 'Experience', 'high', 'experience'],
+  'experience.intelligence.deep_analysis': ['Deep corpus analysis', 'Experience', 'high', 'experience'],
+  'experience.social.analyze': ['Social listening analysis', 'Experience', 'high', 'experience'],
+  'experience.social.report': ['Social intelligence report', 'Experience', 'high', 'experience'],
+  'experience.social.reply_draft': ['Social reply draft', 'Experience', 'medium', 'experience'],
+  'experience.journey.generate': ['Journey generation', 'Experience', 'high', 'experience'],
+  'experience.journey.optimize': ['Journey optimization', 'Experience', 'high', 'experience'],
+  'experience.assistant.email_summary': ['Assistant email summary', 'Experience', 'medium', 'experience'],
+  'experience.assistant.email_draft': ['Assistant email draft', 'Experience', 'medium', 'experience'],
+  'experience.assistant.knowledge_answer': ['Assistant knowledge answer', 'Experience', 'high', 'experience'],
+  'experience.assistant.work_product': ['Assistant work product', 'Experience', 'high', 'experience'],
+  'experience.knowledge.answer': ['Knowledge and research answer', 'Experience', 'high', 'experience']
 };
 
 const ACTIVITY_DEFINITIONS = Object.freeze(Object.fromEntries(

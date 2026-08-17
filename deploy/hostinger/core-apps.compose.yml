@@ -39,6 +39,9 @@ services:
       MESSAGING_URL: https://workspace.seemplifyai.com
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
       APPROVER_URL: https://approver.seemplifyai.com
+      EXPERIENCE_MANAGEMENT_URL: https://experience.seemplifyai.com
+      EXPERIENCE_OIDC_CLIENT_SECRET: ${OIDC_EXPERIENCE_SECRET:?required}
+      EXPERIENCE_ADMIN_SSO_SECRET: ${EXPERIENCE_ADMIN_SSO_SECRET:?required}
       MESSAGING_OIDC_CLIENT_SECRET: ${OIDC_MESSAGING_SECRET:?required}
       MESSAGING_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
       RECRUITER_ADMIN_URL: https://app.seemplifyai.com
@@ -82,7 +85,7 @@ services:
 
   recruiter-backend:
     <<: *defaults
-    image: seemplify/recruiter-backend:hostinger-20260817-redis-authfix
+    image: ${RECRUITER_BACKEND_IMAGE:-seemplify/recruiter-backend:hostinger-20260817-redis-authfix}
     environment:
       NODE_ENV: production
       PORT: "5001"
@@ -117,6 +120,7 @@ services:
       AI_GATEWAY_HMAC_SECRET: ${AI_GATEWAY_HMAC_SECRET:?required}
       PERFORMANCE_AI_SHARED_SECRET: ${PERFORMANCE_AI_SHARED_SECRET:?required}
       MESSAGING_AI_SHARED_SECRET: ${MESSAGING_AI_SHARED_SECRET:?required}
+      EXPERIENCE_AI_SHARED_SECRET: ${EXPERIENCE_AI_SHARED_SECRET:?required}
       MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com

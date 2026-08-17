@@ -669,9 +669,11 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
   // Revocation is an immediate privacy boundary. Never make it depend on the
   // connected account, live model catalog, or any optional full-form fields.
   if (input.provider === 'codex' && input.codexDataSharingAcknowledged === false) {
-    return setAiProviderPreference(userId, spaceId, {
+    const next = setAiProviderPreference(userId, spaceId, {
       provider: 'codex', runtimeChoice: 'chatgpt', codexDataSharingAcknowledgedAt: null
     });
+    await codexClientForUser(userId).setConsent(false).catch(() => undefined);
+    return next;
   }
   const policy = getAiRuntimePolicy();
   if (!providerEnabled(input.provider, policy)) {
@@ -738,6 +740,7 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
       adminDefaults,
       target: 'user'
     });
+    await client.setConsent(Boolean(acknowledgedAt));
     return setAiProviderPreference(userId, spaceId, {
       provider: input.provider,
       runtimeChoice: 'chatgpt',

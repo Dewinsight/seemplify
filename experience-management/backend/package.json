@@ -12,13 +12,14 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@seemplify/journey-event-protocol": "0.1.0",
     "@openai/codex": "0.146.0",
+    "@seemplify/journey-event-protocol": "0.1.0",
     "better-sqlite3": "^12.2.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "multer": "^2.0.2",
+    "openid-client": "^5.7.1",
     "pdf-lib": "^1.17.1",
     "pg": "^8.22.0",
     "pptxgenjs": "^4.0.1",

@@ -17,6 +17,7 @@ import {
 import { computeAnalytics } from './analytics.js';
 import { assistantRouter, nylasCallback } from './assistantRoutes.js';
 import { config } from './config.js';
+import { finishIdpAdminSso, finishOidc, oidcLogout, oidcStatus, startOidc } from './oidc.js';
 import {
   createCollector, createJourney, createResponse, db, deleteJourney, deleteSurvey, getCollectorBySlug, getJob, getJobForSpace,
   getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJourneyVersionSummaries,
@@ -125,12 +126,29 @@ const socialImportUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (_request, file, callback) => callback(null, /\.(csv|json|txt)$/i.test(file.originalname))
 });
-app.post('/api/auth/login', noStore, login);
-app.post('/api/auth/signup', noStore, signup);
-app.post('/api/auth/verify-email', noStore, verifyEmail);
-app.post('/api/auth/resend-verification', noStore, resendEmailVerification);
-app.post('/api/auth/forgot-password', noStore, forgotPassword);
-app.post('/api/auth/reset-password', noStore, resetPassword);
+app.get('/api/auth/oidc/start', noStore, startOidc);
+app.get('/api/auth/oidc/callback', noStore, finishOidc);
+app.get('/api/auth/oidc/logout', noStore, oidcLogout);
+app.get('/api/auth/oidc/status', noStore, oidcStatus);
+app.get('/api/auth/idp-admin', noStore, finishIdpAdminSso);
+if (config.localAuthEnabled) {
+  app.post('/api/auth/login', noStore, login);
+  app.post('/api/auth/signup', noStore, signup);
+  app.post('/api/auth/verify-email', noStore, verifyEmail);
+  app.post('/api/auth/resend-verification', noStore, resendEmailVerification);
+  app.post('/api/auth/forgot-password', noStore, forgotPassword);
+  app.post('/api/auth/reset-password', noStore, resetPassword);
+} else {
+  const idpRequired = (_request: express.Request, response: express.Response) => response.status(410).json({
+    error: 'Sign in with Seemplify Identity.', code: 'IDENTITY_PROVIDER_REQUIRED'
+  });
+  app.post('/api/auth/login', noStore, idpRequired);
+  app.post('/api/auth/signup', noStore, idpRequired);
+  app.post('/api/auth/verify-email', noStore, idpRequired);
+  app.post('/api/auth/resend-verification', noStore, idpRequired);
+  app.post('/api/auth/forgot-password', noStore, idpRequired);
+  app.post('/api/auth/reset-password', noStore, idpRequired);
+}
 app.post('/api/auth/logout', noStore, logout);
 app.get('/api/auth/session', noStore, session);
 app.get('/api/account/profile', noStore, accountProfile);

@@ -12,6 +12,7 @@ import { Team } from '../models/Team.js'
 import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import DemoRequest from '../models/DemoRequest.js'
 import { buildRecruiterAdminLaunchUrl } from '../services/recruiterAdminSsoService.js'
+import { buildExperienceAdminLaunchUrl } from '../services/experienceAdminSsoService.js'
 import { getWorkforceOperationsAnalytics } from '../services/adminAnalyticsService.js'
 import { emailService } from '../services/emailService.js'
 import {
@@ -453,6 +454,22 @@ router.get('/recruiter-admin', async (req, res) => {
     res.status(500).render('error', {
       title: 'Error',
       message: 'Failed to open recruiter admin'
+    })
+  }
+})
+
+/**
+ * GET /admin/experience-admin
+ * Launch the application-specific Experience control plane with IdP authority.
+ */
+router.get('/experience-admin', async (req, res) => {
+  try {
+    res.redirect(await buildExperienceAdminLaunchUrl(req.user))
+  } catch (error) {
+    console.error('Error launching Experience admin:', error)
+    res.status(500).render('error', {
+      title: 'Error',
+      message: 'Failed to open Experience Management admin'
     })
   }
 })

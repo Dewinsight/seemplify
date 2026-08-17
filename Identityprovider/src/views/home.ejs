@@ -2674,15 +2674,12 @@
             'leave-management': { subtitle: 'Time off, sorted', category: 'people-ops', metricLabel: 'Workflow', metricValue: 'Requests', description: 'Requests, balances, and approvals with policies your team can actually read.' },
             'performance-management': { subtitle: 'Goals that move', category: 'insights', metricLabel: 'Workspace', metricValue: 'Reviews', description: 'OKRs, review cycles, and continuous feedback that stays close to the work.' },
             'payroll-management': { subtitle: 'Pay run confidence', category: 'finance', metricLabel: 'Workspace', metricValue: 'Payroll', description: 'Salary processing, bonuses, and compensation with a clean audit trail.' },
-            'time-attendance': { subtitle: 'Hours you can trust', category: 'people-ops', metricLabel: 'Status', metricValue: 'Live', description: 'Track work hours, manage timesheets, and clear approvals in a single pass.' }
+            'time-attendance': { subtitle: 'Hours you can trust', category: 'people-ops', metricLabel: 'Status', metricValue: 'Live', description: 'Track work hours, manage timesheets, and clear approvals in a single pass.' },
+            'experience-management': { subtitle: 'Listen, learn, act', category: 'insights', metricLabel: 'Workspace', metricValue: 'Experience', description: 'Research, listening, journeys, and action in one evidence-led workspace.' }
           }; %>
-          <% const appOrder = ['smarthr', 'people-transitions', 'leave-management', 'performance-management', 'payroll-management', 'time-attendance']; %>
+          <% const appOrder = ['smarthr', 'people-transitions', 'leave-management', 'performance-management', 'payroll-management', 'time-attendance', 'experience-management']; %>
           <% const orderedHubApps = [...(apps || [])].sort((a, b) => appOrder.indexOf(a.appId) - appOrder.indexOf(b.appId)); %>
-          <% const dashboardCards = [
-            ...orderedHubApps.slice(0, 2),
-            { appId: 'experience-management', name: 'Experience Management', description: 'Research, listening, journeys, and action in one evidence-led workspace.', color: '#7048e8', external: true },
-            ...orderedHubApps.slice(2)
-          ]; %>
+          <% const dashboardCards = orderedHubApps; %>
           <% const availableDashboardAppIds = new Set(dashboardCards.map(app => String(app.appId))); %>
           <% const initialPinnedAppIds = (typeof pinnedAppIds !== 'undefined' && Array.isArray(pinnedAppIds) ? pinnedAppIds : [])
             .map(String)
@@ -2752,7 +2749,7 @@
               <div class="app-card__footer">
                 <div class="app-card__metric"><span><%= presentation.metricLabel %></span><strong><%= presentation.metricValue %></strong></div>
                 <% if (app.external) { %>
-                  <a href="https://experience.aiinnigeria.com/" target="_blank" rel="noopener noreferrer" class="app-card__open">Open site <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+                  <a href="https://experience.seemplifyai.com/" target="_blank" rel="noopener noreferrer" class="app-card__open">Open site <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
                 <% } else if (app.isBeta) { %>
                   <button type="button" class="app-card__open" onclick="showBetaWarning('<%= app.appId %>', '<%= app.name %>')">Open <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 5 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                 <% } else { %>

@@ -181,6 +181,20 @@ const developmentApps = [
     isPublic: true,
     category: 'productivity',
     order: 8.5
+  },
+  {
+    appId: 'experience-management',
+    name: 'Experience Management',
+    description: 'Research, listening, journeys, and action in one evidence-led workspace',
+    icon: 'chart-bar',
+    color: '#7048e8',
+    url: process.env.EXPERIENCE_MANAGEMENT_URL || 'http://localhost:5410',
+    apiUrl: process.env.EXPERIENCE_MANAGEMENT_URL || 'http://localhost:5410',
+    clientId: 'experience-management',
+    isActive: true,
+    isPublic: true,
+    category: 'insights',
+    order: 8.25
   }
 ]
 
@@ -343,6 +357,20 @@ const productionApps = [
     isPublic: true,
     category: 'productivity',
     order: 8.5
+  },
+  {
+    appId: 'experience-management',
+    name: 'Experience Management',
+    description: 'Research, listening, journeys, and action in one evidence-led workspace',
+    icon: 'chart-bar',
+    color: '#7048e8',
+    url: productionSafeUrl(process.env.EXPERIENCE_MANAGEMENT_URL, 'https://experience.seemplifyai.com'),
+    apiUrl: productionSafeUrl(process.env.EXPERIENCE_MANAGEMENT_URL, 'https://experience.seemplifyai.com'),
+    clientId: 'experience-management',
+    isActive: true,
+    isPublic: true,
+    category: 'insights',
+    order: 8.25
   }
 ]
 
