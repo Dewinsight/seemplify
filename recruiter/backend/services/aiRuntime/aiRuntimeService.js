@@ -24,7 +24,7 @@ const LOCAL_LLM_SERVICE_KEY_CONTEXT = 'seemplify-local-llm-service-v2';
 // metering and authorization must always use the product identity.
 const PLATFORM_SOURCE_APP = 'recruiter';
 const METERING_SOURCE_APPS = new Set([
-  'recruiter', 'performance-management', 'messaging', 'identity-provider',
+  'recruiter', 'performance-management', 'messaging', 'experience-management', 'identity-provider',
   'leave-management', 'payroll', 'time-attendance'
 ]);
 

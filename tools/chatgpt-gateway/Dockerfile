@@ -19,7 +19,7 @@ ENV NODE_ENV=production \
   CODEX_SUBJECTS_DIR=/data/codex-subjects \
   CODEX_PER_USER_SESSIONS=true \
   CODEX_MAX_CONCURRENT_TURNS_PER_SUBJECT=4 \
-  CODEX_SUBJECT_SOURCE_APPS=identity-provider,leave-management,messaging,payroll,performance-management,recruiter,time-attendance \
+  CODEX_SUBJECT_SOURCE_APPS=experience-management,identity-provider,leave-management,messaging,payroll,performance-management,recruiter,time-attendance \
   HOME=/home/node
 
 USER node

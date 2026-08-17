@@ -11,8 +11,9 @@ const {
   isSharedConsumer
 } = require('./consumer-registry.cjs');
 
-test('shared registry includes the Seemplify suite and deliberately excludes Experience Management', () => {
+test('shared registry includes the intentionally onboarded Seemplify suite', () => {
   assert.deepEqual(allowedConsumerIds(), [
+    'experience-management',
     'identity-provider',
     'leave-management',
     'messaging',
@@ -30,10 +31,10 @@ test('shared registry includes the Seemplify suite and deliberately excludes Exp
   assert.equal(canonicalConsumerId('admin'), 'recruiter');
   assert.equal(canonicalConsumerId('identityprovider'), 'identity-provider');
   assert.equal(canonicalConsumerId('unknown-worker'), null);
-  assert.equal(isSharedConsumer('experience-management'), false);
+  assert.equal(isSharedConsumer('experience-management'), true);
   assert.deepEqual(
     allowedConsumerIds('recruiter,experience-management,payroll,unknown,recruiter'),
-    ['recruiter', 'payroll']
+    ['recruiter', 'experience-management', 'payroll']
   );
   assert.deepEqual(
     allowedConsumerIds('recruiter-cv-worker,ai-interview,recruiter-worker'),
@@ -48,7 +49,10 @@ test('deployment consumers are discovered from optional platform application IDs
     PERFORMANCE_BACKEND_APP_ID: 'performance-id',
     EXPERIENCE_BACKEND_APP_ID: 'must-not-be-used'
   });
-  assert.deepEqual(consumers.map(({ id }) => id), ['messaging', 'performance-management', 'recruiter']);
+  assert.deepEqual(
+    consumers.map(({ id }) => id),
+    ['experience-management', 'messaging', 'performance-management', 'recruiter']
+  );
 });
 
 test('gateway container authorizes every canonical shared consumer', () => {

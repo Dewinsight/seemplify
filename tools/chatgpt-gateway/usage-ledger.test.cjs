@@ -55,9 +55,11 @@ test('platform ledger recovers established worker identities as their registered
   assert.deepEqual((await ledger.summary()).bySourceApp, { recruiter: 4 });
 });
 
-test('platform ledger rejects Experience Management until it is intentionally onboarded', async (context) => {
+test('platform ledger records Experience Management under its own product identity', async (context) => {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'seemplify-ai-ledger-'));
   context.after(() => fs.promises.rm(directory, { recursive: true, force: true }));
   const ledger = new PlatformUsageLedger({ directory });
-  await assert.rejects(ledger.record(usage('experience-management', 'excluded')), { code: 'AI_SOURCE_APP_NOT_ALLOWED' });
+  const recorded = await ledger.record(usage('experience-management', 'experience'));
+  assert.equal(recorded.sourceApp, 'experience-management');
+  assert.equal((await ledger.query({ sourceApp: 'experience-management' })).length, 1);
 });

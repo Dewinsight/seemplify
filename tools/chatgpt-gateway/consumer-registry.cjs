@@ -1,6 +1,7 @@
 'use strict';
 
 const SHARED_CONSUMERS = Object.freeze([
+  Object.freeze({ id: 'experience-management', applicationIdEnv: 'EXPERIENCE_BACKEND_APP_ID' }),
   Object.freeze({ id: 'identity-provider', applicationIdEnv: 'IDENTITY_PROVIDER_APP_ID' }),
   Object.freeze({ id: 'leave-management', applicationIdEnv: 'LEAVE_BACKEND_APP_ID' }),
   Object.freeze({ id: 'messaging', applicationIdEnv: 'MESSAGING_BACKEND_APP_ID' }),
@@ -11,7 +12,7 @@ const SHARED_CONSUMERS = Object.freeze([
 ]);
 
 const SHARED_CONSUMER_IDS = new Set(SHARED_CONSUMERS.map(({ id }) => id));
-const EXCLUDED_CONSUMER_IDS = new Set(['experience-management']);
+const EXCLUDED_CONSUMER_IDS = new Set();
 
 // Product services historically used their worker or route name as the usage
 // source. The gateway authorizes products, not their internal processes, so

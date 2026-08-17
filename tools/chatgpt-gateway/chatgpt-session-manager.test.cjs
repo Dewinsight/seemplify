@@ -123,12 +123,12 @@ test('concurrent legacy adoption requests share one atomic migration', async () 
 
 test('a subject claim is validated against a closed source-app allowlist', () => {
   assert.deepEqual([...sessions.allowedSourceApps({})], [
-    'identity-provider', 'leave-management', 'messaging', 'payroll',
+    'experience-management', 'identity-provider', 'leave-management', 'messaging', 'payroll',
     'performance-management', 'recruiter', 'time-attendance'
   ]);
   assert.deepEqual(
     [...sessions.allowedSourceApps({ CODEX_SUBJECT_SOURCE_APPS: 'recruiter,experience-management,payroll,crm' })],
-    ['recruiter', 'payroll']
+    ['recruiter', 'experience-management', 'payroll']
   );
   assert.deepEqual(
     sessions.resolveSubjectRequest(
