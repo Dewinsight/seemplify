@@ -192,12 +192,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const logout = () => {
-        void api.post('/auth/logout').catch(() => {});
         clearPersistedSessionState();
         setUser(null);
         setOrganizations([]);
         setActiveOrganization(null);
         setActiveDepartment(null);
+        window.location.assign('/api/auth/oidc/logout');
     };
 
     const switchOrganization = (org: OrgMembership) => {

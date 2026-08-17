@@ -184,11 +184,11 @@ router.post('/idp', verifyIdpSignature, async (req, res) => {
   let claim;
   try {
     claim = await claimIdpWebhookEvent(req.body);
-    if (claim.duplicate) return res.status(200).json({ received: true, event: req.body.event, idempotentReplay: true });
-    if (!claim.claimed) return res.status(202).json({ received: true, event: req.body.event, processing: true });
+    if (claim.duplicate) return res.status(200).json({ received: true, event: req.body.event, eventId: req.body.eventId, idempotentReplay: true });
+    if (!claim.claimed) return res.status(202).json({ received: true, event: req.body.event, eventId: req.body.eventId, processing: true });
     await processEvent(req.body.event, req.body.data || {}, req.body);
     await markIdpWebhookProcessed(claim);
-    res.status(200).json({ received: true, event: req.body.event });
+    res.status(200).json({ received: true, event: req.body.event, eventId: req.body.eventId });
   } catch (error) {
     if (claim?.claimed) await markIdpWebhookFailed(claim, error).catch(() => {});
     console.error('Webhook processing error:', error);

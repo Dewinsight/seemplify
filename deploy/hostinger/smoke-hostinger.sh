@@ -110,6 +110,7 @@ Performance api-performance.seemplifyai.com https%3A%2F%2Fperformance.seemplifya
 Payroll api-payroll.seemplifyai.com https%3A%2F%2Fpayroll.seemplifyai.com
 Time api-time.seemplifyai.com https%3A%2F%2Ftime.seemplifyai.com
 Learning learning.seemplifyai.com https%3A%2F%2Flearning.seemplifyai.com
+Approver approver.seemplifyai.com https%3A%2F%2Fapprover.seemplifyai.com
 OIDC_APPS
 
 curl -fsS 'https://api-workspace.seemplifyai.com/socket.io/?EIO=4&transport=polling' --max-time 20 \

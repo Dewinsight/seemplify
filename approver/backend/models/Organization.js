@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const OrganizationSchema = new mongoose.Schema({
     name: { type: String, required: true, unique: true },
     slug: { type: String, required: true, unique: true, lowercase: true },
+    idpOrganizationId: { type: String, unique: true, sparse: true, trim: true },
     description: { type: String },
     logo: { type: String }, // Path/filename of uploaded logo (used when logoMode is 'all')
     logoDark: { type: String }, // Logo for dark theme (when logoMode is dark/system)

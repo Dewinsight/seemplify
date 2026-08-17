@@ -22,6 +22,7 @@ docker run --rm \
   -e OIDC_TIME_SECRET \
   -e OIDC_LEARNING_SECRET \
   -e OIDC_MESSAGING_SECRET \
+  -e OIDC_APPROVER_SECRET \
   -e OUTPUT_NAME="$output_name" \
   -v "$source_clients:/input/clients.json:ro" \
   -v "$output_dir:/output" \
@@ -36,7 +37,8 @@ docker run --rm \
       ["payroll-management", process.env.OIDC_PAYROLL_SECRET],
       ["time-attendance", process.env.OIDC_TIME_SECRET],
       ["seemplify-learning", process.env.OIDC_LEARNING_SECRET],
-      ["messaging", process.env.OIDC_MESSAGING_SECRET]
+      ["messaging", process.env.OIDC_MESSAGING_SECRET],
+      ["approver", process.env.OIDC_APPROVER_SECRET]
     ]);
     source.clients = source.clients
       .filter((client) => secretByClient.has(client.client_id))

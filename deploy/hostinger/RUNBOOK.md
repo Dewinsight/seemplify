@@ -119,12 +119,15 @@ The production acceptance pass verified:
 
 - authenticated browser launches to the Recruiter, Leave, Performance,
   Payroll, Time & Attendance, Learning and People Transitions workspaces;
+- Approver serves its React application from the same protected origin as its
+  API, launches the `approver` OIDC client with PKCE, provisions IdP tenants and
+  consumes signed authorization-invalidation webhooks;
 - the Recruiter dashboard completes organization authorization after SSO;
 - Experience Management, Candidate Portal, AI Interview and the marketing
   site render without browser console errors;
 - the hub uses the new Experience hostname and exposes
   working embedded attendance status and controls;
-- all public API health routes, all five OIDC start routes, the AI Interview
+- all public API health routes, all configured OIDC start routes, the AI Interview
   feature flag, Google-relayed mail control and Postal, ChatGPT/Codex gateway,
   MongoDB, Redis, PostgreSQL, MariaDB, Weaviate and Qdrant dependencies;
 - authenticated external UDP TURN allocation; and
@@ -140,9 +143,15 @@ search and sign-out journey. The dedicated AIIN `staff` smoke identity has only
 the `messaging` app grant, and its email/password are stored only as encrypted
 repository secrets `MESSAGING_TEST_EMAIL` and `MESSAGING_TEST_PASSWORD`.
 
+Approver release `seemplify/approver:hostinger-20260817-idp` and Identity
+release `seemplify/identity-provider:hostinger-20260817-approver-idp` passed the
+public SPA, health, OIDC launch and seven-target signed webhook readiness checks.
+Performance and Time use matching `hostinger-20260817-webhook-contract` backend
+images so every receiver returns the same authenticated acknowledgement.
+
 The IdP membership idempotency and claims-cache repair is preserved in GitHub
 by merged PR `#45` (`c05578cd3c959f4cbf5f9f712761f57c78329d56`). The current
-image is `seemplify/identity-provider:hostinger-20260817-zulip-retired`.
+image is `seemplify/identity-provider:hostinger-20260817-approver-idp`.
 
 Redis consumers use the stack-specific hostname `seemplify-shared-redis-1`.
 Do not change it back to the generic Docker alias `redis`.

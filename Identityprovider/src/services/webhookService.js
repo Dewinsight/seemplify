@@ -22,7 +22,8 @@ const WEBHOOK_ENDPOINTS = {
   payroll: process.env.PAYROLL_WEBHOOK_URL || 'http://localhost:5006/api/webhooks/idp',
   performance: process.env.PERFORMANCE_WEBHOOK_URL || 'http://localhost:5004/api/webhooks/idp',
   timeAttendance: process.env.TIME_ATTENDANCE_WEBHOOK_URL || 'http://localhost:5010/api/webhooks/idp',
-  recruiter: process.env.RECRUITER_WEBHOOK_URL || 'http://localhost:5001/api/webhooks/idp-lifecycle',
+  messaging: process.env.MESSAGING_WEBHOOK_URL || 'http://localhost:5009/api/webhooks/idp',
+  approver: process.env.APPROVER_WEBHOOK_URL || 'http://localhost:5000/api/webhooks/idp',
 }
 
 const INSECURE_WEBHOOK_SECRET = 'your-webhook-secret-key'
@@ -31,8 +32,9 @@ const WEBHOOK_TARGET_SECRET_ENV = {
   leaveManagement: 'IDP_WEBHOOK_SECRET_LEAVE_MANAGEMENT',
   payroll: 'IDP_WEBHOOK_SECRET_PAYROLL',
   performance: 'IDP_WEBHOOK_SECRET_PERFORMANCE_MANAGEMENT',
-  timeAttendance: 'IDP_WEBHOOK_SECRET',
-  recruiter: 'IDP_WEBHOOK_SECRET_RECRUITER'
+  timeAttendance: 'IDP_WEBHOOK_SECRET_TIME_ATTENDANCE',
+  messaging: 'IDP_WEBHOOK_SECRET_MESSAGING',
+  approver: 'IDP_WEBHOOK_SECRET_APPROVER'
 }
 
 export function resolveWebhookSecret(source = process.env) {

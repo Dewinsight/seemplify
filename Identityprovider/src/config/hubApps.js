@@ -167,6 +167,20 @@ const developmentApps = [
     isPublic: true,
     category: 'productivity',
     order: 8
+  },
+  {
+    appId: 'approver',
+    name: 'Approver',
+    description: 'Govern AI initiatives, policies, reviews, and executive approvals',
+    icon: 'check-badge',
+    color: '#7b3fc0',
+    url: process.env.APPROVER_URL || 'http://localhost:5000',
+    apiUrl: process.env.APPROVER_URL || 'http://localhost:5000',
+    clientId: 'approver',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 8.5
   }
 ]
 
@@ -315,6 +329,20 @@ const productionApps = [
     isPublic: true,
     category: 'productivity',
     order: 8
+  },
+  {
+    appId: 'approver',
+    name: 'Approver',
+    description: 'Govern AI initiatives, policies, reviews, and executive approvals',
+    icon: 'check-badge',
+    color: '#7b3fc0',
+    url: productionSafeUrl(process.env.APPROVER_URL, 'https://approver.seemplifyai.com'),
+    apiUrl: productionSafeUrl(process.env.APPROVER_URL, 'https://approver.seemplifyai.com'),
+    clientId: 'approver',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 8.5
   }
 ]
 

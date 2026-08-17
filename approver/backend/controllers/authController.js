@@ -20,6 +20,17 @@ const hasCompletedProfile = (user) => {
     return Boolean(normalizeName(user?.firstName) && normalizeName(user?.lastName));
 };
 
+const localAuthEnabled = () => {
+    if (process.env.NODE_ENV !== 'production') return process.env.LOCAL_AUTH_ENABLED !== 'false';
+    return String(process.env.LOCAL_AUTH_ENABLED || '').toLowerCase() === 'true';
+};
+
+const requireLocalAuth = (res) => {
+    if (localAuthEnabled()) return true;
+    res.status(403).json({ error: 'Password authentication is disabled. Continue with Seemplify instead.' });
+    return false;
+};
+
 const buildAuthPayload = (user) => ({
     id: user._id,
     username: user.username,
@@ -91,6 +102,13 @@ const buildSessionResponse = async (user) => {
         .populate('organization', 'name slug logo logoDark logoLight logoBackground logoMode')
         .populate('permissions.department', 'name');
 
+    const currentOrganizationId = user.organization?.toString();
+    memberships.sort((left, right) => {
+        const leftCurrent = left.organization?._id?.toString() === currentOrganizationId ? 1 : 0;
+        const rightCurrent = right.organization?._id?.toString() === currentOrganizationId ? 1 : 0;
+        return rightCurrent - leftCurrent;
+    });
+
     const organizations = await enrichMemberships(memberships);
 
     return {
@@ -102,6 +120,7 @@ const buildSessionResponse = async (user) => {
 
 // --- Registration: simple (username, email, password only) ---
 exports.register = async (req, res) => {
+    if (!requireLocalAuth(res)) return;
     try {
         const { username, email, password, firstName, lastName } = req.body;
 
@@ -154,6 +173,7 @@ exports.register = async (req, res) => {
 };
 
 exports.verifyOtp = async (req, res) => {
+    if (!requireLocalAuth(res)) return;
     try {
         const { email, otp } = req.body;
         const user = await User.findOne({ email });
@@ -181,6 +201,7 @@ exports.verifyOtp = async (req, res) => {
 
 // Resend OTP for unverified user
 exports.resendOtp = async (req, res) => {
+    if (!requireLocalAuth(res)) return;
     try {
         const { email } = req.body;
         if (!email) return res.status(400).json({ error: 'Email is required' });
@@ -208,6 +229,7 @@ exports.resendOtp = async (req, res) => {
 
 // --- Login: returns org memberships list + needsOnboarding flag ---
 exports.login = async (req, res) => {
+    if (!requireLocalAuth(res)) return;
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
@@ -232,7 +254,7 @@ exports.login = async (req, res) => {
             });
         }
 
-        const isMatch = await bcrypt.compare(password, user.password);
+        const isMatch = Boolean(user.password) && await bcrypt.compare(password, user.password);
         if (!isMatch) {
             console.warn(`Failed login attempt for email: ${email}`);
             return res.status(400).json({ error: 'Invalid email or password' });
@@ -285,6 +307,9 @@ exports.logout = async (req, res) => {
 };
 
 exports.seedAdmin = async (req, res) => {
+    if (process.env.NODE_ENV === 'production' || process.env.ENABLE_ADMIN_SEED !== 'true') {
+        return res.status(404).json({ error: 'Not found' });
+    }
     try {
         const existingAdmin = await User.findOne({ email: 'admin@approver.com' });
         if (existingAdmin) return res.json({ message: 'Admin already exists' });
@@ -457,6 +482,7 @@ exports.updateProfile = async (req, res) => {
 
 // --- Forgot Password ---
 exports.forgotPassword = async (req, res) => {
+    if (!requireLocalAuth(res)) return;
     try {
         const { email } = req.body;
         
@@ -492,6 +518,7 @@ exports.forgotPassword = async (req, res) => {
 
 // --- Reset Password ---
 exports.resetPassword = async (req, res) => {
+    if (!requireLocalAuth(res)) return;
     try {
         const { email, otp, newPassword } = req.body;
         
@@ -529,3 +556,6 @@ exports.resetPassword = async (req, res) => {
         res.status(500).json({ error: 'An error occurred. Please try again.' });
     }
 };
+
+exports.buildAuthPayload = buildAuthPayload;
+exports.buildSessionResponse = buildSessionResponse;

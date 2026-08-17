@@ -5,10 +5,16 @@ const authController = require('../controllers/authController');
 const inviteController = require('../controllers/inviteController');
 const organizationController = require('../controllers/organizationController');
 const governanceController = require('../controllers/governanceController');
+const oidcController = require('../controllers/oidcController');
+const idpWebhookController = require('../controllers/idpWebhookController');
 const upload = require('../middleware/upload');
 const { verifyToken, verifyRole, injectOrgContext, optionalToken } = require('../middleware/auth');
 
 // --- Auth Routes ---
+router.get('/auth/oidc/start', oidcController.start);
+router.get('/auth/oidc/callback', oidcController.callback);
+router.get('/auth/oidc/logout', oidcController.logout);
+router.get('/auth/oidc/status', oidcController.status);
 router.post('/auth/register', authController.register);
 router.post('/auth/verify', authController.verifyOtp);
 router.post('/auth/resend-otp', authController.resendOtp);
@@ -19,6 +25,9 @@ router.post('/auth/seed-admin', authController.seedAdmin);
 router.post('/auth/forgot-password', authController.forgotPassword);
 router.post('/auth/reset-password', authController.resetPassword);
 router.patch('/auth/me', verifyToken, authController.updateProfile);
+
+// --- Identity lifecycle ---
+router.post('/webhooks/idp', idpWebhookController.receive);
 
 // --- Organizations ---
 router.get('/organizations', mainController.getOrganizations); // Public list

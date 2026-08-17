@@ -39,7 +39,21 @@ const getAuthCookieOptions = () => {
     return options;
 };
 
+const clearLegacyDomainCookie = (res) => {
+    if (process.env.NODE_ENV !== 'production') return;
+    res.clearCookie(AUTH_COOKIE_NAME, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/',
+        domain: process.env.LEGACY_AUTH_COOKIE_DOMAIN || '.seemplifyai.com'
+    });
+};
+
 const setAuthCookie = (res, token) => {
+    // Migrate away from the former parent-domain cookie before issuing the
+    // host-only cookie. A sibling Seemplify subdomain must not control this app's session.
+    clearLegacyDomainCookie(res);
     res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
 };
 
@@ -48,6 +62,7 @@ const clearAuthCookie = (res) => {
         ...getAuthCookieOptions(),
         maxAge: undefined
     });
+    clearLegacyDomainCookie(res);
 };
 
 const extractTokenFromRequest = (req) => {

@@ -10,7 +10,7 @@ x-defaults: &defaults
 services:
   identity-provider:
     <<: *defaults
-    image: seemplify/identity-provider:hostinger-20260817-zulip-retired
+    image: ${IDENTITY_PROVIDER_IMAGE:-seemplify/identity-provider:hostinger-20260817-approver-idp}
     environment:
       NODE_ENV: production
       PORT: "5008"
@@ -38,6 +38,7 @@ services:
       SEEMPLIFY_LEARNING_URL: https://learning.seemplifyai.com
       MESSAGING_URL: https://workspace.seemplifyai.com
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
+      APPROVER_URL: https://approver.seemplifyai.com
       MESSAGING_OIDC_CLIENT_SECRET: ${OIDC_MESSAGING_SECRET:?required}
       MESSAGING_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
       RECRUITER_ADMIN_URL: https://app.seemplifyai.com
@@ -50,12 +51,14 @@ services:
       IDP_WEBHOOK_SECRET_PERFORMANCE_MANAGEMENT: ${IDP_WEBHOOK_PERFORMANCE:?required}
       IDP_WEBHOOK_SECRET_TIME_ATTENDANCE: ${IDP_WEBHOOK_TIME:?required}
       IDP_WEBHOOK_SECRET_MESSAGING: ${IDP_WEBHOOK_MESSAGING:?required}
+      IDP_WEBHOOK_SECRET_APPROVER: ${IDP_WEBHOOK_APPROVER:?required}
       SMARTHR_WEBHOOK_URL: http://recruiter-backend:5001/api/webhooks/idp
       LEAVE_WEBHOOK_URL: http://leave-backend:5002/api/webhooks/idp
       PAYROLL_WEBHOOK_URL: http://payroll-backend:5006/api/webhooks/idp
       PERFORMANCE_WEBHOOK_URL: http://performance-backend:5004/api/webhooks/idp
       TIME_ATTENDANCE_WEBHOOK_URL: http://time-backend:5010/api/webhooks/idp
       MESSAGING_WEBHOOK_URL: http://workspace-backend:5009/api/webhooks/idp
+      APPROVER_WEBHOOK_URL: http://approver:80/api/webhooks/idp
     volumes:
       - /opt/seemplify/secrets/idp-clients.json:/run/seemplify/idp-clients.json:ro
     healthcheck:
@@ -244,7 +247,7 @@ services:
 
   performance-backend:
     <<: *defaults
-    image: seemplify/performance-backend:hostinger
+    image: seemplify/performance-backend:hostinger-20260817-webhook-contract
     environment:
       NODE_ENV: production
       PORT: "5004"
@@ -261,6 +264,7 @@ services:
       JWT_SECRET: ${PERFORMANCE_SESSION_SECRET:?required}
       HUB_TOKEN_SECRET: ${PERFORMANCE_HUB_SECRET:?required}
       IDP_PERFORMANCE_SERVICE_SECRET: ${IDP_WEBHOOK_PERFORMANCE:?required}
+      IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_PERFORMANCE:?required}
       MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
@@ -382,7 +386,7 @@ services:
 
   time-backend:
     <<: *defaults
-    image: seemplify/time-backend:hostinger
+    image: seemplify/time-backend:hostinger-20260817-webhook-contract
     environment:
       NODE_ENV: production
       PORT: "5010"
@@ -442,15 +446,21 @@ services:
 
   approver:
     <<: *defaults
-    image: seemplify/approver:hostinger
+    image: ${APPROVER_IMAGE:-seemplify/approver:hostinger-20260817-idp}
     environment:
       NODE_ENV: production
       PORT: "80"
       MONGO_URI: mongodb://approver_app:${MONGO_APPROVER_PASSWORD:?required}@mongodb:27017/approver?authSource=approver
       JWT_SECRET: ${APPROVER_JWT_SECRET:?required}
+      OIDC_STATE_SECRET: ${APPROVER_OIDC_STATE_SECRET:?required}
+      IDP_ISSUER_URL: https://auth.seemplifyai.com
+      OIDC_CLIENT_ID: approver
+      OIDC_CLIENT_SECRET: ${OIDC_APPROVER_SECRET:?required}
+      OIDC_REDIRECT_URI: https://approver.seemplifyai.com/api/auth/oidc/callback
+      IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_APPROVER:?required}
+      LOCAL_AUTH_ENABLED: "false"
       FRONTEND_URL: https://approver.seemplifyai.com
       FRONTEND_URLS: https://approver.seemplifyai.com
-      AUTH_COOKIE_DOMAIN: .seemplifyai.com
       MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com

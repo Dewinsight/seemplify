@@ -4,8 +4,15 @@ const UserSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
     firstName: { type: String, trim: true, default: '' },
     lastName: { type: String, trim: true, default: '' },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    password: {
+        type: String,
+        required() { return !this.idpSubject; }
+    },
+    idpSubject: { type: String, unique: true, sparse: true, trim: true },
+    authProvider: { type: String, enum: ['local', 'seemplify-idp'], default: 'local' },
+    sessionVersion: { type: Number, default: 0, min: 0 },
+    lastLoginAt: { type: Date },
 
     // DEPRECATED — org membership now lives in UserOrganization model
     // Kept temporarily for backward compatibility during migration

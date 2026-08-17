@@ -2,7 +2,8 @@ const jwt = require('jsonwebtoken');
 const UserOrganization = require('../models/UserOrganization');
 const Role = require('../models/Role');
 const { ensureGovernanceConfigForOrganization } = require('../services/governanceConfigService');
-const { extractTokenFromRequest } = require('../utils/authSession');
+const User = require('../models/User');
+const { extractTokenFromRequest, parseCookieHeader } = require('../utils/authSession');
 const {
     buildRoleCatalog,
     sanitizePermissions,
@@ -11,7 +12,7 @@ const {
     hasAnyCapability
 } = require('../utils/access');
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
     const token = extractTokenFromRequest(req);
 
     if (!token) {
@@ -20,6 +21,16 @@ const verifyToken = (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
+        const logoutAt = Number(parseCookieHeader(req.headers.cookie).seemplify_logout_at || 0);
+        if (logoutAt && Number(decoded.iat || 0) * 1000 <= logoutAt) {
+            return res.status(401).json({ error: 'Session ended centrally' });
+        }
+        if (decoded.authProvider === 'seemplify-idp') {
+            const user = await User.findById(decoded.id).select('idpSubject sessionVersion');
+            if (!user || user.idpSubject !== decoded.sub || Number(user.sessionVersion || 0) !== Number(decoded.sv || 0)) {
+                return res.status(401).json({ error: 'Session access has changed. Sign in again.' });
+            }
+        }
         req.user = decoded;
         next();
     } catch (error) {

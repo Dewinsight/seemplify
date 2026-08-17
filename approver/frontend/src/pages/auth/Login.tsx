@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import api from '../../api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -8,8 +8,23 @@ const Login: React.FC = () => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [localAuthEnabled, setLocalAuthEnabled] = useState(false);
+    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { login } = useAuth();
+
+    useEffect(() => {
+        const oidcError = searchParams.get('error');
+        if (oidcError) setError(oidcError);
+        api.get('/auth/oidc/status')
+            .then((response) => setLocalAuthEnabled(response.data?.localAuthEnabled === true))
+            .catch(() => setLocalAuthEnabled(false));
+    }, [searchParams]);
+
+    const startSingleSignOn = () => {
+        const returnTo = `${window.location.origin}/`;
+        window.location.assign(`/api/auth/oidc/start?returnTo=${encodeURIComponent(returnTo)}`);
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -57,7 +72,19 @@ const Login: React.FC = () => {
             </div>
             <h2 style={{ marginBottom: '2rem', color: 'var(--text-primary)' }}>Welcome Back</h2>
             <div className="glass-panel">
-                <form onSubmit={handleSubmit}>
+                {error && <p role="alert" style={{ color: '#c24141', margin: '0 0 1rem 0' }}>{error}</p>}
+                <button type="button" className="btn-primary" style={{ width: '100%' }} onClick={startSingleSignOn}>
+                    Continue with Seemplify
+                </button>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.5, margin: '0.85rem 0 0' }}>
+                    Use your Seemplify account and organization access.
+                </p>
+                {localAuthEnabled && <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '1.25rem 0', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                    <span style={{ height: 1, background: 'var(--glass-border)', flex: 1 }} />
+                    Local account
+                    <span style={{ height: 1, background: 'var(--glass-border)', flex: 1 }} />
+                </div>}
+                {localAuthEnabled && <form onSubmit={handleSubmit}>
                     <input
                         type="email"
                         placeholder="Email Address"
@@ -72,17 +99,16 @@ const Login: React.FC = () => {
                         onChange={(e) => setPassword(e.target.value)}
                         required
                     />
-                    {error && <p style={{ color: '#ff6b6b', margin: '0 0 1rem 0' }}>{error}</p>}
                     <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={loading}>
                         {loading ? 'Logging in...' : 'Login'}
                     </button>
-                </form>
-                <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>
+                </form>}
+                {localAuthEnabled && <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>
                     Don't have an account? <Link to="/register" style={{ color: 'var(--accent)' }}>Register</Link>
-                </p>
-                <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
+                </p>}
+                {localAuthEnabled && <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
                     Forgot your password? <Link to="/forgot-password" style={{ color: 'var(--accent)' }}>Reset it here</Link>
-                </p>
+                </p>}
             </div>
             <p style={{ marginTop: '1.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
                 <Link

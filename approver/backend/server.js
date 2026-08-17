@@ -68,7 +68,11 @@ app.use(cors({
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Organization-Id']
 }));
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buffer) => {
+        if (req.originalUrl?.startsWith('/api/webhooks/idp')) req.rawBody = Buffer.from(buffer);
+    }
+}));
 
 // Database Connection
 mongoose.connect(process.env.MONGO_URI)
@@ -84,21 +88,23 @@ app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'ok', 
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || 'development',
+        oidcConfigured: Boolean(
+            process.env.IDP_ISSUER_URL
+            && process.env.OIDC_CLIENT_ID
+            && process.env.OIDC_CLIENT_SECRET
+            && process.env.OIDC_REDIRECT_URI
+        )
     });
 });
 
-// API-only backend (frontend is deployed separately)
-app.get('/', (req, res) => {
-    res.json({ 
-        message: 'Approver Backend API',
-        version: '1.0.0',
-        endpoints: {
-            health: '/api/health',
-            api: '/api/*'
-        }
-    });
-});
+app.use('/api', (req, res) => res.status(404).json({ error: 'API route not found' }));
+
+// The production image contains the Vite build. Serve it from the same origin
+// as the API so cookies, CSP and OIDC callbacks have one authoritative host.
+const frontendDist = path.join(__dirname, 'frontend', 'dist');
+app.use(express.static(frontendDist, { index: false, maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0 }));
+app.get('*', (req, res) => res.sendFile(path.join(frontendDist, 'index.html')));
 
 // Start Server
 app.listen(PORT, () => {

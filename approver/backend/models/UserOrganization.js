@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const UserOrganizationSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true },
+    managedByIdp: { type: Boolean, default: false },
+    idpRole: { type: String, trim: true, default: '' },
     isAdmin: { type: Boolean, default: false }, // Org-level admin for THIS org
     permissions: [{
         department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
