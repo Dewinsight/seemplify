@@ -1,0 +1,23 @@
+---
+description: Protect Seemplify credentials with the encrypted access vault workflow
+alwaysApply: true
+---
+
+# Access vault security
+
+- Treat `access/` as the local plaintext credential vault. It must stay ignored.
+- Never commit credentials, passwords, tokens, private keys, production `.env`
+  files, vault passwords, or recovery keys as readable Git content.
+- The only publishable vault artifact is `access.zip`, created with AES-256 by
+  `scripts/access-vault.py` and an unlock key stored outside the repository.
+- Before staging `access.zip`, verify every nonempty member requires the key,
+  verify the archive with the key, and record its SHA-256 checksum.
+- Never reuse an application, email, SSH, Google, GitHub, or Cloudflare password
+  as the vault unlock key.
+- Other PCs must receive the unlock key through a separate secure channel; the
+  archive and its key must never travel together in Git.
+- Read secrets only when required for the active task and redact tool output,
+  logs, screenshots, commits, PRs, and final responses.
+- If plaintext secret material reaches Git, stop publishing, remove it from the
+  current tree, rotate affected credentials, and obtain approval before any
+  destructive history rewrite.
