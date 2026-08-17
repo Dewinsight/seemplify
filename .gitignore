@@ -38,6 +38,8 @@ logs/
 # Local test and automation artifacts
 .codex-temp/
 .local-runtime/
+__pycache__/
+*.py[cod]
 platform/email/.env.runtime
 **/eng.traineddata
 output/
