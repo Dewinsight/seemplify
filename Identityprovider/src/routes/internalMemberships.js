@@ -10,6 +10,7 @@ import { normalizeAppAccess } from '../utils/appAccess.js'
 import { serializeReconciliationTeams } from '../utils/reconciliationTeams.js'
 import { subscriptionService } from '../services/subscriptionService.js'
 import { forceUserLogout, sendWebhook } from '../services/webhookService.js'
+import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
@@ -139,6 +140,7 @@ async function executeScheduledDeactivation(action) {
     idempotencyKey: action.idempotencyKey,
   })
   await sendWebhook('organization.member.deactivated', data)
+  invalidateClaimsCache(account.sub)
   return data
 }
 
@@ -213,7 +215,7 @@ async function executeIdempotently(operation, req, res, handler) {
   if (String(req.body.idempotencyKey) !== key) return res.status(400).json({ error: 'Body and header idempotency keys must match' })
   const hash = requestHash(req.body)
   let record = await MembershipOperation.findOne({ idempotencyKey: key })
-  if (record?.requestHash !== hash || (record && record.operation !== operation)) {
+  if (record && (record.requestHash !== hash || record.operation !== operation)) {
     return res.status(409).json({ error: 'Idempotency key was already used for a different request' })
   }
   if (record?.status === 'completed') return res.json({ ...record.response, idempotentReplay: true })
@@ -327,6 +329,7 @@ router.post('/provision', (req, res) => executeIdempotently('provision', req, re
     idempotencyKey: body.idempotencyKey,
   })
   await sendWebhook(event, data)
+  invalidateClaimsCache(account.sub)
   return { status: 'completed', operation: 'provision', account: data, event }
 }))
 
@@ -372,6 +375,7 @@ router.post('/deactivate', (req, res) => executeIdempotently('deactivate', req, 
     idempotencyKey: body.idempotencyKey,
   })
   await sendWebhook('organization.member.deactivated', data)
+  invalidateClaimsCache(account.sub)
   return { status: 'completed', operation: 'deactivate', account: data }
 }))
 
@@ -409,6 +413,7 @@ router.post('/reactivate', (req, res) => executeIdempotently('reactivate', req, 
     idempotencyKey: body.idempotencyKey,
   })
   await sendWebhook('organization.member.reactivated', data)
+  invalidateClaimsCache(account.sub)
   return { status: 'completed', operation: 'reactivate', account: data }
 }))
 
