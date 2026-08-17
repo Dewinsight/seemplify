@@ -115,6 +115,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/integrations/v1/performance', performanceIntegrationRoutes);
 app.use('/api/v1/exceptions', exceptionRoutes);
+app.use('/api/automation/actions', require('./routes/automation'));
 
 // Error handling middleware
 app.use(errorHandler);
@@ -129,6 +130,7 @@ const startServer = async () => {
     try {
         // Connect to database
         await connectDatabase();
+        await require('./models/AutomationRequestNonce').init();
 
         // Initialize OIDC client
         await initializeOIDC();

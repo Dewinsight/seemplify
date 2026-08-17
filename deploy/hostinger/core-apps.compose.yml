@@ -38,6 +38,9 @@ services:
       SEEMPLIFY_LEARNING_URL: https://learning.seemplifyai.com
       MESSAGING_URL: https://workspace.seemplifyai.com
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
+      AUTOMATION_HUB_URL: https://automations.seemplifyai.com
+      AUTOMATION_HUB_API_URL: http://automation-hub:5420
+      AUTOMATION_HUB_HMAC_SECRET_FILE: /run/seemplify/automation-hub-hmac-secret
       APPROVER_URL: https://approver.seemplifyai.com
       EXPERIENCE_MANAGEMENT_URL: https://experience.seemplifyai.com
       EXPERIENCE_OIDC_CLIENT_SECRET: ${OIDC_EXPERIENCE_SECRET:?required}
@@ -62,10 +65,12 @@ services:
       TIME_ATTENDANCE_WEBHOOK_URL: http://time-backend:5010/api/webhooks/idp
       MESSAGING_WEBHOOK_URL: http://workspace-backend:5009/api/webhooks/idp
       APPROVER_WEBHOOK_URL: http://approver:80/api/webhooks/idp
+      AUTOMATION_HUB_WEBHOOK_URL: http://automation-hub:5420/hooks/identity
       SHARED_AI_ADMIN_BASE_URL: http://recruiter-backend:5001
       AI_GATEWAY_ADMIN_ANALYTICS_SECRET: ${AI_GATEWAY_ADMIN_ANALYTICS_SECRET:?required}
     volumes:
       - /opt/seemplify/secrets/idp-clients.json:/run/seemplify/idp-clients.json:ro
+      - /opt/seemplify/secrets/automation-hub/identity-hmac-secret:/run/seemplify/automation-hub-hmac-secret:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5008/.well-known/openid-configuration').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -213,6 +218,10 @@ services:
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
       MAIL_FROM_NAME: Seemplify Leave
+      AUTOMATION_HUB_API_URL: http://automation-hub:5420
+      AUTOMATION_HUB_HMAC_SECRET_FILE: /run/seemplify/automation-hub-hmac-secret
+    volumes:
+      - /opt/seemplify/secrets/automation-hub/leave-hmac-secret:/run/seemplify/automation-hub-hmac-secret:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -347,6 +356,10 @@ services:
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
       MAIL_FROM_NAME: Seemplify Payroll
+      AUTOMATION_HUB_API_URL: http://automation-hub:5420
+      AUTOMATION_HUB_HMAC_SECRET_FILE: /run/seemplify/automation-hub-hmac-secret
+    volumes:
+      - /opt/seemplify/secrets/automation-hub/payroll-hmac-secret:/run/seemplify/automation-hub-hmac-secret:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5006/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -412,6 +425,9 @@ services:
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
       MAIL_FROM_NAME: Seemplify Time
+      AUTOMATION_HUB_HMAC_SECRET_FILE: /run/seemplify/automation-hub-hmac-secret
+    volumes:
+      - /opt/seemplify/secrets/automation-hub/time-hmac-secret:/run/seemplify/automation-hub-hmac-secret:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5010/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s

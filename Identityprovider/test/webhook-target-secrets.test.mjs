@@ -28,7 +28,8 @@ test('readiness probe is signed by the running IdP for every target receiver', a
     IDP_WEBHOOK_SECRET_PERFORMANCE_MANAGEMENT: 'performance-target-secret-at-least-32-characters',
     IDP_WEBHOOK_SECRET_TIME_ATTENDANCE: 'time-target-secret-that-is-at-least-32-characters',
     IDP_WEBHOOK_SECRET_MESSAGING: 'messaging-target-secret-that-is-at-least-32-characters',
-    IDP_WEBHOOK_SECRET_APPROVER: 'approver-target-secret-that-is-at-least-32-characters'
+    IDP_WEBHOOK_SECRET_APPROVER: 'approver-target-secret-that-is-at-least-32-characters',
+    AUTOMATION_HUB_HMAC_SECRET: 'automation-target-secret-that-is-at-least-32-characters'
   }
   const prior = Object.fromEntries(Object.keys(keys).map(key => [key, process.env[key]]))
   Object.assign(process.env, keys)
@@ -46,11 +47,11 @@ test('readiness probe is signed by the running IdP for every target receiver', a
         }), { status: 200 })
       }
     })
-    assert.equal(calls.length, 7)
+    assert.equal(calls.length, 8)
     assert.deepEqual(result.results.map(item => item.name).sort(), [
-      'approver', 'leaveManagement', 'messaging', 'payroll', 'performance', 'smarthr', 'timeAttendance'
+      'approver', 'automationHub', 'leaveManagement', 'messaging', 'payroll', 'performance', 'smarthr', 'timeAttendance'
     ])
-    assert.equal(new Set(calls.map(call => call.init.headers['X-IDP-Signature-V2'])).size, 7)
+    assert.equal(new Set(calls.map(call => call.init.headers['X-IDP-Signature-V2'])).size, 8)
     assert.ok(calls.every(call => call.init.headers['X-IDP-Delivery-Timestamp']))
   } finally {
     for (const [key, value] of Object.entries(prior)) {

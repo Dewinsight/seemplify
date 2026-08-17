@@ -11,6 +11,7 @@
  */
 
 import crypto from 'crypto'
+import fs from 'fs'
 import mongoose from 'mongoose'
 import WebhookOutbox from '../models/WebhookOutbox.js'
 
@@ -24,6 +25,7 @@ const WEBHOOK_ENDPOINTS = {
   timeAttendance: process.env.TIME_ATTENDANCE_WEBHOOK_URL || 'http://localhost:5010/api/webhooks/idp',
   messaging: process.env.MESSAGING_WEBHOOK_URL || 'http://localhost:5009/api/webhooks/idp',
   approver: process.env.APPROVER_WEBHOOK_URL || 'http://localhost:5000/api/webhooks/idp',
+  automationHub: process.env.AUTOMATION_HUB_WEBHOOK_URL || 'http://localhost:5420/hooks/identity',
 }
 
 const INSECURE_WEBHOOK_SECRET = 'your-webhook-secret-key'
@@ -34,7 +36,11 @@ const WEBHOOK_TARGET_SECRET_ENV = {
   performance: 'IDP_WEBHOOK_SECRET_PERFORMANCE_MANAGEMENT',
   timeAttendance: 'IDP_WEBHOOK_SECRET_TIME_ATTENDANCE',
   messaging: 'IDP_WEBHOOK_SECRET_MESSAGING',
-  approver: 'IDP_WEBHOOK_SECRET_APPROVER'
+  approver: 'IDP_WEBHOOK_SECRET_APPROVER',
+  automationHub: 'AUTOMATION_HUB_HMAC_SECRET'
+}
+const WEBHOOK_TARGET_SECRET_FILE_ENV = {
+  automationHub: 'AUTOMATION_HUB_HMAC_SECRET_FILE'
 }
 
 export function resolveWebhookSecret(source = process.env) {
@@ -48,16 +54,20 @@ export function resolveWebhookSecret(source = process.env) {
 
 export function resolveWebhookSecretForTarget(targetName, source = process.env) {
   const environmentName = WEBHOOK_TARGET_SECRET_ENV[targetName]
+  const fileEnvironmentName = WEBHOOK_TARGET_SECRET_FILE_ENV[targetName]
+  const secretFile = String(fileEnvironmentName ? source[fileEnvironmentName] || '' : '').trim()
+  const fromFile = secretFile ? fs.readFileSync(secretFile, 'utf8').trim() : ''
   const explicit = String(environmentName ? source[environmentName] || '' : '').trim()
   const production = String(source.NODE_ENV || '').trim().toLowerCase() === 'production'
-  if (explicit) {
-    if (production && (explicit.length < 32 || explicit === INSECURE_WEBHOOK_SECRET)) {
-      throw new Error(`${environmentName} must be a rotated secret of at least 32 characters in production`)
+  const resolved = fromFile || explicit
+  if (resolved) {
+    if (production && (resolved.length < 32 || resolved === INSECURE_WEBHOOK_SECRET)) {
+      throw new Error(`${fileEnvironmentName || environmentName} must contain a rotated secret of at least 32 characters in production`)
     }
-    return explicit
+    return resolved
   }
   if (production) {
-    throw new Error(`${environmentName || 'Target webhook secret'} is required in production`)
+    throw new Error(`${fileEnvironmentName || environmentName || 'Target webhook secret'} is required in production`)
   }
   // Local development retains the single-key setup unless explicit target
   // keys are provided. Production is always isolated per destination.

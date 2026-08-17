@@ -32,6 +32,7 @@ const websocketService = require('./services/websocketService');
 const sessionStoreService = require('./services/sessionStore');
 const { initializeEmailService } = require('./services/emailService');
 const { startAttendanceIntegrationWorker } = require('./services/attendanceIntegrationService');
+const { startAutomationEventWorker } = require('./services/automationEventService');
 const { assertInternalPayrollConfiguration } = require('./services/internalPayrollSecurity');
 
 const app = express();
@@ -122,6 +123,7 @@ app.use('/api/hub', hubRoutes);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/presence', require('./routes/presenceReporter'));
 app.use('/api/internal/v1/time-attendance', require('./routes/timeAttendanceIntegration'));
+app.use('/api/automation/actions', require('./routes/automation'));
 
 // Error handling middleware
 app.use(errorHandler);
@@ -156,6 +158,7 @@ const startServer = async () => {
       console.log(`Leave Management Backend running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       startAttendanceIntegrationWorker();
+      startAutomationEventWorker();
     });
 
     // Initialize WebSocket server

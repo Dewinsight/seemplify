@@ -1,5 +1,13 @@
 # Seemplify AI and Automation Roadmap
 
+> Platform-wide workflow semantics, internal/external integration architecture,
+> approval controls, commands, developer APIs, and delivery phases are defined
+> in [SEEMPLIFY-AUTOMATION-PLATFORM-PLAN.md](./SEEMPLIFY-AUTOMATION-PLATFORM-PLAN.md).
+> This roadmap remains the product use-case and AI sequencing companion; it does
+> not authorize a cross-product action that the platform plan rejects.
+> The first Automation Hub tranche and its browser evidence are recorded in
+> [AUTOMATION-HUB-ACCEPTANCE-2026-08-17.md](./AUTOMATION-HUB-ACCEPTANCE-2026-08-17.md).
+
 ## Runtime contract
 
 Seemplify supports two deliberately separate inference runtimes:

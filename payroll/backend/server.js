@@ -19,6 +19,8 @@ require('./models/OrganizationCurrencyPolicy');
 require('./models/TaxJurisdictionConfig');
 require('./models/TimeAttendanceImport');
 require('./models/PayrollEmployerEntity');
+require('./models/AutomationRequestNonce');
+require('./models/AutomationEventOutbox');
 const PayrollRun = require('./models/PayrollRun');
 const Payslip = require('./models/Payslip');
 const PayrollSequence = require('./models/PayrollSequence');
@@ -36,6 +38,7 @@ const ExchangeRateScheduler = require('./jobs/ExchangeRateScheduler');
 const taxJurisdictionService = require('./services/TaxJurisdictionService');
 const payrollSequenceMigrationService = require('./services/PayrollSequenceMigrationService');
 const { getPayrollLeaveSigningReadiness } = require('./services/PayrollLeaveRequestSigner');
+const { startAutomationEventWorker } = require('./services/automationEventService');
 
 // Import webhook routes and claims middleware
 const webhooksRouter = require('./routes/webhooks');
@@ -127,6 +130,7 @@ app.use('/api/payroll/tax', require('./routes/tax'));
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/presence', require('./routes/presenceReporter'));
 app.use('/api/integrations/v1/time-attendance', require('./routes/timeAttendanceIntegration'));
+app.use('/api/automation/actions', require('./routes/automation'));
 
 // Health Check
 app.get('/health', (req, res) => {
@@ -233,6 +237,7 @@ async function startServer() {
       exchangeRateScheduler.initializeScheduler();
     }
     serviceReady = true;
+    startAutomationEventWorker();
 
     return app.listen(PORT, () => {
       console.log(`Payroll Service running on port ${PORT}`);

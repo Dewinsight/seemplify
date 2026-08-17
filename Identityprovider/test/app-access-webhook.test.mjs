@@ -28,7 +28,7 @@ test('member app-access changes are delivered as a signed cross-product webhook'
       appAccess: { mode: 'selected', appIds: ['performance-management'] },
       changedBy: 'admin-7'
     })
-    assert.equal(requests.length, 4)
+    assert.equal(requests.length, 8)
     for (const { init } of requests) {
       const payload = JSON.parse(init.body)
       assert.equal(payload.event, 'organization.member.app_access_changed')

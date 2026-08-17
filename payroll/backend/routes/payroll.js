@@ -15,6 +15,7 @@ const payrollFinalizationService = require('../services/PayrollFinalizationServi
 const payrollRetractionService = require('../services/PayrollRetractionService');
 const employerEntityService = require('../services/PayrollEmployerEntityService');
 const payrollCountryAutomationService = require('../services/PayrollCountryAutomationService');
+const { queuePayrollReadyEvent } = require('../services/automationEventService');
 const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 const { createPayslipPdf } = require('../services/payslipPdfService');
 const { hasPayConfiguration } = require('../services/contractPayService');
@@ -1954,6 +1955,12 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
       return res.status(404).json({ error: 'Payroll run not found' });
     }
 
+    if (run.status === 'pending_approval') {
+      try { await queuePayrollReadyEvent(run, adminId); }
+      catch (error) { console.error('Payroll is pending approval; Automation Hub outbox reconciliation will retry:', error.message); }
+      return res.json({ success: true, run, idempotent: true });
+    }
+
     if (run.status !== 'calculated') {
       return res.status(400).json({ error: `Cannot submit run with status: ${run.status}` });
     }
@@ -1969,6 +1976,9 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
       { payrollRunId: run._id },
       { status: 'pending_approval' }
     );
+
+    try { await queuePayrollReadyEvent(run, adminId); }
+    catch (error) { console.error('Payroll submitted; Automation Hub outbox reconciliation will retry:', error.message); }
 
     res.json({ success: true, run });
   } catch (err) {

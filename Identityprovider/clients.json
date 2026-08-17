@@ -287,6 +287,29 @@
       "token_endpoint_auth_method": "client_secret_basic"
     },
     {
+      "client_id": "automation-hub",
+      "client_secret": "automation-hub-development-secret",
+      "redirect_uri_patterns": [
+        "http://localhost:5420/auth/callback",
+        "http://127.0.0.1:5420/auth/callback",
+        "https://automations.seemplifyai.com/auth/callback",
+        "https://automations-dev.seemplifyai.com/auth/callback"
+      ],
+      "allowed_origins": [
+        "http://localhost:5420",
+        "http://localhost:5421",
+        "http://127.0.0.1:5420",
+        "http://127.0.0.1:5421",
+        "https://automations.seemplifyai.com",
+        "https://automations-dev.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "response_types": ["code"],
+      "grant_types": ["authorization_code", "refresh_token"],
+      "token_endpoint_auth_method": "client_secret_basic"
+    },
+    {
       "client_id": "approver",
       "client_secret": "approver-development-secret",
       "redirect_uri_patterns": [

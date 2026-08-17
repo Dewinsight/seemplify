@@ -92,6 +92,7 @@ import { subscriptionService } from './services/subscriptionService.js'
 import cloudinary, { isCloudinaryConfigured } from './services/cloudinaryService.js'
 import { claimsCacheEnabled } from './utils/claimsCachePolicy.js'
 import { createWebhookReadinessVerifier } from './middleware/webhookReadinessAuth.js'
+import { createAutomationRequestVerifier } from './middleware/automationRequestAuth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1205,6 +1206,7 @@ app.use((req, res, next) => {
 const verifyWebhookReadinessRequest = createWebhookReadinessVerifier({
   resolveSecret: resolveWebhookSecret
 })
+const verifyAutomationRequest = createAutomationRequestVerifier()
 
 // Proves the running IdP loaded its current target-specific keys and every
 // deployed product receiver accepts them. No membership state is mutated.
@@ -1214,6 +1216,41 @@ app.post('/api/internal/webhook-readiness', verifyWebhookReadinessRequest, async
     return res.json({ ok: true, targets: result.results.map(item => item.name), eventId: result.eventId })
   } catch (error) {
     return res.status(503).json({ ok: false, message: error.message, results: error.results || [] })
+  }
+})
+
+// Runtime authorization for the shared Automation Hub. This endpoint never
+// performs the product action; it verifies the publisher's current Identity
+// membership, role, and application grants immediately before the Hub calls
+// the authoritative product adapter.
+app.post('/api/internal/automation/authorize', verifyAutomationRequest, async (req, res) => {
+  try {
+    const organizationId = String(req.body?.organizationId || '').trim()
+    const userId = String(req.body?.userId || '').trim()
+    const requiredRoles = Array.isArray(req.body?.requiredRoles) ? req.body.requiredRoles.map(String) : []
+    const requiredAppIds = Array.isArray(req.body?.requiredAppIds) ? req.body.requiredAppIds.map(String) : []
+    if (!organizationId || !userId || requiredRoles.length > 20 || requiredAppIds.length > 30) {
+      return res.status(400).json({ allowed: false, code: 'AUTOMATION_AUTHORIZATION_INPUT_INVALID' })
+    }
+    const [organization, account] = await Promise.all([
+      Organization.findById(organizationId).select('members.account members.status members.role members.appAccess updatedAt').lean(),
+      Account.findOne({ sub: userId }).select('_id sub').lean()
+    ])
+    if (!organization || !account) return res.status(404).json({ allowed: false, code: 'AUTOMATION_IDENTITY_NOT_FOUND' })
+    const member = organization.members.find(item => String(item.account) === String(account._id) && item.status === 'active')
+    if (!member) return res.status(403).json({ allowed: false, code: 'AUTOMATION_MEMBERSHIP_INACTIVE', reason: 'The workflow publisher is no longer an active organization member.' })
+    const normalizedRole = member.role === 'owner' || member.role === 'admin'
+      ? member.role
+      : member.role === 'hr_manager' ? 'manager' : 'member'
+    if (requiredRoles.length && !requiredRoles.includes(normalizedRole)) {
+      return res.status(403).json({ allowed: false, code: 'AUTOMATION_ROLE_DENIED', reason: 'The workflow publisher no longer has the required organization role.' })
+    }
+    const missingAppId = requiredAppIds.find(appId => !memberCanAccessApp(member.appAccess, appId))
+    if (missingAppId) return res.status(403).json({ allowed: false, code: 'AUTOMATION_APP_ACCESS_DENIED', reason: `Application access to ${missingAppId} has been removed.` })
+    return res.json({ allowed: true, organizationRevision: organization.updatedAt?.toISOString?.() || null, role: normalizedRole })
+  } catch (error) {
+    console.error('Automation runtime authorization failed:', error.message)
+    return res.status(503).json({ allowed: false, code: 'AUTOMATION_AUTHORIZATION_UNAVAILABLE' })
   }
 })
 
@@ -8831,7 +8868,16 @@ app.post('/invitations/accept/do', getSessionUser, async (req, res) => {
     await notifyOrgMemberAdded(
       req.user.sub,
       organization._id.toString(),
-      { id: organization._id.toString(), name: organization.name },
+      {
+        id: organization._id.toString(),
+        name: organization.name,
+        member: {
+          employeeId: matchedInvite.employeeId || req.user.sub,
+          name: req.user.profile?.name || req.user.email,
+          email: req.user.email,
+          onboardingTemplateId: 'standard'
+        }
+      },
       matchedInvite.role
     )
 

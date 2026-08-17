@@ -4,6 +4,7 @@ import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { Account } from '../models/Account.js'
 import { Team } from '../models/Team.js'
 import { emailService } from '../services/emailService.js'
+import { notifyOrgMemberAdded } from '../services/webhookService.js'
 import { getHubApps } from '../config/hubApps.js'
 import {
   APP_ACCESS_MODE_SELECTED,
@@ -35,6 +36,24 @@ function getHubAppMetadata() {
 
 function normalizeEmployeeId(value = '') {
   return String(value || '').trim()
+}
+
+async function notifyMembershipActivated(user, organization, invitation) {
+  await notifyOrgMemberAdded(
+    user.sub,
+    organization._id.toString(),
+    {
+      id: organization._id.toString(),
+      name: organization.name,
+      member: {
+        employeeId: invitation.employeeId || user.sub,
+        name: user.profile?.name || user.email,
+        email: user.email,
+        onboardingTemplateId: 'standard'
+      }
+    },
+    invitation.role
+  )
 }
 
 function getEmployeeIdKey(value = '') {
@@ -308,6 +327,8 @@ router.post('/accept/:invitationId',
         }
       }
 
+      await notifyMembershipActivated(req.user, organization, invitation)
+
       invalidateClaimsCache(req.user.sub)
 
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
@@ -385,6 +406,8 @@ router.post('/:token/accept',
           await team.addMember(req.user._id, 'member')
         }
       }
+
+      await notifyMembershipActivated(req.user, organization, matchedInvite)
 
       invalidateClaimsCache(req.user.sub)
 

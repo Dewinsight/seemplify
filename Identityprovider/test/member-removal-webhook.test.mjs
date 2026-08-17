@@ -25,7 +25,7 @@ test('member removal payload uses the stable subject and both remove/leave route
       subject: 'stable-subject-a',
       email: 'person@example.test'
     })
-    assert.equal(bodies.length, 6)
+    assert.equal(bodies.length, 8)
     assert.deepEqual(bodies[0].data, {
       userId: 'stable-subject-a',
       subject: 'stable-subject-a',

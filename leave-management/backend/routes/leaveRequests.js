@@ -27,6 +27,7 @@ const {
 } = require('../services/auditService');
 const emailService = require('../services/emailService');
 const { queueLeaveEvent } = require('../services/attendanceIntegrationService');
+const { queueLeaveSubmittedEvent } = require('../services/automationEventService');
 const { normalizeLeaveTypeKey } = require('../services/leaveEntitlementService');
 const { fetchOrganizationRoster } = require('../services/rosterService');
 const { buildCalendarAnalytics, daysInRange } = require('../services/calendarAnalyticsService');
@@ -520,6 +521,10 @@ router.post('/',
 
     // Log audit
     await logLeaveRequestCreated(leaveRequest, req.user, req);
+    if (leaveRequest.status === 'pending') {
+      try { await queueLeaveSubmittedEvent(leaveRequest); }
+      catch (error) { console.error('Leave request saved; Automation Hub outbox reconciliation will retry:', error.message); }
+    }
     if (leaveRequest.status === 'approved') await queueLeaveEvent(leaveRequest, 'leave.approved');
 
     // Email notifications
