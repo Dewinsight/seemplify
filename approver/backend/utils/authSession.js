@@ -1,4 +1,9 @@
-const AUTH_COOKIE_NAME = 'mosaic_auth';
+// Keep the production session cookie app-specific. The former `mosaic_auth`
+// name was once issued for the parent Seemplify domain, which means a stale
+// sibling-domain cookie can shadow a fresh host-only cookie in browser request
+// headers after OIDC completes.
+const AUTH_COOKIE_NAME = 'seemplify_approver_session';
+const LEGACY_AUTH_COOKIE_NAMES = ['mosaic_auth'];
 const AUTH_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const parseCookieHeader = (cookieHeader = '') => {
@@ -39,21 +44,31 @@ const getAuthCookieOptions = () => {
     return options;
 };
 
-const clearLegacyDomainCookie = (res) => {
-    if (process.env.NODE_ENV !== 'production') return;
-    res.clearCookie(AUTH_COOKIE_NAME, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'lax',
-        path: '/',
-        domain: process.env.LEGACY_AUTH_COOKIE_DOMAIN || '.seemplifyai.com'
+const clearLegacyCookies = (res) => {
+    LEGACY_AUTH_COOKIE_NAMES.forEach((name) => {
+        res.clearCookie(name, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/'
+        });
+
+        if (process.env.NODE_ENV === 'production') {
+            res.clearCookie(name, {
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax',
+                path: '/',
+                domain: process.env.LEGACY_AUTH_COOKIE_DOMAIN || '.seemplifyai.com'
+            });
+        }
     });
 };
 
 const setAuthCookie = (res, token) => {
-    // Migrate away from the former parent-domain cookie before issuing the
-    // host-only cookie. A sibling Seemplify subdomain must not control this app's session.
-    clearLegacyDomainCookie(res);
+    // Remove old host and parent-domain cookies before issuing a distinct,
+    // host-only session. A sibling Seemplify subdomain must not control this app.
+    clearLegacyCookies(res);
     res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
 };
 
@@ -62,7 +77,7 @@ const clearAuthCookie = (res) => {
         ...getAuthCookieOptions(),
         maxAge: undefined
     });
-    clearLegacyDomainCookie(res);
+    clearLegacyCookies(res);
 };
 
 const extractTokenFromRequest = (req) => {
@@ -72,11 +87,14 @@ const extractTokenFromRequest = (req) => {
     }
 
     const cookies = parseCookieHeader(req.headers.cookie);
-    return cookies[AUTH_COOKIE_NAME] || null;
+    return cookies[AUTH_COOKIE_NAME]
+        || LEGACY_AUTH_COOKIE_NAMES.map(name => cookies[name]).find(Boolean)
+        || null;
 };
 
 module.exports = {
     AUTH_COOKIE_NAME,
+    LEGACY_AUTH_COOKIE_NAMES,
     AUTH_COOKIE_TTL_MS,
     clearAuthCookie,
     extractTokenFromRequest,
