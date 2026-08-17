@@ -10,7 +10,6 @@ import {
 } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken, requireScopes } from '../middleware/apiAuth.js'
 import { invalidateClaimsCache } from '../index.js'
-import zulipService from '../services/zulipService.js'
 import { subscriptionService } from '../services/subscriptionService.js'
 
 const router = express.Router()
@@ -104,17 +103,6 @@ router.post('/',
         throw trialError
       }
 
-      // Provision Zulip realm for the organization
-      let zulipRealmInfo = null
-      try {
-        zulipRealmInfo = await zulipService.createZulipRealm(organization, req.user)
-        console.log('✅ Zulip realm provisioned:', zulipRealmInfo)
-      } catch (zulipError) {
-        console.error('❌ Failed to provision Zulip realm:', zulipError)
-        // Continue without failing - organization was created successfully
-        // Zulip provisioning can be retried later
-      }
-
       // Update user's organizations array and set as current organization
       await Account.updateOne(
         { _id: req.user._id },
@@ -163,12 +151,7 @@ router.post('/',
           startDate: trialSubscription?.startDate || null,
           endDate: trialSubscription?.endDate || null
         },
-        trialWelcome,
-        zulip: zulipRealmInfo ? {
-          realmId: zulipRealmInfo.realmId,
-          realmStringId: zulipRealmInfo.realmStringId,
-          chatUrl: zulipRealmInfo.chatUrl
-        } : null
+        trialWelcome
       })
     } catch (error) {
       console.error('Create organization error:', error)
@@ -228,14 +211,6 @@ router.get('/:orgId',
         .populate('owner', 'email profile.name')
         .populate('members.account', 'email profile.name')
 
-      // Get Zulip realm info
-      let zulipInfo = null
-      try {
-        zulipInfo = await zulipService.getZulipRealmInfo(organization)
-      } catch (error) {
-        console.error('Error getting Zulip realm info:', error)
-      }
-
       res.json({
         id: organization._id,
         name: organization.name,
@@ -248,8 +223,7 @@ router.get('/:orgId',
         settings: organization.settings,
         memberCount: organization.members.filter(m => m.status === 'active').length,
         yourRole: req.memberRole,
-        createdAt: organization.createdAt,
-        zulip: zulipInfo
+        createdAt: organization.createdAt
       })
     } catch (error) {
       console.error('Get organization error:', error)
@@ -474,15 +448,6 @@ router.delete('/:orgId',
   async (req, res) => {
     try {
       const organization = req.organization
-
-      // Delete Zulip realm first (if exists)
-      try {
-        await zulipService.deleteZulipRealm(organization)
-        console.log('✅ Zulip realm deleted for:', organization.name)
-      } catch (zulipError) {
-        console.error('❌ Failed to delete Zulip realm:', zulipError)
-        // Continue with organization deletion even if Zulip cleanup fails
-      }
 
       // Remove organization from all members' accounts
       const memberIds = organization.members.map(m => m.account)

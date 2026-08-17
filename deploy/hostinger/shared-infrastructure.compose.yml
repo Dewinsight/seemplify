@@ -1,0 +1,140 @@
+name: seemplify-shared
+
+services:
+  mongodb:
+    image: mongo:8.0.28-noble
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: seemplify_root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD is required}
+    command:
+      - mongod
+      - --auth
+      - --bind_ip_all
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --host 127.0.0.1 --username seemplify_root
+          --password "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin
+          --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 2)'
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - dokploy-network
+
+  redis:
+    image: redis:7.4.10-alpine3.21
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - dokploy-network
+
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.38.3
+    restart: unless-stopped
+    environment:
+      QUERY_DEFAULTS_LIMIT: "25"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
+      AUTHENTICATION_APIKEY_ENABLED: "true"
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: ${WEAVIATE_API_KEY:?WEAVIATE_API_KEY is required}
+      AUTHENTICATION_APIKEY_USERS: seemplify
+      AUTHORIZATION_ADMINLIST_ENABLED: "true"
+      AUTHORIZATION_ADMINLIST_USERS: seemplify
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: none
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: seemplify-weaviate-1
+      DISABLE_TELEMETRY: "true"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --spider
+        - --quiet
+        - http://127.0.0.1:8080/v1/.well-known/ready
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - dokploy-network
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.3-unprivileged
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333;
+          printf "GET /healthz HTTP/1.1\r\nHost: localhost\r\napi-key: %s\r\nConnection: close\r\n\r\n" "$$QDRANT__SERVICE__API_KEY" >&3;
+          grep -q "200 OK" <&3'
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - dokploy-network
+
+  experience-postgres:
+    image: postgres:17.10-alpine3.23
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: seemplify_experience
+      POSTGRES_USER: seemplify_experience_owner
+      POSTGRES_PASSWORD: ${EXPERIENCE_POSTGRES_OWNER_PASSWORD:?EXPERIENCE_POSTGRES_OWNER_PASSWORD is required}
+    volumes:
+      - experience_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U seemplify_experience_owner -d seemplify_experience
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - dokploy-network
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+  redis_data:
+  weaviate_data:
+  qdrant_data:
+  experience_postgres_data:
+
+networks:
+  dokploy-network:
+    external: true

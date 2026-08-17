@@ -911,11 +911,11 @@ const config = {
     introspection: { enabled: true },
     userinfo: { enabled: true }
   },
-  // Make PKCE optional for clients that don't support it (like Outline, Zulip)
+  // Make PKCE optional for clients that don't support it.
   pkce: {
     required: (ctx, client) => {
       // List of clients that don't support PKCE
-      const noPkceClients = ['outline', 'openwebui', 'zulip'];
+      const noPkceClients = ['outline', 'openwebui'];
       return !noPkceClients.includes(client.clientId);
     }
   },
@@ -3291,8 +3291,7 @@ async function getSessionFromCookies(req) {
     if (sessionData && sessionData.accountId) {
       const accountLookupStart = Date.now()
       // IMPORTANT: Populate currentOrganization to ensure organization context is available
-      // This is critical for tenant isolation - apps like Zulip use currentOrganization.name
-      // to determine which organization subdomain to redirect to
+      // This is critical for tenant isolation in downstream applications.
       const account = await Account.findOne({ sub: sessionData.accountId })
         .populate('currentOrganization', 'name')
         .populate('organizations.organization', 'name')
@@ -4461,23 +4460,6 @@ app.get('/launch/:appId', async (req, res) => {
         }
       })
       return res.redirect(openwebuiAuthUrl)
-    }
-
-    // Zulip uses a single realm instance with multi-org support via OIDC claims
-    if (app.appId === 'zulip') {
-      const zulipUrl = 'https://chat.seemplifyai.com/login/oidc/?next=/'
-      void logAppLaunchActivity({
-        req,
-        account,
-        app,
-        status: 'launched_zulip',
-        details: {
-          redirectUrl: zulipUrl,
-          authType: 'oidc',
-          launchDurationMs: Date.now() - launchStartTime
-        }
-      })
-      return res.redirect(zulipUrl)
     }
 
     // Special handling for LMS - Frappe uses Social Login Key for OIDC

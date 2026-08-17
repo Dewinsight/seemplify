@@ -18,6 +18,10 @@ function productionSafeUrl(value, fallback) {
   return configured
 }
 
+function hasConfiguredUrl(value) {
+  return Boolean(String(value || '').trim())
+}
+
 // Development apps configuration
 const developmentApps = [
   {
@@ -163,20 +167,6 @@ const developmentApps = [
     isPublic: true,
     category: 'productivity',
     order: 8
-  },
-  {
-    appId: 'zulip',
-    name: 'Seemplify Chat',
-    description: 'Thread-based team messaging and collaboration',
-    icon: 'chat-bubble-left-right',
-    color: '#6492fe',
-    url: process.env.ZULIP_URL || 'http://localhost:80',
-    apiUrl: process.env.ZULIP_URL || 'http://localhost:80',
-    clientId: 'zulip',
-    isActive: true,
-    isPublic: true,
-    category: 'communication',
-    order: 8.5
   }
 ]
 
@@ -191,7 +181,7 @@ const productionApps = [
     url: process.env.OPENWEBUI_URL || 'https://ai.seemplifyai.com',
     apiUrl: process.env.OPENWEBUI_URL || 'https://ai.seemplifyai.com',
     clientId: 'openwebui',
-    isActive: true,
+    isActive: hasConfiguredUrl(process.env.OPENWEBUI_URL),
     isPublic: true,
     category: 'ai',
     order: 6
@@ -205,7 +195,7 @@ const productionApps = [
     url: process.env.OUTLINE_URL || 'https://docs.seemplifyai.com',
     apiUrl: process.env.OUTLINE_URL || 'https://docs.seemplifyai.com',
     clientId: 'outline',
-    isActive: true,
+    isActive: hasConfiguredUrl(process.env.OUTLINE_URL),
     isPublic: true,
     category: 'productivity',
     order: 5
@@ -321,24 +311,10 @@ const productionApps = [
     url: productionSafeUrl(process.env.MESSAGING_URL, 'https://workspace.seemplifyai.com'),
     apiUrl: productionSafeUrl(process.env.MESSAGING_API_URL, 'https://api-workspace.seemplifyai.com'),
     clientId: 'messaging',
-    isActive: true,
+    isActive: hasConfiguredUrl(process.env.MESSAGING_URL),
     isPublic: true,
     category: 'productivity',
     order: 8
-  },
-  {
-    appId: 'zulip',
-    name: 'Seemplify Chat',
-    description: 'Thread-based team messaging and collaboration',
-    icon: 'chat-bubble-left-right',
-    color: '#6492fe',
-    url: process.env.ZULIP_URL || 'https://chat.seemplifyai.com',
-    apiUrl: process.env.ZULIP_URL || 'https://chat.seemplifyai.com',
-    clientId: 'zulip',
-    isActive: true,
-    isPublic: true,
-    category: 'communication',
-    order: 8.5
   }
 ]
 

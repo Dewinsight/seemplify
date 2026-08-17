@@ -51,7 +51,6 @@ learning.seemplifyai.com 200
 experience.seemplifyai.com 200
 api-interview.seemplifyai.com 404
 interview.seemplifyai.com 200
-chat.seemplifyai.com 302
 mail-control.seemplifyai.com 401
 postal.seemplifyai.com 302
 turn.seemplifyai.com 404
@@ -69,7 +68,6 @@ time https://api-time.seemplifyai.com/health 200
 approver https://approver.seemplifyai.com/api/health 200
 experience https://experience.seemplifyai.com/health 200
 ai-interview https://api-interview.seemplifyai.com/health 200
-zulip https://chat.seemplifyai.com/api/v1/server_settings 200
 HEALTH_ENDPOINTS
 
 curl -fsS https://api-interview.seemplifyai.com/api/platform/features \
@@ -111,6 +109,7 @@ Leave api-leave.seemplifyai.com https%3A%2F%2Fleave.seemplifyai.com
 Performance api-performance.seemplifyai.com https%3A%2F%2Fperformance.seemplifyai.com
 Payroll api-payroll.seemplifyai.com https%3A%2F%2Fpayroll.seemplifyai.com
 Time api-time.seemplifyai.com https%3A%2F%2Ftime.seemplifyai.com
+Learning learning.seemplifyai.com https%3A%2F%2Flearning.seemplifyai.com
 OIDC_APPS
 
 curl -fsS 'https://api-workspace.seemplifyai.com/socket.io/?EIO=4&transport=polling' --max-time 20 \
@@ -122,11 +121,6 @@ curl -fsS https://workspace.seemplifyai.com/release.json --max-time 20 \
   | python3 -c 'import json, re, sys; release=json.load(sys.stdin); assert re.fullmatch(r"[0-9a-f]{40}", release["sha"])' \
   || fail "Workspace release manifest is missing a full Git commit SHA"
 echo "workspace release manifest ok"
-
-curl -fsSL https://chat.seemplifyai.com/login/ --max-time 20 \
-  | grep -qi 'seemplify' \
-  || fail "Zulip login does not expose Seemplify OIDC"
-echo "zulip oidc login ok"
 
 curl -fsS https://turn.seemplifyai.com/api/health \
   | python3 -c 'import json, sys; assert json.load(sys.stdin)["status"] == "ok"' \

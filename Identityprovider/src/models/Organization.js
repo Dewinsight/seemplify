@@ -216,18 +216,6 @@ const OrganizationSchema = new mongoose.Schema({
     sparse: true,
     index: true
   },
-  // Zulip realm ID for multi-organization isolation
-  // Each organization gets its own Zulip realm
-  zulipRealmId: {
-    type: String,
-    sparse: true,
-    index: true
-  },
-  // Zulip realm name (for display purposes)
-  zulipRealmName: {
-    type: String,
-    sparse: true
-  },
   // Active subscription reference
   activeSubscription: {
     type: mongoose.Schema.Types.ObjectId,

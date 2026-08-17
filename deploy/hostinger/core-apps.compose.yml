@@ -1,0 +1,517 @@
+name: seemplify-core
+
+x-defaults: &defaults
+  restart: unless-stopped
+  networks:
+    - dokploy-network
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  identity-provider:
+    <<: *defaults
+    image: seemplify/identity-provider:hostinger-20260817-zulip-retired
+    environment:
+      NODE_ENV: production
+      PORT: "5008"
+      MONGO_URI: mongodb://identity_app:${MONGO_IDENTITY_PASSWORD:?required}@mongodb:27017/identity?authSource=identity
+      ISSUER_URL: https://auth.seemplifyai.com
+      API_AUDIENCE: https://auth.seemplifyai.com
+      OIDC_COOKIE_SECRET: ${IDP_COOKIE_SECRET:?required}
+      CLIENTS_CONFIG: /run/seemplify/idp-clients.json
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify Identity
+      SMARTHR_URL: https://app.seemplifyai.com
+      SMARTHR_LOGIN_URL: https://app.seemplifyai.com/login
+      SMARTHR_API_URL: https://api.seemplifyai.com
+      LEAVE_MANAGEMENT_URL: https://leave.seemplifyai.com
+      LEAVE_MANAGEMENT_API_URL: https://api-leave.seemplifyai.com
+      PERFORMANCE_MANAGEMENT_URL: https://performance.seemplifyai.com
+      PERFORMANCE_MANAGEMENT_API_URL: https://api-performance.seemplifyai.com
+      PAYROLL_MANAGEMENT_URL: https://payroll.seemplifyai.com
+      PAYROLL_MANAGEMENT_API_URL: https://api-payroll.seemplifyai.com
+      TIME_ATTENDANCE_URL: https://time.seemplifyai.com
+      TIME_ATTENDANCE_API_URL: https://api-time.seemplifyai.com
+      ATTENDANCE_HUB_SECRET: ${TIME_INTERNAL_SECRET:?required}
+      SEEMPLIFY_LEARNING_URL: https://learning.seemplifyai.com
+      MESSAGING_URL: https://workspace.seemplifyai.com
+      MESSAGING_API_URL: https://api-workspace.seemplifyai.com
+      MESSAGING_OIDC_CLIENT_SECRET: ${OIDC_MESSAGING_SECRET:?required}
+      MESSAGING_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
+      RECRUITER_ADMIN_URL: https://app.seemplifyai.com
+      RECRUITER_ADMIN_SSO_SECRET: ${RECRUITER_ADMIN_SSO_SECRET:?required}
+      RECRUITER_ADMIN_SSO_ISSUER: aiin-idp-admin
+      RECRUITER_ADMIN_SSO_AUDIENCE: recruiter-admin
+      IDP_WEBHOOK_SECRET_RECRUITER: ${IDP_WEBHOOK_RECRUITER:?required}
+      IDP_WEBHOOK_SECRET_LEAVE_MANAGEMENT: ${IDP_WEBHOOK_LEAVE:?required}
+      IDP_WEBHOOK_SECRET_PAYROLL: ${IDP_WEBHOOK_PAYROLL:?required}
+      IDP_WEBHOOK_SECRET_PERFORMANCE_MANAGEMENT: ${IDP_WEBHOOK_PERFORMANCE:?required}
+      IDP_WEBHOOK_SECRET_TIME_ATTENDANCE: ${IDP_WEBHOOK_TIME:?required}
+      IDP_WEBHOOK_SECRET_MESSAGING: ${IDP_WEBHOOK_MESSAGING:?required}
+      SMARTHR_WEBHOOK_URL: http://recruiter-backend:5001/api/webhooks/idp
+      LEAVE_WEBHOOK_URL: http://leave-backend:5002/api/webhooks/idp
+      PAYROLL_WEBHOOK_URL: http://payroll-backend:5006/api/webhooks/idp
+      PERFORMANCE_WEBHOOK_URL: http://performance-backend:5004/api/webhooks/idp
+      TIME_ATTENDANCE_WEBHOOK_URL: http://time-backend:5010/api/webhooks/idp
+      MESSAGING_WEBHOOK_URL: http://workspace-backend:5009/api/webhooks/idp
+    volumes:
+      - /opt/seemplify/secrets/idp-clients.json:/run/seemplify/idp-clients.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5008/.well-known/openid-configuration').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-auth.rule=Host(`auth.seemplifyai.com`)
+      - traefik.http.routers.seemplify-auth.entrypoints=web
+      - traefik.http.routers.seemplify-auth.service=seemplify-auth
+      - traefik.http.routers.seemplify-auth-secure.rule=Host(`auth.seemplifyai.com`)
+      - traefik.http.routers.seemplify-auth-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-auth-secure.service=seemplify-auth
+      - traefik.http.routers.seemplify-auth-secure.tls=true
+      - traefik.http.routers.seemplify-auth-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-auth.loadbalancer.server.port=5008
+
+  recruiter-backend:
+    <<: *defaults
+    image: seemplify/recruiter-backend:hostinger-20260817-redis-authfix
+    environment:
+      NODE_ENV: production
+      PORT: "5001"
+      MONGO_URI: mongodb://recruiter_app:${MONGO_RECRUITER_PASSWORD:?required}@mongodb:27017/smarthr?authSource=smarthr
+      FRONTEND_URL: https://app.seemplifyai.com
+      FRONTEND_URLS: https://app.seemplifyai.com,https://candidate.seemplifyai.com
+      CANDIDATE_PORTAL_URL: https://candidate.seemplifyai.com
+      IDP_ISSUER_URL: https://auth.seemplifyai.com
+      OIDC_ISSUER: https://auth.seemplifyai.com
+      IDP_INTERNAL_API_URL: http://identity-provider:5008
+      OIDC_CLIENT_ID: smarthr-backend
+      OIDC_CLIENT_SECRET: ${OIDC_RECRUITER_SECRET:?required}
+      OIDC_REDIRECT_URI: https://api.seemplifyai.com/api/auth/oidc/callback
+      SESSION_SECRET: ${RECRUITER_SESSION_SECRET:?required}
+      JWT_SECRET: ${RECRUITER_JWT_SECRET:?required}
+      HUB_TOKEN_SECRET: ${RECRUITER_JWT_SECRET:?required}
+      IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_RECRUITER:?required}
+      RECRUITER_ADMIN_SSO_SECRET: ${RECRUITER_ADMIN_SSO_SECRET:?required}
+      IDP_RECRUITER_ADMIN_SSO_SECRET: ${RECRUITER_ADMIN_SSO_SECRET:?required}
+      RECRUITER_ADMIN_SSO_ISSUER: aiin-idp-admin
+      RECRUITER_ADMIN_SSO_AUDIENCE: recruiter-admin
+      REDIS_URL: redis://:${REDIS_PASSWORD:?required}@seemplify-shared-redis-1:6379/0
+      CV_GLOBAL_DISPATCH_REDIS_URL: redis://:${REDIS_PASSWORD:?required}@seemplify-shared-redis-1:6379/1
+      REDIS_HOST: seemplify-shared-redis-1
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+      WEAVIATE_HOST: weaviate:8080
+      WEAVIATE_SCHEME: http
+      WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:?required}
+      CHATGPT_GATEWAY_BASE_URL: http://chatgpt-gateway:11435
+      CHATGPT_GATEWAY_SHARED_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
+      AI_GATEWAY_HMAC_SECRET: ${AI_GATEWAY_HMAC_SECRET:?required}
+      PERFORMANCE_AI_SHARED_SECRET: ${PERFORMANCE_AI_SHARED_SECRET:?required}
+      MESSAGING_AI_SHARED_SECRET: ${MESSAGING_AI_SHARED_SECRET:?required}
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify
+      ENABLE_BREVO_CALENDAR_INVITE_FALLBACK: "false"
+      FORCE_BREVO_CALENDAR_INVITE_FALLBACK: "false"
+      FORCE_BREVO_INTERVIEW_EMAILS: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5001/api/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 8s
+      retries: 15
+      start_period: 45s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-api.rule=Host(`api.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api.entrypoints=web
+      - traefik.http.routers.seemplify-api.service=seemplify-api
+      - traefik.http.routers.seemplify-api-secure.rule=Host(`api.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-api-secure.service=seemplify-api
+      - traefik.http.routers.seemplify-api-secure.tls=true
+      - traefik.http.routers.seemplify-api-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-api.loadbalancer.server.port=5001
+
+  recruiter-frontend:
+    <<: *defaults
+    image: seemplify/recruiter-frontend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5000"
+      HOSTNAME: 0.0.0.0
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-app.rule=Host(`app.seemplifyai.com`)
+      - traefik.http.routers.seemplify-app.entrypoints=web
+      - traefik.http.routers.seemplify-app.service=seemplify-app
+      - traefik.http.routers.seemplify-app-secure.rule=Host(`app.seemplifyai.com`)
+      - traefik.http.routers.seemplify-app-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-app-secure.service=seemplify-app
+      - traefik.http.routers.seemplify-app-secure.tls=true
+      - traefik.http.routers.seemplify-app-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-app.loadbalancer.server.port=5000
+
+  candidate-portal:
+    <<: *defaults
+    image: seemplify/candidate-portal:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5300"
+      HOSTNAME: 0.0.0.0
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-candidate.rule=Host(`candidate.seemplifyai.com`)
+      - traefik.http.routers.seemplify-candidate.entrypoints=web
+      - traefik.http.routers.seemplify-candidate.service=seemplify-candidate
+      - traefik.http.routers.seemplify-candidate-secure.rule=Host(`candidate.seemplifyai.com`)
+      - traefik.http.routers.seemplify-candidate-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-candidate-secure.service=seemplify-candidate
+      - traefik.http.routers.seemplify-candidate-secure.tls=true
+      - traefik.http.routers.seemplify-candidate-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-candidate.loadbalancer.server.port=5300
+
+  leave-backend:
+    <<: *defaults
+    image: seemplify/leave-backend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5002"
+      MONGODB_URI: mongodb://leave_app:${MONGO_LEAVE_PASSWORD:?required}@mongodb:27017/leave-management?authSource=leave-management
+      IDP_ISSUER_URL: https://auth.seemplifyai.com
+      IDP_INTERNAL_API_URL: http://identity-provider:5008
+      OIDC_CLIENT_ID: leave-management
+      OIDC_CLIENT_SECRET: ${OIDC_LEAVE_SECRET:?required}
+      OIDC_REDIRECT_URI: https://api-leave.seemplifyai.com/api/auth/oidc/callback
+      SESSION_SECRET: ${LEAVE_SESSION_SECRET:?required}
+      HUB_TOKEN_SECRET: ${LEAVE_HUB_SECRET:?required}
+      FRONTEND_URL: https://leave.seemplifyai.com
+      LEAVE_MANAGEMENT_URL: https://leave.seemplifyai.com
+      IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_LEAVE:?required}
+      PAYROLL_LEAVE_SHARED_SECRET: ${PAYROLL_LEAVE_SHARED_SECRET:?required}
+      PAYROLL_LEAVE_SERVICE_ID: payroll
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify Leave
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-api-leave.rule=Host(`api-leave.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-leave.entrypoints=web
+      - traefik.http.routers.seemplify-api-leave.service=seemplify-api-leave
+      - traefik.http.routers.seemplify-api-leave-secure.rule=Host(`api-leave.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-leave-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-api-leave-secure.service=seemplify-api-leave
+      - traefik.http.routers.seemplify-api-leave-secure.tls=true
+      - traefik.http.routers.seemplify-api-leave-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-api-leave.loadbalancer.server.port=5002
+
+  leave-frontend:
+    <<: *defaults
+    image: seemplify/leave-frontend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5003"
+      HOSTNAME: 0.0.0.0
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-leave.rule=Host(`leave.seemplifyai.com`)
+      - traefik.http.routers.seemplify-leave.entrypoints=web
+      - traefik.http.routers.seemplify-leave.service=seemplify-leave
+      - traefik.http.routers.seemplify-leave-secure.rule=Host(`leave.seemplifyai.com`)
+      - traefik.http.routers.seemplify-leave-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-leave-secure.service=seemplify-leave
+      - traefik.http.routers.seemplify-leave-secure.tls=true
+      - traefik.http.routers.seemplify-leave-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-leave.loadbalancer.server.port=5003
+
+  performance-backend:
+    <<: *defaults
+    image: seemplify/performance-backend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5004"
+      MONGO_URI: mongodb://performance_app:${MONGO_PERFORMANCE_PASSWORD:?required}@mongodb:27017/performance_db?authSource=performance_db
+      FRONTEND_URL: https://performance.seemplifyai.com
+      BACKEND_URL: https://api-performance.seemplifyai.com
+      IDP_ISSUER_URL: https://auth.seemplifyai.com
+      IDP_URL: https://auth.seemplifyai.com
+      IDP_HUB_URL: https://auth.seemplifyai.com
+      OIDC_CLIENT_ID: performance-management
+      OIDC_CLIENT_SECRET: ${OIDC_PERFORMANCE_SECRET:?required}
+      OIDC_REDIRECT_URI: https://api-performance.seemplifyai.com/api/auth/oidc/callback
+      SESSION_SECRET: ${PERFORMANCE_SESSION_SECRET:?required}
+      JWT_SECRET: ${PERFORMANCE_SESSION_SECRET:?required}
+      HUB_TOKEN_SECRET: ${PERFORMANCE_HUB_SECRET:?required}
+      IDP_PERFORMANCE_SERVICE_SECRET: ${IDP_WEBHOOK_PERFORMANCE:?required}
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify Performance
+      SEEMPLIFY_SHARED_AI_URL: http://recruiter-backend:5001
+      PERFORMANCE_AI_SHARED_SECRET: ${PERFORMANCE_AI_SHARED_SECRET:?required}
+      LOCAL_LLM_BASE_URL: http://chatgpt-gateway:11435
+      LOCAL_LLM_SHARED_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5004/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-api-performance.rule=Host(`api-performance.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-performance.entrypoints=web
+      - traefik.http.routers.seemplify-api-performance.service=seemplify-api-performance
+      - traefik.http.routers.seemplify-api-performance-secure.rule=Host(`api-performance.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-performance-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-api-performance-secure.service=seemplify-api-performance
+      - traefik.http.routers.seemplify-api-performance-secure.tls=true
+      - traefik.http.routers.seemplify-api-performance-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-api-performance.loadbalancer.server.port=5004
+
+  performance-frontend:
+    <<: *defaults
+    image: seemplify/performance-frontend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5005"
+      HOSTNAME: 0.0.0.0
+      NEXTAUTH_URL: https://performance.seemplifyai.com
+      NEXTAUTH_SECRET: ${PERFORMANCE_SESSION_SECRET:?required}
+      OIDC_ISSUER: https://auth.seemplifyai.com
+      OIDC_CLIENT_ID: performance-management
+      OIDC_CLIENT_SECRET: ${OIDC_PERFORMANCE_SECRET:?required}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-performance.rule=Host(`performance.seemplifyai.com`)
+      - traefik.http.routers.seemplify-performance.entrypoints=web
+      - traefik.http.routers.seemplify-performance.service=seemplify-performance
+      - traefik.http.routers.seemplify-performance-secure.rule=Host(`performance.seemplifyai.com`)
+      - traefik.http.routers.seemplify-performance-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-performance-secure.service=seemplify-performance
+      - traefik.http.routers.seemplify-performance-secure.tls=true
+      - traefik.http.routers.seemplify-performance-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-performance.loadbalancer.server.port=5005
+
+  payroll-backend:
+    <<: *defaults
+    image: seemplify/payroll-backend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5006"
+      MONGODB_URI: mongodb://payroll_app:${MONGO_PAYROLL_PASSWORD:?required}@mongodb:27017/payroll-management?authSource=payroll-management
+      FRONTEND_URL: https://payroll.seemplifyai.com
+      IDP_ISSUER_URL: https://auth.seemplifyai.com
+      OIDC_CLIENT_ID: payroll-management
+      OIDC_CLIENT_SECRET: ${OIDC_PAYROLL_SECRET:?required}
+      OIDC_REDIRECT_URI: https://api-payroll.seemplifyai.com/api/auth/oidc/callback
+      SESSION_SECRET: ${PAYROLL_SESSION_SECRET:?required}
+      JWT_SECRET: ${PAYROLL_JWT_SECRET:?required}
+      HUB_TOKEN_SECRET: ${PAYROLL_HUB_SECRET:?required}
+      IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_PAYROLL:?required}
+      PAYROLL_LEAVE_SHARED_SECRET: ${PAYROLL_LEAVE_SHARED_SECRET:?required}
+      PAYROLL_LEAVE_SERVICE_ID: payroll
+      LEAVE_SERVICE_URL: http://leave-backend:5002
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify Payroll
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5006/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-api-payroll.rule=Host(`api-payroll.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-payroll.entrypoints=web
+      - traefik.http.routers.seemplify-api-payroll.service=seemplify-api-payroll
+      - traefik.http.routers.seemplify-api-payroll-secure.rule=Host(`api-payroll.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-payroll-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-api-payroll-secure.service=seemplify-api-payroll
+      - traefik.http.routers.seemplify-api-payroll-secure.tls=true
+      - traefik.http.routers.seemplify-api-payroll-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-api-payroll.loadbalancer.server.port=5006
+
+  payroll-frontend:
+    <<: *defaults
+    image: seemplify/payroll-frontend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5007"
+      HOSTNAME: 0.0.0.0
+      NEXTAUTH_URL: https://payroll.seemplifyai.com
+      NEXTAUTH_SECRET: ${PAYROLL_SESSION_SECRET:?required}
+      OIDC_ISSUER: https://auth.seemplifyai.com
+      OIDC_CLIENT_ID: payroll-management
+      OIDC_CLIENT_SECRET: ${OIDC_PAYROLL_SECRET:?required}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-payroll.rule=Host(`payroll.seemplifyai.com`)
+      - traefik.http.routers.seemplify-payroll.entrypoints=web
+      - traefik.http.routers.seemplify-payroll.service=seemplify-payroll
+      - traefik.http.routers.seemplify-payroll-secure.rule=Host(`payroll.seemplifyai.com`)
+      - traefik.http.routers.seemplify-payroll-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-payroll-secure.service=seemplify-payroll
+      - traefik.http.routers.seemplify-payroll-secure.tls=true
+      - traefik.http.routers.seemplify-payroll-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-payroll.loadbalancer.server.port=5007
+
+  time-backend:
+    <<: *defaults
+    image: seemplify/time-backend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5010"
+      MONGODB_URI: mongodb://time_app:${MONGO_TIME_PASSWORD:?required}@mongodb:27017/time-attendance?authSource=time-attendance
+      FRONTEND_URL: https://time.seemplifyai.com
+      IDP_ISSUER_URL: https://auth.seemplifyai.com
+      IDP_INTERNAL_API_URL: http://identity-provider:5008
+      OIDC_CLIENT_ID: time-attendance
+      OIDC_CLIENT_SECRET: ${OIDC_TIME_SECRET:?required}
+      OIDC_REDIRECT_URI: https://api-time.seemplifyai.com/api/auth/oidc/callback
+      SESSION_SECRET: ${TIME_SESSION_SECRET:?required}
+      INTERNAL_SERVICE_SECRET: ${TIME_INTERNAL_SECRET:?required}
+      ATTENDANCE_HUB_SECRET: ${TIME_INTERNAL_SECRET:?required}
+      IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_TIME:?required}
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify Time
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5010/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-api-time.rule=Host(`api-time.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-time.entrypoints=web
+      - traefik.http.routers.seemplify-api-time.service=seemplify-api-time
+      - traefik.http.routers.seemplify-api-time-secure.rule=Host(`api-time.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-time-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-api-time-secure.service=seemplify-api-time
+      - traefik.http.routers.seemplify-api-time-secure.tls=true
+      - traefik.http.routers.seemplify-api-time-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-api-time.loadbalancer.server.port=5010
+
+  time-frontend:
+    <<: *defaults
+    image: seemplify/time-frontend:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5011"
+      HOSTNAME: 0.0.0.0
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-time.rule=Host(`time.seemplifyai.com`)
+      - traefik.http.routers.seemplify-time.entrypoints=web
+      - traefik.http.routers.seemplify-time.service=seemplify-time
+      - traefik.http.routers.seemplify-time-secure.rule=Host(`time.seemplifyai.com`)
+      - traefik.http.routers.seemplify-time-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-time-secure.service=seemplify-time
+      - traefik.http.routers.seemplify-time-secure.tls=true
+      - traefik.http.routers.seemplify-time-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-time.loadbalancer.server.port=5011
+
+  approver:
+    <<: *defaults
+    image: seemplify/approver:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "80"
+      MONGO_URI: mongodb://approver_app:${MONGO_APPROVER_PASSWORD:?required}@mongodb:27017/approver?authSource=approver
+      JWT_SECRET: ${APPROVER_JWT_SECRET:?required}
+      FRONTEND_URL: https://approver.seemplifyai.com
+      FRONTEND_URLS: https://approver.seemplifyai.com
+      AUTH_COOKIE_DOMAIN: .seemplifyai.com
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify Approver
+      WEAVIATE_HOST: weaviate:8080
+      WEAVIATE_SCHEME: http
+      WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:?required}
+      USE_WEAVIATE: "true"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-approver.rule=Host(`approver.seemplifyai.com`)
+      - traefik.http.routers.seemplify-approver.entrypoints=web
+      - traefik.http.routers.seemplify-approver.service=seemplify-approver
+      - traefik.http.routers.seemplify-approver-secure.rule=Host(`approver.seemplifyai.com`)
+      - traefik.http.routers.seemplify-approver-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-approver-secure.service=seemplify-approver
+      - traefik.http.routers.seemplify-approver-secure.tls=true
+      - traefik.http.routers.seemplify-approver-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-approver.loadbalancer.server.port=80
+
+  learning:
+    <<: *defaults
+    image: seemplify/learning:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "5012"
+      MONGODB_URI: mongodb://learning_app:${MONGO_LEARNING_PASSWORD:?required}@mongodb:27017/seemplify-learning?authSource=seemplify-learning
+      MONGO_URI: mongodb://learning_app:${MONGO_LEARNING_PASSWORD:?required}@mongodb:27017/seemplify-learning?authSource=seemplify-learning
+      SESSION_SECRET: ${LEARNING_SESSION_SECRET:?required}
+      APP_BASE_URL: https://learning.seemplifyai.com
+      IDP_ISSUER_URL: https://auth.seemplifyai.com
+      OIDC_CLIENT_ID: seemplify-learning
+      OIDC_CLIENT_SECRET: ${OIDC_LEARNING_SECRET:?required}
+      OIDC_REDIRECT_URI: https://learning.seemplifyai.com/auth/seemplify/callback
+      PERFORMANCE_MANAGEMENT_URL: http://performance-backend:5004
+      PERFORMANCE_MANAGEMENT_WEBHOOK_SECRET: ${IDP_WEBHOOK_PERFORMANCE:?required}
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify Learning
+      CREDENTIALS_ENCRYPTION_KEY: ${LEARNING_SESSION_SECRET:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5012/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-learning.rule=Host(`learning.seemplifyai.com`)
+      - traefik.http.routers.seemplify-learning.entrypoints=web
+      - traefik.http.routers.seemplify-learning.service=seemplify-learning
+      - traefik.http.routers.seemplify-learning-secure.rule=Host(`learning.seemplifyai.com`)
+      - traefik.http.routers.seemplify-learning-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-learning-secure.service=seemplify-learning
+      - traefik.http.routers.seemplify-learning-secure.tls=true
+      - traefik.http.routers.seemplify-learning-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-learning.loadbalancer.server.port=5012
+
+networks:
+  dokploy-network:
+    external: true

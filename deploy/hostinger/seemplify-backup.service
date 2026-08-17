@@ -1,0 +1,19 @@
+[Unit]
+Description=Back up Seemplify databases and persistent service state
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/seemplify-backup
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/backups/seemplify /run/lock
+
+[Install]
+WantedBy=multi-user.target

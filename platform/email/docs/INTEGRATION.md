@@ -122,18 +122,6 @@ Useful routes are `/health/live`, `/health/ready`, `/v1/status`, `/v1/gates`,
 `/v1/metrics`, `/v1/events`, `/v1/bounces` and `/v1/suppressions`. Read and
 admin routes require the matching scope.
 
-## Zulip SMTP exception
-
-Zulip is the one production service that does not call the Mail API. It sends
-through the private `seemplify-mail_relay_internal` network to
-`postfix-relay:25`; that relay then uses the same IP-authorized Google Workspace
-hop as the central mail stack. Zulip uses `no-reply@dewinsight.com`, disables
-tokenized no-reply addresses and never exposes the private relay publicly.
-
-Keep this exception until Zulip can use a Mail API adapter. Do not change its
-visible sender to `seemplifyai.com` while bypassing Postal, because it would not
-receive the Postal DKIM signature needed for aligned authentication.
-
 ## Dashboard integration
 
 Postal already provides its operations UI at `https://postal.seemplifyai.com`

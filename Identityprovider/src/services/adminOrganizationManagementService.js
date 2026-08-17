@@ -18,7 +18,6 @@ import { SimplePerformanceEvaluationConfig } from '../models/SimplePerformanceEv
 import Subscription from '../models/Subscription.js'
 import SubscriptionRequest from '../models/SubscriptionRequest.js'
 import { Team } from '../models/Team.js'
-import zulipService from './zulipService.js'
 
 export const ADMIN_ORGANIZATION_ACTIONS = {
   REMOVE_MEMBERS: 'remove_members',
@@ -233,12 +232,6 @@ export async function deleteOrganizationCascade(organization, options = {}) {
   }
 
   const memberIds = uniqueIdStrings((existingOrganization.members || []).map(member => member.account))
-
-  try {
-    await zulipService.deleteZulipRealm(existingOrganization)
-  } catch (error) {
-    console.error('Failed to delete Zulip realm during organization cleanup:', error)
-  }
 
   await Promise.all([
     Account.updateMany(

@@ -30,18 +30,17 @@ shell history. Password SSH is disabled; use the Hostinger root SSH key.
 | Experience Management | `experience.seemplifyai.com` | Extended apps |
 | Workspace | `api-workspace.seemplifyai.com`, `workspace.seemplifyai.com` | Workspace stack |
 | AI Interview | `api-interview.seemplifyai.com`, `interview.seemplifyai.com` | Extended apps |
-| Zulip | `chat.seemplifyai.com` | Zulip stack |
 | TURN credentials and Coturn | `turn.seemplifyai.com`, ports `3478` and `49152-49252` | Coturn stack |
 | Postal control UI | `postal.seemplifyai.com` | Mail stack |
 | Transactional Mail API | `mail-control.seemplifyai.com` | Mail stack |
 | ChatGPT/Codex gateway | internal persistent service | Extended apps |
 
-The deployed data services are MongoDB 8, Redis 7, PostgreSQL 17, Zulip
-PostgreSQL 14, MariaDB 10.11, Weaviate and Qdrant. MongoDB has a `65536`
+The deployed data services are MongoDB 8, Redis 7, PostgreSQL 17,
+MariaDB 10.11, Weaviate and Qdrant. MongoDB has a `65536`
 open-file limit so bulk index restore does not exhaust descriptors.
 
 The intentionally excluded products are diGiLog Recruiter, Auto-Mailer,
-Rocket.Chat, Mailcow and Brevo.
+Rocket.Chat, Zulip, Mailcow and Brevo.
 
 The Identity hub exposes only services that have a live production target.
 Outline Docs and standalone Open WebUI remain hidden until their `OUTLINE_URL`
@@ -71,11 +70,6 @@ docker compose \
   --env-file /opt/seemplify/secrets/shared-infrastructure.env \
   --env-file /opt/seemplify/secrets/core-apps.env \
   -f /opt/seemplify/deploy/hostinger/extended-apps.compose.yml \
-  up -d
-
-docker compose \
-  --env-file /opt/seemplify/secrets/zulip.env \
-  -f /opt/seemplify/deploy/hostinger/zulip.compose.yml \
   up -d
 
 docker compose \
@@ -128,13 +122,11 @@ The production acceptance pass verified:
 - the Recruiter dashboard completes organization authorization after SSO;
 - Experience Management, Candidate Portal, AI Interview and the marketing
   site render without browser console errors;
-- the hub shows nine live cards, uses the new Experience hostname and exposes
+- the hub uses the new Experience hostname and exposes
   working embedded attendance status and controls;
-- Zulip serves its Seemplify OIDC login, while its first OIDC sign-in may
-  auto-create the user's Zulip profile;
 - all public API health routes, all five OIDC start routes, the AI Interview
   feature flag, Google-relayed mail control and Postal, ChatGPT/Codex gateway,
-  MongoDB, Redis, PostgreSQL, MariaDB, Weaviate, Qdrant and Zulip dependencies;
+  MongoDB, Redis, PostgreSQL, MariaDB, Weaviate and Qdrant dependencies;
 - authenticated external UDP TURN allocation; and
 - the local backup timer, an empty Postfix queue and zero failed systemd units.
 
@@ -148,14 +140,12 @@ search and sign-out journey. The dedicated AIIN `staff` smoke identity has only
 the `messaging` app grant, and its email/password are stored only as encrypted
 repository secrets `MESSAGING_TEST_EMAIL` and `MESSAGING_TEST_PASSWORD`.
 
-The IdP membership idempotency and claims-cache repair is deployed as
-`seemplify/identity-provider:hostinger-20260817-membershipfix` and preserved in
-GitHub by merged PR `#45` (`c05578cd3c959f4cbf5f9f712761f57c78329d56`).
+The IdP membership idempotency and claims-cache repair is preserved in GitHub
+by merged PR `#45` (`c05578cd3c959f4cbf5f9f712761f57c78329d56`). The current
+image is `seemplify/identity-provider:hostinger-20260817-zulip-retired`.
 
-Redis consumers use stack-specific hostnames (`seemplify-shared-redis-1` and
-`seemplify-zulip-redis-1`). Do not change them back to the generic Docker alias
-`redis`: Dokploy, shared infrastructure and Zulip all attach Redis services to
-the same network, so the generic alias resolves to multiple different servers.
+Redis consumers use the stack-specific hostname `seemplify-shared-redis-1`.
+Do not change it back to the generic Docker alias `redis`.
 Recruiter and AI Interview must both use shared Redis database `1` for
 `CV_GLOBAL_DISPATCH_REDIS_URL`; their cross-service inference limit is one
 persisted fail-closed contract, not two independent queues.
@@ -177,9 +167,9 @@ journalctl -u seemplify-backup.service --since today
 readlink -f /var/backups/seemplify/latest
 ```
 
-The backup includes native dumps of MongoDB, Experience PostgreSQL, Zulip
-PostgreSQL, Dokploy PostgreSQL and MariaDB; a Redis RDB; and archives of Qdrant,
-Weaviate, Zulip, Postal, Mail API, Experience runtime, Dokploy and gateway
+The backup includes native dumps of MongoDB, Experience PostgreSQL,
+Dokploy PostgreSQL and MariaDB; a Redis RDB; and archives of Qdrant,
+Weaviate, Postal, Mail API, Experience runtime, Dokploy and gateway
 state, including the Workspace uploads volume.
 
 Run an isolated, non-production restore verification with:
@@ -227,10 +217,15 @@ the envelope sender only, preserving each application's visible
 message reached Gmail Inbox with SPF, DKIM and DMARC all passing.
 
 Experience Management and AI Interview run with their email mode set to `send`.
-Zulip is an explicit SMTP-only exception: it connects privately to
-`postfix-relay:25`, disables tokenized no-reply addresses and sends as
-`no-reply@dewinsight.com`, whose Google-managed authentication passes. Do not
-point Zulip directly at the public Mail API or expose port 25.
+
+## Retired Zulip service
+
+Zulip was retired on 17 August 2026. Its containers and Cloudflare DNS record
+were removed, it is no longer an IdP client or hub application, and production
+automation must not recreate it. A final checksum-verified backup is stored in
+`/var/backups/seemplify/20260817T142511Z`; its named Docker volumes remain on
+the VPS temporarily for recoverability and must not be reattached without an
+explicit restore decision.
 
 Do not add a Brevo fallback or rotate aliases to evade quotas. See
 `platform/email/docs/INTEGRATION.md` and `platform/email/docs/OPERATIONS.md` for

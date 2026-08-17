@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Seemplify backup every day
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 Africa/Lagos
+RandomizedDelaySec=15m
+Persistent=true
+Unit=seemplify-backup.service
+
+[Install]
+WantedBy=timers.target

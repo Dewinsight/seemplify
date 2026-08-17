@@ -125,8 +125,6 @@ database passwords in Git, issue comments, screenshots or deployment logs.
   and all 11 messages reached the test mailbox.
 - The real AI Interview invitation function and Experience Management password
   reset workflow both reached the test mailbox through Postal and Google.
-- Zulip's built-in email test delivered both its normal and no-reply variants
-  through the private Postfix relay.
 - `postal._domainkey.bounce.seemplifyai.com` publishes Postal's public DKIM key.
   A post-propagation message from `no-reply@seemplifyai.com` reached Inbox with
   SPF, DKIM and DMARC all passing.

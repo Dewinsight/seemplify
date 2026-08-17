@@ -93,7 +93,7 @@ services:
       AI_INTERVIEW_MONGO_DB: ai-interview
       AI_INTERVIEW_SESSION_SECRET: ${AI_INTERVIEW_SESSION_SECRET:?required}
       SEEMPLIFY_PLATFORM_API_URL: http://recruiter-backend:5001
-      SEEMPLIFY_AI_GATEWAY_URL: http://chatgpt-gateway:11435
+      SEEMPLIFY_AI_GATEWAY_URL: http://recruiter-backend:5001
       AI_GATEWAY_SERVICE_ID: ai-interview
       AI_GATEWAY_HMAC_SECRET: ${AI_GATEWAY_HMAC_SECRET:?required}
       AI_INTERVIEW_REDIS_HOST: seemplify-shared-redis-1
