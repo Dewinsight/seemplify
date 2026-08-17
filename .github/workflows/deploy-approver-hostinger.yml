@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-approver-hostinger-production
+  group: hostinger-production-deployments
   cancel-in-progress: false
 
 jobs:

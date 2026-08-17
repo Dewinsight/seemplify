@@ -1,14 +1,8 @@
-# Deploy Identity Provider and provision its Messaging OIDC trust.
-name: Deploy Identity Provider
+# Legacy Dokploy path retained for manual recovery. Hostinger production uses
+# deploy-core-hostinger.yml for every Identity Provider change.
+name: Legacy Deploy Identity Provider (manual)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'Identityprovider/**'
-      - 'tools/messaging-oidc/**'
-      - 'tools/chatgpt-gateway/dokploy-configure.cjs'
-      - '.github/workflows/deploy-identity-provider.yml'
   workflow_dispatch:
 
 env:

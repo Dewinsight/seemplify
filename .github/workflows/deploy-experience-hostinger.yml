@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-experience-hostinger-production
+  group: hostinger-production-deployments
   cancel-in-progress: false
 
 jobs:
