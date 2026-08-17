@@ -62,3 +62,21 @@ npx tsx --test experience-management/backend/test/idp-provisioning.test.ts
 node --test Identityprovider/test/experience-oidc-client.test.mjs
 node --test recruiter/backend/tests/internalServiceAuth.test.js
 ```
+
+### Production acceptance (2026-08-17)
+
+- The IdP hub launched Experience through OIDC and provisioned the verified
+  administrator into the entitled AIIN space.
+- IdP Admin's **Experience Admin** action completed the signed handoff to
+  `https://experience.seemplifyai.com/admin`; the Experience platform overview
+  and administration sections were available under the central super-admin.
+- The Experience AI panel reached the shared ChatGPT device-connection flow.
+  First-login account creation is duplicate-key race-safe.
+- Recruiter enrichment BullMQ uses the protected shared Redis credential; the
+  configuration contract is covered by `enrichmentRedisConfig.test.js`.
+- `/usr/local/sbin/seemplify-smoke` passed after the production deployment,
+  including Experience health, OIDC, mail, TURN, realtime, and container checks.
+
+The ChatGPT account link is per-user and still requires that user's external
+OpenAI/Google MFA approval. No MFA recovery code belongs in this repository or
+the access vault.

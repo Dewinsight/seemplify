@@ -10,21 +10,19 @@ const {
   candidateIdFromMatch,
   selectAuthoritativeMatches
 } = require('./matchingEnrichmentInputService');
+const { resolveEnrichmentRedisConnection } = require('../config/enrichmentRedis');
 
-const REDIS_ENABLED = process.env.REDIS_ENABLED
-  ? process.env.REDIS_ENABLED !== 'false'
-  : process.env.NODE_ENV === 'production' || Boolean(process.env.REDIS_HOST);
-const REDIS_HOST = process.env.REDIS_HOST || (process.env.NODE_ENV === 'production' ? 'dokploy-redis' : '127.0.0.1');
-const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
+const redisConfig = resolveEnrichmentRedisConnection();
+const REDIS_ENABLED = Boolean(redisConfig);
 const CONCURRENCY = parseInt(process.env.ENRICHMENT_CONCURRENCY || '2', 10);
 const BATCH_SIZE = 10;
 const QUEUE_NAME = 'candidate-enrichment';
 
-const connection = REDIS_ENABLED ? new IORedis(REDIS_PORT, REDIS_HOST, {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  lazyConnect: true,
-}) : null;
+const connection = REDIS_ENABLED
+  ? redisConfig.url
+    ? new IORedis(redisConfig.url, redisConfig.options)
+    : new IORedis(redisConfig.options)
+  : null;
 
 if (connection) {
   connection.on('error', (err) => {
