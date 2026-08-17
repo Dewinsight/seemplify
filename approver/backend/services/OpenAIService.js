@@ -157,16 +157,21 @@ class OpenAIService {
         this.config = resolveOpenAIConfig();
         if (this.config.provider === 'responses') {
             if (!this.config.responsesUrl || !this.config.responsesApiKey || !this.config.responsesModel) {
-                throw new Error('Azure OpenAI Responses config missing. Set AZURE_OPENAI_RESPONSES_URL, AZURE_OPENAI_RESPONSES_MODEL, and an API key.');
+                this.client = null;
+                this.availabilityError = 'Azure OpenAI Responses config missing. Set AZURE_OPENAI_RESPONSES_URL, AZURE_OPENAI_RESPONSES_MODEL, and an API key.';
+                console.warn(`Approver AI is unavailable: ${this.availabilityError}`);
+                return;
             }
             this.client = null;
+            this.availabilityError = '';
             return;
         }
 
         if (!this.config.apiKey || !this.config.baseURL || !this.config.apiVersion || !this.config.deployment) {
-            throw new Error(
-                'Azure OpenAI config missing. Set AZURE_OPENAI_* vars or Azure_openai_kimi2.5_* vars.'
-            );
+            this.client = null;
+            this.availabilityError = 'Azure OpenAI config missing. Set AZURE_OPENAI_* vars or Azure_openai_kimi2.5_* vars.';
+            console.warn(`Approver AI is unavailable: ${this.availabilityError}`);
+            return;
         }
         this.client = new OpenAI({
             apiKey: this.config.apiKey,
@@ -174,9 +179,15 @@ class OpenAIService {
             defaultQuery: { 'api-version': this.config.apiVersion },
             defaultHeaders: { 'api-key': this.config.apiKey }
         });
+        this.availabilityError = '';
     }
 
     async createCompletion(messages, options = {}) {
+        if (this.availabilityError) {
+            const error = new Error(this.availabilityError);
+            error.code = 'APPROVER_AI_UNAVAILABLE';
+            throw error;
+        }
         if (this.config.provider === 'responses') {
             return this.createResponsesCompletion(messages, options);
         }
