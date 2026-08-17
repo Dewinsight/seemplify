@@ -74,6 +74,7 @@ export default function RootLayout({
       <head>
         {/* Load runtime configuration before any other scripts */}
         <Script src="/__runtime_config__.js" strategy="beforeInteractive" />
+        <Script src="https://auth.seemplifyai.com/js/seemplify-browser-realtime.js?v=1" strategy="afterInteractive" />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
       </head>

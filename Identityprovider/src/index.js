@@ -93,6 +93,10 @@ import cloudinary, { isCloudinaryConfigured } from './services/cloudinaryService
 import { claimsCacheEnabled } from './utils/claimsCachePolicy.js'
 import { createWebhookReadinessVerifier } from './middleware/webhookReadinessAuth.js'
 import { createAutomationRequestVerifier } from './middleware/automationRequestAuth.js'
+import {
+  createBrowserNotificationClientRouter,
+  createInternalBrowserNotificationRouter
+} from './routes/browserNotificationRelay.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1191,6 +1195,13 @@ app.use(session({
     sameSite: isProduction ? 'none' : 'lax',
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
+}))
+
+// Central browser notification relay. Workspace signs server-to-server writes;
+// browser reads are bound to the user's authoritative Seemplify Identity session.
+app.use('/api/internal/browser-notifications', createInternalBrowserNotificationRouter())
+app.use('/api/browser-notifications', createBrowserNotificationClientRouter({
+  resolveAccount: getSessionFromCookies
 }))
 
 // Set up EJS templating for organization management UI

@@ -3,6 +3,7 @@
 import { useState, useEffect, useLayoutEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Script from 'next/script';
 import { useUserContext, useOrganizations } from '@/lib/hooks';
 import { authApi, handleAuthCallback } from '@/lib/api';
 import { resolveIdpUrl } from '@/lib/runtimeConfig';
@@ -175,6 +176,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     return (
       <html lang="en" suppressHydrationWarning>
         <body className="payroll-app-shell bg-[rgb(var(--background-start-rgb))]">
+          <Script src={`${hubUrl.replace(/\/$/, '')}/js/seemplify-browser-realtime.js?v=1`} strategy="afterInteractive" />
           <div className="bg-noise" />
           <div className="min-h-screen flex items-center justify-center px-4 py-16">
             <div className="w-full max-w-xl rounded-2xl border border-zinc-700/50 bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 p-8 text-center shadow-2xl">
@@ -262,6 +264,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="payroll-app-shell bg-[rgb(var(--background-start-rgb))]">
+        <Script src={`${hubUrl.replace(/\/$/, '')}/js/seemplify-browser-realtime.js?v=1`} strategy="afterInteractive" />
         <div className="bg-noise" />
 
         <PayrollViewModeProvider value={providerValue}>

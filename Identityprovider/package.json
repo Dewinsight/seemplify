@@ -15,6 +15,8 @@
     "test:oidc-recovery": "node --test test/oidc-recovery-page.test.mjs",
     "test:hub-pins": "node --test test/hub-pins.test.mjs",
     "test:profile-completion": "node --test test/profile-completion.test.mjs",
+    "test:browser-notifications": "node --test test/browser-notification-relay.test.mjs",
+    "test:browser-notification-client": "node test/browser-notification-client.playwright.mjs",
     "test:surface-retirement": "node --test test/legacy-ui-redirects.test.mjs",
     "seed-admin": "node src/seeds/seedAdminSimple.js",
     "seed-plans": "node src/seeds/seedPlans.js"
@@ -39,6 +41,7 @@
     "pg": "^8.11.3",
     "pino": "^9.4.0",
     "samlify": "^2.10.2",
+    "web-push": "^3.6.7",
     "xlsx": "^0.18.5"
   },
   "pnpm": {
@@ -47,6 +50,7 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "nodemon": "^3.1.10"
   }
 }
