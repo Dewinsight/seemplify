@@ -389,7 +389,10 @@ class AIRuntimeService {
         // Credential ownership stays Recruiter (`codexSourceApp` above), but
         // usage attribution follows the authenticated product and active org.
         sourceApp: meteringSourceApp(context.sourceApp),
+        runtimeOwner: route.runtimeOwner === 'user' ? 'user' : 'platform',
         actorId: meteringDimension(context.actorId),
+        actorName: meteringDimension(context.actorName, 200),
+        actorEmail: meteringDimension(context.actorEmail, 254),
         organizationId: meteringDimension(context.organizationId, 120),
         organizationName: meteringDimension(context.organizationName, 200)
       }

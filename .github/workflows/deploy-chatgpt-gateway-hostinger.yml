@@ -1,0 +1,147 @@
+name: Deploy ChatGPT Gateway to Hostinger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/chatgpt-gateway/**'
+      - 'recruiter/backend/config/aiRuntimeCatalog.js'
+      - 'recruiter/backend/services/aiRuntime/**'
+      - 'recruiter/backend/routes/internalAI.js'
+      - 'deploy/hostinger/extended-apps.compose.yml'
+      - 'deploy/hostinger/smoke-hostinger.sh'
+      - '.github/workflows/deploy-chatgpt-gateway-hostinger.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-production-deployments
+  cancel-in-progress: false
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify gateway metering and Recruiter ingestion
+        run: |
+          node --test \
+            tools/chatgpt-gateway/usage-metering-outbox.test.cjs \
+            tools/chatgpt-gateway/usage-ledger.test.cjs \
+            recruiter/backend/tests/aiRuntimeChatgptProvider.test.js \
+            recruiter/backend/tests/chatGptUsageReplay.test.js
+
+  deploy:
+    needs: qa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Package release
+        run: |
+          tar -czf chatgpt-hostinger-release.tgz \
+            tools/chatgpt-gateway \
+            recruiter/backend \
+            deploy/hostinger/extended-apps.compose.yml \
+            deploy/hostinger/smoke-hostinger.sh
+      - name: Upload release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: scp chatgpt-hostinger-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/chatgpt-hostinger-release-${GITHUB_SHA}.tgz"
+      - name: Build, deploy, and verify immutable release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          release_root="/opt/seemplify/releases/$RELEASE_SHA"
+          archive="/opt/seemplify/build/chatgpt-hostinger-release-$RELEASE_SHA.tgz"
+          backup_root=/var/backups/seemplify/chatgpt-gateway-deployments
+          volume=seemplify-extended_chatgpt_gateway_data
+          install -d -m 700 "$release_root" "$backup_root"
+          tar -xzf "$archive" -C "$release_root"
+
+          snapshot="$backup_root/predeploy-$RELEASE_SHA.tar.gz"
+          docker volume inspect "$volume" >/dev/null
+          docker run --rm \
+            -v "$volume:/source:ro" \
+            -v "$backup_root:/backup" \
+            alpine:3.20 sh -euc "tar -C /source -czf /backup/$(basename "$snapshot") ."
+          test -s "$snapshot"
+
+          gateway_image="seemplify/chatgpt-gateway:hostinger-$RELEASE_SHA"
+          recruiter_image="seemplify/recruiter-backend:hostinger-$RELEASE_SHA"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -f "$release_root/tools/chatgpt-gateway/Dockerfile" \
+            -t "$gateway_image" "$release_root"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$recruiter_image" "$release_root/recruiter/backend"
+
+          install -d /opt/seemplify/source/tools/chatgpt-gateway
+          cp -a "$release_root/tools/chatgpt-gateway/." /opt/seemplify/source/tools/chatgpt-gateway/
+          cp -a "$release_root/recruiter/backend/." /opt/seemplify/source/recruiter/backend/
+          install -m 644 "$release_root/deploy/hostinger/extended-apps.compose.yml" /opt/seemplify/deploy/hostinger/extended-apps.compose.yml
+          install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
+          install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /usr/local/sbin/seemplify-smoke
+
+          export CHATGPT_GATEWAY_IMAGE="$gateway_image"
+          export RECRUITER_BACKEND_IMAGE="$recruiter_image"
+          core=(docker compose \
+            --env-file /opt/seemplify/secrets/shared-infrastructure.env \
+            --env-file /opt/seemplify/secrets/core-apps.env \
+            -f /opt/seemplify/deploy/hostinger/core-apps.compose.yml)
+          extended=(docker compose \
+            --env-file /opt/seemplify/secrets/shared-infrastructure.env \
+            --env-file /opt/seemplify/secrets/core-apps.env \
+            -f /opt/seemplify/deploy/hostinger/extended-apps.compose.yml)
+          "${core[@]}" config --quiet
+          "${extended[@]}" config --quiet
+
+          wait_healthy() {
+            local container="$1"
+            for _ in $(seq 1 90); do
+              state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
+              [[ "$state" == healthy ]] && return 0
+              [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && break
+              sleep 2
+            done
+            docker logs --tail 150 "$container" >&2 || true
+            return 1
+          }
+
+          "${core[@]}" up -d --no-deps --force-recreate recruiter-backend
+          wait_healthy seemplify-core-recruiter-backend-1
+          "${extended[@]}" up -d --no-deps --force-recreate chatgpt-gateway
+          wait_healthy seemplify-extended-chatgpt-gateway-1
+
+          docker exec seemplify-extended-chatgpt-gateway-1 node -e '
+            fetch("http://127.0.0.1:11435/health")
+              .then(async response => {
+                const health = await response.json();
+                if (!response.ok || health.ok !== true || health.telemetryMirrorConfigured !== true) process.exit(1);
+                console.log("ChatGPT gateway usage mirror is ready");
+              })
+              .catch(() => process.exit(1));
+          '
+          /usr/local/sbin/seemplify-smoke
+          rm -f "$archive"
+          find "$backup_root" -type f -name 'predeploy-*.tar.gz' -mtime +30 -delete
+          REMOTE

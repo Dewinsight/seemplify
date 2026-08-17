@@ -67,6 +67,9 @@ test('outbox stores approved operational identity but never prompt or CV content
   const result = await outbox.enqueue({
     ...usageEvent(),
     candidateName: 'Must not persist',
+    runtimeOwner: 'user',
+    actorName: 'Michael Egbo',
+    actorEmail: 'michael.egbo@dewinsight.com',
     organizationName: 'Acme Ltd',
     prompt: 'Must not persist'
   });
@@ -76,6 +79,9 @@ test('outbox stores approved operational identity but never prompt or CV content
   const stored = JSON.parse(fs.readFileSync(result.file, 'utf8'));
   assert.equal(stored.event.inputTokens, 100);
   assert.equal(stored.event.candidateName, undefined);
+  assert.equal(stored.event.runtimeOwner, 'user');
+  assert.equal(stored.event.actorName, 'Michael Egbo');
+  assert.equal(stored.event.actorEmail, 'michael.egbo@dewinsight.com');
   assert.equal(stored.event.organizationName, 'Acme Ltd');
   assert.equal(stored.event.prompt, undefined);
 });

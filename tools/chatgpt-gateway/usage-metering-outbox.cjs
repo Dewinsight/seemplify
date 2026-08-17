@@ -43,6 +43,7 @@ function sanitizeUsageEvent(input = {}) {
     gatewayExecutionId,
     requestId: safeText(input.requestId, 200),
     sourceApp: safeText(input.sourceApp || 'recruiter', 64),
+    runtimeOwner: input.runtimeOwner === 'platform' ? 'platform' : 'user',
     organizationId: safeText(input.organizationId, 120) || undefined,
     organizationName: safeText(input.organizationName, 200) || undefined,
     actorId: safeText(input.actorId, 160) || undefined,

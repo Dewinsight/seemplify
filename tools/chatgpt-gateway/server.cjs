@@ -257,7 +257,10 @@ function meteringContext(input) {
     executionId,
     requestId: dimension(input.metering.requestId, 200) || '',
     sourceApp,
+    runtimeOwner: input.metering.runtimeOwner === 'platform' ? 'platform' : 'user',
     actorId: dimension(input.metering.actorId, 160),
+    actorName: dimension(input.metering.actorName, 200),
+    actorEmail: dimension(input.metering.actorEmail, 254),
     organizationId: dimension(input.metering.organizationId, 120),
     organizationName: dimension(input.metering.organizationName, 200)
   };
@@ -278,7 +281,9 @@ function usageRecord({ input, metering, result, status, latencyMs, error }) {
   return {
     eventId: metering.eventId, gatewayExecutionId: metering.executionId,
     requestId: metering.requestId, sourceApp: metering.sourceApp,
-    actorId: metering.actorId, organizationId: metering.organizationId,
+    runtimeOwner: metering.runtimeOwner,
+    actorId: metering.actorId, actorName: metering.actorName, actorEmail: metering.actorEmail,
+    organizationId: metering.organizationId,
     organizationName: metering.organizationName,
     activity: input.activity, provider: 'chatgpt-connect',
     model: result?.model || error?.usageEnvelope?.model || 'connected-account',

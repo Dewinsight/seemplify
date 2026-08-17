@@ -183,6 +183,7 @@ test('trusted Performance completion bypasses only Recruiter runtime policy and 
       context: {
         requestId: 'shared-request', operationKey,
         actorId: 'idp-subject-42', runtimeActorId: 'canonical-recruiter-user',
+        actorName: 'Michael Egbo', actorEmail: 'michael.egbo@dewinsight.com',
         organizationId: 'idp-active-org', localOrganizationId: 'local-active-org',
         organizationName: 'AIIN',
         sourceApp: 'performance-management'
@@ -196,6 +197,9 @@ test('trusted Performance completion bypasses only Recruiter runtime policy and 
     assert.ok(captured.every((body) => body.codexSourceApp === 'recruiter'));
     assert.ok(captured.every((body) => body.metering.sourceApp === 'performance-management'));
     assert.ok(captured.every((body) => body.metering.actorId === 'idp-subject-42'));
+    assert.ok(captured.every((body) => body.metering.actorName === 'Michael Egbo'));
+    assert.ok(captured.every((body) => body.metering.actorEmail === 'michael.egbo@dewinsight.com'));
+    assert.ok(captured.every((body) => body.metering.runtimeOwner === 'user'));
     assert.ok(captured.every((body) => body.metering.organizationId === 'idp-active-org'));
     assert.ok(captured.every((body) => body.metering.organizationName === 'AIIN'));
     assert.notEqual(captured[0].metering.eventId, captured[1].metering.eventId);

@@ -10,7 +10,7 @@ x-defaults: &defaults
 services:
   chatgpt-gateway:
     <<: *defaults
-    image: seemplify/chatgpt-gateway:hostinger
+    image: ${CHATGPT_GATEWAY_IMAGE:-seemplify/chatgpt-gateway:hostinger}
     environment:
       NODE_ENV: production
       CHATGPT_GATEWAY_HOST: 0.0.0.0
@@ -19,6 +19,7 @@ services:
       RECRUITER_CHATGPT_GATEWAY_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
       CHATGPT_GATEWAY_STORAGE_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
       CHATGPT_GATEWAY_SHARED_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
+      PLATFORM_AI_USAGE_SINK_URL: http://recruiter-backend:5001/api/internal/ai/v1/chatgpt-usage/events
     volumes:
       - chatgpt_gateway_data:/data
     healthcheck:

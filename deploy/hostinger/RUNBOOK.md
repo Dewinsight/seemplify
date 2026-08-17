@@ -178,6 +178,14 @@ HMAC v2 signature. Both containers receive the dedicated
 `/opt/seemplify/secrets/core-apps.env`. This key authorizes analytics only and
 must not be added to the normal inference service allow-list.
 
+The hosted ChatGPT gateway must also receive
+`PLATFORM_AI_USAGE_SINK_URL=http://recruiter-backend:5001/api/internal/ai/v1/chatgpt-usage/events`.
+The gateway keeps its volume-backed ledger as the source of truth and mirrors
+sanitized, content-free usage envelopes to Recruiter so the IdP dashboard can
+show app, activity, status, latency, and token history. Recreate the gateway
+container after changing this value; a normal restart does not apply updated
+Compose environment values.
+
 Prompt text, generated content, CV contents, credentials, raw provider errors,
 IP addresses, user agents, per-user runtime subjects, and queue job documents
 are excluded from the analytics response. After changing this integration,
