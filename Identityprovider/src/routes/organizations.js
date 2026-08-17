@@ -11,6 +11,7 @@ import {
 import { requireAuthOrAPIToken, requireScopes } from '../middleware/apiAuth.js'
 import { invalidateClaimsCache } from '../index.js'
 import { subscriptionService } from '../services/subscriptionService.js'
+import { deleteOrganizationCascade } from '../services/adminOrganizationManagementService.js'
 
 const router = express.Router()
 
@@ -448,23 +449,28 @@ router.delete('/:orgId',
   async (req, res) => {
     try {
       const organization = req.organization
+      const result = await deleteOrganizationCascade(organization, { deletedBy: req.user._id })
+      await invalidateOrganizationMemberClaims(organization)
+      const currentUserFallback = (result.fallbackAssignments || []).find(
+        assignment => assignment.accountId === req.user._id.toString()
+      )?.currentOrganization || null
 
-      // Remove organization from all members' accounts
-      const memberIds = organization.members.map(m => m.account)
-      await Account.updateMany(
-        { _id: { $in: memberIds } },
-        {
-          $pull: { organizations: { organization: organization._id } },
-          $unset: { currentOrganization: '' }
-        }
-      )
+      if (req.session) {
+        req.session.currentOrganization = currentUserFallback
+      }
 
-      // Delete the organization
-      await Organization.findByIdAndDelete(req.params.orgId)
+      const fallbackOrganization = currentUserFallback
+        ? await Organization.findById(currentUserFallback).select('name').lean()
+        : null
 
       console.log('✅ Organization deleted:', organization.name, 'by', req.user.email)
 
-      res.json({ message: 'Organization deleted successfully' })
+      res.json({
+        message: 'Organization deleted successfully',
+        currentOrganization: fallbackOrganization
+          ? { id: fallbackOrganization._id, name: fallbackOrganization.name }
+          : null
+      })
     } catch (error) {
       console.error('Delete organization error:', error)
       res.status(500).json({ error: 'Failed to delete organization' })

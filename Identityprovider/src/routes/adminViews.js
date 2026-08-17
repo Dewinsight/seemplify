@@ -759,7 +759,7 @@ router.post('/organizations/:organizationId/members/action', async (req, res) =>
 
     if (action === ADMIN_ORGANIZATION_ACTIONS.DELETE_ORGANIZATION) {
       result = await deleteOrganizationCascade(organization, { deletedBy: req.user._id })
-      await invalidateClaimsForAccounts(result.deletedMemberIds || [])
+      await invalidateClaimsForAccounts(result.affectedAccountIds || result.deletedMemberIds || [])
       return res.redirect(buildOrganizationsRedirectPath(
         `Organization "${organization.name}" was deleted successfully.`
       ))
@@ -789,7 +789,8 @@ router.post('/organizations/:organizationId/members/action', async (req, res) =>
       ...(result.removedMemberIds || []),
       ...(result.deletedAccountIds || []),
       ...(result.promotedAccountIds || []),
-      ...(result.deletedMemberIds || [])
+      ...(result.deletedMemberIds || []),
+      ...(result.affectedAccountIds || [])
     ]
     await invalidateClaimsForAccounts(affectedAccountIds)
 

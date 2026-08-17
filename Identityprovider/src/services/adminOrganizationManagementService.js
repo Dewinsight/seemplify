@@ -18,6 +18,7 @@ import { SimplePerformanceEvaluationConfig } from '../models/SimplePerformanceEv
 import Subscription from '../models/Subscription.js'
 import SubscriptionRequest from '../models/SubscriptionRequest.js'
 import { Team } from '../models/Team.js'
+import { selectNextAvailableOrganizationId } from './organizationFallbackService.js'
 
 export const ADMIN_ORGANIZATION_ACTIONS = {
   REMOVE_MEMBERS: 'remove_members',
@@ -62,6 +63,76 @@ async function updateAccountOrgRole(accountId, organizationId, role) {
     { _id: accountId, 'organizations.organization': organizationId },
     { $set: { 'organizations.$.role': role } }
   )
+}
+
+export async function removeOrganizationMembershipsAndAssignFallback(
+  accountIds = [],
+  organizationId,
+  options = {}
+) {
+  const normalizedAccountIds = uniqueIdStrings(accountIds)
+  const removedOrganizationId = toIdString(organizationId)
+  const currentAccountQuery = { currentOrganization: organizationId }
+  if (!options.includeAllCurrentAccounts) {
+    currentAccountQuery._id = { $in: normalizedAccountIds }
+  }
+  const currentAccounts = await Account.find(currentAccountQuery)
+    .select('_id organizations')
+    .lean()
+  const currentAccountIds = new Set(currentAccounts.map(account => toIdString(account._id)))
+  const nonCurrentAccountIds = normalizedAccountIds.filter(accountId => !currentAccountIds.has(accountId))
+  const updatedAt = new Date()
+
+  if (nonCurrentAccountIds.length > 0) {
+    await Account.updateMany(
+      { _id: { $in: nonCurrentAccountIds } },
+      {
+        $pull: {
+          organizations: { organization: organizationId },
+          teams: { organization: organizationId }
+        },
+        $set: { updatedAt }
+      }
+    )
+  }
+
+  const fallbackAssignments = currentAccounts.map((account) => ({
+    accountId: toIdString(account._id),
+    currentOrganization: selectNextAvailableOrganizationId(
+      account.organizations,
+      removedOrganizationId
+    )
+  }))
+
+  if (fallbackAssignments.length > 0) {
+    await Account.bulkWrite(fallbackAssignments.map((assignment) => {
+      const update = {
+        $pull: {
+          organizations: { organization: organizationId },
+          teams: { organization: organizationId }
+        },
+        $set: { updatedAt }
+      }
+
+      if (assignment.currentOrganization) {
+        update.$set.currentOrganization = assignment.currentOrganization
+      } else {
+        update.$unset = { currentOrganization: '' }
+      }
+
+      return {
+        updateOne: {
+          filter: {
+            _id: assignment.accountId,
+            currentOrganization: organizationId
+          },
+          update
+        }
+      }
+    }))
+  }
+
+  return fallbackAssignments
 }
 
 async function cleanupOrganizationMemberArtifacts(organizationId, accountIds = []) {
@@ -233,27 +304,13 @@ export async function deleteOrganizationCascade(organization, options = {}) {
 
   const memberIds = uniqueIdStrings((existingOrganization.members || []).map(member => member.account))
 
+  const fallbackAssignments = await removeOrganizationMembershipsAndAssignFallback(
+    memberIds,
+    existingOrganization._id,
+    { includeAllCurrentAccounts: true }
+  )
+
   await Promise.all([
-    Account.updateMany(
-      { _id: { $in: memberIds } },
-      {
-        $pull: {
-          organizations: { organization: existingOrganization._id },
-          teams: { organization: existingOrganization._id }
-        }
-      }
-    ),
-    Account.updateMany(
-      {
-        _id: { $in: memberIds },
-        currentOrganization: existingOrganization._id
-      },
-      {
-        $unset: {
-          currentOrganization: ''
-        }
-      }
-    ),
     Team.deleteMany({ organization: existingOrganization._id }),
     OrganizationInvite.deleteMany({ organization: existingOrganization._id }),
     Notification.deleteMany({ organization: existingOrganization._id }),
@@ -279,6 +336,11 @@ export async function deleteOrganizationCascade(organization, options = {}) {
   return {
     deletedOrganizationId: organizationId,
     deletedMemberIds: memberIds,
+    affectedAccountIds: uniqueIdStrings([
+      ...memberIds,
+      ...fallbackAssignments.map(assignment => assignment.accountId)
+    ]),
+    fallbackAssignments,
     deletedBy: options.deletedBy || null
   }
 }
@@ -402,38 +464,26 @@ export async function removeMembersFromOrganization(organization, options = {}) 
     await updateAccountOrgRole(normalizedAdminReplacementId, organization._id, 'admin')
   }
 
-  await Account.updateMany(
-    { _id: { $in: selectedIds } },
-    {
-      $pull: {
-        organizations: { organization: organization._id },
-        teams: { organization: organization._id }
-      }
-    }
-  )
-
-  await Account.updateMany(
-    {
-      _id: { $in: selectedIds },
-      currentOrganization: organization._id
-    },
-    {
-      $unset: {
-        currentOrganization: ''
-      }
-    }
+  const fallbackAssignments = await removeOrganizationMembershipsAndAssignFallback(
+    selectedIds,
+    organization._id
   )
 
   await cleanupOrganizationMemberArtifacts(organization._id, selectedIds)
 
   if (organizationWillBeEmpty && deleteOrganizationIfEmpty) {
     const deletionResult = await deleteOrganizationCascade(organization, { deletedBy: updatedBy })
+    const combinedFallbackAssignments = [
+      ...fallbackAssignments,
+      ...(deletionResult.fallbackAssignments || [])
+    ]
     return {
       action: ADMIN_ORGANIZATION_ACTIONS.REMOVE_MEMBERS,
       removedMemberIds: selectedIds,
       promotedAccountIds: uniqueIdStrings(promotedAccountIds),
       organizationDeleted: true,
-      ...deletionResult
+      ...deletionResult,
+      fallbackAssignments: combinedFallbackAssignments
     }
   }
 
@@ -441,6 +491,7 @@ export async function removeMembersFromOrganization(organization, options = {}) 
     action: ADMIN_ORGANIZATION_ACTIONS.REMOVE_MEMBERS,
     removedMemberIds: selectedIds,
     promotedAccountIds: uniqueIdStrings(promotedAccountIds),
+    fallbackAssignments,
     organizationDeleted: false,
     organizationId: toIdString(organization._id)
   }
