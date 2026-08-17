@@ -34,7 +34,12 @@ smtp_tls_protocols = >=TLSv1.2
 smtp_tls_mandatory_ciphers = high
 smtp_tls_secure_cert_match = nexthop
 smtp_tls_note_starttls_offer = yes
-smtp_generic_maps = regexp:/etc/postfix/generic
+# Google authorizes the Dew Insight envelope identity, while recipients must
+# still see and authenticate the product's approved From domain. Rewrite only
+# the SMTP envelope sender; rewriting headers would silently replace
+# no-reply@seemplifyai.com and break DKIM/DMARC alignment.
+sender_canonical_maps = regexp:/etc/postfix/generic
+sender_canonical_classes = envelope_sender
 smtp_destination_concurrency_limit = 2
 
 minimal_backoff_time = 300s

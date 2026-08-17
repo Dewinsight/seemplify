@@ -19,6 +19,7 @@ test('cutover replicas and sending default to off', () => {
   assert.match(text, /MAIL_API_REPLICAS:-0/);
   assert.match(text, /POSTAL_WORKER_REPLICAS:-0/);
   assert.match(text, /MAIL_TUNNEL_REPLICAS:-0/);
-  assert.match(text, /RELAY_SMTP_PASSWORD:\s*\$\{RELAY_SMTP_PASSWORD:\?/);
+  assert.match(text, /RELAY_SMTP_AUTH_MODE:\s*\$\{RELAY_SMTP_AUTH_MODE:-password\}/);
+  assert.match(text, /RELAY_SMTP_PASSWORD:\s*\$\{RELAY_SMTP_PASSWORD:-\}/);
   assert.doesNotMatch(text, /RELAY_SMTP_PASSWORD:\s*[A-Za-z0-9]{16}\s*$/m);
 });

@@ -1,0 +1,198 @@
+name: seemplify-mail
+
+x-postal: &postal
+  image: ghcr.io/postalserver/postal:3.3.7
+  restart: unless-stopped
+  environment:
+    POSTAL_CONFIG_FILE_PATH: /config/postal.yml
+    WAIT_FOR_TARGETS: mariadb:3306
+    WAIT_FOR_TIMEOUT: "120"
+  volumes:
+    - postal_config:/config
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=200
+    environment:
+      MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_DATABASE: postal
+      MARIADB_USER: postal
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?required}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?required}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - mail_internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+
+  postfix-relay:
+    build:
+      context: /opt/seemplify/source/platform/email/relay
+    image: seemplify/mail-relay:hostinger
+    restart: unless-stopped
+    environment:
+      RELAY_UPSTREAM_HOST: smtp-relay.gmail.com
+      RELAY_UPSTREAM_PORT: "587"
+      RELAY_SMTP_AUTH_MODE: ip
+      RELAY_ALLOWED_NETWORKS: 172.31.250.0/24
+      RELAY_SENDER_DOMAIN: dewinsight.com
+    volumes:
+      - relay_spool:/var/spool/postfix
+    networks:
+      - relay_internal
+      - mail_egress
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  postal-web:
+    <<: *postal
+    command: postal web-server
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - mail_internal
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "ruby", "-e", "require 'socket'; TCPSocket.new('127.0.0.1', 5000).close"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-postal.rule=Host(`postal.seemplifyai.com`)
+      - traefik.http.routers.seemplify-postal.entrypoints=web
+      - traefik.http.routers.seemplify-postal.service=seemplify-postal
+      - traefik.http.routers.seemplify-postal-secure.rule=Host(`postal.seemplifyai.com`)
+      - traefik.http.routers.seemplify-postal-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-postal-secure.service=seemplify-postal
+      - traefik.http.routers.seemplify-postal-secure.tls=true
+      - traefik.http.routers.seemplify-postal-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-postal.loadbalancer.server.port=5000
+
+  postal-worker:
+    <<: *postal
+    command: postal worker
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      postfix-relay:
+        condition: service_healthy
+    networks:
+      - mail_internal
+      - relay_internal
+
+  postal-smtp:
+    <<: *postal
+    command: postal smtp-server
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - mail_internal
+    healthcheck:
+      test: ["CMD", "ruby", "-e", "require 'socket'; TCPSocket.new('127.0.0.1', 25).close"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  mail-api:
+    build:
+      context: /opt/seemplify/source/platform/email/api
+    image: seemplify/mail-api:hostinger
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MAIL_API_PORT: "8080"
+      MAIL_API_RELEASE: hostinger
+      MAIL_API_DATA_DIR: /var/lib/mail-api
+      MAIL_API_DOMAIN: seemplifyai.com
+      MAIL_API_ALLOWED_DOMAINS: ${MAIL_API_ALLOWED_DOMAINS:-seemplifyai.com}
+      MAIL_API_BOUNCE_DOMAIN: bounce.seemplifyai.com
+      MAIL_API_SEND_ENABLED: ${MAIL_API_SEND_ENABLED:-false}
+      MAIL_API_KEYS: ${MAIL_API_KEYS:?required}
+      MAIL_API_ADDRESS_HASH_SALT: ${MAIL_API_ADDRESS_HASH_SALT:?required}
+      # Postal rejects requests whose HTTP Host does not match web_hostname.
+      # Node's fetch implementation does not reliably forward an overridden
+      # Host header, so use the canonical HTTPS hostname end to end.
+      MAIL_API_POSTAL_BASE_URL: https://postal.seemplifyai.com
+      MAIL_API_POSTAL_HOST_HEADER: ""
+      MAIL_API_POSTAL_API_KEY: ${MAIL_API_POSTAL_API_KEY:?required}
+      MAIL_API_POSTAL_WEBHOOK_TOKEN: ${MAIL_API_POSTAL_WEBHOOK_TOKEN:?required}
+      MAIL_API_WEBHOOK_HMAC_SECRET: ${MAIL_API_WEBHOOK_HMAC_SECRET:?required}
+      MAIL_API_TRUSTED_PROXY_HOPS: "1"
+      MAIL_API_RELAY_MODE: google
+      MAIL_API_RELAY_HOST: postfix-relay
+      MAIL_API_RELAY_PORT: "25"
+      MAIL_API_RELAY_UPSTREAM_HOST: smtp-relay.gmail.com
+      MAIL_API_RELAY_UPSTREAM_PORT: "587"
+      MAIL_API_RELAY_USERNAME: ""
+    volumes:
+      - mail_api_data:/var/lib/mail-api
+    depends_on:
+      postal-web:
+        condition: service_healthy
+    networks:
+      - mail_internal
+      - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8080/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-mail-api.rule=Host(`mail-control.seemplifyai.com`)
+      - traefik.http.routers.seemplify-mail-api.entrypoints=web
+      - traefik.http.routers.seemplify-mail-api.service=seemplify-mail-api
+      - traefik.http.routers.seemplify-mail-api-secure.rule=Host(`mail-control.seemplifyai.com`)
+      - traefik.http.routers.seemplify-mail-api-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-mail-api-secure.service=seemplify-mail-api
+      - traefik.http.routers.seemplify-mail-api-secure.tls=true
+      - traefik.http.routers.seemplify-mail-api-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-mail-api.loadbalancer.server.port=8080
+
+volumes:
+  mariadb_data:
+  postal_config:
+    external: true
+    name: seemplify-mail_postal_config
+  relay_spool:
+  mail_api_data:
+
+networks:
+  mail_internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.251.0/24
+  relay_internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+  mail_egress:
+    ipam:
+      config:
+        - subnet: 172.31.252.0/24
+  dokploy-network:
+    external: true

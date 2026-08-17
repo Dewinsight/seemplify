@@ -55,8 +55,10 @@ function normalizeRecipientList(value, field, max) {
   return addresses;
 }
 
-function isSendingDomain(domain, sendingDomain) {
-  return domain === sendingDomain || domain.endsWith(`.${sendingDomain}`);
+function isSendingDomain(domain, sendingDomains) {
+  return sendingDomains.some((sendingDomain) => (
+    domain === sendingDomain || domain.endsWith(`.${sendingDomain}`)
+  ));
 }
 
 /**
@@ -66,15 +68,15 @@ function isSendingDomain(domain, sendingDomain) {
  *   headers: Record<string,string>, attachments: Array<object>, allRecipients: string[]
  * }}
  */
-export function validateMessage(body, { sendingDomain, maxRecipients }) {
+export function validateMessage(body, { sendingDomains, maxRecipients }) {
   if (!body || typeof body !== 'object') throw new HttpError(400, 'invalid_body', 'A JSON object is required.');
 
   assertNoInjection(body.from ?? '', 'from');
   const from = normalizeAddress(body.from);
   if (!from) throw new HttpError(422, 'invalid_from', 'A valid `from` address is required.');
   const fromDomain = addressDomain(from);
-  if (!isSendingDomain(fromDomain, sendingDomain)) {
-    throw new HttpError(403, 'from_domain_not_allowed', `This platform only sends as ${sendingDomain} or a subdomain of it.`);
+  if (!isSendingDomain(fromDomain, sendingDomains)) {
+    throw new HttpError(403, 'from_domain_not_allowed', `This platform only sends as an approved sender domain: ${sendingDomains.join(', ')}.`);
   }
 
   let fromName = null;

@@ -10,6 +10,11 @@ import { PostalClient, PostalError } from './postal-client.mjs';
 import { createLogger } from './logging.mjs';
 
 const SOFT_BOUNCE_SUPPRESSION_THRESHOLD = 5;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+
+export function validIdempotencyKey(value) {
+  return IDEMPOTENCY_KEY_PATTERN.test(String(value ?? ''));
+}
 
 /** Maps a Postal webhook event name onto a stored event type. */
 const POSTAL_EVENT_MAP = new Map([
@@ -166,14 +171,14 @@ export function createApp({ config, store, logger = createLogger({ release: conf
     const raw = await readBody(request, config.limits.maxBodyBytes);
     const body = parseJsonBody(raw);
     const message = validateMessage(body, {
-      sendingDomain: config.domain,
+      sendingDomains: config.allowedDomains,
       maxRecipients: config.limits.maxRecipients,
     });
     store.increment('sendAttempts');
 
     const idempotencyKey = String(request.headers['idempotency-key'] || '').trim();
-    if (idempotencyKey && !/^[A-Za-z0-9._-]{8,128}$/.test(idempotencyKey)) {
-      throw new HttpError(400, 'invalid_idempotency_key', 'Idempotency-Key must be 8-128 characters of [A-Za-z0-9._-].');
+    if (idempotencyKey && !validIdempotencyKey(idempotencyKey)) {
+      throw new HttpError(400, 'invalid_idempotency_key', 'Idempotency-Key must be 8-128 characters of [A-Za-z0-9._:-].');
     }
 
     // Keys are scoped to the credential so two applications cannot collide on
@@ -431,6 +436,7 @@ export function createApp({ config, store, logger = createLogger({ release: conf
       checkedAt: new Date(now()).toISOString(),
       release: config.release,
       domain: config.domain,
+      allowedDomains: config.allowedDomains,
       bounceDomain: config.bounceDomain,
       sendEnabled: config.sendEnabled,
       postal: { configured: postalClient.configured, baseUrl: postalClient.baseUrl || null },

@@ -78,6 +78,7 @@ $ordered = [ordered]@{
     MARIADB_ROOT_PASSWORD          = $values['MARIADB_ROOT_PASSWORD']
     MAIL_API_RELEASE               = 'dokploy-staging'
     MAIL_API_DOMAIN                = $values['MAIL_API_DOMAIN']
+    MAIL_API_ALLOWED_DOMAINS       = if ($values.ContainsKey('MAIL_API_ALLOWED_DOMAINS')) { $values['MAIL_API_ALLOWED_DOMAINS'] } else { $values['MAIL_API_DOMAIN'] }
     MAIL_API_BOUNCE_DOMAIN         = $values['MAIL_API_BOUNCE_DOMAIN']
     MAIL_API_SEND_ENABLED          = 'false'
     MAIL_API_KEYS                  = $values['MAIL_API_KEYS']

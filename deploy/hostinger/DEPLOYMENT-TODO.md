@@ -57,6 +57,15 @@ Target: `179.198.192.126` (`srv1907030`)
 - [x] Pass the authenticated production Workspace journey through IdP login,
   dashboard, messaging, permission-aware search and sign-out on release
   `35a180c2c3e10ebcdc65d8e52bfb324a614ec5c1`.
+- [x] Switch Experience Management and AI Interview from log-only email to
+  production send mode and verify their real password-reset/invitation flows.
+- [x] Route Zulip email through the private Google-authorized Postfix relay,
+  disable tokenized no-reply addresses and verify SPF/DKIM/DMARC delivery.
+- [x] Preserve visible Seemplify sender headers with envelope-only relay rewrite,
+  publish the Postal DKIM selector and verify Gmail Inbox authentication.
+- [x] Test deployed Mail API credentials for Identity, Recruiter, Leave,
+  Performance, Payroll, Time, Approver, Learning, Experience, AI Interview and
+  Workspace; all 11 controlled submissions were accepted and received.
 
 ## In progress
 

@@ -124,6 +124,7 @@ services:
       MAIL_API_RELEASE: local
       MAIL_API_DATA_DIR: /var/lib/mail-api
       MAIL_API_DOMAIN: ${MAIL_API_DOMAIN:-seemplifyai.com}
+      MAIL_API_ALLOWED_DOMAINS: ${MAIL_API_ALLOWED_DOMAINS:-seemplifyai.com}
       MAIL_API_BOUNCE_DOMAIN: ${MAIL_API_BOUNCE_DOMAIN:-bounce.seemplifyai.com}
       MAIL_API_SEND_ENABLED: "true"
       MAIL_API_KEYS: ${MAIL_API_KEYS:?Set MAIL_API_KEYS}

@@ -11,12 +11,13 @@ pinned upstream image versions, while their state remains in named volumes.
 
 Seemplify products call the central Mail API with their scoped bearer key. The
 API validates, meters and queues each message in Postal. Postal submits to the
-private Postfix sidecar. Postfix authenticates to `smtp.gmail.com:587` with the
-Dew Insight Google Workspace account, normalizes the outbound sender to
-`no-reply@dewinsight.com`, and preserves each product's `Reply-To` header.
+private Postfix sidecar. On Hostinger, Postfix uses TLS to
+`smtp-relay.gmail.com:587`; Google authorizes only the production public IP.
+Postal preserves each approved From identity and signs it with that domain's
+DKIM key.
 
 This path does not depend on the home's public IP, PTR, Dynamic DNS, or
-Cloudflare Tunnel for SMTP. Cloudflare Tunnel remains the HTTPS ingress for the
+Cloudflare for SMTP. Cloudflare-proxied Traefik HTTPS is the ingress for the
 Mail API at `https://mail-control.seemplifyai.com`.
 
 ## Documentation
@@ -31,6 +32,10 @@ fail-closed until the API, worker, sending and tunnel gates are explicitly
 opened during the controlled cutover.
 
 ## Relay configuration
+
+The steps below describe the legacy/local password-authenticated development
+mode. Hostinger production uses source-IP authorization and stores no Google
+SMTP password.
 
 1. Create `platform/email/.env.local` from `.env.example`.
 2. Put the Google app password in the path named by `RELAY_PASSWORD_PATH`.
@@ -66,9 +71,7 @@ accepted the message for processing.
 
 ## Sender behavior
 
-Applications may keep their existing `@seemplifyai.com` From and Reply-To
-configuration. The final SMTP hop rewrites the authenticated visible/envelope
-sender to Dew Insight. This is deliberate: Google Workspace can authenticate
-the Dew Insight identity from any changing residential IP, while the previous
-`smtp-relay.gmail.com` configuration rejected the same machine because its IP
-was not allowlisted.
+Production accepts `@seemplifyai.com` and `@aiinnigeria.com` From identities.
+`@dewinsight.com` remains blocked until its DNS zone is available and its Postal
+DKIM/return-path checks pass. `Reply-To` may point at any monitored mailbox.
+Adding or rotating local-part aliases does not increase Google relay capacity.

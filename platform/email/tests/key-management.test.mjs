@@ -13,7 +13,7 @@ test('PowerShell key writer creates a hashed inventory and revokes exactly one I
   const dir = mkdtempSync(path.join(tmpdir(), 'mail-key-'));
   const envFile = path.join(dir, '.env.runtime');
   const bearerFile = path.join(dir, 'bearer');
-  writeFileSync(envFile, `MAIL_API_KEYS=existing:${'a'.repeat(64)}:read\nUNCHANGED=value\n`);
+  writeFileSync(envFile, `MAIL_API_KEYS="existing:${'a'.repeat(64)}:read"\nUNCHANGED=value\n`);
   const script = path.join(root, 'scripts', 'new-secrets.ps1');
   const create = spawnSync('powershell.exe', ['-NoProfile','-NonInteractive','-File',script,'-Json','-EnvironmentFile',envFile,'-NewApiKey','recruiter-test','-Scopes','send,read','-BearerOutputFile',bearerFile], { encoding: 'utf8' });
   assert.equal(create.status, 0, create.stderr);

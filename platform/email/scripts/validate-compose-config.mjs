@@ -53,14 +53,14 @@ const SECRET_ENV_KEYS = new Set([
 /** Interpolations that must use `:?` so a missing value stops the deploy. */
 const REQUIRED_INTERPOLATIONS = [
   'MARIADB_DATABASE', 'MARIADB_USER', 'MARIADB_PASSWORD', 'MARIADB_ROOT_PASSWORD',
-  'RELAY_SMTP_USERNAME', 'RELAY_SMTP_PASSWORD', 'RELAY_ALLOWED_NETWORKS',
+  'RELAY_ALLOWED_NETWORKS',
   'MAIL_API_KEYS', 'MAIL_API_ADDRESS_HASH_SALT', 'MAIL_API_POSTAL_API_KEY',
   'MAIL_API_POSTAL_WEBHOOK_TOKEN', 'MAIL_API_WEBHOOK_HMAC_SECRET', 'MAIL_TUNNEL_IMAGE',
 ];
 
 const REQUIRED_ENV_KEYS = [
   'MARIADB_DATABASE', 'MARIADB_USER', 'MARIADB_PASSWORD', 'MARIADB_ROOT_PASSWORD',
-  'RELAY_SMTP_USERNAME', 'RELAY_SMTP_PASSWORD', 'RELAY_ALLOWED_NETWORKS',
+  'RELAY_ALLOWED_NETWORKS',
   'MAIL_API_KEYS', 'MAIL_API_ADDRESS_HASH_SALT', 'MAIL_API_POSTAL_API_KEY',
   'MAIL_API_POSTAL_WEBHOOK_TOKEN', 'MAIL_API_WEBHOOK_HMAC_SECRET', 'MAIL_TUNNEL_IMAGE',
 ];
@@ -254,14 +254,36 @@ export function validateEnvironment(env, { source = 'environment' } = {}) {
     fail('api-keys', 'MAIL_API_REPLICAS is 1 but MAIL_API_KEYS is empty; the API would answer every authenticated route with 503.');
   }
 
+  const relayMode = value('RELAY_SMTP_AUTH_MODE') || 'password';
+  if (!['ip', 'password'].includes(relayMode)) {
+    fail('relay-auth-mode', 'RELAY_SMTP_AUTH_MODE must be either ip or password.');
+  }
+
   // Checked by shape only. The value is never echoed, compared or logged.
   const relayPassword = String(env.RELAY_SMTP_PASSWORD ?? '').replace(/\s+/g, '');
+  if (relayMode === 'password' && !value('RELAY_SMTP_USERNAME')) {
+    fail('relay-credential', 'RELAY_SMTP_USERNAME is required in password mode.');
+  }
+  if (relayMode === 'password' && !relayPassword) {
+    fail('relay-credential', 'RELAY_SMTP_PASSWORD is required in password mode.');
+  }
   if (relayPassword && !/^[a-z]{16}$/.test(relayPassword)) {
     fail('relay-credential', 'RELAY_SMTP_PASSWORD is not shaped like a Google app password (16 letters once spaces are removed); the relay would refuse to start.');
+  }
+  if (relayMode === 'ip' && value('RELAY_UPSTREAM_HOST') !== 'smtp-relay.gmail.com') {
+    fail('relay-auth-mode', 'IP mode must use smtp-relay.gmail.com.');
   }
 
   const domain = value('MAIL_API_DOMAIN') || 'seemplifyai.com';
   const bounceDomain = value('MAIL_API_BOUNCE_DOMAIN') || 'bounce.seemplifyai.com';
+  const domainPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+  const allowedDomains = (value('MAIL_API_ALLOWED_DOMAINS') || domain)
+    .split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (!allowedDomains.length || allowedDomains.some((item) => !domainPattern.test(item))) {
+    fail('sender-domains', 'MAIL_API_ALLOWED_DOMAINS must be a comma-separated list of valid domains.');
+  } else if (!allowedDomains.includes(domain.toLowerCase())) {
+    fail('sender-domains', 'MAIL_API_ALLOWED_DOMAINS must include MAIL_API_DOMAIN.');
+  }
   if (bounceDomain === domain || !bounceDomain.endsWith(`.${domain}`)) {
     fail('bounce-domain', 'MAIL_API_BOUNCE_DOMAIN must be a subdomain of MAIL_API_DOMAIN; sharing the apex collides with Google Workspace inbound mail.');
   }

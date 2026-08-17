@@ -1,0 +1,177 @@
+name: seemplify-extended
+
+x-defaults: &defaults
+  restart: unless-stopped
+  networks:
+    - dokploy-network
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  chatgpt-gateway:
+    <<: *defaults
+    image: seemplify/chatgpt-gateway:hostinger
+    environment:
+      NODE_ENV: production
+      CHATGPT_GATEWAY_HOST: 0.0.0.0
+      CHATGPT_GATEWAY_PORT: "11435"
+      CHATGPT_GATEWAY_DATA_DIR: /data
+      RECRUITER_CHATGPT_GATEWAY_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
+      CHATGPT_GATEWAY_STORAGE_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
+      CHATGPT_GATEWAY_SHARED_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
+    volumes:
+      - chatgpt_gateway_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:11435/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  experience:
+    <<: *defaults
+    image: seemplify/experience:hostinger
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
+      PUBLIC_URL: https://experience.seemplifyai.com
+      DATABASE_PROVIDER: postgres
+      POSTGRES_HOST: experience-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DATABASE: seemplify_experience
+      POSTGRES_OWNER_USER: seemplify_experience_owner
+      POSTGRES_OWNER_PASSWORD: ${EXPERIENCE_POSTGRES_OWNER_PASSWORD:?required}
+      POSTGRES_USER: seemplify_experience_app
+      POSTGRES_PASSWORD: ${EXPERIENCE_POSTGRES_APP_PASSWORD:?required}
+      POSTGRES_SSL: disable
+      POSTGRES_SCHEMA_VERSION: "1"
+      POSTGRES_RUNTIME_SCHEMA_VERSION: "30"
+      ADMIN_EMAIL: michael.egbo@dewinsight.com
+      ADMIN_PASSWORD: ${EXPERIENCE_ADMIN_PASSWORD:?required}
+      SESSION_SECRET: ${EXPERIENCE_SESSION_SECRET:?required}
+      ESIGN_ENCRYPTION_KEY: ${EXPERIENCE_ESIGN_KEY:?required}
+      NYLAS_CREDENTIAL_ENCRYPTION_KEY: ${EXPERIENCE_NYLAS_ENCRYPTION_KEY:?required}
+      X_CREDENTIAL_ENCRYPTION_KEY: ${EXPERIENCE_X_ENCRYPTION_KEY:?required}
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify Experience
+      EMAIL_MODE: send
+      SUBSCRIPTION_ENFORCEMENT_ENABLED: "false"
+      AI_WORKER_CONCURRENCY: "1"
+    volumes:
+      - experience_runtime:/app/runtime
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 8s
+      retries: 15
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-experience.rule=Host(`experience.seemplifyai.com`)
+      - traefik.http.routers.seemplify-experience.entrypoints=web
+      - traefik.http.routers.seemplify-experience.service=seemplify-experience
+      - traefik.http.routers.seemplify-experience-secure.rule=Host(`experience.seemplifyai.com`)
+      - traefik.http.routers.seemplify-experience-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-experience-secure.service=seemplify-experience
+      - traefik.http.routers.seemplify-experience-secure.tls=true
+      - traefik.http.routers.seemplify-experience-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-experience.loadbalancer.server.port=3000
+
+  ai-interview-backend:
+    <<: *defaults
+    image: seemplify/ai-interview-backend:hostinger
+    environment:
+      NODE_ENV: production
+      AI_INTERVIEW_BACKEND_PORT: "5101"
+      PORT: "5101"
+      AI_INTERVIEW_FRONTEND_URL: https://interview.seemplifyai.com
+      CORS_ORIGIN: https://interview.seemplifyai.com
+      AI_INTERVIEW_MONGO_URI: mongodb://ai_interview_app:${MONGO_AI_INTERVIEW_PASSWORD:?required}@mongodb:27017/ai-interview?authSource=ai-interview
+      AI_INTERVIEW_MONGO_DB: ai-interview
+      AI_INTERVIEW_SESSION_SECRET: ${AI_INTERVIEW_SESSION_SECRET:?required}
+      SEEMPLIFY_PLATFORM_API_URL: http://recruiter-backend:5001
+      SEEMPLIFY_AI_GATEWAY_URL: http://chatgpt-gateway:11435
+      AI_GATEWAY_SERVICE_ID: ai-interview
+      AI_GATEWAY_HMAC_SECRET: ${AI_GATEWAY_HMAC_SECRET:?required}
+      AI_INTERVIEW_REDIS_HOST: seemplify-shared-redis-1
+      AI_INTERVIEW_REDIS_PORT: "6379"
+      AI_INTERVIEW_REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+      CV_GLOBAL_DISPATCH_REDIS_URL: redis://:${REDIS_PASSWORD:?required}@seemplify-shared-redis-1:6379/1
+      AI_INTERVIEW_CV_QUEUE_ENABLED: "true"
+      AI_INTERVIEW_CV_STATUS_TOKEN_SECRET: ${AI_INTERVIEW_STATUS_TOKEN_SECRET:?required}
+      MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
+      MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
+      MAIL_FROM_EMAIL: no-reply@seemplifyai.com
+      MAIL_FROM_NAME: Seemplify AI Interview
+      AI_INTERVIEW_EMAIL_MODE: send
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5101/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 8s
+      retries: 15
+      start_period: 45s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-api-interview.rule=Host(`api-interview.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-interview.entrypoints=web
+      - traefik.http.routers.seemplify-api-interview.service=seemplify-api-interview
+      - traefik.http.routers.seemplify-api-interview-secure.rule=Host(`api-interview.seemplifyai.com`)
+      - traefik.http.routers.seemplify-api-interview-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-api-interview-secure.service=seemplify-api-interview
+      - traefik.http.routers.seemplify-api-interview-secure.tls=true
+      - traefik.http.routers.seemplify-api-interview-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-api-interview.loadbalancer.server.port=5101
+
+  ai-interview-frontend:
+    <<: *defaults
+    image: seemplify/ai-interview-frontend:hostinger-20260817-api-origin-fix
+    environment:
+      NODE_ENV: production
+      PORT: "5200"
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_BASE_URL: https://api-interview.seemplifyai.com
+      NEXT_PUBLIC_WS_BASE_URL: wss://api-interview.seemplifyai.com
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-interview.rule=Host(`interview.seemplifyai.com`)
+      - traefik.http.routers.seemplify-interview.entrypoints=web
+      - traefik.http.routers.seemplify-interview.service=seemplify-interview
+      - traefik.http.routers.seemplify-interview-secure.rule=Host(`interview.seemplifyai.com`)
+      - traefik.http.routers.seemplify-interview-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-interview-secure.service=seemplify-interview
+      - traefik.http.routers.seemplify-interview-secure.tls=true
+      - traefik.http.routers.seemplify-interview-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-interview.loadbalancer.server.port=5200
+
+  marketing:
+    <<: *defaults
+    image: seemplify/marketing:hostinger
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      HOSTNAME: 0.0.0.0
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-marketing.rule=Host(`seemplifyai.com`) || Host(`www.seemplifyai.com`)
+      - traefik.http.routers.seemplify-marketing.entrypoints=web
+      - traefik.http.routers.seemplify-marketing.service=seemplify-marketing
+      - traefik.http.routers.seemplify-marketing-secure.rule=Host(`seemplifyai.com`) || Host(`www.seemplifyai.com`)
+      - traefik.http.routers.seemplify-marketing-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-marketing-secure.service=seemplify-marketing
+      - traefik.http.routers.seemplify-marketing-secure.tls=true
+      - traefik.http.routers.seemplify-marketing-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.seemplify-marketing.loadbalancer.server.port=3001
+
+volumes:
+  chatgpt_gateway_data:
+  experience_runtime:
+
+networks:
+  dokploy-network:
+    external: true

@@ -220,6 +220,18 @@ received Google `250 2.0.0`. `dewinsight.com` is staged in Postal but remains
 outside `MAIL_API_ALLOWED_DOMAINS` until its DNS zone is accessible and passes
 the same checks.
 
+The production DKIM selector used by the Seemplify sender is
+`postal._domainkey.bounce.seemplifyai.com`. Postfix applies its canonical map to
+the envelope sender only, preserving each application's visible
+`no-reply@seemplifyai.com` From header. On 17 August 2026 a final controlled
+message reached Gmail Inbox with SPF, DKIM and DMARC all passing.
+
+Experience Management and AI Interview run with their email mode set to `send`.
+Zulip is an explicit SMTP-only exception: it connects privately to
+`postfix-relay:25`, disables tokenized no-reply addresses and sends as
+`no-reply@dewinsight.com`, whose Google-managed authentication passes. Do not
+point Zulip directly at the public Mail API or expose port 25.
+
 Do not add a Brevo fallback or rotate aliases to evade quotas. See
 `platform/email/docs/INTEGRATION.md` and `platform/email/docs/OPERATIONS.md` for
 future-app integration, sender policy, documented Google limits, queue behavior,

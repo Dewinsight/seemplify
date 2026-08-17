@@ -53,6 +53,18 @@ function normalizeDomain(value, field) {
   return domain;
 }
 
+function normalizeDomains(value, primaryDomain) {
+  const domains = String(value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry, index) => normalizeDomain(entry, `MAIL_API_ALLOWED_DOMAINS[${index}]`));
+
+  const unique = [...new Set([primaryDomain, ...domains])];
+  if (unique.length > 20) throw new Error('MAIL_API_ALLOWED_DOMAINS may contain at most 20 domains.');
+  return Object.freeze(unique);
+}
+
 function normalizeBaseUrl(value, fallback) {
   const raw = text(value, fallback);
   if (!raw) return '';
@@ -94,13 +106,15 @@ export function loadConfig(env = process.env) {
   }
 
   const apiKeys = parseApiKeys(env.MAIL_API_KEYS);
+  const domain = normalizeDomain(env.MAIL_API_DOMAIN, 'MAIL_API_DOMAIN');
 
   return Object.freeze({
     release: text(env.MAIL_API_RELEASE, 'local'),
     port: int(env.MAIL_API_PORT, DEFAULTS.port, { min: 1, max: 65_535 }),
     host: text(env.MAIL_API_HOST, DEFAULTS.host),
     dataDir: text(env.MAIL_API_DATA_DIR, DEFAULTS.dataDir),
-    domain: normalizeDomain(env.MAIL_API_DOMAIN, 'MAIL_API_DOMAIN'),
+    domain,
+    allowedDomains: normalizeDomains(env.MAIL_API_ALLOWED_DOMAINS, domain),
     bounceDomain: normalizeDomain(env.MAIL_API_BOUNCE_DOMAIN, 'MAIL_API_BOUNCE_DOMAIN'),
     sendEnabled,
     apiKeys,
