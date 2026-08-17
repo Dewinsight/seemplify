@@ -162,14 +162,27 @@ async function accountForUser(user) {
     if (changed) await existing.save();
     return existing;
   }
-  return AIUserRuntimeAccount.create({
-    user: userId,
-    organization: await organizationForUser(user, userId),
-    idpSubject,
-    subjectKey: subjectKeyForUser(userId),
-    status: 'disconnected',
-    credentialNamespaceVersion: 1
-  });
+  try {
+    return await AIUserRuntimeAccount.create({
+      user: userId,
+      organization: await organizationForUser(user, userId),
+      idpSubject,
+      subjectKey: subjectKeyForUser(userId),
+      status: 'disconnected',
+      credentialNamespaceVersion: 1
+    });
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    // Account status and model discovery load together in product UIs. Two
+    // first-time requests may therefore both observe no row before one wins
+    // the unique user/subject insert. Return that winner instead of surfacing
+    // a transient duplicate-key failure to the product.
+    const raced = await AIUserRuntimeAccount.findOne({ user: userId });
+    if (raced && String(raced.idpSubject || '') === idpSubject) return raced;
+    throw new AIRuntimeError('The ChatGPT account identity could not be reconciled.', {
+      code: 'CHATGPT_IDENTITY_CONFLICT', statusCode: 409, retryable: false
+    });
+  }
 }
 
 async function ensureCanonicalCredential(account, options = {}) {

@@ -36,6 +36,36 @@ test('a pre-migration account retains its proven Recruiter gateway identity', as
   }
 });
 
+test('concurrent first-time account provisioning returns the unique insert winner', async () => {
+  const originalFindOne = AIUserRuntimeAccount.findOne;
+  const originalCreate = AIUserRuntimeAccount.create;
+  const user = {
+    id: '507f191e810c19729de860d1',
+    idpSubject: 'idp-concurrent-user',
+    currentOrganization: '507f191e810c19729de860d2'
+  };
+  const winner = {
+    user: user.id,
+    idpSubject: user.idpSubject,
+    subjectKey: codexAccountService.subjectKeyForUser(user.id),
+    credentialNamespaceVersion: 1
+  };
+  let reads = 0;
+  AIUserRuntimeAccount.findOne = async () => (++reads === 1 ? null : winner);
+  AIUserRuntimeAccount.create = async () => {
+    const error = new Error('duplicate key');
+    error.code = 11000;
+    throw error;
+  };
+  try {
+    assert.equal(await codexAccountService.accountForUser(user), winner);
+    assert.equal(reads, 2);
+  } finally {
+    AIUserRuntimeAccount.findOne = originalFindOne;
+    AIUserRuntimeAccount.create = originalCreate;
+  }
+});
+
 test('an older gateway without account adoption keeps status and disconnect on the legacy credential', async () => {
   const originalFindOne = AIUserRuntimeAccount.findOne;
   const originalUrl = process.env.CHATGPT_GATEWAY_BASE_URL;
