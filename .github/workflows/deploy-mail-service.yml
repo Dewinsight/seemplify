@@ -119,6 +119,10 @@ jobs:
             revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container")
             [[ "$revision" == "$RELEASE_SHA" ]]
           done
+          for _ in $(seq 1 30); do
+            curl -fsS --max-time 15 https://mail-control.seemplifyai.com/health/live >/dev/null && break
+            sleep 2
+          done
           curl -fsS --max-time 15 https://mail-control.seemplifyai.com/health/live >/dev/null
           /usr/local/sbin/seemplify-smoke
           rm -f "$archive"
