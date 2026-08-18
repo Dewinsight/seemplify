@@ -14,6 +14,8 @@ output_dir=$(dirname "$output_clients")
 output_name=$(basename "$output_clients")
 install -d -m 700 "$output_dir"
 
+identity_provider_image=${IDENTITY_PROVIDER_IMAGE:-seemplify/identity-provider:hostinger}
+
 docker run --rm \
   -e OIDC_RECRUITER_SECRET \
   -e OIDC_LEAVE_SECRET \
@@ -28,7 +30,7 @@ docker run --rm \
   -e OUTPUT_NAME="$output_name" \
   -v "$source_clients:/input/clients.json:ro" \
   -v "$output_dir:/output" \
-  seemplify/identity-provider:hostinger \
+  "$identity_provider_image" \
   node -e '
     const fs = require("node:fs");
     const source = JSON.parse(fs.readFileSync("/input/clients.json", "utf8"));

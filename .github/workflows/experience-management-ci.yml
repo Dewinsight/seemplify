@@ -24,10 +24,10 @@ jobs:
           cache: npm
           cache-dependency-path: experience-management/package-lock.json
       - run: npm ci
-      - run: npm run qualify:sdk
       - run: npm run typecheck:sdk
       - run: npm run test:sdk
       - run: npm run build:sdk
+      - run: npm run qualify:sdk
       - run: npm run test:sdk:browser-compat
       - run: npm run test:sdk:consumer
 
@@ -51,6 +51,7 @@ jobs:
           node -e "const [major, minor, patch] = require('node:child_process').execSync('npm --version', { encoding: 'utf8' }).trim().split('.').map((value) => Number.parseInt(value, 10));
           if (major < 11 || (major === 11 && minor < 5) || (major === 11 && minor === 5 && patch < 1)) throw new Error('npm 11.5.1+ required for the release-shaped verification lane');"
       - run: npm ci
+      - run: npm run build:sdk
       - run: npm run qualify:sdk
       - run: npx playwright install --with-deps chromium
       - run: npm run validate:journey-plan

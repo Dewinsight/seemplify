@@ -105,7 +105,7 @@ jobs:
           install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /usr/local/sbin/seemplify-smoke
-          /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
+          IDENTITY_PROVIDER_IMAGE="$identity_image" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
 
           test -s /opt/seemplify/secrets/platform-integrations/credential-encryption-key
           test -s /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
