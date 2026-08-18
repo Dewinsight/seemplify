@@ -22,7 +22,8 @@ import {
   getAppById,
   getAppApiUrl,
   getComingSoonCards,
-  getOidcLaunchApiUrl
+  getOidcLaunchApiUrl,
+  getOidcLaunchPath
 } from './config/hubApps.js'
 import { getPlanFeatureKeyForApp } from './config/planFeatures.js'
 import bcrypt from 'bcryptjs'
@@ -4621,7 +4622,7 @@ app.get('/launch/:appId', async (req, res) => {
       returnTo: frontendUrl
     })
     if (requestedWorkspace) oidcStartParams.set('workspace', requestedWorkspace)
-    const redirectUrl = `${apiUrl}/api/auth/oidc/start?${oidcStartParams.toString()}`
+    const redirectUrl = `${apiUrl}${getOidcLaunchPath(app)}?${oidcStartParams.toString()}`
 
     void logAppLaunchActivity({
       req,

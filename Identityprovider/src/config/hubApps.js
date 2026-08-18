@@ -11,7 +11,7 @@ function productionSafeUrl(value, fallback) {
   if (!configured) return fallback
   try {
     const hostname = new URL(configured).hostname.toLowerCase()
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return fallback
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || !hostname.includes('.')) return fallback
   } catch {
     return fallback
   }
@@ -178,6 +178,7 @@ const developmentApps = [
     color: '#545c47',
     url: process.env.AUTOMATION_HUB_URL || 'http://localhost:5421',
     apiUrl: process.env.AUTOMATION_HUB_API_URL || 'http://localhost:5420',
+    oidcStartPath: '/auth/login',
     clientId: 'automation-hub',
     isActive: true,
     isPublic: true,
@@ -370,6 +371,7 @@ const productionApps = [
     color: '#545c47',
     url: productionSafeUrl(process.env.AUTOMATION_HUB_URL, 'https://automations.seemplifyai.com'),
     apiUrl: productionSafeUrl(process.env.AUTOMATION_HUB_API_URL, 'https://automations.seemplifyai.com'),
+    oidcStartPath: '/auth/login',
     clientId: 'automation-hub',
     isActive: hasConfiguredUrl(process.env.AUTOMATION_HUB_URL),
     isPublic: true,
@@ -470,6 +472,17 @@ export function getAppApiUrl(appId) {
 export function getOidcLaunchApiUrl(app, fallbackApiUrl) {
   const configuredApiUrl = String(app?.apiUrl || '').trim()
   return configuredApiUrl || fallbackApiUrl
+}
+
+/**
+ * Resolve the public OIDC entrypoint exposed by a hub application.
+ * Most products retain the legacy API route; Automation Hub serves auth
+ * directly from the same public origin.
+ */
+export function getOidcLaunchPath(app) {
+  const configuredPath = String(app?.oidcStartPath || '').trim()
+  if (configuredPath.startsWith('/') && !configuredPath.startsWith('//')) return configuredPath
+  return '/api/auth/oidc/start'
 }
 
 /**

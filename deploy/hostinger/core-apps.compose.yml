@@ -39,7 +39,7 @@ services:
       MESSAGING_URL: https://workspace.seemplifyai.com
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
       AUTOMATION_HUB_URL: https://automations.seemplifyai.com
-      AUTOMATION_HUB_API_URL: http://automation-hub:5420
+      AUTOMATION_HUB_API_URL: https://automations.seemplifyai.com
       AUTOMATION_HUB_HMAC_SECRET_FILE: /run/seemplify/automation-hub-hmac-secret
       APPROVER_URL: https://approver.seemplifyai.com
       EXPERIENCE_MANAGEMENT_URL: https://experience.seemplifyai.com
