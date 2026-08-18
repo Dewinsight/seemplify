@@ -101,6 +101,9 @@ const parseCloudinaryUrl = (cloudinaryUrl) => {
   }
 }
 
+const buildCloudinaryUrl = ({ apiKey, apiSecret, cloudName }) =>
+  `cloudinary://${encodeURIComponent(apiKey)}:${encodeURIComponent(apiSecret)}@${cloudName}`
+
 const applyDotenvFromKnownLocations = () => {
   for (const envPath of ENV_PATH_CANDIDATES) {
     if (!existsSync(envPath)) continue
@@ -174,7 +177,7 @@ const ensureCloudinaryConfigured = () => {
       process.env.CLOUDINARY_CLOUD_NAME = parsedFromUrl.cloudName
       process.env.CLOUDINARY_API_KEY = parsedFromUrl.apiKey
       process.env.CLOUDINARY_API_SECRET = parsedFromUrl.apiSecret
-      process.env.CLOUDINARY_URL = `cloudinary://${parsedFromUrl.apiKey}:${parsedFromUrl.apiSecret}@${parsedFromUrl.cloudName}`
+      process.env.CLOUDINARY_URL = buildCloudinaryUrl(parsedFromUrl)
       return true
     }
   }
@@ -188,7 +191,7 @@ const ensureCloudinaryConfigured = () => {
     process.env.CLOUDINARY_CLOUD_NAME = cloudName
     process.env.CLOUDINARY_API_KEY = apiKey
     process.env.CLOUDINARY_API_SECRET = apiSecret
-    process.env.CLOUDINARY_URL = `cloudinary://${apiKey}:${apiSecret}@${cloudName}`
+    process.env.CLOUDINARY_URL = buildCloudinaryUrl({ apiKey, apiSecret, cloudName })
     return true
   }
 

@@ -24,6 +24,7 @@ import {
 } from '../services/nylasPlatformConfigurationService.js'
 import {
   deleteMediaConfiguration,
+  getCloudinaryAdminCredentialReveal,
   getAzureSpeechAdminCredentialReveal,
   getMediaConfigurationStatus,
   saveAzureSpeechConfiguration,
@@ -580,6 +581,25 @@ router.post('/integrations/media-ai/azure-speech', requireSuperAdmin, auditLog('
     return res.redirect(`/admin/integrations/media-ai?notice=${encodeURIComponent(error.message || 'Failed to save Azure Speech settings')}&noticeType=error`)
   }
 })
+
+router.post(
+  '/api/integrations/media-ai/cloudinary/reveal',
+  requireSuperAdmin,
+  disableSecretResponseCaching,
+  auditLog('reveal_cloudinary_platform_credential'),
+  requireSensitiveAdminAction('reveal-cloudinary-url'),
+  adminRateLimit({ windowMs: 60_000, maxRequests: 6, keyPrefix: 'cloudinary-url-reveal' }),
+  async (_req, res) => {
+    try {
+      return res.json(await getCloudinaryAdminCredentialReveal())
+    } catch (error) {
+      const missing = error.message === 'Cloudinary credentials are not configured.'
+      return res.status(missing ? 404 : 500).json({
+        error: missing ? error.message : 'Failed to reveal the Cloudinary API environment variable.'
+      })
+    }
+  }
+)
 
 router.post(
   '/api/integrations/media-ai/azure-speech/reveal',

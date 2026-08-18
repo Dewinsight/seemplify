@@ -30,7 +30,7 @@
     <%- include('../partials/admin-nav', { activePage: 'media-ai-integration' }) %>
     <main class="admin-content">
       <div class="admin-header"><h1>Media &amp; Speech</h1></div>
-      <p class="integration-copy">Manage shared media storage and speech services once for Seemplify. Secrets are encrypted by Identity and delivered to approved services over signed requests. Super admins can explicitly reveal the Azure Speech key when operational access is required.</p>
+      <p class="integration-copy">Manage shared media storage and speech services once for Seemplify. Secrets are encrypted by Identity and delivered to approved services over signed requests. Super admins can explicitly reveal saved production credentials when operational access is required.</p>
 
       <% if (notice) { %><div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>"><span><%= notice %></span></div><% } %>
 
@@ -41,7 +41,15 @@
         </div>
         <form method="post" action="/admin/integrations/media-ai/cloudinary" autocomplete="off">
           <div class="integration-grid">
-            <div class="admin-form-group"><label class="admin-form-label" for="cloud-name">Cloud name</label><input class="admin-form-input" id="cloud-name" name="cloudName" value="<%= status.cloudinary.cloudName %>" placeholder="Your Cloudinary cloud name" required></div>
+            <div class="admin-form-group integration-span">
+              <label class="admin-form-label" for="cloudinary-url">API environment variable</label>
+              <div class="secret-input-row">
+                <input class="admin-form-input" id="cloudinary-url" name="cloudinaryUrl" type="password" autocomplete="new-password" placeholder="<%= status.cloudinary.apiEnvironmentVariableConfigured ? 'Configured — leave blank to keep' : 'CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME' %>">
+                <% if (status.cloudinary.apiEnvironmentVariableConfigured && admin?.isSuperAdmin) { %><button class="btn btn-secondary" id="reveal-cloudinary-url" type="button" aria-controls="cloudinary-url" aria-pressed="false">Reveal saved variable</button><% } %>
+              </div>
+              <div class="field-note" id="cloudinary-url-note" aria-live="polite">Paste Cloudinary’s API environment variable to replace all three values at once, or enter them separately below. Identity parses and encrypts the components without storing a redundant plain-text URL.</div>
+            </div>
+            <div class="admin-form-group"><label class="admin-form-label" for="cloud-name">Cloud name</label><input class="admin-form-input" id="cloud-name" name="cloudName" value="<%= status.cloudinary.cloudName %>" placeholder="Your Cloudinary cloud name"></div>
             <div class="admin-form-group"><label class="admin-form-label" for="cloud-key">API key</label><input class="admin-form-input" id="cloud-key" name="apiKey" type="password" autocomplete="new-password" placeholder="<%= status.cloudinary.apiKeyConfigured ? 'Configured — leave blank to keep' : 'Required' %>"></div>
             <div class="admin-form-group integration-span"><label class="admin-form-label" for="cloud-secret">API secret</label><input class="admin-form-input" id="cloud-secret" name="apiSecret" type="password" autocomplete="new-password" placeholder="<%= status.cloudinary.apiSecretConfigured ? 'Configured — leave blank to keep' : 'Required' %>"><div class="field-note">The secret is write-only. Workspace receives it through the authenticated internal configuration channel.</div></div>
           </div>
@@ -83,86 +91,125 @@
   </div>
   <script>
     (() => {
-      const button = document.getElementById('reveal-speech-key')
-      const input = document.getElementById('speech-key')
-      const note = document.getElementById('speech-key-note')
-      const form = input?.closest('form')
-      if (!button || !input || !note || !form) return
+      function setupCredentialReveal({
+        buttonId,
+        inputId,
+        noteId,
+        endpoint,
+        action,
+        payloadKey,
+        revealLabel,
+        hideLabel,
+        confirmMessage,
+        unsavedMessage,
+        failureMessage
+      }) {
+        const button = document.getElementById(buttonId)
+        const input = document.getElementById(inputId)
+        const note = document.getElementById(noteId)
+        const form = input?.closest('form')
+        if (!button || !input || !note || !form) return
 
-      const defaultNote = note.textContent
-      let hideTimer = null
-      let requestPending = false
+        const defaultNote = note.textContent
+        let hideTimer = null
+        let requestPending = false
 
-      function hideKey({ focusButton = false } = {}) {
-        if (button.dataset.state !== 'revealed') return
-        if (hideTimer) window.clearTimeout(hideTimer)
-        hideTimer = null
-        input.value = ''
-        input.type = 'password'
-        input.readOnly = false
-        button.dataset.state = ''
-        button.textContent = 'Reveal saved key'
-        button.setAttribute('aria-pressed', 'false')
-        note.textContent = defaultNote
-        if (focusButton) button.focus()
+        function hideCredential({ focusButton = false } = {}) {
+          if (button.dataset.state !== 'revealed') return
+          if (hideTimer) window.clearTimeout(hideTimer)
+          hideTimer = null
+          input.value = ''
+          input.type = 'password'
+          input.readOnly = false
+          button.dataset.state = ''
+          button.textContent = revealLabel
+          button.setAttribute('aria-pressed', 'false')
+          note.textContent = defaultNote
+          if (focusButton) button.focus()
+        }
+
+        button.addEventListener('click', async () => {
+          if (requestPending) return
+          if (button.dataset.state === 'revealed') {
+            hideCredential({ focusButton: true })
+            return
+          }
+          if (input.value) {
+            note.textContent = unsavedMessage
+            input.focus()
+            return
+          }
+          if (!window.confirm(confirmMessage)) return
+
+          requestPending = true
+          button.disabled = true
+          button.textContent = 'Revealing…'
+          button.setAttribute('aria-busy', 'true')
+          note.textContent = 'Requesting the saved credential…'
+
+          try {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { Accept: 'application/json', 'X-Seemplify-Admin-Action': action }
+            })
+            const payload = await response.json().catch(() => ({}))
+            if (!response.ok || !payload[payloadKey]) throw new Error(payload.error || failureMessage)
+
+            input.value = payload[payloadKey]
+            input.type = 'text'
+            input.readOnly = true
+            button.dataset.state = 'revealed'
+            button.textContent = hideLabel
+            button.setAttribute('aria-pressed', 'true')
+            note.textContent = 'Visible for 30 seconds. Hide it as soon as you finish using it.'
+            input.focus()
+            input.select()
+            hideTimer = window.setTimeout(() => hideCredential(), 30_000)
+          } catch (error) {
+            button.textContent = revealLabel
+            note.textContent = error.message || failureMessage
+          } finally {
+            requestPending = false
+            button.disabled = false
+            button.removeAttribute('aria-busy')
+          }
+        })
+
+        form.addEventListener('submit', () => hideCredential())
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) hideCredential()
+        })
+        window.addEventListener('pagehide', () => hideCredential())
       }
 
-      button.addEventListener('click', async () => {
-        if (requestPending) return
-        if (button.dataset.state === 'revealed') {
-          hideKey({ focusButton: true })
-          return
-        }
-        if (input.value) {
-          note.textContent = 'Clear the unsaved replacement key before revealing the saved key.'
-          input.focus()
-          return
-        }
-        if (!window.confirm('Reveal the production Azure Speech key? This action is audited.')) return
-
-        requestPending = true
-        button.disabled = true
-        button.textContent = 'Revealing…'
-        button.setAttribute('aria-busy', 'true')
-        note.textContent = 'Requesting the saved key…'
-
-        try {
-          const response = await fetch('/admin/api/integrations/media-ai/azure-speech/reveal', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-              Accept: 'application/json',
-              'X-Seemplify-Admin-Action': 'reveal-azure-speech-key'
-            }
-          })
-          const payload = await response.json().catch(() => ({}))
-          if (!response.ok || !payload.speechKey) throw new Error(payload.error || 'Failed to reveal Azure Speech key.')
-
-          input.value = payload.speechKey
-          input.type = 'text'
-          input.readOnly = true
-          button.dataset.state = 'revealed'
-          button.textContent = 'Hide key'
-          button.setAttribute('aria-pressed', 'true')
-          note.textContent = 'Visible for 30 seconds. Hide it as soon as you finish using it.'
-          input.focus()
-          input.select()
-          hideTimer = window.setTimeout(() => hideKey(), 30_000)
-        } catch (error) {
-          button.textContent = 'Reveal saved key'
-          note.textContent = error.message || 'Failed to reveal Azure Speech key.'
-        } finally {
-          requestPending = false
-          button.disabled = false
-          button.removeAttribute('aria-busy')
-        }
+      setupCredentialReveal({
+        buttonId: 'reveal-cloudinary-url',
+        inputId: 'cloudinary-url',
+        noteId: 'cloudinary-url-note',
+        endpoint: '/admin/api/integrations/media-ai/cloudinary/reveal',
+        action: 'reveal-cloudinary-url',
+        payloadKey: 'cloudinaryUrl',
+        revealLabel: 'Reveal saved variable',
+        hideLabel: 'Hide variable',
+        confirmMessage: 'Reveal the production Cloudinary API environment variable? This action is audited.',
+        unsavedMessage: 'Clear the unsaved replacement variable before revealing the saved value.',
+        failureMessage: 'Failed to reveal the Cloudinary API environment variable.'
       })
 
-      form.addEventListener('submit', () => hideKey())
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden) hideKey()
+      setupCredentialReveal({
+        buttonId: 'reveal-speech-key',
+        inputId: 'speech-key',
+        noteId: 'speech-key-note',
+        endpoint: '/admin/api/integrations/media-ai/azure-speech/reveal',
+        action: 'reveal-azure-speech-key',
+        payloadKey: 'speechKey',
+        revealLabel: 'Reveal saved key',
+        hideLabel: 'Hide key',
+        confirmMessage: 'Reveal the production Azure Speech key? This action is audited.',
+        unsavedMessage: 'Clear the unsaved replacement key before revealing the saved key.',
+        failureMessage: 'Failed to reveal Azure Speech key.'
       })
-      window.addEventListener('pagehide', () => hideKey())
     })()
   </script>
 </body>

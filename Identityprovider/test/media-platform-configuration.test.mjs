@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildCloudinaryAdminCredentialReveal,
+  buildCloudinaryEnvironmentVariable,
   buildAzureSpeechAdminCredentialReveal,
   decryptMediaConfiguration,
   encryptMediaConfiguration,
   normalizeAzureSpeechConfiguration,
-  normalizeCloudinaryConfiguration
+  normalizeCloudinaryConfiguration,
+  parseCloudinaryEnvironmentVariable
 } from '../src/services/mediaPlatformConfigurationService.js'
 
 const environment = { NODE_ENV: 'test', IDP_PLATFORM_CREDENTIAL_ENCRYPTION_KEY: 'test-only-platform-encryption-key-material-123456' }
@@ -29,6 +32,26 @@ test('blank admin secrets preserve existing Cloudinary and Azure values', () => 
   ).speechKey, 'existing-speech-key')
 })
 
+test('Cloudinary API environment variable is parsed without storing a redundant composite secret', () => {
+  const input = 'CLOUDINARY_URL=cloudinary://test-key:test%40secret@demo-cloud'
+  assert.deepEqual(normalizeCloudinaryConfiguration({ cloudinaryUrl: input }), {
+    cloudName: 'demo-cloud',
+    apiKey: 'test-key',
+    apiSecret: 'test@secret'
+  })
+  assert.deepEqual(parseCloudinaryEnvironmentVariable(`"${input}"`), {
+    cloudName: 'demo-cloud',
+    apiKey: 'test-key',
+    apiSecret: 'test@secret'
+  })
+  assert.equal(buildCloudinaryEnvironmentVariable({
+    cloudName: 'demo-cloud',
+    apiKey: 'test-key',
+    apiSecret: 'test@secret'
+  }), input)
+  assert.throws(() => normalizeCloudinaryConfiguration({ cloudinaryUrl: 'https://example.com' }), /Cloudinary API environment variable/u)
+})
+
 test('Azure custom endpoints reject insecure production URLs', () => {
   const previous = process.env.NODE_ENV
   process.env.NODE_ENV = 'production'
@@ -48,4 +71,15 @@ test('Azure Speech key is available only through the explicit admin reveal proje
     updatedAt: record.updatedAt
   })
   assert.throws(() => buildAzureSpeechAdminCredentialReveal(record, { region: 'swedencentral' }), /not configured/u)
+})
+
+test('Cloudinary composite credential is available only through the explicit admin reveal projection', () => {
+  const record = { revision: 2, updatedAt: new Date('2026-08-18T15:00:00Z') }
+  const configuration = { cloudName: 'demo-cloud', apiKey: 'test-key', apiSecret: 'test-secret' }
+  assert.deepEqual(buildCloudinaryAdminCredentialReveal(record, configuration), {
+    cloudinaryUrl: 'CLOUDINARY_URL=cloudinary://test-key:test-secret@demo-cloud',
+    revision: 2,
+    updatedAt: record.updatedAt
+  })
+  assert.throws(() => buildCloudinaryAdminCredentialReveal(record, { cloudName: 'demo-cloud' }), /not configured/u)
 })

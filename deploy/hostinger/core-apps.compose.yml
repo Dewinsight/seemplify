@@ -535,6 +535,8 @@ services:
       OIDC_CLIENT_ID: seemplify-learning
       OIDC_CLIENT_SECRET: ${OIDC_LEARNING_SECRET:?required}
       OIDC_REDIRECT_URI: https://learning.seemplifyai.com/auth/seemplify/callback
+      IDP_PLATFORM_CONFIGURATION_URL: http://identity-provider:5008
+      IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /run/seemplify/platform-integration-hmac
       PERFORMANCE_MANAGEMENT_URL: http://performance-backend:5004
       PERFORMANCE_MANAGEMENT_WEBHOOK_SECRET: ${IDP_WEBHOOK_PERFORMANCE:?required}
       MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
@@ -542,6 +544,8 @@ services:
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
       MAIL_FROM_NAME: Seemplify Learning
       CREDENTIALS_ENCRYPTION_KEY: ${LEARNING_SESSION_SECRET:?required}
+    volumes:
+      - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-hmac:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5012/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s

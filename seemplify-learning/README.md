@@ -33,7 +33,7 @@ Standalone Simple LMS application with its own authentication, organization/team
 - `OIDC_CLIENT_ID`
 - `OIDC_CLIENT_SECRET`
 - `OIDC_REDIRECT_URI` (optional when request host/proxy headers are authoritative)
-- `CLOUDINARY_URL` (required for banner uploads)
+- Cloudinary is loaded from Seemplify Identity over the signed platform-configuration channel in production. `CLOUDINARY_URL` or the three split `CLOUDINARY_*` values remain supported as local-development fallbacks.
 
 ## Deployment
 GitHub Actions workflow:

@@ -17,6 +17,7 @@ const multiCandidateRetryService = require('./services/multiCandidateRetryServic
 const interviewBotJoinService = require('./services/interviewBotJoinService');
 const aiInterviewEmailService = require('./services/aiInterviewEmailService');
 const { requestValidation } = require('./middleware/requestValidation');
+const { hydrateCloudinaryConfiguration } = require('./services/platformConfigurationClient');
 
 // Load environment variables
 dotenv.config();
@@ -387,7 +388,11 @@ if (process.env.VERCEL) {
   return;
 }
 
-server.listen(PORT, async () => {
+async function startServer() {
+  await hydrateCloudinaryConfiguration();
+  setInterval(() => hydrateCloudinaryConfiguration({ quiet: true }).catch(() => undefined), 5 * 60 * 1000).unref();
+
+  server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 WebSocket available at ws://localhost:${PORT}/ws/assistant`);
   console.log(`📊 Background services status:`, backgroundServiceManager.getStatus());
@@ -410,4 +415,10 @@ server.listen(PORT, async () => {
   } catch (err) {
     console.warn('⚠️ Enrichment queue init failed (non-fatal, enrichment will init on first use):', err.message);
   }
+  });
+}
+
+startServer().catch((error) => {
+  console.error('Failed to start server:', error.message);
+  process.exit(1);
 });

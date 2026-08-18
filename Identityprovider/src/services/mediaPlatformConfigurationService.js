@@ -38,6 +38,48 @@ export function decryptMediaConfiguration(integration, envelope, environment = p
 
 const clean = (value, maximum = 2_000) => String(value || '').trim().slice(0, maximum)
 
+function cloudinaryUrlValue(value) {
+  let text = clean(value, 4_000)
+  if (text.length >= 2 && ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'")))) {
+    text = text.slice(1, -1).trim()
+  }
+  return text.replace(/^CLOUDINARY_URL\s*=\s*/iu, '').trim()
+}
+
+export function parseCloudinaryEnvironmentVariable(value) {
+  const text = cloudinaryUrlValue(value)
+  if (!text) return null
+
+  try {
+    const parsed = new URL(text)
+    if (parsed.protocol !== 'cloudinary:' || !parsed.hostname || !parsed.username || !parsed.password) {
+      throw new Error('incomplete Cloudinary URL')
+    }
+    if (parsed.search || parsed.hash) throw new Error('Cloudinary URL options are not supported')
+    return {
+      cloudName: parsed.hostname,
+      apiKey: decodeURIComponent(parsed.username),
+      apiSecret: decodeURIComponent(parsed.password)
+    }
+  } catch {
+    throw new Error('The Cloudinary API environment variable must use CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME.')
+  }
+}
+
+export function buildCloudinaryUrl(configuration = {}) {
+  const cloudName = clean(configuration.cloudName, 300)
+  const apiKey = clean(configuration.apiKey, 500)
+  const apiSecret = clean(configuration.apiSecret)
+  if (!cloudName || !apiKey || !apiSecret || !/^[a-z0-9_-]+$/iu.test(cloudName)) {
+    throw new Error('Cloudinary cloud name, API key, and API secret are required.')
+  }
+  return `cloudinary://${encodeURIComponent(apiKey)}:${encodeURIComponent(apiSecret)}@${cloudName}`
+}
+
+export function buildCloudinaryEnvironmentVariable(configuration = {}) {
+  return `CLOUDINARY_URL=${buildCloudinaryUrl(configuration)}`
+}
+
 function optionalHttpsUrl(value) {
   const text = clean(value).replace(/\/+$/u, '')
   if (!text) return ''
@@ -73,6 +115,9 @@ async function save(integration, configuration, adminId) {
 }
 
 export function normalizeCloudinaryConfiguration(input, existing = null) {
+  const fromEnvironmentVariable = parseCloudinaryEnvironmentVariable(input.cloudinaryUrl)
+  if (fromEnvironmentVariable) return fromEnvironmentVariable
+
   const configuration = {
     cloudName: clean(input.cloudName, 300) || existing?.cloudName || '',
     apiKey: clean(input.apiKey, 500) || existing?.apiKey || '',
@@ -103,6 +148,7 @@ function publicCloudinary(record, configuration) {
     cloudName: configuration?.cloudName || '',
     apiKeyConfigured: Boolean(configuration?.apiKey),
     apiSecretConfigured: Boolean(configuration?.apiSecret),
+    apiEnvironmentVariableConfigured: Boolean(configuration?.cloudName && configuration?.apiKey && configuration?.apiSecret),
     revision: Number(record?.revision || 0),
     updatedAt: record?.updatedAt || null
   }
@@ -127,6 +173,17 @@ export function buildAzureSpeechAdminCredentialReveal(record, configuration) {
   if (!record || !speechKey) throw new Error('Azure Speech key is not configured.')
   return {
     speechKey,
+    revision: Number(record.revision || 0),
+    updatedAt: record.updatedAt || null
+  }
+}
+
+export function buildCloudinaryAdminCredentialReveal(record, configuration) {
+  if (!record || !configuration?.cloudName || !configuration?.apiKey || !configuration?.apiSecret) {
+    throw new Error('Cloudinary credentials are not configured.')
+  }
+  return {
+    cloudinaryUrl: buildCloudinaryEnvironmentVariable(configuration),
     revision: Number(record.revision || 0),
     updatedAt: record.updatedAt || null
   }
@@ -161,6 +218,11 @@ export async function getAzureSpeechAdminCredentialReveal() {
   return buildAzureSpeechAdminCredentialReveal(record, configuration)
 }
 
+export async function getCloudinaryAdminCredentialReveal() {
+  const { record, configuration } = await stored(CLOUDINARY)
+  return buildCloudinaryAdminCredentialReveal(record, configuration)
+}
+
 export async function deleteMediaConfiguration(integration) {
   if (![CLOUDINARY, AZURE_SPEECH].includes(integration)) throw new Error('Unsupported media integration.')
   await PlatformIntegrationCredential.deleteOne({ integration })
@@ -180,10 +242,8 @@ function cloudinaryFromEnvironment(environment) {
   const url = clean(environment.CLOUDINARY_URL, 4_000)
   if (url) {
     try {
-      const parsed = new URL(url)
-      if (parsed.protocol === 'cloudinary:' && parsed.hostname && parsed.username && parsed.password) {
-        return { cloudName: parsed.hostname, apiKey: decodeURIComponent(parsed.username), apiSecret: decodeURIComponent(parsed.password) }
-      }
+      const configuration = parseCloudinaryEnvironmentVariable(url)
+      if (configuration) return configuration
     } catch { /* Fall through to the separate variables. */ }
   }
   return {
@@ -228,6 +288,7 @@ export function applyMediaConfigurationEnvironment({ cloudinary, azureSpeech }, 
     environment.CLOUDINARY_CLOUD_NAME = cloudinary.cloudName
     environment.CLOUDINARY_API_KEY = cloudinary.apiKey
     environment.CLOUDINARY_API_SECRET = cloudinary.apiSecret
+    environment.CLOUDINARY_URL = buildCloudinaryUrl(cloudinary)
   }
   if (azureSpeech?.speechKey && azureSpeech?.region) {
     environment.AZURE_SPEECH_KEY = azureSpeech.speechKey

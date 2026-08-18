@@ -370,10 +370,10 @@ backgroundServiceManager.register('memoryManager', memoryManager);
 
 async function startServer() {
   await databaseReady;
-  const { hydrateAzureSpeechConfiguration } = require('./services/platformConfigurationClient');
-  await hydrateAzureSpeechConfiguration();
+  const { hydratePlatformConfiguration } = require('./services/platformConfigurationClient');
+  await hydratePlatformConfiguration();
   aiInterviewVoiceLiveService.initialize(server);
-  setInterval(() => hydrateAzureSpeechConfiguration({ quiet: true }).catch(() => undefined), 5 * 60 * 1000).unref();
+  setInterval(() => hydratePlatformConfiguration({ quiet: true }).catch(() => undefined), 5 * 60 * 1000).unref();
   try {
     const meteringOutbox = await usageMeteringOutbox.start(persistUsageEnvelope);
     assertUsageMeteringOutboxReady(meteringOutbox);

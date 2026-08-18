@@ -66,3 +66,11 @@ test('Azure Speech reveal route and UI retain the privileged short-lived contrac
   assert.match(view, /visibilitychange/u)
   assert.match(view, /pagehide/u)
 })
+
+test('Cloudinary environment-variable reveal uses the same privileged short-lived contract', () => {
+  const route = fs.readFileSync(new URL('../src/routes/adminViews.js', import.meta.url), 'utf8')
+  const view = fs.readFileSync(new URL('../src/views/admin/media-ai-integration.ejs', import.meta.url), 'utf8')
+  assert.match(route, /\/api\/integrations\/media-ai\/cloudinary\/reveal[\s\S]*requireSuperAdmin[\s\S]*disableSecretResponseCaching[\s\S]*auditLog\('reveal_cloudinary_platform_credential'\)[\s\S]*requireSensitiveAdminAction\('reveal-cloudinary-url'\)/u)
+  assert.match(view, /API environment variable[\s\S]*admin\?\.isSuperAdmin[\s\S]*Reveal saved variable/u)
+  assert.match(view, /X-Seemplify-Admin-Action[\s\S]*reveal-cloudinary-url/u)
+})

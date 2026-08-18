@@ -30,6 +30,7 @@ import { resolveCourseSaleContext } from './utils/courseSelling.js'
 import { resolveLearningRole as resolveLearningRoleFromAccount } from './utils/learningRoles.js'
 import { resolveAccountOrganizationLearningAccess } from './utils/organizationLearning.js'
 import { startPerformanceLearningSyncWorker } from './services/performanceLearningSyncService.js'
+import { hydrateCloudinaryConfiguration } from './services/platformConfigurationClient.js'
 
 dotenv.config()
 
@@ -817,6 +818,7 @@ const port = Number(process.env.PORT || 5012)
 mongoose.connect(mongoUri)
   .then(async () => {
     console.log(`Seemplify Learning connected to MongoDB`) // eslint-disable-line no-console
+    await hydrateCloudinaryConfiguration()
     try {
       await getSimpleLmsCurrencyCatalog({ forceRefresh: true })
       console.log('Simple LMS currencies ready') // eslint-disable-line no-console
@@ -824,6 +826,7 @@ mongoose.connect(mongoUri)
       console.error('Simple LMS currency seed failed:', currencyError) // eslint-disable-line no-console
     }
     startPerformanceLearningSyncWorker()
+    setInterval(() => hydrateCloudinaryConfiguration({ quiet: true }).catch(() => undefined), 5 * 60 * 1000).unref()
     app.listen(port, () => {
       console.log(`Seemplify Learning running on port ${port}`) // eslint-disable-line no-console
     })
