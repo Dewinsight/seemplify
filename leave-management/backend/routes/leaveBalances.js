@@ -219,10 +219,14 @@ router.patch('/user/:userId/entitlements/:leaveTypeKey',
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-      const [policy, balance] = await Promise.all([
-        LeavePolicy.findOne({ organizationId: req.organizationId }).session(session),
-        LeaveBalance.findOne({ userId: member.userId, organizationId: req.organizationId, year }).session(session),
-      ]);
+      // MongoDB transactions do not support parallel operations on one session.
+      // Keep these reads sequential to avoid transaction-number races.
+      const policy = await LeavePolicy.findOne({ organizationId: req.organizationId }).session(session);
+      const balance = await LeaveBalance.findOne({
+        userId: member.userId,
+        organizationId: req.organizationId,
+        year,
+      }).session(session);
       const definition = policy?.getLeaveType(key, { includeInactive: true });
       if (!definition) throw new AppError('Leave type not found', 404, 'LEAVE_TYPE_NOT_FOUND');
       const entitlement = balance.getEntitlement(key);
