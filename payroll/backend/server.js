@@ -87,7 +87,7 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Trust Proxy for Azure/Netlify
+// Trust Hostinger Traefik
 app.set('trust proxy', 1);
 
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/payroll-management';

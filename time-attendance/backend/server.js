@@ -39,7 +39,7 @@ const { errorHandler } = require('./middleware/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 5010;
 
-// Trust proxy for Azure/App Service
+// Trust Hostinger Traefik
 app.set('trust proxy', 1);
 
 // Security middleware

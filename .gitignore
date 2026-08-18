@@ -30,6 +30,8 @@ access/
 # Logs
 *.log
 logs/
+**/latest-logs/
+**/idp-logs-new/
 .playwright-cli/
 
 # Local test and automation artifacts
@@ -44,6 +46,7 @@ output/
 test-results/
 playwright-report/
 .playwright/
+*.inspect.ndjson
 
 # OS files
 .DS_Store

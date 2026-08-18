@@ -78,7 +78,7 @@ const performanceRuntimeConfig = getPerformanceOidcClientConfig({
   frontendUrlFallback: 'http://localhost:5005'
 });
 
-// Trust proxy (for Azure/App Service deployments)
+// Trust Hostinger Traefik
 app.set('trust proxy', 1);
 
 // Security middleware

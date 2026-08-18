@@ -1,1 +1,0 @@
-2025-12-14T07:29:56  Startup Request, url: /diagnostics/runtime, method: GET, type: request, pid: 831,1,5, ScmType: None

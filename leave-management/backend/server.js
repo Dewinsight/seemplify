@@ -38,7 +38,7 @@ const { assertInternalPayrollConfiguration } = require('./services/internalPayro
 const app = express();
 const PORT = process.env.PORT || 5002;
 
-// Trust proxy (Azure/App Service) so req.protocol respects X-Forwarded-Proto
+// Trust Hostinger Traefik so req.protocol respects X-Forwarded-Proto
 app.set('trust proxy', 1);
 
 // Security middleware

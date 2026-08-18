@@ -896,7 +896,7 @@ try {
 
 const config = {
   adapter: MongoAdapter,
-  proxy: true, // Enable proxy support for Azure Web Apps
+  proxy: true, // Enable proxy support behind Hostinger Traefik
   clients: configuredOidcClients.map(client => ({
     client_id: client.client_id,
     client_secret: client.client_secret,
@@ -1020,7 +1020,7 @@ const provider = new Provider(ISSUER_URL, config)
 // Set provider instance for API authentication middleware
 setProviderInstance(provider)
 
-// Set proxy on the Koa app directly for Azure and dev (behind Traefik)
+// Set proxy on the Koa app directly for Hostinger and local reverse proxies
 provider.proxy = true
 console.log('🔧 Provider proxy set to:', provider.proxy)
 
@@ -1103,12 +1103,12 @@ provider.on('userinfo.success', async (ctx) => {
 
 const app = express()
 
-// Trust proxy for Azure (required for secure cookies behind load balancer)
+// Trust Hostinger Traefik for secure cookies behind the reverse proxy
 app.set('trust proxy', 1)
 console.log('🔒 Trust proxy enabled for Azure')
 
-// CRITICAL: Force HTTPS detection for Azure Web Apps
-// Azure's proxy sets x-forwarded-proto but oidc-provider needs it to be present
+// Force HTTPS detection behind Hostinger Traefik.
+// The reverse proxy sets x-forwarded-proto but oidc-provider needs it to be present.
 // This middleware ensures HTTPS is detected correctly
 if (isProduction) {
   app.use((req, res, next) => {
@@ -10076,7 +10076,7 @@ app.get('/profile/documents', getSessionUser, requireCurrentOrganizationActiveSu
 if (isProduction) {
   const providerCallback = provider.callback()
   app.use((req, res, next) => {
-    // Ensure x-forwarded-proto is set for Azure
+    // Ensure x-forwarded-proto is set behind Hostinger Traefik
     // This is critical for oidc-provider to generate https:// URLs
     req.headers['x-forwarded-proto'] = 'https'
     providerCallback(req, res, next)

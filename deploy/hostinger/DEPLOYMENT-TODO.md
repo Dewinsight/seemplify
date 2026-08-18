@@ -24,7 +24,7 @@ Target: `179.198.192.126` (`srv1907030`)
 - [x] Run public HTTPS, OIDC and authenticated external TURN smoke tests.
 - [x] Write the production operations and recovery runbook.
 - [x] Complete Dokploy administrator registration, create its API key and close direct port `3000`.
-- [x] Authorize the Hostinger IP in Google Workspace and remove the Azure relay IP.
+- [x] Authorize the Hostinger IP in Google Workspace and remove the retired relay IP.
 - [x] Enable outbound Mail API sending and verify Google `250 2.0.0` delivery.
 - [x] Configure and verify Postal/SPF/DKIM/return-path sending for `seemplifyai.com` and `aiinnigeria.com`.
 - [x] Remove retired Brevo DNS authentication records from accessible zones.
@@ -82,5 +82,5 @@ Target: `179.198.192.126` (`srv1907030`)
 - Rotate or replace the active local Nylas credential before enabling connected inbox/calendar features in production.
 - Flutterwave and Paystack credentials for paid Learning flows.
 - Per-user ChatGPT/Codex connected-account sessions.
-- Azure Blob or Cloudflare R2 credentials for off-host backups.
+- Cloudflare R2 credentials for off-host backups.
 - DNS-management access for `dewinsight.com`.

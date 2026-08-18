@@ -9,7 +9,7 @@ STUN/TURN server and REST API for WebRTC (Mediasoup, etc.) on Seemplify.
 
 1. Copy `.env.example` to `.env` and set `TURN_AUTH_SECRET` (e.g. `openssl rand -hex 32`) and `COTURN_EXTERNAL_IP` (server public IP).
 2. Create DNS: **turn.seemplifyai.com** → A record to server IP with **proxied off** (see `DEPLOY-COTURN-SEEMPLIFY.md` or `setup-cloudflare-dns.ps1`).
-3. Open firewall: UDP 3478, TCP 3478, UDP 49152–49252 (Azure NSG + UFW).
+3. Open the Hostinger firewall and UFW for UDP 3478, TCP 3478, and UDP 49152–49252.
 4. Deploy: use `docker-compose.yml` in Dokploy (Docker Compose app) or run `docker compose up -d` from this directory.
 
 Full steps: **DEPLOY-COTURN-SEEMPLIFY.md**.

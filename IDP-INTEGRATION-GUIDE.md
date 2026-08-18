@@ -183,7 +183,7 @@ const { Provider } from 'oidc-provider'
 
 const config = {
   adapter: MongoAdapter,
-  proxy: true, // Enable proxy support for Azure Web Apps
+  proxy: true, // Enable proxy support behind Hostinger Traefik
   clients: clientsData.clients.map(client => ({
     client_id: client.client_id,
     client_secret: client.client_secret,

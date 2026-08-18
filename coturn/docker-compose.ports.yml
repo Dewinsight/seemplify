@@ -1,6 +1,6 @@
 # Alternative: Coturn with port mapping (no host network).
 # Use this if Dokploy/Swarm does not support network_mode: host for this stack.
-# Ensure host firewall and Azure NSG allow UDP 3478 and UDP 49152-49252 to this host.
+# Ensure the Hostinger firewall and UFW allow UDP 3478 and UDP 49152-49252 to this host.
 
 services:
   coturn:

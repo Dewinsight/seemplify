@@ -220,8 +220,8 @@ The restore check uses temporary containers and tmpfs storage. It verifies
 checksums, restores every database, counts restored structures, validates the
 Redis RDB, and removes its temporary containers on exit.
 
-Local backups do not protect against loss of the VPS. Configure an Azure Blob
-or Cloudflare R2 destination when credentials are issued; no usable off-host
+Local backups do not protect against loss of the VPS. Configure a Cloudflare R2
+destination when credentials are issued; no usable off-host
 backup credential was present in the repository or access folder at migration
 time.
 
@@ -239,7 +239,7 @@ Inbound company mail remains on Google Workspace. Outbound product email uses:
 `Mail API -> Postal -> Postfix relay -> smtp-relay.gmail.com:587`
 
 The Google relay uses source-IP authorization, not a stored Google password.
-Its allowlist contains only `179.198.192.126`; the retired Azure IP was removed
+Its allowlist contains only `179.198.192.126`; the retired relay IP was removed
 after delivery succeeded. `MAIL_API_SEND_ENABLED=true` is active.
 
 Enabled sender domains are `seemplifyai.com` and `aiinnigeria.com`. Postal's
@@ -289,12 +289,12 @@ security, monitoring and the custom-dashboard interface.
 The base applications run without these integrations, but the related features
 remain disabled until the owner supplies and authorizes the credentials:
 
-- Azure OpenAI for Approver and other Azure-hosted AI features.
+- Azure OpenAI for Approver and other AI features.
 - Cloudinary for media uploads where enabled.
 - Nylas for connected inbox and calendar features.
 - Flutterwave and Paystack for paid Learning flows.
 - Per-user ChatGPT/Codex connected-account sessions.
-- Azure Blob or Cloudflare R2 for off-host backups.
+- Cloudflare R2 for off-host backups.
 
 Azure Speech is configured centrally in Identity for AI Interview voice
 features; retain the encrypted access-vault recovery entry during rotations.
