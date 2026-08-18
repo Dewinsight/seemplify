@@ -314,7 +314,7 @@ services:
 
   performance-frontend:
     <<: *defaults
-    image: seemplify/performance-frontend:hostinger
+    image: ${PERFORMANCE_FRONTEND_IMAGE:-seemplify/performance-frontend:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5005"
@@ -385,7 +385,7 @@ services:
 
   payroll-frontend:
     <<: *defaults
-    image: seemplify/payroll-frontend:hostinger
+    image: ${PAYROLL_FRONTEND_IMAGE:-seemplify/payroll-frontend:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5007"

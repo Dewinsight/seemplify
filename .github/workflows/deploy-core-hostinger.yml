@@ -6,6 +6,8 @@ on:
     paths:
       - 'Identityprovider/**'
       - 'recruiter/backend/**'
+      - 'performance/frontend/**'
+      - 'payroll/frontend/**'
       - 'deploy/hostinger/core-apps.compose.yml'
       - 'deploy/hostinger/generate-idp-clients.sh'
       - 'deploy/hostinger/smoke-hostinger.sh'
@@ -86,6 +88,8 @@ jobs:
           tar -czf core-release.tgz \
             Identityprovider \
             recruiter/backend \
+            performance/frontend \
+            payroll/frontend \
             deploy/hostinger/core-apps.compose.yml \
             deploy/hostinger/generate-idp-clients.sh \
             deploy/hostinger/smoke-hostinger.sh
@@ -110,15 +114,25 @@ jobs:
 
           identity_image="seemplify/identity-provider:hostinger-$RELEASE_SHA"
           recruiter_image="seemplify/recruiter-backend:hostinger-$RELEASE_SHA"
+          performance_frontend_image="seemplify/performance-frontend:hostinger-$RELEASE_SHA"
+          payroll_frontend_image="seemplify/payroll-frontend:hostinger-$RELEASE_SHA"
           docker build --pull \
             --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "$identity_image" "$release_root/Identityprovider"
           docker build --pull \
             --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "$recruiter_image" "$release_root/recruiter/backend"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$performance_frontend_image" "$release_root/performance/frontend"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$payroll_frontend_image" "$release_root/payroll/frontend"
 
           cp -a "$release_root/Identityprovider/." /opt/seemplify/source/Identityprovider/
           cp -a "$release_root/recruiter/backend/." /opt/seemplify/source/recruiter/backend/
+          cp -a "$release_root/performance/frontend/." /opt/seemplify/source/performance/frontend/
+          cp -a "$release_root/payroll/frontend/." /opt/seemplify/source/payroll/frontend/
           install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
           install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
@@ -130,6 +144,8 @@ jobs:
 
           export IDENTITY_PROVIDER_IMAGE="$identity_image"
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"
+          export PERFORMANCE_FRONTEND_IMAGE="$performance_frontend_image"
+          export PAYROLL_FRONTEND_IMAGE="$payroll_frontend_image"
           compose=(docker compose \
             --env-file /opt/seemplify/secrets/shared-infrastructure.env \
             --env-file /opt/seemplify/secrets/core-apps.env \
@@ -140,7 +156,7 @@ jobs:
             local container="$1"
             for _ in $(seq 1 60); do
               state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
-              [[ "$state" == healthy ]] && return 0
+              [[ "$state" == healthy || "$state" == running ]] && return 0
               [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && break
               sleep 2
             done
@@ -152,6 +168,9 @@ jobs:
           wait_healthy seemplify-core-recruiter-backend-1
           "${compose[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
+          "${compose[@]}" up -d --no-deps --force-recreate performance-frontend payroll-frontend
+          wait_healthy seemplify-core-performance-frontend-1
+          wait_healthy seemplify-core-payroll-frontend-1
 
           docker exec -i seemplify-core-identity-provider-1 node --input-type=module <<'NODE'
           import crypto from 'node:crypto'

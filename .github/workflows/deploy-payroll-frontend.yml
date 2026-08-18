@@ -2,11 +2,6 @@
 name: Deploy Payroll Frontend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'payroll/frontend/**'
-      - '.github/workflows/deploy-payroll-frontend.yml'
   workflow_dispatch:
 
 env:
