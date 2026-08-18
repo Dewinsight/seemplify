@@ -3,12 +3,12 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>Shared AI Gateway - <%= brand.name %> IDP</title>
+  <title>Platform Settings - <%= brand.name %> IDP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../../public/css/idp-theme.css') %>
 
-    .gateway-page-intro { color: var(--muted); font-size: 14px; margin: -14px 0 22px; max-width: 820px; line-height: 1.55; }
+    .gateway-page-intro { color: var(--muted); font-size: 14px; margin: 0 0 22px; max-width: 820px; line-height: 1.55; }
     .gateway-filter-grid { display: grid; grid-template-columns: 140px minmax(180px, 1fr) repeat(4, minmax(140px, .65fr)) auto; gap: 12px; align-items: end; }
     .gateway-filter-grid .admin-form-group { margin-bottom: 0; }
     .gateway-health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -62,11 +62,12 @@
 
     <main class="admin-content">
       <div class="admin-header">
-        <h1>Shared AI Gateway</h1>
+        <h1>Platform Settings</h1>
         <div class="admin-header-actions">
           <a href="/admin/shared-ai?<%= currentQuery.toString() %>" class="btn btn-secondary">Refresh telemetry</a>
         </div>
       </div>
+      <%- include('../partials/admin-platform-settings-tabs', { activeSettingsTab: 'shared-ai' }) %>
       <p class="gateway-page-intro">Platform-wide AI operations across Recruiter, AI Interview, Performance, Messaging, Experience Management, and other connected apps. Request content and credentials are deliberately excluded.</p>
 
       <% if (analyticsError) { %>

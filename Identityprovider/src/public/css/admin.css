@@ -1409,3 +1409,35 @@ html[data-theme="light"] {
     scroll-behavior: auto !important;
   }
 }
+.platform-settings-tabs {
+  display: flex;
+  gap: 24px;
+  margin: 0 0 24px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.platform-settings-tab {
+  flex: 0 0 auto;
+  margin-bottom: -1px;
+  padding: 10px 1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.platform-settings-tab:hover {
+  color: var(--text);
+}
+
+.platform-settings-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.platform-settings-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

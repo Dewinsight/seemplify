@@ -1,0 +1,17 @@
+<nav class="platform-settings-tabs" aria-label="Platform settings sections">
+  <a
+    href="/admin/shared-ai"
+    class="platform-settings-tab <%= activeSettingsTab === 'shared-ai' ? 'active' : '' %>"
+    <%- activeSettingsTab === 'shared-ai' ? 'aria-current="page"' : '' %>
+  >Shared AI Gateway</a>
+  <a
+    href="/admin/integrations/nylas"
+    class="platform-settings-tab <%= activeSettingsTab === 'nylas' ? 'active' : '' %>"
+    <%- activeSettingsTab === 'nylas' ? 'aria-current="page"' : '' %>
+  >Nylas Integration</a>
+  <a
+    href="/admin/integrations/media-ai"
+    class="platform-settings-tab <%= activeSettingsTab === 'media-ai' ? 'active' : '' %>"
+    <%- activeSettingsTab === 'media-ai' ? 'aria-current="page"' : '' %>
+  >Media &amp; Speech</a>
+</nav>

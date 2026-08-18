@@ -2,11 +2,11 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Media &amp; Speech - <%= brand.name %> IDP</title>
+  <title>Platform Settings - <%= brand.name %> IDP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../../public/css/idp-theme.css') %>
-    .integration-copy { color: var(--muted); font-size: 14px; line-height: 1.55; margin: -14px 0 22px; max-width: 780px; }
+    .integration-copy { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 0 0 22px; max-width: 780px; }
     .integration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
     .integration-grid .admin-form-group { margin-bottom: 0; }
     .integration-span { grid-column: 1 / -1; }
@@ -34,7 +34,8 @@
   <div class="admin-layout">
     <%- include('../partials/admin-nav', { activePage: 'media-ai-integration' }) %>
     <main class="admin-content">
-      <div class="admin-header"><h1>Media &amp; Speech</h1></div>
+      <div class="admin-header"><h1>Platform Settings</h1></div>
+      <%- include('../partials/admin-platform-settings-tabs', { activeSettingsTab: 'media-ai' }) %>
       <p class="integration-copy">Manage shared media storage and speech services once for Seemplify. Secrets are encrypted by Identity and delivered to approved services over signed requests. Super admins can explicitly reveal saved production credentials when operational access is required.</p>
 
       <% if (notice) { %><div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>"><span><%= notice %></span></div><% } %>

@@ -2,11 +2,11 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Nylas Integration - <%= brand.name %> IDP</title>
+  <title>Platform Settings - <%= brand.name %> IDP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../../public/css/idp-theme.css') %>
-    .integration-copy { color: var(--muted); font-size: 14px; line-height: 1.55; margin: -14px 0 22px; max-width: 760px; }
+    .integration-copy { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 0 0 22px; max-width: 760px; }
     .integration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
     .integration-grid .admin-form-group { margin-bottom: 0; }
     .integration-span { grid-column: 1 / -1; }
@@ -25,7 +25,8 @@
   <div class="admin-layout">
     <%- include('../partials/admin-nav', { activePage: 'nylas-integration' }) %>
     <main class="admin-content">
-      <div class="admin-header"><h1>Nylas Integration</h1></div>
+      <div class="admin-header"><h1>Platform Settings</h1></div>
+      <%- include('../partials/admin-platform-settings-tabs', { activeSettingsTab: 'nylas' }) %>
       <p class="integration-copy">Configure the platform Nylas application used by Experience Management. Credentials are encrypted by Identity and delivered only to the authenticated Experience service. Saved secret values are never returned to this page.</p>
 
       <% if (notice) { %><div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>"><span><%= notice %></span></div><% } %>
