@@ -85,9 +85,15 @@ function listen(server: http.Server, port: number) {
   return new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
 }
 
+let fakeNylasCodeChallenge = '';
 const fakeNylas = http.createServer(async (request, response) => {
   const url = new URL(request.url || '/', 'http://127.0.0.1:5492');
   if (request.method === 'GET' && url.pathname === '/v3/connect/auth') {
+    fakeNylasCodeChallenge = String(url.searchParams.get('code_challenge') || '');
+    if (url.searchParams.get('code_challenge_method') !== 'S256'
+      || !/^[A-Za-z0-9_-]{43}$/u.test(fakeNylasCodeChallenge)) {
+      return sendJson(response, { error: 'invalid test PKCE challenge' }, 400);
+    }
     const callback = new URL(String(url.searchParams.get('redirect_uri')));
     callback.searchParams.set('state', String(url.searchParams.get('state')));
     callback.searchParams.set('code', 'playwright-oauth-code');
@@ -95,8 +101,10 @@ const fakeNylas = http.createServer(async (request, response) => {
   }
   if (request.method === 'POST' && url.pathname === '/v3/connect/token') {
     const body = await requestJson(request);
+    const codeVerifier = String(body.code_verifier || '');
     if (body.client_id !== 'experience-e2e-client' || body.client_secret !== 'experience-e2e-api-key-not-live'
-      || body.grant_type !== 'authorization_code' || body.code_verifier !== 'nylas') {
+      || body.grant_type !== 'authorization_code'
+      || crypto.createHash('sha256').update(codeVerifier).digest('base64url') !== fakeNylasCodeChallenge) {
       return sendJson(response, { error: 'invalid test exchange' }, 400);
     }
     return sendJson(response, { data: { grant_id: 'playwright-grant', email: 'connected@example.test', provider: 'google' } });

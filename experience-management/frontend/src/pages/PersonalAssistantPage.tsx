@@ -501,11 +501,19 @@ export function PersonalAssistantPage() {
     const url = new URL(window.location.href);
     const status = url.searchParams.get('nylas');
     if (!status) return;
+    const code = url.searchParams.get('code');
+    const failureMessages: Record<string, string> = {
+      nylas_authorization_failed: 'Nylas rejected this connection. Verify the saved Client ID and API key, then start a new connection.',
+      nylas_request_failed: 'Nylas could not complete this connection. Start a new connection and try again.',
+      nylas_unavailable: 'Nylas is temporarily unavailable. Try connecting again in a few minutes.',
+      nylas_oauth_state_invalid: 'This mailbox connection expired. Start a new connection and try again.',
+      nylas_oauth_state_replay: 'This mailbox connection was already used. Start a new connection and try again.'
+    };
     const notice = status === 'connected'
       ? { tone: 'success' as const, text: 'Mailbox connected successfully.' }
       : status === 'cancelled'
         ? { tone: 'warning' as const, text: 'Mailbox connection was cancelled. No access was added.' }
-        : { tone: 'error' as const, text: 'Mailbox connection failed. Review the Nylas setup and try again.' };
+        : { tone: 'error' as const, text: failureMessages[code || ''] || 'Mailbox connection failed. Start a new connection and try again.' };
     setOauthNotice(notice);
     if (status === 'connected') toast.success(notice.text);
     else if (status === 'cancelled') toast.warning(notice.text);

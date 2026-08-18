@@ -1135,7 +1135,7 @@ export async function nylasCallback(request: Request, response: Response) {
       });
       return callbackRedirect(response, 'cancelled');
     }
-    const grant = await exchangeNylasCode(query.code, authorization.provider);
+    const grant = await exchangeNylasCode(query.code, authorization.provider, query.state);
     const connection = saveNylasConnection({
       spaceId: authorization.spaceId, userId: authorization.userId, provider: authorization.provider,
       grantId: grant.grantId, email: grant.email, scopes: grant.scopes

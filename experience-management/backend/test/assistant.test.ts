@@ -426,6 +426,9 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   assert.equal(authorizeUrl.pathname, '/v3/connect/auth');
   assert.equal(authorizeUrl.searchParams.get('access_type'), 'online');
   assert.equal(authorizeUrl.searchParams.get('response_type'), 'code');
+  assert.equal(authorizeUrl.searchParams.get('code_challenge_method'), 'S256');
+  const codeChallenge = String(authorizeUrl.searchParams.get('code_challenge'));
+  assert.match(codeChallenge, /^[A-Za-z0-9_-]{43}$/u);
   const googleScopes = (authorizeUrl.searchParams.get('scope') || '').split(/\s+/u);
   assert.ok(googleScopes.includes('https://www.googleapis.com/auth/gmail.readonly'));
   assert.ok(googleScopes.includes('https://www.googleapis.com/auth/gmail.send'));
@@ -450,10 +453,15 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
     .query({ state, code: 'oauth-code-1', userId: 'attacker', spaceId: 'attacker-space' }).redirects(0).expect(302);
   assert.match(String(callback.headers.location), /nylas=connected/u);
   const exchange = fetchCalls.find((call) => call.url.endsWith('/v3/connect/token'))!;
-  assert.deepEqual(exchange.body, {
+  const codeVerifier = String(exchange.body.code_verifier);
+  assert.match(codeVerifier, /^[A-Za-z0-9_-]{43}$/u);
+  assert.notEqual(codeVerifier, 'nylas');
+  assert.equal(crypto.createHash('sha256').update(codeVerifier).digest('base64url'), codeChallenge);
+  const { code_verifier: _codeVerifier, ...exchangeBody } = exchange.body;
+  assert.deepEqual(exchangeBody, {
     client_id: 'assistant-test-client', client_secret: 'assistant-test-api-key-not-live',
     grant_type: 'authorization_code', redirect_uri: 'http://127.0.0.1:5496/api/integrations/nylas/callback',
-    code: 'oauth-code-1', code_verifier: 'nylas'
+    code: 'oauth-code-1'
   });
   const connectionRow = db.prepare('SELECT * FROM assistant_nylas_connections').get() as any;
   assert.equal(connectionRow.user_id, ownerId); assert.equal(connectionRow.space_id, ownerSpace.id);

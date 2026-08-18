@@ -1,6 +1,8 @@
+import crypto from 'node:crypto';
 import { config } from './config.js';
 import { normalizeEmailDraftHtml } from './emailDraftHtml.js';
 import { resolveNylasPlatformConfiguration, type NylasPlatformConfiguration } from './nylasPlatformConfiguration.js';
+import { deriveNylasPkceVerifier } from './nylasSecrets.js';
 
 export type NylasProvider = 'google' | 'microsoft';
 
@@ -66,6 +68,7 @@ async function requireConfiguration() {
 
 export async function createNylasAuthorizeUrl(provider: NylasProvider, state: string) {
   const runtime = await requireConfiguration();
+  const codeVerifier = deriveNylasPkceVerifier(state);
   const url = new URL(`${runtime.apiUri}/v3/connect/auth`);
   url.searchParams.set('client_id', runtime.clientId);
   url.searchParams.set('redirect_uri', await nylasRedirectUri(runtime));
@@ -74,6 +77,8 @@ export async function createNylasAuthorizeUrl(provider: NylasProvider, state: st
   url.searchParams.set('provider', provider);
   url.searchParams.set('state', state);
   url.searchParams.set('scope', configuredNylasScopes(provider, runtime).join(' '));
+  url.searchParams.set('code_challenge', crypto.createHash('sha256').update(codeVerifier).digest('base64url'));
+  url.searchParams.set('code_challenge_method', 'S256');
   return url.toString();
 }
 
@@ -127,7 +132,7 @@ async function nylasRequest(path: string, init: RequestInit, maximumBytes?: numb
 
 function payloadData(value: any) { return value?.data ?? value ?? {}; }
 
-export async function exchangeNylasCode(code: string, expectedProvider: NylasProvider) {
+export async function exchangeNylasCode(code: string, expectedProvider: NylasProvider, oauthState: string) {
   const runtime = await requireConfiguration();
   const payload = await nylasRequest('/v3/connect/token', {
     method: 'POST',
@@ -138,7 +143,7 @@ export async function exchangeNylasCode(code: string, expectedProvider: NylasPro
       grant_type: 'authorization_code',
       redirect_uri: await nylasRedirectUri(runtime),
       code,
-      code_verifier: 'nylas'
+      code_verifier: deriveNylasPkceVerifier(oauthState)
     })
   });
   const grant = payloadData(payload);
