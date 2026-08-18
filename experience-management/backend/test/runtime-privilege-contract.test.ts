@@ -150,9 +150,12 @@ test('runtime-33 replaces fresh and cutover provider checks before seeding Azure
 test('production provisions only the Experience-scoped ChatGPT credential for knowledge graph extraction', () => {
   const workflow = fs.readFileSync(
     path.resolve(backendRoot, '..', '..', '.github', 'workflows', 'deploy-experience-hostinger.yml'), 'utf8');
-  assert.match(workflow, /deriveServiceSecret\(masterSecret, 'experience-management'\)/u);
+  assert.match(workflow, /deriveServiceSecret\(masterSecret, "experience-management"\)/u);
   assert.doesNotMatch(workflow, /printf '%s' "\$gateway_secret" >"\$knowledge_secret_dir\/chatgpt-gateway"/u);
-  assert.match(workflow, /fs\.writeFileSync\(process\.argv\[3\], deriveServiceSecret/u);
+  assert.match(workflow, /docker run --rm --user 0:0 --entrypoint node/u);
+  assert.match(workflow, /\.chatgpt-master\.XXXXXX/u);
+  assert.match(workflow, /trap 'rm -f "\$gateway_master_file"' EXIT/u);
+  assert.doesNotMatch(workflow, /^\s*node - /mu, 'the Hostinger host does not provide a global Node runtime');
 });
 
 test('the runtime contracts stay pinned to the shipped compatibility window', () => {

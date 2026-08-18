@@ -6,7 +6,8 @@ on:
     paths:
       - 'experience-management/**'
       - 'tools/local-knowledge/**'
-      - 'ai-interview/backend/**'
+      - 'ai-interview/**'
+      - 'marketing-site/**'
       - 'Identityprovider/**'
       - 'recruiter/backend/config/aiRuntimeCatalog.js'
       - 'recruiter/backend/middleware/internalServiceAuth.js'
@@ -60,6 +61,18 @@ jobs:
           npm ci --ignore-scripts
           npm run check
           node --test test/platformConfigurationClient.test.js
+      - name: Build and test AI Interview frontend
+        working-directory: ai-interview/frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run typecheck
+          npm run test:cv-upload
+          npm run build
+      - name: Build marketing site
+        working-directory: marketing-site
+        run: |
+          npm ci --ignore-scripts
+          npm run build
 
   deploy:
     needs: qa
@@ -79,7 +92,7 @@ jobs:
       - name: Package release
         run: |
           tar -czf experience-release.tgz \
-            experience-management Identityprovider recruiter/backend ai-interview/backend \
+            experience-management Identityprovider recruiter/backend ai-interview marketing-site \
             tools/local-knowledge tools/local-llm/service-auth.cjs \
             deploy/hostinger/core-apps.compose.yml \
             deploy/hostinger/extended-apps.compose.yml \
@@ -117,12 +130,23 @@ jobs:
           identity_image="seemplify/identity-provider:hostinger-$RELEASE_SHA"
           recruiter_image="seemplify/recruiter-backend:hostinger-$RELEASE_SHA"
           ai_interview_image="seemplify/ai-interview-backend:hostinger-$RELEASE_SHA"
+          ai_interview_frontend_image="seemplify/ai-interview-frontend:hostinger-$RELEASE_SHA"
+          marketing_image="seemplify/marketing:hostinger-$RELEASE_SHA"
           knowledge_image="seemplify/knowledge-runtime:hostinger-$RELEASE_SHA"
-          docker build --pull -t "$experience_image" "$release_root/experience-management"
-          docker build --pull -t "$identity_image" "$release_root/Identityprovider"
-          docker build --pull -t "$recruiter_image" "$release_root/recruiter/backend"
-          docker build --pull -t "$ai_interview_image" "$release_root/ai-interview/backend"
+          docker build --pull --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$experience_image" "$release_root/experience-management"
+          docker build --pull --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$identity_image" "$release_root/Identityprovider"
+          docker build --pull --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$recruiter_image" "$release_root/recruiter/backend"
+          docker build --pull --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$ai_interview_image" "$release_root/ai-interview/backend"
+          docker build --pull --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$ai_interview_frontend_image" "$release_root/ai-interview/frontend"
+          docker build --pull --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$marketing_image" "$release_root/marketing-site"
           docker build --pull -f "$release_root/tools/local-knowledge/Dockerfile" \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "$knowledge_image" "$release_root/tools"
 
           cp -a "$release_root/experience-management/." /opt/seemplify/source/experience-management/
@@ -130,6 +154,9 @@ jobs:
           cp -a "$release_root/recruiter/backend/." /opt/seemplify/source/recruiter/backend/
           install -d -m 750 /opt/seemplify/source/ai-interview/backend
           cp -a "$release_root/ai-interview/backend/." /opt/seemplify/source/ai-interview/backend/
+          install -d -m 750 /opt/seemplify/source/ai-interview/frontend
+          cp -a "$release_root/ai-interview/frontend/." /opt/seemplify/source/ai-interview/frontend/
+          cp -a "$release_root/marketing-site/." /opt/seemplify/source/marketing-site/
           install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
           install -m 644 "$release_root/deploy/hostinger/extended-apps.compose.yml" /opt/seemplify/deploy/hostinger/extended-apps.compose.yml
           install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
@@ -152,23 +179,27 @@ jobs:
             chown root:root "$target"
             chmod 0640 "$target"
           done
-          node - "$release_root/tools/local-llm/service-auth.cjs" \
-            "$knowledge_secret_dir/chatgpt-gateway" <<'NODE'
-          const fs = require('node:fs');
-          const { execFileSync } = require('node:child_process');
-          const { deriveServiceSecret } = require(process.argv[2]);
-          const environment = execFileSync('docker', [
-            'inspect', '--format', '{{range .Config.Env}}{{println .}}{{end}}',
-            'seemplify-extended-chatgpt-gateway-1'
-          ], { encoding: 'utf8' });
-          const prefix = 'CHATGPT_GATEWAY_SHARED_SECRET=';
-          const masterSecret = environment.split('\n')
-            .find((line) => line.startsWith(prefix))?.slice(prefix.length).trim();
-          if (!masterSecret) throw new Error('The ChatGPT gateway master secret is unavailable.');
-          fs.writeFileSync(process.argv[3], deriveServiceSecret(masterSecret, 'experience-management'), {
-            encoding: 'utf8', mode: 0o640
-          });
-          NODE
+          gateway_master_file=$(mktemp "$knowledge_secret_dir/.chatgpt-master.XXXXXX")
+          trap 'rm -f "$gateway_master_file"' EXIT
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            seemplify-extended-chatgpt-gateway-1 \
+            | awk -F= '$1=="CHATGPT_GATEWAY_SHARED_SECRET"{sub(/^[^=]*=/,""); print; exit}' \
+            >"$gateway_master_file"
+          test -s "$gateway_master_file"
+          chmod 0600 "$gateway_master_file"
+          docker run --rm --user 0:0 --entrypoint node \
+            -v "$gateway_master_file:/run/seemplify/chatgpt-master:ro" \
+            -v "$knowledge_secret_dir:/run/seemplify/knowledge-output" \
+            "$knowledge_image" -e '
+              const fs = require("node:fs");
+              const { deriveServiceSecret } = require("/local-llm/service-auth.cjs");
+              const masterSecret = fs.readFileSync("/run/seemplify/chatgpt-master", "utf8").trim();
+              if (!masterSecret) throw new Error("The ChatGPT gateway master secret is unavailable.");
+              fs.writeFileSync("/run/seemplify/knowledge-output/chatgpt-gateway",
+                deriveServiceSecret(masterSecret, "experience-management"), { encoding: "utf8", mode: 0o640 });
+            '
+          rm -f "$gateway_master_file"
+          trap - EXIT
           chown root:root "$knowledge_secret_dir/chatgpt-gateway"
           chmod 0640 "$knowledge_secret_dir/chatgpt-gateway"
           for name in arango-app arango-provisioner; do
@@ -183,6 +214,8 @@ jobs:
           export IDENTITY_PROVIDER_IMAGE="$identity_image"
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"
           export AI_INTERVIEW_BACKEND_IMAGE="$ai_interview_image"
+          export AI_INTERVIEW_FRONTEND_IMAGE="$ai_interview_frontend_image"
+          export MARKETING_IMAGE="$marketing_image"
           export KNOWLEDGE_RUNTIME_IMAGE="$knowledge_image"
           core=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/core-apps.compose.yml)
           extended=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/extended-apps.compose.yml)
@@ -196,7 +229,7 @@ jobs:
             local container="$1"
             for _ in $(seq 1 60); do
               state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
-              [[ "$state" == healthy ]] && return 0
+              [[ "$state" == healthy || "$state" == running ]] && return 0
               [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && break
               sleep 2
             done
@@ -218,6 +251,9 @@ jobs:
           wait_healthy seemplify-extended-experience-1
           "${extended[@]}" up -d --no-deps --force-recreate ai-interview-backend
           wait_healthy seemplify-extended-ai-interview-backend-1
+          "${extended[@]}" up -d --no-deps --force-recreate ai-interview-frontend marketing
+          wait_healthy seemplify-extended-ai-interview-frontend-1
+          wait_healthy seemplify-extended-marketing-1
           "${core[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
           /usr/local/sbin/seemplify-smoke
