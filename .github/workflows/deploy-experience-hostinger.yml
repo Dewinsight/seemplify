@@ -78,9 +78,6 @@ jobs:
   deploy:
     needs: qa
     runs-on: ubuntu-latest
-    concurrency:
-      group: hostinger-production-deploy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Configure SSH
@@ -110,7 +107,7 @@ jobs:
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
           source deploy/hostinger/github-actions-ssh-retry.sh
-          hostinger_scp experience-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/experience-release-${GITHUB_SHA}.tgz"
+          hostinger_upload_with_lock experience-release.tgz "$SSH_USER@$SSH_HOST" "/opt/seemplify/build/experience-release-${GITHUB_SHA}.tgz"
       - name: Upload Azure embedding credential
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
@@ -121,7 +118,7 @@ jobs:
           test -n "$AZURE_OPENAI_EMBEDDING_API_KEY"
           printf '%s' "$AZURE_OPENAI_EMBEDDING_API_KEY" >/tmp/azure-openai-embedding
           source deploy/hostinger/github-actions-ssh-retry.sh
-          hostinger_scp /tmp/azure-openai-embedding "$SSH_USER@$SSH_HOST:/tmp/azure-openai-embedding-${GITHUB_SHA}"
+          hostinger_upload_with_lock /tmp/azure-openai-embedding "$SSH_USER@$SSH_HOST" "/tmp/azure-openai-embedding-${GITHUB_SHA}"
           rm -f /tmp/azure-openai-embedding
       - name: Build and deploy immutable release
         env:

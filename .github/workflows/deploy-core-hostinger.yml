@@ -173,9 +173,6 @@ jobs:
       - workforce-backend-qa
       - workforce-frontend-qa
     runs-on: ubuntu-latest
-    concurrency:
-      group: hostinger-production-deploy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -212,7 +209,7 @@ jobs:
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
           source deploy/hostinger/github-actions-ssh-retry.sh
-          hostinger_scp core-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/core-release-${GITHUB_SHA}.tgz"
+          hostinger_upload_with_lock core-release.tgz "$SSH_USER@$SSH_HOST" "/opt/seemplify/build/core-release-${GITHUB_SHA}.tgz"
 
       - name: Build, deploy, and verify exact release
         env:

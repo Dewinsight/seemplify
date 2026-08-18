@@ -13,9 +13,6 @@ concurrency:
 jobs:
   provision-arangodb:
     runs-on: ubuntu-latest
-    concurrency:
-      group: hostinger-production-deploy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Validate shared infrastructure compose
@@ -47,7 +44,7 @@ jobs:
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
           source deploy/hostinger/github-actions-ssh-retry.sh
-          hostinger_scp deploy/hostinger/shared-infrastructure.compose.yml "$SSH_USER@$SSH_HOST:/tmp/seemplify-shared-infrastructure-${GITHUB_SHA}.yml"
+          hostinger_upload_with_lock deploy/hostinger/shared-infrastructure.compose.yml "$SSH_USER@$SSH_HOST" "/tmp/seemplify-shared-infrastructure-${GITHUB_SHA}.yml"
       - name: Provision private ArangoDB service
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}

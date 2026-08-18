@@ -58,9 +58,6 @@ jobs:
   deploy:
     needs: qa
     runs-on: ubuntu-latest
-    concurrency:
-      group: hostinger-production-deploy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +89,7 @@ jobs:
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
           source deploy/hostinger/github-actions-ssh-retry.sh
-          hostinger_scp approver-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/approver-release-${GITHUB_SHA}.tgz"
+          hostinger_upload_with_lock approver-release.tgz "$SSH_USER@$SSH_HOST" "/opt/seemplify/build/approver-release-${GITHUB_SHA}.tgz"
 
       - name: Build and deploy immutable release
         env:

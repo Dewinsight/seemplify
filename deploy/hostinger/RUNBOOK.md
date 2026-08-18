@@ -94,15 +94,17 @@ restart does not reload container environment variables.
 
 ## Deployment coordination
 
-All monorepo production deployment jobs use the GitHub concurrency group
-`hostinger-production-deploy`. The remote build/deploy command also acquires
-`/var/lock/seemplify-production-deploy.lock` with `flock`. The server lock is
-authoritative across repositories, so the separate Workspace deployment waits
-instead of competing with a Seemplify deployment for SSH and Docker resources.
+Each component keeps its own GitHub concurrency queue. Every upload and remote
+build/deploy command also acquires `/var/lock/seemplify-production-deploy.lock`
+with `flock`. The server lock is the authoritative queue across components and
+repositories, so the separate Workspace deployment waits instead of competing
+with a Seemplify deployment for SSH and Docker resources. Do not replace this
+with one shared GitHub concurrency group: GitHub retains only one pending job
+per group and cancels older pending jobs when more deployments arrive.
 
 SSH uploads and commands use five attempts with exponential backoff. Keep the
 shared behavior in `deploy/hostinger/github-actions-ssh-retry.sh`; do not add
-one-off unretired `scp` or `ssh` calls to production workflows.
+one-off unretried `scp` or `ssh` calls to production workflows.
 
 To redeploy every monorepo component sequentially from GitHub, run **Deploy All
 Seemplify Apps to Hostinger**. To include the private Workspace repository in

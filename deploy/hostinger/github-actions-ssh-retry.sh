@@ -9,7 +9,16 @@ hostinger_retry() {
 
   local max_attempts="${HOSTINGER_RETRY_MAX_ATTEMPTS:-5}"
   local base_delay="${HOSTINGER_RETRY_BASE_DELAY_SECONDS:-5}"
+  local initial_jitter="${HOSTINGER_RETRY_INITIAL_JITTER_SECONDS:-8}"
   local attempt exit_code delay
+
+  if (( initial_jitter > 0 )); then
+    delay=$((RANDOM % (initial_jitter + 1)))
+    if (( delay > 0 )); then
+      printf '%s waiting %ss before the first connection attempt.\n' "$label" "$delay" >&2
+      sleep "$delay"
+    fi
+  fi
 
   for ((attempt = 1; attempt <= max_attempts; attempt += 1)); do
     if "$@"; then
@@ -31,12 +40,31 @@ hostinger_retry() {
   done
 }
 
-hostinger_scp() {
-  hostinger_retry 'Hostinger upload' scp "$@"
-}
-
 hostinger_ssh_command() {
   hostinger_retry 'Hostinger SSH command' ssh "$@"
+}
+
+hostinger_upload_with_lock() {
+  local local_file="$1"
+  local ssh_target="$2"
+  local remote_file="$3"
+
+  [[ -f "$local_file" ]] || {
+    printf 'Upload source does not exist: %s\n' "$local_file" >&2
+    return 2
+  }
+  [[ "$remote_file" =~ ^/[A-Za-z0-9._/-]+$ ]] || {
+    printf 'Refusing unsafe remote upload path: %s\n' "$remote_file" >&2
+    return 2
+  }
+
+  _hostinger_upload_attempt() {
+    ssh "$ssh_target" \
+      "REMOTE_FILE='$remote_file' flock --exclusive --wait 1800 /var/lock/seemplify-production-deploy.lock bash -c 'umask 077; command cat > \"\$REMOTE_FILE\"'" \
+      <"$local_file"
+  }
+
+  hostinger_retry 'Hostinger locked upload' _hostinger_upload_attempt
 }
 
 hostinger_ssh_stdin() {

@@ -35,9 +35,6 @@ jobs:
   deploy:
     needs: qa
     runs-on: ubuntu-latest
-    concurrency:
-      group: hostinger-production-deploy
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Configure Hostinger SSH
@@ -59,7 +56,7 @@ jobs:
         run: |
           tar -czf coturn-release.tgz coturn
           source deploy/hostinger/github-actions-ssh-retry.sh
-          hostinger_scp coturn-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/coturn-release-${GITHUB_SHA}.tgz"
+          hostinger_upload_with_lock coturn-release.tgz "$SSH_USER@$SSH_HOST" "/opt/seemplify/build/coturn-release-${GITHUB_SHA}.tgz"
       - name: Build, deploy, and verify exact TURN API release
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
