@@ -265,9 +265,11 @@ async function loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument) {
   await ensureEnvelopeDocumentSnapshot(envelope, envelopeDocument);
 
   let lastDownloadError = null;
-  for (const sourceUrl of documentPdfUrls(envelopeDocument)) {
+  for (const snapshot of [envelopeDocument?.signedPdf, envelopeDocument?.pdfSnapshot].filter(Boolean)) {
     try {
-      return await onboardingPdfService.downloadPdfBuffer(sourceUrl);
+      return await onboardingStorageService.downloadBuffer(snapshot, {
+        download: onboardingPdfService.downloadPdfBuffer
+      });
     } catch (error) {
       lastDownloadError = error;
     }

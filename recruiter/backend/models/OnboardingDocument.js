@@ -40,6 +40,7 @@ const FileSnapshotSchema = new mongoose.Schema({
   downloadUrl: String,
   publicId: String,
   resourceType: String,
+  deliveryType: String,
   format: String,
   bytes: Number,
   originalName: String,
