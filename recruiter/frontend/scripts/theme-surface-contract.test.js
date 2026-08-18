@@ -12,6 +12,10 @@ const interviewTheme = fs.readFileSync(
   path.join(root, "app", "ai-interviews", "ai-interviews.css"),
   "utf8"
 );
+const interviewBrandTheme = fs.readFileSync(
+  path.join(root, "styles", "ai-interview-brand.css"),
+  "utf8"
+);
 const suiteTheme = fs.readFileSync(
   path.join(root, "styles", "suite-theme.css"),
   "utf8"
@@ -40,5 +44,17 @@ test("AI interview cards use theme-aware surfaces", () => {
   }
 
   assert.match(interviewTheme, /\.ai-interviews-summary\s*\{[^}]*background:\s*var\(--suite-surface\)/s);
+  assert.match(
+    interviewBrandTheme,
+    /\.ai-interviews-workspace \.ai-interviews-summary\s*\{[^}]*background:\s*var\(--ai-surface\)/s
+  );
+  assert.match(
+    interviewBrandTheme,
+    /\.ai-interviews-workspace \.ai-interviews-voice-card\.is-selected\s*\{[^}]*background:\s*var\(--ai-violet-soft\)/s
+  );
+  assert.match(
+    interviewBrandTheme,
+    /\.dark \.ai-interviews-workspace \.ai-interviews-summary\s*\{[^}]*background:\s*var\(--ai-ink\)/s
+  );
   assert.match(suiteTheme, /\.dark\s*\{[\s\S]*--suite-surface:/);
 });

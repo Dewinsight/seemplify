@@ -114,30 +114,30 @@
 
 .ai-interviews-workspace .ai-interviews-wizard__header,
 .ai-interviews-workspace .ai-interviews-summary__header {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background: var(--ai-ink) !important;
-  color: #f8f7fa !important;
+  border-color: var(--ai-line) !important;
+  background: var(--ai-surface) !important;
+  color: var(--ai-text) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-wizard__header h3,
 .ai-interviews-workspace .ai-interviews-summary__header h3 {
-  color: #fff !important;
+  color: var(--ai-text) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-wizard__header p,
 .ai-interviews-workspace .ai-interviews-summary__header p {
-  color: #bdb7c5 !important;
+  color: var(--ai-muted) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-wizard__header svg,
 .ai-interviews-workspace .ai-interviews-summary__header svg {
-  color: #a98eff !important;
+  color: var(--ai-violet) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-wizard__header [class*="border-white"] {
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  background: rgba(255, 255, 255, 0.07) !important;
-  color: #f8f7fa !important;
+  border-color: var(--ai-line) !important;
+  background: var(--ai-surface-muted) !important;
+  color: var(--ai-muted) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-step {
@@ -163,21 +163,21 @@
 }
 
 .ai-interviews-workspace .ai-interviews-voice-card.is-selected {
-  border-color: var(--ai-ink) !important;
-  background: var(--ai-ink) !important;
-  color: #fff !important;
-  box-shadow: inset 3px 0 0 #a98eff !important;
+  border-color: var(--ai-violet) !important;
+  background: var(--ai-violet-soft) !important;
+  color: var(--ai-text) !important;
+  box-shadow: inset 3px 0 0 var(--ai-violet) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-voice-card.is-selected,
 .ai-interviews-workspace .ai-interviews-voice-card.is-selected * {
-  color: #f7f5fa !important;
+  color: var(--ai-text) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-voice-card.is-selected [class*="bg-white"],
 .ai-interviews-workspace .ai-interviews-voice-card.is-selected [class*="bg-slate"] {
-  border-color: rgba(255, 255, 255, 0.14) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: var(--ai-line) !important;
+  background: var(--ai-surface) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-cost-estimate {
@@ -186,20 +186,26 @@
 }
 
 .ai-interviews-workspace .ai-interviews-summary {
-  background: var(--ai-ink) !important;
-  color: #f7f5fa !important;
+  background: var(--ai-surface) !important;
+  color: var(--ai-text) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-summary__metric,
 .ai-interviews-workspace .ai-interviews-summary__section {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background: rgba(255, 255, 255, 0.055) !important;
-  color: #fff !important;
+  border-color: var(--ai-line) !important;
+  background: var(--ai-surface-muted) !important;
+  color: var(--ai-text) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-summary__metric > div:first-child,
 .ai-interviews-workspace .ai-interviews-summary__section [class*="text-slate"] {
-  color: #aaa4b3 !important;
+  color: var(--ai-muted) !important;
+}
+
+.ai-interviews-workspace .ai-interviews-summary [class*="bg-white/10"] {
+  border: 1px solid var(--ai-line);
+  background: var(--ai-surface-muted) !important;
+  color: var(--ai-text) !important;
 }
 
 .ai-interviews-workspace .ai-interviews-summary .ai-interviews-primary {
@@ -209,6 +215,75 @@
 
 .ai-interviews-workspace .ai-interviews-batch-card {
   border-radius: 9px !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-wizard__header,
+.dark .ai-interviews-workspace .ai-interviews-summary__header {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: var(--ai-ink) !important;
+  color: #f8f7fa !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-wizard__header h3,
+.dark .ai-interviews-workspace .ai-interviews-summary__header h3 {
+  color: #fff !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-wizard__header p,
+.dark .ai-interviews-workspace .ai-interviews-summary__header p {
+  color: #bdb7c5 !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-wizard__header svg,
+.dark .ai-interviews-workspace .ai-interviews-summary__header svg {
+  color: #a98eff !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-wizard__header [class*="border-white"] {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: #f8f7fa !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-voice-card.is-selected {
+  border-color: #a98eff !important;
+  background: var(--ai-ink) !important;
+  color: #fff !important;
+  box-shadow: inset 3px 0 0 #a98eff !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-voice-card.is-selected,
+.dark .ai-interviews-workspace .ai-interviews-voice-card.is-selected * {
+  color: #f7f5fa !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-voice-card.is-selected [class*="bg-white"],
+.dark .ai-interviews-workspace .ai-interviews-voice-card.is-selected [class*="bg-slate"] {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-summary {
+  background: var(--ai-ink) !important;
+  color: #f7f5fa !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-summary__metric,
+.dark .ai-interviews-workspace .ai-interviews-summary__section {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  color: #fff !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-summary__metric > div:first-child,
+.dark .ai-interviews-workspace .ai-interviews-summary__section [class*="text-slate"] {
+  color: #aaa4b3 !important;
+}
+
+.dark .ai-interviews-workspace .ai-interviews-summary [class*="bg-white/10"] {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #f7f5fa !important;
 }
 
 /* Batch and candidate review */
