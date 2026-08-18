@@ -4,7 +4,7 @@
 
 services:
   coturn:
-    image: coturn/coturn:latest
+    image: coturn/coturn:4.16.0-r0
     container_name: coturn
     network_mode: host
     # Use host network so TURN UDP/TCP ports are directly on the server (required for NAT traversal).
@@ -34,17 +34,23 @@ services:
     networks:
       - dokploy-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     labels:
       - traefik.enable=true
       - traefik.http.routers.turn-api-web.rule=Host(`turn.seemplifyai.com`)
       - traefik.http.routers.turn-api-web.entrypoints=web
       - traefik.http.services.turn-api.loadbalancer.server.port=3000
       - traefik.http.routers.turn-api-web.service=turn-api
-      - traefik.http.routers.turn-api-websecure.rule=Host(`turn.seemplifyai.com`)
-      - traefik.http.routers.turn-api-websecure.entrypoints=websecure
-      - traefik.http.routers.turn-api-websecure.service=turn-api
-      - traefik.http.routers.turn-api-websecure.tls=true
-      - traefik.http.routers.turn-api-websecure.tls.certresolver=letsencrypt
+      - traefik.http.routers.turn-api-secure.rule=Host(`turn.seemplifyai.com`)
+      - traefik.http.routers.turn-api-secure.entrypoints=websecure
+      - traefik.http.routers.turn-api-secure.service=turn-api
+      - traefik.http.routers.turn-api-secure.tls=true
+      - traefik.http.routers.turn-api-secure.tls.certresolver=letsencrypt
 
 networks:
   dokploy-network:

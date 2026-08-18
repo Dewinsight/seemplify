@@ -7,18 +7,12 @@ ARG NEXT_PUBLIC_API_URL=https://api-payroll.seemplifyai.com/api
 ARG NEXT_PUBLIC_IDP_URL=https://auth.seemplifyai.com
 ARG NEXTAUTH_URL=https://payroll.seemplifyai.com
 ARG OIDC_ISSUER=https://auth.seemplifyai.com
-ARG IDC_ISSUER=https://auth.seemplifyai.com
-ARG IDC_CLIENT_ID=payroll-management
-ARG IDC_CLIENT_SECRET=payroll-management-secret
 
 # Set them as environment variables for the build
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_IDP_URL=$NEXT_PUBLIC_IDP_URL
 ENV NEXTAUTH_URL=$NEXTAUTH_URL
 ENV OIDC_ISSUER=$OIDC_ISSUER
-ENV IDC_ISSUER=$IDC_ISSUER
-ENV IDC_CLIENT_ID=$IDC_CLIENT_ID
-ENV IDC_CLIENT_SECRET=$IDC_CLIENT_SECRET
 
 # Copy package files
 COPY package*.json ./

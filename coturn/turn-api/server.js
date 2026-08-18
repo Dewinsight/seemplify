@@ -1,7 +1,8 @@
 /**
  * TURN Credentials API (TURN REST API style)
  * Returns time-limited username/credential for Coturn (use-auth-secret / lt-cred-mech).
- * Algorithm: username = timestamp:ttl, password = base64(HMAC-SHA1(secret, username))
+ * Algorithm: username = expiry-timestamp:label,
+ * password = base64(HMAC-SHA1(secret, username))
  */
 
 const express = require('express');
@@ -23,15 +24,14 @@ if (!TURN_AUTH_SECRET) {
   process.exit(1);
 }
 
-function generateTurnCredentials() {
+function generateTurnCredentials(nowSeconds = Math.floor(Date.now() / 1000)) {
   const ttl = TURN_TTL;
-  const timestamp = Math.floor(Date.now() / 1000);
-  const username = `${timestamp}:${ttl}`;
-  const hmac = crypto.createHmac('sha1', TURN_AUTH_SECRET);
-  hmac.setEncoding('base64');
-  hmac.write(username);
-  hmac.end();
-  const credential = hmac.read();
+  const expiresAt = nowSeconds + ttl;
+  const username = `${expiresAt}:seemplify`;
+  const credential = crypto
+    .createHmac('sha1', TURN_AUTH_SECRET)
+    .update(username)
+    .digest('base64');
   return { username, credential };
 }
 
@@ -55,6 +55,10 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', service: 'turn-api' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Turn API listening on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Turn API listening on port ${PORT}`);
+  });
+}
+
+module.exports = { app, generateTurnCredentials };

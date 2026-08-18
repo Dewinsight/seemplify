@@ -22,7 +22,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'self' http://localhost:* ws://localhost:* https://*.microsoft.com https://*.azure.com https://*.azurewebsites.net; media-src 'self' blob:; object-src 'none'; frame-src 'self'; worker-src 'self' blob:;"
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'self' https://api-interview.seemplifyai.com wss://api-interview.seemplifyai.com http://localhost:* ws://localhost:* https://*.microsoft.com https://*.azure.com https://*.azurewebsites.net; media-src 'self' blob:; object-src 'none'; frame-src 'self'; worker-src 'self' blob:;"
           },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
