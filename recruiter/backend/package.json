@@ -94,7 +94,8 @@
     "seed:onboarding-templates:akwa-ibom": "node scripts/seedOnboardingTemplates.js --only-akwa-ibom",
     "seed:onboarding-templates:akwa-ibom:dry-run": "node scripts/seedOnboardingTemplates.js --only-akwa-ibom --dry-run",
     "test:ai-runtime": "node --test tests/aiRuntimeChatgptProvider.test.js tests/aiRuntimeGatewayIntegration.test.js tests/codexAccountService.test.js",
-    "test:chatgpt-cv-queue": "node --test tests/aiRuntimePublicCvDeferral.test.js tests/cvRuntimeCompatibility.test.js"
+    "test:chatgpt-cv-queue": "node --test tests/aiRuntimePublicCvDeferral.test.js tests/cvRuntimeCompatibility.test.js",
+    "test:embeddings": "node --test tests/embeddingRuntimeConfig.test.js"
   },
   "keywords": [],
   "author": "",

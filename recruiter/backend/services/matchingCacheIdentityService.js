@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
 const { getAIRequestContext } = require('./aiRuntime/requestContext');
+const { getEmbeddingRuntimeConfig } = require('../config/embeddingRuntimeConfig');
 
 function stableValue(value) {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -66,7 +67,7 @@ async function resolveMatchingRuntimeIdentity(activity, promptVersion) {
 function vectorMatchingIdentity(job) {
   return {
     provider: 'weaviate',
-    model: process.env.azure_openai_embedding_model?.trim() || 'text-embedding-3-large',
+    model: getEmbeddingRuntimeConfig().model,
     routeVersion: 'vector-v2',
     promptVersion: 'job-candidate-embedding-v2',
     inputFingerprint: matchingJobFingerprint(job)

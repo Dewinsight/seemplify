@@ -136,6 +136,13 @@ services:
       WEAVIATE_HOST: weaviate:8080
       WEAVIATE_SCHEME: http
       WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:?required}
+      USE_WEAVIATE: "true"
+      AZURE_OPENAI_EMBEDDING_URL: ${AZURE_OPENAI_EMBEDDING_URL:?required}
+      AZURE_OPENAI_EMBEDDING_API_KEY: ${AZURE_OPENAI_EMBEDDING_API_KEY:?required}
+      AZURE_OPENAI_EMBEDDING_MODEL: ${AZURE_OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
+      azure_openai_embedding_url: ${AZURE_OPENAI_EMBEDDING_URL:?required}
+      azure_openai_embedding_key: ${AZURE_OPENAI_EMBEDDING_API_KEY:?required}
+      azure_openai_embedding_model: ${AZURE_OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
       CHATGPT_GATEWAY_BASE_URL: http://chatgpt-gateway:11435
       CHATGPT_GATEWAY_SHARED_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
       AI_GATEWAY_HMAC_SECRET: ${AI_GATEWAY_HMAC_SECRET:?required}
@@ -508,6 +515,10 @@ services:
       WEAVIATE_SCHEME: http
       WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:?required}
       USE_WEAVIATE: "true"
+      AZURE_OPENAI_EMBEDDING_URL: ${AZURE_OPENAI_EMBEDDING_URL:?required}
+      AZURE_OPENAI_EMBEDDING_API_KEY: ${AZURE_OPENAI_EMBEDDING_API_KEY:?required}
+      AZURE_OPENAI_EMBEDDING_MODEL: ${AZURE_OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
+      WEAVIATE_ALLOW_HASH_FALLBACK: "false"
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network

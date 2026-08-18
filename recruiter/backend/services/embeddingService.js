@@ -1,5 +1,6 @@
 const axios = require('axios');
 const rankingService = require('./rankingService');
+const { requireEmbeddingRuntimeConfig } = require('../config/embeddingRuntimeConfig');
 
 class EmbeddingService {
   constructor() {
@@ -441,6 +442,7 @@ class EmbeddingService {
    */
   async generateEmbedding(text) {
     const RetryHelper = require('../utils/retryHelper');
+    const embeddingConfig = requireEmbeddingRuntimeConfig();
     // Azure rejects inputs above the model's 8,192-token ceiling. A character
     // cap leaves ample room for non-ASCII and token-dense CV content while
     // retaining the structured, highest-value fields at the start.
@@ -448,15 +450,15 @@ class EmbeddingService {
     
     const generateOperation = async () => {
       const response = await axios.post(
-        process.env.azure_openai_embedding_url,
+        embeddingConfig.url,
         {
           input: embeddingInput,
-          model: process.env.azure_openai_embedding_model?.trim() || 'text-embedding-3-large'
+          model: embeddingConfig.model
         },
         {
           headers: {
             'Content-Type': 'application/json',
-            'api-key': process.env.azure_openai_embedding_key
+            'api-key': embeddingConfig.apiKey
           },
           timeout: 30000 // 30 second timeout
         }
