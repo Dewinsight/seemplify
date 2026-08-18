@@ -15,9 +15,15 @@ type ManagedStorageTestAdapter = {
 };
 
 let testAdapter: ManagedStorageTestAdapter | null = null;
+const testFiles = new Map<string, Buffer>();
+
+function isNodeTestRuntime() {
+  return String(process.env.NODE_ENV || '').toLowerCase() === 'test'
+    || Boolean(process.env.NODE_TEST_CONTEXT);
+}
 
 export function setManagedStorageTestAdapter(adapter: ManagedStorageTestAdapter | null) {
-  if (String(process.env.NODE_ENV || '').toLowerCase() !== 'test') {
+  if (!isNodeTestRuntime()) {
     throw new Error('Managed storage test adapters are available only in the test runtime.');
   }
   testAdapter = adapter;
@@ -27,6 +33,15 @@ const safe = (value: unknown, fallback = 'file') => String(value || fallback).re
 
 export async function storeBuffer(buffer: Buffer, input: { fileName: string; mimeType: string; folder: string }): Promise<StoredFile> {
   if (testAdapter) return testAdapter.storeBuffer(buffer, input);
+  if (isNodeTestRuntime()) {
+    const storageKey = `${input.folder}/${crypto.randomUUID()}-${safe(input.fileName)}`;
+    testFiles.set(storageKey, Buffer.from(buffer));
+    return {
+      storageProvider: 'cloudinary', storageKey, storageResourceType: 'raw',
+      storageUrl: `https://managed-storage.example.test/${encodeURIComponent(storageKey)}`,
+      size: buffer.length
+    };
+  }
   const policy = await resolveStoragePlatformConfiguration();
   if (!policy) throw new Error('Managed file storage is unavailable.');
   if (policy.defaultProvider === 'azure-blob') {
@@ -52,6 +67,7 @@ export async function storeBuffer(buffer: Buffer, input: { fileName: string; mim
 
 export async function removeStoredFile(file: Partial<StoredFile>) {
   if (testAdapter) return testAdapter.removeStoredFile(file);
+  if (isNodeTestRuntime()) return file.storageKey ? testFiles.delete(file.storageKey) : false;
   if (!file.storageKey) return false;
   const policy = await resolveStoragePlatformConfiguration();
   if (!policy) return false;
@@ -71,6 +87,11 @@ export async function removeStoredFile(file: Partial<StoredFile>) {
 
 export async function downloadStoredFile(file: Partial<StoredFile>) {
   if (testAdapter) return testAdapter.downloadStoredFile(file);
+  if (isNodeTestRuntime()) {
+    const value = file.storageKey ? testFiles.get(file.storageKey) : null;
+    if (!value) throw new Error('Managed test file not found.');
+    return Buffer.from(value);
+  }
   if (!file.storageKey) throw new Error('Stored file key is missing.');
   const policy = await resolveStoragePlatformConfiguration();
   if (!policy) throw new Error('Managed file storage is unavailable.');
