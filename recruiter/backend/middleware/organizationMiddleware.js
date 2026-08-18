@@ -21,8 +21,9 @@ function activeMemberships(user) {
 }
 
 function activeMembershipFor(user, organizationId) {
+  const targetOrganizationId = String(organizationId?._id || organizationId || '');
   return activeMemberships(user).find((membership) =>
-    String(membership.organization?._id || membership.organization) === String(organizationId)
+    String(membership.organization?._id || membership.organization) === targetOrganizationId
   );
 }
 

@@ -7,7 +7,6 @@ ARG NEXT_PUBLIC_API_URL=https://api-performance.seemplifyai.com/api
 ARG NEXT_PUBLIC_WS_URL=wss://api-performance.seemplifyai.com/ws
 ARG NEXT_PUBLIC_IDP_URL=https://auth.seemplifyai.com
 ARG NEXTAUTH_URL=https://performance.seemplifyai.com
-ARG NEXTAUTH_SECRET=performance-management-secret-2024
 ARG OIDC_ISSUER=https://auth.seemplifyai.com
 ARG OIDC_CLIENT_ID=performance-management
 
@@ -16,7 +15,6 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_IDP_URL=$NEXT_PUBLIC_IDP_URL
 ENV NEXTAUTH_URL=$NEXTAUTH_URL
-ENV NEXTAUTH_SECRET=$NEXTAUTH_SECRET
 ENV OIDC_ISSUER=$OIDC_ISSUER
 ENV OIDC_CLIENT_ID=$OIDC_CLIENT_ID
 

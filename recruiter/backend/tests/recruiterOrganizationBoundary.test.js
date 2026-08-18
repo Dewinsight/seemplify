@@ -139,6 +139,30 @@ test('organization middleware meters with canonical IdP org while retaining the 
   }
 });
 
+test('organization middleware accepts a populated current organization document', async () => {
+  const originalFindById = User.findById;
+  const organization = { _id: ORG_A, idpOrganizationId: 'idp-org-a', name: 'Organization A' };
+  const actor = user();
+  actor.currentOrganization = organization;
+  actor.organizationMemberships = [{ organization, isActive: true, role: 'owner' }];
+  actor.recruiterAuthorizedOrganizations = [ORG_A];
+  User.findById = async () => actor;
+  try {
+    const output = responseResult();
+    const request = {
+      user: { id: actor.id, currentOrganization: ORG_A },
+      get() { return ''; }
+    };
+    let next = false;
+    await requireOrganization(request, output.response, () => { next = true; });
+    assert.equal(output.result.statusCode, 200);
+    assert.equal(next, true);
+    assert.equal(String(request.user.currentOrganization), ORG_A);
+  } finally {
+    User.findById = originalFindById;
+  }
+});
+
 test('switchOrganization rejects an IdP membership whose app access excludes Recruiter', async () => {
   const originalUserFind = User.findById;
   const originalOrgFind = Organization.findById;

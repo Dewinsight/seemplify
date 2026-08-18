@@ -43,9 +43,18 @@ async function sourceState() {
     const source = (await client.query(
       'SELECT version,source_sha256 FROM experience_schema_version WHERE singleton=TRUE'
     )).rows[0];
-    const current = Number((await client.query(
-      'SELECT COALESCE(MAX(version),0)::integer version FROM experience_runtime_schema_version'
-    )).rows[0]?.version || 0);
+    // A fresh SQLite-to-PostgreSQL migration creates the source schema and its
+    // metadata, but the runtime migration ledger is owned by the runtime
+    // upgrader below. Treat a missing ledger as version zero so first boot can
+    // create it and apply every required runtime migration.
+    const ledgerExists = Boolean((await client.query(
+      "SELECT to_regclass('public.experience_runtime_schema_version') IS NOT NULL AS present"
+    )).rows[0]?.present);
+    const current = ledgerExists
+      ? Number((await client.query(
+        'SELECT COALESCE(MAX(version),0)::integer version FROM experience_runtime_schema_version'
+      )).rows[0]?.version || 0)
+      : 0;
     return { sourceVersion: Number(source?.version), sourceSha256: String(source?.source_sha256 || ''), current };
   } finally {
     await client.end();
