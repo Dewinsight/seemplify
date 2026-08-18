@@ -279,9 +279,6 @@ export function AiProviderSettings() {
   }, [loginPending]);
 
   async function chooseProvider(provider: 'codex') {
-    if (provider === state?.preference.provider
-      && state.preference.runtimeChoice === 'chatgpt'
-      && Boolean(state.preference.codexDataSharingAcknowledgedAt)) return;
     if (!beginMutation(`provider:${provider}`)) return;
     try {
       const inheritedPlatformModel = Boolean(state?.codex.adminDefaults?.codexModel && !state.preference.codexModel);
