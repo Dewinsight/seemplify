@@ -44,6 +44,7 @@ const FileSnapshotSchema = new mongoose.Schema({
   storageContainer: String,
   publicId: String,
   resourceType: String,
+  deliveryType: String,
   format: String,
   bytes: Number,
   originalName: String,
