@@ -90,6 +90,7 @@ import { registerCampaignConversion, resolveVisitorTouches } from './services/ma
 import { samlIdPService as samlService } from './services/samlService.js'
 import { subscriptionService } from './services/subscriptionService.js'
 import cloudinary, { isCloudinaryConfigured } from './services/cloudinaryService.js'
+import { hydrateMediaConfigurationEnvironment, seedMediaConfigurationFromEnvironment } from './services/mediaPlatformConfigurationService.js'
 import { claimsCacheEnabled } from './utils/claimsCachePolicy.js'
 import { createWebhookReadinessVerifier } from './middleware/webhookReadinessAuth.js'
 import { createAutomationRequestVerifier } from './middleware/automationRequestAuth.js'
@@ -874,6 +875,18 @@ try {
   console.log('🔌 Connecting to MongoDB...')
   await mongoose.connect(MONGODB_URI)
   console.log('✅ MongoDB connected successfully')
+  const platformConfigurationAdmin = await Account.findOne({ isSuperAdmin: true }).select('_id')
+  if (platformConfigurationAdmin) {
+    try {
+      const seeded = await seedMediaConfigurationFromEnvironment(platformConfigurationAdmin._id)
+      if (seeded.cloudinary || seeded.azureSpeech) {
+        console.log('✅ Existing media service environment configuration imported into encrypted Identity settings')
+      }
+    } catch (seedError) {
+      console.warn('⚠️ Media service environment configuration could not be imported:', seedError.message)
+    }
+  }
+  await hydrateMediaConfigurationEnvironment()
 } catch (error) {
   console.error('❌ MongoDB connection failed:', error.message)
   console.error('Error details:', error)

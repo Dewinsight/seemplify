@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Media &amp; Speech - <%= brand.name %> IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+    .integration-copy { color: var(--muted); font-size: 14px; line-height: 1.55; margin: -14px 0 22px; max-width: 780px; }
+    .integration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .integration-grid .admin-form-group { margin-bottom: 0; }
+    .integration-span { grid-column: 1 / -1; }
+    .integration-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+    .integration-status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #8b949e; }
+    .integration-status.ready::before { background: #3fb950; }
+    .integration-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+    .integration-remove { margin-left: auto; }
+    .admin-card + .admin-card { margin-top: 18px; }
+    .field-note { color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 6px; }
+    @media (max-width: 760px) { .integration-grid { grid-template-columns: 1fr; } .integration-span { grid-column: auto; } .integration-remove { margin-left: 0; } }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=3"></script>
+</head>
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'media-ai-integration' }) %>
+    <main class="admin-content">
+      <div class="admin-header"><h1>Media &amp; Speech</h1></div>
+      <p class="integration-copy">Manage shared media storage and speech services once for Seemplify. Secrets are encrypted by Identity, delivered only to approved services over signed requests, and never returned to this page.</p>
+
+      <% if (notice) { %><div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>"><span><%= notice %></span></div><% } %>
+
+      <section class="admin-card" aria-labelledby="cloudinary-title">
+        <div class="admin-card-header">
+          <div><div class="admin-card-title" id="cloudinary-title">Cloudinary</div><div class="admin-card-subtitle">Workspace attachments, clips, profile media, and other approved product uploads.</div></div>
+          <div class="integration-status <%= status.cloudinary.configured ? 'ready' : '' %>"><%= status.cloudinary.configured ? 'Configured' : 'Not configured' %></div>
+        </div>
+        <form method="post" action="/admin/integrations/media-ai/cloudinary" autocomplete="off">
+          <div class="integration-grid">
+            <div class="admin-form-group"><label class="admin-form-label" for="cloud-name">Cloud name</label><input class="admin-form-input" id="cloud-name" name="cloudName" value="<%= status.cloudinary.cloudName %>" placeholder="Your Cloudinary cloud name" required></div>
+            <div class="admin-form-group"><label class="admin-form-label" for="cloud-key">API key</label><input class="admin-form-input" id="cloud-key" name="apiKey" type="password" autocomplete="new-password" placeholder="<%= status.cloudinary.apiKeyConfigured ? 'Configured — leave blank to keep' : 'Required' %>"></div>
+            <div class="admin-form-group integration-span"><label class="admin-form-label" for="cloud-secret">API secret</label><input class="admin-form-input" id="cloud-secret" name="apiSecret" type="password" autocomplete="new-password" placeholder="<%= status.cloudinary.apiSecretConfigured ? 'Configured — leave blank to keep' : 'Required' %>"><div class="field-note">The secret is write-only. Workspace receives it through the authenticated internal configuration channel.</div></div>
+          </div>
+          <div class="integration-actions">
+            <button class="btn btn-primary" type="submit" <%= admin?.isSuperAdmin ? '' : 'disabled' %>>Save Cloudinary settings</button>
+            <% if (status.cloudinary.configured && admin?.isSuperAdmin) { %><button class="btn btn-danger integration-remove" type="submit" formaction="/admin/integrations/media-ai/cloudinary/remove" onclick="return confirm('Remove the shared Cloudinary configuration?')">Remove</button><% } %>
+          </div>
+        </form>
+      </section>
+
+      <section class="admin-card" aria-labelledby="azure-title">
+        <div class="admin-card-header">
+          <div><div class="admin-card-title" id="azure-title">Azure Speech</div><div class="admin-card-subtitle">Central speech-to-text and text-to-speech configuration for AI Interview.</div></div>
+          <div class="integration-status <%= status.azureSpeech.configured ? 'ready' : '' %>"><%= status.azureSpeech.configured ? 'Configured' : 'Not configured' %></div>
+        </div>
+        <form method="post" action="/admin/integrations/media-ai/azure-speech" autocomplete="off">
+          <div class="integration-grid">
+            <div class="admin-form-group"><label class="admin-form-label" for="speech-key">Speech key</label><input class="admin-form-input" id="speech-key" name="speechKey" type="password" autocomplete="new-password" placeholder="<%= status.azureSpeech.speechKeyConfigured ? 'Configured — leave blank to keep' : 'Required' %>"></div>
+            <div class="admin-form-group"><label class="admin-form-label" for="speech-region">Region</label><input class="admin-form-input" id="speech-region" name="region" value="<%= status.azureSpeech.region %>" placeholder="for example, westeurope" required></div>
+            <div class="admin-form-group integration-span"><label class="admin-form-label" for="tts-endpoint">Custom TTS endpoint</label><input class="admin-form-input" id="tts-endpoint" name="ttsEndpoint" type="url" value="<%= status.azureSpeech.ttsEndpoint %>" placeholder="Optional — Azure regional endpoint is used by default"></div>
+            <div class="admin-form-group"><label class="admin-form-label" for="speech-language">Default language</label><input class="admin-form-input" id="speech-language" name="language" value="<%= status.azureSpeech.language %>" placeholder="en-US"></div>
+            <div class="admin-form-group"><label class="admin-form-label" for="speech-voice">Default voice</label><input class="admin-form-input" id="speech-voice" name="voice" value="<%= status.azureSpeech.voice %>" placeholder="en-US-AvaNeural"></div>
+            <div class="admin-form-group integration-span"><label class="admin-form-label" for="speech-format">Audio output format</label><input class="admin-form-input" id="speech-format" name="outputFormat" value="<%= status.azureSpeech.outputFormat %>"></div>
+          </div>
+          <div class="integration-actions">
+            <button class="btn btn-primary" type="submit" <%= admin?.isSuperAdmin ? '' : 'disabled' %>>Save Azure Speech settings</button>
+            <% if (status.azureSpeech.configured && admin?.isSuperAdmin) { %><button class="btn btn-danger integration-remove" type="submit" formaction="/admin/integrations/media-ai/azure-speech/remove" onclick="return confirm('Remove the shared Azure Speech configuration?')">Remove</button><% } %>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

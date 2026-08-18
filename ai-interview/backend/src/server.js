@@ -23,6 +23,7 @@ const {
 const { estimateAIInterviewWalletCost, findAIInterviewVoiceOption } = require('./aiInterviewVoiceOptions');
 const azureSpeechTtsService = require('./azureSpeechTtsService');
 const azureSpeechSttService = require('./azureSpeechSttService');
+const { hydrateAzureSpeechConfiguration } = require('./platformConfigurationClient');
 const mailDeliveryService = require('./mailDeliveryService');
 const questionGeneratorService = require('./questionGeneratorService');
 const cvProcessingQueue = require('./cvProcessingQueueService');
@@ -1670,6 +1671,7 @@ app.use((error, _req, res, _next) => {
 
 async function startServer() {
   assertProductionDurabilityConfig();
+  await hydrateAzureSpeechConfiguration();
   await readStore();
   await recoverPendingCandidateDeletions().catch((error) => {
     console.error('AI Interview pending candidate deletion startup recovery failed:', error.message);
@@ -1693,6 +1695,9 @@ async function startServer() {
       console.error('Pending candidate deletion scheduler failed:', error.message);
     });
   }, 60 * 1000).unref();
+  setInterval(() => {
+    hydrateAzureSpeechConfiguration({ quiet: true }).catch(() => undefined);
+  }, 5 * 60 * 1000).unref();
   return server;
 }
 

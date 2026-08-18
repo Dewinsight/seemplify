@@ -47,6 +47,14 @@ services:
       EXPERIENCE_ADMIN_SSO_SECRET: ${EXPERIENCE_ADMIN_SSO_SECRET:?required}
       IDP_PLATFORM_CREDENTIAL_ENCRYPTION_KEY_FILE: /run/seemplify/platform-integration-credential-key
       IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /run/seemplify/platform-integration-experience-hmac
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:-}
+      AZURE_SPEECH_REGION: ${AZURE_SPEECH_REGION:-}
+      AZURE_SPEECH_TTS_ENDPOINT: ${AZURE_SPEECH_TTS_ENDPOINT:-}
+      AZURE_SPEECH_LANGUAGE: ${AZURE_SPEECH_LANGUAGE:-en-US}
+      AZURE_SPEECH_VOICE: ${AZURE_SPEECH_VOICE:-en-US-AvaNeural}
       MESSAGING_OIDC_CLIENT_SECRET: ${OIDC_MESSAGING_SECRET:?required}
       MESSAGING_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
       RECRUITER_ADMIN_URL: https://app.seemplifyai.com
@@ -107,6 +115,8 @@ services:
       IDP_ISSUER_URL: https://auth.seemplifyai.com
       OIDC_ISSUER: https://auth.seemplifyai.com
       IDP_INTERNAL_API_URL: http://identity-provider:5008
+      IDP_PLATFORM_CONFIGURATION_URL: http://identity-provider:5008
+      IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /run/seemplify/platform-integration-hmac
       OIDC_CLIENT_ID: smarthr-backend
       OIDC_CLIENT_SECRET: ${OIDC_RECRUITER_SECRET:?required}
       OIDC_REDIRECT_URI: https://api.seemplifyai.com/api/auth/oidc/callback
@@ -140,6 +150,8 @@ services:
       ENABLE_BREVO_CALENDAR_INVITE_FALLBACK: "false"
       FORCE_BREVO_CALENDAR_INVITE_FALLBACK: "false"
       FORCE_BREVO_INTERVIEW_EMAILS: "false"
+    volumes:
+      - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-hmac:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5001/api/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s

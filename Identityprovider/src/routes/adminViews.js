@@ -22,6 +22,12 @@ import {
   saveNylasConfiguration
 } from '../services/nylasPlatformConfigurationService.js'
 import {
+  deleteMediaConfiguration,
+  getMediaConfigurationStatus,
+  saveAzureSpeechConfiguration,
+  saveCloudinaryConfiguration
+} from '../services/mediaPlatformConfigurationService.js'
+import {
   ADMIN_ORGANIZATION_ACTIONS,
   deleteOrganizationAccounts,
   deleteOrganizationCascade,
@@ -538,6 +544,47 @@ router.post('/integrations/nylas/remove', requireSuperAdmin, auditLog('remove_ny
   } catch (error) {
     console.error('Error removing Nylas integration settings:', error.message)
     return res.redirect('/admin/integrations/nylas?notice=Failed+to+remove+Nylas+settings&noticeType=error')
+  }
+})
+
+router.get('/integrations/media-ai', async (req, res) => {
+  try {
+    res.render('admin/media-ai-integration', {
+      status: await getMediaConfigurationStatus(),
+      notice: typeof req.query.notice === 'string' ? req.query.notice : '',
+      noticeType: req.query.noticeType === 'error' ? 'error' : 'success',
+      user: req.user
+    })
+  } catch (error) {
+    console.error('Error loading media integration settings:', error.message)
+    res.status(500).render('error', { title: 'Error', message: 'Failed to load media integration settings' })
+  }
+})
+
+router.post('/integrations/media-ai/cloudinary', requireSuperAdmin, auditLog('update_cloudinary_platform_configuration'), async (req, res) => {
+  try {
+    await saveCloudinaryConfiguration(req.body || {}, req.user._id)
+    return res.redirect('/admin/integrations/media-ai?notice=Cloudinary+settings+saved')
+  } catch (error) {
+    return res.redirect(`/admin/integrations/media-ai?notice=${encodeURIComponent(error.message || 'Failed to save Cloudinary settings')}&noticeType=error`)
+  }
+})
+
+router.post('/integrations/media-ai/azure-speech', requireSuperAdmin, auditLog('update_azure_speech_platform_configuration'), async (req, res) => {
+  try {
+    await saveAzureSpeechConfiguration(req.body || {}, req.user._id)
+    return res.redirect('/admin/integrations/media-ai?notice=Azure+Speech+settings+saved')
+  } catch (error) {
+    return res.redirect(`/admin/integrations/media-ai?notice=${encodeURIComponent(error.message || 'Failed to save Azure Speech settings')}&noticeType=error`)
+  }
+})
+
+router.post('/integrations/media-ai/:integration/remove', requireSuperAdmin, auditLog('remove_media_platform_configuration'), async (req, res) => {
+  try {
+    await deleteMediaConfiguration(req.params.integration)
+    return res.redirect('/admin/integrations/media-ai?notice=Integration+settings+removed')
+  } catch (error) {
+    return res.redirect(`/admin/integrations/media-ai?notice=${encodeURIComponent(error.message || 'Failed to remove integration settings')}&noticeType=error`)
   }
 })
 

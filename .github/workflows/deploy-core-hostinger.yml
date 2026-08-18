@@ -42,6 +42,7 @@ jobs:
             test/auth-redirects.test.mjs \
             test/hub-pins.test.mjs \
             test/nylas-platform-configuration.test.mjs \
+            test/media-platform-configuration.test.mjs \
             test/organization-deletion-fallback.test.mjs \
             test/shared-ai-admin-client.test.mjs
 
@@ -64,6 +65,7 @@ jobs:
             tests/aiAdminAnalytics.test.js \
             tests/aiRuntimeGatewayIntegration.test.js \
             tests/codexAccountService.test.js
+          node --test tests/platformConfigurationClient.test.js
 
   deploy:
     name: Deploy immutable core release

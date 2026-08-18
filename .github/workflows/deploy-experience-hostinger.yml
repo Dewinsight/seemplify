@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'experience-management/**'
+      - 'ai-interview/backend/**'
       - 'Identityprovider/**'
       - 'recruiter/backend/config/aiRuntimeCatalog.js'
       - 'recruiter/backend/middleware/internalServiceAuth.js'
@@ -45,10 +46,16 @@ jobs:
         working-directory: Identityprovider
         run: |
           npm ci --ignore-scripts
-          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs test/nylas-platform-configuration.test.mjs
+          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs test/nylas-platform-configuration.test.mjs test/media-platform-configuration.test.mjs
       - name: Test shared gateway authentication
         working-directory: recruiter/backend
         run: node --test tests/internalServiceAuth.test.js
+      - name: Test AI Interview platform configuration
+        working-directory: ai-interview/backend
+        run: |
+          npm ci --ignore-scripts
+          npm run check
+          node --test test/platformConfigurationClient.test.js
 
   deploy:
     needs: qa
@@ -68,7 +75,7 @@ jobs:
       - name: Package release
         run: |
           tar -czf experience-release.tgz \
-            experience-management Identityprovider recruiter/backend \
+            experience-management Identityprovider recruiter/backend ai-interview/backend \
             deploy/hostinger/core-apps.compose.yml \
             deploy/hostinger/extended-apps.compose.yml \
             deploy/hostinger/generate-idp-clients.sh \
@@ -93,13 +100,17 @@ jobs:
           experience_image="seemplify/experience:hostinger-$RELEASE_SHA"
           identity_image="seemplify/identity-provider:hostinger-$RELEASE_SHA"
           recruiter_image="seemplify/recruiter-backend:hostinger-$RELEASE_SHA"
+          ai_interview_image="seemplify/ai-interview-backend:hostinger-$RELEASE_SHA"
           docker build --pull -t "$experience_image" "$release_root/experience-management"
           docker build --pull -t "$identity_image" "$release_root/Identityprovider"
           docker build --pull -t "$recruiter_image" "$release_root/recruiter/backend"
+          docker build --pull -t "$ai_interview_image" "$release_root/ai-interview/backend"
 
           cp -a "$release_root/experience-management/." /opt/seemplify/source/experience-management/
           cp -a "$release_root/Identityprovider/." /opt/seemplify/source/Identityprovider/
           cp -a "$release_root/recruiter/backend/." /opt/seemplify/source/recruiter/backend/
+          install -d -m 750 /opt/seemplify/source/ai-interview/backend
+          cp -a "$release_root/ai-interview/backend/." /opt/seemplify/source/ai-interview/backend/
           install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
           install -m 644 "$release_root/deploy/hostinger/extended-apps.compose.yml" /opt/seemplify/deploy/hostinger/extended-apps.compose.yml
           install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
@@ -113,6 +124,7 @@ jobs:
           export EXPERIENCE_IMAGE="$experience_image"
           export IDENTITY_PROVIDER_IMAGE="$identity_image"
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"
+          export AI_INTERVIEW_BACKEND_IMAGE="$ai_interview_image"
           core=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/core-apps.compose.yml)
           extended=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/extended-apps.compose.yml)
           docker volume create seemplify-extended_experience_runtime >/dev/null
@@ -136,6 +148,8 @@ jobs:
           wait_healthy seemplify-core-recruiter-backend-1
           "${extended[@]}" up -d --no-deps --force-recreate experience
           wait_healthy seemplify-extended-experience-1
+          "${extended[@]}" up -d --no-deps --force-recreate ai-interview-backend
+          wait_healthy seemplify-extended-ai-interview-backend-1
           "${core[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
           /usr/local/sbin/seemplify-smoke

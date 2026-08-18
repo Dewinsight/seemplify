@@ -345,7 +345,6 @@ const server = http.createServer(app);
 
 // Initialize WebSocket service
 websocketService.initialize(server);
-aiInterviewVoiceLiveService.initialize(server);
 
 // Start grant verification scheduler
 grantVerificationScheduler.start();
@@ -371,6 +370,10 @@ backgroundServiceManager.register('memoryManager', memoryManager);
 
 async function startServer() {
   await databaseReady;
+  const { hydrateAzureSpeechConfiguration } = require('./services/platformConfigurationClient');
+  await hydrateAzureSpeechConfiguration();
+  aiInterviewVoiceLiveService.initialize(server);
+  setInterval(() => hydrateAzureSpeechConfiguration({ quiet: true }).catch(() => undefined), 5 * 60 * 1000).unref();
   try {
     const meteringOutbox = await usageMeteringOutbox.start(persistUsageEnvelope);
     assertUsageMeteringOutboxReady(meteringOutbox);

@@ -92,7 +92,7 @@ services:
 
   ai-interview-backend:
     <<: *defaults
-    image: seemplify/ai-interview-backend:hostinger
+    image: ${AI_INTERVIEW_BACKEND_IMAGE:-seemplify/ai-interview-backend:hostinger}
     environment:
       NODE_ENV: production
       AI_INTERVIEW_BACKEND_PORT: "5101"
@@ -106,6 +106,8 @@ services:
       SEEMPLIFY_AI_GATEWAY_URL: http://recruiter-backend:5001
       AI_GATEWAY_SERVICE_ID: ai-interview
       AI_GATEWAY_HMAC_SECRET: ${AI_GATEWAY_HMAC_SECRET:?required}
+      IDP_PLATFORM_CONFIGURATION_URL: http://identity-provider:5008
+      IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /run/seemplify/platform-integration-hmac
       AI_INTERVIEW_REDIS_HOST: seemplify-shared-redis-1
       AI_INTERVIEW_REDIS_PORT: "6379"
       AI_INTERVIEW_REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
@@ -117,6 +119,8 @@ services:
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
       MAIL_FROM_NAME: Seemplify AI Interview
       AI_INTERVIEW_EMAIL_MODE: send
+    volumes:
+      - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-hmac:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5101/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
