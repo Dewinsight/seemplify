@@ -8,6 +8,9 @@ const OrganizationSchema = new mongoose.Schema({
     logo: { type: String }, // Path/filename of uploaded logo (used when logoMode is 'all')
     logoDark: { type: String }, // Logo for dark theme (when logoMode is dark/system)
     logoLight: { type: String }, // Logo for light theme (when logoMode is light/system)
+    logoStorage: { type: mongoose.Schema.Types.Mixed },
+    logoDarkStorage: { type: mongoose.Schema.Types.Mixed },
+    logoLightStorage: { type: mongoose.Schema.Types.Mixed },
     logoBackground: { type: String, default: 'transparent' }, // 'transparent' or hex color e.g. '#1a1a2e'
     logoMode: { type: String, default: 'all', enum: ['dark', 'light', 'system', 'all'] }, // When to show: dark theme only, light only, follow system, or always
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

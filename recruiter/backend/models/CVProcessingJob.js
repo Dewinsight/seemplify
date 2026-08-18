@@ -196,6 +196,9 @@ const CVProcessingJobSchema = new mongoose.Schema({
   cloudinary: {
     resumeUrl: String,
     publicId: String,
+    storageProvider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+    storageKey: String,
+    storageContainer: String,
     assetId: String,
     resourceType: String,
     deliveryType: String,
@@ -216,6 +219,9 @@ const CVProcessingJobSchema = new mongoose.Schema({
   // safely overwrite.
   cloudinaryUploadIntent: {
     publicId: String,
+    storageProvider: { type: String, enum: ['cloudinary', 'azure-blob'] },
+    storageKey: String,
+    storageContainer: String,
     resourceType: String,
     deliveryType: String,
     generation: String,

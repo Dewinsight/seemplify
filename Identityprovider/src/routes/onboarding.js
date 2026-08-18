@@ -110,10 +110,13 @@ const buildCloudinaryRawDownloadUrl = ({
 const fetchOnboardingPdfBuffer = async ({
   url = '',
   publicId = '',
+  storageProvider = '',
   mimeType = 'application/pdf'
 } = {}) => {
   const candidateUrls = []
-  const cloudinaryDownloadUrl = buildCloudinaryRawDownloadUrl({ publicId, mimeType })
+  const cloudinaryDownloadUrl = storageProvider === 'azure-blob'
+    ? ''
+    : buildCloudinaryRawDownloadUrl({ publicId, mimeType })
 
   if (cloudinaryDownloadUrl) {
     candidateUrls.push({
@@ -846,44 +849,52 @@ const sendAssignmentEmail = async ({
   }
 }
 
-const collectAssignmentAssetPublicIds = (items = []) => {
-  const assetIds = new Set()
+const collectAssignmentAssets = (items = []) => {
+  const assets = new Map()
+
+  const addAsset = ({ publicId, storageKey, storageProvider, provider, storageContainer }) => {
+    const key = String(storageKey || publicId || '').trim()
+    if (!key) return
+    const resolvedProvider = storageProvider || provider || 'cloudinary'
+    const identity = `${resolvedProvider}:${storageContainer || ''}:${key}`
+    assets.set(identity, {
+      publicId: publicId || key,
+      storageKey: key,
+      storageProvider: resolvedProvider,
+      storageContainer: storageContainer || null,
+      resourceType: 'raw'
+    })
+  }
 
   items.forEach(item => {
-    const documentPublicId = item?.config?.document?.publicId
-    if (documentPublicId) {
-      assetIds.add(String(documentPublicId))
-    }
-
-    const uploadPublicId = item?.data?.upload?.publicId
-    if (uploadPublicId) {
-      assetIds.add(String(uploadPublicId))
-    }
-
-    const signedPublicId = item?.data?.esign?.signedPublicId
-    if (signedPublicId) {
-      assetIds.add(String(signedPublicId))
-    }
+    addAsset(item?.config?.document || {})
+    addAsset(item?.data?.upload || {})
+    addAsset({
+      publicId: item?.data?.esign?.signedPublicId,
+      storageKey: item?.data?.esign?.signedStorageKey,
+      storageProvider: item?.data?.esign?.signedStorageProvider,
+      storageContainer: item?.data?.esign?.signedStorageContainer
+    })
   })
 
-  return assetIds
+  return assets
 }
 
 const cleanupRemovedAssignmentAssets = async ({
   previousItems = [],
   nextItems = []
 } = {}) => {
-  if (!isCloudinaryConfigured()) return
+  const previousAssets = collectAssignmentAssets(previousItems)
+  const nextAssets = collectAssignmentAssets(nextItems)
+  const removedAssets = Array.from(previousAssets.entries())
+    .filter(([identity]) => !nextAssets.has(identity))
+    .map(([, asset]) => asset)
 
-  const previousAssetIds = collectAssignmentAssetPublicIds(previousItems)
-  const nextAssetIds = collectAssignmentAssetPublicIds(nextItems)
-  const removedAssetIds = Array.from(previousAssetIds).filter(publicId => !nextAssetIds.has(publicId))
-
-  await Promise.all(removedAssetIds.map(async publicId => {
+  await Promise.all(removedAssets.map(async asset => {
     try {
-      await deleteFromCloudinary({ publicId, resourceType: 'raw' })
+      await deleteFromCloudinary(asset)
     } catch (error) {
-      console.warn('Failed to remove replaced onboarding asset:', publicId, error)
+      console.warn('Failed to remove replaced onboarding asset:', asset.storageKey, error)
     }
   }))
 }
@@ -1073,6 +1084,10 @@ router.post('/organizations/:orgId/onboarding/documents',
       res.json({
         url: uploadResult.secure_url,
         publicId: uploadResult.public_id,
+        provider: uploadResult.storageProvider || 'cloudinary',
+        storageProvider: uploadResult.storageProvider || 'cloudinary',
+        storageKey: uploadResult.storageKey || uploadResult.public_id,
+        storageContainer: uploadResult.storageContainer || null,
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
         size: req.file.size
@@ -1089,7 +1104,7 @@ router.post('/organizations/:orgId/onboarding/documents/delete', requireAuth, re
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
-  const { publicId } = req.body || {}
+  const { publicId, storageProvider, storageContainer } = req.body || {}
   if (!publicId || typeof publicId !== 'string') {
     return res.status(400).json({ error: 'publicId is required' })
   }
@@ -1099,12 +1114,8 @@ router.post('/organizations/:orgId/onboarding/documents/delete', requireAuth, re
     return res.status(400).json({ error: 'Invalid document reference' })
   }
 
-  if (!isCloudinaryConfigured()) {
-    return res.status(500).json({ error: 'Cloudinary is not configured' })
-  }
-
   try {
-    await deleteFromCloudinary({ publicId, resourceType: 'raw' })
+    await deleteFromCloudinary({ publicId, storageKey: publicId, storageProvider, storageContainer, resourceType: 'raw' })
     res.json({ message: 'Document deleted' })
   } catch (error) {
     console.error('Onboarding document delete error:', error)
@@ -1596,6 +1607,10 @@ router.post('/onboarding/:assignmentId/items/:itemId/upload',
       item.data.upload = {
         url: uploadResult.secure_url,
         publicId: uploadResult.public_id,
+        provider: uploadResult.storageProvider || 'cloudinary',
+        storageProvider: uploadResult.storageProvider || 'cloudinary',
+        storageKey: uploadResult.storageKey || uploadResult.public_id,
+        storageContainer: uploadResult.storageContainer || null,
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
         size: req.file.size,
@@ -1648,6 +1663,9 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     }
 
     const previousSignedPublicId = item.data?.esign?.signedPublicId
+    const previousSignedStorageKey = item.data?.esign?.signedStorageKey || previousSignedPublicId
+    const previousSignedStorageProvider = item.data?.esign?.signedStorageProvider || 'cloudinary'
+    const previousSignedStorageContainer = item.data?.esign?.signedStorageContainer
 
     const signerIdStr = req.user._id.toString()
     const normalizeSignerId = (value) => {
@@ -1706,9 +1724,11 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     const sourcePublicId = item.data?.esign?.signedPublicId
       || document.publicId
       || inferCloudinaryPublicIdFromUrl(sourceUrl)
+    const sourceStorageProvider = item.data?.esign?.signedStorageProvider || document.provider || 'cloudinary'
     const sourceBuffer = await fetchOnboardingPdfBuffer({
       url: sourceUrl,
       publicId: sourcePublicId,
+      storageProvider: sourceStorageProvider,
       mimeType: 'application/pdf'
     })
 
@@ -1833,10 +1853,6 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
 
     const signedPdfBytes = await pdfDoc.save()
 
-    if (!isCloudinaryConfigured()) {
-      return res.status(500).json({ error: 'Cloudinary is not configured' })
-    }
-
     const baseFileName = (document.fileName || 'signed-document').replace(/\.[^/.]+$/, '')
     const signedFileName = `${baseFileName}-signed-${Date.now()}.pdf`
     const uploadResult = await uploadBufferToCloudinary({
@@ -1851,6 +1867,9 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     item.data.esign.originalUrl = item.data.esign.originalUrl || document.url
     item.data.esign.signedUrl = uploadResult.secure_url
     item.data.esign.signedPublicId = uploadResult.public_id
+    item.data.esign.signedStorageProvider = uploadResult.storageProvider || 'cloudinary'
+    item.data.esign.signedStorageKey = uploadResult.storageKey || uploadResult.public_id
+    item.data.esign.signedStorageContainer = uploadResult.storageContainer || null
     item.data.esign.signedFileName = signedFileName
     item.data.esign.signedMimeType = 'application/pdf'
 
@@ -1904,9 +1923,15 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
 
     if (previousSignedPublicId && previousSignedPublicId !== uploadResult.public_id) {
       try {
-        await deleteFromCloudinary({ publicId: previousSignedPublicId, resourceType: 'raw' })
+        await deleteFromCloudinary({
+          publicId: previousSignedPublicId,
+          storageKey: previousSignedStorageKey,
+          storageProvider: previousSignedStorageProvider,
+          storageContainer: previousSignedStorageContainer,
+          resourceType: 'raw'
+        })
       } catch (deleteError) {
-        console.error('Failed to delete old signed document from Cloudinary:', deleteError)
+        console.error('Failed to delete old signed document from storage:', deleteError)
       }
     }
 

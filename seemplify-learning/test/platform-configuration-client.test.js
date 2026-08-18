@@ -1,6 +1,23 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { hydrateCloudinaryConfiguration } from '../src/services/platformConfigurationClient.js'
+import { clearStoragePlatformConfigurationCache, hydrateCloudinaryConfiguration, resolveStoragePlatformConfiguration } from '../src/services/platformConfigurationClient.js'
+
+test('Learning resolves its provider-neutral storage policy over the signed Identity channel', async (t) => {
+  const originalFetch = global.fetch
+  t.after(() => { global.fetch = originalFetch; clearStoragePlatformConfigurationCache() })
+  clearStoragePlatformConfigurationCache()
+  global.fetch = async (url, options) => {
+    assert.match(String(url), /platform-integrations\/storage$/u)
+    assert.equal(options.headers['x-seemplify-service'], 'seemplify-learning')
+    return { ok: true, json: async () => ({ configured: true, solution: 'seemplify-learning',
+      defaultProvider: 'cloudinary', providers: { cloudinary: { configured: true }, azureBlob: { configured: true } } }) }
+  }
+  const result = await resolveStoragePlatformConfiguration({ force: true, environment: {
+    NODE_ENV: 'test', IDP_PLATFORM_INTEGRATION_HMAC_SECRET: 'test-only-platform-service-secret-material-123456'
+  } })
+  assert.equal(result.solution, 'seemplify-learning')
+  assert.equal(result.defaultProvider, 'cloudinary')
+})
 
 test('Learning hydrates Cloudinary from the signed Identity configuration channel', async (t) => {
   const originalFetch = global.fetch

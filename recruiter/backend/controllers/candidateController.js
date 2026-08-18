@@ -133,7 +133,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
 
     // Check if both operations were successful
     if (!cloudinaryResult.success) {
-      throw new Error(`Cloudinary upload failed after retries: ${cloudinaryResult.error}`);
+      throw new Error(`Managed storage upload failed after retries: ${cloudinaryResult.error}`);
     }
 
     // ✅ CRITICAL FIX: Prevent candidate creation with insufficient data
@@ -151,11 +151,10 @@ exports.uploadAndCreateCandidate = async (req, res) => {
     let resumeUrl = cloudinaryResult.resumeUrl;
 
     // 🔧 FIX: Generate accessible PDF URL for Free Plan limitations
-    if (fileType === 'application/pdf') {
+    if (fileType === 'application/pdf' && (cloudinaryResult.storageProvider || 'cloudinary') === 'cloudinary') {
       console.log('📄 Generating accessible PDF URL for Free Plan...');
       try {
         resumeUrl = cloudinaryUploadService.getAccessiblePdfUrl(cloudinaryResult.publicId);
-        console.log(`🔗 Accessible PDF URL: ${resumeUrl}`);
       } catch (urlError) {
         console.warn('⚠️ Could not generate accessible PDF URL, using original:', urlError.message);
         // Keep original URL as fallback
@@ -170,7 +169,6 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       potentialFlags: []
     };
 
-    console.log(`📄 Resume URL: ${resumeUrl}`);
     console.log(`🔍 Text extracted: ${resumeText.length} characters`);
     console.log(`🤖 AI analysis success: ${cvParsingResult.aiSuccess}`);
 
@@ -238,6 +236,10 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       jobAppliedFor: req.body.jobId || null, // Link to the job if provided
       // Store Cloudinary metadata
       cloudinaryPublicId: cloudinaryResult.publicId,
+      resumeStorageProvider: cloudinaryResult.storageProvider || 'cloudinary',
+      resumeStorageKey: cloudinaryResult.storageKey || cloudinaryResult.publicId,
+      resumeStorageContainer: cloudinaryResult.storageContainer || null,
+      resumeStorageResourceType: cloudinaryResult.resourceType,
       cloudinaryResourceType: cloudinaryResult.resourceType,
       // Store AI analysis results
       parsedData: extractedFields || {},
@@ -1538,7 +1540,9 @@ exports.bulkDownloadCandidates = async (req, res) => {
       if (candidate.cloudinaryPublicId) {
         try {
           const deliveryType = candidate.cloudinaryDeliveryType || 'upload';
-          const downloadUrl = cloudinaryUploadService.getDownloadUrl(candidate.cloudinaryPublicId, deliveryType);
+          const downloadUrl = candidate.resumeStorageProvider === 'azure-blob'
+            ? candidate.resumeUrl
+            : cloudinaryUploadService.getDownloadUrl(candidate.cloudinaryPublicId, deliveryType);
           const response = await fetch(downloadUrl);
           if (!response.ok) throw new Error(`CV download failed: ${response.status}`);
           const cvBuffer = Buffer.from(await response.arrayBuffer());
@@ -1610,6 +1614,19 @@ exports.getAccessibleResumeUrl = async (req, res) => {
       });
     }
 
+    if (candidate.resumeStorageProvider === 'azure-blob') {
+      return res.json({
+        msg: 'Azure resume URL generated successfully',
+        originalUrl: candidate.resumeUrl,
+        accessibleUrl: candidate.resumeUrl,
+        viewUrl: candidate.resumeUrl,
+        downloadUrl: candidate.resumeUrl,
+        previewUrl: candidate.resumeUrl,
+        candidateId: candidate._id,
+        candidateName: `${candidate.firstName} ${candidate.lastName}`
+      });
+    }
+
     // Check if it's a PDF that needs accessible URL
     const isPdf = candidate.resumeUrl && candidate.resumeUrl.includes('.pdf');
 
@@ -1659,16 +1676,18 @@ exports.streamPublicFeedbackResume = async (req, res) => {
     };
     if (interview?.organizationId) candidateQuery.organization = interview.organizationId;
     const candidate = await Candidate.findOne(candidateQuery).select(
-      '_id cloudinaryPublicId cloudinaryResourceType cloudinaryDeliveryType resumeUrl'
+      '_id cloudinaryPublicId cloudinaryResourceType cloudinaryDeliveryType resumeUrl resumeStorageProvider resumeStorageKey resumeStorageContainer resumeStorageResourceType'
     );
     if (!candidate || String(interview?.candidateId || '') !== String(candidate._id)) {
       return res.status(404).json({ msg: 'Resume access was not found' });
     }
 
     const deliveryType = candidate.cloudinaryDeliveryType || 'authenticated';
-    const providerUrl = req.query?.mode === 'download'
-      ? cloudinaryUploadService.getDownloadUrl(candidate.cloudinaryPublicId, deliveryType)
-      : cloudinaryUploadService.getAccessiblePdfUrl(candidate.cloudinaryPublicId, deliveryType);
+    const providerUrl = candidate.resumeStorageProvider === 'azure-blob'
+      ? candidate.resumeUrl
+      : req.query?.mode === 'download'
+        ? cloudinaryUploadService.getDownloadUrl(candidate.cloudinaryPublicId, deliveryType)
+        : cloudinaryUploadService.getAccessiblePdfUrl(candidate.cloudinaryPublicId, deliveryType);
     const upstream = await fetch(providerUrl);
     if (!upstream.ok) {
       return res.status(502).json({ msg: 'Resume asset is temporarily unavailable' });

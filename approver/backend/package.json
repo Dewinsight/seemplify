@@ -28,8 +28,10 @@
         "migrate:logo-assets:from-api": "node scripts/backfillLogoAssetsFromApi.js"
     },
     "dependencies": {
+        "@azure/storage-blob": "^12.28.0",
         "axios": "^1.14.0",
         "bcryptjs": "^3.0.3",
+        "cloudinary": "^2.5.1",
         "cors": "^2.8.5",
         "dotenv": "^16.3.1",
         "express": "^4.18.2",

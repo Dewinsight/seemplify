@@ -1,8 +1,11 @@
 import dotenv from 'dotenv'
+import crypto from 'crypto'
+import { BlobSASPermissions, BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob'
 import { v2 as cloudinary } from 'cloudinary'
 import { existsSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
+import { getStorageRuntimeConfiguration } from './mediaPlatformConfigurationService.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -200,12 +203,37 @@ const ensureCloudinaryConfigured = () => {
 
 export const isCloudinaryConfigured = () => ensureCloudinaryConfigured()
 
-export const uploadBufferToCloudinary = ({
+export const uploadBufferToCloudinary = async ({
   buffer,
   filename,
   folder,
   resourceType = 'auto'
 }) => {
+  const policy = await getStorageRuntimeConfiguration('identity-provider').catch(() => null)
+  if (policy?.configured && policy.defaultProvider === 'azure-blob') {
+    const configuration = policy.providers.azureBlob
+    const credential = new StorageSharedKeyCredential(configuration.accountName, configuration.accountKey)
+    const service = new BlobServiceClient(configuration.endpoint, credential)
+    const safeFolder = String(folder || 'identity-provider').split('/').filter(Boolean)
+      .map((part) => part.replace(/[^a-zA-Z0-9._-]+/gu, '-').slice(0, 80)).join('/')
+    const safeFilename = String(filename || 'file').replace(/[^a-zA-Z0-9._-]+/gu, '-').slice(-180)
+    const storageKey = `${safeFolder}/${crypto.randomUUID()}-${safeFilename}`
+    const blob = service.getContainerClient(configuration.containerName).getBlockBlobClient(storageKey)
+    await blob.uploadData(buffer, { blobHTTPHeaders: { blobContentType: resourceType === 'image' ? 'image/*' : 'application/octet-stream' } })
+    const url = await blob.generateSasUrl({
+      permissions: BlobSASPermissions.parse('r'),
+      expiresOn: new Date(Date.now() + 10 * 365 * 24 * 60 * 60_000)
+    })
+    return {
+      secure_url: url,
+      public_id: storageKey,
+      resource_type: 'blob',
+      bytes: buffer.length,
+      storageProvider: 'azure-blob',
+      storageKey,
+      storageContainer: configuration.containerName
+    }
+  }
   if (!ensureCloudinaryConfigured()) {
     throw new Error('Cloudinary configuration missing')
   }
@@ -229,7 +257,17 @@ export const uploadBufferToCloudinary = ({
   })
 }
 
-export const deleteFromCloudinary = async ({ publicId, resourceType = 'raw' }) => {
+export const deleteFromCloudinary = async ({ publicId, storageKey, storageProvider, provider, storageContainer, resourceType = 'raw' }) => {
+  if (storageProvider === 'azure-blob' || provider === 'azure-blob') {
+    const policy = await getStorageRuntimeConfiguration('identity-provider')
+    const configuration = policy.providers?.azureBlob
+    if (!configuration?.configured) throw new Error('Azure Blob Storage is not configured')
+    const credential = new StorageSharedKeyCredential(configuration.accountName, configuration.accountKey)
+    const service = new BlobServiceClient(configuration.endpoint, credential)
+    return service.getContainerClient(storageContainer || configuration.containerName)
+      .getBlockBlobClient(storageKey || publicId)
+      .deleteIfExists({ deleteSnapshots: 'include' })
+  }
   if (!ensureCloudinaryConfigured()) {
     throw new Error('Cloudinary configuration missing')
   }

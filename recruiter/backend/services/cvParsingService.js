@@ -168,7 +168,7 @@ class CVParsingService {
       if (!resumeText || resumeText.trim().length < 50) {
         console.warn('⚠️ CV parsing returned insufficient text. Aborting AI analysis to prevent hallucinations.');
         console.warn(`Resume text length: ${resumeText?.length || 0} characters`);
-        console.warn(`File type: ${fileType}, File path: ${filePath}`);
+        console.warn(`File type: ${fileType}`);
         
         return {
           success: false,

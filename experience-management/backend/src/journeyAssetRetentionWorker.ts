@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { purgeExpiredJourneyCardAssets } from './journeyRichCards.js';
 
-type RetentionOutcome = ReturnType<typeof purgeExpiredJourneyCardAssets>;
-type RetentionRun = (asOf?: string) => RetentionOutcome;
+type RetentionOutcome = Awaited<ReturnType<typeof purgeExpiredJourneyCardAssets>>;
+type RetentionRun = (asOf?: string) => RetentionOutcome | Promise<RetentionOutcome>;
 type RetentionTelemetry = (level: 'info' | 'error', event: Record<string, unknown>) => void;
 
 function defaultTelemetry(level: 'info' | 'error', event: Record<string, unknown>) {
@@ -33,16 +33,16 @@ export class JourneyAssetRetentionWorker {
   start() {
     if (!this.stopped) return;
     this.stopped = false;
-    this.timer = setInterval(() => { this.runOnce(); }, this.intervalMs);
+    this.timer = setInterval(() => { void this.runOnce(); }, this.intervalMs);
     this.timer.unref();
-    this.runOnce();
+    void this.runOnce();
   }
 
-  runOnce(asOf = new Date().toISOString()) {
+  async runOnce(asOf = new Date().toISOString()) {
     if (this.stopped || this.running) return null;
     this.running = true;
     try {
-      const result = this.runRetention(asOf);
+      const result = await this.runRetention(asOf);
       if (result.purged || result.purgeReceiptsClaimed || result.purgeReceiptsFailed) {
         this.telemetry('info', { event: 'journey_asset_retention_pass', at: asOf,
           purged: result.purged, blobsScheduled: result.blobsScheduled, blobsPurged: result.blobsPurged,

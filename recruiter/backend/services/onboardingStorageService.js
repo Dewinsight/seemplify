@@ -1,4 +1,6 @@
 const cloudinary = require('cloudinary').v2;
+const { createStorageService } = require('./storageService');
+const { resolveStoragePlatformConfiguration } = require('./platformConfigurationClient');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -19,13 +21,18 @@ async function uploadBuffer(buffer, {
     throw new Error('A file buffer is required for onboarding upload');
   }
 
-  const dataUri = `data:${mimeType};base64,${buffer.toString('base64')}`;
-  const result = await cloudinary.uploader.upload(dataUri, {
-    resource_type: resourceType,
-    access_mode: 'public',
+  const result = await createStorageService({
+    configurationResolver: () => resolveStoragePlatformConfiguration({ solution: 'people-transitions' })
+  }).uploadBuffer(buffer, {
+    mimeType,
+    fileName,
     folder: normalizeFolder(folder),
-    public_id: fileName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 90),
-    overwrite: true
+    resourceType,
+    cloudinaryOptions: {
+      access_mode: 'public',
+      public_id: fileName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 90),
+      overwrite: true
+    }
   });
 
   return toFileSnapshot(result, fileName, mimeType);
@@ -44,10 +51,14 @@ function toFileSnapshot(result, originalName, mimeType) {
   if (!result) return null;
 
   return {
-    url: result.secure_url,
-    downloadUrl: getDownloadUrl(result.public_id, result.resource_type || 'raw'),
-    publicId: result.public_id,
-    resourceType: result.resource_type,
+    url: result.url,
+    downloadUrl: result.storageProvider === 'azure-blob' ? result.url : getDownloadUrl(result.storageKey, result.resourceType || 'raw'),
+    provider: result.storageProvider,
+    storageProvider: result.storageProvider,
+    storageKey: result.storageKey,
+    storageContainer: result.storageContainer || null,
+    publicId: result.storageKey,
+    resourceType: result.resourceType,
     format: result.format,
     bytes: result.bytes,
     originalName,

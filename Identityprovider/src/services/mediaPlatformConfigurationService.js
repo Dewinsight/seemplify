@@ -4,6 +4,47 @@ import PlatformIntegrationCredential from '../models/PlatformIntegrationCredenti
 
 const CLOUDINARY = 'cloudinary'
 const AZURE_SPEECH = 'azure-speech'
+const AZURE_BLOB = 'azure-blob'
+const STORAGE_DEFAULTS = 'storage-defaults'
+
+export const STORAGE_SOLUTIONS = Object.freeze([
+  { id: 'identity-provider', label: 'Identity, onboarding & exits' },
+  { id: 'recruiter', label: 'Recruiter & candidate files' },
+  { id: 'people-transitions', label: 'People Transitions' },
+  { id: 'seemplify-learning', label: 'Learning' },
+  { id: 'workspace', label: 'Workspace, documents & messaging' },
+  { id: 'performance', label: 'Performance management' },
+  { id: 'experience-management', label: 'Experience management' },
+  { id: 'approver', label: 'Approver logos' }
+])
+
+export const STORAGE_SOLUTION_ACCESS = Object.freeze({
+  'identity-provider': Object.freeze(['identity-provider']),
+  recruiter: Object.freeze(['recruiter', 'people-transitions']),
+  'seemplify-learning': Object.freeze(['seemplify-learning']),
+  workspace: Object.freeze(['workspace']),
+  performance: Object.freeze(['performance']),
+  'experience-management': Object.freeze(['experience-management']),
+  approver: Object.freeze(['approver'])
+})
+
+export function canServiceAccessStorageSolution(service, solution) {
+  return STORAGE_SOLUTION_ACCESS[String(service || '').trim().toLowerCase()]?.includes(
+    String(solution || '').trim().toLowerCase()
+  ) === true
+}
+
+const STORAGE_PROVIDERS = new Set([CLOUDINARY, AZURE_BLOB])
+const INITIAL_STORAGE_DEFAULTS = Object.freeze({
+  'identity-provider': CLOUDINARY,
+  recruiter: CLOUDINARY,
+  'people-transitions': CLOUDINARY,
+  'seemplify-learning': CLOUDINARY,
+  workspace: CLOUDINARY,
+  performance: AZURE_BLOB,
+  'experience-management': AZURE_BLOB,
+  approver: AZURE_BLOB
+})
 
 function encryptionKey(environment = process.env) {
   const file = String(environment.IDP_PLATFORM_CREDENTIAL_ENCRYPTION_KEY_FILE || '').trim()
@@ -142,6 +183,33 @@ export function normalizeAzureSpeechConfiguration(input, existing = null) {
   return configuration
 }
 
+export function normalizeAzureBlobConfiguration(input, existing = null) {
+  const accountName = clean(input.accountName, 80) || existing?.accountName || ''
+  const configuration = {
+    accountName,
+    accountKey: clean(input.accountKey, 4_000) || existing?.accountKey || '',
+    containerName: (clean(input.containerName, 63) || existing?.containerName || 'seemplify-files').toLowerCase(),
+    endpoint: optionalHttpsUrl(input.endpoint || existing?.endpoint || (accountName ? `https://${accountName}.blob.core.windows.net` : ''))
+  }
+  if (!/^[a-z0-9]{3,24}$/u.test(configuration.accountName)) throw new Error('Azure Storage account name is invalid.')
+  if (!configuration.accountKey) throw new Error('Azure Storage account key is required.')
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/u.test(configuration.containerName) || configuration.containerName.includes('--')) {
+    throw new Error('Azure Blob container name is invalid.')
+  }
+  return configuration
+}
+
+export function normalizeStorageDefaults(input = {}, existing = null) {
+  const source = input.defaults && typeof input.defaults === 'object' ? input.defaults : input
+  const defaults = {}
+  for (const solution of STORAGE_SOLUTIONS) {
+    const value = clean(source[solution.id] || existing?.defaults?.[solution.id] || INITIAL_STORAGE_DEFAULTS[solution.id], 40).toLowerCase()
+    if (!STORAGE_PROVIDERS.has(value)) throw new Error(`Unsupported storage provider for ${solution.label}.`)
+    defaults[solution.id] = value
+  }
+  return { defaults }
+}
+
 function publicCloudinary(record, configuration) {
   return {
     configured: Boolean(configuration?.cloudName && configuration?.apiKey && configuration?.apiSecret),
@@ -168,6 +236,30 @@ function publicAzureSpeech(record, configuration) {
   }
 }
 
+function publicAzureBlob(record, configuration) {
+  return {
+    configured: Boolean(configuration?.accountName && configuration?.accountKey && configuration?.containerName),
+    accountName: configuration?.accountName || '',
+    accountKeyConfigured: Boolean(configuration?.accountKey),
+    containerName: configuration?.containerName || 'seemplify-files',
+    endpoint: configuration?.endpoint || '',
+    revision: Number(record?.revision || 0),
+    updatedAt: record?.updatedAt || null
+  }
+}
+
+function publicStorageDefaults(record, configuration) {
+  const normalized = normalizeStorageDefaults({}, configuration)
+  return {
+    solutions: STORAGE_SOLUTIONS.map((solution) => ({
+      ...solution,
+      defaultProvider: normalized.defaults[solution.id]
+    })),
+    revision: Number(record?.revision || 0),
+    updatedAt: record?.updatedAt || null
+  }
+}
+
 export function buildAzureSpeechAdminCredentialReveal(record, configuration) {
   const speechKey = clean(configuration?.speechKey)
   if (!record || !speechKey) throw new Error('Azure Speech key is not configured.')
@@ -189,11 +281,25 @@ export function buildCloudinaryAdminCredentialReveal(record, configuration) {
   }
 }
 
+export function buildAzureBlobAdminCredentialReveal(record, configuration) {
+  const accountKey = clean(configuration?.accountKey, 4_000)
+  if (!record || !accountKey) throw new Error('Azure Storage account key is not configured.')
+  return {
+    accountKey,
+    revision: Number(record.revision || 0),
+    updatedAt: record.updatedAt || null
+  }
+}
+
 export async function getMediaConfigurationStatus() {
-  const [cloudinary, azureSpeech] = await Promise.all([stored(CLOUDINARY), stored(AZURE_SPEECH)])
+  const [cloudinary, azureSpeech, azureBlob, storageDefaults] = await Promise.all([
+    stored(CLOUDINARY), stored(AZURE_SPEECH), stored(AZURE_BLOB), stored(STORAGE_DEFAULTS)
+  ])
   return {
     cloudinary: publicCloudinary(cloudinary.record, cloudinary.configuration),
-    azureSpeech: publicAzureSpeech(azureSpeech.record, azureSpeech.configuration)
+    azureSpeech: publicAzureSpeech(azureSpeech.record, azureSpeech.configuration),
+    azureBlob: publicAzureBlob(azureBlob.record, azureBlob.configuration),
+    storageDefaults: publicStorageDefaults(storageDefaults.record, storageDefaults.configuration)
   }
 }
 
@@ -213,6 +319,20 @@ export async function saveAzureSpeechConfiguration(input, adminId) {
   return publicAzureSpeech(record, configuration)
 }
 
+export async function saveAzureBlobConfiguration(input, adminId) {
+  const current = await stored(AZURE_BLOB)
+  const configuration = normalizeAzureBlobConfiguration(input, current.configuration)
+  const record = await save(AZURE_BLOB, configuration, adminId)
+  return publicAzureBlob(record, configuration)
+}
+
+export async function saveStorageDefaults(input, adminId) {
+  const current = await stored(STORAGE_DEFAULTS)
+  const configuration = normalizeStorageDefaults(input, current.configuration)
+  const record = await save(STORAGE_DEFAULTS, configuration, adminId)
+  return publicStorageDefaults(record, configuration)
+}
+
 export async function getAzureSpeechAdminCredentialReveal() {
   const { record, configuration } = await stored(AZURE_SPEECH)
   return buildAzureSpeechAdminCredentialReveal(record, configuration)
@@ -223,8 +343,13 @@ export async function getCloudinaryAdminCredentialReveal() {
   return buildCloudinaryAdminCredentialReveal(record, configuration)
 }
 
+export async function getAzureBlobAdminCredentialReveal() {
+  const { record, configuration } = await stored(AZURE_BLOB)
+  return buildAzureBlobAdminCredentialReveal(record, configuration)
+}
+
 export async function deleteMediaConfiguration(integration) {
-  if (![CLOUDINARY, AZURE_SPEECH].includes(integration)) throw new Error('Unsupported media integration.')
+  if (![CLOUDINARY, AZURE_SPEECH, AZURE_BLOB].includes(integration)) throw new Error('Unsupported media integration.')
   await PlatformIntegrationCredential.deleteOne({ integration })
 }
 
@@ -236,6 +361,33 @@ export async function getMediaRuntimeConfiguration(integration) {
     ? Boolean(configuration.cloudName && configuration.apiKey && configuration.apiSecret)
     : Boolean(configuration.speechKey && configuration.region)
   return configured ? { configured: true, ...configuration, revision: record.revision, updatedAt: record.updatedAt } : { configured: false }
+}
+
+export async function getStorageRuntimeConfiguration(solution) {
+  const normalizedSolution = clean(solution, 80).toLowerCase()
+  if (!STORAGE_SOLUTIONS.some((entry) => entry.id === normalizedSolution)) return { configured: false }
+  const [cloudinary, azureBlob, storageDefaults] = await Promise.all([
+    stored(CLOUDINARY), stored(AZURE_BLOB), stored(STORAGE_DEFAULTS)
+  ])
+  const defaults = normalizeStorageDefaults({}, storageDefaults.configuration)
+  const defaultProvider = defaults.defaults[normalizedSolution]
+  const providers = {
+    cloudinary: cloudinary.configuration
+      ? { configured: true, ...cloudinary.configuration, revision: cloudinary.record?.revision || 0 }
+      : { configured: false },
+    azureBlob: azureBlob.configuration
+      ? { configured: true, ...azureBlob.configuration, revision: azureBlob.record?.revision || 0 }
+      : { configured: false }
+  }
+  const selected = defaultProvider === AZURE_BLOB ? providers.azureBlob : providers.cloudinary
+  return {
+    configured: Boolean(selected.configured),
+    solution: normalizedSolution,
+    defaultProvider,
+    providers,
+    policyRevision: storageDefaults.record?.revision || 0,
+    updatedAt: storageDefaults.record?.updatedAt || null
+  }
 }
 
 function cloudinaryFromEnvironment(environment) {

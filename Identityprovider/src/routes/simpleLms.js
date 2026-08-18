@@ -999,6 +999,9 @@ apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
     res.json({
       url: uploadResult.secure_url,
       publicId: uploadResult.public_id,
+      provider: uploadResult.storageProvider || 'cloudinary',
+      storageKey: uploadResult.storageKey || uploadResult.public_id,
+      storageContainer: uploadResult.storageContainer || null,
       width: uploadResult.width,
       height: uploadResult.height
     })
@@ -1141,6 +1144,9 @@ apiRouter.post('/courses', async (req, res) => {
       banner: {
         url: String(banner.url || req.body.bannerUrl || '').trim().slice(0, 2000),
         publicId: String(banner.publicId || req.body.bannerPublicId || '').trim().slice(0, 400),
+        provider: banner.provider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+        storageKey: String(banner.storageKey || banner.publicId || '').trim().slice(0, 600),
+        storageContainer: String(banner.storageContainer || '').trim().slice(0, 100),
         width: banner.width,
         height: banner.height
       },
@@ -1269,6 +1275,9 @@ apiRouter.put('/courses/:courseId', async (req, res) => {
       course.banner = {
         url: String(banner.url || '').trim().slice(0, 2000),
         publicId: String(banner.publicId || '').trim().slice(0, 400),
+        provider: banner.provider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+        storageKey: String(banner.storageKey || banner.publicId || '').trim().slice(0, 600),
+        storageContainer: String(banner.storageContainer || '').trim().slice(0, 100),
         width: banner.width,
         height: banner.height
       }
@@ -1542,7 +1551,10 @@ apiRouter.post('/programs', async (req, res) => {
       objective: String(req.body.objective || '').trim().slice(0, 2000),
       banner: {
         url: String(banner?.url || '').trim().slice(0, 2000),
-        publicId: String(banner?.publicId || '').trim().slice(0, 400)
+        publicId: String(banner?.publicId || '').trim().slice(0, 400),
+        provider: banner?.provider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+        storageKey: String(banner?.storageKey || banner?.publicId || '').trim().slice(0, 600),
+        storageContainer: String(banner?.storageContainer || '').trim().slice(0, 100)
       },
       visibility: req.body.visibility === 'organization_public' ? 'organization_public' : 'organization_private',
       status: req.body.status === 'published' ? 'published' : 'draft',
@@ -1612,7 +1624,10 @@ apiRouter.put('/programs/:programId', async (req, res) => {
       const banner = parseJsonInput(req.body.banner, {})
       program.banner = {
         url: String(banner?.url || '').trim().slice(0, 2000),
-        publicId: String(banner?.publicId || '').trim().slice(0, 400)
+        publicId: String(banner?.publicId || '').trim().slice(0, 400),
+        provider: banner?.provider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+        storageKey: String(banner?.storageKey || banner?.publicId || '').trim().slice(0, 600),
+        storageContainer: String(banner?.storageContainer || '').trim().slice(0, 100)
       }
     }
     if (req.body.visibility !== undefined) {

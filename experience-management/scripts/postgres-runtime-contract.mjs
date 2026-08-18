@@ -23,7 +23,7 @@ const BASE_RUNTIME_EXTENSION_TABLES = Object.freeze([
   'assistant_audit_events'
 ]);
 
-export const LATEST_RUNTIME_SCHEMA_VERSION = 30;
+export const LATEST_RUNTIME_SCHEMA_VERSION = 32;
 
 export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VERSION) {
   const tables = [...BASE_RUNTIME_EXTENSION_TABLES];
@@ -130,6 +130,16 @@ export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VE
   if (runtimeVersion >= 30) {
     tables.push('journey_stage_reprojection_runs','journey_stage_reprojection_attempts',
       'journey_stage_reprojection_checkpoints','journey_stage_reprojection_audit_events');
+  }
+  if (runtimeVersion >= 31) {
+    tables.push('journey_identity_profiles','journey_identity_bindings','journey_identity_merges',
+      'journey_identity_memberships','journey_identity_groups','journey_identity_source_facts',
+      'journey_identity_audit_facts','journey_identity_profile_tombstones',
+      'journey_identity_identifier_tombstones','journey_identity_processed_commands',
+      'journey_profile_timeline_events','journey_identity_sessions','journey_identity_segments',
+      'journey_identity_segment_versions','journey_identity_segment_memberships',
+      'journey_profile_privacy_states','journey_profile_export_jobs','journey_profile_privacy_jobs',
+      'journey_identity_correction_runs');
   }
   return tables;
 }
@@ -5120,6 +5130,29 @@ export async function assertRuntimePrivileges(query, runtimeRole, options = {}) 
       ['journey_stage_reprojection_attempts', true, true, false, false],
       ['journey_stage_reprojection_checkpoints', true, true, true, false],
       ['journey_stage_reprojection_audit_events', true, true, false, false]
+    );
+  }
+  if (privilegeRuntimeVersion >= 31) {
+    expectations.push(
+      ['journey_identity_profiles', true, true, true, false],
+      ['journey_identity_bindings', true, true, true, true],
+      ['journey_identity_merges', true, true, false, false],
+      ['journey_identity_memberships', true, true, true, true],
+      ['journey_identity_groups', true, true, true, false],
+      ['journey_identity_source_facts', true, true, false, false],
+      ['journey_identity_audit_facts', true, true, false, false],
+      ['journey_identity_profile_tombstones', true, true, false, false],
+      ['journey_identity_identifier_tombstones', true, true, false, false],
+      ['journey_identity_processed_commands', true, true, false, false],
+      ['journey_profile_timeline_events', true, true, false, true],
+      ['journey_identity_sessions', true, true, true, true],
+      ['journey_identity_segments', true, true, true, false],
+      ['journey_identity_segment_versions', true, true, true, false],
+      ['journey_identity_segment_memberships', true, true, true, true],
+      ['journey_profile_privacy_states', true, true, true, false],
+      ['journey_profile_export_jobs', true, true, true, true],
+      ['journey_profile_privacy_jobs', true, true, true, false],
+      ['journey_identity_correction_runs', true, true, true, false]
     );
   }
   for (const [table, select, insert, update, remove] of expectations) {

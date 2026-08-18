@@ -1,10 +1,37 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
+  clearStoragePlatformConfigurationCache,
   hydrateAzureSpeechConfiguration,
   hydrateCloudinaryConfiguration,
-  hydratePlatformConfiguration
+  hydratePlatformConfiguration,
+  resolveStoragePlatformConfiguration
 } = require('../services/platformConfigurationClient');
+
+test('People Transitions requests its independently switchable storage policy', async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; clearStoragePlatformConfigurationCache(); });
+  clearStoragePlatformConfigurationCache();
+  global.fetch = async (url, options) => {
+    assert.match(String(url), /platform-integrations\/storage\/people-transitions$/u);
+    assert.equal(options.headers['x-seemplify-service'], 'recruiter');
+    return { ok: true, json: async () => ({
+      configured: true,
+      solution: 'people-transitions',
+      defaultProvider: 'cloudinary',
+      providers: { cloudinary: { configured: true }, azureBlob: { configured: true } }
+    }) };
+  };
+  const configuration = await resolveStoragePlatformConfiguration({
+    environment: {
+      NODE_ENV: 'test',
+      IDP_PLATFORM_INTEGRATION_HMAC_SECRET: 'test-only-platform-service-secret-material-123456'
+    },
+    solution: 'people-transitions',
+    force: true
+  });
+  assert.equal(configuration.solution, 'people-transitions');
+});
 
 test('Recruiter hydrates AI Interview speech settings from signed Identity configuration', async (t) => {
   const originalFetch = global.fetch;

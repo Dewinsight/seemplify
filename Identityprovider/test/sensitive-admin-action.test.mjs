@@ -74,3 +74,11 @@ test('Cloudinary environment-variable reveal uses the same privileged short-live
   assert.match(view, /API environment variable[\s\S]*admin\?\.isSuperAdmin[\s\S]*Reveal saved variable/u)
   assert.match(view, /X-Seemplify-Admin-Action[\s\S]*reveal-cloudinary-url/u)
 })
+
+test('Azure Blob key reveal uses the privileged short-lived contract', () => {
+  const route = fs.readFileSync(new URL('../src/routes/adminViews.js', import.meta.url), 'utf8')
+  const view = fs.readFileSync(new URL('../src/views/admin/media-ai-integration.ejs', import.meta.url), 'utf8')
+  assert.match(route, /\/api\/integrations\/media-ai\/azure-blob\/reveal[\s\S]*requireSuperAdmin[\s\S]*disableSecretResponseCaching[\s\S]*auditLog\('reveal_azure_blob_platform_credential'\)[\s\S]*requireSensitiveAdminAction\('reveal-azure-storage-key'\)/u)
+  assert.match(view, /Azure Blob Storage[\s\S]*admin\?\.isSuperAdmin[\s\S]*Reveal saved key/u)
+  assert.match(view, /X-Seemplify-Admin-Action[\s\S]*reveal-azure-storage-key/u)
+})

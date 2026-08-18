@@ -43,6 +43,7 @@ import {
 import { templates } from './templates.js';
 import { esignPublicRouter, esignRecipientRouter, esignRouter } from './esignRoutes.js';
 import { getKnowledgeRuntimeStatus } from './knowledgeClient.js';
+import { removeStoredFile, storeBuffer, type StoredFile } from './storageService.js';
 import { supportsKnowledgeContext } from './knowledgeContext.js';
 import { knowledgeJobRunner } from './knowledgeJobs.js';
 import {
@@ -321,6 +322,7 @@ function uploadResponse(row: any, publicToken?: string) {
     mimeType: row.mime_type,
     size: Number(row.size),
     url,
+    storageProvider: row.storage_provider || 'local',
     transcriptionState: /^(audio|video)\//.test(row.mime_type) ? 'transcript_required' : 'not_applicable'
   };
 }
@@ -366,15 +368,30 @@ function allowPublicUploadAttempt(key: string) {
   return true;
 }
 
+type UploadStorageRow = {
+  id?: string; stored_filename: string; storage_provider?: 'local' | 'cloudinary' | 'azure-blob'; storage_key?: string;
+  storage_container?: string; storage_resource_type?: string; storage_url?: string;
+};
+
 function purgeExpiredPublicUploads() {
   const cutoff = new Date().toISOString();
-  const expired = db.prepare(`SELECT id,stored_filename FROM uploads
+  const expired = db.prepare(`SELECT id,stored_filename,storage_provider,storage_key,storage_container,storage_resource_type,storage_url FROM uploads
     WHERE response_id IS NULL AND expires_at IS NOT NULL AND expires_at<=? LIMIT 500`)
-    .all(cutoff) as Array<{ id: string; stored_filename: string }>;
+    .all(cutoff) as Array<UploadStorageRow & { id: string }>;
   const remove = db.prepare(`DELETE FROM uploads
     WHERE id=? AND response_id IS NULL AND expires_at IS NOT NULL AND expires_at<=?`);
   for (const row of expired) {
-    if (remove.run(row.id, cutoff).changes) removeUploadedFile(path.resolve(config.uploadDir, row.stored_filename));
+    if (remove.run(row.id, cutoff).changes) {
+      if (row.storage_provider && row.storage_provider !== 'local') {
+        void removeStoredFile({
+          storageProvider: row.storage_provider,
+          storageKey: row.storage_key,
+          storageContainer: row.storage_container,
+          storageResourceType: row.storage_resource_type,
+          storageUrl: row.storage_url
+        } as StoredFile).catch((error) => console.error('Expired upload cleanup failed:', error));
+      } else removeUploadedFile(path.resolve(config.uploadDir, row.stored_filename));
+    }
   }
 }
 
@@ -447,6 +464,11 @@ function publicAnswerUploadRows(survey: Survey, collectorId: string, spaceId: st
 }
 
 function sendUploadContent(response: express.Response, row: any) {
+  if (row.storage_provider && row.storage_provider !== 'local' && row.storage_url) {
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    return response.redirect(302, String(row.storage_url));
+  }
   const resolved = path.resolve(config.uploadDir, String(row.stored_filename));
   const root = `${path.resolve(config.uploadDir)}${path.sep}`.toLowerCase();
   if (!resolved.toLowerCase().startsWith(root) || !fs.existsSync(resolved)) return response.status(404).json({ error: 'Upload not found.' });
@@ -1552,12 +1574,22 @@ app.put('/api/surveys/:id', (request, response) => {
 app.delete('/api/surveys/:id', (request, response) => {
   const id = String(request.params.id);
   const space = authenticatedSpace(request);
-  const files = db.prepare(`SELECT u.stored_filename FROM uploads u JOIN collectors c ON c.id=u.collector_id
-    WHERE c.survey_id=? AND u.space_id=?`).all(id, space.id) as Array<{ stored_filename: string }>;
+  const files = db.prepare(`SELECT u.stored_filename,u.storage_provider,u.storage_key,u.storage_container,u.storage_resource_type,u.storage_url FROM uploads u JOIN collectors c ON c.id=u.collector_id
+    WHERE c.survey_id=? AND u.space_id=?`).all(id, space.id) as UploadStorageRow[];
   queueJourneyMetricRebuildsForSurvey({ spaceId: space.id, surveyId: id, reason: 'source_deleted',
     idempotencyPrefix: `survey-deleted:${id}`, actorUserId: authenticatedUser(request).id });
   if (!deleteSurvey(id, space.id)) return response.status(404).json({ error: 'Survey not found.' });
-  for (const file of files) removeUploadedFile(path.resolve(config.uploadDir, file.stored_filename));
+  for (const file of files) {
+    if (file.storage_provider && file.storage_provider !== 'local') {
+      void removeStoredFile({
+        storageProvider: file.storage_provider,
+        storageKey: file.storage_key,
+        storageContainer: file.storage_container,
+        storageResourceType: file.storage_resource_type,
+        storageUrl: file.storage_url
+      } as StoredFile).catch((error) => console.error('Survey upload cleanup failed:', error));
+    } else removeUploadedFile(path.resolve(config.uploadDir, file.stored_filename));
+  }
   return response.status(204).end();
 });
 app.post('/api/surveys/:id/publish', (request, response) => {
@@ -1689,24 +1721,35 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
   return response.status(201).json({ responseId: stored.id, status: stored.status, thankYouMessage: survey.thankYouMessage });
 });
 
-app.post('/api/public/collectors/:slug/uploads', admitPublicUpload, upload.single('file'), (request, response) => {
+app.post('/api/public/collectors/:slug/uploads', admitPublicUpload, upload.single('file'), async (request, response) => {
   if (!request.file) return response.status(400).json({ error: 'No supported file was uploaded.' });
   const { collector, spaceId, questionId } = response.locals.publicUpload as { collector: Collector; spaceId: string; questionId: string };
   const id = crypto.randomUUID();
   const token = crypto.randomBytes(32).toString('base64url');
   const timestamp = new Date();
+  let stored: StoredFile | null = null;
   try {
+    stored = await storeBuffer(fs.readFileSync(request.file.path), {
+      fileName: request.file.originalname,
+      mimeType: request.file.mimetype,
+      folder: `experience/public-uploads/${spaceId}`
+    });
     db.prepare(`INSERT INTO uploads
-      (id,space_id,collector_id,created_by_user_id,question_id,response_id,stored_filename,original_name,mime_type,size,access_token_hash,expires_at,claimed_at,created_at)
-      VALUES (?,?,?,NULL,?,NULL,?,?,?,?,?,?,NULL,?)`).run(
-      id, spaceId, collector.id, questionId, request.file.filename, path.basename(request.file.originalname).slice(0, 255),
+      (id,space_id,collector_id,created_by_user_id,question_id,response_id,stored_filename,storage_provider,storage_key,storage_container,storage_resource_type,storage_url,original_name,mime_type,size,access_token_hash,expires_at,claimed_at,created_at)
+      VALUES (?,?,?,NULL,?,NULL,?,?,?,?,?,?,?,?,?,?,?,NULL,?)`).run(
+      id, spaceId, collector.id, questionId, request.file.filename,
+      stored.storageProvider, stored.storageKey, stored.storageContainer || null, stored.storageResourceType || null, stored.storageUrl,
+      path.basename(request.file.originalname).slice(0, 255),
       request.file.mimetype, request.file.size, crypto.createHash('sha256').update(token).digest('hex'),
       new Date(timestamp.getTime() + 24 * 60 * 60_000).toISOString(), timestamp.toISOString()
     );
+    // Keep the validated local extraction cache for processors that require a
+    // filesystem path; the managed provider remains the canonical copy.
     const row = db.prepare('SELECT * FROM uploads WHERE id=?').get(id);
     return response.status(201).json(uploadResponse(row, token));
   } catch (error) {
     removeUploadedFile(request.file.path);
+    if (stored) await removeStoredFile(stored).catch(() => undefined);
     return sendError(response, error, 500);
   }
 });
@@ -1719,22 +1762,33 @@ app.get('/api/public/uploads/:id/:token', noStore, (request, response) => {
   return row ? sendUploadContent(response, row) : response.status(404).json({ error: 'Upload not found.' });
 });
 
-app.post('/api/uploads', upload.single('file'), (request, response) => {
+app.post('/api/uploads', upload.single('file'), async (request, response) => {
   if (!request.file) return response.status(400).json({ error: 'No supported file was uploaded.' });
   const space = authenticatedSpace(request);
   const user = authenticatedUser(request);
   const id = crypto.randomUUID();
+  let stored: StoredFile | null = null;
   try {
+    stored = await storeBuffer(fs.readFileSync(request.file.path), {
+      fileName: request.file.originalname,
+      mimeType: request.file.mimetype,
+      folder: `experience/uploads/${space.id}`
+    });
     db.prepare(`INSERT INTO uploads
-      (id,space_id,collector_id,created_by_user_id,stored_filename,original_name,mime_type,size,access_token_hash,created_at)
-      VALUES (?,?,NULL,?,?,?,?,?,NULL,?)`).run(
-      id, space.id, user.id, request.file.filename, path.basename(request.file.originalname).slice(0, 255),
+      (id,space_id,collector_id,created_by_user_id,stored_filename,storage_provider,storage_key,storage_container,storage_resource_type,storage_url,original_name,mime_type,size,access_token_hash,created_at)
+      VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?,?,NULL,?)`).run(
+      id, space.id, user.id, request.file.filename,
+      stored.storageProvider, stored.storageKey, stored.storageContainer || null, stored.storageResourceType || null, stored.storageUrl,
+      path.basename(request.file.originalname).slice(0, 255),
       request.file.mimetype, request.file.size, new Date().toISOString()
     );
+    // Keep the validated local extraction cache for journey/media processors;
+    // lifecycle cleanup removes it together with the canonical provider copy.
     const row = db.prepare('SELECT * FROM uploads WHERE id=?').get(id);
     return response.status(201).json(uploadResponse(row));
   } catch (error) {
     removeUploadedFile(request.file.path);
+    if (stored) await removeStoredFile(stored).catch(() => undefined);
     return sendError(response, error, 500);
   }
 });

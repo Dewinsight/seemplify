@@ -12,9 +12,11 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@azure/storage-blob": "^12.28.0",
     "@openai/codex": "0.146.0",
     "@seemplify/journey-event-protocol": "0.1.0",
     "better-sqlite3": "^12.2.0",
+    "cloudinary": "^2.5.1",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "helmet": "^8.1.0",

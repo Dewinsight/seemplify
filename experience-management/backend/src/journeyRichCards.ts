@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 import { db } from './database.js';
+import { removeStoredFile, type StoredFile } from './storageService.js';
 import {
   assertSubscriptionFeature, assertSubscriptionQuota
 } from './subscriptionEntitlements.js';
@@ -320,6 +321,11 @@ function ensureSqliteSchema() {
       space_id TEXT NOT NULL,
       source_upload_id TEXT NOT NULL,
       stored_filename TEXT NOT NULL CHECK(length(stored_filename) BETWEEN 1 AND 255),
+      storage_provider TEXT NOT NULL DEFAULT 'local',
+      storage_key TEXT,
+      storage_container TEXT,
+      storage_resource_type TEXT,
+      storage_url TEXT,
       expected_sha256 TEXT NOT NULL CHECK(length(expected_sha256)=64 AND expected_sha256 NOT GLOB '*[^a-f0-9]*'),
       expected_byte_size INTEGER NOT NULL CHECK(expected_byte_size>=0),
       state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','processing','failed','completed')),
@@ -373,6 +379,15 @@ function ensureSqliteSchema() {
 }
 
 ensureSqliteSchema();
+
+if (db.provider === 'sqlite') {
+  const purgeColumns = new Set((db.prepare('PRAGMA table_info(journey_asset_blob_purge_outbox)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!purgeColumns.has('storage_provider')) db.exec("ALTER TABLE journey_asset_blob_purge_outbox ADD COLUMN storage_provider TEXT NOT NULL DEFAULT 'local'");
+  if (!purgeColumns.has('storage_key')) db.exec('ALTER TABLE journey_asset_blob_purge_outbox ADD COLUMN storage_key TEXT');
+  if (!purgeColumns.has('storage_container')) db.exec('ALTER TABLE journey_asset_blob_purge_outbox ADD COLUMN storage_container TEXT');
+  if (!purgeColumns.has('storage_resource_type')) db.exec('ALTER TABLE journey_asset_blob_purge_outbox ADD COLUMN storage_resource_type TEXT');
+  if (!purgeColumns.has('storage_url')) db.exec('ALTER TABLE journey_asset_blob_purge_outbox ADD COLUMN storage_url TEXT');
+}
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -1277,7 +1292,7 @@ function blobPurgeErrorFingerprint(error: unknown) {
  * unlink is harmless: the expired lease is reclaimed and `force` removal is
  * idempotent. Unexpected replacement bytes are never deleted.
  */
-export function processJourneyAssetBlobPurgeOutbox(input: {
+export async function processJourneyAssetBlobPurgeOutbox(input: {
   asOf?: string;
   limit?: number;
   removeFile?: JourneyBlobPurgeFileRemover;
@@ -1312,6 +1327,14 @@ export function processJourneyAssetBlobPurgeOutbox(input: {
         }
         removeFile(target);
       }
+      if (receipt.storage_provider !== 'local' && receipt.storage_key) {
+        const removed = await removeStoredFile({
+          storageProvider: receipt.storage_provider as StoredFile['storageProvider'],
+          storageKey: String(receipt.storage_key), storageContainer: receipt.storage_container || undefined,
+          storageResourceType: receipt.storage_resource_type || undefined, storageUrl: receipt.storage_url || undefined
+        });
+        if (!removed) throw new Error('Managed journey asset could not be removed.');
+      }
       const finishedAt = nowIso();
       completed += db.prepare(`UPDATE journey_asset_blob_purge_outbox
         SET state='completed',completed_at=?,lease_expires_at=NULL,last_error_fingerprint=NULL,updated_at=?
@@ -1331,7 +1354,7 @@ export function processJourneyAssetBlobPurgeOutbox(input: {
   return { claimed: candidates.length, completed, failed, failedReceiptIds };
 }
 
-export function purgeExpiredJourneyCardAssets(asOf = nowIso(), options: {
+export async function purgeExpiredJourneyCardAssets(asOf = nowIso(), options: {
   removeFile?: JourneyBlobPurgeFileRemover;
 } = {}) {
   const outcome = db.transaction(() => {
@@ -1358,19 +1381,21 @@ export function purgeExpiredJourneyCardAssets(asOf = nowIso(), options: {
       if (deleted === 1) {
         const receiptId = crypto.randomUUID(); const queuedAt = asOf;
         db.prepare(`INSERT INTO journey_asset_blob_purge_outbox
-          (id,space_id,source_upload_id,stored_filename,expected_sha256,expected_byte_size,state,attempt_count,
+          (id,space_id,source_upload_id,stored_filename,storage_provider,storage_key,storage_container,storage_resource_type,storage_url,
+            expected_sha256,expected_byte_size,state,attempt_count,
             last_error_fingerprint,next_attempt_at,lease_expires_at,completed_at,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,'pending',0,NULL,?,NULL,NULL,?,?)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',0,NULL,?,NULL,NULL,?,?)
           ON CONFLICT(source_upload_id,space_id) DO NOTHING`).run(
-          receiptId, row.space_id, row.source_upload_id, String(upload.stored_filename), String(row.sha256),
-          Number(row.byte_size), queuedAt, queuedAt, queuedAt
+          receiptId, row.space_id, row.source_upload_id, String(upload.stored_filename), upload.storage_provider || 'local',
+          upload.storage_key || null, upload.storage_container || null, upload.storage_resource_type || null, upload.storage_url || null,
+          String(row.sha256), Number(row.byte_size), queuedAt, queuedAt, queuedAt
         );
         blobsScheduled += 1;
       } else blobsRetained += 1;
     }
     return { purged, blobsScheduled, blobsRetained };
   })();
-  const processed = processJourneyAssetBlobPurgeOutbox({ asOf, removeFile: options.removeFile });
+  const processed = await processJourneyAssetBlobPurgeOutbox({ asOf, removeFile: options.removeFile });
   return {
     ...outcome,
     blobsPurged: processed.completed,

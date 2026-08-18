@@ -20,6 +20,7 @@ import {
   type KnowledgeCitation, type KnowledgeDocumentRecord, type KnowledgeJobRecord
 } from './knowledgeRepository.js';
 import { resolveRequestSpace, SpaceError } from './spaces.js';
+import { removeStoredFile, storeBuffer, type StoredFile } from './storageService.js';
 import { assertSubscriptionFeature, consumeDirectAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import { AiProviderError } from './aiProviderError.js';
 
@@ -314,13 +315,19 @@ router.post('/:id/documents', (request, response, next) => {
   knowledgeUpload.array('files', 25)(request, response, (error) => error ? next(error) : void uploadDocuments(request, response));
 });
 
-router.post('/:id/agreements/:envelopeId/artifacts/:artifactId', (request, response) => {
+router.post('/:id/agreements/:envelopeId/artifacts/:artifactId', async (request, response) => {
+  let stored: StoredFile | null = null;
   try {
     const { user, space, knowledgeBase } = requireVisibleBase(request);
     assertSubscriptionFeature(space.id, 'agreements');
     const artifact = getOwnedCompletedDocumentArtifact(
       String(request.params.envelopeId), String(request.params.artifactId), space.id
     );
+    stored = await storeBuffer(artifact.bytes, {
+      fileName: artifact.fileName,
+      mimeType: artifact.mimeType,
+      folder: `experience/knowledge/${space.id}/${knowledgeBase.id}`
+    });
     const result = createKnowledgeBinaryDocument({
       spaceId: space.id,
       knowledgeBaseId: knowledgeBase.id,
@@ -328,6 +335,7 @@ router.post('/:id/agreements/:envelopeId/artifacts/:artifactId', (request, respo
       originalName: artifact.fileName,
       mimeType: artifact.mimeType,
       bytes: artifact.bytes,
+      storage: stored,
       idempotencyKey: requestIdempotencyKey(request),
       metadata: {
         source: 'signed_agreement',
@@ -336,6 +344,10 @@ router.post('/:id/agreements/:envelopeId/artifacts/:artifactId', (request, respo
         artifactSha256: artifact.sha256
       }
     });
+    if (result.deduplicated) {
+      await removeStoredFile(stored);
+      stored = null;
+    }
     recordEsignAudit(artifact.envelopeId, 'knowledge.document_added', {
       userId: user.id, actorType: 'user', ip: request.ip || null,
       userAgent: String(request.headers['user-agent'] || '').slice(0, 500) || null
@@ -351,12 +363,16 @@ router.post('/:id/agreements/:envelopeId/artifacts/:artifactId', (request, respo
       deduplicated: result.deduplicated,
       statusUrl: result.job ? `/api/knowledge-bases/${knowledgeBase.id}/indexing-jobs` : null
     });
-  } catch (error) { return sendKnowledgeError(response, error); }
+  } catch (error) {
+    if (stored) await removeStoredFile(stored).catch(() => false);
+    return sendKnowledgeError(response, error);
+  }
 });
 
 async function uploadDocuments(request: express.Request, response: express.Response) {
   const files = (request.files || []) as Express.Multer.File[];
   const adopted = new Set<string>();
+  const managed = new Map<string, StoredFile>();
   try {
     const { user, space, knowledgeBase } = requireVisibleBase(request);
     if (!files.length) throw new KnowledgeError('Choose at least one supported document.', 400, 'KNOWLEDGE_DOCUMENT_REQUIRED');
@@ -371,18 +387,34 @@ async function uploadDocuments(request: express.Request, response: express.Respo
       if (error instanceof KnowledgeError) throw error;
     }
     const baseKey = requestIdempotencyKey(request);
-    const preflight = await Promise.all(files.map(async (file) => ({
-      file, validated: validateStagedFile(file), sha256: await sha256File(file.path)
-    })));
-    const results = createKnowledgeDocuments(preflight.map(({ file, validated, sha256 }) => ({
+    const preflight = [];
+    for (const file of files) {
+      const validated = validateStagedFile(file);
+      const sha256 = await sha256File(file.path);
+      const storage = await storeBuffer(fs.readFileSync(file.path), {
+        fileName: validated.originalName,
+        mimeType: validated.mimeType,
+        folder: `experience/knowledge/${space.id}/${knowledgeBase.id}`
+      });
+      managed.set(file.path, storage);
+      preflight.push({ file, validated, sha256, storage });
+    }
+    const results = createKnowledgeDocuments(preflight.map(({ file, validated, sha256, storage }) => ({
         spaceId: space.id, knowledgeBaseId: knowledgeBase.id, userId: user.id, storedFilename: file.filename,
         originalName: validated.originalName, mimeType: validated.mimeType, sizeBytes: file.size, sha256, metadata,
-        idempotencyKey: baseKey ? `${baseKey}:${knowledgeBase.id}:${sha256}` : undefined
+        idempotencyKey: baseKey ? `${baseKey}:${knowledgeBase.id}:${sha256}` : undefined, storage
       })));
     const accepted = [];
     for (let index = 0; index < preflight.length; index += 1) {
       const { file } = preflight[index]; const result = results[index];
-      if (result.deduplicated) removeStagedFile(file.path); else adopted.add(path.resolve(file.path));
+      if (result.deduplicated) {
+        removeStagedFile(file.path);
+        await removeStoredFile(managed.get(file.path) || {});
+        managed.delete(file.path);
+      } else {
+        adopted.add(path.resolve(file.path));
+        managed.delete(file.path);
+      }
       accepted.push({ document: documentResponse(result.document, result.job ? [result.job] : []), job: result.job,
         deduplicated: result.deduplicated, statusUrl: result.job ? `/api/knowledge-bases/${knowledgeBase.id}/indexing-jobs` : null });
       if (result.job) publishEvent('knowledge-job', result.job, space.id, knowledgeJobAudienceUserId(result.job));
@@ -391,6 +423,7 @@ async function uploadDocuments(request: express.Request, response: express.Respo
     return response.status(202).json({ accepted, documents: accepted.map((item) => item.document),
       jobs: accepted.map((item) => item.job).filter(Boolean) });
   } catch (error) {
+    await Promise.all(Array.from(managed.values()).map((stored) => removeStoredFile(stored).catch(() => false)));
     for (const file of files) if (!adopted.has(path.resolve(file.path))) removeStagedFile(file.path);
     return sendKnowledgeError(response, error);
   }

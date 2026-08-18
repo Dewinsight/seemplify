@@ -6967,6 +6967,15 @@ const resolveOnboardingDocumentPayload = (item, requestedVersion) => {
     return {
       docUrl,
       docPublicId: resolvedVersion === 'signed' ? signedPublicId : originalPublicId,
+      docStorageProvider: resolvedVersion === 'signed'
+        ? (item.data?.esign?.signedStorageProvider || 'cloudinary')
+        : (item.config?.document?.provider || 'cloudinary'),
+      docStorageKey: resolvedVersion === 'signed'
+        ? (item.data?.esign?.signedStorageKey || signedPublicId)
+        : (item.config?.document?.storageKey || originalPublicId),
+      docStorageContainer: resolvedVersion === 'signed'
+        ? item.data?.esign?.signedStorageContainer
+        : item.config?.document?.storageContainer,
       docType: 'pdf',
       subtitle: resolvedVersion === 'signed' ? 'Signed document' : 'Original document',
       docMimeType: normalizeMimeType(item.data?.esign?.signedMimeType) || 'application/pdf',
@@ -6990,6 +6999,9 @@ const resolveOnboardingDocumentPayload = (item, requestedVersion) => {
   return {
     docUrl,
     docPublicId,
+    docStorageProvider: upload.storageProvider || upload.provider || 'cloudinary',
+    docStorageKey: upload.storageKey || docPublicId,
+    docStorageContainer: upload.storageContainer,
     docType: isPdf ? 'pdf' : (isImage ? 'image' : 'unknown'),
     subtitle: 'Uploaded document',
     docMimeType: normalizedMimeType || 'application/octet-stream',
@@ -7374,6 +7386,9 @@ const resolveOnboardingBackUrl = (backParam, isManager, organizationId) => {
 }
 
 const buildOnboardingCloudinaryDownloadUrl = (payload = {}) => {
+  if (payload.docStorageProvider === 'azure-blob') {
+    return ''
+  }
   const publicId = (payload.docPublicId || inferCloudinaryPublicIdFromUrl(payload.docUrl)).toString().trim()
   if (!publicId || !isCloudinaryConfigured()) {
     return ''

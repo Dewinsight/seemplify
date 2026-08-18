@@ -1,4 +1,5 @@
 const cloudinary = require('cloudinary').v2;
+const { createStorageService } = require('./storageService');
 
 class CloudinaryUploadService {
   constructor() {
@@ -8,6 +9,7 @@ class CloudinaryUploadService {
       api_key: process.env.CLOUDINARY_API_KEY,
       api_secret: process.env.CLOUDINARY_API_SECRET,
     });
+    this.storage = createStorageService();
   }
 
   /**
@@ -19,11 +21,8 @@ class CloudinaryUploadService {
    */
   async uploadFile(filePath, fileType, options = {}) {
     try {
-      console.log('☁️ Starting Cloudinary upload...');
+      console.log('Starting managed storage upload...');
       console.log(`File type: ${fileType}`);
-      console.log(`File path: ${filePath}`);
-      
-      let cloudinaryUploadResult;
       
       const deliveryType = options.privateAsset ? 'authenticated' : 'upload';
       const commonOptions = {
@@ -36,70 +35,37 @@ class CloudinaryUploadService {
         ...(options.publicId ? { public_id: String(options.publicId).replace(/[^A-Za-z0-9_-]/g, '_') } : {})
       };
 
-      // Handle different file types with appropriate resource_type
-      if (['image/jpeg', 'image/png', 'image/tiff'].includes(fileType)) {
-        cloudinaryUploadResult = await cloudinary.uploader.upload(filePath, { 
-          ...commonOptions,
-          resource_type: 'image',
-          folder: 'resumes/images' // Organize files in folders
-        });
-        
-      } else if (fileType === 'application/pdf') {
-        cloudinaryUploadResult = await cloudinary.uploader.upload(filePath, {
-          ...commonOptions,
-          resource_type: 'raw',
-          folder: 'resumes/documents',
-          format: 'pdf' // Explicitly set format for PDFs
-        });
-        
-      } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        cloudinaryUploadResult = await cloudinary.uploader.upload(filePath, {
-          ...commonOptions,
-          resource_type: 'raw',
-          folder: 'resumes/documents',
-          format: 'docx'
-        });
-        
-      } else if (fileType === 'application/msword') {
-        cloudinaryUploadResult = await cloudinary.uploader.upload(filePath, {
-          ...commonOptions,
-          resource_type: 'raw',
-          folder: 'resumes/documents',
-          format: 'doc'
-        });
-        
-      } else {
-        // Fallback for any other file types
-        cloudinaryUploadResult = await cloudinary.uploader.upload(filePath, {
-          ...commonOptions,
-          resource_type: 'auto', // Let Cloudinary detect
-          folder: 'resumes/other'
-        });
-      }
-      
-      console.log('✅ Cloudinary upload successful!');
-      console.log(`Resume URL: ${cloudinaryUploadResult.secure_url}`);
-      
-      const resumeUrl = options.privateAsset
-        ? this.getSignedUrl(cloudinaryUploadResult.public_id, {
-            resourceType: cloudinaryUploadResult.resource_type,
-            deliveryType,
-            format: cloudinaryUploadResult.format
-          })
-        : cloudinaryUploadResult.secure_url;
+      const image = ['image/jpeg', 'image/png', 'image/tiff'].includes(fileType);
+      const document = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'].includes(fileType);
+      const resourceType = image ? 'image' : document ? 'raw' : 'auto';
+      const folder = image ? 'resumes/images' : document ? 'resumes/documents' : 'resumes/other';
+      const stored = await this.storage.uploadFile(filePath, {
+        fileName: options.fileName,
+        mimeType: fileType,
+        folder,
+        storageKey: options.publicId ? `${folder}/${String(options.publicId).replace(/[^A-Za-z0-9_-]/g, '_')}` : undefined,
+        resourceType,
+        cloudinaryOptions: commonOptions
+      });
+      const resumeUrl = stored.provider === 'cloudinary' && options.privateAsset
+        ? this.getSignedUrl(stored.storageKey, { resourceType: stored.resourceType, deliveryType, format: stored.format })
+        : stored.url;
       return {
         success: true,
         resumeUrl,
-        publicId: cloudinaryUploadResult.public_id,
-        resourceType: cloudinaryUploadResult.resource_type,
-        deliveryType,
-        format: cloudinaryUploadResult.format,
-        bytes: cloudinaryUploadResult.bytes,
-        uploadResult: cloudinaryUploadResult
+        publicId: stored.storageKey,
+        storageKey: stored.storageKey,
+        storageProvider: stored.storageProvider,
+        storageContainer: stored.storageContainer || null,
+        resourceType: stored.resourceType,
+        deliveryType: stored.deliveryType || deliveryType,
+        format: stored.format,
+        bytes: stored.bytes,
+        uploadResult: stored
       };
       
     } catch (error) {
-      console.error('❌ Cloudinary upload failed:', error.message);
+      console.error('Managed storage upload failed:', error.message);
       
       return {
         success: false,
@@ -117,20 +83,18 @@ class CloudinaryUploadService {
    * @param {string} deliveryType - Delivery type (upload, authenticated, private)
    * @returns {Promise<Object>} - Deletion result
    */
-  async deleteFile(publicId, resourceType = 'raw', deliveryType = 'upload') {
+  async deleteFile(publicId, resourceType = 'raw', deliveryType = 'upload', storage = {}) {
     try {
-      console.log(`🗑️ Deleting file from Cloudinary: ${publicId}`);
-      
-      const result = await cloudinary.uploader.destroy(publicId, {
-        resource_type: resourceType,
-        type: deliveryType
+      const result = await this.storage.remove({
+        storageKey: publicId,
+        resourceType,
+        deliveryType,
+        ...storage
       });
-      
-      console.log('✅ File deleted from Cloudinary');
       return { success: true, result };
       
     } catch (error) {
-      console.error('❌ Error deleting file from Cloudinary:', error.message);
+      console.error('Error deleting managed file:', error.message);
       return { success: false, error: error.message };
     }
   }

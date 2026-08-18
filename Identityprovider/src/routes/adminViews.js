@@ -24,11 +24,14 @@ import {
 } from '../services/nylasPlatformConfigurationService.js'
 import {
   deleteMediaConfiguration,
+  getAzureBlobAdminCredentialReveal,
   getCloudinaryAdminCredentialReveal,
   getAzureSpeechAdminCredentialReveal,
   getMediaConfigurationStatus,
+  saveAzureBlobConfiguration,
   saveAzureSpeechConfiguration,
-  saveCloudinaryConfiguration
+  saveCloudinaryConfiguration,
+  saveStorageDefaults
 } from '../services/mediaPlatformConfigurationService.js'
 import {
   ADMIN_ORGANIZATION_ACTIONS,
@@ -581,6 +584,43 @@ router.post('/integrations/media-ai/azure-speech', requireSuperAdmin, auditLog('
     return res.redirect(`/admin/integrations/media-ai?notice=${encodeURIComponent(error.message || 'Failed to save Azure Speech settings')}&noticeType=error`)
   }
 })
+
+router.post('/integrations/media-ai/azure-blob', requireSuperAdmin, auditLog('update_azure_blob_platform_configuration'), async (req, res) => {
+  try {
+    await saveAzureBlobConfiguration(req.body || {}, req.user._id)
+    return res.redirect('/admin/integrations/media-ai?notice=Azure+Blob+settings+saved')
+  } catch (error) {
+    return res.redirect(`/admin/integrations/media-ai?notice=${encodeURIComponent(error.message || 'Failed to save Azure Blob settings')}&noticeType=error`)
+  }
+})
+
+router.post('/integrations/media-ai/storage-defaults', requireSuperAdmin, auditLog('update_storage_platform_defaults'), async (req, res) => {
+  try {
+    await saveStorageDefaults(req.body || {}, req.user._id)
+    return res.redirect('/admin/integrations/media-ai?notice=Storage+defaults+saved')
+  } catch (error) {
+    return res.redirect(`/admin/integrations/media-ai?notice=${encodeURIComponent(error.message || 'Failed to save storage defaults')}&noticeType=error`)
+  }
+})
+
+router.post(
+  '/api/integrations/media-ai/azure-blob/reveal',
+  requireSuperAdmin,
+  disableSecretResponseCaching,
+  auditLog('reveal_azure_blob_platform_credential'),
+  requireSensitiveAdminAction('reveal-azure-storage-key'),
+  adminRateLimit({ windowMs: 60_000, maxRequests: 6, keyPrefix: 'azure-storage-key-reveal' }),
+  async (_req, res) => {
+    try {
+      return res.json(await getAzureBlobAdminCredentialReveal())
+    } catch (error) {
+      const missing = error.message === 'Azure Storage account key is not configured.'
+      return res.status(missing ? 404 : 500).json({
+        error: missing ? error.message : 'Failed to reveal the Azure Storage account key.'
+      })
+    }
+  }
+)
 
 router.post(
   '/api/integrations/media-ai/cloudinary/reveal',
