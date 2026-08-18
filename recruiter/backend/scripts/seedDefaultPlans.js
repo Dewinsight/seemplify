@@ -26,14 +26,6 @@ function planCredits(code) {
   };
 }
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected...'))
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-  });
-
 // Default plans — list prices $99 → $4,999 / mo (see creditEconomics.js)
 const defaultPlans = [
   {
@@ -176,55 +168,57 @@ const defaultPlans = [
 // Seed function
 async function seedDefaultPlans() {
   try {
-    // Check if we already have default plans
-    const existingPlans = await Plan.find({ isDefault: true });
-    
-    if (existingPlans.length > 0) {
-      console.log(`Found ${existingPlans.length} existing default plans.`);
-      
-      // Update existing plans to ensure they match our defaults
-      for (const planConfig of defaultPlans) {
-        const existingPlan = await Plan.findOne({ code: planConfig.code, isDefault: true });
-        
-        if (existingPlan) {
-          console.log(`Updating existing default plan: ${planConfig.name}`);
-          
-          existingPlan.name = planConfig.name;
-          existingPlan.features = planConfig.features;
-          existingPlan.isPublished = true;
-          existingPlan.isDefault = true;
-          if (planConfig.credits) {
-            existingPlan.credits = planConfig.credits;
-          }
+    let created = 0;
+    let preserved = 0;
+    let updated = 0;
 
-          if (forceSync) {
-            existingPlan.price = planConfig.price;
-            existingPlan.limits = planConfig.limits;
-            console.log(`  (force-sync: price & limits overwritten from defaults)`);
-          } else if (existingPlan.price === 0 || !existingPlan.limits) {
-            existingPlan.price = planConfig.price;
-            existingPlan.limits = planConfig.limits;
-          }
-          
-          await existingPlan.save();
-        } else {
-          console.log(`Creating missing default plan: ${planConfig.name}`);
-          await Plan.create(planConfig);
-        }
+    for (const planConfig of defaultPlans) {
+      const existingPlan = await Plan.findOne({ code: planConfig.code });
+
+      if (!existingPlan) {
+        await Plan.create(planConfig);
+        created += 1;
+        console.log(`Created missing Recruiter plan: ${planConfig.name} (${planConfig.code})`);
+        continue;
       }
-    } else {
-      // No default plans found, create them all
-      console.log('No default plans found. Creating all default plans...');
-      await Plan.insertMany(defaultPlans);
+
+      if (!forceSync) {
+        preserved += 1;
+        console.log(`Preserved existing Recruiter plan: ${existingPlan.name} (${existingPlan.code})`);
+        continue;
+      }
+
+      Object.assign(existingPlan, planConfig);
+      await existingPlan.save();
+      updated += 1;
+      console.log(`Force-synced Recruiter plan: ${planConfig.name} (${planConfig.code})`);
     }
-    
-    console.log('Default plans seeded successfully!');
+
+    console.log(`Recruiter plans seeded: ${created} created, ${preserved} preserved, ${updated} updated.`);
+    return { created, preserved, updated, total: defaultPlans.length };
   } catch (error) {
     console.error('Error seeding default plans:', error);
-  } finally {
-    mongoose.connection.close();
+    throw error;
   }
 }
 
-// Run the seed function
-seedDefaultPlans();
+async function main() {
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!uri) throw new Error('MONGODB_URI or MONGO_URI is required');
+  await mongoose.connect(uri);
+  console.log('MongoDB connected...');
+  try {
+    await seedDefaultPlans();
+  } finally {
+    await mongoose.connection.close();
+  }
+}
+
+if (require.main === module) {
+  main().catch(error => {
+    console.error('Recruiter plan seed failed:', error.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { defaultPlans, seedDefaultPlans };
