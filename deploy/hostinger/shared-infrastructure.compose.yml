@@ -107,6 +107,36 @@ services:
     networks:
       - dokploy-network
 
+  arangodb:
+    image: arangodb@sha256:bf5eabc0fb3a16a13d0d4de00cddfbf2209e3d25630e5331832efb206519ff8f
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - >-
+        export ARANGO_ROOT_PASSWORD="$$(cat /run/seemplify/arango-root)";
+        exec /entrypoint.sh arangod --vector-index
+    volumes:
+      - arangodb_data:/var/lib/arangodb3
+      - /opt/seemplify/secrets/knowledge/arango-root:/run/seemplify/arango-root:ro
+      - /opt/seemplify/secrets/knowledge/arango-app:/run/seemplify/arango-app:ro
+      - /opt/seemplify/secrets/knowledge/arango-provisioner:/run/seemplify/arango-provisioner:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          arangosh --server.endpoint tcp://127.0.0.1:8529
+          --server.username root
+          --server.password "$$(cat /run/seemplify/arango-root)"
+          --javascript.execute-string 'db._version()' >/dev/null 2>&1
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 45s
+    networks:
+      - dokploy-network
+
   experience-postgres:
     image: postgres:17.10-alpine3.23
     restart: unless-stopped
@@ -133,6 +163,7 @@ volumes:
   redis_data:
   weaviate_data:
   qdrant_data:
+  arangodb_data:
   experience_postgres_data:
 
 networks:

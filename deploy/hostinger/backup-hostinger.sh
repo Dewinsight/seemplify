@@ -62,6 +62,7 @@ require_container seemplify-shared-mongodb-1
 require_container seemplify-shared-experience-postgres-1
 require_container seemplify-mail-mariadb-1
 require_container seemplify-shared-redis-1
+require_container seemplify-shared-arangodb-1
 
 docker exec seemplify-shared-mongodb-1 sh -lc \
   'exec mongodump --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip' \
@@ -90,6 +91,7 @@ docker cp seemplify-shared-redis-1:/data/dump.rdb "${DESTINATION}/shared-redis.r
 
 archive_volume seemplify-shared_qdrant_data qdrant-data.tar.gz
 archive_volume seemplify-shared_weaviate_data weaviate-data.tar.gz
+archive_volume seemplify-shared_arangodb_data arangodb-data.tar.gz
 archive_volume seemplify-extended_chatgpt_gateway_data chatgpt-gateway-data.tar.gz
 archive_volume seemplify-extended_experience_runtime experience-runtime.tar.gz
 archive_volume seemplify-workspace_workspace_uploads workspace-uploads.tar.gz

@@ -1,0 +1,118 @@
+name: Provision Experience Knowledge Infrastructure
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-production-deployments
+  cancel-in-progress: false
+
+jobs:
+  provision-arangodb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shared infrastructure compose
+        run: |
+          mkdir -p /tmp/seemplify-secrets/knowledge
+          for name in arango-root arango-app arango-provisioner; do
+            printf 'validation-only-secret-value-with-sufficient-length\n' > "/tmp/seemplify-secrets/knowledge/$name"
+          done
+          sed 's#/opt/seemplify/secrets/knowledge#/tmp/seemplify-secrets/knowledge#g' \
+            deploy/hostinger/shared-infrastructure.compose.yml >/tmp/shared-infrastructure.compose.yml
+          MONGO_ROOT_PASSWORD=validation REDIS_PASSWORD=validation WEAVIATE_API_KEY=validation \
+            QDRANT_API_KEY=validation EXPERIENCE_POSTGRES_OWNER_PASSWORD=validation \
+            docker compose -f /tmp/shared-infrastructure.compose.yml config --quiet
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Upload shared infrastructure definition
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: scp deploy/hostinger/shared-infrastructure.compose.yml "$SSH_USER@$SSH_HOST:/tmp/seemplify-shared-infrastructure-${GITHUB_SHA}.yml"
+      - name: Provision private ArangoDB service
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+          source_file="/tmp/seemplify-shared-infrastructure-$RELEASE_SHA.yml"
+          target_file=/opt/seemplify/deploy/hostinger/shared-infrastructure.compose.yml
+          secret_dir=/opt/seemplify/secrets/knowledge
+          install -d -o root -g root -m 0700 "$secret_dir"
+          for name in arango-root arango-app arango-provisioner; do
+            target="$secret_dir/$name"
+            if [[ ! -s "$target" ]]; then
+              openssl rand -base64 48 | tr -d '\n' >"$target"
+            fi
+            chown root:root "$target"
+            chmod 0600 "$target"
+          done
+          install -o root -g root -m 0644 "$source_file" "$target_file"
+          compose=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env -f "$target_file")
+          "${compose[@]}" config --quiet
+          "${compose[@]}" pull arangodb
+          "${compose[@]}" up -d --no-deps arangodb
+
+          container=seemplify-shared-arangodb-1
+          for _ in $(seq 1 60); do
+            state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
+            [[ "$state" == healthy ]] && break
+            if [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]]; then
+              docker logs --tail 120 "$container" >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+          [[ "$(docker inspect --format '{{.State.Health.Status}}' "$container")" == healthy ]]
+
+          root_password=$(<"$secret_dir/arango-root")
+          app_password=$(<"$secret_dir/arango-app")
+          provisioner_password=$(<"$secret_dir/arango-provisioner")
+          arango_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container")
+          [[ "$arango_ip" =~ ^[0-9a-fA-F:.]+$ ]]
+          arango_url="http://$arango_ip:8529"
+          upsert_user() {
+            local username="$1" password="$2" extra="$3" status
+            payload=$(jq -cn --arg passwd "$password" --arg owner "$extra" \
+              '{passwd:$passwd,active:true,extra:{owner:$owner}}')
+            status=$(curl --silent --show-error --output /tmp/arango-user.json --write-out '%{http_code}' \
+              --user "root:$root_password" \
+              "$arango_url/_db/_system/_api/user/$username")
+            if [[ "$status" == 200 ]]; then
+              curl --fail --silent --show-error --user "root:$root_password" \
+                --header 'content-type: application/json' --request PUT --data "$payload" \
+                "$arango_url/_db/_system/_api/user/$username" >/dev/null
+            else
+              payload=$(jq -cn --arg user "$username" --arg passwd "$password" --arg owner "$extra" \
+                '{user:$user,passwd:$passwd,active:true,extra:{owner:$owner}}')
+              curl --fail --silent --show-error --user "root:$root_password" \
+                --header 'content-type: application/json' --request POST --data "$payload" \
+                "$arango_url/_db/_system/_api/user" >/dev/null
+            fi
+          }
+          upsert_user seemplify_knowledge_app "$app_password" seemplify-experience-knowledge
+          upsert_user seemplify_knowledge_provisioner "$provisioner_password" seemplify-experience-knowledge
+          curl --fail --silent --show-error --user "root:$root_password" \
+            --header 'content-type: application/json' --request PUT --data '{"grant":"rw"}' \
+            "$arango_url/_db/_system/_api/user/seemplify_knowledge_provisioner/database/_system" >/dev/null
+
+          docker run --rm --network dokploy-network curlimages/curl:8.16.0 \
+            --fail --silent --show-error --user "seemplify_knowledge_provisioner:$provisioner_password" \
+            http://arangodb:8529/_db/_system/_api/version >/dev/null
+          rm -f "$source_file" /tmp/arango-user.json
+          printf 'ArangoDB is healthy, private, persistent, and reachable on dokploy-network.\n'
+          REMOTE
