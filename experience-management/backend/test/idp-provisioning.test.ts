@@ -148,6 +148,8 @@ function adminLaunchToken(jti: string) {
 test('production auth routes require IdP and accept a one-time IdP Admin launch', async () => {
   const status = await request(app).get('/api/auth/oidc/status').expect(200);
   assert.deepEqual(status.body, { configured: true, localAuthEnabled: false });
+  const hub = await request(app).get('/api/auth/hub').expect(302);
+  assert.equal(hub.headers.location, 'http://localhost:4000');
   await request(app).post('/api/auth/login').send({}).expect(410)
     .expect(({ body }) => assert.equal(body.code, 'IDENTITY_PROVIDER_REQUIRED'));
 

@@ -168,6 +168,10 @@ export function oidcStatus(_request: Request, response: Response) {
   } catch { return response.json({ configured: false, localAuthEnabled: config.localAuthEnabled }); }
 }
 
+export function goToHub(_request: Request, response: Response) {
+  return response.redirect(config.oidc.issuerUrl);
+}
+
 function decodeAdminToken(token: string) {
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('The administrator launch token is invalid.');

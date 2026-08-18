@@ -47,7 +47,8 @@ test('keeps the Experience personal assistant private, durable, grounded, and hu
     'exact evidence excerpts are frozen before queueing', 'Private to your account within the active space',
     'Human review required', 'connectedConnectionIds', "connection.status === 'connected'",
     'threadConnectionId', 'calendarConnectionId', 'knowledgeBaseIds', 'messagesTruncated', 'confirmDraftDiscard',
-    'Review and send', 'Send this reply?', "confirmation: 'send'", 'Enable replies'
+    'Review and send', 'Send this reply?', "confirmation: 'send'", 'Enable replies',
+    'Go to Hub', '/api/auth/hub'
   ]) assert.match(assistant, new RegExp(feature));
   assert.match(shell, /label: 'Personal assistant'/);
 });

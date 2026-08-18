@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, BookOpenCheck, CalendarDays, CheckSquare, ChevronRight, CircleAlert, Clock3, Copy, FilePenLine,
-  FileText, Inbox, ListTodo, Loader2, MailCheck, MailOpen, MailPlus, MessageSquareText, PanelRightClose,
+  FileText, House, Inbox, ListTodo, Loader2, MailCheck, MailOpen, MailPlus, MessageSquareText, PanelRightClose,
   Paperclip, Plus, RefreshCw, Save, Search, Send, ShieldCheck, Sparkles, Square, Star, Users
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -985,7 +985,10 @@ export function PersonalAssistantPage() {
   return <div className="space-y-3">
     <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
       <div><h1 className="text-2xl font-semibold tracking-tight">Personal assistant</h1><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Read, understand, and reply to important conversations with the selected AI runtime. Every provider action requires your review.</p></div>
-      <Button size="sm" variant="outline" onClick={() => { void loadWorkspace(); void loadThreads(); }}><RefreshCw />Refresh</Button>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" asChild><a href="/api/auth/hub"><House />Go to Hub</a></Button>
+        <Button size="sm" variant="outline" onClick={() => { void loadWorkspace(); void loadThreads(); }}><RefreshCw />Refresh</Button>
+      </div>
     </header>
 
     {error && <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">{error}</div>}

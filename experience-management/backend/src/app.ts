@@ -17,7 +17,7 @@ import {
 import { computeAnalytics } from './analytics.js';
 import { assistantRouter, nylasCallback } from './assistantRoutes.js';
 import { config } from './config.js';
-import { finishIdpAdminSso, finishOidc, oidcLogout, oidcStatus, startOidc } from './oidc.js';
+import { finishIdpAdminSso, finishOidc, goToHub, oidcLogout, oidcStatus, startOidc } from './oidc.js';
 import {
   createCollector, createJourney, createResponse, db, deleteJourney, deleteSurvey, getCollectorBySlug, getJob, getJobForSpace,
   getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJourneyVersionSummaries,
@@ -130,6 +130,7 @@ app.get('/api/auth/oidc/start', noStore, startOidc);
 app.get('/api/auth/oidc/callback', noStore, finishOidc);
 app.get('/api/auth/oidc/logout', noStore, oidcLogout);
 app.get('/api/auth/oidc/status', noStore, oidcStatus);
+app.get('/api/auth/hub', noStore, goToHub);
 app.get('/api/auth/idp-admin', noStore, finishIdpAdminSso);
 if (config.localAuthEnabled) {
   app.post('/api/auth/login', noStore, login);
