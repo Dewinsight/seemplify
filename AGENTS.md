@@ -13,3 +13,11 @@
 - Organization membership and per-app access originate in IdP claims. Downstream applications may mirror that authorization but must not become a second identity authority.
 - Product ChatGPT/Codex integrations use the central Recruiter-hosted shared AI gateway with a service-specific HMAC key and an app-scoped activity allow-list.
 - New or changed IdP/gateway integrations require focused contract tests, production OIDC-start smoke coverage, and an authenticated browser acceptance pass.
+
+## Canonical branches and deployment
+
+- The Seemplify monorepo and the separate Workspace repository both use `main` as their only development, integration, and production deployment branch.
+- Work on the checked-out `main` branch unless the user explicitly requests a separate branch or pull request.
+- Before completion, fetch all refs and confirm every relevant recent task branch has zero commits ahead of `main`; merge relevant work before pushing.
+- A legacy `master` ref may only be fast-forwarded to `main`. Never develop on it, deploy from it, merge it back into `main`, or force-push it.
+- Production workflows must deploy the exact tested `main` commit and verify the live revision plus OIDC/authenticated browser smoke.

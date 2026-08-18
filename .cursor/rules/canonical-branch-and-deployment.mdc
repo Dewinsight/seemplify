@@ -1,0 +1,14 @@
+---
+description: Keep Seemplify and Workspace work and deployments on their canonical main branches
+alwaysApply: true
+---
+
+# Canonical Branch and Deployment
+
+- Use `main` for development, integration, pushes, and production deployments in both repositories.
+- Do not create or switch to another branch unless the user explicitly requests it.
+- Fetch all refs before completion and merge every relevant task branch that is ahead of `main`.
+- Treat `master` only as a legacy fast-forward mirror; never develop on it or deploy from it.
+- Never force-push canonical or mirror refs.
+- Deploy only exact commits that passed the applicable backend, unit, and browser workflow gates.
+- Verify the exact live revision and OIDC/authenticated browser smoke after deployment.
