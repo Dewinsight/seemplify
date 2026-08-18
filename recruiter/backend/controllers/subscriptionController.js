@@ -8,6 +8,7 @@ const pdfService = require('../services/pdfService');
 const path = require('path');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { organizationPlanManagerFilter } = require('../services/subscriptionAuthorizationService');
 
 function documentId(value) {
   return value?._id || value || null;
@@ -227,13 +228,9 @@ exports.createUpgradeRequest = async (req, res) => {
     
     if (requestType === 'organization') {
       // Verify user belongs to this organization
-      const organization = await Organization.findOne({
-        _id: organizationId,
-        $or: [
-          { owner: userId },
-          { members: { $elemMatch: { userId, role: 'admin' } } }
-        ]
-      });
+      const organization = await Organization.findOne(
+        organizationPlanManagerFilter(organizationId, userId)
+      );
 
       if (!organization) {
         return res.status(403).json({
@@ -341,13 +338,9 @@ exports.getOrganizationRequests = async (req, res) => {
     const userId = req.user.id;
 
     // Verify user has permission to view org requests
-    const organization = await Organization.findOne({
-      _id: organizationId,
-      $or: [
-        { owner: userId },
-        { members: { $elemMatch: { userId, role: { $in: ['admin', 'owner'] } } } }
-      ]
-    });
+    const organization = await Organization.findOne(
+      organizationPlanManagerFilter(organizationId, userId)
+    );
 
     if (!organization) {
       return res.status(403).json({
