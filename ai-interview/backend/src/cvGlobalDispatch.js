@@ -878,7 +878,7 @@ function createGlobalDispatchCoordinator({
         error: wrapped
       };
     }
-    const reason = resultText(result, 1, 'full');
+    const reason = resultText(result, 1, 'unknown');
     if (resultNumber(result, 0) !== 1) {
       if (['contract_mismatch', 'invalid_limit'].includes(reason)) {
         const error = reason === 'contract_mismatch'
@@ -1002,7 +1002,11 @@ function createGlobalDispatchInferenceRunner({
   async function defer(bullJob, workerToken, onDeferred, reason, error) {
     try {
       if (typeof onDeferred === 'function') {
-        await onDeferred({ reason, error: error || null });
+        await onDeferred({
+          reason,
+          error: error || null,
+          retryAfterMs: safeRetryDelayMs
+        });
       }
       if (typeof bullJob?.moveToDelayed !== 'function') {
         throw new Error('BullMQ job does not support delayed storage');
@@ -1018,6 +1022,7 @@ function createGlobalDispatchInferenceRunner({
     const delayed = new DelayedErrorType();
     delayed.code = 'CV_GLOBAL_DISPATCH_DEFERRED';
     delayed.dispatchReason = reason;
+    delayed.retryAfterMs = safeRetryDelayMs;
     throw delayed;
   }
 
@@ -1033,7 +1038,7 @@ function createGlobalDispatchInferenceRunner({
         bullJob,
         workerToken,
         onDeferred,
-        dispatch.reason || 'full',
+        dispatch.reason || 'unknown',
         dispatch.error || null
       );
     }

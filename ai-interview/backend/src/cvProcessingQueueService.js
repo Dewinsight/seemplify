@@ -54,7 +54,10 @@ const globalDispatchConnection = redisEnabled
   ? createGlobalDispatchConnection(globalDispatchConfig)
   : null;
 const GLOBAL_DISPATCH_KEY_PREFIX = globalDispatchConfig.contract.keyPrefix;
-const GLOBAL_DISPATCH_POLL_MS = globalDispatchConfig.pollMs;
+const GLOBAL_DISPATCH_RETRY_MS = Math.max(
+  1_000,
+  Number(process.env.CV_GLOBAL_DISPATCH_RETRY_MS || 30_000)
+);
 const CLEANUP_RETRY_BASE_MS = Math.max(
   1_000,
   Number(process.env.AI_INTERVIEW_CV_CLEANUP_RETRY_BASE_MS || 30_000)
@@ -140,7 +143,7 @@ const bypassDispatchInferenceRunner = async (_bullJob, _workerToken, operation) 
 const defaultDispatchInferenceRunner = globalDispatchConnection
   ? createGlobalDispatchInferenceRunner({
     coordinator: globalDispatch,
-    retryDelayMs: GLOBAL_DISPATCH_POLL_MS,
+    retryDelayMs: GLOBAL_DISPATCH_RETRY_MS,
     DelayedErrorType: DelayedError
   })
   : bypassDispatchInferenceRunner;
@@ -1023,10 +1026,18 @@ async function processJob(bullJob, workerToken) {
         }, { signal });
       },
       async ({ reason, error }) => {
+        const dispatchReason = String(reason || 'unknown');
+        const waitingMessages = {
+          full: 'CV analysis is queued while another shared CV analysis finishes',
+          fairness: 'CV analysis is queued for its turn in shared processing',
+          paused: 'CV analysis is waiting because shared CV processing is paused',
+          stopping: 'CV analysis is waiting while shared CV processing restarts',
+          unhealthy: 'Shared CV processing is temporarily unavailable'
+        };
         const waitError = error || Object.assign(
-          new Error(`CV inference is waiting for shared dispatch capacity (${reason || 'waiting'})`),
+          new Error(waitingMessages[dispatchReason] || 'CV analysis is waiting for shared processing'),
           {
-            code: `CV_GLOBAL_DISPATCH_${String(reason || 'WAITING').toUpperCase().replace(/-/g, '_')}`
+            code: `CV_GLOBAL_DISPATCH_${dispatchReason.toUpperCase().replace(/-/g, '_')}`
           }
         );
         const waiting = await cvProcessingJobs.recordFailure(processingJob.publicId, waitError, {

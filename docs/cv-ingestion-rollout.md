@@ -19,7 +19,8 @@ the new history, retry, replacement, and capability endpoints available.
   `CV_GLOBAL_DISPATCH_IDENTITY=seemplify-cv-inference`,
   `CV_GLOBAL_DISPATCH_KEY_PREFIX=seemplify:cv:dispatch:v2`,
   `CV_GLOBAL_DISPATCH_APPROVED_LIMIT`, `CV_GLOBAL_DISPATCH_LEASE_MS=120000`,
-  and `CV_GLOBAL_DISPATCH_FAIRNESS_WINDOW_MS=10000`. A mismatched contract
+  `CV_GLOBAL_DISPATCH_FAIRNESS_WINDOW_MS=10000`, and
+  `CV_GLOBAL_DISPATCH_RETRY_MS=30000`. A mismatched contract
   fails closed instead of allowing unapproved parallel inference.
 - Stable, random secrets shared by every replica of the corresponding service:
   `CV_STATUS_TOKEN_SECRET`, `PUBLIC_APPLICATION_CAPABILITY_SECRET`,
@@ -47,6 +48,7 @@ CV_GLOBAL_DISPATCH_KEY_PREFIX=seemplify:cv:dispatch:v2
 CV_GLOBAL_DISPATCH_APPROVED_LIMIT=1
 CV_GLOBAL_DISPATCH_LEASE_MS=120000
 CV_GLOBAL_DISPATCH_FAIRNESS_WINDOW_MS=10000
+CV_GLOBAL_DISPATCH_RETRY_MS=30000
 CV_ANALYSIS_QUEUE_CONCURRENCY=1
 CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY=1
 CV_STATUS_TOKEN_SECRET=<separate-long-random-secret>

@@ -405,6 +405,8 @@ test('full shared capacity preserves preprocessed durable state without counting
   assert.equal(stored.stage, 'retry_scheduled');
   assert.equal(stored.attempts, 0);
   assert.equal(stored.boundedFailureAttempts, 0);
+  assert.equal(stored.lastError?.message, 'CV analysis is queued while another shared CV analysis finishes');
+  assert.doesNotMatch(stored.lastError?.message || '', /capacity.*full/i);
   assert.equal(stored.resumeText, extractedText);
   assert.ok(stored.cloudinary?.publicId);
   assert.deepEqual(moves, [{ timestamp: 1_250, token: 'worker-token' }]);

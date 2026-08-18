@@ -641,6 +641,7 @@ test('paused and full dispatch return BullMQ jobs to delayed storage without ent
     (error) => error instanceof SyntheticDelayedError
       && error.code === 'CV_GLOBAL_DISPATCH_DEFERRED'
       && error.dispatchReason === 'full'
+      && error.retryAfterMs === 250
   );
   await held.release();
 
@@ -661,6 +662,33 @@ test('paused and full dispatch return BullMQ jobs to delayed storage without ent
     { timestamp: 1_250, token: 'worker-token' },
     { timestamp: 1_250, token: 'worker-token' }
   ]);
+});
+
+test('missing dispatch reasons are reported as unknown instead of claiming capacity is full', async () => {
+  class SyntheticDelayedError extends Error {}
+  const moves = [];
+  const deferrals = [];
+  const runner = recruiterDispatch.createGlobalDispatchInferenceRunner({
+    coordinator: {
+      tryAcquire: async () => ({ acquired: false })
+    },
+    retryDelayMs: 30_000,
+    now: () => 5_000,
+    DelayedErrorType: SyntheticDelayedError
+  });
+
+  await assert.rejects(
+    runner({
+      id: 'unknown-cv',
+      moveToDelayed: async (timestamp, token) => moves.push({ timestamp, token })
+    }, 'worker-token', async () => undefined, async (event) => deferrals.push(event)),
+    (error) => error instanceof SyntheticDelayedError
+      && error.code === 'CV_GLOBAL_DISPATCH_DEFERRED'
+      && error.dispatchReason === 'unknown'
+      && error.retryAfterMs === 30_000
+  );
+  assert.deepEqual(moves, [{ timestamp: 35_000, token: 'worker-token' }]);
+  assert.deepEqual(deferrals, [{ reason: 'unknown', error: null, retryAfterMs: 30_000 }]);
 });
 
 for (const failureMode of ['missing', 'redis-error']) {
