@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildAzureSpeechAdminCredentialReveal,
   decryptMediaConfiguration,
   encryptMediaConfiguration,
   normalizeAzureSpeechConfiguration,
@@ -36,4 +37,15 @@ test('Azure custom endpoints reject insecure production URLs', () => {
   } finally {
     process.env.NODE_ENV = previous
   }
+})
+
+test('Azure Speech key is available only through the explicit admin reveal projection', () => {
+  const record = { revision: 4, updatedAt: new Date('2026-08-18T14:00:00Z') }
+  const configuration = { speechKey: 'saved-speech-key', region: 'swedencentral' }
+  assert.deepEqual(buildAzureSpeechAdminCredentialReveal(record, configuration), {
+    speechKey: 'saved-speech-key',
+    revision: 4,
+    updatedAt: record.updatedAt
+  })
+  assert.throws(() => buildAzureSpeechAdminCredentialReveal(record, { region: 'swedencentral' }), /not configured/u)
 })

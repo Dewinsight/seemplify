@@ -17,7 +17,10 @@
     .integration-remove { margin-left: auto; }
     .admin-card + .admin-card { margin-top: 18px; }
     .field-note { color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 6px; }
-    @media (max-width: 760px) { .integration-grid { grid-template-columns: 1fr; } .integration-span { grid-column: auto; } .integration-remove { margin-left: 0; } }
+    .secret-input-row { display: flex; align-items: stretch; gap: 8px; }
+    .secret-input-row .admin-form-input { min-width: 0; }
+    .secret-input-row .btn { flex: 0 0 auto; white-space: nowrap; }
+    @media (max-width: 760px) { .integration-grid { grid-template-columns: 1fr; } .integration-span { grid-column: auto; } .integration-remove { margin-left: 0; } .secret-input-row { align-items: stretch; flex-direction: column; } }
   </style>
   <link rel="stylesheet" href="/css/admin.css">
   <script src="/js/theme.js?v=3"></script>
@@ -27,7 +30,7 @@
     <%- include('../partials/admin-nav', { activePage: 'media-ai-integration' }) %>
     <main class="admin-content">
       <div class="admin-header"><h1>Media &amp; Speech</h1></div>
-      <p class="integration-copy">Manage shared media storage and speech services once for Seemplify. Secrets are encrypted by Identity, delivered only to approved services over signed requests, and never returned to this page.</p>
+      <p class="integration-copy">Manage shared media storage and speech services once for Seemplify. Secrets are encrypted by Identity and delivered to approved services over signed requests. Super admins can explicitly reveal the Azure Speech key when operational access is required.</p>
 
       <% if (notice) { %><div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>"><span><%= notice %></span></div><% } %>
 
@@ -56,7 +59,14 @@
         </div>
         <form method="post" action="/admin/integrations/media-ai/azure-speech" autocomplete="off">
           <div class="integration-grid">
-            <div class="admin-form-group"><label class="admin-form-label" for="speech-key">Speech key</label><input class="admin-form-input" id="speech-key" name="speechKey" type="password" autocomplete="new-password" placeholder="<%= status.azureSpeech.speechKeyConfigured ? 'Configured — leave blank to keep' : 'Required' %>"></div>
+            <div class="admin-form-group">
+              <label class="admin-form-label" for="speech-key">Speech key</label>
+              <div class="secret-input-row">
+                <input class="admin-form-input" id="speech-key" name="speechKey" type="password" autocomplete="new-password" placeholder="<%= status.azureSpeech.speechKeyConfigured ? 'Configured — leave blank to keep' : 'Required' %>">
+                <% if (status.azureSpeech.speechKeyConfigured && admin?.isSuperAdmin) { %><button class="btn btn-secondary" id="reveal-speech-key" type="button" aria-controls="speech-key" aria-pressed="false">Reveal saved key</button><% } %>
+              </div>
+              <div class="field-note" id="speech-key-note" aria-live="polite">The saved value remains encrypted and is loaded only after an explicit reveal.</div>
+            </div>
             <div class="admin-form-group"><label class="admin-form-label" for="speech-region">Region</label><input class="admin-form-input" id="speech-region" name="region" value="<%= status.azureSpeech.region %>" placeholder="for example, westeurope" required></div>
             <div class="admin-form-group integration-span"><label class="admin-form-label" for="tts-endpoint">Custom TTS endpoint</label><input class="admin-form-input" id="tts-endpoint" name="ttsEndpoint" type="url" value="<%= status.azureSpeech.ttsEndpoint %>" placeholder="Optional — Azure regional endpoint is used by default"></div>
             <div class="admin-form-group"><label class="admin-form-label" for="speech-language">Default language</label><input class="admin-form-input" id="speech-language" name="language" value="<%= status.azureSpeech.language %>" placeholder="en-US"></div>
@@ -71,5 +81,89 @@
       </section>
     </main>
   </div>
+  <script>
+    (() => {
+      const button = document.getElementById('reveal-speech-key')
+      const input = document.getElementById('speech-key')
+      const note = document.getElementById('speech-key-note')
+      const form = input?.closest('form')
+      if (!button || !input || !note || !form) return
+
+      const defaultNote = note.textContent
+      let hideTimer = null
+      let requestPending = false
+
+      function hideKey({ focusButton = false } = {}) {
+        if (button.dataset.state !== 'revealed') return
+        if (hideTimer) window.clearTimeout(hideTimer)
+        hideTimer = null
+        input.value = ''
+        input.type = 'password'
+        input.readOnly = false
+        button.dataset.state = ''
+        button.textContent = 'Reveal saved key'
+        button.setAttribute('aria-pressed', 'false')
+        note.textContent = defaultNote
+        if (focusButton) button.focus()
+      }
+
+      button.addEventListener('click', async () => {
+        if (requestPending) return
+        if (button.dataset.state === 'revealed') {
+          hideKey({ focusButton: true })
+          return
+        }
+        if (input.value) {
+          note.textContent = 'Clear the unsaved replacement key before revealing the saved key.'
+          input.focus()
+          return
+        }
+        if (!window.confirm('Reveal the production Azure Speech key? This action is audited.')) return
+
+        requestPending = true
+        button.disabled = true
+        button.textContent = 'Revealing…'
+        button.setAttribute('aria-busy', 'true')
+        note.textContent = 'Requesting the saved key…'
+
+        try {
+          const response = await fetch('/admin/api/integrations/media-ai/azure-speech/reveal', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              Accept: 'application/json',
+              'X-Seemplify-Admin-Action': 'reveal-azure-speech-key'
+            }
+          })
+          const payload = await response.json().catch(() => ({}))
+          if (!response.ok || !payload.speechKey) throw new Error(payload.error || 'Failed to reveal Azure Speech key.')
+
+          input.value = payload.speechKey
+          input.type = 'text'
+          input.readOnly = true
+          button.dataset.state = 'revealed'
+          button.textContent = 'Hide key'
+          button.setAttribute('aria-pressed', 'true')
+          note.textContent = 'Visible for 30 seconds. Hide it as soon as you finish using it.'
+          input.focus()
+          input.select()
+          hideTimer = window.setTimeout(() => hideKey(), 30_000)
+        } catch (error) {
+          button.textContent = 'Reveal saved key'
+          note.textContent = error.message || 'Failed to reveal Azure Speech key.'
+        } finally {
+          requestPending = false
+          button.disabled = false
+          button.removeAttribute('aria-busy')
+        }
+      })
+
+      form.addEventListener('submit', () => hideKey())
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) hideKey()
+      })
+      window.addEventListener('pagehide', () => hideKey())
+    })()
+  </script>
 </body>
 </html>

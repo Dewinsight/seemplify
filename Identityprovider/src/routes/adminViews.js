@@ -1,5 +1,6 @@
 import express from 'express'
-import { auditLog, requireAdminAuth, requireSuperAdmin, setAdminContext } from '../middleware/adminAuth.js'
+import { adminRateLimit, auditLog, requireAdminAuth, requireSuperAdmin, setAdminContext } from '../middleware/adminAuth.js'
+import { disableSecretResponseCaching, requireSensitiveAdminAction } from '../middleware/sensitiveAdminAction.js'
 import { subscriptionService } from '../services/subscriptionService.js'
 import { Organization } from '../models/Organization.js'
 import { Account } from '../models/Account.js'
@@ -23,6 +24,7 @@ import {
 } from '../services/nylasPlatformConfigurationService.js'
 import {
   deleteMediaConfiguration,
+  getAzureSpeechAdminCredentialReveal,
   getMediaConfigurationStatus,
   saveAzureSpeechConfiguration,
   saveCloudinaryConfiguration
@@ -578,6 +580,25 @@ router.post('/integrations/media-ai/azure-speech', requireSuperAdmin, auditLog('
     return res.redirect(`/admin/integrations/media-ai?notice=${encodeURIComponent(error.message || 'Failed to save Azure Speech settings')}&noticeType=error`)
   }
 })
+
+router.post(
+  '/api/integrations/media-ai/azure-speech/reveal',
+  requireSuperAdmin,
+  disableSecretResponseCaching,
+  auditLog('reveal_azure_speech_platform_credential'),
+  requireSensitiveAdminAction('reveal-azure-speech-key'),
+  adminRateLimit({ windowMs: 60_000, maxRequests: 6, keyPrefix: 'azure-speech-key-reveal' }),
+  async (_req, res) => {
+    try {
+      return res.json(await getAzureSpeechAdminCredentialReveal())
+    } catch (error) {
+      const missing = error.message === 'Azure Speech key is not configured.'
+      return res.status(missing ? 404 : 500).json({
+        error: missing ? error.message : 'Failed to reveal Azure Speech key.'
+      })
+    }
+  }
+)
 
 router.post('/integrations/media-ai/:integration/remove', requireSuperAdmin, auditLog('remove_media_platform_configuration'), async (req, res) => {
   try {

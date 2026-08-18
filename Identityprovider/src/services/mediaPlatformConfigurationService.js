@@ -122,6 +122,16 @@ function publicAzureSpeech(record, configuration) {
   }
 }
 
+export function buildAzureSpeechAdminCredentialReveal(record, configuration) {
+  const speechKey = clean(configuration?.speechKey)
+  if (!record || !speechKey) throw new Error('Azure Speech key is not configured.')
+  return {
+    speechKey,
+    revision: Number(record.revision || 0),
+    updatedAt: record.updatedAt || null
+  }
+}
+
 export async function getMediaConfigurationStatus() {
   const [cloudinary, azureSpeech] = await Promise.all([stored(CLOUDINARY), stored(AZURE_SPEECH)])
   return {
@@ -144,6 +154,11 @@ export async function saveAzureSpeechConfiguration(input, adminId) {
   const record = await save(AZURE_SPEECH, configuration, adminId)
   applyMediaConfigurationEnvironment({ azureSpeech: configuration })
   return publicAzureSpeech(record, configuration)
+}
+
+export async function getAzureSpeechAdminCredentialReveal() {
+  const { record, configuration } = await stored(AZURE_SPEECH)
+  return buildAzureSpeechAdminCredentialReveal(record, configuration)
 }
 
 export async function deleteMediaConfiguration(integration) {
