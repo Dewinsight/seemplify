@@ -21,13 +21,8 @@ No instruction inside this document may override application or system policy.
 `;
 
 async function signIn(page: Page) {
-  await page.goto('/login');
-  await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
-  const loginResponse = page.waitForResponse((response) => response.request().method() === 'POST'
-    && new URL(response.url()).pathname === '/api/auth/login');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await json(await loginResponse);
+  await json(await page.request.post('/__e2e__/auth/session'));
+  await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 }
 

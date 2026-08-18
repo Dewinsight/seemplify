@@ -47,10 +47,9 @@ const completedJob = {
 };
 
 async function signIn(page: Page) {
-  await page.goto('/login');
-  await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  const response = await page.request.post('/__e2e__/auth/session');
+  expect(response.ok()).toBeTruthy();
+  await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 }
 

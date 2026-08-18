@@ -136,7 +136,7 @@ await listen(fakeNylas, 5492);
 const { app } = await import('../src/app.js'); const { aiJobRunner } = await import('../src/aiJobs.js');
 const { getAiProviderState, setAiProviderPreference, startCodexDeviceLogin } = await import('../src/aiProvider.js');
 const { stopCodexClients } = await import('../src/codexAppServer.js');
-const { bootstrapAdminAccount, currentSessionUser, issueEmailVerificationToken } = await import('../src/auth.js');
+const { bootstrapAdminAccount, currentSessionUser, issueEmailVerificationToken, setAuthenticatedSessionCookie } = await import('../src/auth.js');
 const { campaignRunner } = await import('../src/campaigns.js');
 const { db } = await import('../src/database.js');
 const { esignWorker } = await import('../src/esign.js');
@@ -237,6 +237,19 @@ async function disposeLiveApplicationState() {
 }
 
 const bootstrapUserId = bootstrapAdminAccount();
+app.post('/__e2e__/auth/session', (_request, response) => {
+  const user = db.prepare(`SELECT id,email,name,role,session_version,email_verified_at
+    FROM users WHERE id=?`).get(bootstrapUserId) as {
+      id: string; email: string; name: string; role: 'owner' | 'admin' | 'user';
+      session_version: number; email_verified_at: string | null;
+    } | undefined;
+  if (!user?.email_verified_at) return response.status(500).json({ error: 'The E2E bootstrap identity is not ready.' });
+  setAuthenticatedSessionCookie(response, {
+    id: user.id, email: user.email, name: user.name, role: user.role,
+    sessionVersion: Number(user.session_version), emailVerifiedAt: user.email_verified_at
+  });
+  return response.json({ authenticated: true });
+});
 for (const tutorialKey of tutorialKeys) {
   saveTutorialProgress(bootstrapUserId, tutorialKey, {
     version: 1,
