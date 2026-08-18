@@ -1,3 +1,4 @@
 experience-management/backend/migrations/postgres/*.sql text eol=lf
 platform/email/**/*.sh text eol=lf
 platform/email/relay/entrypoint.sh text eol=lf
+coturn/*.sh text eol=lf
