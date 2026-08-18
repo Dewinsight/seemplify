@@ -2,6 +2,7 @@ const Organization = require('../models/Organization');
 const LogoAsset = require('../models/LogoAsset');
 const path = require('path');
 const fs = require('fs');
+const { createStorageService } = require('../services/storageService');
 
 const resolveFilename = (logoPath) => {
     if (!logoPath) return null;
@@ -72,6 +73,7 @@ exports.updateOrganization = async (req, res) => {
 // Upload organization logo (Admin only)
 // Query param: variant=dark|light — when set, uploads to logoDark/logoLight. Otherwise updates logo (for "all" mode).
 exports.uploadLogo = async (req, res) => {
+    let stored = null;
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
@@ -84,40 +86,37 @@ exports.uploadLogo = async (req, res) => {
 
         const variant = req.query.variant; // 'dark' | 'light'
         const field = variant === 'dark' ? 'logoDark' : variant === 'light' ? 'logoLight' : 'logo';
-        const newFilename = req.file.filename;
+        const storageField = variant === 'dark' ? 'logoDarkStorage' : variant === 'light' ? 'logoLightStorage' : 'logoStorage';
+        const newFilename = req.file.originalname;
         const newBuffer = loadUploadedLogoBuffer(req.file);
 
         if (!newFilename || !newBuffer) {
             return res.status(500).json({ error: 'Failed to process uploaded logo file' });
         }
 
-        // Remove old file if exists
         const previousLogoPath = org[field];
+        const previousStorage = org[storageField];
         const previousFilename = resolveFilename(previousLogoPath);
-        if (previousFilename && previousFilename !== newFilename) {
+        const storage = createStorageService();
+        stored = await storage.uploadBuffer(newBuffer, {
+            fileName: newFilename,
+            mimeType: req.file.mimetype,
+            folder: `approver/logos/${org._id}/${field}`
+        });
+        org[field] = stored.storageUrl;
+        org[storageField] = stored;
+        await org.save();
+
+        if (previousStorage?.storageKey) await storage.remove(previousStorage).catch(() => false);
+        if (previousFilename && !previousStorage?.storageKey) {
             await LogoAsset.deleteOne({ filename: previousFilename, organization: org._id });
             deleteDiskLogoIfExists(previousLogoPath);
         }
 
-        await LogoAsset.findOneAndUpdate(
-            { filename: newFilename },
-            {
-                $set: {
-                    organization: org._id,
-                    mimeType: req.file.mimetype || 'application/octet-stream',
-                    size: Number(req.file.size || newBuffer.length || 0),
-                    data: newBuffer
-                }
-            },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
-        );
-
-        org[field] = `uploads/logos/${newFilename}`;
-        await org.save();
-
-        const logoUrl = `/api/uploads/logos/${newFilename}`;
+        const logoUrl = stored.storageUrl;
         res.json({ logo: org.logo, logoDark: org.logoDark, logoLight: org.logoLight, logoUrl, field });
     } catch (error) {
+        if (stored?.storageKey) await createStorageService().remove(stored).catch(() => false);
         res.status(500).json({ error: error.message });
     }
 };
@@ -133,16 +132,21 @@ exports.removeLogo = async (req, res) => {
 
         const variant = req.query.variant;
         const field = variant === 'dark' ? 'logoDark' : variant === 'light' ? 'logoLight' : 'logo';
+        const storageField = variant === 'dark' ? 'logoDarkStorage' : variant === 'light' ? 'logoLightStorage' : 'logoStorage';
 
         if (org[field]) {
+            if (org[storageField]?.storageKey) {
+                await createStorageService().remove(org[storageField]);
+            }
             const oldFilename = resolveFilename(org[field]);
-            if (oldFilename) {
+            if (oldFilename && !org[storageField]?.storageKey) {
                 await LogoAsset.deleteOne({ filename: oldFilename, organization: org._id });
             }
-            deleteDiskLogoIfExists(org[field]);
+            if (!org[storageField]?.storageKey) deleteDiskLogoIfExists(org[field]);
         }
 
         org[field] = undefined;
+        org[storageField] = undefined;
         await org.save();
 
         res.json({ logo: org.logo, logoDark: org.logoDark, logoLight: org.logoLight, [field]: null, message: 'Logo removed' });

@@ -221,6 +221,14 @@ test.beforeEach(async () => {
   cvQueue._resetDependenciesForTests();
   cvQueue._setDependenciesForTests({
     enqueueJob: async () => ({ id: 'queued' }),
+    storageConfigurationResolver: async () => ({
+      configured: true,
+      defaultProvider: 'cloudinary',
+      providers: {
+        cloudinary: { configured: true },
+        azureBlob: { configured: false }
+      }
+    }),
     completionEffectHandlers: {
       candidateNotification: async () => {},
       gptCacheInvalidation: async () => {},

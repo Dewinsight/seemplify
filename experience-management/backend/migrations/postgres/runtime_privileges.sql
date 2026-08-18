@@ -160,7 +160,26 @@ BEGIN
     'journey_stage_reprojection_runs',
     'journey_stage_reprojection_attempts',
     'journey_stage_reprojection_checkpoints',
-    'journey_stage_reprojection_audit_events'
+    'journey_stage_reprojection_audit_events',
+    'journey_identity_profiles',
+    'journey_identity_bindings',
+    'journey_identity_merges',
+    'journey_identity_memberships',
+    'journey_identity_groups',
+    'journey_identity_source_facts',
+    'journey_identity_audit_facts',
+    'journey_identity_profile_tombstones',
+    'journey_identity_identifier_tombstones',
+    'journey_identity_processed_commands',
+    'journey_profile_timeline_events',
+    'journey_identity_sessions',
+    'journey_identity_segments',
+    'journey_identity_segment_versions',
+    'journey_identity_segment_memberships',
+    'journey_profile_privacy_states',
+    'journey_profile_export_jobs',
+    'journey_profile_privacy_jobs',
+    'journey_identity_correction_runs'
   ] LOOP
     IF to_regclass('public.' || protected_table) IS NULL THEN
       RAISE EXCEPTION 'Required runtime privilege target public.% is missing', protected_table;
@@ -293,8 +312,15 @@ REVOKE UPDATE,DELETE ON TABLE
   public.journey_hierarchy_operations,
   public.journey_hierarchy_activity,
   public.journey_stage_reprojection_attempts,
-  public.journey_stage_reprojection_audit_events
+  public.journey_stage_reprojection_audit_events,
+  public.journey_identity_merges,
+  public.journey_identity_source_facts,
+  public.journey_identity_audit_facts,
+  public.journey_identity_profile_tombstones,
+  public.journey_identity_identifier_tombstones,
+  public.journey_identity_processed_commands
 FROM __APP_ROLE__;
+REVOKE UPDATE ON TABLE public.journey_profile_timeline_events FROM __APP_ROLE__;
 REVOKE DELETE ON TABLE
   public.journey_event_rate_buckets,
   public.journey_event_processing_inbox,
@@ -333,7 +359,14 @@ REVOKE DELETE ON TABLE
   public.journey_hierarchy_health_policies,
   public.journey_blueprints,
   public.journey_stage_reprojection_runs,
-  public.journey_stage_reprojection_checkpoints
+  public.journey_stage_reprojection_checkpoints,
+  public.journey_identity_profiles,
+  public.journey_identity_groups,
+  public.journey_identity_segments,
+  public.journey_identity_segment_versions,
+  public.journey_profile_privacy_states,
+  public.journey_profile_privacy_jobs,
+  public.journey_identity_correction_runs
 FROM __APP_ROLE__;
 -- Blob purge receipts are stateful while pending, but are durable history:
 -- the runtime may claim/update them and cannot erase completed or failed

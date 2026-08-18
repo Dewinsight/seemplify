@@ -17,6 +17,7 @@ fs.writeFileSync(sessionFile, 'journey-rich-card-test-session-secret-that-is-lon
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 41).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 42).toString('base64url'));
 Object.assign(process.env, {
+  NODE_ENV: 'test',
   DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'),
   FRONTEND_DIST: path.join(root, 'missing-frontend'), PUBLIC_URL: 'http://127.0.0.1:5412',
   ADMIN_EMAIL: 'journey-rich-cards@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile,
@@ -34,8 +35,32 @@ const { db } = await import('../src/database.js');
 const maps = await import('../src/journeyMaps.js');
 const rich = await import('../src/journeyRichCards.js');
 const { JourneyAssetRetentionWorker } = await import('../src/journeyAssetRetentionWorker.js');
+const { setManagedStorageTestAdapter } = await import('../src/storageService.js');
+const managedFiles = new Map<string, Buffer>();
+setManagedStorageTestAdapter({
+  async storeBuffer(buffer, input) {
+    const storageKey = `${input.folder}/${crypto.randomUUID()}-${path.basename(input.fileName)}`;
+    managedFiles.set(storageKey, Buffer.from(buffer));
+    return {
+      storageProvider: 'cloudinary' as const,
+      storageKey,
+      storageResourceType: 'raw',
+      storageUrl: `https://managed-storage.example.test/${encodeURIComponent(storageKey)}`,
+      size: buffer.length
+    };
+  },
+  async removeStoredFile(file) {
+    return file.storageKey ? managedFiles.delete(file.storageKey) : false;
+  },
+  async downloadStoredFile(file) {
+    const value = file.storageKey ? managedFiles.get(file.storageKey) : null;
+    if (!value) throw new Error('Managed test file not found.');
+    return Buffer.from(value);
+  }
+});
 
 after(() => {
+  setManagedStorageTestAdapter(null);
   db.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -85,12 +110,13 @@ test('rich-text and external-reference validation is strict, bounded, and privat
     'https://research.example.com/report');
 });
 
-test('retention worker restarts after a redacted failed pass', () => {
+test('retention worker restarts after a redacted failed pass', async () => {
   const telemetry: Array<{ level: string; event: Record<string, unknown> }> = [];
   const first = new JourneyAssetRetentionWorker(3_600_000, () => {
     throw new Error('sensitive filesystem detail must not be logged');
   }, (level, event) => telemetry.push({ level, event }));
   first.start(); first.stop();
+  await first.drain();
   assert.equal(telemetry[0]?.level, 'error');
   assert.match(String(telemetry[0]?.event.errorFingerprint), /^[a-f0-9]{64}$/u);
   assert.doesNotMatch(JSON.stringify(telemetry), /sensitive filesystem detail/u);
@@ -102,6 +128,7 @@ test('retention worker restarts after a redacted failed pass', () => {
       blobFileErrors: [], purgeReceiptsClaimed: 1, purgeReceiptsFailed: 0 };
   }, (level, event) => telemetry.push({ level, event }));
   second.start(); second.stop();
+  await second.drain();
   assert.equal(recovered, 1);
   assert.ok(telemetry.some((entry) => entry.event.event === 'journey_asset_retention_pass'
     && entry.event.blobsPurged === 1));
@@ -221,7 +248,7 @@ test('governed image lifecycle denies cross-space, changed, deleted and expired 
   }).expect(200);
   db.prepare("UPDATE journey_card_assets SET retention_expires_at='2026-01-01T00:00:00.000Z' WHERE id=?")
     .run(assetId);
-  const purged = rich.purgeExpiredJourneyCardAssets('2026-08-05T00:00:00.000Z', {
+  const purged = await rich.purgeExpiredJourneyCardAssets('2026-08-05T00:00:00.000Z', {
     removeFile: () => { throw new Error('injected unlink failure'); }
   });
   assert.equal(purged.purged, 1);
@@ -239,7 +266,7 @@ test('governed image lifecycle denies cross-space, changed, deleted and expired 
   assert.match(String(failedReceipt.last_error_fingerprint), /^[a-f0-9]{64}$/u);
   assert.doesNotMatch(JSON.stringify(failedReceipt), /injected unlink failure/u);
 
-  const retried = rich.processJourneyAssetBlobPurgeOutbox({ asOf: '2030-08-05T00:03:00.000Z' });
+  const retried = await rich.processJourneyAssetBlobPurgeOutbox({ asOf: '2030-08-05T00:03:00.000Z' });
   assert.deepEqual(retried, { claimed: 1, completed: 1, failed: 0, failedReceiptIds: [] });
   assert.equal(fs.existsSync(storedPath), false);
   assert.equal((db.prepare('SELECT state FROM journey_asset_blob_purge_outbox WHERE id=?')

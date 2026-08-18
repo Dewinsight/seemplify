@@ -52,6 +52,7 @@ export function createPlatformIntegrationServiceAuth(allowedServices = ['experie
     if (error?.code === 11000) return res.status(409).json({ error: 'Service request was already used.' })
     return res.status(503).json({ error: 'Service replay protection is unavailable.' })
   }
+  req.platformIntegrationService = service
   return next()
   }
 }

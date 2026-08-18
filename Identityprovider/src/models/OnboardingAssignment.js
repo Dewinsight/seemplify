@@ -37,6 +37,9 @@ const OnboardingAssignmentItemSchema = new mongoose.Schema({
     document: {
       url: { type: String, trim: true },
       publicId: { type: String, trim: true },
+      provider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+      storageKey: { type: String, trim: true },
+      storageContainer: { type: String, trim: true },
       fileName: { type: String, trim: true },
       mimeType: { type: String, trim: true },
       size: { type: Number }
@@ -77,6 +80,10 @@ const OnboardingAssignmentItemSchema = new mongoose.Schema({
     upload: {
       url: { type: String, trim: true },
       publicId: { type: String, trim: true },
+      provider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+      storageProvider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+      storageKey: { type: String, trim: true },
+      storageContainer: { type: String, trim: true },
       fileName: { type: String, trim: true },
       mimeType: { type: String, trim: true },
       size: { type: Number },
@@ -90,6 +97,9 @@ const OnboardingAssignmentItemSchema = new mongoose.Schema({
       originalUrl: { type: String, trim: true },
       signedUrl: { type: String, trim: true },
       signedPublicId: { type: String, trim: true },
+      signedStorageProvider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+      signedStorageKey: { type: String, trim: true },
+      signedStorageContainer: { type: String, trim: true },
       signedFileName: { type: String, trim: true },
       signedMimeType: { type: String, trim: true },
       ipAddress: { type: String, trim: true },

@@ -14,6 +14,7 @@ const Organization = require('../models/Organization');
 const User = require('../models/User');
 const CVParsingService = require('./cvParsingService');
 const CloudinaryUploadService = require('./cloudinaryUploadService');
+const { resolveStoragePlatformConfiguration } = require('./platformConfigurationClient');
 const durableCvFileStore = require('./durableCvFileStore');
 const staleCvUploadSweeper = require('./staleCvUploadSweeper');
 const embeddingService = require('./embeddingService');
@@ -65,6 +66,7 @@ const defaultCvParser = new CVParsingService();
 const defaultCloudinary = new CloudinaryUploadService();
 let cvParser = defaultCvParser;
 let cloudinary = defaultCloudinary;
+let storageConfigurationResolver = resolveStoragePlatformConfiguration;
 let durableFileStore = durableCvFileStore;
 let enqueueJob = (...args) => addQueueJob(...args);
 const defaultCompletionEffectHandlers = {
@@ -3510,6 +3512,10 @@ function candidatePayload(job, result) {
     cloudinaryPublicId: job.cloudinary.publicId,
     cloudinaryResourceType: job.cloudinary.resourceType,
     cloudinaryDeliveryType: job.cloudinary.deliveryType,
+    resumeStorageProvider: job.cloudinary.storageProvider || 'cloudinary',
+    resumeStorageKey: job.cloudinary.storageKey || job.cloudinary.publicId,
+    resumeStorageContainer: job.cloudinary.storageContainer,
+    resumeStorageResourceType: job.cloudinary.resourceType,
     parsedData: fields,
     aiAnalysis: result.aiAnalysis || {},
     workExperience: result.workExperience || fields.workExperience,
@@ -3597,9 +3603,12 @@ function cleanupTaskResource(provider, input = {}) {
     };
   }
   if (provider === 'cloudinary') {
-    if (!input.publicId) throw new Error('Cloudinary cleanup requires a public ID');
+    if (!input.publicId && !input.storageKey) throw new Error('Managed file cleanup requires a storage key');
     return {
-      publicId: String(input.publicId).slice(0, 500),
+      publicId: String(input.publicId || input.storageKey).slice(0, 500),
+      storageProvider: input.storageProvider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+      storageKey: String(input.storageKey || input.publicId).slice(0, 500),
+      storageContainer: input.storageContainer ? String(input.storageContainer).slice(0, 100) : undefined,
       assetId: String(input.assetId || '').slice(0, 200),
       resourceType: String(input.resourceType || 'raw').slice(0, 40),
       deliveryType: String(input.deliveryType || 'authenticated').slice(0, 40)
@@ -3619,7 +3628,7 @@ function cleanupTaskKey(provider, resource, generation) {
     ? `${resource.bucket}:${resource.fileId}`
     : provider === 'embedding'
       ? resource.candidateId
-      : `${resource.assetId || resource.publicId}:${resource.resourceType}:${resource.deliveryType}`;
+      : `${resource.storageProvider || 'cloudinary'}:${resource.assetId || resource.storageKey || resource.publicId}:${resource.resourceType}:${resource.deliveryType}`;
   return crypto.createHash('sha256')
     .update(`recruiter:${provider}:${identity}:${generation || 'resource'}`)
     .digest('hex');
@@ -3732,7 +3741,12 @@ async function executeCleanupTask(task, {
       const result = await cloudinary.deleteFile(
         task.resource?.publicId,
         task.resource?.resourceType || 'raw',
-        task.resource?.deliveryType || 'authenticated'
+        task.resource?.deliveryType || 'authenticated',
+        {
+          storageProvider: task.resource?.storageProvider,
+          storageKey: task.resource?.storageKey || task.resource?.publicId,
+          storageContainer: task.resource?.storageContainer
+        }
       );
       if (!result?.success) {
         const error = new Error(result?.error || 'Cloudinary cleanup failed');
@@ -4253,7 +4267,7 @@ async function skipCompletionEffect(processingJobId, effectName) {
   );
 }
 
-async function runCompletionEffectWithinFence(processingJobId, effectName, handler) {
+async function runCompletionEffectWithinFence(processingJobId, effectName, handler, deliveryStartedAt) {
   const prefix = `completionEffects.${effectName}`;
   const statusPath = `${prefix}.status`;
   const claimToken = crypto.randomUUID();
@@ -4264,7 +4278,13 @@ async function runCompletionEffectWithinFence(processingJobId, effectName, handl
       state: 'completed',
       $or: [
         { [statusPath]: { $exists: false } },
-        { [statusPath]: 'pending' },
+        {
+          [statusPath]: 'pending',
+          $or: [
+            { [`${prefix}.lastError.at`]: { $exists: false } },
+            { [`${prefix}.lastError.at`]: { $lt: deliveryStartedAt } }
+          ]
+        },
         {
           [statusPath]: 'processing',
           [`${prefix}.claimedAt`]: { $lt: staleClaim }
@@ -4373,7 +4393,7 @@ async function runCompletionEffectWithinFence(processingJobId, effectName, handl
   }
 }
 
-async function runCompletionEffect(processingJobId, effectName, handler) {
+async function runCompletionEffect(processingJobId, effectName, handler, deliveryStartedAt) {
   const job = await CVProcessingJob.findById(processingJobId).select('organization').lean();
   if (!job?.organization) return { effectName, claimed: false };
   let lease;
@@ -4391,7 +4411,7 @@ async function runCompletionEffect(processingJobId, effectName, handler) {
   const stopHeartbeat = organizationCvWriteFence.startHeartbeat(lease);
   try {
     await organizationCvWriteFence.renew(lease);
-    return await runCompletionEffectWithinFence(processingJobId, effectName, handler);
+    return await runCompletionEffectWithinFence(processingJobId, effectName, handler, deliveryStartedAt);
   } finally {
     stopHeartbeat();
     await organizationCvWriteFence.release(lease).catch(() => {});
@@ -4399,6 +4419,7 @@ async function runCompletionEffect(processingJobId, effectName, handler) {
 }
 
 async function deliverCompletionEffects(processingJobId) {
+  const deliveryStartedAt = new Date();
   const processingJob = await CVProcessingJob.findById(processingJobId);
   if (!processingJob?.candidate || processingJob.state !== 'completed') return [];
   const candidate = await Candidate.findById(processingJob.candidate);
@@ -4424,7 +4445,8 @@ async function deliverCompletionEffects(processingJobId) {
     results.push(await runCompletionEffect(
       processingJob._id,
       effectName,
-      (claimedJob) => completionEffectHandlers[effectName](claimedJob, candidate)
+      (claimedJob) => completionEffectHandlers[effectName](claimedJob, candidate),
+      deliveryStartedAt
     ));
   }
 
@@ -4670,7 +4692,7 @@ async function recoverCommittedCandidate(processingJob) {
   return candidate;
 }
 
-function deterministicCloudinaryUploadIntent(processingJob, generation) {
+function deterministicCloudinaryUploadIntent(processingJob, generation, storagePolicy) {
   const requestedId = String(processingJob.publicId || '')
     .replace(/[^A-Za-z0-9_-]/g, '_');
   const uploadGeneration = String(generation || crypto.randomUUID())
@@ -4685,8 +4707,13 @@ function deterministicCloudinaryUploadIntent(processingJob, generation) {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/msword'
   ].includes(processingJob.fileType);
+  const publicId = `${image ? 'resumes/images' : document ? 'resumes/documents' : 'resumes/other'}/${providerRequestId}`;
+  const storageProvider = storagePolicy?.defaultProvider || 'cloudinary';
   return {
-    publicId: `${image ? 'resumes/images' : document ? 'resumes/documents' : 'resumes/other'}/${providerRequestId}`,
+    publicId,
+    storageProvider,
+    storageKey: publicId,
+    storageContainer: storageProvider === 'azure-blob' ? storagePolicy?.providers?.azureBlob?.containerName : undefined,
     resourceType: image ? 'image' : document ? 'raw' : 'auto',
     deliveryType: 'authenticated',
     generation: uploadGeneration,
@@ -4765,9 +4792,12 @@ async function processJob(bullJob, workerToken) {
       try {
         if (!processingJob.cloudinary?.publicId) {
           await updateProcessingStage(processingJob, bullJob, 'uploading', 20);
+          const storagePolicy = await storageConfigurationResolver();
+          if (!storagePolicy?.configured) throw new Error('Managed CV storage is unavailable');
           const uploadIntent = deterministicCloudinaryUploadIntent(
             processingJob,
-            processingAttempt.attemptId
+            processingAttempt.attemptId,
+            storagePolicy
           );
           const prepared = await CVProcessingJob.updateOne(
             {
@@ -4799,6 +4829,9 @@ async function processJob(bullJob, workerToken) {
           const cloudinaryMetadata = {
             resumeUrl: upload.resumeUrl,
             publicId: upload.publicId,
+            storageProvider: upload.storageProvider || 'cloudinary',
+            storageKey: upload.storageKey || upload.publicId,
+            storageContainer: upload.storageContainer || null,
             assetId: upload.uploadResult?.asset_id,
             resourceType: upload.resourceType,
             deliveryType: upload.deliveryType || 'authenticated',
@@ -6681,6 +6714,9 @@ async function setPaused(paused) {
 function setDependenciesForTests(overrides = {}) {
   if (overrides.cvParser) cvParser = overrides.cvParser;
   if (overrides.cloudinary) cloudinary = overrides.cloudinary;
+  if (overrides.storageConfigurationResolver) {
+    storageConfigurationResolver = overrides.storageConfigurationResolver;
+  }
   if (overrides.durableFileStore) durableFileStore = overrides.durableFileStore;
   if (overrides.enqueueJob) enqueueJob = overrides.enqueueJob;
   if (overrides.queue) queueOverrideForTests = overrides.queue;
@@ -6705,6 +6741,7 @@ function setDependenciesForTests(overrides = {}) {
 function resetDependenciesForTests() {
   cvParser = defaultCvParser;
   cloudinary = defaultCloudinary;
+  storageConfigurationResolver = resolveStoragePlatformConfiguration;
   durableFileStore = durableCvFileStore;
   enqueueJob = (...args) => addQueueJob(...args);
   queueOverrideForTests = undefined;

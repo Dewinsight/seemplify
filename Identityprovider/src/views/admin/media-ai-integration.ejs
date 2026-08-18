@@ -16,11 +16,16 @@
     .integration-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
     .integration-remove { margin-left: auto; }
     .admin-card + .admin-card { margin-top: 18px; }
+    .storage-defaults { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 260px); gap: 12px 20px; align-items: center; }
+    .storage-default-row { display: contents; }
+    .storage-default-label { min-width: 0; }
+    .storage-default-label strong { display: block; color: var(--text); font-size: 14px; font-weight: 600; }
+    .storage-default-label span { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; margin-top: 2px; }
     .field-note { color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 6px; }
     .secret-input-row { display: flex; align-items: stretch; gap: 8px; }
     .secret-input-row .admin-form-input { min-width: 0; }
     .secret-input-row .btn { flex: 0 0 auto; white-space: nowrap; }
-    @media (max-width: 760px) { .integration-grid { grid-template-columns: 1fr; } .integration-span { grid-column: auto; } .integration-remove { margin-left: 0; } .secret-input-row { align-items: stretch; flex-direction: column; } }
+    @media (max-width: 760px) { .integration-grid, .storage-defaults { grid-template-columns: 1fr; } .storage-default-row { display: grid; gap: 7px; } .integration-span { grid-column: auto; } .integration-remove { margin-left: 0; } .secret-input-row { align-items: stretch; flex-direction: column; } }
   </style>
   <link rel="stylesheet" href="/css/admin.css">
   <script src="/js/theme.js?v=3"></script>
@@ -33,6 +38,26 @@
       <p class="integration-copy">Manage shared media storage and speech services once for Seemplify. Secrets are encrypted by Identity and delivered to approved services over signed requests. Super admins can explicitly reveal saved production credentials when operational access is required.</p>
 
       <% if (notice) { %><div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>"><span><%= notice %></span></div><% } %>
+
+      <section class="admin-card" aria-labelledby="storage-defaults-title">
+        <div class="admin-card-header">
+          <div><div class="admin-card-title" id="storage-defaults-title">Default storage by solution</div><div class="admin-card-subtitle">The selection applies to new uploads only. Existing files keep their original provider and storage key.</div></div>
+        </div>
+        <form method="post" action="/admin/integrations/media-ai/storage-defaults">
+          <div class="storage-defaults">
+            <% status.storageDefaults.solutions.forEach((solution) => { %>
+              <div class="storage-default-row">
+                <label class="storage-default-label" for="storage-default-<%= solution.id %>"><strong><%= solution.label %></strong><span><%= solution.id %></span></label>
+                <select class="admin-form-input" id="storage-default-<%= solution.id %>" name="<%= solution.id %>" <%= admin?.isSuperAdmin ? '' : 'disabled' %>>
+                  <option value="cloudinary" <%= solution.defaultProvider === 'cloudinary' ? 'selected' : '' %>>Cloudinary</option>
+                  <option value="azure-blob" <%= solution.defaultProvider === 'azure-blob' ? 'selected' : '' %>>Azure Blob Storage</option>
+                </select>
+              </div>
+            <% }) %>
+          </div>
+          <div class="integration-actions"><button class="btn btn-primary" type="submit" <%= admin?.isSuperAdmin ? '' : 'disabled' %>>Save storage defaults</button></div>
+        </form>
+      </section>
 
       <section class="admin-card" aria-labelledby="cloudinary-title">
         <div class="admin-card-header">
@@ -60,9 +85,35 @@
         </form>
       </section>
 
-      <section class="admin-card" aria-labelledby="azure-title">
+      <section class="admin-card" aria-labelledby="azure-blob-title">
         <div class="admin-card-header">
-          <div><div class="admin-card-title" id="azure-title">Azure Speech</div><div class="admin-card-subtitle">Central speech-to-text and text-to-speech configuration for AI Interview.</div></div>
+          <div><div class="admin-card-title" id="azure-blob-title">Azure Blob Storage</div><div class="admin-card-subtitle">Private file storage for any solution whose default is set to Azure.</div></div>
+          <div class="integration-status <%= status.azureBlob.configured ? 'ready' : '' %>"><%= status.azureBlob.configured ? 'Configured' : 'Not configured' %></div>
+        </div>
+        <form method="post" action="/admin/integrations/media-ai/azure-blob" autocomplete="off">
+          <div class="integration-grid">
+            <div class="admin-form-group"><label class="admin-form-label" for="storage-account-name">Storage account name</label><input class="admin-form-input" id="storage-account-name" name="accountName" value="<%= status.azureBlob.accountName %>" placeholder="seemplifyprod" required></div>
+            <div class="admin-form-group"><label class="admin-form-label" for="storage-container-name">Private container</label><input class="admin-form-input" id="storage-container-name" name="containerName" value="<%= status.azureBlob.containerName %>" placeholder="seemplify-files" required></div>
+            <div class="admin-form-group integration-span"><label class="admin-form-label" for="storage-endpoint">Blob service endpoint</label><input class="admin-form-input" id="storage-endpoint" name="endpoint" type="url" value="<%= status.azureBlob.endpoint %>" placeholder="https://ACCOUNT.blob.core.windows.net"></div>
+            <div class="admin-form-group integration-span">
+              <label class="admin-form-label" for="storage-account-key">Storage account key</label>
+              <div class="secret-input-row">
+                <input class="admin-form-input" id="storage-account-key" name="accountKey" type="password" autocomplete="new-password" placeholder="<%= status.azureBlob.accountKeyConfigured ? 'Configured — leave blank to keep' : 'Required' %>">
+                <% if (status.azureBlob.accountKeyConfigured && admin?.isSuperAdmin) { %><button class="btn btn-secondary" id="reveal-storage-account-key" type="button" aria-controls="storage-account-key" aria-pressed="false">Reveal saved key</button><% } %>
+              </div>
+              <div class="field-note" id="storage-account-key-note" aria-live="polite">The key remains encrypted at rest and is delivered only to approved backend services over signed requests.</div>
+            </div>
+          </div>
+          <div class="integration-actions">
+            <button class="btn btn-primary" type="submit" <%= admin?.isSuperAdmin ? '' : 'disabled' %>>Save Azure Blob settings</button>
+            <% if (status.azureBlob.configured && admin?.isSuperAdmin) { %><button class="btn btn-danger integration-remove" type="submit" formaction="/admin/integrations/media-ai/azure-blob/remove" onclick="return confirm('Remove the shared Azure Blob configuration?')">Remove</button><% } %>
+          </div>
+        </form>
+      </section>
+
+      <section class="admin-card" aria-labelledby="azure-speech-title">
+        <div class="admin-card-header">
+          <div><div class="admin-card-title" id="azure-speech-title">Azure Speech</div><div class="admin-card-subtitle">Central speech-to-text and text-to-speech configuration for AI Interview.</div></div>
           <div class="integration-status <%= status.azureSpeech.configured ? 'ready' : '' %>"><%= status.azureSpeech.configured ? 'Configured' : 'Not configured' %></div>
         </div>
         <form method="post" action="/admin/integrations/media-ai/azure-speech" autocomplete="off">
@@ -182,6 +233,20 @@
         })
         window.addEventListener('pagehide', () => hideCredential())
       }
+
+      setupCredentialReveal({
+        buttonId: 'reveal-storage-account-key',
+        inputId: 'storage-account-key',
+        noteId: 'storage-account-key-note',
+        endpoint: '/admin/api/integrations/media-ai/azure-blob/reveal',
+        action: 'reveal-azure-storage-key',
+        payloadKey: 'accountKey',
+        revealLabel: 'Reveal saved key',
+        hideLabel: 'Hide key',
+        confirmMessage: 'Reveal the production Azure Storage account key? This action is audited.',
+        unsavedMessage: 'Clear the unsaved replacement key before revealing the saved key.',
+        failureMessage: 'Failed to reveal the Azure Storage account key.'
+      })
 
       setupCredentialReveal({
         buttonId: 'reveal-cloudinary-url',

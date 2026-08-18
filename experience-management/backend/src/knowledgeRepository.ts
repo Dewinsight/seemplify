@@ -7,6 +7,7 @@ import {
 } from './config.js';
 import { db } from './database.js';
 import { assertSubscriptionQuota, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
+import { downloadStoredFile, removeStoredFile, type StoredFile } from './storageService.js';
 import './spaces.js';
 
 export type KnowledgeBaseStatus = 'empty' | 'indexing' | 'ready' | 'degraded' | 'deleting' | 'deleted';
@@ -71,6 +72,11 @@ export interface KnowledgeDocumentRecord {
   mimeType: string;
   sizeBytes: number;
   sha256: string;
+  storageProvider: 'local' | 'cloudinary' | 'azure-blob';
+  storageKey: string | null;
+  storageContainer: string | null;
+  storageResourceType: string | null;
+  storageUrl: string | null;
   state: KnowledgeDocumentState;
   indexVersion: number;
   pageCount: number | null;
@@ -207,6 +213,11 @@ const applyKnowledgeSchema = db.transaction(() => {
       mime_type TEXT NOT NULL,
       size_bytes INTEGER NOT NULL,
       sha256 TEXT NOT NULL,
+      storage_provider TEXT NOT NULL DEFAULT 'local',
+      storage_key TEXT,
+      storage_container TEXT,
+      storage_resource_type TEXT,
+      storage_url TEXT,
       state TEXT NOT NULL DEFAULT 'queued',
       index_version INTEGER NOT NULL DEFAULT 0,
       page_count INTEGER,
@@ -389,6 +400,11 @@ if (!knowledgeBaseColumns.has('vector_index_version')) db.exec("ALTER TABLE know
 if (!knowledgeBaseColumns.has('last_allocated_version')) db.exec('ALTER TABLE knowledge_bases ADD COLUMN last_allocated_version INTEGER NOT NULL DEFAULT 0');
 const knowledgeDocumentColumns = new Set((db.prepare('PRAGMA table_info(knowledge_documents)').all() as Array<{ name: string }>).map((column) => column.name));
 if (!knowledgeDocumentColumns.has('relationship_count')) db.exec('ALTER TABLE knowledge_documents ADD COLUMN relationship_count INTEGER NOT NULL DEFAULT 0');
+if (!knowledgeDocumentColumns.has('storage_provider')) db.exec("ALTER TABLE knowledge_documents ADD COLUMN storage_provider TEXT NOT NULL DEFAULT 'local'");
+if (!knowledgeDocumentColumns.has('storage_key')) db.exec('ALTER TABLE knowledge_documents ADD COLUMN storage_key TEXT');
+if (!knowledgeDocumentColumns.has('storage_container')) db.exec('ALTER TABLE knowledge_documents ADD COLUMN storage_container TEXT');
+if (!knowledgeDocumentColumns.has('storage_resource_type')) db.exec('ALTER TABLE knowledge_documents ADD COLUMN storage_resource_type TEXT');
+if (!knowledgeDocumentColumns.has('storage_url')) db.exec('ALTER TABLE knowledge_documents ADD COLUMN storage_url TEXT');
 const knowledgeJobColumns = new Set((db.prepare('PRAGMA table_info(knowledge_jobs)').all() as Array<{ name: string }>).map((column) => column.name));
 if (!knowledgeJobColumns.has('embedding_profile_id')) db.exec(`ALTER TABLE knowledge_jobs ADD COLUMN embedding_profile_id TEXT
   REFERENCES knowledge_embedding_profiles(vector_index_version) ON DELETE RESTRICT`);
@@ -441,6 +457,11 @@ if (db.provider === 'sqlite') db.exec(`
     knowledge_base_id TEXT NOT NULL,
     document_id TEXT,
     stored_filename TEXT NOT NULL UNIQUE,
+    storage_provider TEXT NOT NULL DEFAULT 'local',
+    storage_key TEXT,
+    storage_container TEXT,
+    storage_resource_type TEXT,
+    storage_url TEXT,
     state TEXT NOT NULL DEFAULT 'pending',
     attempt INTEGER NOT NULL DEFAULT 0,
     error TEXT,
@@ -641,6 +662,11 @@ if (db.provider === 'sqlite') db.exec(`
 `);
 const knowledgeCleanupColumns = new Set((db.prepare('PRAGMA table_info(knowledge_file_cleanup)').all() as Array<{ name: string }>).map((column) => column.name));
 if (!knowledgeCleanupColumns.has('retry_at')) db.exec('ALTER TABLE knowledge_file_cleanup ADD COLUMN retry_at TEXT');
+if (!knowledgeCleanupColumns.has('storage_provider')) db.exec("ALTER TABLE knowledge_file_cleanup ADD COLUMN storage_provider TEXT NOT NULL DEFAULT 'local'");
+if (!knowledgeCleanupColumns.has('storage_key')) db.exec('ALTER TABLE knowledge_file_cleanup ADD COLUMN storage_key TEXT');
+if (!knowledgeCleanupColumns.has('storage_container')) db.exec('ALTER TABLE knowledge_file_cleanup ADD COLUMN storage_container TEXT');
+if (!knowledgeCleanupColumns.has('storage_resource_type')) db.exec('ALTER TABLE knowledge_file_cleanup ADD COLUMN storage_resource_type TEXT');
+if (!knowledgeCleanupColumns.has('storage_url')) db.exec('ALTER TABLE knowledge_file_cleanup ADD COLUMN storage_url TEXT');
 const knowledgeBackfillRunColumns = new Set((db.prepare('PRAGMA table_info(knowledge_backfill_runs)').all() as Array<{ name: string }>).map((column) => column.name));
 if (!knowledgeBackfillRunColumns.has('scope_space_id')) db.exec('ALTER TABLE knowledge_backfill_runs ADD COLUMN scope_space_id TEXT REFERENCES spaces(id) ON DELETE CASCADE');
 const knowledgeBackfillItemColumns = new Set((db.prepare('PRAGMA table_info(knowledge_backfill_items)').all() as Array<{ name: string }>).map((column) => column.name));
@@ -959,6 +985,9 @@ function rowDocument(row: any): KnowledgeDocumentRecord {
   return {
     id: row.id, spaceId: row.space_id, knowledgeBaseId: row.knowledge_base_id,
     originalName: row.original_name, mimeType: row.mime_type, sizeBytes: Number(row.size_bytes), sha256: row.sha256,
+    storageProvider: row.storage_provider || 'local', storageKey: row.storage_key || null,
+    storageContainer: row.storage_container || null, storageResourceType: row.storage_resource_type || null,
+    storageUrl: row.storage_url || null,
     state: row.state, indexVersion: Number(row.index_version), pageCount: row.page_count == null ? null : Number(row.page_count),
     chunkCount: Number(row.chunk_count), entityCount: Number(row.entity_count), relationshipCount: Number(row.relationship_count || 0), language: row.language,
     error: row.error, createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at,
@@ -1189,6 +1218,7 @@ function queueDocumentEmbeddingTargets(document: KnowledgeDocumentRecord, job: K
 export function createKnowledgeDocument(input: {
   spaceId: string; knowledgeBaseId: string; userId: string; storedFilename: string; originalName: string;
   mimeType: string; sizeBytes: number; sha256: string; metadata?: Record<string, unknown>; idempotencyKey?: string;
+  storage?: Partial<StoredFile>;
 }) {
   const base = getKnowledgeBase(input.knowledgeBaseId, input.spaceId);
   if (!base) throw new KnowledgeError('Knowledge base not found.', 404, 'KNOWLEDGE_BASE_NOT_FOUND');
@@ -1215,9 +1245,13 @@ export function createKnowledgeDocument(input: {
     assertKnowledgeStorageAllowance(input.spaceId, input.sizeBytes);
     const id = crypto.randomUUID(); const now = new Date().toISOString();
     db.prepare(`INSERT INTO knowledge_documents
-      (id,space_id,knowledge_base_id,created_by,stored_filename,original_name,mime_type,size_bytes,sha256,state,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,'queued',?,?)`).run(id, input.spaceId, input.knowledgeBaseId, input.userId,
-        input.storedFilename, input.originalName, input.mimeType, input.sizeBytes, input.sha256, now, now);
+      (id,space_id,knowledge_base_id,created_by,stored_filename,original_name,mime_type,size_bytes,sha256,
+       storage_provider,storage_key,storage_container,storage_resource_type,storage_url,state,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)`).run(id, input.spaceId, input.knowledgeBaseId, input.userId,
+        input.storedFilename, input.originalName, input.mimeType, input.sizeBytes, input.sha256,
+        input.storage?.storageProvider || 'local', input.storage?.storageKey || null,
+        input.storage?.storageContainer || null, input.storage?.storageResourceType || null,
+        input.storage?.storageUrl || null, now, now);
     db.prepare(`UPDATE knowledge_bases SET status='indexing',updated_at=? WHERE id=? AND space_id=?`).run(now, input.knowledgeBaseId, input.spaceId);
     const job = insertKnowledgeJob({ spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBaseId, documentId: id,
       requestedBy: input.userId, kind: 'document.index', idempotencyKey: input.idempotencyKey,
@@ -1328,6 +1362,7 @@ export function createKnowledgeMarkdownDocument(input: {
 export function createKnowledgeBinaryDocument(input: {
   spaceId: string; knowledgeBaseId: string; userId: string; originalName: string;
   mimeType: string; bytes: Buffer; metadata?: Record<string, unknown>; idempotencyKey?: string;
+  storage?: Partial<StoredFile>;
 }) {
   if (!input.bytes.length) throw new KnowledgeError('Generated knowledge content cannot be empty.', 400, 'KNOWLEDGE_DOCUMENT_EMPTY');
   if (input.bytes.length > config.knowledgeMaxDocumentBytes) {
@@ -1348,7 +1383,7 @@ export function createKnowledgeBinaryDocument(input: {
     const created = createKnowledgeDocument({
       spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBaseId, userId: input.userId,
       storedFilename, originalName, mimeType: input.mimeType, sizeBytes: input.bytes.length, sha256,
-      metadata: input.metadata || {}, idempotencyKey: input.idempotencyKey
+      metadata: input.metadata || {}, idempotencyKey: input.idempotencyKey, storage: input.storage
     });
     if (created.deduplicated) fs.rmSync(stagedPath, { force: true });
     return { ...created, sha256 };
@@ -1570,13 +1605,17 @@ function safeStoredPath(storedFilename: string) {
 
 function enqueueKnowledgeFileCleanup(input: {
   spaceId: string; knowledgeBaseId: string; documentId?: string | null; storedFilename: string;
+  storageProvider?: string | null; storageKey?: string | null; storageContainer?: string | null;
+  storageResourceType?: string | null; storageUrl?: string | null;
 }) {
   const now = new Date().toISOString();
   db.prepare(`INSERT INTO knowledge_file_cleanup
-    (id,space_id,knowledge_base_id,document_id,stored_filename,state,attempt,error,retry_at,created_at,updated_at)
-    VALUES (?,?,?,?,?,'pending',0,NULL,NULL,?,?) ON CONFLICT(stored_filename) DO NOTHING`)
+    (id,space_id,knowledge_base_id,document_id,stored_filename,storage_provider,storage_key,storage_container,
+     storage_resource_type,storage_url,state,attempt,error,retry_at,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,'pending',0,NULL,NULL,?,?) ON CONFLICT(stored_filename) DO NOTHING`)
     .run(crypto.randomUUID(), input.spaceId, input.knowledgeBaseId, input.documentId || null,
-      input.storedFilename, now, now);
+      input.storedFilename, input.storageProvider || 'local', input.storageKey || null,
+      input.storageContainer || null, input.storageResourceType || null, input.storageUrl || null, now, now);
 }
 
 /**
@@ -1584,12 +1623,13 @@ function enqueueKnowledgeFileCleanup(input: {
  * committed. A crash after unlinking but before acknowledgement is harmless:
  * force removal of the already-absent file succeeds on the next pass.
  */
-export function processKnowledgeFileCleanup(limit = 100) {
+export async function processKnowledgeFileCleanup(limit = 100) {
   const now = new Date().toISOString();
   const rows = db.prepare(`SELECT * FROM knowledge_file_cleanup
     WHERE state='pending' AND (retry_at IS NULL OR retry_at<=?)
     ORDER BY created_at,id LIMIT ?`).all(now, Math.max(1, Math.min(500, limit))) as Array<{
-      id: string; stored_filename: string; attempt: number;
+      id: string; stored_filename: string; attempt: number; storage_provider: string; storage_key: string | null;
+      storage_container: string | null; storage_resource_type: string | null; storage_url: string | null;
     }>;
   let completed = 0; let failed = 0;
   for (const row of rows) {
@@ -1598,6 +1638,14 @@ export function processKnowledgeFileCleanup(limit = 100) {
     if (!claimed) continue;
     try {
       fs.rmSync(safeStoredPath(row.stored_filename), { force: true });
+      if (row.storage_provider !== 'local' && row.storage_key) {
+        const removed = await removeStoredFile({
+          storageProvider: row.storage_provider as StoredFile['storageProvider'], storageKey: row.storage_key,
+          storageContainer: row.storage_container || undefined, storageResourceType: row.storage_resource_type || undefined,
+          storageUrl: row.storage_url || undefined
+        });
+        if (!removed) throw new Error('Managed knowledge file could not be removed.');
+      }
       const finishedAt = new Date().toISOString();
       db.prepare(`UPDATE knowledge_file_cleanup SET state='completed',error=NULL,retry_at=NULL,completed_at=?,updated_at=? WHERE id=?`)
         .run(finishedAt, finishedAt, row.id);
@@ -1614,12 +1662,26 @@ export function processKnowledgeFileCleanup(limit = 100) {
   return { inspected: rows.length, completed, failed };
 }
 
-export function knowledgeDocumentSourcePath(document: KnowledgeDocumentRecord) {
-  const row = db.prepare('SELECT stored_filename FROM knowledge_documents WHERE id=? AND space_id=?')
-    .get(document.id, document.spaceId) as { stored_filename: string } | undefined;
+export async function knowledgeDocumentSourcePath(document: KnowledgeDocumentRecord) {
+  const row = db.prepare(`SELECT stored_filename,storage_provider,storage_key,storage_container,storage_resource_type,storage_url
+    FROM knowledge_documents WHERE id=? AND space_id=?`)
+    .get(document.id, document.spaceId) as { stored_filename: string; storage_provider: string; storage_key: string | null;
+      storage_container: string | null; storage_resource_type: string | null; storage_url: string | null } | undefined;
   if (!row) throw new KnowledgeError('Knowledge document not found.', 404, 'KNOWLEDGE_DOCUMENT_NOT_FOUND');
   const resolved = safeStoredPath(row.stored_filename);
-  if (!fs.existsSync(resolved)) throw new KnowledgeError('The staged knowledge document is missing.', 409, 'KNOWLEDGE_DOCUMENT_FILE_MISSING');
+  if (!fs.existsSync(resolved) && row.storage_provider !== 'local' && row.storage_key) {
+    const bytes = await downloadStoredFile({
+      storageProvider: row.storage_provider as StoredFile['storageProvider'], storageKey: row.storage_key,
+      storageContainer: row.storage_container || undefined, storageResourceType: row.storage_resource_type || undefined,
+      storageUrl: row.storage_url || undefined
+    });
+    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+    if (bytes.length !== document.sizeBytes || digest !== document.sha256) {
+      throw new KnowledgeError('The managed knowledge document failed its integrity check.', 409, 'KNOWLEDGE_DOCUMENT_INTEGRITY_FAILED');
+    }
+    fs.writeFileSync(resolved, bytes, { flag: 'wx' });
+  }
+  if (!fs.existsSync(resolved)) throw new KnowledgeError('The managed knowledge document is missing.', 409, 'KNOWLEDGE_DOCUMENT_FILE_MISSING');
   return resolved;
 }
 
@@ -1653,8 +1715,9 @@ export function completeKnowledgeDelete(job: KnowledgeJobRecord, output: Record<
     lockKnowledgeJobLease(job);
     const now = new Date().toISOString();
     if (job.kind === 'document.delete' && job.documentId) {
-      const stored = db.prepare('SELECT stored_filename FROM knowledge_documents WHERE id=? AND space_id=?')
-        .get(job.documentId, job.spaceId) as { stored_filename: string } | undefined;
+      const stored = db.prepare(`SELECT stored_filename,storage_provider,storage_key,storage_container,storage_resource_type,storage_url
+        FROM knowledge_documents WHERE id=? AND space_id=?`)
+        .get(job.documentId, job.spaceId) as any;
       purgeKnowledgeEvidence(job.spaceId, job.knowledgeBaseId, job.documentId);
       db.prepare(`UPDATE knowledge_documents SET state='deleted',deleted_at=?,original_name='Deleted document',mime_type='application/octet-stream',
         size_bytes=0,sha256='deleted:'||id,page_count=NULL,chunk_count=0,entity_count=0,relationship_count=0,language=NULL,error=NULL,updated_at=?
@@ -1673,10 +1736,13 @@ export function completeKnowledgeDelete(job: KnowledgeJobRecord, output: Record<
         WHEN EXISTS(SELECT 1 FROM knowledge_documents WHERE knowledge_base_id=? AND state='ready' AND deleted_at IS NULL) THEN 'ready' ELSE 'empty' END,
         updated_at=? WHERE id=? AND space_id=?`).run(job.targetVersion || 0, job.knowledgeBaseId, now, job.knowledgeBaseId, job.spaceId);
       if (stored) enqueueKnowledgeFileCleanup({ spaceId: job.spaceId, knowledgeBaseId: job.knowledgeBaseId,
-        documentId: job.documentId, storedFilename: stored.stored_filename });
+        documentId: job.documentId, storedFilename: stored.stored_filename, storageProvider: stored.storage_provider,
+        storageKey: stored.storage_key, storageContainer: stored.storage_container,
+        storageResourceType: stored.storage_resource_type, storageUrl: stored.storage_url });
     } else if (job.kind === 'base.delete') {
-      const stored = db.prepare(`SELECT stored_filename FROM knowledge_documents WHERE knowledge_base_id=? AND space_id=? AND deleted_at IS NULL`)
-        .all(job.knowledgeBaseId, job.spaceId) as Array<{ stored_filename: string }>;
+      const stored = db.prepare(`SELECT stored_filename,storage_provider,storage_key,storage_container,storage_resource_type,storage_url
+        FROM knowledge_documents WHERE knowledge_base_id=? AND space_id=? AND deleted_at IS NULL`)
+        .all(job.knowledgeBaseId, job.spaceId) as any[];
       purgeKnowledgeEvidence(job.spaceId, job.knowledgeBaseId);
       db.prepare('DELETE FROM survey_knowledge_bases WHERE space_id=? AND knowledge_base_id=?')
         .run(job.spaceId, job.knowledgeBaseId);
@@ -1699,7 +1765,8 @@ export function completeKnowledgeDelete(job: KnowledgeJobRecord, output: Record<
       db.prepare(`UPDATE knowledge_base_embedding_profiles SET mode='disabled',state='disabled',error=NULL,updated_at=?
         WHERE knowledge_base_id=? AND space_id=?`).run(now, job.knowledgeBaseId, job.spaceId);
       for (const item of stored) enqueueKnowledgeFileCleanup({ spaceId: job.spaceId, knowledgeBaseId: job.knowledgeBaseId,
-        storedFilename: item.stored_filename });
+        storedFilename: item.stored_filename, storageProvider: item.storage_provider, storageKey: item.storage_key,
+        storageContainer: item.storage_container, storageResourceType: item.storage_resource_type, storageUrl: item.storage_url });
     }
     // Provider snapshots are required while a delete is queued or retrying, but
     // are no longer needed after the destructive operation has committed.
@@ -1712,7 +1779,7 @@ export function completeKnowledgeDelete(job: KnowledgeJobRecord, output: Record<
   })();
   // Keep filesystem side effects outside the SQLite transaction. Any failure is
   // retained durably and retried by the worker without rolling back redaction.
-  processKnowledgeFileCleanup();
+  void processKnowledgeFileCleanup();
   return completed;
 }
 

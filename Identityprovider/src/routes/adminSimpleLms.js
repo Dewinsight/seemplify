@@ -158,6 +158,9 @@ const sanitizeChaptersInput = (input) => {
 const sanitizeBanner = (bannerInput = {}, body = {}) => ({
   url: String(bannerInput?.url || body.bannerUrl || '').trim().slice(0, 2000),
   publicId: String(bannerInput?.publicId || body.bannerPublicId || '').trim().slice(0, 400),
+  provider: bannerInput?.provider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+  storageKey: String(bannerInput?.storageKey || bannerInput?.publicId || '').trim().slice(0, 600),
+  storageContainer: String(bannerInput?.storageContainer || '').trim().slice(0, 100),
   width: Number.isFinite(Number(bannerInput?.width)) ? Number(bannerInput.width) : undefined,
   height: Number.isFinite(Number(bannerInput?.height)) ? Number(bannerInput.height) : undefined
 })
@@ -261,6 +264,9 @@ router.post('/upload/banner', upload.single('banner'), auditLog('admin_simple_lm
     res.json({
       url: uploadResult.secure_url,
       publicId: uploadResult.public_id,
+      provider: uploadResult.storageProvider || 'cloudinary',
+      storageKey: uploadResult.storageKey || uploadResult.public_id,
+      storageContainer: uploadResult.storageContainer || null,
       width: uploadResult.width,
       height: uploadResult.height
     })

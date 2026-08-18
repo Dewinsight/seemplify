@@ -45,7 +45,7 @@ const CandidateSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
-  resumeUrl: { // URL of the resume stored in Cloudinary
+  resumeUrl: { // URL of the resume stored by the configured platform provider
     type: String,
     trim: true,
   },
@@ -288,6 +288,14 @@ const CandidateSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  resumeStorageProvider: {
+    type: String,
+    enum: ['cloudinary', 'azure-blob'],
+    default: 'cloudinary'
+  },
+  resumeStorageKey: { type: String, trim: true },
+  resumeStorageContainer: { type: String, trim: true },
+  resumeStorageResourceType: { type: String, trim: true },
   // Processing metadata
   processingMetadata: {
     uploadSuccess: Boolean,

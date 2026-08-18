@@ -22,7 +22,6 @@ const OnboardingHandoff = require('../models/OnboardingHandoff');
 const OnboardingTemplate = require('../models/OnboardingTemplate');
 const OnboardingAuditEvent = require('../models/OnboardingAuditEvent');
 const OnboardingWorkflowItem = require('../models/OnboardingWorkflowItem');
-const CloudinaryUploadService = require('../services/cloudinaryUploadService');
 const onboardingStorageService = require('../services/onboardingStorageService');
 const onboardingPdfService = require('../services/onboardingPdfService');
 const onboardingEmailService = require('../services/onboardingEmailService');
@@ -49,7 +48,6 @@ const {
 const { serializeSubmission } = require('../services/onboardingSecurityService');
 const { performIdentityAction } = require('../services/idpMembershipLifecycleService');
 
-const cloudinaryUploadService = new CloudinaryUploadService();
 const ACTIVE_SIGNING_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
 const VIEWABLE_SIGNING_ENVELOPE_STATUSES = [...ACTIVE_SIGNING_ENVELOPE_STATUSES, 'completed'];
 const SIGNABLE_DOCUMENT_STATUSES = ['pending', 'signed'];
@@ -2042,22 +2040,13 @@ router.post('/documents/upload', upload.single('document'), async (req, res) => 
     let builderBlocks = [];
 
     if (req.file.mimetype === 'application/pdf') {
-      const uploadResult = await cloudinaryUploadService.uploadFile(req.file.path, req.file.mimetype);
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || 'PDF upload failed');
-      }
-      originalFile = {
-        url: uploadResult.resumeUrl,
-        downloadUrl: cloudinaryUploadService.getDownloadUrl(uploadResult.publicId),
-        publicId: uploadResult.publicId,
-        resourceType: uploadResult.resourceType,
-        deliveryType: uploadResult.deliveryType,
-        format: uploadResult.format,
-        bytes: uploadResult.bytes,
-        originalName: req.file.originalname,
+      originalFile = await onboardingStorageService.uploadBuffer(await fs.readFile(req.file.path), {
+        folder: 'onboarding/originals',
+        fileName: `${title}-${Date.now()}.pdf`,
         mimeType: req.file.mimetype,
-        renderedAt: new Date()
-      };
+        resourceType: 'raw'
+      });
+      originalFile.originalName = req.file.originalname;
       pdfSnapshot = originalFile;
     } else {
       sourceType = 'uploaded_docx';

@@ -139,6 +139,9 @@ const bannerSchema = new mongoose.Schema({
     trim: true,
     maxlength: 400
   },
+  provider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+  storageKey: { type: String, trim: true, maxlength: 600 },
+  storageContainer: { type: String, trim: true, maxlength: 100 },
   width: Number,
   height: Number
 }, { _id: false })

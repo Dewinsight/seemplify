@@ -28,6 +28,7 @@ const { findManagerForEmployee } = require('../services/idpService');
 const User = require('../models/User');
 const { fetchAttendanceContext } = require('../services/attendanceContextService');
 const { buildGoalSnapshots } = require('../services/appraisalGoalSnapshotService');
+const { createStorageService } = require('../services/storageService');
 const {
   canAppraiseEmployee,
   canManageAppraisal,
@@ -1499,6 +1500,19 @@ function removeRejectedUpload(file) {
   const expectedPrefix = `${APPRAISAL_UPLOAD_DIR}${path.sep}`;
   if (!resolvedPath.startsWith(expectedPrefix)) return;
   fs.unlink(resolvedPath, () => {});
+}
+
+function resolveLegacyAppraisalDocumentPath(document) {
+  if (document?.storageProvider && document.storageProvider !== 'local') return null;
+  const candidates = [document?.storagePath, document?.fileName].filter(Boolean);
+  const expectedPrefix = `${APPRAISAL_UPLOAD_DIR}${path.sep}`;
+  for (const candidate of candidates) {
+    const resolvedPath = path.isAbsolute(candidate)
+      ? path.resolve(candidate)
+      : path.resolve(APPRAISAL_UPLOAD_DIR, path.basename(candidate));
+    if (resolvedPath.startsWith(expectedPrefix) && fs.existsSync(resolvedPath)) return resolvedPath;
+  }
+  return null;
 }
 
 const storage = multer.diskStorage({
@@ -3769,6 +3783,7 @@ router.post('/:appraisalId/chat', requireAuth, async (req, res) => {
 
 // Upload document
 router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async (req, res) => {
+  let storedFile = null;
   try {
     const organizationId = resolveOrganizationId(req);
     if (!organizationId) {
@@ -3808,17 +3823,27 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
       return res.status(403).json({ success: false, error: 'Only HR can upload HR-only documents' });
     }
 
+    storedFile = await createStorageService().uploadBuffer(await fs.promises.readFile(file.path), {
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      folder: `performance/appraisals/${appraisal.organizationId}/${appraisal._id}`
+    });
+
     // Create document record
     const document = new AppraisalDocument({
       appraisalId: appraisal._id,
       organizationId: appraisal.organizationId,
-      fileName: file.filename,
+      fileName: storedFile.storageKey,
       originalName: file.originalname,
       fileType,
       mimeType: file.mimetype,
       fileSize: file.size,
-      storageProvider: 'local',
-      storagePath: file.path,
+      storageProvider: storedFile.storageProvider,
+      storagePath: storedFile.storageKey,
+      storageKey: storedFile.storageKey,
+      storageContainer: storedFile.storageContainer || null,
+      storageResourceType: storedFile.storageResourceType || null,
+      storageUrl: storedFile.storageUrl,
       category: req.body.category || 'other',
       description: req.body.description,
       visibility: requestedVisibility,
@@ -3881,10 +3906,12 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
     // Link to appraisal
     appraisal.documents.push(document._id);
     await appraisal.save();
+    removeRejectedUpload(file);
 
     res.status(201).json({ success: true, data: document });
   } catch (error) {
     removeRejectedUpload(req.file);
+    if (storedFile?.storageKey) await createStorageService().remove(storedFile).catch(() => undefined);
     console.error('Upload document error:', error);
     res.status(500).json({ success: false, error: 'Failed to upload document' });
   }
@@ -3943,6 +3970,78 @@ router.get('/:appraisalId/documents/:documentId', requireAuth, async (req, res) 
   } catch (error) {
     console.error('Get document error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch document' });
+  }
+});
+
+// Download document from the provider captured when it was uploaded.
+router.get('/:appraisalId/documents/:documentId/content', requireAuth, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    if (!organizationId) return res.status(403).json({ success: false, error: 'Organization context is required' });
+    const appraisal = await Appraisal.findOne({ _id: req.params.appraisalId, organizationId });
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    const document = await AppraisalDocument.findOne({
+      _id: req.params.documentId, appraisalId: appraisal._id, organizationId, status: { $ne: 'deleted' }
+    });
+    if (!document) return res.status(404).json({ success: false, error: 'Document not found' });
+    const isEmployee = isAppraisalEmployee(req, appraisal);
+    const canManage = await canManageAppraisal(req, appraisal);
+    const isHR = req.userRole === 'hr_admin';
+    const canView = document.visibility === 'employee_only' ? isEmployee
+      : document.visibility === 'hr_only' ? isHR : (isEmployee || canManage || isHR);
+    if (!canView) return res.status(403).json({ success: false, error: 'Access denied' });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    if (!document.storageUrl) {
+      const legacyPath = resolveLegacyAppraisalDocumentPath(document);
+      if (!legacyPath) return res.status(410).json({ success: false, error: 'Document content is unavailable' });
+      return res.download(legacyPath, document.originalName);
+    }
+    return res.redirect(302, document.storageUrl);
+  } catch (error) {
+    console.error('Download document error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to download document' });
+  }
+});
+
+router.delete('/:appraisalId/documents/:documentId', requireAuth, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    if (!organizationId) return res.status(403).json({ success: false, error: 'Organization context is required' });
+    const appraisal = await Appraisal.findOne({ _id: req.params.appraisalId, organizationId });
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    const document = await AppraisalDocument.findOne({
+      _id: req.params.documentId, appraisalId: appraisal._id, organizationId, status: { $ne: 'deleted' }
+    });
+    if (!document) return res.status(404).json({ success: false, error: 'Document not found' });
+    const isOwner = String(document.uploadedBy?.userId || '') === String(req.session?.user?.id || req.session?.user?.sub || '');
+    const canManage = await canManageAppraisal(req, appraisal);
+    if (!isOwner && !canManage && req.userRole !== 'hr_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    if (document.storageProvider === 'local' || (!document.storageProvider && !document.storageUrl)) {
+      const legacyPath = resolveLegacyAppraisalDocumentPath(document);
+      if (legacyPath) await fs.promises.unlink(legacyPath).catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    } else {
+      await createStorageService().remove({
+        storageProvider: document.storageProvider,
+        storageKey: document.storageKey || document.storagePath,
+        storageContainer: document.storageContainer,
+        storageResourceType: document.storageResourceType,
+        storageUrl: document.storageUrl
+      });
+    }
+    document.status = 'deleted';
+    document.storageUrl = undefined;
+    await document.save();
+    appraisal.documents = appraisal.documents.filter((id) => String(id) !== String(document._id));
+    await appraisal.save();
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Delete document error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to delete document' });
   }
 });
 
@@ -4762,6 +4861,7 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
  * Upload a document mid-conversation
  */
 router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('file'), async (req, res) => {
+  let storedFile = null;
   try {
     const organizationId = resolveOrganizationId(req);
     if (!organizationId) {
@@ -4816,17 +4916,27 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
 
     const fileType = path.extname(file.originalname).slice(1).toLowerCase();
 
+    storedFile = await createStorageService().uploadBuffer(await fs.promises.readFile(file.path), {
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      folder: `performance/conversations/${appraisal.organizationId}/${appraisal._id}`
+    });
+
     // Create document record
     const document = new AppraisalDocument({
       appraisalId: appraisal._id,
       organizationId: appraisal.organizationId,
-      fileName: file.filename,
+      fileName: storedFile.storageKey,
       originalName: file.originalname,
       fileType,
       mimeType: file.mimetype,
       fileSize: file.size,
-      storageProvider: 'local',
-      storagePath: file.path,
+      storageProvider: storedFile.storageProvider,
+      storagePath: storedFile.storageKey,
+      storageKey: storedFile.storageKey,
+      storageContainer: storedFile.storageContainer || null,
+      storageResourceType: storedFile.storageResourceType || null,
+      storageUrl: storedFile.storageUrl,
       category: req.body.category || 'achievement_evidence',
       description: req.body.description,
       uploadedBy: {
@@ -4928,6 +5038,7 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
 
     appraisal.conversationAssessment.lastActivityAt = new Date();
     await appraisal.save();
+    removeRejectedUpload(file);
 
     res.status(201).json({
       success: true,
@@ -4940,6 +5051,7 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
     });
   } catch (error) {
     removeRejectedUpload(req.file);
+    if (storedFile?.storageKey) await createStorageService().remove(storedFile).catch(() => undefined);
     console.error('Conversation upload error:', error);
     sendConversationRuntimeError(res, error, 'Failed to upload document');
   }

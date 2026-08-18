@@ -3657,7 +3657,8 @@ const sanitizeLessonMediaInput = (input) => {
   const url = String(input.url || '').trim().slice(0, 2000)
   const publicId = String(input.publicId || '').trim().slice(0, 400)
   const resourceType = normalizeLessonMediaResourceType(input.resourceType, 'video')
-  const provider = String(input.provider || '').trim().toLowerCase() === 'external' ? 'external' : 'cloudinary'
+  const requestedProvider = String(input.provider || '').trim().toLowerCase()
+  const provider = ['external', 'azure-blob'].includes(requestedProvider) ? requestedProvider : 'cloudinary'
 
   if (!url && !publicId) return null
 
@@ -3665,6 +3666,8 @@ const sanitizeLessonMediaInput = (input) => {
     provider,
     url,
     publicId,
+    storageKey: String(input.storageKey || publicId).trim().slice(0, 600),
+    storageContainer: String(input.storageContainer || '').trim().slice(0, 100),
     resourceType,
     format: String(input.format || '').trim().toLowerCase().slice(0, 40),
     bytes: Number.isFinite(Number(input.bytes)) ? Math.max(0, Math.round(Number(input.bytes))) : 0,
@@ -3855,6 +3858,9 @@ const parseCoursePayload = ({
   const bannerFromFields = {
     url: String(body.bannerUrl || '').trim().slice(0, 2000),
     publicId: String(body.bannerPublicId || '').trim().slice(0, 400),
+    provider: body.bannerProvider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+    storageKey: String(body.bannerStorageKey || body.bannerPublicId || '').trim().slice(0, 600),
+    storageContainer: String(body.bannerStorageContainer || '').trim().slice(0, 100),
     width: Number.isFinite(Number(body.bannerWidth)) ? Number(body.bannerWidth) : undefined,
     height: Number.isFinite(Number(body.bannerHeight)) ? Number(body.bannerHeight) : undefined
   }
@@ -3964,6 +3970,9 @@ const parseCoursePayload = ({
     payload.banner = {
       url: String(effectiveBannerPayload.url || '').trim().slice(0, 2000),
       publicId: String(effectiveBannerPayload.publicId || '').trim().slice(0, 400),
+      provider: effectiveBannerPayload.provider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+      storageKey: String(effectiveBannerPayload.storageKey || effectiveBannerPayload.publicId || '').trim().slice(0, 600),
+      storageContainer: String(effectiveBannerPayload.storageContainer || '').trim().slice(0, 100),
       width: Number.isFinite(Number(effectiveBannerPayload.width)) ? Number(effectiveBannerPayload.width) : undefined,
       height: Number.isFinite(Number(effectiveBannerPayload.height)) ? Number(effectiveBannerPayload.height) : undefined
     }
@@ -4060,7 +4069,10 @@ const parseProgramPayload = ({ body, existingProgram = null }) => {
   if (bannerPayload && typeof bannerPayload === 'object' && String(bannerPayload.url || '').trim()) {
     payload.banner = {
       url: String(bannerPayload.url || '').trim().slice(0, 2000),
-      publicId: String(bannerPayload.publicId || '').trim().slice(0, 400)
+      publicId: String(bannerPayload.publicId || '').trim().slice(0, 400),
+      provider: bannerPayload.provider === 'azure-blob' ? 'azure-blob' : 'cloudinary',
+      storageKey: String(bannerPayload.storageKey || bannerPayload.publicId || '').trim().slice(0, 600),
+      storageContainer: String(bannerPayload.storageContainer || '').trim().slice(0, 100)
     }
   } else if (existingProgram?.banner?.url) {
     payload.banner = existingProgram.banner
@@ -12759,6 +12771,9 @@ apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
       message: 'Banner uploaded successfully.',
       url: uploadResult.secure_url,
       publicId: uploadResult.public_id,
+      provider: uploadResult.storageProvider || 'cloudinary',
+      storageKey: uploadResult.storageKey || uploadResult.public_id,
+      storageContainer: uploadResult.storageContainer || null,
       width: uploadResult.width,
       height: uploadResult.height
     })
@@ -12800,16 +12815,20 @@ apiRouter.post('/upload/lesson-media', lessonMediaUpload.single('media'), async 
       : 0
     const durationMinutes = durationSeconds > 0 ? Math.max(1, Math.ceil(durationSeconds / 60)) : 0
     const lessonMedia = {
-      provider: 'cloudinary',
+      provider: uploadResult.storageProvider || 'cloudinary',
       url: uploadResult.secure_url,
       publicId: uploadResult.public_id,
+      storageKey: uploadResult.storageKey || uploadResult.public_id,
+      storageContainer: uploadResult.storageContainer || null,
       resourceType: normalizedResourceType,
       format: String(uploadResult.format || '').trim().toLowerCase(),
       bytes: Number.isFinite(Number(uploadResult.bytes)) ? Number(uploadResult.bytes) : 0,
       width: Number.isFinite(Number(uploadResult.width)) ? Number(uploadResult.width) : 0,
       height: Number.isFinite(Number(uploadResult.height)) ? Number(uploadResult.height) : 0,
       durationSeconds,
-      sourceLabel: normalizedResourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video'
+      sourceLabel: uploadResult.storageProvider === 'azure-blob'
+        ? (normalizedResourceType === 'audio' ? 'Azure Audio' : 'Azure Video')
+        : (normalizedResourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
     }
 
     return res.json({

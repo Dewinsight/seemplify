@@ -25,7 +25,7 @@ async function executeKnowledgeJob(job: KnowledgeJobRecord) {
     const document = getKnowledgeDocument(job.documentId, job.knowledgeBaseId, job.spaceId, true);
     if (!document || document.deletedAt) throw new KnowledgeError('Knowledge document not found.', 404, 'KNOWLEDGE_DOCUMENT_NOT_FOUND');
     publishKnowledgeJob(markKnowledgeJobStage(job, 'extracting', 20));
-    const sourcePath = knowledgeDocumentSourcePath(document);
+    const sourcePath = await knowledgeDocumentSourcePath(document);
     publishKnowledgeJob(markKnowledgeJobStage(job, 'indexing', 45));
     const metadata = job.input.metadata && typeof job.input.metadata === 'object' && !Array.isArray(job.input.metadata)
       ? job.input.metadata as Record<string, unknown> : {};
@@ -80,7 +80,7 @@ export class KnowledgeJobRunner {
     this.stopped = false;
     this.timer = setInterval(() => void this.pump(), config.knowledgeWorkerPollMs);
     this.timer.unref();
-    processKnowledgeFileCleanup();
+    void processKnowledgeFileCleanup();
     void this.pump();
   }
 
@@ -90,7 +90,7 @@ export class KnowledgeJobRunner {
     // available promptly after a crashed worker's lease expires without ever
     // stealing a fresh claim from another replica.
     recoverKnowledgeJobs();
-    processKnowledgeFileCleanup();
+    void processKnowledgeFileCleanup();
     while (this.active < config.knowledgeWorkerConcurrency) {
       const job = claimNextKnowledgeJob(this.ownerId);
       if (!job) return;

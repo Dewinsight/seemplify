@@ -27,6 +27,10 @@ const SignatureFieldSchema = new mongoose.Schema({
 const FileSnapshotSchema = new mongoose.Schema({
   url: String,
   downloadUrl: String,
+  provider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+  storageProvider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+  storageKey: String,
+  storageContainer: String,
   publicId: String,
   resourceType: String,
   deliveryType: String,

@@ -37,6 +37,9 @@ const OnboardingItemSchema = new mongoose.Schema({
     document: {
       url: { type: String, trim: true },
       publicId: { type: String, trim: true },
+      provider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+      storageKey: { type: String, trim: true },
+      storageContainer: { type: String, trim: true },
       fileName: { type: String, trim: true },
       mimeType: { type: String, trim: true },
       size: { type: Number }

@@ -483,6 +483,7 @@ exports.changePassword = async (req, res) => {
 
 // Upload avatar
 exports.uploadAvatar = async (req, res) => {
+  let stored = null;
   try {
     if (!req.file) {
       return res.status(400).json({ msg: 'No file uploaded' });
@@ -493,15 +494,35 @@ exports.uploadAvatar = async (req, res) => {
       return res.status(404).json({ msg: 'User not found' });
     }
 
-    // Update avatar URL (assuming you're using Cloudinary or similar)
-    user.profile.avatar = req.file.secure_url || req.file.path;
+    const storage = require('../services/storageService').createStorageService();
+    stored = await storage.uploadBuffer(req.file.buffer, {
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      folder: `recruiter/avatars/${user._id}`,
+      resourceType: 'image'
+    });
+    const previous = {
+      storageProvider: user.profile.avatarStorageProvider,
+      storageKey: user.profile.avatarStorageKey,
+      storageContainer: user.profile.avatarStorageContainer,
+      resourceType: user.profile.avatarStorageResourceType
+    };
+    user.profile.avatar = stored.url;
+    user.profile.avatarStorageProvider = stored.storageProvider;
+    user.profile.avatarStorageKey = stored.storageKey;
+    user.profile.avatarStorageContainer = stored.storageContainer;
+    user.profile.avatarStorageResourceType = stored.resourceType;
     await user.save();
+    if (previous.storageKey) await storage.remove(previous).catch(() => false);
 
     res.json({ 
       msg: 'Avatar uploaded successfully', 
       avatarUrl: user.profile.avatar 
     });
   } catch (error) {
+    if (stored?.storageKey) {
+      await require('../services/storageService').createStorageService().remove(stored).catch(() => false);
+    }
     console.error('Error uploading avatar:', error);
     res.status(500).json({ msg: 'Server error' });
   }
@@ -563,4 +584,4 @@ exports.getProfileSuggestions = async (req, res) => {
     console.error('Error fetching profile suggestions:', error);
     res.status(500).json({ msg: 'Server error' });
   }
-}; 
+};

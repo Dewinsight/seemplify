@@ -1,21 +1,5 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-
-const uploadsDir = path.join(__dirname, '..', 'uploads', 'logos');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadsDir),
-    filename: (req, file, cb) => {
-        const ext = (path.extname(file.originalname) || '.png').toLowerCase();
-        const safeExt = ['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext) ? ext : '.png';
-        const filename = `${req.organization}-${Date.now()}${safeExt}`;
-        cb(null, filename);
-    }
-});
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
     const allowed = /\.(png|jpg|jpeg|gif|webp)$/i;

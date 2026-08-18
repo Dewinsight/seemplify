@@ -2080,7 +2080,9 @@
         const resourceTypeValue = String(input.resourceType || 'video').trim().toLowerCase()
         const resourceType = ['audio', 'video', 'raw', 'link'].includes(resourceTypeValue) ? resourceTypeValue : 'video'
         return {
-          provider: String(input.provider || '').trim().toLowerCase() === 'external' ? 'external' : 'cloudinary',
+          provider: ['external', 'azure-blob'].includes(String(input.provider || '').trim().toLowerCase())
+            ? String(input.provider || '').trim().toLowerCase()
+            : 'cloudinary',
           url,
           publicId,
           resourceType,
@@ -2249,12 +2251,14 @@
         ).trim()
         if (!value) return { kind: 'none', embedUrl: '', directUrl: '', sourceLabel: '' }
 
-        if (media?.provider === 'cloudinary') {
+        if (media?.provider === 'cloudinary' || media?.provider === 'azure-blob') {
           return {
             kind: media.resourceType === 'audio' ? 'audio' : 'video',
             embedUrl: '',
             directUrl: value,
-            sourceLabel: media.sourceLabel || (media.resourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+            sourceLabel: media.sourceLabel || (media.provider === 'azure-blob'
+              ? (media.resourceType === 'audio' ? 'Azure Audio' : 'Azure Video')
+              : (media.resourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video'))
           }
         }
 

@@ -256,6 +256,11 @@ function createSpaceSchema() {
       question_id TEXT REFERENCES questions(id) ON DELETE SET NULL,
       response_id TEXT REFERENCES responses(id) ON DELETE CASCADE,
       stored_filename TEXT NOT NULL UNIQUE,
+      storage_provider TEXT NOT NULL DEFAULT 'local',
+      storage_key TEXT,
+      storage_container TEXT,
+      storage_resource_type TEXT,
+      storage_url TEXT,
       original_name TEXT NOT NULL,
       mime_type TEXT NOT NULL,
       size INTEGER NOT NULL,
@@ -271,6 +276,12 @@ function createSpaceSchema() {
 
   const userColumns = columns('users');
   if (!userColumns.has('active_space_id')) db.exec('ALTER TABLE users ADD COLUMN active_space_id TEXT');
+  const uploadColumns = columns('uploads');
+  if (!uploadColumns.has('storage_provider')) db.exec("ALTER TABLE uploads ADD COLUMN storage_provider TEXT NOT NULL DEFAULT 'local'");
+  if (!uploadColumns.has('storage_key')) db.exec('ALTER TABLE uploads ADD COLUMN storage_key TEXT');
+  if (!uploadColumns.has('storage_container')) db.exec('ALTER TABLE uploads ADD COLUMN storage_container TEXT');
+  if (!uploadColumns.has('storage_resource_type')) db.exec('ALTER TABLE uploads ADD COLUMN storage_resource_type TEXT');
+  if (!uploadColumns.has('storage_url')) db.exec('ALTER TABLE uploads ADD COLUMN storage_url TEXT');
   for (const table of spaceColumnTables) {
     if (!columns(table).has('space_id')) db.exec(`ALTER TABLE ${table} ADD COLUMN space_id TEXT REFERENCES spaces(id) ON DELETE CASCADE`);
   }
@@ -278,11 +289,11 @@ function createSpaceSchema() {
   if (!columns('email_suppressions').has('space_id')) {
     db.exec('ALTER TABLE email_suppressions ADD COLUMN space_id TEXT REFERENCES spaces(id) ON DELETE CASCADE');
   }
-  const uploadColumns = columns('uploads');
-  if (!uploadColumns.has('question_id')) db.exec('ALTER TABLE uploads ADD COLUMN question_id TEXT REFERENCES questions(id) ON DELETE SET NULL');
-  if (!uploadColumns.has('response_id')) db.exec('ALTER TABLE uploads ADD COLUMN response_id TEXT REFERENCES responses(id) ON DELETE CASCADE');
-  if (!uploadColumns.has('expires_at')) db.exec('ALTER TABLE uploads ADD COLUMN expires_at TEXT');
-  if (!uploadColumns.has('claimed_at')) db.exec('ALTER TABLE uploads ADD COLUMN claimed_at TEXT');
+  const uploadLifecycleColumns = columns('uploads');
+  if (!uploadLifecycleColumns.has('question_id')) db.exec('ALTER TABLE uploads ADD COLUMN question_id TEXT REFERENCES questions(id) ON DELETE SET NULL');
+  if (!uploadLifecycleColumns.has('response_id')) db.exec('ALTER TABLE uploads ADD COLUMN response_id TEXT REFERENCES responses(id) ON DELETE CASCADE');
+  if (!uploadLifecycleColumns.has('expires_at')) db.exec('ALTER TABLE uploads ADD COLUMN expires_at TEXT');
+  if (!uploadLifecycleColumns.has('claimed_at')) db.exec('ALTER TABLE uploads ADD COLUMN claimed_at TEXT');
   if (!columns('intelligence_reports').has('knowledge_refs_json')) {
     db.exec("ALTER TABLE intelligence_reports ADD COLUMN knowledge_refs_json TEXT NOT NULL DEFAULT '[]'");
   }

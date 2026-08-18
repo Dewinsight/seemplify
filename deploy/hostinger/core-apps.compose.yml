@@ -296,6 +296,8 @@ services:
       IDP_ISSUER_URL: https://auth.seemplifyai.com
       IDP_URL: https://auth.seemplifyai.com
       IDP_HUB_URL: https://auth.seemplifyai.com
+      IDP_PLATFORM_CONFIGURATION_URL: http://identity-provider:5008
+      IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /run/seemplify/platform-integration-hmac
       OIDC_CLIENT_ID: performance-management
       OIDC_CLIENT_SECRET: ${OIDC_PERFORMANCE_SECRET:?required}
       OIDC_REDIRECT_URI: https://api-performance.seemplifyai.com/api/auth/oidc/callback
@@ -312,6 +314,8 @@ services:
       PERFORMANCE_AI_SHARED_SECRET: ${PERFORMANCE_AI_SHARED_SECRET:?required}
       LOCAL_LLM_BASE_URL: http://chatgpt-gateway:11435
       LOCAL_LLM_SHARED_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
+    volumes:
+      - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-hmac:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5004/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -500,6 +504,8 @@ services:
       JWT_SECRET: ${APPROVER_JWT_SECRET:?required}
       OIDC_STATE_SECRET: ${APPROVER_OIDC_STATE_SECRET:?required}
       IDP_ISSUER_URL: https://auth.seemplifyai.com
+      IDP_PLATFORM_CONFIGURATION_URL: http://identity-provider:5008
+      IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /run/seemplify/platform-integration-hmac
       OIDC_CLIENT_ID: approver
       OIDC_CLIENT_SECRET: ${OIDC_APPROVER_SECRET:?required}
       OIDC_REDIRECT_URI: https://approver.seemplifyai.com/api/auth/oidc/callback
@@ -519,6 +525,8 @@ services:
       AZURE_OPENAI_EMBEDDING_API_KEY: ${AZURE_OPENAI_EMBEDDING_API_KEY:?required}
       AZURE_OPENAI_EMBEDDING_MODEL: ${AZURE_OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
       WEAVIATE_ALLOW_HASH_FALLBACK: "false"
+    volumes:
+      - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-hmac:ro
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network

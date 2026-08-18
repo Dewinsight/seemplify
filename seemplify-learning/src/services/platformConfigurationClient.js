@@ -3,6 +3,8 @@ import fs from 'fs'
 
 const SERVICE = 'seemplify-learning'
 const CLOUDINARY_PATH = '/api/internal/v1/platform-integrations/cloudinary'
+const STORAGE_PATH = '/api/internal/v1/platform-integrations/storage'
+let storageCache = null
 
 function sharedSecret(environment = process.env) {
   const file = String(environment.IDP_LEARNING_PLATFORM_INTEGRATION_HMAC_SECRET_FILE || environment.IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE || '').trim()
@@ -68,3 +70,39 @@ export async function hydrateCloudinaryConfiguration({ environment = process.env
     return Boolean(fallback)
   }
 }
+
+export async function resolveStoragePlatformConfiguration({ environment = process.env, force = false } = {}) {
+  const now = Date.now()
+  if (!force && storageCache?.expiresAt > now) return storageCache.value
+  try {
+    const baseUrl = String(environment.IDP_PLATFORM_CONFIGURATION_URL || environment.IDENTITY_PROVIDER_URL || 'https://auth.seemplifyai.com').trim().replace(/\/+$/u, '')
+    const timestamp = String(now)
+    const nonce = crypto.randomBytes(24).toString('base64url')
+    const canonical = `${timestamp}\n${nonce}\n${SERVICE}\nGET\n${STORAGE_PATH}`
+    const response = await fetch(`${baseUrl}${STORAGE_PATH}`, {
+      headers: {
+        accept: 'application/json',
+        'x-seemplify-service': SERVICE,
+        'x-seemplify-timestamp': timestamp,
+        'x-seemplify-nonce': nonce,
+        'x-seemplify-signature': crypto.createHmac('sha256', sharedSecret(environment)).update(canonical).digest('hex')
+      },
+      signal: AbortSignal.timeout(Number(environment.IDP_PLATFORM_CONFIGURATION_TIMEOUT_MS || 5_000))
+    })
+    if (!response.ok) throw new Error(`Identity returned ${response.status}.`)
+    const configuration = await response.json()
+    if (!configuration?.configured || !['cloudinary', 'azure-blob'].includes(configuration.defaultProvider)) throw new Error('Identity returned an incomplete storage configuration.')
+    storageCache = { value: configuration, expiresAt: now + 5 * 60_000 }
+    return configuration
+  } catch (error) {
+    const cloudinary = environmentCloudinary(environment)
+    const fallback = cloudinary ? {
+      configured: true, solution: SERVICE, defaultProvider: 'cloudinary',
+      providers: { cloudinary: { configured: true, ...cloudinary }, azureBlob: { configured: false } }
+    } : null
+    storageCache = { value: fallback, expiresAt: now + 30_000 }
+    return fallback
+  }
+}
+
+export function clearStoragePlatformConfigurationCache() { storageCache = null }

@@ -4,6 +4,8 @@ const fs = require('fs');
 const SERVICE = 'recruiter';
 const AZURE_SPEECH_PATH = '/api/internal/v1/platform-integrations/azure-speech';
 const CLOUDINARY_PATH = '/api/internal/v1/platform-integrations/cloudinary';
+const STORAGE_PATH = '/api/internal/v1/platform-integrations/storage';
+const storageCache = new Map();
 
 function secret(environment = process.env) {
   const file = String(environment.IDP_RECRUITER_PLATFORM_INTEGRATION_HMAC_SECRET_FILE || environment.IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE || '').trim();
@@ -96,6 +98,35 @@ async function hydrateAzureSpeechConfiguration({ environment = process.env, quie
   }
 }
 
+async function resolveStoragePlatformConfiguration({ environment = process.env, force = false, solution = SERVICE } = {}) {
+  const normalizedSolution = String(solution || SERVICE).trim().toLowerCase();
+  if (![SERVICE, 'people-transitions'].includes(normalizedSolution)) {
+    throw new Error('Recruiter is not permitted to request that storage solution.');
+  }
+  const path = normalizedSolution === SERVICE ? STORAGE_PATH : `${STORAGE_PATH}/${normalizedSolution}`;
+  const now = Date.now();
+  const cached = storageCache.get(normalizedSolution);
+  if (!force && cached?.expiresAt > now) return cached.value;
+  try {
+    const configuration = await signedConfiguration(path, environment);
+    if (!configuration?.configured || !['cloudinary', 'azure-blob'].includes(configuration.defaultProvider)) {
+      throw new Error('Identity returned an incomplete storage configuration.');
+    }
+    storageCache.set(normalizedSolution, { value: configuration, expiresAt: now + 5 * 60_000 });
+    return configuration;
+  } catch (error) {
+    const cloudinary = environmentCloudinary(environment);
+    const fallback = cloudinary ? {
+      configured: true,
+      solution: normalizedSolution,
+      defaultProvider: 'cloudinary',
+      providers: { cloudinary: { configured: true, ...cloudinary }, azureBlob: { configured: false } }
+    } : null;
+    storageCache.set(normalizedSolution, { value: fallback, expiresAt: now + 30_000 });
+    return fallback;
+  }
+}
+
 async function hydratePlatformConfiguration(options = {}) {
   const [cloudinary, azureSpeech] = await Promise.all([
     hydrateCloudinaryConfiguration(options),
@@ -104,4 +135,12 @@ async function hydratePlatformConfiguration(options = {}) {
   return { cloudinary, azureSpeech };
 }
 
-module.exports = { hydrateAzureSpeechConfiguration, hydrateCloudinaryConfiguration, hydratePlatformConfiguration };
+function clearStoragePlatformConfigurationCache() { storageCache.clear(); }
+
+module.exports = {
+  clearStoragePlatformConfigurationCache,
+  hydrateAzureSpeechConfiguration,
+  hydrateCloudinaryConfiguration,
+  hydratePlatformConfiguration,
+  resolveStoragePlatformConfiguration
+};

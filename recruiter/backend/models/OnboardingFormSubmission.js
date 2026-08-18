@@ -3,6 +3,10 @@ const mongoose = require('mongoose');
 const FileSnapshotSchema = new mongoose.Schema({
   url: String,
   downloadUrl: String,
+  provider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+  storageProvider: { type: String, enum: ['cloudinary', 'azure-blob'], default: 'cloudinary' },
+  storageKey: String,
+  storageContainer: String,
   publicId: String,
   resourceType: String,
   format: String,

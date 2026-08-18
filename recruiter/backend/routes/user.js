@@ -1,31 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const cloudinary = require('cloudinary').v2;
 const auth = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const userController = require('../controllers/userController');
 
-// Configure Cloudinary (you may want to move this to a config file)
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
 // Configure multer for avatar uploads
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'smarthr/avatars',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
-    transformation: [
-      { width: 400, height: 400, crop: 'fill', gravity: 'face' },
-      { quality: 'auto', fetch_format: 'auto' }
-    ]
-  },
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({ 
   storage: storage,
@@ -81,4 +62,4 @@ router.post('/upload-avatar', auth, upload.single('avatar'), userController.uplo
 // @access  Private
 router.get('/profile-suggestions', auth, userController.getProfileSuggestions);
 
-module.exports = router; 
+module.exports = router;

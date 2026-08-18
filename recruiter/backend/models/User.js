@@ -56,6 +56,10 @@ const UserSchema = new mongoose.Schema({
       type: String, // URL to profile picture
       trim: true,
     },
+    avatarStorageProvider: { type: String, enum: ['cloudinary', 'azure-blob'] },
+    avatarStorageKey: { type: String, trim: true },
+    avatarStorageContainer: { type: String, trim: true },
+    avatarStorageResourceType: { type: String, trim: true },
     title: {
       type: String, // Job title like "HR Manager", "Recruiter"
       trim: true,

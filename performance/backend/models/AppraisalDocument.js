@@ -38,10 +38,13 @@ const appraisalDocumentSchema = new mongoose.Schema({
   // Storage
   storageProvider: {
     type: String,
-    enum: ['local', 'azure', 's3', 'cloudinary'],
+    enum: ['local', 'azure', 'azure-blob', 's3', 'cloudinary'],
     default: 'local'
   },
   storagePath: String,
+  storageKey: String,
+  storageContainer: String,
+  storageResourceType: String,
   storageUrl: String,
   publicUrl: String,
 
