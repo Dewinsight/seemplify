@@ -6,6 +6,7 @@ on:
     paths:
       - 'Identityprovider/**'
       - 'recruiter/backend/**'
+      - 'seemplify-learning/**'
       - 'performance/frontend/**'
       - 'payroll/frontend/**'
       - 'deploy/hostinger/core-apps.compose.yml'
@@ -67,9 +68,25 @@ jobs:
             tests/codexAccountService.test.js
           node --test tests/platformConfigurationClient.test.js
 
+  learning-qa:
+    name: Test Learning platform configuration
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seemplify-learning
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: seemplify-learning/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: node --test test/platform-configuration-client.test.js
+
   deploy:
     name: Deploy immutable core release
-    needs: [identity-qa, recruiter-qa]
+    needs: [identity-qa, recruiter-qa, learning-qa]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,6 +107,7 @@ jobs:
           tar -czf core-release.tgz \
             Identityprovider \
             recruiter/backend \
+            seemplify-learning \
             performance/frontend \
             payroll/frontend \
             deploy/hostinger/core-apps.compose.yml \
@@ -116,6 +134,7 @@ jobs:
 
           identity_image="seemplify/identity-provider:hostinger-$RELEASE_SHA"
           recruiter_image="seemplify/recruiter-backend:hostinger-$RELEASE_SHA"
+          learning_image="seemplify/learning:hostinger-$RELEASE_SHA"
           performance_frontend_image="seemplify/performance-frontend:hostinger-$RELEASE_SHA"
           payroll_frontend_image="seemplify/payroll-frontend:hostinger-$RELEASE_SHA"
           docker build --pull \
@@ -126,6 +145,9 @@ jobs:
             -t "$recruiter_image" "$release_root/recruiter/backend"
           docker build --pull \
             --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$learning_image" "$release_root/seemplify-learning"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "$performance_frontend_image" "$release_root/performance/frontend"
           docker build --pull \
             --label "org.opencontainers.image.revision=$RELEASE_SHA" \
@@ -133,6 +155,7 @@ jobs:
 
           cp -a "$release_root/Identityprovider/." /opt/seemplify/source/Identityprovider/
           cp -a "$release_root/recruiter/backend/." /opt/seemplify/source/recruiter/backend/
+          cp -a "$release_root/seemplify-learning/." /opt/seemplify/source/seemplify-learning/
           cp -a "$release_root/performance/frontend/." /opt/seemplify/source/performance/frontend/
           cp -a "$release_root/payroll/frontend/." /opt/seemplify/source/payroll/frontend/
           install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
@@ -146,6 +169,7 @@ jobs:
 
           export IDENTITY_PROVIDER_IMAGE="$identity_image"
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"
+          export LEARNING_IMAGE="$learning_image"
           export PERFORMANCE_FRONTEND_IMAGE="$performance_frontend_image"
           export PAYROLL_FRONTEND_IMAGE="$payroll_frontend_image"
           compose=(docker compose \
@@ -170,6 +194,8 @@ jobs:
           wait_healthy seemplify-core-recruiter-backend-1
           "${compose[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
+          "${compose[@]}" up -d --no-deps --force-recreate learning
+          wait_healthy seemplify-core-learning-1
           "${compose[@]}" up -d --no-deps --force-recreate performance-frontend payroll-frontend
           wait_healthy seemplify-core-performance-frontend-1
           wait_healthy seemplify-core-payroll-frontend-1

@@ -523,7 +523,7 @@ services:
 
   learning:
     <<: *defaults
-    image: seemplify/learning:hostinger
+    image: ${LEARNING_IMAGE:-seemplify/learning:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5012"
