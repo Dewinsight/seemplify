@@ -36,6 +36,8 @@ export default function AdminSsoPage() {
       return;
     }
 
+    window.history.replaceState(window.history.state, '', '/admin/sso');
+
     hasAttemptedExchangeRef.current = true;
     let cancelled = false;
 

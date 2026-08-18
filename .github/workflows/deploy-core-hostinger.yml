@@ -45,6 +45,7 @@ jobs:
             test/nylas-platform-configuration.test.mjs \
             test/media-platform-configuration.test.mjs \
             test/organization-deletion-fallback.test.mjs \
+            test/recruiter-admin-sso-secret.test.mjs \
             test/shared-ai-admin-client.test.mjs
 
   recruiter-qa:
@@ -65,7 +66,8 @@ jobs:
           node --test \
             tests/aiAdminAnalytics.test.js \
             tests/aiRuntimeGatewayIntegration.test.js \
-            tests/codexAccountService.test.js
+            tests/codexAccountService.test.js \
+            tests/idpAdminSsoService.test.js
           node --test tests/platformConfigurationClient.test.js
 
   learning-qa:
@@ -193,6 +195,7 @@ jobs:
           "${compose[@]}" up -d --no-deps --force-recreate recruiter-backend
           wait_healthy seemplify-core-recruiter-backend-1
           docker exec seemplify-core-recruiter-backend-1 npm run seed:catalog
+          docker exec seemplify-core-recruiter-backend-1 npm run reconcile:idp-admin-locks
           "${compose[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
           "${compose[@]}" up -d --no-deps --force-recreate learning

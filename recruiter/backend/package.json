@@ -86,6 +86,7 @@
     "seed:plans": "node scripts/seedDefaultPlans.js",
     "seed:credit-packs": "node scripts/seedCreditPacks.js",
     "seed:catalog": "node scripts/seedRecruiterCatalog.js",
+    "reconcile:idp-admin-locks": "node scripts/reconcileIdpAdminLocks.js",
     "seed:onboarding-templates": "node scripts/seedOnboardingTemplates.js",
     "migrate:idp-people-transitions": "node scripts/migrateIdpOnboardingToPeopleTransitions.js",
     "migrate:idp-people-transitions:apply": "node scripts/migrateIdpOnboardingToPeopleTransitions.js --apply --verify-files",

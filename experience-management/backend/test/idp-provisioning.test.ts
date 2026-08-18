@@ -122,6 +122,28 @@ test('IdP Admin SSO grants the matching Experience platform role', () => {
   });
   assert.deepEqual(platformRolesForUser(admin.id), ['support']);
 
+  db.prepare("UPDATE users SET account_status='suspended' WHERE id=?").run(admin.id);
+  provisionIdpAdminIdentity({
+    sub: 'idp-admin-123',
+    email: 'system.admin@example.test',
+    email_verified: true,
+    name: 'System Admin',
+    isSuperAdmin: true
+  });
+  const reactivated = db.prepare('SELECT account_status FROM users WHERE id=?')
+    .get(admin.id) as { account_status: string };
+  assert.equal(reactivated.account_status, 'active');
+  assert.deepEqual(platformRolesForUser(admin.id), ['superadmin']);
+
+  provisionIdpAdminIdentity({
+    sub: 'idp-admin-123',
+    email: 'system.admin@example.test',
+    email_verified: true,
+    name: 'System Admin',
+    isSystemAdmin: true
+  });
+  assert.deepEqual(platformRolesForUser(admin.id), ['support']);
+
   const superAdmin = provisionIdpAdminIdentity({
     sub: 'idp-superadmin-123',
     email: 'super.admin@example.test',

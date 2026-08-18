@@ -349,14 +349,24 @@ function ensureActivePlatformRole(userId: string, role: PlatformRole, reason: st
     VALUES (?,?,?,?,?,NULL,NULL,?)`).run(crypto.randomUUID(), userId, role, userId, now, reason);
 }
 
+const IDP_ADMIN_ROLE_REASON = 'Managed by Seemplify IdP administrator SSO';
+
+function syncIdpAdminPlatformRole(userId: string, role: PlatformRole) {
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE platform_role_assignments
+    SET revoked_by_user_id=?,revoked_at=?
+    WHERE user_id=? AND revoked_at IS NULL AND reason=? AND role<>?`)
+    .run(userId, now, userId, IDP_ADMIN_ROLE_REASON, role);
+  ensureActivePlatformRole(userId, role, IDP_ADMIN_ROLE_REASON);
+}
+
 export function provisionIdpAdminIdentity(claims: IdpClaims & { isSuperAdmin?: unknown; isSystemAdmin?: unknown }) {
   if (claims.isSuperAdmin !== true && claims.isSystemAdmin !== true) {
     throw new AccountProvisionError('Seemplify administrator access is required.', 403, 'IDP_ADMIN_REQUIRED');
   }
   const user = findOrLinkIdpUser({ ...claims, email_verified: true });
   ensureDefaultSpaceForUser(user);
-  ensureActivePlatformRole(user.id, claims.isSuperAdmin === true ? 'superadmin' : 'support',
-    'Managed by Seemplify IdP administrator SSO');
+  syncIdpAdminPlatformRole(user.id, claims.isSuperAdmin === true ? 'superadmin' : 'support');
   return user;
 }
 

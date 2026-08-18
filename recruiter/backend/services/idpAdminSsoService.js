@@ -25,14 +25,14 @@ const cleanupTimer = setInterval(cleanupUsedIdpAdminTokenIds, 5 * 60 * 1000);
 cleanupTimer.unref?.();
 
 const getIdpAdminSsoConfig = () => ({
-  secret: String(
+  secrets: Array.from(new Set([
     process.env.RECRUITER_ADMIN_SSO_SECRET ||
-    process.env.IDP_RECRUITER_ADMIN_SSO_SECRET ||
-    process.env.OIDC_CLIENT_SECRET ||
-    process.env.SMART_HR_CLIENT_SECRET ||
-    process.env.SMARTHR_CLIENT_SECRET ||
-    ''
-  ).trim(),
+    '',
+    process.env.IDP_RECRUITER_ADMIN_SSO_SECRET || '',
+    process.env.OIDC_CLIENT_SECRET || '',
+    process.env.SMART_HR_CLIENT_SECRET || '',
+    process.env.SMARTHR_CLIENT_SECRET || ''
+  ].map((secret) => String(secret).trim()).filter(Boolean))),
   issuer: String(
     process.env.RECRUITER_ADMIN_SSO_ISSUER ||
     process.env.IDP_RECRUITER_ADMIN_SSO_ISSUER ||
@@ -53,6 +53,12 @@ const getFullAdminPermissions = () => ({
   viewAnalytics: true,
   systemSettings: true
 });
+
+const clearAdminLockout = (admin) => {
+  admin.loginAttempts = 0;
+  admin.lockUntil = undefined;
+  return admin;
+};
 
 const sanitizePermissions = (permissions = {}) => {
   return IDP_ADMIN_PERMISSION_KEYS.reduce((acc, key) => {
@@ -81,20 +87,28 @@ const buildInvalidTokenError = (message, code = 'INVALID_IDP_ADMIN_SSO_TOKEN') =
 };
 
 const verifyIdpAdminSsoToken = (token) => {
-  const { secret, issuer, audience } = getIdpAdminSsoConfig();
-  if (!secret) {
+  const { secrets, issuer, audience } = getIdpAdminSsoConfig();
+  if (secrets.length === 0) {
     throw buildInvalidTokenError('Recruiter admin SSO secret is not configured', 'IDP_ADMIN_SSO_NOT_CONFIGURED');
   }
 
-  let claims;
-  try {
-    claims = jwt.verify(token, secret, {
-      algorithms: ['HS256'],
-      issuer,
-      audience
-    });
-  } catch (error) {
-    throw buildInvalidTokenError(error.message || 'Failed to verify IDP admin SSO token');
+  let claims = null;
+  let verificationError = null;
+  for (const secret of secrets) {
+    try {
+      claims = jwt.verify(token, secret, {
+        algorithms: ['HS256'],
+        issuer,
+        audience
+      });
+      break;
+    } catch (error) {
+      verificationError = error;
+    }
+  }
+
+  if (!claims) {
+    throw buildInvalidTokenError(verificationError?.message || 'Failed to verify IDP admin SSO token');
   }
 
   const idpAccountId = String(claims.idpAccountId || claims.sub || '').trim();
@@ -172,11 +186,15 @@ const upsertAdminFromIdpIdentity = async (identity) => {
     admin.isActive = true;
   }
 
+  // A verified IdP exchange is a successful authentication. Password lockout
+  // state must not invalidate the admin token issued immediately afterwards.
+  clearAdminLockout(admin);
   await admin.save();
   return admin;
 };
 
 module.exports = {
+  clearAdminLockout,
   consumeIdpAdminSsoToken,
   getFullAdminPermissions,
   upsertAdminFromIdpIdentity,
