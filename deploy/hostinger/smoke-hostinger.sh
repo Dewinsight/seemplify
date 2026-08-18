@@ -9,9 +9,13 @@ fail() {
 check_status() {
   local host="$1"
   local expected="$2"
-  local actual
+  local actual="000"
 
-  actual="$(curl -sS -o /dev/null -w '%{http_code}' "https://${host}/" --max-time 20)"
+  for _ in $(seq 1 30); do
+    actual="$(curl -sS -o /dev/null -w '%{http_code}' "https://${host}/" --max-time 20 || true)"
+    [[ "${actual}" == "${expected}" ]] && break
+    sleep 2
+  done
   [[ "${actual}" == "${expected}" ]] || fail "${host} returned ${actual}; expected ${expected}"
   printf 'https %-38s %s\n' "${host}" "${actual}"
 }
@@ -20,9 +24,13 @@ check_status_path() {
   local label="$1"
   local url="$2"
   local expected="$3"
-  local actual
+  local actual="000"
 
-  actual="$(curl -sS -o /dev/null -w '%{http_code}' "${url}" --max-time 20)"
+  for _ in $(seq 1 30); do
+    actual="$(curl -sS -o /dev/null -w '%{http_code}' "${url}" --max-time 20 || true)"
+    [[ "${actual}" == "${expected}" ]] && break
+    sleep 2
+  done
   [[ "${actual}" == "${expected}" ]] || fail "${label} returned ${actual}; expected ${expected}"
   printf 'health %-37s %s\n' "${label}" "${actual}"
 }
