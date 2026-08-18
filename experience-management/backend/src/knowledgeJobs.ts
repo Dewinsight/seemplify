@@ -30,7 +30,10 @@ async function executeKnowledgeJob(job: KnowledgeJobRecord) {
     publishKnowledgeJob(markKnowledgeJobStage(job, 'indexing', 45));
     const metadata = job.input.metadata && typeof job.input.metadata === 'object' && !Array.isArray(job.input.metadata)
       ? job.input.metadata as Record<string, unknown> : {};
-    const requesterUserId = knowledgeJobAudienceUserId(job);
+    // Event visibility and AI attribution are different concerns: public/space
+    // jobs have no private event audience, but they still retain the user who
+    // requested indexing for the shared-AI gateway identity.
+    const requesterUserId = job.requestedBy;
     if (!requesterUserId) throw new KnowledgeError('Knowledge graph extraction requires an authenticated requester.',
       409, 'KNOWLEDGE_AI_IDENTITY_REQUIRED', false);
     const result = await indexKnowledgeDocument({

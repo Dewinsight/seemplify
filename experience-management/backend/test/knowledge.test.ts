@@ -287,6 +287,12 @@ test('preflights uploads atomically, durably indexes, deduplicates and recovers 
   assert.equal(uploaded.body.jobs[0].input.embeddingProfile.vectorIndexVersion, 'qwen-v1');
   assert.deepEqual(uploaded.body.jobs[0].input.targetEmbeddingProfiles.map((profile: any) => profile.vectorIndexVersion), ['qwen-v1']);
   assert.equal(uploaded.body.jobs[0].input.dualWrite, false);
+  const requesterPassword = (db.prepare('SELECT password_hash FROM users WHERE id=?')
+    .get(uploaded.body.jobs[0].requestedBy) as { password_hash: string }).password_hash;
+  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(
+    `oidc$${Buffer.from('knowledge-owner-idp-subject').toString('base64url')}`,
+    uploaded.body.jobs[0].requestedBy
+  );
   const queuedProjection = db.prepare(`SELECT state,last_job_id FROM knowledge_document_embeddings
     WHERE document_id=? AND vector_index_version='qwen-v1'`).get(operationsDocumentId) as any;
   assert.equal(queuedProjection.state, 'queued');
@@ -307,6 +313,8 @@ test('preflights uploads atomically, durably indexes, deduplicates and recovers 
   assert.deepEqual(lastIndexPayload.knowledgeBase.targetEmbeddingProfiles
     .map((profile: any) => profile.vectorIndexVersion), ['qwen-v1']);
   assert.equal(lastIndexPayload.knowledgeBase.dualWrite, false);
+  assert.equal(lastIndexPayload.aiIdentity.sub, 'knowledge-owner-idp-subject');
+  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(requesterPassword, uploaded.body.jobs[0].requestedBy);
 
   const gteBase = (await owner.post('/api/knowledge-bases').send({ name: 'GTE isolation fixture' }).expect(201)).body.knowledgeBase;
   db.prepare(`UPDATE knowledge_bases SET embedding_provider='gte-node',embedding_model=?,embedding_revision=?,
