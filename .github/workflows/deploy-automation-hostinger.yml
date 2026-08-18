@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: automation-hub/package-lock.json
-      - run: npm ci --ignore-scripts
+      - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
