@@ -12,7 +12,7 @@ const employee = {
 };
 const ownRequest = {
   _id: 'request-1', userId: 'employee-1', userName: 'Amina Bello', userEmail: 'amina@example.com', organizationId: 'org-1', organizationName: 'Acme Limited',
-  teamId: 'team-a', teamIds: ['team-a'], teamName: 'Operations', leaveType: 'annual', leaveTypeName: 'Annual Leave', startDate: '2026-08-10T00:00:00.000Z', endDate: '2026-08-12T00:00:00.000Z', numberOfDays: 3, timezone: 'Europe/London', status: 'approved', auditLog: [], createdAt: '2026-07-20T00:00:00.000Z', updatedAt: '2026-07-20T00:00:00.000Z',
+  teamId: 'team-a', teamIds: ['team-a'], teamName: 'Operations', leaveType: 'annual', leaveTypeName: 'Annual Leave', startDate: '2026-08-10T00:00:00.000Z', endDate: '2026-08-12T00:00:00.000Z', numberOfDays: 3, reason: 'Family holiday', timezone: 'Europe/London', status: 'approved', approvedBy: { userId: 'admin-1', userName: 'HR Admin', approvedAt: '2026-07-21T00:00:00.000Z', approvalType: 'organization_role' }, auditLog: [], createdAt: '2026-07-20T00:00:00.000Z', updatedAt: '2026-07-20T00:00:00.000Z',
 };
 const otherRequest = {
   ...ownRequest, _id: 'request-2', userId: 'employee-2', userName: 'Chidi Okafor', userEmail: 'chidi@example.com', status: 'pending', startDate: '2026-08-11T00:00:00.000Z', endDate: '2026-08-11T00:00:00.000Z', numberOfDays: 1,
@@ -42,6 +42,12 @@ test('personal calendar shows only the signed-in employee requests', async ({ pa
   await expect(page.getByText('Other employees’ requests are not shown here.')).toBeVisible();
   await expect(page.getByText('Annual Leave').first()).toBeVisible();
   await expect(page.getByText('Chidi Okafor')).toHaveCount(0);
+  await page.getByRole('button', { name: /10/ }).click();
+  const selectedDay = page.getByLabel(/Monday, August 10/);
+  await expect(selectedDay.getByText('Amina Bello')).toBeVisible();
+  await expect(selectedDay.getByText('amina@example.com · Operations')).toBeVisible();
+  await expect(selectedDay.getByText('Family holiday')).toBeVisible();
+  await expect(selectedDay.getByRole('link', { name: 'View full request' })).toHaveAttribute('href', '/leave-requests/request-1');
 });
 
 test('admin workforce calendar shows organization percentages and team coverage', async ({ page }) => {

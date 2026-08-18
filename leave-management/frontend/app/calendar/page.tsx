@@ -9,11 +9,11 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Layout from '@/components/Layout';
 import CalendarViewSwitcher from '@/components/CalendarViewSwitcher';
 import LeaveCalendarGrid, { requestsForDay } from '@/components/LeaveCalendarGrid';
+import LeaveCalendarRequestDetails from '@/components/LeaveCalendarRequestDetails';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { leavePoliciesApi, leaveRequestsApi } from '@/lib/api';
-import { formatDateRange, getLeaveTypeLabel, getStatusColor, getStatusLabel } from '@/lib/utils';
 import { Holiday, LeaveRequest } from '@/types';
 
 export default function CalendarPage() {
@@ -85,14 +85,7 @@ export default function CalendarPage() {
         {selectedDay && (
           <section className="border border-border bg-card" aria-labelledby="selected-day-title">
             <div className="border-b border-border px-4 py-3"><h2 id="selected-day-title" className="font-semibold">{format(selectedDay, 'EEEE, MMMM d, yyyy')}</h2></div>
-            {selectedRequests.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">You have no leave scheduled for this day.</p> : (
-              <div className="divide-y divide-border">{selectedRequests.map((request) => (
-                <Link key={request._id} href={`/leave-requests/${request._id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-muted/30">
-                  <div><p className="text-sm font-medium">{getLeaveTypeLabel(request.leaveType, request.leaveTypeName)}</p><p className="mt-1 text-xs text-muted-foreground">{formatDateRange(request.startDate, request.endDate)} · {request.numberOfDays} day{request.numberOfDays === 1 ? '' : 's'}</p></div>
-                  <span className={`rounded px-2 py-1 text-xs font-medium ${getStatusColor(request.status)}`}>{getStatusLabel(request.status)}</span>
-                </Link>
-              ))}</div>
-            )}
+            <LeaveCalendarRequestDetails requests={selectedRequests} emptyMessage="You have no leave scheduled for this day." />
           </section>
         )}
       </div>

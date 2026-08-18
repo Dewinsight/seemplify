@@ -1,6 +1,7 @@
 const {
   isTransactionUnsupportedError,
   persistLeaveRequestAndBalance,
+  runWithTransactionFallback,
   saveWithoutTransaction,
 } = require('../leaveRequestPersistence');
 
@@ -20,6 +21,41 @@ test('recognizes the standalone MongoDB transaction error', () => {
     { code: 20, codeName: 'IllegalOperation' }
   ))).toBe(true);
   expect(isTransactionUnsupportedError(new Error('validation failed'))).toBe(false);
+});
+
+describe('runWithTransactionFallback', () => {
+  test('retries the complete operation without a session on standalone MongoDB', async () => {
+    const session = sessionMock();
+    const operation = jest.fn()
+      .mockRejectedValueOnce(Object.assign(new Error(
+        'Transaction numbers are only allowed on a replica set member or mongos'
+      ), { code: 20 }))
+      .mockResolvedValueOnce('approved');
+
+    const outcome = await runWithTransactionFallback(operation, {
+      startSession: async () => session,
+    });
+
+    expect(operation).toHaveBeenNthCalledWith(1, session);
+    expect(operation).toHaveBeenNthCalledWith(2, null);
+    expect(outcome).toEqual({ mode: 'standalone', result: 'approved' });
+    expect(session.abortTransaction).toHaveBeenCalledTimes(1);
+    expect(session.endSession).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not retry ordinary operation failures', async () => {
+    const session = sessionMock();
+    const error = new Error('validation failed');
+    const operation = jest.fn().mockRejectedValue(error);
+
+    await expect(runWithTransactionFallback(operation, {
+      startSession: async () => session,
+    })).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(session.abortTransaction).toHaveBeenCalledTimes(1);
+    expect(session.endSession).toHaveBeenCalledTimes(1);
+  });
 });
 
 test('persists both documents in a transaction when supported', async () => {

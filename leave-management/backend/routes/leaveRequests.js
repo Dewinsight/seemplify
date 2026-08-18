@@ -31,7 +31,10 @@ const { queueLeaveSubmittedEvent } = require('../services/automationEventService
 const { normalizeLeaveTypeKey } = require('../services/leaveEntitlementService');
 const { fetchOrganizationRoster } = require('../services/rosterService');
 const { buildCalendarAnalytics, daysInRange } = require('../services/calendarAnalyticsService');
-const { persistLeaveRequestAndBalance } = require('../services/leaveRequestPersistence');
+const {
+  persistLeaveRequestAndBalance,
+  runWithTransactionFallback,
+} = require('../services/leaveRequestPersistence');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
@@ -305,7 +308,7 @@ router.get('/calendar/organization', requireLeavePermission('view_all_leaves'), 
       status: { $in: ['pending', 'approved'] },
       startDate: { $lte: new Date(endDate) },
       endDate: { $gte: new Date(startDate) },
-    }).select('userId userName userEmail leaveType leaveTypeName startDate endDate numberOfDays status teamId teamName reason').sort({ startDate: 1 }).lean(),
+    }).select('userId userName userEmail leaveType leaveTypeName startDate endDate numberOfDays status teamId teamName reason assignedApprover approvedBy createdAt timezone').sort({ startDate: 1 }).lean(),
     fetchOrganizationRoster(req.organizationId),
   ]);
   const rosterByUserId = new Map(roster.map((member) => [String(member.userId), member]));
@@ -342,7 +345,7 @@ router.get('/calendar', asyncHandler(async (req, res) => {
   };
 
   const requests = await LeaveRequest.find(query)
-    .select('userId userName leaveType leaveTypeName startDate endDate numberOfDays status teamName')
+    .select('userId userName userEmail leaveType leaveTypeName startDate endDate numberOfDays status teamName reason assignedApprover approvedBy createdAt timezone')
     .sort({ startDate: 1 });
 
   res.json({ requests });
@@ -594,16 +597,32 @@ router.post('/:id/approve',
       }
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const { result: approvedRequest } = await runWithTransactionFallback(async (session) => {
+      // A failed transaction can leave the in-memory document dirty. Reload it
+      // before the standalone retry so the operation starts from persisted state.
+      const requestToApprove = session
+        ? leaveRequest
+        : await LeaveRequest.findById(leaveRequest._id);
 
-    try {
+      if (!requestToApprove) {
+        throw new AppError('Leave request not found', 404, 'REQUEST_NOT_FOUND');
+      }
+      if (requestToApprove.status !== 'pending') {
+        throw new AppError(
+          `Cannot approve request with status: ${requestToApprove.status}`,
+          400,
+          'INVALID_STATUS'
+        );
+      }
+
       // Get balance
-      const balance = await LeaveBalance.findOne({
+      let balanceQuery = LeaveBalance.findOne({
         userId: leaveRequest.userId,
         organizationId: leaveRequest.organizationId,
         year: new Date(leaveRequest.startDate).getFullYear(),
-      }).session(session);
+      });
+      if (session) balanceQuery = balanceQuery.session(session);
+      const balance = await balanceQuery;
 
       if (!balance) {
         throw new AppError('Leave balance not found', 404, 'BALANCE_NOT_FOUND');
@@ -613,8 +632,8 @@ router.post('/:id/approve',
       balance.useBalance(leaveRequest.leaveType, leaveRequest.numberOfDays);
 
       // Update request
-      leaveRequest.status = 'approved';
-      leaveRequest.approvedBy = {
+      requestToApprove.status = 'approved';
+      requestToApprove.approvedBy = {
         userId: req.user.id,
         userName: req.user.name,
         userEmail: req.user.email,
@@ -628,39 +647,53 @@ router.post('/:id/approve',
       };
 
       if (idempotencyKey) {
-        leaveRequest.approvalIdempotencyKey = idempotencyKey;
+        requestToApprove.approvalIdempotencyKey = idempotencyKey;
       }
 
-      leaveRequest.addAuditLog(
+      requestToApprove.addAuditLog(
         'approved',
         req.user.id,
         req.user.name,
         `Approved by ${req.user.name} (${approvalContext.reason})`
       );
 
-      await leaveRequest.save({ session });
-      await balance.save({ session });
-      await session.commitTransaction();
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+      if (session) {
+        await requestToApprove.save({ session });
+        await balance.save({ session });
+      } else {
+        const originalRequest = await LeaveRequest.findById(requestToApprove._id).lean();
+        await requestToApprove.save();
+        try {
+          await balance.save();
+        } catch (error) {
+          // Compensate if the second standalone write fails.
+          if (originalRequest) {
+            try {
+              await LeaveRequest.replaceOne({ _id: requestToApprove._id }, originalRequest);
+            } catch (rollbackError) {
+              error.rollbackError = rollbackError;
+            }
+          }
+          throw error;
+        }
+      }
+
+      return requestToApprove;
+    });
 
     // Log audit
-    await logLeaveRequestApproved(leaveRequest, req.user, req, comment);
-    await queueLeaveEvent(leaveRequest, 'leave.updated');
+    await logLeaveRequestApproved(approvedRequest, req.user, req, comment);
+    await queueLeaveEvent(approvedRequest, 'leave.updated');
 
     // Email notifications
     const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
     if (policy.notifyRequesterOnDecision) {
-      await emailService.sendLeaveRequestApproved(leaveRequest);
+      await emailService.sendLeaveRequestApproved(approvedRequest);
     }
 
     res.json({
       success: true,
-      request: leaveRequest,
+      request: approvedRequest,
     });
   })
 );

@@ -1,16 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { addMonths, endOfMonth, format, parseISO, startOfMonth, subMonths } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import LeaveCalendarGrid, { requestsForDay } from '@/components/LeaveCalendarGrid';
+import LeaveCalendarRequestDetails from '@/components/LeaveCalendarRequestDetails';
 import CalendarViewSwitcher from '@/components/CalendarViewSwitcher';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { leavePoliciesApi, leaveRequestsApi } from '@/lib/api';
-import { formatDateRange, getLeaveTypeLabel, getStatusColor, getStatusLabel } from '@/lib/utils';
 import {
   CalendarCoverageSummary,
   CalendarDailyCoverage,
@@ -108,14 +107,7 @@ export default function WorkforceCalendarPanel() {
       {selectedDay && (
         <section className="border border-border bg-card" aria-labelledby="workforce-selected-day">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3"><h3 id="workforce-selected-day" className="font-semibold">{format(selectedDay, 'EEEE, MMMM d, yyyy')}</h3><p className="text-sm text-muted-foreground">{selectedCoverage?.approvedAway || 0} approved away · {selectedCoverage?.approvedAwayPercent || 0}% of workforce · {selectedCoverage?.pendingAway || 0} pending</p></div>
-          {selectedRequests.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">No leave requests overlap this day.</p> : (
-            <div className="divide-y divide-border">{selectedRequests.map((request) => (
-              <Link key={request._id} href={`/leave-requests/${request._id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-muted/30">
-                <div><p className="text-sm font-medium">{request.userName}</p><p className="mt-1 text-xs text-muted-foreground">{request.teamName || 'No team'} · {getLeaveTypeLabel(request.leaveType, request.leaveTypeName)} · {formatDateRange(request.startDate, request.endDate)}</p></div>
-                <span className={`rounded px-2 py-1 text-xs font-medium ${getStatusColor(request.status)}`}>{getStatusLabel(request.status)}</span>
-              </Link>
-            ))}</div>
-          )}
+          <LeaveCalendarRequestDetails requests={selectedRequests} emptyMessage="No leave requests overlap this day." />
         </section>
       )}
 

@@ -7,6 +7,39 @@ function isTransactionUnsupportedError(error) {
     || /Transaction numbers are only allowed on a replica set member or mongos/i.test(message);
 }
 
+async function runWithTransactionFallback(
+  operation,
+  { startSession = () => mongoose.startSession() } = {}
+) {
+  const session = await startSession();
+
+  try {
+    session.startTransaction();
+    const result = await operation(session);
+    await session.commitTransaction();
+    return { mode: 'transaction', result };
+  } catch (error) {
+    if (!isTransactionUnsupportedError(error)) {
+      try {
+        if (session.inTransaction?.()) await session.abortTransaction();
+      } catch {
+        // Preserve the original operation error.
+      }
+      throw error;
+    }
+
+    try {
+      if (session.inTransaction?.()) await session.abortTransaction();
+    } catch {
+      // A standalone server can reject both the transaction and its abort.
+    }
+  } finally {
+    await session.endSession();
+  }
+
+  return { mode: 'standalone', result: await operation(null) };
+}
+
 async function saveWithoutTransaction(leaveRequest, balance) {
   await leaveRequest.save();
 
@@ -62,5 +95,6 @@ async function persistLeaveRequestAndBalance(
 module.exports = {
   isTransactionUnsupportedError,
   persistLeaveRequestAndBalance,
+  runWithTransactionFallback,
   saveWithoutTransaction,
 };
