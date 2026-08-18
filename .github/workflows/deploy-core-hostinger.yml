@@ -6,9 +6,15 @@ on:
     paths:
       - 'Identityprovider/**'
       - 'recruiter/backend/**'
+      - 'recruiter/frontend/**'
+      - 'recruiter/candidates/**'
+      - 'leave-management/**'
       - 'seemplify-learning/**'
+      - 'performance/backend/**'
       - 'performance/frontend/**'
+      - 'payroll/backend/**'
       - 'payroll/frontend/**'
+      - 'time-attendance/**'
       - 'deploy/hostinger/core-apps.compose.yml'
       - 'deploy/hostinger/generate-idp-clients.sh'
       - 'deploy/hostinger/smoke-hostinger.sh'
@@ -86,9 +92,84 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node --test test/platform-configuration-client.test.js
 
+  workforce-backend-qa:
+    name: Test ${{ matrix.name }} backend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Leave
+            directory: leave-management/backend
+            install_command: npm install --ignore-scripts --no-package-lock
+            test_command: npm test -- --runInBand
+          - name: Performance
+            directory: performance/backend
+            install_command: npm ci --ignore-scripts
+            test_command: npm run test:legacy && npm run test:unit
+          - name: Payroll
+            directory: payroll/backend
+            install_command: npm install --ignore-scripts --no-package-lock
+            test_command: npm test -- --runInBand
+          - name: Time and Attendance
+            directory: time-attendance/backend
+            install_command: npm ci --ignore-scripts
+            test_command: npm test -- --runInBand
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: ${{ matrix.install_command }}
+      - run: ${{ matrix.test_command }}
+
+  workforce-frontend-qa:
+    name: Build ${{ matrix.name }} frontend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Recruiter
+            directory: recruiter/frontend
+            install_command: npm install --ignore-scripts --no-package-lock
+          - name: Candidate Portal
+            directory: recruiter/candidates
+            install_command: npm install --ignore-scripts --no-package-lock
+          - name: Leave
+            directory: leave-management/frontend
+            install_command: npm install --ignore-scripts --no-package-lock
+          - name: Performance
+            directory: performance/frontend
+            install_command: npm ci --ignore-scripts
+          - name: Payroll
+            directory: payroll/frontend
+            install_command: npm install --ignore-scripts --no-package-lock
+          - name: Time and Attendance
+            directory: time-attendance/frontend
+            install_command: npm ci --ignore-scripts
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: ${{ matrix.install_command }}
+      - run: npm run build
+
   deploy:
     name: Deploy immutable core release
-    needs: [identity-qa, recruiter-qa, learning-qa]
+    needs:
+      - identity-qa
+      - recruiter-qa
+      - learning-qa
+      - workforce-backend-qa
+      - workforce-frontend-qa
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,10 +189,12 @@ jobs:
         run: |
           tar -czf core-release.tgz \
             Identityprovider \
-            recruiter/backend \
+            recruiter/backend recruiter/frontend recruiter/candidates \
+            leave-management \
             seemplify-learning \
-            performance/frontend \
-            payroll/frontend \
+            performance \
+            payroll \
+            time-attendance \
             deploy/hostinger/core-apps.compose.yml \
             deploy/hostinger/generate-idp-clients.sh \
             deploy/hostinger/smoke-hostinger.sh
@@ -136,9 +219,17 @@ jobs:
 
           identity_image="seemplify/identity-provider:hostinger-$RELEASE_SHA"
           recruiter_image="seemplify/recruiter-backend:hostinger-$RELEASE_SHA"
+          recruiter_frontend_image="seemplify/recruiter-frontend:hostinger-$RELEASE_SHA"
+          candidate_portal_image="seemplify/candidate-portal:hostinger-$RELEASE_SHA"
+          leave_backend_image="seemplify/leave-backend:hostinger-$RELEASE_SHA"
+          leave_frontend_image="seemplify/leave-frontend:hostinger-$RELEASE_SHA"
           learning_image="seemplify/learning:hostinger-$RELEASE_SHA"
+          performance_backend_image="seemplify/performance-backend:hostinger-$RELEASE_SHA"
           performance_frontend_image="seemplify/performance-frontend:hostinger-$RELEASE_SHA"
+          payroll_backend_image="seemplify/payroll-backend:hostinger-$RELEASE_SHA"
           payroll_frontend_image="seemplify/payroll-frontend:hostinger-$RELEASE_SHA"
+          time_backend_image="seemplify/time-backend:hostinger-$RELEASE_SHA"
+          time_frontend_image="seemplify/time-frontend:hostinger-$RELEASE_SHA"
           docker build --pull \
             --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "$identity_image" "$release_root/Identityprovider"
@@ -147,19 +238,47 @@ jobs:
             -t "$recruiter_image" "$release_root/recruiter/backend"
           docker build --pull \
             --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$recruiter_frontend_image" "$release_root/recruiter/frontend"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$candidate_portal_image" "$release_root/recruiter/candidates"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$leave_backend_image" "$release_root/leave-management/backend"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$leave_frontend_image" "$release_root/leave-management/frontend"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "$learning_image" "$release_root/seemplify-learning"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$performance_backend_image" "$release_root/performance/backend"
           docker build --pull \
             --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "$performance_frontend_image" "$release_root/performance/frontend"
           docker build --pull \
             --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$payroll_backend_image" "$release_root/payroll/backend"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "$payroll_frontend_image" "$release_root/payroll/frontend"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$time_backend_image" "$release_root/time-attendance/backend"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$time_frontend_image" "$release_root/time-attendance/frontend"
 
           cp -a "$release_root/Identityprovider/." /opt/seemplify/source/Identityprovider/
           cp -a "$release_root/recruiter/backend/." /opt/seemplify/source/recruiter/backend/
+          cp -a "$release_root/recruiter/frontend/." /opt/seemplify/source/recruiter/frontend/
+          cp -a "$release_root/recruiter/candidates/." /opt/seemplify/source/recruiter/candidates/
+          cp -a "$release_root/leave-management/." /opt/seemplify/source/leave-management/
           cp -a "$release_root/seemplify-learning/." /opt/seemplify/source/seemplify-learning/
-          cp -a "$release_root/performance/frontend/." /opt/seemplify/source/performance/frontend/
-          cp -a "$release_root/payroll/frontend/." /opt/seemplify/source/payroll/frontend/
+          cp -a "$release_root/performance/." /opt/seemplify/source/performance/
+          cp -a "$release_root/payroll/." /opt/seemplify/source/payroll/
+          cp -a "$release_root/time-attendance/." /opt/seemplify/source/time-attendance/
           install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
           install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
@@ -171,9 +290,17 @@ jobs:
 
           export IDENTITY_PROVIDER_IMAGE="$identity_image"
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"
+          export RECRUITER_FRONTEND_IMAGE="$recruiter_frontend_image"
+          export CANDIDATE_PORTAL_IMAGE="$candidate_portal_image"
+          export LEAVE_BACKEND_IMAGE="$leave_backend_image"
+          export LEAVE_FRONTEND_IMAGE="$leave_frontend_image"
           export LEARNING_IMAGE="$learning_image"
+          export PERFORMANCE_BACKEND_IMAGE="$performance_backend_image"
           export PERFORMANCE_FRONTEND_IMAGE="$performance_frontend_image"
+          export PAYROLL_BACKEND_IMAGE="$payroll_backend_image"
           export PAYROLL_FRONTEND_IMAGE="$payroll_frontend_image"
+          export TIME_BACKEND_IMAGE="$time_backend_image"
+          export TIME_FRONTEND_IMAGE="$time_frontend_image"
           compose=(docker compose \
             --env-file /opt/seemplify/secrets/shared-infrastructure.env \
             --env-file /opt/seemplify/secrets/core-apps.env \
@@ -192,17 +319,61 @@ jobs:
             return 1
           }
 
+          verify_revision() {
+            local container="$1"
+            local revision
+            revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container")
+            if [[ "$revision" != "$RELEASE_SHA" ]]; then
+              echo "Revision mismatch for $container: expected=$RELEASE_SHA actual=$revision" >&2
+              return 1
+            fi
+          }
+
           "${compose[@]}" up -d --no-deps --force-recreate recruiter-backend
           wait_healthy seemplify-core-recruiter-backend-1
           docker exec seemplify-core-recruiter-backend-1 npm run seed:catalog
           docker exec seemplify-core-recruiter-backend-1 npm run reconcile:idp-admin-locks
+          "${compose[@]}" up -d --no-deps --force-recreate \
+            leave-backend performance-backend payroll-backend time-backend learning
+          for container in \
+            seemplify-core-leave-backend-1 \
+            seemplify-core-performance-backend-1 \
+            seemplify-core-payroll-backend-1 \
+            seemplify-core-time-backend-1 \
+            seemplify-core-learning-1; do
+            wait_healthy "$container"
+          done
           "${compose[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
-          "${compose[@]}" up -d --no-deps --force-recreate learning
-          wait_healthy seemplify-core-learning-1
-          "${compose[@]}" up -d --no-deps --force-recreate performance-frontend payroll-frontend
-          wait_healthy seemplify-core-performance-frontend-1
-          wait_healthy seemplify-core-payroll-frontend-1
+          "${compose[@]}" up -d --no-deps --force-recreate \
+            recruiter-frontend candidate-portal leave-frontend \
+            performance-frontend payroll-frontend time-frontend
+          for container in \
+            seemplify-core-recruiter-frontend-1 \
+            seemplify-core-candidate-portal-1 \
+            seemplify-core-leave-frontend-1 \
+            seemplify-core-performance-frontend-1 \
+            seemplify-core-payroll-frontend-1 \
+            seemplify-core-time-frontend-1; do
+            wait_healthy "$container"
+          done
+
+          for container in \
+            seemplify-core-identity-provider-1 \
+            seemplify-core-recruiter-backend-1 \
+            seemplify-core-recruiter-frontend-1 \
+            seemplify-core-candidate-portal-1 \
+            seemplify-core-leave-backend-1 \
+            seemplify-core-leave-frontend-1 \
+            seemplify-core-performance-backend-1 \
+            seemplify-core-performance-frontend-1 \
+            seemplify-core-payroll-backend-1 \
+            seemplify-core-payroll-frontend-1 \
+            seemplify-core-time-backend-1 \
+            seemplify-core-time-frontend-1 \
+            seemplify-core-learning-1; do
+            verify_revision "$container"
+          done
 
           docker exec -i seemplify-core-identity-provider-1 node --input-type=module <<'NODE'
           import crypto from 'node:crypto'

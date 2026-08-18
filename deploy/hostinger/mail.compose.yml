@@ -38,7 +38,7 @@ services:
   postfix-relay:
     build:
       context: /opt/seemplify/source/platform/email/relay
-    image: seemplify/mail-relay:hostinger
+    image: ${MAIL_RELAY_IMAGE:-seemplify/mail-relay:hostinger}
     restart: unless-stopped
     environment:
       RELAY_UPSTREAM_HOST: smtp-relay.gmail.com
@@ -116,7 +116,7 @@ services:
   mail-api:
     build:
       context: /opt/seemplify/source/platform/email/api
-    image: seemplify/mail-api:hostinger
+    image: ${MAIL_API_IMAGE:-seemplify/mail-api:hostinger}
     restart: unless-stopped
     environment:
       NODE_ENV: production

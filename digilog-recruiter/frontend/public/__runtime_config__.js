@@ -1,5 +1,5 @@
 // Runtime configuration for deployment
-// diGiLog talks to its own self-hosted backend (Azure VM) — no Seemplify IdP, no api.seemplifyai.com.
+// diGiLog talks to its own self-hosted backend — no Seemplify IdP or api.seemplifyai.com.
 (function () {
   var hostname = window.location.hostname;
   var isLocal = hostname === 'localhost' || hostname === '127.0.0.1';

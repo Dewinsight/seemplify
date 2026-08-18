@@ -233,36 +233,15 @@ function currentEnvironment(target: MailDeliveryAppTarget) {
 }
 
 function extractDokployTokenCandidates() {
-  const files = [
-    path.join(repositoryDir, 'access', 'ACCESS-GUIDE.md'),
-    path.join(repositoryDir, 'access', 'DOKPLOY-KEY-FIX-COMPLETE.md'),
-    path.join(repositoryDir, 'access', 'DEPLOYMENT-FIX-SUMMARY.md'),
-    path.join(repositoryDir, 'access', 'GITHUB-ACTIONS-CONFIG.md'),
-    path.join(repositoryDir, 'approver', 'complete-deployment-setup.ps1')
-  ];
-  const patterns = [
-    /gh secret set DOKPLOY_TOKEN --body "([^"]+)"/gu,
-    /DOKPLOY_TOKEN\s*=\s*'([^']+)'/gu,
-    /\b(github-actions-[A-Za-z0-9]+)\b/gu,
-    /\b(sk_dokploy_[A-Za-z0-9]+)\b/gu
-  ];
   const candidates = new Map<string, string>();
-  for (const filePath of files) {
-    const text = safeReadFile(filePath);
-    if (!text) continue;
-    for (const pattern of patterns) {
-      for (const match of text.matchAll(pattern)) {
-        const candidate = String(match[1] || '').trim();
-        if (!candidate || /YOUR_NEW_API_KEY_HERE|your-api-key-here|<your/i.test(candidate)) continue;
-        if (!candidates.has(candidate)) candidates.set(candidate, filePath);
-      }
-    }
-  }
+  const token = String(process.env.DOKPLOY_API_TOKEN || process.env.DOKPLOY_TOKEN || '').trim();
+  if (token) candidates.set(token, 'protected runtime environment');
   return candidates;
 }
 
 async function dokployRequest<T>(token: string, endpoint: string, options: RequestInit = {}) {
-  const response = await fetch(`http://4.180.153.209:3000/api/${endpoint}`, {
+  const baseUrl = String(process.env.DOKPLOY_API_URL || 'https://dokploy.seemplifyai.com/api').replace(/\/$/u, '');
+  const response = await fetch(`${baseUrl}/${endpoint}`, {
     ...options,
     headers: {
       accept: 'application/json',
@@ -293,7 +272,7 @@ async function resolveDokployAccess() {
       continue;
     }
   }
-  throw new Error('No working Dokploy API token could be resolved from the local access documentation.');
+  throw new Error('No working Dokploy API token is available in the protected runtime environment.');
 }
 
 function parseProductionMailEnvironment(envText: string) {

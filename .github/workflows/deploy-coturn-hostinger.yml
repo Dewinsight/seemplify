@@ -1,0 +1,93 @@
+name: Deploy TURN Service to Hostinger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'coturn/**'
+      - '.github/workflows/deploy-coturn-hostinger.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-production-deployments
+  cancel-in-progress: false
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: coturn/turn-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: coturn/turn-api/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
+
+  deploy:
+    needs: qa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Hostinger SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Package and upload release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          tar -czf coturn-release.tgz coturn
+          scp coturn-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/coturn-release-${GITHUB_SHA}.tgz"
+      - name: Build, deploy, and verify exact TURN API release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          release_root="/opt/seemplify/releases/$RELEASE_SHA"
+          archive="/opt/seemplify/build/coturn-release-$RELEASE_SHA.tgz"
+          install -d -m 700 "$release_root"
+          tar -xzf "$archive" -C "$release_root"
+          image="seemplify/turn-api:hostinger-$RELEASE_SHA"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$image" "$release_root/coturn/turn-api"
+          cp -a "$release_root/coturn/." /opt/seemplify/source/coturn/
+          cd /opt/seemplify/source/coturn
+          export TURN_API_IMAGE="$image"
+          compose=(docker compose \
+            --env-file /opt/seemplify/secrets/core-apps.env \
+            -f docker-compose.yml)
+          "${compose[@]}" config --quiet
+          "${compose[@]}" up -d --force-recreate coturn turn-api
+          for _ in $(seq 1 45); do
+            state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' turn-api)
+            [[ "$state" == healthy ]] && break
+            [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && {
+              docker logs --tail 150 turn-api >&2 || true
+              exit 1
+            }
+            sleep 2
+          done
+          [[ "$state" == healthy ]]
+          revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' turn-api)
+          [[ "$revision" == "$RELEASE_SHA" ]]
+          curl -fsS --max-time 15 https://turn.seemplifyai.com/api/health >/dev/null
+          rm -f "$archive"
+          REMOTE

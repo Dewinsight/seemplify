@@ -1,15 +1,12 @@
 ---
-description: Use deploy-server skill and access/ for deployment, Dokploy, SSH, Cloudflare DNS, or when the user mentions @access/
-globs: "**/.github/workflows/deploy*.yml,**/scripts/deploy*.sh,**/approver/deploy*.sh,check-cloudflare.ps1,add-cloudflare-dns.sh"
+description: Use the Hostinger deployment skill for production deployment and access work
+globs: "**/.github/workflows/*hostinger*.yml,deploy/hostinger/**"
 alwaysApply: false
 ---
 
-# Deploy and access/ context
+# Deployment and access context
 
-When doing **deployment**, **server**, **Dokploy**, **SSH**, **Cloudflare DNS**, or **@access/** work:
-
-1. **Apply** the deploy-server skill (`.cursor/skills/deploy-server/SKILL.md`).
-2. **Read credentials** only from `access/` — e.g. `access/DOKPLOY-CREDENTIALS.md`, `access/CLOUDFLARE-CREDENTIALS.md`, `access/SERVER-ACCESS.md`. Never hardcode.
-3. For full Deploy subagent behavior, run the **deploy-agent** command.
-
-**Quick ref:** Server `seemplify@4.180.153.209`, Dokploy `http://4.180.153.209:3000`, Cloudflare Zone `bbc142d2d661d64011e2e4becae7a5c3` (seemplifyai.com).
+Apply `.cursor/skills/deploy-server/SKILL.md` for deployment, server, Dokploy,
+SSH, DNS, or access-vault work. Production applications deploy only through
+Hostinger workflows and Compose definitions. Credentials are referenced by
+secret name; plaintext belongs only in the encrypted operational vault flow.

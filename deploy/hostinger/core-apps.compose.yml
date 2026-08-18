@@ -180,7 +180,7 @@ services:
 
   recruiter-frontend:
     <<: *defaults
-    image: seemplify/recruiter-frontend:hostinger
+    image: ${RECRUITER_FRONTEND_IMAGE:-seemplify/recruiter-frontend:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5000"
@@ -200,7 +200,7 @@ services:
 
   candidate-portal:
     <<: *defaults
-    image: seemplify/candidate-portal:hostinger
+    image: ${CANDIDATE_PORTAL_IMAGE:-seemplify/candidate-portal:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5300"
@@ -220,7 +220,7 @@ services:
 
   leave-backend:
     <<: *defaults
-    image: seemplify/leave-backend:hostinger
+    image: ${LEAVE_BACKEND_IMAGE:-seemplify/leave-backend:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5002"
@@ -266,7 +266,7 @@ services:
 
   leave-frontend:
     <<: *defaults
-    image: seemplify/leave-frontend:hostinger
+    image: ${LEAVE_FRONTEND_IMAGE:-seemplify/leave-frontend:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5003"
@@ -286,7 +286,7 @@ services:
 
   performance-backend:
     <<: *defaults
-    image: seemplify/performance-backend:hostinger-20260817-webhook-contract
+    image: ${PERFORMANCE_BACKEND_IMAGE:-seemplify/performance-backend:hostinger-20260817-webhook-contract}
     environment:
       NODE_ENV: production
       PORT: "5004"
@@ -362,7 +362,7 @@ services:
 
   payroll-backend:
     <<: *defaults
-    image: seemplify/payroll-backend:hostinger
+    image: ${PAYROLL_BACKEND_IMAGE:-seemplify/payroll-backend:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5006"
@@ -433,7 +433,7 @@ services:
 
   time-backend:
     <<: *defaults
-    image: seemplify/time-backend:hostinger-20260817-webhook-contract
+    image: ${TIME_BACKEND_IMAGE:-seemplify/time-backend:hostinger-20260817-webhook-contract}
     environment:
       NODE_ENV: production
       PORT: "5010"
@@ -476,7 +476,7 @@ services:
 
   time-frontend:
     <<: *defaults
-    image: seemplify/time-frontend:hostinger
+    image: ${TIME_FRONTEND_IMAGE:-seemplify/time-frontend:hostinger}
     environment:
       NODE_ENV: production
       PORT: "5011"

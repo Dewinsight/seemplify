@@ -44,7 +44,7 @@ function getDefaultsForHostname(hostname: string): {
     };
   }
 
-  // diGiLog uses its own self-hosted backend on the Azure VM. No Seemplify IdP.
+  // diGiLog uses its own self-hosted backend. No Seemplify IdP.
   return {
     apiBase: 'https://172-182-227-84.nip.io',
     wsBase: 'wss://172-182-227-84.nip.io',

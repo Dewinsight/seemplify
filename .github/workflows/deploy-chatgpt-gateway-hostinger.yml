@@ -131,6 +131,10 @@ jobs:
           wait_healthy seemplify-core-recruiter-backend-1
           "${extended[@]}" up -d --no-deps --force-recreate chatgpt-gateway
           wait_healthy seemplify-extended-chatgpt-gateway-1
+          for container in seemplify-core-recruiter-backend-1 seemplify-extended-chatgpt-gateway-1; do
+            revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container")
+            [[ "$revision" == "$RELEASE_SHA" ]]
+          done
 
           docker exec seemplify-extended-chatgpt-gateway-1 node -e '
             fetch("http://127.0.0.1:11435/health")

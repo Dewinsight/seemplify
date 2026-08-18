@@ -1,17 +1,16 @@
-name: Diagnose or Repair Leave Backend
+name: Diagnose or Restart Leave Backend on Hostinger
 
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: Diagnose the service or force a safe restart
+        description: Diagnose the service or restart its current release
         required: true
         default: diagnose
         type: choice
         options:
           - diagnose
           - restart
-          - configure-payroll-secret
 
 permissions:
   contents: read
@@ -22,151 +21,46 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Configure VM access
+      - name: Configure Hostinger SSH
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          key="${SSH_PRIVATE_KEY:-${VM_SSH_KEY:-}}"
-          if [ -z "$key" ]; then
-            echo "Missing SSH_PRIVATE_KEY or VM_SSH_KEY secret." >&2
-            exit 1
-          fi
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$key" > ~/.ssh/id_vm
-          chmod 600 ~/.ssh/id_vm
-          ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts 2>/dev/null
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
-      - name: Inspect or restart production service
+      - name: Inspect or restart current production release
         env:
           ACTION: ${{ inputs.action }}
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_vm -o BatchMode=yes seemplify@4.180.153.209 "bash -s -- '$ACTION'" <<'REMOTE'
-          set -u
-          action="${1:-diagnose}"
-
-          echo "=== Matching Docker services ==="
-          docker service ls --format '{{.ID}} {{.Name}} {{.Replicas}} {{.Image}}' \
-            | grep -E 'leave-backend($|[-_])|leave-backend ' \
-            | grep -v -E 'dev|development' || true
-
-          service_name="$(docker service ls --format '{{.Name}}' \
-            | grep -E 'leave-backend($|[-_])|leave-backend' \
-            | grep -v -E 'dev|development' \
-            | head -1)"
-
-          if [ -n "$service_name" ]; then
-            echo "=== Service tasks: $service_name ==="
-            docker service ps --no-trunc "$service_name" || true
-          fi
-
-          echo "=== Matching containers ==="
-          docker ps -a --format '{{.ID}} {{.Names}} {{.Status}} {{.Image}}' \
-            | grep 'leave-backend' \
-            | grep -v -E 'dev|development' || true
-
-          container_id="$(docker ps -aq --filter name=leave-backend \
-            | while read -r id; do
-                name="$(docker inspect --format '{{.Name}}' "$id" 2>/dev/null | sed 's#^/##')"
-                case "$name" in *dev*|*development*) ;; *) echo "$id"; break ;; esac
-              done)"
-
-          if [ -n "$container_id" ]; then
-            echo "=== Container state ==="
-            docker inspect --format 'name={{.Name}} status={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} exit={{.State.ExitCode}} error={{json .State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} image={{.Config.Image}} networks={{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' "$container_id" || true
-            echo "=== Container logs (last 200 lines) ==="
-            docker logs --tail 200 "$container_id" 2>&1 || true
-          else
-            echo "No production leave-backend container exists."
-          fi
-
-          if [ "$action" = restart ]; then
-            if [ -n "$service_name" ]; then
-              echo "=== Forcing service restart: $service_name ==="
-              docker service update --force "$service_name"
-            elif [ -n "$container_id" ]; then
-              echo "=== Restarting container: $container_id ==="
-              docker restart "$container_id"
-            else
-              echo "Nothing can be restarted because no production service or container was found." >&2
-              exit 1
-            fi
-          fi
-
-          if [ "$action" = configure-payroll-secret ]; then
-            postgres_container="$(docker ps --format '{{.ID}} {{.Names}}' \
-              | awk '/dokploy-postgres/ { print $1; exit }')"
-            if [ -z "$postgres_container" ]; then
-              echo "Dokploy PostgreSQL container was not found." >&2
-              exit 1
-            fi
-
-            secret="$(openssl rand -hex 32)"
-            echo "=== Persisting a new service-specific secret in Dokploy ==="
-            updated="$(docker exec -i "$postgres_container" \
-              psql -U dokploy -d dokploy -At -v secret="$secret" <<'SQL'
-          UPDATE application AS app
-          SET env = concat_ws(
-            E'\n',
-            NULLIF(
-              (
-                SELECT string_agg(line, E'\n')
-                FROM unnest(string_to_array(COALESCE(app.env, ''), E'\n')) AS line
-                WHERE line !~ '^PAYROLL_LEAVE_SHARED_SECRET='
-                  AND line <> ''
-              ),
-              ''
-            ),
-            'PAYROLL_LEAVE_SHARED_SECRET=' || :'secret'
-          )
-          WHERE name IN ('leave-backend', 'payroll-backend')
-          RETURNING name;
-          SQL
-            )"
-            printf '%s\n' "$updated" | grep -q 'leave-backend' || {
-              echo "Dokploy application leave-backend was not updated." >&2
-              exit 1
-            }
-            printf '%s\n' "$updated" | grep -q 'payroll-backend' || {
-              echo "Dokploy application payroll-backend was not updated." >&2
-              exit 1
-            }
-            echo "Updated persistent environment for leave-backend and payroll-backend."
-
-            echo "=== Applying the secret to running services ==="
-            for service in $(docker service ls --format '{{.Name}}' \
-              | grep -E '^(leave-backend|payroll-backend)(-|$)' \
-              | grep -v -E 'dev|development'); do
-              if docker service inspect --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' "$service" \
-                | grep -q '^PAYROLL_LEAVE_SHARED_SECRET='; then
-                docker service update --detach=false \
-                  --env-rm PAYROLL_LEAVE_SHARED_SECRET \
-                  --env-add "PAYROLL_LEAVE_SHARED_SECRET=$secret" \
-                  "$service"
-              else
-                docker service update --detach=false \
-                  --env-add "PAYROLL_LEAVE_SHARED_SECRET=$secret" \
-                  "$service"
-              fi
+          ssh "$SSH_USER@$SSH_HOST" "bash -s -- '$ACTION'" <<'REMOTE'
+          set -euo pipefail
+          action="$1"
+          container=seemplify-core-leave-backend-1
+          docker inspect --format 'name={{.Name}} image={{.Config.Image}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} started={{.State.StartedAt}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}' "$container"
+          docker logs --tail 100 "$container" 2>&1 || true
+          if [[ "$action" == restart ]]; then
+            docker restart "$container" >/dev/null
+            for _ in $(seq 1 45); do
+              state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
+              [[ "$state" == healthy || "$state" == running ]] && exit 0
+              [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && break
+              sleep 2
             done
-            unset secret
+            docker logs --tail 150 "$container" >&2 || true
+            exit 1
           fi
           REMOTE
 
-      - name: Verify public health after restart
-        if: inputs.action == 'restart' || inputs.action == 'configure-payroll-secret'
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 18); do
-            code="$(curl -sS -o /tmp/health.txt -w '%{http_code}' --max-time 10 https://api-leave.seemplifyai.com/health || true)"
-            echo "attempt=$attempt status=$code"
-            if [ "$code" = 200 ]; then
-              cat /tmp/health.txt
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Leave backend did not become healthy after restart." >&2
-          exit 1
+      - name: Verify public health
+        if: inputs.action == 'restart'
+        run: curl -fsS --max-time 15 https://api-leave.seemplifyai.com/health

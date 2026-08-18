@@ -100,8 +100,10 @@ jobs:
 
           approver_image="seemplify/approver:hostinger-$RELEASE_SHA"
           identity_image="seemplify/identity-provider:hostinger-$RELEASE_SHA"
-          docker build --pull -t "$approver_image" "$release_root/approver"
-          docker build --pull -t "$identity_image" "$release_root/Identityprovider"
+          docker build --pull --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$approver_image" "$release_root/approver"
+          docker build --pull --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$identity_image" "$release_root/Identityprovider"
 
           cp -a "$release_root/approver/." /opt/seemplify/source/approver/
           cp -a "$release_root/Identityprovider/." /opt/seemplify/source/Identityprovider/
@@ -134,6 +136,10 @@ jobs:
           wait_healthy seemplify-core-approver-1
           "${compose[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
+          for container in seemplify-core-approver-1 seemplify-core-identity-provider-1; do
+            revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container")
+            [[ "$revision" == "$RELEASE_SHA" ]]
+          done
           /usr/local/sbin/seemplify-smoke
           rm -f "$archive"
           REMOTE

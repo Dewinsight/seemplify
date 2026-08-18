@@ -1,0 +1,107 @@
+name: Deploy Automation Hub to Hostinger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'automation-hub/**'
+      - 'deploy/hostinger/automation-nango.compose.yml'
+      - 'deploy/hostinger/smoke-hostinger.sh'
+      - '.github/workflows/deploy-automation-hostinger.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-production-deployments
+  cancel-in-progress: false
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: automation-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: automation-hub/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    needs: qa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Hostinger SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Package release
+        run: |
+          tar -czf automation-release.tgz \
+            automation-hub \
+            deploy/hostinger/automation-nango.compose.yml \
+            deploy/hostinger/smoke-hostinger.sh
+      - name: Upload release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: scp automation-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/automation-release-${GITHUB_SHA}.tgz"
+      - name: Build, deploy, and verify exact automation release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          release_root="/opt/seemplify/releases/$RELEASE_SHA"
+          archive="/opt/seemplify/build/automation-release-$RELEASE_SHA.tgz"
+          install -d -m 700 "$release_root"
+          tar -xzf "$archive" -C "$release_root"
+          image="seemplify/automation-hub:hostinger-$RELEASE_SHA"
+          docker build --pull \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "$image" "$release_root/automation-hub"
+          cp -a "$release_root/automation-hub/." /opt/seemplify/source/automation-hub/
+          install -m 644 "$release_root/deploy/hostinger/automation-nango.compose.yml" \
+            /opt/seemplify/deploy/hostinger/automation-nango.compose.yml
+          install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" \
+            /usr/local/sbin/seemplify-smoke
+          export AUTOMATION_HUB_IMAGE="$image"
+          compose=(docker compose \
+            --env-file /opt/seemplify/secrets/shared-infrastructure.env \
+            --env-file /opt/seemplify/secrets/core-apps.env \
+            -f /opt/seemplify/deploy/hostinger/automation-nango.compose.yml)
+          "${compose[@]}" config --quiet
+          "${compose[@]}" up -d nango-db nango-server
+          "${compose[@]}" up -d --no-deps --force-recreate automation-hub
+          for _ in $(seq 1 60); do
+            state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' seemplify-automation-automation-hub-1)
+            [[ "$state" == healthy ]] && break
+            [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && {
+              docker logs --tail 150 seemplify-automation-automation-hub-1 >&2 || true
+              exit 1
+            }
+            sleep 2
+          done
+          [[ "$state" == healthy ]]
+          revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' seemplify-automation-automation-hub-1)
+          [[ "$revision" == "$RELEASE_SHA" ]]
+          curl -fsS --max-time 15 https://automations.seemplifyai.com/api/health >/dev/null
+          /usr/local/sbin/seemplify-smoke
+          rm -f "$archive"
+          REMOTE

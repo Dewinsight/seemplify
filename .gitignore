@@ -27,9 +27,6 @@ secrets/
 # Local plaintext access vault. Never commit this directory.
 access/
 
-# The only publishable access artifact is the AES-256 encrypted archive.
-!access.zip
-
 # Logs
 *.log
 logs/

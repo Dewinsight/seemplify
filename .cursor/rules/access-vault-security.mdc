@@ -5,13 +5,13 @@ alwaysApply: true
 
 # Access vault security
 
-- Treat `access/` as the local plaintext credential vault. It must stay ignored.
+- Treat `access/` as ignored local material. The canonical operational vault is
+  the sibling `../access` repository and must follow its own security rules.
 - Never commit credentials, passwords, tokens, private keys, production `.env`
   files, vault passwords, or recovery keys as readable Git content.
-- The only publishable vault artifact is `access.zip`, created with AES-256 by
-  `scripts/access-vault.py` and an unlock key stored outside the repository.
-- Before staging `access.zip`, verify every nonempty member requires the key,
-  verify the archive with the key, and record its SHA-256 checksum.
+- Never add an access archive or recovery key to this application repository.
+- Update and verify encrypted recovery artifacts only in the sibling access
+  repository, keeping its local password helper ignored.
 - Never reuse an application, email, SSH, Google, GitHub, or Cloudflare password
   as the vault unlock key.
 - Other PCs must receive the unlock key through a separate secure channel; the

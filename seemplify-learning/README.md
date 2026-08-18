@@ -9,7 +9,7 @@ Standalone Simple LMS application with its own authentication, organization/team
 - Full Simple LMS workspace (courses, programs, assignments, requests)
 - Banner uploads via Cloudinary
 - Email notifications via the Seemplify transactional mail service (optional)
-- Dokploy deployment workflow
+- Immutable Hostinger deployment through the shared production stack
 
 ## Run Locally
 1. Copy `.env.example` to `.env` and set values.
@@ -36,10 +36,8 @@ Standalone Simple LMS application with its own authentication, organization/team
 - Cloudinary is loaded from Seemplify Identity over the signed platform-configuration channel in production. `CLOUDINARY_URL` or the three split `CLOUDINARY_*` values remain supported as local-development fallbacks.
 
 ## Deployment
-GitHub Actions workflow:
-- `.github/workflows/deploy-seemplify-learning.yml`
-
-Required GitHub secrets:
-- `DOKPLOY_URL`
-- `DOKPLOY_TOKEN`
-- `SEEMPLIFY_LEARNING_APP_ID`
+GitHub Actions deploys Learning through
+`.github/workflows/deploy-core-hostinger.yml`. The workflow uses the standard
+`HOSTINGER_SSH_*` repository secrets, builds an image tagged with the tested
+`main` commit, deploys it through `deploy/hostinger/core-apps.compose.yml`, and
+verifies the live revision and production smoke checks.

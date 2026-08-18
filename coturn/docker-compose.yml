@@ -16,7 +16,8 @@ services:
       - ./entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     restart: unless-stopped
-    # With host network, coturn binds to 3478 (UDP/TCP) and relay range on host. Ensure Azure NSG and UFW allow UDP 3478, UDP 49152-49252.
+    # With host network, coturn binds to 3478 (UDP/TCP) and the relay range on
+    # Hostinger. Keep the VPS firewall open for UDP 3478 and UDP 49152-49252.
 
   turn-api:
     image: ${TURN_API_IMAGE:-turn-api:latest}

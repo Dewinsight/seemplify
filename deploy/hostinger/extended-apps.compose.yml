@@ -222,7 +222,7 @@ services:
 
   ai-interview-frontend:
     <<: *defaults
-    image: seemplify/ai-interview-frontend:hostinger-20260817-api-origin-fix
+    image: ${AI_INTERVIEW_FRONTEND_IMAGE:-seemplify/ai-interview-frontend:hostinger-20260817-api-origin-fix}
     environment:
       NODE_ENV: production
       PORT: "5200"
@@ -244,7 +244,7 @@ services:
 
   marketing:
     <<: *defaults
-    image: seemplify/marketing:hostinger
+    image: ${MARKETING_IMAGE:-seemplify/marketing:hostinger}
     environment:
       NODE_ENV: production
       PORT: "3001"
