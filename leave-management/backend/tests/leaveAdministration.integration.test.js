@@ -52,8 +52,9 @@ describe('leave administration API', () => {
     app.use((req, _res, next) => {
       const organizationId = String(req.get('x-test-organization') || 'org-a');
       const employeeRequest = req.get('x-test-user') === 'employee';
+      const adminId = String(req.get('x-test-admin-id') || `admin-${organizationId}`);
       const testUser = {
-        id: employeeRequest ? 'employee-a' : `admin-${organizationId}`,
+        id: employeeRequest ? 'employee-a' : adminId,
         name: employeeRequest ? 'Employee A' : `Admin ${organizationId}`,
         email: employeeRequest ? 'a@example.com' : `admin-${organizationId}@example.com`,
         organizations: [{ id: organizationId, name: organizationId, role: employeeRequest ? 'staff' : 'admin', appPermissions: { 'leave-management': employeeRequest ? ['request_leave'] : ['*'] } }],
@@ -159,6 +160,67 @@ describe('leave administration API', () => {
     expect(logs).toHaveLength(3);
     expect(logs.map((item) => item.metadata.operation)).toEqual(['add', 'deduct', 'reset']);
     expect(logs[0].metadata.targetUserId).toBe('employee-a');
+  });
+
+  test('repeats entitlement transactions without sharing parallel session operations', async () => {
+    const createTypeResponse = await request(app)
+      .post('/api/leave-types')
+      .set('x-test-organization', 'org-a')
+      .send({ name: 'Repeated Study Leave', defaultDays: 8, paid: true });
+    expect(createTypeResponse.status).toBe(201);
+
+    for (let round = 0; round < 5; round += 1) {
+      const startingVersion = round * 3;
+      const addResponse = await request(app)
+        .patch('/api/leave-balances/user/employee-a/entitlements/repeated-study-leave')
+        .set('x-test-organization', 'org-a')
+        .set('x-test-admin-id', `transaction-regression-${round + 1}`)
+        .send({
+          year: 2026,
+          operation: 'add',
+          delta: 2,
+          reason: `Repeated transaction round ${round + 1}`,
+          expectedVersion: startingVersion,
+        });
+      expect(addResponse.status).toBe(200);
+
+      const deductResponse = await request(app)
+        .patch('/api/leave-balances/user/employee-a/entitlements/repeated-study-leave')
+        .set('x-test-organization', 'org-a')
+        .set('x-test-admin-id', `transaction-regression-${round + 1}`)
+        .send({
+          year: 2026,
+          operation: 'deduct',
+          delta: -1,
+          reason: `Repeated correction round ${round + 1}`,
+          expectedVersion: startingVersion + 1,
+        });
+      expect(deductResponse.status).toBe(200);
+
+      const resetResponse = await request(app)
+        .patch('/api/leave-balances/user/employee-a/entitlements/repeated-study-leave')
+        .set('x-test-organization', 'org-a')
+        .set('x-test-admin-id', `transaction-regression-${round + 1}`)
+        .send({
+          year: 2026,
+          operation: 'reset',
+          resetToPolicy: true,
+          reason: `Repeated reset round ${round + 1}`,
+          expectedVersion: startingVersion + 2,
+        });
+      expect(resetResponse.status).toBe(200);
+      expect(resetResponse.body.balance.version).toBe(startingVersion + 3);
+      expect(resetResponse.body.balance.entitlements.find(
+        (item) => item.leaveTypeKey === 'repeated-study-leave',
+      )).toMatchObject({ total: 8, source: 'policy', policyDefault: 8 });
+    }
+
+    const adjustments = await LeaveEntitlementAdjustment.find({
+      organizationId: 'org-a',
+      userId: 'employee-a',
+      leaveTypeKey: 'repeated-study-leave',
+    });
+    expect(adjustments).toHaveLength(15);
   });
 
   test('records bulk balance initialization in the organization audit log', async () => {

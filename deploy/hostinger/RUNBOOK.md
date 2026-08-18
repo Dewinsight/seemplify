@@ -92,6 +92,29 @@ docker compose \
 Use `--force-recreate` after a protected environment value changes. A plain
 restart does not reload container environment variables.
 
+## Deployment coordination
+
+All monorepo production deployment jobs use the GitHub concurrency group
+`hostinger-production-deploy`. The remote build/deploy command also acquires
+`/var/lock/seemplify-production-deploy.lock` with `flock`. The server lock is
+authoritative across repositories, so the separate Workspace deployment waits
+instead of competing with a Seemplify deployment for SSH and Docker resources.
+
+SSH uploads and commands use five attempts with exponential backoff. Keep the
+shared behavior in `deploy/hostinger/github-actions-ssh-retry.sh`; do not add
+one-off unretired `scp` or `ssh` calls to production workflows.
+
+To redeploy every monorepo component sequentially from GitHub, run **Deploy All
+Seemplify Apps to Hostinger**. To include the private Workspace repository in
+the same sequence, use an authenticated GitHub CLI from this checkout:
+
+```powershell
+./deploy/hostinger/Deploy-All.ps1
+```
+
+The local orchestrator needs no stored cross-repository token and stops at the
+first failed workflow.
+
 ## Health and protocol checks
 
 Run the complete on-server check:

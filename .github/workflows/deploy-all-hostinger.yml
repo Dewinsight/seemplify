@@ -1,0 +1,36 @@
+name: Deploy All Seemplify Apps to Hostinger
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Seemplify branch or commit to deploy
+        required: true
+        default: main
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: hostinger-deploy-all-orchestrator
+  cancel-in-progress: false
+
+jobs:
+  deploy-all:
+    name: Dispatch production workflows sequentially
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy every Seemplify component sequentially
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./deploy/hostinger/Deploy-All.ps1 -SeemplifyRef '${{ inputs.ref }}' -SkipWorkspace
+      - name: Explain Workspace boundary
+        run: |
+          echo 'Workspace is a private separate repository and cannot be dispatched by this public repository token.'
+          echo 'Run deploy/hostinger/Deploy-All.ps1 with an authenticated GitHub CLI to include Workspace.'

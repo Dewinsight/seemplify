@@ -17,6 +17,7 @@ on:
       - 'deploy/hostinger/core-apps.compose.yml'
       - 'deploy/hostinger/extended-apps.compose.yml'
       - 'deploy/hostinger/generate-idp-clients.sh'
+      - 'deploy/hostinger/github-actions-ssh-retry.sh'
       - 'deploy/hostinger/smoke-hostinger.sh'
       - '.github/workflows/deploy-experience-hostinger.yml'
   workflow_dispatch:
@@ -77,6 +78,9 @@ jobs:
   deploy:
     needs: qa
     runs-on: ubuntu-latest
+    concurrency:
+      group: hostinger-production-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Configure SSH
@@ -89,7 +93,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-          printf 'Host *\n  ConnectionAttempts 10\n  ConnectTimeout 30\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
           chmod 600 ~/.ssh/config
       - name: Package release
         run: |
@@ -104,7 +108,9 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
-        run: scp experience-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/experience-release-${GITHUB_SHA}.tgz"
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_scp experience-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/experience-release-${GITHUB_SHA}.tgz"
       - name: Upload Azure embedding credential
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
@@ -114,14 +120,17 @@ jobs:
           umask 077
           test -n "$AZURE_OPENAI_EMBEDDING_API_KEY"
           printf '%s' "$AZURE_OPENAI_EMBEDDING_API_KEY" >/tmp/azure-openai-embedding
-          scp /tmp/azure-openai-embedding "$SSH_USER@$SSH_HOST:/tmp/azure-openai-embedding-${GITHUB_SHA}"
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_scp /tmp/azure-openai-embedding "$SSH_USER@$SSH_HOST:/tmp/azure-openai-embedding-${GITHUB_SHA}"
           rm -f /tmp/azure-openai-embedding
       - name: Build and deploy immutable release
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
-          ssh "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" \
+            "RELEASE_SHA='$GITHUB_SHA' flock --exclusive --wait 1800 /var/lock/seemplify-production-deploy.lock bash -s" <<'REMOTE'
           set -euo pipefail
           release_root="/opt/seemplify/releases/$RELEASE_SHA"
           archive="/opt/seemplify/build/experience-release-$RELEASE_SHA.tgz"

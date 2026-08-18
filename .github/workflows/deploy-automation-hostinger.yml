@@ -6,6 +6,7 @@ on:
     paths:
       - 'automation-hub/**'
       - 'deploy/hostinger/automation-nango.compose.yml'
+      - 'deploy/hostinger/github-actions-ssh-retry.sh'
       - 'deploy/hostinger/smoke-hostinger.sh'
       - '.github/workflows/deploy-automation-hostinger.yml'
   workflow_dispatch:
@@ -38,6 +39,9 @@ jobs:
   deploy:
     needs: qa
     runs-on: ubuntu-latest
+    concurrency:
+      group: hostinger-production-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Configure Hostinger SSH
@@ -50,7 +54,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-          printf 'Host *\n  ConnectionAttempts 10\n  ConnectTimeout 30\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
           chmod 600 ~/.ssh/config
       - name: Package release
         run: |
@@ -62,13 +66,17 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
-        run: scp automation-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/automation-release-${GITHUB_SHA}.tgz"
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_scp automation-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/automation-release-${GITHUB_SHA}.tgz"
       - name: Build, deploy, and verify exact automation release
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
-          ssh "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" \
+            "RELEASE_SHA='$GITHUB_SHA' flock --exclusive --wait 1800 /var/lock/seemplify-production-deploy.lock bash -s" <<'REMOTE'
           set -euo pipefail
           release_root="/opt/seemplify/releases/$RELEASE_SHA"
           archive="/opt/seemplify/build/automation-release-$RELEASE_SHA.tgz"

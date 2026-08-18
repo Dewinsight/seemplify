@@ -20,7 +20,12 @@ jobs:
     name: ${{ inputs.action }} leave-backend
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: hostinger-production-deploy
+      cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v4
+
       - name: Configure Hostinger SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
@@ -34,7 +39,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-          printf 'Host *\n  ConnectionAttempts 10\n  ConnectTimeout 30\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
           chmod 600 ~/.ssh/config
 
       - name: Inspect or restart current production release
@@ -44,7 +49,9 @@ jobs:
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
           set -euo pipefail
-          ssh "$SSH_USER@$SSH_HOST" "bash -s -- '$ACTION'" <<'REMOTE'
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" \
+            "flock --exclusive --wait 480 /var/lock/seemplify-production-deploy.lock bash -s -- '$ACTION'" <<'REMOTE'
           set -euo pipefail
           action="$1"
           container=seemplify-core-leave-backend-1
