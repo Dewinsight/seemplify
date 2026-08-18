@@ -419,7 +419,7 @@ assistantRouter.use((_request, response, next) => {
 assistantRouter.get('/overview', async (request, response) => {
   try {
     const { user, space } = identity(request);
-    const credentialsConfigured = nylasConfigured(); const encryptionConfigured = nylasSecretEncryptionConfigured();
+    const credentialsConfigured = await nylasConfigured(); const encryptionConfigured = nylasSecretEncryptionConfigured();
     const preference = getAiProviderPreference(user.id, space.id);
     const providerState = await getAiProviderState(user.id, space.id);
     const aiStatus = {
@@ -431,7 +431,7 @@ assistantRouter.get('/overview', async (request, response) => {
     };
     return response.json({
       configured: credentialsConfigured && encryptionConfigured,
-      callbackUrl: nylasRedirectUri(),
+      callbackUrl: await nylasRedirectUri(),
       configurationError: !credentialsConfigured ? 'Nylas credentials are not configured.'
         : !encryptionConfigured ? 'Nylas credential encryption is not configured.' : null,
       connections: listNylasConnections(user.id, space.id),
@@ -697,10 +697,10 @@ assistantRouter.get('/runs/:id', (request, response) => {
   } catch (error) { return assistantError(response, error); }
 });
 
-assistantRouter.post('/nylas/connect', (request, response) => {
+assistantRouter.post('/nylas/connect', async (request, response) => {
   try {
     const { user, space } = identity(request); const input = providerInput.parse(request.body);
-    if (!nylasConfigured() || !nylasSecretEncryptionConfigured()) {
+    if (!await nylasConfigured() || !nylasSecretEncryptionConfigured()) {
       throw new AssistantError('Nylas is not configured.', 503, 'NYLAS_NOT_CONFIGURED');
     }
     const state = createNylasOAuthState(user.id, space.id, input.provider);
@@ -708,7 +708,7 @@ assistantRouter.post('/nylas/connect', (request, response) => {
       spaceId: space.id, actorUserId: user.id, action: 'assistant.oauth.requested',
       targetType: 'nylas_connection', detail: { provider: input.provider }
     });
-    return response.json({ authorizeUrl: createNylasAuthorizeUrl(input.provider, state) });
+    return response.json({ authorizeUrl: await createNylasAuthorizeUrl(input.provider, state) });
   } catch (error) { return assistantError(response, error); }
 });
 
