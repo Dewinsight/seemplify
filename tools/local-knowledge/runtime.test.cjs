@@ -8,7 +8,7 @@ const { CONFIG } = require('./config.cjs');
 const { AQL } = require('./aql.cjs');
 const { createReplayGuard, signRequest, tenantDatabaseName, verifyRequest } = require('./auth.cjs');
 const {
-  BENCHMARK_CLEANUP_CONFIRMATION, blendRetrievalScore, chunkText, createKnowledgeRuntime, extractGraph, groundedMentions,
+  BENCHMARK_CLEANUP_CONFIRMATION, blendRetrievalScore, chunkText, createKnowledgeRuntime, embedTexts, extractGraph, groundedMentions,
   normalizeRawRerankerScore, purgeKnowledgeEvidence, rerank,
   selectDeclaredBindVars, upstreamResponseError, validateRetrieveInput, validateScanInput, validateTestCleanupInput, vectorIndexState, weightedReciprocalRankFusion,
 } = require('./runtime.cjs');
@@ -261,17 +261,58 @@ test('test tenant cleanup cannot target an arbitrary production space', () => {
 });
 
 test('status exposes a consistent ready and healthy contract', async () => {
+  const config = { ...CONFIG, services: { ...CONFIG.services, azureEmbedding: 'https://azure.example/embeddings' } };
   const runtime = createKnowledgeRuntime({
+    config,
     secrets: { 'arango-app': 'a', 'arango-provisioner': 'p', 'chatgpt-gateway': 'l', 'tei-api': 't', 'docling-api': 'd' },
     appClient: {},
     provisionerClient: { authorization: 'Basic test', request: async () => ({ result: [] }) },
     gteClient: { status: () => ({ state: 'ready', ready: true, accepting: true, queue: { waiting: 0 } }) },
-    fetchImpl: async () => ({ ok: true, status: 200 }),
+    fetchImpl: async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => String(url).includes('azure.example')
+        ? ({ data: [{ index: 0, embedding: [1] }] })
+        : ({})
+    }),
   });
   const status = await runtime.status();
   assert.equal(status.ready, true);
   assert.equal(status.healthy, true);
-  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'chatgpt', 'docling', 'gteEmbedding', 'reranker']);
+  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'chatgpt', 'docling', 'embedding', 'gteEmbedding', 'reranker']);
+});
+
+test('Azure embeddings use the API key header, pinned dimensions, stable batching, and response order', async () => {
+  const calls = [];
+  const config = { ...CONFIG, services: { ...CONFIG.services, azureEmbedding: 'https://azure.example/embeddings' } };
+  const texts = Array.from({ length: 33 }, (_, index) => `chunk-${index}`);
+  const vectors = await embedTexts(texts, {
+    config,
+    apiKey: 'test-only-key',
+    fetchImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      calls.push({ url, headers: options.headers, body });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: body.input.map((_, index) => ({
+          index: body.input.length - index - 1,
+          embedding: [body.input.length - index - 1]
+        })) })
+      };
+    }
+  });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((call) => call.body.input.length), [32, 1]);
+  for (const call of calls) {
+    assert.equal(call.url, config.services.azureEmbedding);
+    assert.equal(call.headers['api-key'], 'test-only-key');
+    assert.equal(call.headers.authorization, undefined);
+    assert.equal(call.body.dimensions, 3072);
+    assert.equal(call.body.encoding_format, 'float');
+  }
+  assert.deepEqual(vectors.slice(0, 3), [[0], [1], [2]]);
+  assert.deepEqual(vectors.at(-1), [0]);
 });
 
 test('index response exposes canonical relationshipCount and scoped receipt metadata', async () => {

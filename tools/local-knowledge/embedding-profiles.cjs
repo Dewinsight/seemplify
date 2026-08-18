@@ -9,6 +9,18 @@ function deepFreeze(value) {
 }
 
 const EMBEDDING_PROFILES = deepFreeze({
+  'azure-openai': {
+    id: 'azure-openai',
+    provider: 'azure-openai',
+    modelId: 'text-embedding-3-large',
+    revision: 'f0706db2d8dd64a5f9385fd9ab1713b9083eb881',
+    dtype: 'float32',
+    dimension: 3072,
+    pooling: 'model-default',
+    normalize: true,
+    vectorIndexVersion: 'azure-text-embedding-3-large-v1',
+    execution: 'azure-openai',
+  },
   'qwen-tei': {
     id: 'qwen-tei',
     provider: 'qwen-tei',

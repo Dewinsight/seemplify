@@ -101,7 +101,7 @@ function boundedNumber(value: unknown, fallback: number, minimum: number, maximu
   return Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? parsed : fallback));
 }
 
-export type KnowledgeEmbeddingProvider = 'qwen-tei' | 'gte-node';
+export type KnowledgeEmbeddingProvider = 'azure-openai' | 'qwen-tei' | 'gte-node';
 
 export interface KnowledgeEmbeddingProfile {
   provider: KnowledgeEmbeddingProvider;
@@ -130,9 +130,23 @@ export const gteKnowledgeEmbeddingProfile: Readonly<KnowledgeEmbeddingProfile> =
   vectorIndexVersion: 'gte-modernbert-v1'
 });
 
+export const azureKnowledgeEmbeddingProfile: Readonly<KnowledgeEmbeddingProfile> = Object.freeze({
+  provider: 'azure-openai',
+  model: 'text-embedding-3-large',
+  revision: 'f0706db2d8dd64a5f9385fd9ab1713b9083eb881',
+  dtype: 'float32',
+  dimensions: 3072,
+  vectorIndexVersion: 'azure-text-embedding-3-large-v1'
+});
+
 export const bgeKnowledgeRerankerProfile = Object.freeze({
   model: 'BAAI/bge-reranker-v2-m3',
   revision: '953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e'
+});
+
+export const azureKnowledgeRerankerProfile = Object.freeze({
+  model: 'text-embedding-3-large-cosine-reranker',
+  revision: azureKnowledgeEmbeddingProfile.revision
 });
 
 function configuredInteger(value: unknown, fallback: number, minimum: number, maximum: number, name: string) {
@@ -170,11 +184,12 @@ export function resolveKnowledgeEmbeddingConfiguration(environment: NodeJS.Proce
   const providerValue = forceQwen
     ? 'qwen-tei'
     : String(environment.EXPERIENCE_EMBEDDING_PROVIDER || 'gte-node').trim().toLowerCase();
-  if (providerValue !== 'qwen-tei' && providerValue !== 'gte-node') {
-    throw new Error('EXPERIENCE_EMBEDDING_PROVIDER must be either qwen-tei or gte-node.');
+  if (providerValue !== 'azure-openai' && providerValue !== 'qwen-tei' && providerValue !== 'gte-node') {
+    throw new Error('EXPERIENCE_EMBEDDING_PROVIDER must be azure-openai, qwen-tei, or gte-node.');
   }
   const provider = providerValue as KnowledgeEmbeddingProvider;
-  const defaults = provider === 'gte-node' ? gteKnowledgeEmbeddingProfile : qwenKnowledgeEmbeddingProfile;
+  const defaults = provider === 'azure-openai' ? azureKnowledgeEmbeddingProfile
+    : provider === 'gte-node' ? gteKnowledgeEmbeddingProfile : qwenKnowledgeEmbeddingProfile;
   const model = forceQwen ? qwenKnowledgeEmbeddingProfile.model : configuredToken(
     environment.EXPERIENCE_EMBEDDING_MODEL
       || (provider === 'qwen-tei' ? environment.KNOWLEDGE_EMBEDDING_MODEL : undefined),
@@ -226,11 +241,20 @@ export function resolveKnowledgeEmbeddingConfiguration(environment: NodeJS.Proce
         || vectorIndexVersion !== qwenKnowledgeEmbeddingProfile.vectorIndexVersion)) {
     throw new Error('qwen-tei requires the pinned Qwen/Qwen3-Embedding-4B float16 profile and index version.');
   }
+  if (provider === 'azure-openai'
+      && (model !== azureKnowledgeEmbeddingProfile.model || revision !== azureKnowledgeEmbeddingProfile.revision
+        || dtype !== azureKnowledgeEmbeddingProfile.dtype || dimensions !== azureKnowledgeEmbeddingProfile.dimensions
+        || vectorIndexVersion !== azureKnowledgeEmbeddingProfile.vectorIndexVersion)) {
+    throw new Error('azure-openai requires the pinned text-embedding-3-large 3072-dimensional profile and index version.');
+  }
   if (provider === 'gte-node' && qwenRollbackRetained && !dualWrite) {
     throw new Error('gte-node requires dual-write while the Qwen rollback index is retained.');
   }
   if (provider === 'gte-node' && !qwenRollbackRetained && dualWrite) {
     throw new Error('gte-node cannot dual-write to Qwen after the Qwen rollback profile has been retired.');
+  }
+  if (provider === 'azure-openai' && dualWrite) {
+    throw new Error('azure-openai cannot dual-write into a different embedding space.');
   }
 
   return {

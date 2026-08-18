@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  config, gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
+  azureKnowledgeEmbeddingProfile, config, gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
   type KnowledgeEmbeddingProfile
 } from './config.js';
 import { db } from './database.js';
@@ -488,7 +488,7 @@ if (db.provider === 'sqlite') db.exec(`
 
   CREATE TABLE IF NOT EXISTS knowledge_embedding_profiles (
     vector_index_version TEXT PRIMARY KEY,
-    provider TEXT NOT NULL CHECK(provider IN ('qwen-tei','gte-node')),
+    provider TEXT NOT NULL CHECK(provider IN ('azure-openai','qwen-tei','gte-node')),
     model TEXT NOT NULL,
     revision TEXT NOT NULL,
     dtype TEXT NOT NULL,
@@ -711,6 +711,12 @@ insertProfile.run(gteKnowledgeEmbeddingProfile.vectorIndexVersion, gteKnowledgeE
   gteKnowledgeEmbeddingProfile.dimensions, 'disabled', now, now);
 assertKnowledgeEmbeddingProfileIdentity(qwenKnowledgeEmbeddingProfile);
 assertKnowledgeEmbeddingProfileIdentity(gteKnowledgeEmbeddingProfile);
+if (config.knowledgeEmbeddingProvider === 'azure-openai') {
+  insertProfile.run(azureKnowledgeEmbeddingProfile.vectorIndexVersion, azureKnowledgeEmbeddingProfile.provider,
+    azureKnowledgeEmbeddingProfile.model, azureKnowledgeEmbeddingProfile.revision, azureKnowledgeEmbeddingProfile.dtype,
+    azureKnowledgeEmbeddingProfile.dimensions, 'configured', now, now);
+  assertKnowledgeEmbeddingProfileIdentity(azureKnowledgeEmbeddingProfile);
+}
 db.prepare(`INSERT INTO knowledge_embedding_profiles
   (vector_index_version,provider,model,revision,dtype,dimensions,state,created_at,updated_at)
   VALUES (?,?,?,?,?,?,'configured',?,?)
@@ -743,6 +749,17 @@ db.prepare(`UPDATE knowledge_jobs SET embedding_profile_id=(
 const activeProfileConfiguredAt = new Date().toISOString();
 assertKnowledgeEmbeddingProfileIdentity(qwenKnowledgeEmbeddingProfile);
 assertKnowledgeEmbeddingProfileIdentity(gteKnowledgeEmbeddingProfile);
+if (config.knowledgeEmbeddingProvider === 'azure-openai') {
+  db.prepare(`INSERT INTO knowledge_embedding_profiles
+    (vector_index_version,provider,model,revision,dtype,dimensions,state,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,'configured',?,?)
+    ON CONFLICT(vector_index_version) DO NOTHING`)
+    .run(azureKnowledgeEmbeddingProfile.vectorIndexVersion, azureKnowledgeEmbeddingProfile.provider,
+      azureKnowledgeEmbeddingProfile.model, azureKnowledgeEmbeddingProfile.revision,
+      azureKnowledgeEmbeddingProfile.dtype, azureKnowledgeEmbeddingProfile.dimensions,
+      activeProfileConfiguredAt, activeProfileConfiguredAt);
+  assertKnowledgeEmbeddingProfileIdentity(azureKnowledgeEmbeddingProfile);
+}
 db.prepare(`INSERT INTO knowledge_embedding_profiles
   (vector_index_version,provider,model,revision,dtype,dimensions,state,created_at,updated_at)
   VALUES (?,?,?,?,?,?,'configured',?,?)
@@ -809,7 +826,8 @@ function embeddingProfileFromRow(row: any): KnowledgeEmbeddingProfile {
   if (!isKnowledgeEmbeddingProfile(profile)) {
     throw new Error(`Knowledge embedding profile ${String(row.vector_index_version || 'unknown')} is corrupt.`);
   }
-  const pinned = profile.provider === 'gte-node' ? gteKnowledgeEmbeddingProfile : qwenKnowledgeEmbeddingProfile;
+  const pinned = profile.provider === 'azure-openai' ? azureKnowledgeEmbeddingProfile
+    : profile.provider === 'gte-node' ? gteKnowledgeEmbeddingProfile : qwenKnowledgeEmbeddingProfile;
   if (JSON.stringify(profile) !== JSON.stringify(pinned)) {
     throw new Error(`Knowledge embedding profile ${profile.vectorIndexVersion} is not the pinned registry identity.`);
   }
@@ -1038,7 +1056,7 @@ function knowledgeJobIntent(values: Record<string, unknown>) {
 function isKnowledgeEmbeddingProfile(value: unknown): value is KnowledgeEmbeddingProfile {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  return (item.provider === 'qwen-tei' || item.provider === 'gte-node')
+  return (item.provider === 'azure-openai' || item.provider === 'qwen-tei' || item.provider === 'gte-node')
     && typeof item.model === 'string' && Boolean(item.model.trim())
     && typeof item.revision === 'string' && /^[a-f0-9]{40}$/u.test(item.revision)
     && typeof item.dtype === 'string' && Boolean(item.dtype.trim())

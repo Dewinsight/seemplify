@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'experience-management/**'
+      - 'tools/local-knowledge/**'
       - 'ai-interview/backend/**'
       - 'Identityprovider/**'
       - 'recruiter/backend/config/aiRuntimeCatalog.js'
@@ -42,6 +43,9 @@ jobs:
           npm ci
           npm run build
           npx tsx --test backend/test/idp-provisioning.test.ts
+      - name: Test production knowledge runtime contracts
+        working-directory: tools/local-knowledge
+        run: node --test embedding-profiles.test.cjs runtime.test.cjs server.test.cjs
       - name: Test IdP Hub contracts
         working-directory: Identityprovider
         run: |
@@ -76,6 +80,7 @@ jobs:
         run: |
           tar -czf experience-release.tgz \
             experience-management Identityprovider recruiter/backend ai-interview/backend \
+            tools/local-knowledge tools/local-llm/service-auth.cjs \
             deploy/hostinger/core-apps.compose.yml \
             deploy/hostinger/extended-apps.compose.yml \
             deploy/hostinger/generate-idp-clients.sh \
@@ -85,6 +90,17 @@ jobs:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: scp experience-release.tgz "$SSH_USER@$SSH_HOST:/opt/seemplify/build/experience-release-${GITHUB_SHA}.tgz"
+      - name: Upload Azure embedding credential
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+          AZURE_OPENAI_EMBEDDING_API_KEY: ${{ secrets.AZURE_OPENAI_EMBEDDING_API_KEY }}
+        run: |
+          umask 077
+          test -n "$AZURE_OPENAI_EMBEDDING_API_KEY"
+          printf '%s' "$AZURE_OPENAI_EMBEDDING_API_KEY" >/tmp/azure-openai-embedding
+          scp /tmp/azure-openai-embedding "$SSH_USER@$SSH_HOST:/tmp/azure-openai-embedding-${GITHUB_SHA}"
+          rm -f /tmp/azure-openai-embedding
       - name: Build and deploy immutable release
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
@@ -101,10 +117,13 @@ jobs:
           identity_image="seemplify/identity-provider:hostinger-$RELEASE_SHA"
           recruiter_image="seemplify/recruiter-backend:hostinger-$RELEASE_SHA"
           ai_interview_image="seemplify/ai-interview-backend:hostinger-$RELEASE_SHA"
+          knowledge_image="seemplify/knowledge-runtime:hostinger-$RELEASE_SHA"
           docker build --pull -t "$experience_image" "$release_root/experience-management"
           docker build --pull -t "$identity_image" "$release_root/Identityprovider"
           docker build --pull -t "$recruiter_image" "$release_root/recruiter/backend"
           docker build --pull -t "$ai_interview_image" "$release_root/ai-interview/backend"
+          docker build --pull -f "$release_root/tools/local-knowledge/Dockerfile" \
+            -t "$knowledge_image" "$release_root/tools"
 
           cp -a "$release_root/experience-management/." /opt/seemplify/source/experience-management/
           cp -a "$release_root/Identityprovider/." /opt/seemplify/source/Identityprovider/
@@ -120,6 +139,31 @@ jobs:
 
           test -s /opt/seemplify/secrets/platform-integrations/credential-encryption-key
           test -s /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
+          knowledge_secret_dir=/opt/seemplify/secrets/knowledge
+          install -d -o root -g root -m 0700 "$knowledge_secret_dir"
+          install -o root -g root -m 0640 "/tmp/azure-openai-embedding-$RELEASE_SHA" \
+            "$knowledge_secret_dir/azure-openai-embedding"
+          rm -f "/tmp/azure-openai-embedding-$RELEASE_SHA"
+          for name in knowledge-runtime-hmac docling-api; do
+            target="$knowledge_secret_dir/$name"
+            if [[ ! -s "$target" ]]; then
+              openssl rand -base64 48 | tr -d '\n' >"$target"
+            fi
+            chown root:root "$target"
+            chmod 0640 "$target"
+          done
+          gateway_secret=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            seemplify-extended-chatgpt-gateway-1 | awk -F= '$1=="CHATGPT_GATEWAY_SHARED_SECRET"{sub(/^[^=]*=/,""); print; exit}')
+          test -n "$gateway_secret"
+          printf '%s' "$gateway_secret" >"$knowledge_secret_dir/chatgpt-gateway"
+          unset gateway_secret
+          chown root:root "$knowledge_secret_dir/chatgpt-gateway"
+          chmod 0640 "$knowledge_secret_dir/chatgpt-gateway"
+          for name in arango-app arango-provisioner; do
+            test -s "$knowledge_secret_dir/$name"
+            chown root:root "$knowledge_secret_dir/$name"
+            chmod 0640 "$knowledge_secret_dir/$name"
+          done
           chown root:root /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
           chmod 0640 /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
 
@@ -127,6 +171,7 @@ jobs:
           export IDENTITY_PROVIDER_IMAGE="$identity_image"
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"
           export AI_INTERVIEW_BACKEND_IMAGE="$ai_interview_image"
+          export KNOWLEDGE_RUNTIME_IMAGE="$knowledge_image"
           core=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/core-apps.compose.yml)
           extended=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/extended-apps.compose.yml)
           docker volume create seemplify-extended_experience_runtime >/dev/null
@@ -148,6 +193,15 @@ jobs:
           }
           "${core[@]}" up -d --no-deps --force-recreate recruiter-backend
           wait_healthy seemplify-core-recruiter-backend-1
+          "${extended[@]}" up -d --no-deps --force-recreate knowledge-docling
+          wait_healthy seemplify-extended-knowledge-docling-1
+          "${extended[@]}" up -d --no-deps --force-recreate knowledge-runtime
+          wait_healthy seemplify-extended-knowledge-runtime-1
+          docker exec seemplify-extended-knowledge-runtime-1 sh -ec '
+            node client.cjs status >/tmp/knowledge-status.json
+            node -e "const s=require(\"/tmp/knowledge-status.json\"); process.exit(s.ready && s.services?.arango?.healthy && s.services?.embedding?.healthy && s.services?.docling?.healthy && s.services?.chatgpt?.healthy ? 0 : 1)"
+            rm -f /tmp/knowledge-status.json
+          '
           "${extended[@]}" up -d --no-deps --force-recreate experience
           wait_healthy seemplify-extended-experience-1
           "${extended[@]}" up -d --no-deps --force-recreate ai-interview-backend

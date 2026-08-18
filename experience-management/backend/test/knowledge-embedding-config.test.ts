@@ -3,16 +3,30 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
-  gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile, resolveKnowledgeEmbeddingConfiguration
+  azureKnowledgeEmbeddingProfile, gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
+  resolveKnowledgeEmbeddingConfiguration
 } from '../src/config.js';
 
-test('keeps pinned CPU-based GTE as the production default', () => {
+test('keeps pinned CPU-based GTE as the local default', () => {
   const resolved = resolveKnowledgeEmbeddingConfiguration({});
   assert.deepEqual(resolved.profile, gteKnowledgeEmbeddingProfile);
   assert.equal(resolved.concurrency, 8);
   assert.equal(resolved.dualWrite, false);
   assert.equal(resolved.qwenRollbackRetained, false);
   assert.equal(resolved.forceQwen, false);
+});
+
+test('accepts the pinned Azure text-embedding-3-large production contract', () => {
+  const resolved = resolveKnowledgeEmbeddingConfiguration({
+    EXPERIENCE_EMBEDDING_PROVIDER: 'azure-openai',
+    EXPERIENCE_EMBEDDING_MODEL: azureKnowledgeEmbeddingProfile.model,
+    EXPERIENCE_EMBEDDING_MODEL_REVISION: azureKnowledgeEmbeddingProfile.revision,
+    EXPERIENCE_EMBEDDING_DTYPE: azureKnowledgeEmbeddingProfile.dtype,
+    EXPERIENCE_EMBEDDING_DIMENSIONS: String(azureKnowledgeEmbeddingProfile.dimensions),
+    EXPERIENCE_VECTOR_INDEX_VERSION: azureKnowledgeEmbeddingProfile.vectorIndexVersion
+  });
+  assert.deepEqual(resolved.profile, azureKnowledgeEmbeddingProfile);
+  assert.equal(resolved.dualWrite, false);
 });
 
 test('accepts only the pinned GTE q8 embedding-space contract', () => {
@@ -35,7 +49,7 @@ test('accepts only the pinned GTE q8 embedding-space contract', () => {
 
 test('rejects mixed, unpinned, or unsafe provider settings before startup', () => {
   assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_PROVIDER: 'unknown' }),
-    /must be either qwen-tei or gte-node/u);
+    /must be azure-openai, qwen-tei, or gte-node/u);
   assert.throws(() => resolveKnowledgeEmbeddingConfiguration({
     EXPERIENCE_EMBEDDING_PROVIDER: 'gte-node', EXPERIENCE_EMBEDDING_DIMENSIONS: '2560'
   }), /gte-node requires/u);
@@ -84,8 +98,8 @@ test('runtime schema 3 migration is additive and carries durable rollout state',
   ]) assert.match(migration, new RegExp(contract, 'u'));
   assert.match(migration, /ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS/u);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 29,
-    maximumRuntimeSchemaVersion: 29,
+    minimumRuntimeSchemaVersion: 33,
+    maximumRuntimeSchemaVersion: 33,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });

@@ -59,7 +59,7 @@ jobs:
               openssl rand -base64 48 | tr -d '\n' >"$target"
             fi
             chown root:root "$target"
-            chmod 0600 "$target"
+            if [[ "$name" == arango-root ]]; then chmod 0600 "$target"; else chmod 0640 "$target"; fi
           done
           install -o root -g root -m 0644 "$source_file" "$target_file"
           compose=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env -f "$target_file")

@@ -90,6 +90,12 @@ function safeMetadata(value) {
 
 function embeddingProfiles(config = CONFIG) {
   return Object.freeze({
+    'azure-openai': Object.freeze({
+      provider: 'azure-openai', model: config.models.azureEmbedding.id, revision: config.models.azureEmbedding.revision,
+      dtype: config.models.azureEmbedding.dtype, dimensions: config.models.azureEmbedding.dimension,
+      vectorIndexVersion: config.models.azureEmbedding.vectorIndexVersion,
+      collection: 'chunks', vectorIndexName: VECTOR_INDEX_NAME,
+    }),
     'qwen-tei': Object.freeze({
       provider: 'qwen-tei', model: config.models.embedding.id, revision: config.models.embedding.revision,
       dtype: 'float16', dimensions: config.models.embedding.dimension, vectorIndexVersion: 'qwen-v1',
@@ -115,7 +121,7 @@ function embeddingProfileContract(profile) {
   };
 }
 
-function resolveEmbeddingProfile(value, config = CONFIG, { fallback = 'qwen-tei' } = {}) {
+function resolveEmbeddingProfile(value, config = CONFIG, { fallback = 'azure-openai' } = {}) {
   const profiles = embeddingProfiles(config);
   const provider = typeof value === 'string' ? value : (value?.provider || fallback);
   const profile = profiles[provider];
@@ -145,7 +151,7 @@ function validateIndexInput(input, config = CONFIG) {
   const embeddingDimension = positiveInteger(input.knowledgeBase?.embeddingDimension, 'knowledgeBase.embeddingDimension', 10_000);
   const embeddingModel = boundedText(input.knowledgeBase?.embeddingModel, 200, 'knowledgeBase.embeddingModel');
   const inferredProvider = Object.values(embeddingProfiles(config)).find((profile) => profile.model === embeddingModel && profile.dimensions === embeddingDimension)?.provider;
-  const primaryEmbeddingProfile = resolveEmbeddingProfile(input.knowledgeBase?.embeddingProfile || inferredProvider || 'qwen-tei', config);
+  const primaryEmbeddingProfile = resolveEmbeddingProfile(input.knowledgeBase?.embeddingProfile || inferredProvider || 'azure-openai', config);
   if (embeddingModel !== primaryEmbeddingProfile.model || embeddingDimension !== primaryEmbeddingProfile.dimensions) {
     throw runtimeError('The request does not match the pinned embedding profile.', { code: 'EMBEDDING_PROFILE_MISMATCH', status: 409 });
   }
@@ -586,7 +592,7 @@ async function extractDocument(input, { config = CONFIG, fetchImpl = fetch, docl
   form.append('do_ocr', 'true');
   let response;
   try {
-    response = await fetchImpl(`http://${config.host}:${config.ports.docling}/v1/convert/file`, {
+    response = await fetchImpl(`${config.services?.docling || `http://${config.host}:${config.ports.docling}`}/v1/convert/file`, {
       method: 'POST',
       headers: { authorization: `Bearer ${doclingApiKey}`, 'x-api-key': doclingApiKey },
       body: form,
@@ -722,6 +728,26 @@ function chunkText(text, config = CONFIG, { pageCount = null } = {}) {
 }
 
 async function embedTexts(texts, { config = CONFIG, fetchImpl = fetch, apiKey }) {
+  if (config.services?.azureEmbedding) {
+    const vectors = [];
+    for (let offset = 0; offset < texts.length; offset += 32) {
+      let response;
+      try {
+        response = await fetchImpl(config.services.azureEmbedding, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'api-key': apiKey },
+          body: JSON.stringify({ input: texts.slice(offset, offset + 32), dimensions: config.models.azureEmbedding.dimension,
+            encoding_format: 'float' }), signal: AbortSignal.timeout(120_000),
+        });
+      } catch (error) {
+        throw runtimeError(`Azure embedding service is unavailable: ${error.message}`, { code: 'EMBEDDING_UNAVAILABLE', status: 503, retryable: true });
+      }
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw upstreamResponseError('azure embedding', response, `Azure embedding service returned HTTP ${response.status}.`);
+      if (!Array.isArray(payload?.data)) throw runtimeError('Azure embedding service returned an invalid response.', { code: 'INVALID_EMBEDDING_RESPONSE', status: 422 });
+      vectors.push(...payload.data.slice().sort((left, right) => Number(left.index) - Number(right.index)).map((item) => item.embedding));
+    }
+    return vectors;
+  }
   const vectors = [];
   for (let offset = 0; offset < texts.length; offset += 32) {
     let response;
@@ -802,7 +828,7 @@ async function chatgptGraphWindow(source, { jobId, windowIndex, windowOffset, fe
   };
   let response;
   try {
-    response = await fetchImpl(`http://${config.host}:11435${requestPath}`, {
+    response = await fetchImpl(`${config.services?.chatgpt || `http://${config.host}:11435`}${requestPath}`, {
       method: 'POST', headers: {
         'content-type': 'application/json',
         'x-seemplify-service': LOCAL_LLM_SERVICE_ID,
@@ -930,13 +956,19 @@ function weightedReciprocalRankFusion(channels, { rankConstant = 60 } = {}) {
 
 async function rerank(query, candidates, { config = CONFIG, fetchImpl = fetch, apiKey }) {
   if (!candidates.length) return [];
+  if (config.services?.azureEmbedding) {
+    const vectors = await embedTexts([query, ...candidates.map((candidate) => candidate.text)], { config, fetchImpl, apiKey });
+    const queryVector = vectors[0];
+    return candidates.map((candidate, index) => ({ candidate, score: cosine(queryVector, vectors[index + 1]) }))
+      .filter((item) => Number.isFinite(item.score)).sort((left, right) => right.score - left.score);
+  }
   const ranked = [];
   const batchSize = 16;
   for (let offset = 0; offset < candidates.length; offset += batchSize) {
     const batch = candidates.slice(offset, offset + batchSize);
     let response;
     try {
-      response = await fetchImpl(`http://${config.host}:${config.ports.reranker}/rerank`, {
+      response = await fetchImpl(`${config.services?.reranker || `http://${config.host}:${config.ports.reranker}`}/rerank`, {
         method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({ query, texts: batch.map((candidate) => candidate.text), truncate: true, raw_scores: true }), signal: AbortSignal.timeout(120_000),
       });
@@ -1007,7 +1039,7 @@ function createKnowledgeRuntime(options = {}) {
   const gatewaySecret = secret('chatgpt-gateway');
   const embeddingApiKey = secret('tei-api');
   const doclingApiKey = secret('docling-api');
-  const baseUrl = `http://${config.host}:${config.ports.arango}`;
+  const baseUrl = config.services?.arango || `http://${config.host}:${config.ports.arango}`;
   const app = options.appClient || new ArangoClient({ baseUrl, username: config.database.appUser, password: appPassword, fetchImpl });
   const provisioner = options.provisionerClient || new ArangoClient({ baseUrl, username: config.database.provisionerUser, password: provisionerPassword, fetchImpl });
   const queue = options.queue || new WorkQueue({ maxDepth: config.limits.queueDepth });
@@ -1045,6 +1077,7 @@ function createKnowledgeRuntime(options = {}) {
   const shadowTasks = new Set();
   let shadowActive = 0;
   const providerMetrics = {
+    'azure-openai': { embeddings: 0, texts: 0, failures: 0, totalMs: 0 },
     'qwen-tei': { embeddings: 0, texts: 0, failures: 0, totalMs: 0 },
     'gte-node': { embeddings: 0, texts: 0, failures: 0, totalMs: 0 },
   };
@@ -1073,7 +1106,7 @@ function createKnowledgeRuntime(options = {}) {
       let vectors;
       if (options.embedByProfile) {
         vectors = await options.embedByProfile(profile, texts, { priority, requestId });
-      } else if (profile.provider === 'qwen-tei') {
+      } else if (profile.provider === 'qwen-tei' || profile.provider === 'azure-openai') {
         vectors = await (options.embedTexts || embedTexts)(texts, { config, fetchImpl, apiKey: embeddingApiKey });
       } else {
         const client = await ensureGteClient();
@@ -1162,9 +1195,9 @@ function createKnowledgeRuntime(options = {}) {
       await app.query(database, AQL.pruneEntityMentions, { spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, now });
       await app.query(database, AQL.upsertDocument, { key: revisionKey, document: { _key: revisionKey, spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, documentName: input.document.originalName, mimeType: input.document.mimeType, sizeBytes: input.document.sizeBytes, sha256: input.document.sha256, metadata: input.document.metadata, indexVersion: input.knowledgeBase.indexVersion, embeddingModel: input.knowledgeBase.embeddingModel, embeddingDimension: input.knowledgeBase.embeddingDimension, chunkerVersion: input.knowledgeBase.chunkerVersion, receiptKey, operationId: input.jobId, activeUntil: null, pageCount: extracted.pageCount, createdAt: now, updatedAt: now } });
       const baseRecords = chunks.map((chunk, index) => ({ _key: stableKey(revisionKey, chunk.contentHash, index), spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, documentName: input.document.originalName, indexVersion: input.knowledgeBase.indexVersion, ordinal: index, text: chunk.text, contentHash: chunk.contentHash, sourceSha256: input.document.sha256, receiptKey, operationId: input.jobId, tokenEstimate: chunk.tokenEstimate, start: chunk.start, end: chunk.end, section: chunk.section, page: chunk.page, entityRefs: chunk.entityRefs || [], activeUntil: null, createdAt: now, updatedAt: now }));
-      const qwenProfile = embeddingProfiles(config)['qwen-tei'];
-      if (vectorsByProvider.has('qwen-tei')) {
-        const records = baseRecords.map((record, index) => ({ ...record, embedding: vectorsByProvider.get('qwen-tei')[index], embeddingProvider: qwenProfile.provider, embeddingModel: qwenProfile.model, embeddingRevision: qwenProfile.revision, embeddingDtype: qwenProfile.dtype, embeddingDimensions: qwenProfile.dimensions, vectorIndexVersion: qwenProfile.vectorIndexVersion }));
+      const primaryProfile = targets.find((profile) => profile.provider !== 'gte-node');
+      if (primaryProfile && vectorsByProvider.has(primaryProfile.provider)) {
+        const records = baseRecords.map((record, index) => ({ ...record, embedding: vectorsByProvider.get(primaryProfile.provider)[index], embeddingProvider: primaryProfile.provider, embeddingModel: primaryProfile.model, embeddingRevision: primaryProfile.revision, embeddingDtype: primaryProfile.dtype, embeddingDimensions: primaryProfile.dimensions, vectorIndexVersion: primaryProfile.vectorIndexVersion }));
         await app.query(database, AQL.upsertChunks, { chunks: records });
       }
       if (vectorsByProvider.has('gte-node')) {
@@ -1178,9 +1211,9 @@ function createKnowledgeRuntime(options = {}) {
       await app.query(database, AQL.removeUnsupportedEntities, { spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, now });
       const [counts = {}] = await app.query(database, AQL.collectionCounts);
       const vectorIndexes = {};
-      if (vectorsByProvider.has('qwen-tei')) {
-        vectorIndexes.qwen = await ensureVectorIndex(app, database, qwenProfile.dimensions, Number(counts.chunks || 0), { collection: qwenProfile.collection, indexName: qwenProfile.vectorIndexName });
-        indexStates.set(`${database}:qwen-tei`, vectorIndexes.qwen);
+      if (primaryProfile && vectorsByProvider.has(primaryProfile.provider)) {
+        vectorIndexes.primary = await ensureVectorIndex(app, database, primaryProfile.dimensions, Number(counts.chunks || 0), { collection: primaryProfile.collection, indexName: primaryProfile.vectorIndexName });
+        indexStates.set(`${database}:${primaryProfile.provider}`, vectorIndexes.primary);
       }
       if (vectorsByProvider.has('gte-node')) {
         const gteProfile = embeddingProfiles(config)['gte-node'];
@@ -1190,7 +1223,7 @@ function createKnowledgeRuntime(options = {}) {
           : { exists: false, ready: false, training: false, mode: 'exact', eligibleCount: Number(gteCount || 0), deferredUntilBackfillComplete: true };
         indexStates.set(`${database}:gte-node`, vectorIndexes.gte);
       }
-      const response = { document: { pageCount: extracted.pageCount, chunkCount: chunks.length, entityCount: canonical.entities.length, relationshipCount: canonical.relations.length, language: null }, metrics: { durationMs: Date.now() - started, graphWindows: graph.windows, claimCount: canonical.claims.length, relationCount: canonical.relations.length, embeddingModel: input.knowledgeBase.embeddingProfile.model, embeddingDimension: input.knowledgeBase.embeddingProfile.dimensions, embeddingProfiles: targets.map((profile) => ({ provider: profile.provider, model: profile.model, revision: profile.revision, dtype: profile.dtype, dimensions: profile.dimensions, vectorIndexVersion: profile.vectorIndexVersion })), rerankerModel: config.models.reranker.id, vectorIndex: input.knowledgeBase.embeddingProfile.provider === 'gte-node' ? vectorIndexes.gte : vectorIndexes.qwen, vectorIndexes } };
+      const response = { document: { pageCount: extracted.pageCount, chunkCount: chunks.length, entityCount: canonical.entities.length, relationshipCount: canonical.relations.length, language: null }, metrics: { durationMs: Date.now() - started, graphWindows: graph.windows, claimCount: canonical.claims.length, relationCount: canonical.relations.length, embeddingModel: input.knowledgeBase.embeddingProfile.model, embeddingDimension: input.knowledgeBase.embeddingProfile.dimensions, embeddingProfiles: targets.map((profile) => ({ provider: profile.provider, model: profile.model, revision: profile.revision, dtype: profile.dtype, dimensions: profile.dimensions, vectorIndexVersion: profile.vectorIndexVersion })), rerankerModel: config.models.reranker.id, vectorIndex: input.knowledgeBase.embeddingProfile.provider === 'gte-node' ? vectorIndexes.gte : vectorIndexes.primary, vectorIndexes } };
       await app.query(database, AQL.upsertReceipt, { key: receiptKey, receipt: { _key: receiptKey, spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, operationId: input.jobId, type: 'index', response, completedAt: new Date().toISOString() } });
       return response;
     });
@@ -1657,13 +1690,13 @@ function createKnowledgeRuntime(options = {}) {
     const services = {};
     const checks = [
       ['arango', `${baseUrl}/_api/version`, { authorization: provisioner.authorization }],
-      ['reranker', `http://${config.host}:${config.ports.reranker}/health`, { authorization: `Bearer ${embeddingApiKey}` }],
-      ['docling', `http://${config.host}:${config.ports.docling}/health`, { authorization: `Bearer ${doclingApiKey}`, 'x-api-key': doclingApiKey }],
-      ['chatgpt', `http://${config.host}:11435/health`, {}],
+      ['docling', `${config.services?.docling || `http://${config.host}:${config.ports.docling}`}/health`, { authorization: `Bearer ${doclingApiKey}`, 'x-api-key': doclingApiKey }],
+      ['chatgpt', `${config.services?.chatgpt || `http://${config.host}:11435`}/health`, {}],
     ];
-    if (migrationConfig.qwenRollbackRetained !== false || migrationConfig.provider === 'qwen-tei' || migrationConfig.dualWrite === true) {
+    if (!config.services?.azureEmbedding && (migrationConfig.qwenRollbackRetained !== false || migrationConfig.provider === 'qwen-tei' || migrationConfig.dualWrite === true)) {
       checks.push(['embedding', `http://${config.host}:${config.ports.embedding}/health`, { authorization: `Bearer ${embeddingApiKey}` }]);
     }
+    if (!config.services?.azureEmbedding) checks.push(['reranker', `http://${config.host}:${config.ports.reranker}/health`, { authorization: `Bearer ${embeddingApiKey}` }]);
     await Promise.all(checks.map(async ([name, url, headers]) => {
       const started = Date.now();
       try {
@@ -1671,6 +1704,19 @@ function createKnowledgeRuntime(options = {}) {
         services[name] = { healthy: response.ok, statusCode: response.status, latencyMs: Date.now() - started };
       } catch (error) { services[name] = { healthy: false, statusCode: null, latencyMs: Date.now() - started, error: error.message }; }
     }));
+    if (config.services?.azureEmbedding) {
+      const started = Date.now();
+      try {
+        await embedTexts(['knowledge runtime health probe'], { config, fetchImpl, apiKey: embeddingApiKey });
+        const health = { healthy: true, statusCode: 200, latencyMs: Date.now() - started };
+        services.embedding = health;
+        services.reranker = { ...health };
+      } catch (error) {
+        const health = { healthy: false, statusCode: error.status || null, latencyMs: Date.now() - started, error: error.message };
+        services.embedding = health;
+        services.reranker = { ...health };
+      }
+    }
     const gteRequired = migrationConfig.provider === 'gte-node' || migrationConfig.dualWrite === true
       || Number(migrationConfig.shadowPercent || 0) > 0 || Number(migrationConfig.rolloutPercent || 0) > 0;
     const gteStatus = gteClient?.status?.() || { state: 'stopped', ready: false, accepting: false, queue: { waiting: 0, capacity: migrationConfig.queueDepth || config.limits.queueDepth, oldestWaitMs: 0, byPriority: { query: 0, 'live-index': 0, backfill: 0 } }, metrics: null };
@@ -1746,6 +1792,6 @@ function createKnowledgeRuntime(options = {}) {
 
 module.exports = {
   ArangoClient, BENCHMARK_CLEANUP_CONFIRMATION, BENCHMARK_SPACE_PATTERN, GRAPH_SCHEMA, WorkQueue, canonicalizeGraph, chunkText, createKnowledgeRuntime, ensureTenantDatabase,
-  blendRetrievalScore, embeddingProfiles, extractDocument, extractGraph, groundedMentions, normalizeRawRerankerScore, purgeKnowledgeEvidence, rerank, resolveEmbeddingProfile, runtimeError, selectDeclaredBindVars, upstreamResponseError, validateBackfillInput, validateDeleteInput, validateGraphInput, validateIndexInput, validateMigrationControlInput, validateRetrieveInput, validateScanInput, validateTestCleanupInput,
+  blendRetrievalScore, embeddingProfiles, embedTexts, extractDocument, extractGraph, groundedMentions, normalizeRawRerankerScore, purgeKnowledgeEvidence, rerank, resolveEmbeddingProfile, runtimeError, selectDeclaredBindVars, upstreamResponseError, validateBackfillInput, validateDeleteInput, validateGraphInput, validateIndexInput, validateMigrationControlInput, validateRetrieveInput, validateScanInput, validateTestCleanupInput,
   vectorIndexState, weightedReciprocalRankFusion,
 };

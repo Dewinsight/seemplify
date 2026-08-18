@@ -335,8 +335,8 @@ test('refuses an incompatible rollback after a PostgreSQL runtime upgrade starts
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 29,
-    maximumRuntimeSchemaVersion: 29,
+    minimumRuntimeSchemaVersion: 33,
+    maximumRuntimeSchemaVersion: 33,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });
@@ -446,7 +446,7 @@ test('ships persistent section tutorials with every referenced lesson image', ()
 test('exposes signed knowledge runtime health without adding service mutation controls', () => {
   const workspace = fs.readFileSync(path.join(source, 'pages', 'KnowledgeBaseWorkspacePage.tsx'), 'utf8');
   for (const feature of [
-    '/api/runtime', 'RuntimeWorkspace', 'ArangoDB', 'GTE embedding worker', 'BGE reranker', 'Docling',
+    '/api/runtime', 'RuntimeWorkspace', 'ArangoDB', 'Azure embedding service', 'Azure cosine reranker', 'Docling',
     'Queue and workers', 'Retrieval and indexes', 'Runtime process', 'activeEmbeddingProvider',
     'vectorIndexVersion', 'cpuPercent', 'Refreshes every five seconds'
   ]) assert.match(workspace, new RegExp(feature.replaceAll('/', '\\/')));

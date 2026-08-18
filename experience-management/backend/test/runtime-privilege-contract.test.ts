@@ -144,16 +144,16 @@ test('the runtime contracts stay pinned to the shipped compatibility window', ()
     fs.readFileSync(path.join(migrationRoot, 'runtime-compatibility.json'), 'utf8')) as {
       minimumRuntimeSchemaVersion: number; maximumRuntimeSchemaVersion: number;
     };
-  // Runtime 32 alters provider metadata on existing tables and creates no new
+  // Runtime 33 extends knowledge embedding metadata on existing tables and creates no new
   // tables, while runtime 31 is the latest table-creating migration.
-  assert.equal(compatibility.maximumRuntimeSchemaVersion, 32);
-  assert.equal(compatibility.minimumRuntimeSchemaVersion, 32);
-  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 32/u);
+  assert.equal(compatibility.maximumRuntimeSchemaVersion, 33);
+  assert.equal(compatibility.minimumRuntimeSchemaVersion, 33);
+  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 33/u);
   const beyondWindow = fs.readdirSync(migrationRoot)
     .map((name) => /^(\d{4})_.*\.sql$/u.exec(name))
     .filter((match): match is RegExpExecArray => match !== null)
-    .filter((match) => Number(match[1]!) > 32)
+    .filter((match) => Number(match[1]!) > 33)
     .map((match) => match[0]);
   assert.deepEqual(beyondWindow, [],
-    'a migration past runtime-32 must be registered before it can ship');
+    'a migration past runtime-33 must be registered before it can ship');
 });

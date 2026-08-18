@@ -274,7 +274,7 @@ export interface KnowledgeBase {
   id: string; name: string; description: string; privacy: KnowledgeBasePrivacy; terraContextEnabled: boolean;
   state: KnowledgeBaseState; documentCount: number; readyDocumentCount: number; chunkCount: number;
   entityCount: number; relationshipCount: number; storageBytes: number; createdBy?: string | null;
-  embeddingProfile?: { provider: 'qwen-tei' | 'gte-node'; model: string; revision: string; dtype: string; dimensions: number; vectorIndexVersion: string };
+  embeddingProfile?: { provider: 'azure-openai' | 'qwen-tei' | 'gte-node'; model: string; revision: string; dtype: string; dimensions: number; vectorIndexVersion: string };
   createdAt: string; updatedAt: string; lastIndexedAt: string | null;
 }
 export type KnowledgeDocumentState = 'queued' | 'extracting' | 'indexing' | 'chunking' | 'embedding' | 'ready' | 'failed' | 'deleting' | 'deleted';

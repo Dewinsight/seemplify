@@ -2,6 +2,14 @@
 
 This service family provides the private GraphRAG data plane for Experience Management. It is disabled by default, binds every port to `127.0.0.1`, and has no Cloudflare route.
 
+## Hosted production
+
+Hostinger/Dokploy runs the signed runtime, Docling, and ArangoDB only on the private `dokploy-network`; none of their ports or credentials are published through Traefik. Production selects the pinned Azure AI Services `text-embedding-3-large` deployment at 3,072 dimensions for both vector generation and cosine reranking. The Azure API key, Arango users, Docling key, ChatGPT gateway key, and runtime HMAC are mounted from root-owned files below `/opt/seemplify/secrets/knowledge` and never stored in Compose or an image.
+
+`deploy/hostinger/shared-infrastructure.compose.yml` owns persistent Arango data. `deploy/hostinger/extended-apps.compose.yml` owns the runtime state/data volumes and the Experience staging mount. The Experience deployment refuses to start the application until Arango, Docling, Azure embeddings, the ChatGPT gateway, and the signed runtime status are healthy. Host backups include all three knowledge volumes.
+
+ArangoDB Community Edition is operated within its published Community License limits. Monitor aggregate cluster data and move to an appropriately licensed edition before reaching the 100 GB Community limit.
+
 ## Pinned components
 
 | Component | Pin | Host port | Resource ceiling |
@@ -67,7 +75,7 @@ Qwen remains the default provider, its 2,560-dimensional `qwen-v1` collection re
 
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
-| `EXPERIENCE_EMBEDDING_PROVIDER` | `qwen-tei` | Primary provider: `qwen-tei` or `gte-node`. |
+| `EXPERIENCE_EMBEDDING_PROVIDER` | `qwen-tei` | Primary provider: `azure-openai`, `qwen-tei`, or `gte-node`. Hosted production explicitly selects `azure-openai`. |
 | `EXPERIENCE_EMBEDDING_DUAL_WRITE` | `false` | Index new/changed documents into both immutable embedding spaces. |
 | `EXPERIENCE_EMBEDDING_SHADOW_PERCENT` | `0` | Hash-stable percentage of served Qwen searches also evaluated by GTE without changing user results. |
 | `EXPERIENCE_EMBEDDING_ROLLOUT_PERCENT` | Qwen `0`; GTE `100` | Hash-stable percentage eligible for GTE results after coverage is complete. Set 5, 25, or 50 for a staged GTE rollout. |

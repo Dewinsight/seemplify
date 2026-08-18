@@ -58,7 +58,7 @@ services:
       POSTGRES_PASSWORD: ${EXPERIENCE_POSTGRES_APP_PASSWORD:?required}
       POSTGRES_SSL: disable
       POSTGRES_SCHEMA_VERSION: "1"
-      POSTGRES_RUNTIME_SCHEMA_VERSION: "32"
+      POSTGRES_RUNTIME_SCHEMA_VERSION: "33"
       ADMIN_EMAIL: michael.egbo@dewinsight.com
       SESSION_SECRET: ${EXPERIENCE_SESSION_SECRET:?required}
       ESIGN_ENCRYPTION_KEY: ${EXPERIENCE_ESIGN_KEY:?required}
@@ -71,9 +71,21 @@ services:
       EMAIL_MODE: send
       SUBSCRIPTION_ENFORCEMENT_ENABLED: "false"
       AI_WORKER_CONCURRENCY: "1"
+      KNOWLEDGE_STORAGE_DIR: /app/runtime/knowledge
+      KNOWLEDGE_RUNTIME_BASE_URL: http://knowledge-runtime:11540
+      KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: /run/seemplify/knowledge-runtime-hmac
+      EXPERIENCE_EMBEDDING_PROVIDER: azure-openai
+      EXPERIENCE_EMBEDDING_MODEL: text-embedding-3-large
+      EXPERIENCE_EMBEDDING_MODEL_REVISION: f0706db2d8dd64a5f9385fd9ab1713b9083eb881
+      EXPERIENCE_EMBEDDING_DTYPE: float32
+      EXPERIENCE_EMBEDDING_DIMENSIONS: "3072"
+      EXPERIENCE_VECTOR_INDEX_VERSION: azure-text-embedding-3-large-v1
+      EXPERIENCE_EMBEDDING_DUAL_WRITE: "false"
+      EXPERIENCE_QWEN_ROLLBACK_RETAINED: "false"
     volumes:
       - experience_runtime:/app/runtime
       - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-hmac:ro
+      - /opt/seemplify/secrets/knowledge/knowledge-runtime-hmac:/run/seemplify/knowledge-runtime-hmac:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
@@ -92,6 +104,66 @@ services:
       - traefik.http.routers.seemplify-experience-secure.tls=true
       - traefik.http.routers.seemplify-experience-secure.tls.certresolver=letsencrypt
       - traefik.http.services.seemplify-experience.loadbalancer.server.port=3000
+
+  knowledge-runtime:
+    <<: *defaults
+    image: ${KNOWLEDGE_RUNTIME_IMAGE:-seemplify/knowledge-runtime:hostinger}
+    group_add:
+      - "0"
+    environment:
+      KNOWLEDGE_RUNTIME_HOST: 0.0.0.0
+      SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR: /runtime
+      SEEMPLIFY_KNOWLEDGE_DATA_ROOT: /data
+      SEEMPLIFY_KNOWLEDGE_STAGING_DIR: /app/runtime/knowledge
+      SEEMPLIFY_KNOWLEDGE_SECRETS_DIR: /run/seemplify/knowledge-secrets
+      ARANGO_URL: http://arangodb:8529
+      DOCLING_URL: http://knowledge-docling:5001
+      CHATGPT_GATEWAY_URL: http://chatgpt-gateway:11435
+      AZURE_OPENAI_EMBEDDING_URL: https://pubgegbo-3625-resource.cognitiveservices.azure.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2023-05-15
+      EXPERIENCE_EMBEDDING_PROVIDER: azure-openai
+      EXPERIENCE_EMBEDDING_MODEL: text-embedding-3-large
+      EXPERIENCE_EMBEDDING_MODEL_REVISION: f0706db2d8dd64a5f9385fd9ab1713b9083eb881
+      EXPERIENCE_EMBEDDING_DTYPE: float32
+      EXPERIENCE_EMBEDDING_DIMENSIONS: "3072"
+      EXPERIENCE_VECTOR_INDEX_VERSION: azure-text-embedding-3-large-v1
+      EXPERIENCE_EMBEDDING_DUAL_WRITE: "false"
+      EXPERIENCE_QWEN_ROLLBACK_RETAINED: "false"
+    volumes:
+      - experience_runtime:/app/runtime:ro
+      - knowledge_runtime_state:/runtime
+      - knowledge_runtime_data:/data
+      - /opt/seemplify/secrets/knowledge/knowledge-runtime-hmac:/runtime/service-secret:ro
+      - /opt/seemplify/secrets/knowledge/arango-app:/run/seemplify/knowledge-secrets/arango-app:ro
+      - /opt/seemplify/secrets/knowledge/arango-provisioner:/run/seemplify/knowledge-secrets/arango-provisioner:ro
+      - /opt/seemplify/secrets/knowledge/chatgpt-gateway:/run/seemplify/knowledge-secrets/chatgpt-gateway:ro
+      - /opt/seemplify/secrets/knowledge/azure-openai-embedding:/run/seemplify/knowledge-secrets/tei-api:ro
+      - /opt/seemplify/secrets/knowledge/docling-api:/run/seemplify/knowledge-secrets/docling-api:ro
+
+  knowledge-docling:
+    <<: *defaults
+    image: quay.io/docling-project/docling-serve-cpu@sha256:cc207e1eb768878456ed98042c5d84fae56af3729a9c03d3e5c8fef393902956
+    group_add:
+      - "0"
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - >-
+        export DOCLING_SERVE_API_KEY="$$(cat /run/seemplify/docling-api)" DOCLING_DEVICE=cpu;
+        exec container-entrypoint docling-serve run --host 0.0.0.0 --port 5001
+    volumes:
+      - /opt/seemplify/secrets/knowledge/docling-api:/run/seemplify/docling-api:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import os,urllib.request;
+          r=urllib.request.Request('http://127.0.0.1:5001/health',headers={'Authorization':'Bearer '+open('/run/seemplify/docling-api').read().strip(),'X-API-Key':open('/run/seemplify/docling-api').read().strip()});
+          raise SystemExit(0 if urllib.request.urlopen(r,timeout=5).status<500 else 1)"
+      interval: 20s
+      timeout: 10s
+      retries: 30
+      start_period: 120s
 
   ai-interview-backend:
     <<: *defaults
@@ -193,6 +265,8 @@ services:
 volumes:
   chatgpt_gateway_data:
   experience_runtime:
+  knowledge_runtime_state:
+  knowledge_runtime_data:
 
 networks:
   dokploy-network:

@@ -23,7 +23,7 @@ class EmbeddingMigrationController {
     minGateSamples = 20, errorRateLimit = 0.01, p95LimitMs = 500, p99LimitMs = 1_000,
     now = Date.now,
   } = {}) {
-    this.provider = provider === 'gte-node' ? 'gte-node' : 'qwen-tei';
+    this.provider = provider === 'azure-openai' ? 'azure-openai' : provider === 'gte-node' ? 'gte-node' : 'qwen-tei';
     this.rolloutPercent = boundedPercentage(rolloutPercent);
     this.shadowPercent = boundedPercentage(shadowPercent);
     this.windowMs = windowMs;
@@ -44,6 +44,7 @@ class EmbeddingMigrationController {
   }
 
   choose(requestId, { gteReady = false } = {}) {
+    if (this.provider === 'azure-openai') return 'azure-openai';
     if (this.provider !== 'gte-node' || this.paused || !gteReady) return 'qwen-tei';
     return deterministicPercentage(`rollout:${requestId}`) < this.rolloutPercent ? 'gte-node' : 'qwen-tei';
   }

@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { z } from 'zod';
 import {
-  bgeKnowledgeRerankerProfile, config, gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
+  azureKnowledgeEmbeddingProfile, azureKnowledgeRerankerProfile, bgeKnowledgeRerankerProfile, config,
+  gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
   type KnowledgeEmbeddingProfile
 } from './config.js';
 import { getKnowledgeDocument, KnowledgeError, type KnowledgeBaseRef, type KnowledgeCitation } from './knowledgeRepository.js';
@@ -74,13 +75,18 @@ const citationSchema = z.object({
 });
 
 const rerankerTelemetrySchema = z.object({
-  model: z.literal(bgeKnowledgeRerankerProfile.model),
-  revision: z.literal(bgeKnowledgeRerankerProfile.revision),
+  model: z.union([z.literal(bgeKnowledgeRerankerProfile.model), z.literal(azureKnowledgeRerankerProfile.model)]),
+  revision: z.union([z.literal(bgeKnowledgeRerankerProfile.revision), z.literal(azureKnowledgeRerankerProfile.revision)]),
   executed: z.literal(true),
   inputCount: z.number().int().nonnegative(),
   outputCount: z.number().int().nonnegative()
 }).strict().refine((value) => value.outputCount <= value.inputCount, {
   message: 'Reranker output count cannot exceed its input count.'
+}).refine((value) => (value.model === bgeKnowledgeRerankerProfile.model
+  && value.revision === bgeKnowledgeRerankerProfile.revision)
+  || (value.model === azureKnowledgeRerankerProfile.model
+    && value.revision === azureKnowledgeRerankerProfile.revision), {
+  message: 'Reranker model and revision must identify the same pinned profile.'
 });
 
 const retrievalMetricsSchema = z.object({
@@ -150,7 +156,7 @@ const graphResponse = z.object({
 });
 
 const embeddingProfileSchema = z.object({
-  provider: z.enum(['qwen-tei', 'gte-node']),
+  provider: z.enum(['azure-openai', 'qwen-tei', 'gte-node']),
   model: z.string().trim().min(1).max(300),
   revision: z.string().regex(/^[a-f0-9]{40}$/u),
   dtype: z.string().trim().min(1).max(40),
@@ -164,7 +170,8 @@ function profileIdentity(profile: KnowledgeEmbeddingProfile) {
 }
 
 function assertPinnedProfile(profile: KnowledgeEmbeddingProfile, expected?: KnowledgeEmbeddingProfile) {
-  const pinned = profile.provider === 'qwen-tei' ? qwenKnowledgeEmbeddingProfile : gteKnowledgeEmbeddingProfile;
+  const pinned = profile.provider === 'azure-openai' ? azureKnowledgeEmbeddingProfile
+    : profile.provider === 'qwen-tei' ? qwenKnowledgeEmbeddingProfile : gteKnowledgeEmbeddingProfile;
   if (profileIdentity(profile) !== profileIdentity(pinned)
       || (expected && profileIdentity(profile) !== profileIdentity(expected))) {
     throw new KnowledgeError('The local knowledge runtime reported an unpinned embedding profile.',

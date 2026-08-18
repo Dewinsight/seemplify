@@ -23,7 +23,7 @@ const BASE_RUNTIME_EXTENSION_TABLES = Object.freeze([
   'assistant_audit_events'
 ]);
 
-export const LATEST_RUNTIME_SCHEMA_VERSION = 32;
+export const LATEST_RUNTIME_SCHEMA_VERSION = 33;
 
 export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VERSION) {
   const tables = [...BASE_RUNTIME_EXTENSION_TABLES];

@@ -23,7 +23,7 @@ export function supportsKnowledgeContext(kind: AiJobKind) {
 }
 
 const embeddingProfileSchema = z.object({
-  provider: z.enum(['qwen-tei', 'gte-node']),
+  provider: z.enum(['azure-openai', 'qwen-tei', 'gte-node']),
   model: z.string().trim().min(1).max(300),
   revision: z.string().regex(/^[a-f0-9]{40}$/u),
   dtype: z.string().trim().min(1).max(40),

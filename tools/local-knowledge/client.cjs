@@ -7,7 +7,8 @@ async function signedRequest(requestPath, input, { config = CONFIG, fetchImpl = 
   const secret = fs.readFileSync(path.join(config.paths.runtime, 'service-secret'), 'utf8').trim();
   const body = JSON.stringify(input);
   const signed = signRequest(secret, body, requestPath);
-  const response = await fetchImpl(`http://${config.host}:${config.ports.runtime}${requestPath}`, {
+  const clientHost = config.host === '0.0.0.0' ? '127.0.0.1' : config.host;
+  const response = await fetchImpl(`http://${clientHost}:${config.ports.runtime}${requestPath}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-seemplify-timestamp': signed.timestamp, 'x-seemplify-nonce': signed.nonce, 'x-seemplify-signature': signed.signature },
     body,

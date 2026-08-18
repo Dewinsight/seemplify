@@ -15,6 +15,15 @@ const {
 
 test('embedding profiles are immutable, pinned, and default to qwen-tei', () => {
   assert.equal(resolveEmbeddingProfile(), EMBEDDING_PROFILES['qwen-tei']);
+  assert.deepEqual({
+    model: EMBEDDING_PROFILES['azure-openai'].modelId,
+    dtype: EMBEDDING_PROFILES['azure-openai'].dtype,
+    dimension: EMBEDDING_PROFILES['azure-openai'].dimension,
+    vectorIndexVersion: EMBEDDING_PROFILES['azure-openai'].vectorIndexVersion,
+  }, {
+    model: 'text-embedding-3-large', dtype: 'float32', dimension: 3072,
+    vectorIndexVersion: 'azure-text-embedding-3-large-v1',
+  });
   assert.equal(resolveEmbeddingProfile('gte-modernbert-v1'), EMBEDDING_PROFILES['gte-node']);
   assert.equal(EMBEDDING_PROFILES['gte-node'].revision, GTE_MODEL_REVISION);
   assert.deepEqual({
