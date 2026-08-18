@@ -510,6 +510,7 @@ import organizationSubscriptionRouter from './routes/organizationSubscription.js
 import adminUsersRouter from './routes/adminUsers.js'
 import profileRouter from './routes/profile.js'
 import internalMembershipsRouter from './routes/internalMemberships.js'
+import platformIntegrationsRouter from './routes/platformIntegrations.js'
 import { startScheduledMembershipWorker } from './routes/internalMemberships.js'
 
 dotenv.config()
@@ -5918,6 +5919,7 @@ app.use('/api', (req, res, next) => {
   })
 }, onboardingRouter)
 app.use('/api/internal/v1/memberships', internalMembershipsRouter)
+app.use('/api/internal/v1/platform-integrations', platformIntegrationsRouter)
 
 app.use((req, res, next) => {
   const routeOrganizationId = req.path.match(/^\/organizations\/([^/]+)\//)?.[1] || null

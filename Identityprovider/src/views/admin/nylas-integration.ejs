@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Nylas Integration - <%= brand.name %> IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+    .integration-copy { color: var(--muted); font-size: 14px; line-height: 1.55; margin: -14px 0 22px; max-width: 760px; }
+    .integration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .integration-grid .admin-form-group { margin-bottom: 0; }
+    .integration-span { grid-column: 1 / -1; }
+    .integration-status { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 10px 18px; margin: 0; font-size: 14px; }
+    .integration-status dt { color: var(--muted); }
+    .integration-status dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+    .integration-actions { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
+    .integration-warning { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 20px; }
+    .integration-warning p { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 6px 0 12px; }
+    @media (max-width: 760px) { .integration-grid { grid-template-columns: 1fr; } .integration-span { grid-column: auto; } .integration-status { grid-template-columns: 1fr; gap: 4px; } }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=3"></script>
+</head>
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'nylas-integration' }) %>
+    <main class="admin-content">
+      <div class="admin-header"><h1>Nylas Integration</h1></div>
+      <p class="integration-copy">Configure the platform Nylas application used by Experience Management. Credentials are encrypted by Identity and delivered only to the authenticated Experience service. Saved secret values are never returned to this page.</p>
+
+      <% if (notice) { %><div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>"><span><%= notice %></span></div><% } %>
+
+      <div class="admin-card">
+        <div class="admin-card-header"><div><div class="admin-card-title">Current configuration</div><div class="admin-card-subtitle">Revision <%= status.revision || 0 %><%= status.updatedAt ? ` · Updated ${new Date(status.updatedAt).toLocaleString('en-GB')}` : '' %></div></div></div>
+        <dl class="integration-status">
+          <dt>Connection</dt><dd><%= status.configured ? 'Configured' : 'Not configured' %></dd>
+          <dt>Client ID</dt><dd><%= status.clientIdConfigured ? 'Stored securely' : 'Missing' %></dd>
+          <dt>API key</dt><dd><%= status.apiKeyConfigured ? 'Stored securely' : 'Missing' %></dd>
+          <dt>Webhook secret</dt><dd><%= status.webhookSecretConfigured ? 'Stored securely' : 'Not set' %></dd>
+          <dt>API endpoint</dt><dd><%= status.apiUri %></dd>
+          <dt>Redirect URI</dt><dd><%= status.redirectUri || 'Uses the Experience Management callback URL' %></dd>
+        </dl>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-header"><div><div class="admin-card-title">Application credentials</div><div class="admin-card-subtitle">Leave an existing secret blank to keep its current value.</div></div></div>
+        <form method="post" action="/admin/integrations/nylas" autocomplete="off">
+          <div class="integration-grid">
+            <div class="admin-form-group"><label class="admin-form-label" for="nylas-client-id">Client ID</label><input class="admin-form-input" id="nylas-client-id" name="clientId" type="password" autocomplete="new-password" placeholder="<%= status.clientIdConfigured ? 'Configured — leave blank to keep' : 'Required' %>"></div>
+            <div class="admin-form-group"><label class="admin-form-label" for="nylas-api-key">API key</label><input class="admin-form-input" id="nylas-api-key" name="apiKey" type="password" autocomplete="new-password" placeholder="<%= status.apiKeyConfigured ? 'Configured — leave blank to keep' : 'Required' %>"></div>
+            <div class="admin-form-group"><label class="admin-form-label" for="nylas-api-uri">API endpoint</label><input class="admin-form-input" id="nylas-api-uri" name="apiUri" type="url" value="<%= status.apiUri %>" required></div>
+            <div class="admin-form-group"><label class="admin-form-label" for="nylas-redirect-uri">Redirect URI</label><input class="admin-form-input" id="nylas-redirect-uri" name="redirectUri" type="url" value="<%= status.redirectUri %>" placeholder="https://experience.seemplifyai.com/api/integrations/nylas/callback"></div>
+            <div class="admin-form-group integration-span"><label class="admin-form-label" for="nylas-scopes">OAuth scopes</label><textarea class="admin-form-input" id="nylas-scopes" name="connectScopes" rows="4"><%= status.connectScopes.join('\n') %></textarea></div>
+            <div class="admin-form-group integration-span"><label class="admin-form-label" for="nylas-webhook-secret">Webhook secret</label><input class="admin-form-input" id="nylas-webhook-secret" name="webhookSecret" type="password" autocomplete="new-password" placeholder="<%= status.webhookSecretConfigured ? 'Configured — leave blank to keep' : 'Optional' %>"></div>
+          </div>
+          <div class="integration-actions"><button class="btn btn-primary" type="submit" <%= admin?.isSuperAdmin ? '' : 'disabled' %>>Save Nylas settings</button><% if (!admin?.isSuperAdmin) { %><span class="admin-card-subtitle">Super admin access is required to change platform credentials.</span><% } %></div>
+        </form>
+        <% if (status.configured && admin?.isSuperAdmin) { %>
+          <div class="integration-warning"><strong>Remove platform configuration</strong><p>This disables new Nylas connections in Experience Management. Existing mailbox grants remain stored but cannot be used until credentials are configured again.</p><form method="post" action="/admin/integrations/nylas/remove" onsubmit="return confirm('Remove the platform Nylas configuration?')"><button class="btn btn-danger" type="submit">Remove configuration</button></form></div>
+        <% } %>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

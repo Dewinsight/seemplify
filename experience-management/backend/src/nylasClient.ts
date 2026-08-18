@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { normalizeEmailDraftHtml } from './emailDraftHtml.js';
+import { resolveNylasPlatformConfiguration, type NylasPlatformConfiguration } from './nylasPlatformConfiguration.js';
 
 export type NylasProvider = 'google' | 'microsoft';
 
@@ -39,36 +40,40 @@ const defaultScopes: Record<NylasProvider, readonly string[]> = {
   microsoft: ['offline_access', 'openid', 'profile', 'User.Read', 'Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'Calendars.Read']
 };
 
-export function nylasRedirectUri() {
-  return config.nylasRedirectUri || `${config.publicUrl}/api/integrations/nylas/callback`;
+export async function nylasRedirectUri(configuration?: NylasPlatformConfiguration | null) {
+  const runtime = configuration === undefined ? await resolveNylasPlatformConfiguration() : configuration;
+  return runtime?.redirectUri || `${config.publicUrl}/api/integrations/nylas/callback`;
 }
 
-export function configuredNylasScopes(provider: NylasProvider) {
+export function configuredNylasScopes(provider: NylasProvider, configuration?: NylasPlatformConfiguration | null) {
   const allowed = new Map(safeScopes[provider].map((scope) => [scope.toLocaleLowerCase('en-US'), scope]));
-  const requested = config.nylasConnectScopes
+  const requested = (configuration?.connectScopes || config.nylasConnectScopes)
     .map((scope) => allowed.get(scope.toLocaleLowerCase('en-US')))
     .filter((scope): scope is string => Boolean(scope));
   return [...new Set([...defaultScopes[provider], ...requested])];
 }
 
-export function nylasConfigured() {
-  return Boolean(config.nylasClientId && config.nylasApiKey);
+export async function nylasConfigured() {
+  const runtime = await resolveNylasPlatformConfiguration();
+  return Boolean(runtime?.clientId && runtime?.apiKey);
 }
 
-function requireConfiguration() {
-  if (!nylasConfigured()) throw new NylasError('Nylas is not configured.', 503, 'NYLAS_NOT_CONFIGURED', true);
+async function requireConfiguration() {
+  const runtime = await resolveNylasPlatformConfiguration();
+  if (!runtime?.clientId || !runtime.apiKey) throw new NylasError('Nylas is not configured in Seemplify Identity.', 503, 'NYLAS_NOT_CONFIGURED', true);
+  return runtime;
 }
 
-export function createNylasAuthorizeUrl(provider: NylasProvider, state: string) {
-  requireConfiguration();
-  const url = new URL(`${config.nylasApiUri}/v3/connect/auth`);
-  url.searchParams.set('client_id', config.nylasClientId);
-  url.searchParams.set('redirect_uri', nylasRedirectUri());
+export async function createNylasAuthorizeUrl(provider: NylasProvider, state: string) {
+  const runtime = await requireConfiguration();
+  const url = new URL(`${runtime.apiUri}/v3/connect/auth`);
+  url.searchParams.set('client_id', runtime.clientId);
+  url.searchParams.set('redirect_uri', await nylasRedirectUri(runtime));
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('access_type', 'online');
   url.searchParams.set('provider', provider);
   url.searchParams.set('state', state);
-  url.searchParams.set('scope', configuredNylasScopes(provider).join(' '));
+  url.searchParams.set('scope', configuredNylasScopes(provider, runtime).join(' '));
   return url.toString();
 }
 
@@ -93,12 +98,14 @@ async function boundedJson(response: Response, maximumBytes = 4 * 1024 * 1024) {
 }
 
 async function nylasRequest(path: string, init: RequestInit, maximumBytes?: number) {
-  requireConfiguration();
+  const runtime = await requireConfiguration();
   let response: Response;
   try {
-    response = await fetch(`${config.nylasApiUri}${path}`, {
+    const headers = new Headers(init.headers);
+    if (headers.has('authorization')) headers.set('authorization', `Bearer ${runtime.apiKey}`);
+    response = await fetch(`${runtime.apiUri}${path}`, {
       ...init,
-      headers: { accept: 'application/json', ...(init.headers || {}) },
+      headers: { accept: 'application/json', ...Object.fromEntries(headers.entries()) },
       signal: AbortSignal.timeout(config.nylasRequestTimeoutMs)
     });
   } catch {
@@ -121,14 +128,15 @@ async function nylasRequest(path: string, init: RequestInit, maximumBytes?: numb
 function payloadData(value: any) { return value?.data ?? value ?? {}; }
 
 export async function exchangeNylasCode(code: string, expectedProvider: NylasProvider) {
+  const runtime = await requireConfiguration();
   const payload = await nylasRequest('/v3/connect/token', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      client_id: config.nylasClientId,
-      client_secret: config.nylasApiKey,
+      client_id: runtime.clientId,
+      client_secret: runtime.apiKey,
       grant_type: 'authorization_code',
-      redirect_uri: nylasRedirectUri(),
+      redirect_uri: await nylasRedirectUri(runtime),
       code,
       code_verifier: 'nylas'
     })
@@ -147,7 +155,7 @@ export async function exchangeNylasCode(code: string, expectedProvider: NylasPro
     }));
     email = cleanText(detail.email || detail.email_address || '', 254);
   }
-  return { grantId, email, provider: expectedProvider, scopes: configuredNylasScopes(expectedProvider) };
+  return { grantId, email, provider: expectedProvider, scopes: configuredNylasScopes(expectedProvider, runtime) };
 }
 
 export async function revokeNylasGrant(grantId: string) {

@@ -56,11 +56,13 @@ function loadSharedNylasEnvironment() {
   const configured = process.env.NYLAS_ENV_FILE
     ? path.resolve(backendDir, process.env.NYLAS_ENV_FILE)
     : null;
-  // Nylas is an Experience Management integration. The only supported
-  // shared hand-off is the explicitly approved Recruiter environment.
+  // Compatibility for local development and migration tests only. Production
+  // resolves the active Nylas configuration from Seemplify Identity.
   const candidates = [
     configured,
-    path.join(repositoryDir, 'recruiter', 'backend', '.env')
+    ...((process.env.NODE_ENV || '').toLowerCase() === 'production'
+      ? []
+      : [path.join(repositoryDir, 'recruiter', 'backend', '.env')])
   ].filter((value): value is string => Boolean(value));
   let source: string | null = null;
   for (const candidate of candidates) {
@@ -286,6 +288,16 @@ export const config = {
   sharedAiBaseUrl: String(process.env.SEEMPLIFY_SHARED_AI_URL || process.env.SEEMPLIFY_PLATFORM_API_URL
     || (isProduction ? 'http://recruiter-backend:5001' : 'http://localhost:5001')).replace(/\/+$/, ''),
   sharedAiSecret: String(process.env.EXPERIENCE_AI_SHARED_SECRET || '').trim(),
+  idpPlatformConfigurationBaseUrl: String(process.env.IDP_PLATFORM_CONFIGURATION_URL
+    || process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER
+    || (isProduction ? 'https://auth.seemplifyai.com' : 'http://localhost:4000')).replace(/\/+$/, ''),
+  idpPlatformConfigurationSecret: String(process.env.IDP_PLATFORM_INTEGRATION_HMAC_SECRET
+    || process.env.EXPERIENCE_ADMIN_SSO_SECRET || '').trim(),
+  idpPlatformConfigurationSecretFile: process.env.IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE
+    ? resolveFromBackend(process.env.IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE)
+    : '',
+  idpPlatformConfigurationTimeoutMs: boundedNumber(process.env.IDP_PLATFORM_CONFIGURATION_TIMEOUT_MS, 5_000, 1_000, 20_000),
+  idpPlatformConfigurationCacheMs: boundedNumber(process.env.IDP_PLATFORM_CONFIGURATION_CACHE_MS, 300_000, 10_000, 3_600_000),
   databasePath: resolveFromBackend(
     process.env.DATABASE_PATH || '../../.local-runtime/experience-management/experience.sqlite'
   ),
