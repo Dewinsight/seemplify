@@ -79,12 +79,13 @@ before(async () => {
 after(async () => { await closeHub?.(); await closeMock?.(); });
 
 test("OIDC accepts the canonical current organization claim", async () => {
-  const { actorFromClaims } = await import("../src/auth.js");
-  const actor = actorFromClaims({
+  const { actorFromClaims, combineIdentityClaims } = await import("../src/auth.js");
+  const claims = combineIdentityClaims({
     sub: "identity-user-1",
     email: "member@example.test",
     email_verified: true,
     name: "Member One",
+  }, {
     current_organization: {
       id: "org-current",
       name: "Current Org",
@@ -92,6 +93,7 @@ test("OIDC accepts the canonical current organization claim", async () => {
       appAccess: { mode: "selected", appIds: ["automation-hub"] },
     },
   });
+  const actor = actorFromClaims(claims);
 
   assert.equal(actor.organizationId, "org-current");
   assert.equal(actor.role, "admin");

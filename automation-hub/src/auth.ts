@@ -101,6 +101,13 @@ export function actorFromClaims(claims: Record<string, unknown>): SessionActor {
   };
 }
 
+export function combineIdentityClaims(
+  idTokenClaims: Record<string, unknown>,
+  userInfoClaims: Record<string, unknown>,
+) {
+  return { ...idTokenClaims, ...userInfoClaims };
+}
+
 export async function startOidc(request: Request, response: Response) {
   if (!config.oidc.issuerUrl) return response.status(503).send("Seemplify Identity is not configured for this environment.");
   const state = generators.state();
@@ -121,7 +128,11 @@ export async function finishOidc(request: Request, response: Response) {
   try {
     const oidc = await client();
     const tokenSet = await oidc.callback(config.oidc.redirectUri, oidc.callbackParams(request), { state, nonce: row.nonce, code_verifier: row.verifier });
-    const claims = tokenSet.claims() as Record<string, unknown>;
+    const idTokenClaims = tokenSet.claims() as Record<string, unknown>;
+    const userInfoClaims = tokenSet.access_token
+      ? await oidc.userinfo(tokenSet.access_token) as Record<string, unknown>
+      : {};
+    const claims = combineIdentityClaims(idTokenClaims, userInfoClaims);
     const sessionActor = actorFromClaims(claims);
     issueSession(response, sessionActor);
     db.prepare("DELETE FROM oidc_states WHERE state=?").run(state);
