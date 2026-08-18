@@ -68,12 +68,25 @@ test('the governed rich-card migration and SQLite schema converge on runtime 24'
   const sqliteType = (type) => ({
     bigint: 'integer', jsonb: 'text', 'timestamp with time zone': 'text'
   })[type] || type;
+  const managedStorageColumnNames = new Set([
+    'storage_provider',
+    'storage_key',
+    'storage_container',
+    'storage_resource_type',
+    'storage_url'
+  ]);
 
   for (const [table, expected] of Object.entries(journeyRichCardRuntimeContract.columns)) {
-    assert.deepEqual(tableColumns(migration, table), expected,
+    const runtime24Expected = table === 'journey_asset_blob_purge_outbox'
+      ? expected.filter(([name]) => !managedStorageColumnNames.has(name))
+      : expected;
+    const sqliteExpected = table === 'journey_asset_blob_purge_outbox'
+      ? [...runtime24Expected.slice(0, 4), ...expected.slice(-5), ...runtime24Expected.slice(4)]
+      : runtime24Expected;
+    assert.deepEqual(tableColumns(migration, table), runtime24Expected,
       `${table} in migration 0024 drifted from its runtime column contract`);
-    assert.deepEqual(tableColumns(sqlite, table), expected.map(([name, type, nullable]) => [name, sqliteType(type), nullable]),
-      `${table} in the SQLite rich-card schema drifted from runtime 24`);
+    assert.deepEqual(tableColumns(sqlite, table), sqliteExpected.map(([name, type, nullable]) => [name, sqliteType(type), nullable]),
+      `${table} in the SQLite rich-card schema drifted from the current runtime contract`);
   }
 
   for (const index of Object.keys(journeyRichCardRuntimeContract.indexes)) {
@@ -81,6 +94,25 @@ test('the governed rich-card migration and SQLite schema converge on runtime 24'
       `${index} is missing from migration 0024`);
     assert.match(sqlite, new RegExp(`INDEX IF NOT EXISTS ${index}(?![A-Za-z0-9_])`, 'u'),
       `${index} is missing from the SQLite rich-card schema`);
+  }
+});
+
+test('managed storage migration extends the purge outbox runtime contract', () => {
+  const migration = fs.readFileSync(path.join(migrationDirectory, '0032_managed_file_storage.sql'), 'utf8');
+  const expected = journeyRichCardRuntimeContract.columns.journey_asset_blob_purge_outbox.slice(-5);
+
+  assert.deepEqual(expected, [
+    ['storage_provider', 'text', false],
+    ['storage_key', 'text', true],
+    ['storage_container', 'text', true],
+    ['storage_resource_type', 'text', true],
+    ['storage_url', 'text', true]
+  ]);
+  for (const [name] of expected) {
+    assert.match(
+      migration,
+      new RegExp(`ALTER TABLE journey_asset_blob_purge_outbox ADD COLUMN IF NOT EXISTS ${name}(?![A-Za-z0-9_])`, 'u')
+    );
   }
 });
 

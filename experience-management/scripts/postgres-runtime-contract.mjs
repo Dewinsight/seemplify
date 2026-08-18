@@ -2416,7 +2416,9 @@ const journeyRichCardExactColumns = Object.freeze({
     ['state','text',false],['attempt_count','integer',false],['last_error_fingerprint','text',true],
     ['next_attempt_at','timestamp with time zone',false],['lease_expires_at','timestamp with time zone',true],
     ['completed_at','timestamp with time zone',true],['created_at','timestamp with time zone',false],
-    ['updated_at','timestamp with time zone',false]
+    ['updated_at','timestamp with time zone',false],['storage_provider','text',false],
+    ['storage_key','text',true],['storage_container','text',true],
+    ['storage_resource_type','text',true],['storage_url','text',true]
   ],
   journey_rich_card_audit_events: [
     ['id','text',false],['space_id','text',false],['actor_user_id','text',true],['action','text',false],
