@@ -227,6 +227,7 @@ services:
       MONGODB_URI: mongodb://leave_app:${MONGO_LEAVE_PASSWORD:?required}@mongodb:27017/leave-management?authSource=leave-management
       IDP_ISSUER_URL: https://auth.seemplifyai.com
       IDP_INTERNAL_API_URL: http://identity-provider:5008
+      LEAVE_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
       OIDC_CLIENT_ID: leave-management
       OIDC_CLIENT_SECRET: ${OIDC_LEAVE_SECRET:?required}
       OIDC_REDIRECT_URI: https://api-leave.seemplifyai.com/api/auth/oidc/callback
@@ -237,6 +238,8 @@ services:
       IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_LEAVE:?required}
       PAYROLL_LEAVE_SHARED_SECRET: ${PAYROLL_LEAVE_SHARED_SECRET:?required}
       PAYROLL_LEAVE_SERVICE_ID: payroll
+      PRESENCE_REPORTER_SERVICE_SECRET: ${TIME_INTERNAL_SECRET:?required}
+      TIME_ATTENDANCE_PRESENCE_URL: http://time-backend:5010/api/internal/v1/presence
       MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
