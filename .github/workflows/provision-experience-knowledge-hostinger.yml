@@ -82,37 +82,38 @@ jobs:
           root_password=$(<"$secret_dir/arango-root")
           app_password=$(<"$secret_dir/arango-app")
           provisioner_password=$(<"$secret_dir/arango-provisioner")
-          arango_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container")
-          [[ "$arango_ip" =~ ^[0-9a-fA-F:.]+$ ]]
-          arango_url="http://$arango_ip:8529"
+          arango_url=http://arangodb:8529
+          arango_curl() {
+            docker run --rm --network dokploy-network curlimages/curl:8.16.0 "$@"
+          }
           upsert_user() {
             local username="$1" password="$2" extra="$3" status
             payload=$(jq -cn --arg passwd "$password" --arg owner "$extra" \
               '{passwd:$passwd,active:true,extra:{owner:$owner}}')
-            status=$(curl --silent --show-error --output /tmp/arango-user.json --write-out '%{http_code}' \
+            status=$(arango_curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
               --user "root:$root_password" \
               "$arango_url/_db/_system/_api/user/$username")
             if [[ "$status" == 200 ]]; then
-              curl --fail --silent --show-error --user "root:$root_password" \
+              arango_curl --fail --silent --show-error --user "root:$root_password" \
                 --header 'content-type: application/json' --request PUT --data "$payload" \
                 "$arango_url/_db/_system/_api/user/$username" >/dev/null
             else
               payload=$(jq -cn --arg user "$username" --arg passwd "$password" --arg owner "$extra" \
                 '{user:$user,passwd:$passwd,active:true,extra:{owner:$owner}}')
-              curl --fail --silent --show-error --user "root:$root_password" \
+              arango_curl --fail --silent --show-error --user "root:$root_password" \
                 --header 'content-type: application/json' --request POST --data "$payload" \
                 "$arango_url/_db/_system/_api/user" >/dev/null
             fi
           }
           upsert_user seemplify_knowledge_app "$app_password" seemplify-experience-knowledge
           upsert_user seemplify_knowledge_provisioner "$provisioner_password" seemplify-experience-knowledge
-          curl --fail --silent --show-error --user "root:$root_password" \
+          arango_curl --fail --silent --show-error --user "root:$root_password" \
             --header 'content-type: application/json' --request PUT --data '{"grant":"rw"}' \
             "$arango_url/_db/_system/_api/user/seemplify_knowledge_provisioner/database/_system" >/dev/null
 
-          docker run --rm --network dokploy-network curlimages/curl:8.16.0 \
+          arango_curl \
             --fail --silent --show-error --user "seemplify_knowledge_provisioner:$provisioner_password" \
             http://arangodb:8529/_db/_system/_api/version >/dev/null
-          rm -f "$source_file" /tmp/arango-user.json
+          rm -f "$source_file"
           printf 'ArangoDB is healthy, private, persistent, and reachable on dokploy-network.\n'
           REMOTE
