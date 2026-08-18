@@ -28,6 +28,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install Recruiter test dependencies
+        working-directory: recruiter/backend
+        run: npm install --ignore-scripts --no-package-lock
       - name: Verify gateway metering and Recruiter ingestion
         run: |
           node --test \
@@ -51,6 +54,8 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  ConnectionAttempts 10\n  ConnectTimeout 30\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
       - name: Package release
         run: |
           tar -czf chatgpt-hostinger-release.tgz \

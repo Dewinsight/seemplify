@@ -105,7 +105,7 @@ jobs:
             test_command: npm test -- --runInBand
           - name: Performance
             directory: performance/backend
-            install_command: npm ci --ignore-scripts
+            install_command: npm install --ignore-scripts --no-package-lock
             test_command: npm run test:legacy && npm run test:unit
           - name: Payroll
             directory: payroll/backend
@@ -184,6 +184,8 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  ConnectionAttempts 10\n  ConnectTimeout 30\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       - name: Package release
         run: |

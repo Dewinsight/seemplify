@@ -13,7 +13,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+COPY docker-entrypoint.mjs ./docker-entrypoint.mjs
 RUN mkdir -p /app/data && chown -R node:node /app/data
-USER node
 EXPOSE 5420
-CMD ["node", "dist/server/server.js"]
+CMD ["node", "docker-entrypoint.mjs"]
