@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, ExternalLink, Loader2, LogOut, RefreshCw } from 'lucide-react';
+import { Copy, ExternalLink, Loader2, LogOut, RefreshCw, Unlink } from 'lucide-react';
 import { OpenAiAttribution } from '@/components/brand/OpenAiAttribution';
 import { Button } from '@/components/ui/button';
 import {
@@ -176,6 +176,23 @@ export function ChatGptConnectionGate({
     }
   }
 
+  async function disconnectChatGpt() {
+    if (working || !connected) return;
+    if (!window.confirm(`Disconnect ${state?.codex.account.email || 'this ChatGPT account'}? You can connect another account next.`)) return;
+    setWorking('disconnect');
+    setLocalError('');
+    try {
+      const next = await api<AiProviderState>('/api/ai-provider/codex/disconnect', json('POST', {}));
+      setDeviceLogin(null);
+      setCopied(false);
+      publishState(next, true);
+    } catch (reason) {
+      setLocalError(reason instanceof Error ? reason.message : 'Could not disconnect ChatGPT.');
+    } finally {
+      setWorking('');
+    }
+  }
+
   if (!open) return null;
 
   const accountName = state?.codex.account.email || 'your ChatGPT account';
@@ -249,6 +266,17 @@ export function ChatGptConnectionGate({
               ? `Experience Management will use ${state.codex.selectedModel} unless you choose another model in settings.`
               : 'Experience Management will select an available Codex model when you continue.'}
           </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="mt-3"
+            disabled={busy}
+            data-testid="chatgpt-gate-disconnect"
+            onClick={() => void disconnectChatGpt()}
+          >
+            {working === 'disconnect' ? <Loader2 className="animate-spin" /> : <Unlink />}Disconnect ChatGPT
+          </Button>
         </div>}
 
         {displayedError && <div className="border border-destructive/35 bg-destructive/5 p-3 text-sm text-destructive" role="alert" data-testid="chatgpt-gate-error">{displayedError}</div>}
@@ -256,7 +284,7 @@ export function ChatGptConnectionGate({
 
       <DialogFooter className="sm:justify-between">
         <Button type="button" variant="ghost" disabled={busy} data-testid="chatgpt-gate-sign-out" onClick={() => void signOut()}>
-          {working === 'signout' ? <Loader2 className="animate-spin" /> : <LogOut />}Sign out
+          {working === 'signout' ? <Loader2 className="animate-spin" /> : <LogOut />}Sign out of Seemplify
         </Button>
         {deviceLogin
           ? <Button type="button" variant="ghost" disabled={busy} data-testid="chatgpt-gate-retry" onClick={() => void startLogin(true)}>{working === 'restart' ? <Loader2 className="animate-spin" /> : <RefreshCw />}Restart sign-in</Button>
