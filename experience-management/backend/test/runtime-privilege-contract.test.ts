@@ -147,6 +147,14 @@ test('runtime-33 replaces fresh and cutover provider checks before seeding Azure
   assert.ok(source.indexOf('DROP CONSTRAINT %I') < source.indexOf("'azure-text-embedding-3-large-v1','azure-openai'"));
 });
 
+test('production provisions only the Experience-scoped ChatGPT credential for knowledge graph extraction', () => {
+  const workflow = fs.readFileSync(
+    path.resolve(backendRoot, '..', '..', '.github', 'workflows', 'deploy-experience-hostinger.yml'), 'utf8');
+  assert.match(workflow, /deriveServiceSecret\(masterSecret, 'experience-management'\)/u);
+  assert.doesNotMatch(workflow, /printf '%s' "\$gateway_secret" >"\$knowledge_secret_dir\/chatgpt-gateway"/u);
+  assert.match(workflow, /fs\.writeFileSync\(process\.argv\[3\], deriveServiceSecret/u);
+});
+
 test('the runtime contracts stay pinned to the shipped compatibility window', () => {
   const compatibility = JSON.parse(
     fs.readFileSync(path.join(migrationRoot, 'runtime-compatibility.json'), 'utf8')) as {

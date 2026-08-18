@@ -152,11 +152,23 @@ jobs:
             chown root:root "$target"
             chmod 0640 "$target"
           done
-          gateway_secret=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
-            seemplify-extended-chatgpt-gateway-1 | awk -F= '$1=="CHATGPT_GATEWAY_SHARED_SECRET"{sub(/^[^=]*=/,""); print; exit}')
-          test -n "$gateway_secret"
-          printf '%s' "$gateway_secret" >"$knowledge_secret_dir/chatgpt-gateway"
-          unset gateway_secret
+          node - "$release_root/tools/local-llm/service-auth.cjs" \
+            "$knowledge_secret_dir/chatgpt-gateway" <<'NODE'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const { deriveServiceSecret } = require(process.argv[2]);
+          const environment = execFileSync('docker', [
+            'inspect', '--format', '{{range .Config.Env}}{{println .}}{{end}}',
+            'seemplify-extended-chatgpt-gateway-1'
+          ], { encoding: 'utf8' });
+          const prefix = 'CHATGPT_GATEWAY_SHARED_SECRET=';
+          const masterSecret = environment.split('\n')
+            .find((line) => line.startsWith(prefix))?.slice(prefix.length).trim();
+          if (!masterSecret) throw new Error('The ChatGPT gateway master secret is unavailable.');
+          fs.writeFileSync(process.argv[3], deriveServiceSecret(masterSecret, 'experience-management'), {
+            encoding: 'utf8', mode: 0o640
+          });
+          NODE
           chown root:root "$knowledge_secret_dir/chatgpt-gateway"
           chmod 0640 "$knowledge_secret_dir/chatgpt-gateway"
           for name in arango-app arango-provisioner; do
