@@ -120,6 +120,8 @@ jobs:
 
           test -s /opt/seemplify/secrets/platform-integrations/credential-encryption-key
           test -s /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
+          chown root:root /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
+          chmod 0640 /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
 
           export EXPERIENCE_IMAGE="$experience_image"
           export IDENTITY_PROVIDER_IMAGE="$identity_image"

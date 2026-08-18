@@ -256,6 +256,20 @@ message reached Gmail Inbox with SPF, DKIM and DMARC all passing.
 
 Experience Management and AI Interview run with their email mode set to `send`.
 
+## Platform integration secret permissions
+
+Keep `/opt/seemplify/secrets/platform-integrations/experience-hmac-secret`
+owned by `root:root` with mode `0640`. Recruiter runs as root. AI Interview runs
+as the unprivileged `node` user and receives supplemental group `0` only so it
+can read the bind-mounted HMAC file at
+`/run/seemplify/platform-integration-hmac`. Do not make the host secret
+world-readable and do not copy it into an image or environment variable.
+
+Azure Speech for AI Interview is centrally configured in Identity under
+**Admin → Media & Speech**. Identity encrypts the write-only provider key and
+delivers it only to the `ai-interview` and `recruiter` service identities over
+the signed internal configuration route.
+
 ## Retired Zulip service
 
 Zulip was retired on 17 August 2026. Its containers and Cloudflare DNS record
@@ -276,12 +290,14 @@ The base applications run without these integrations, but the related features
 remain disabled until the owner supplies and authorizes the credentials:
 
 - Azure OpenAI for Approver and other Azure-hosted AI features.
-- Azure Speech for AI Interview voice features.
 - Cloudinary for media uploads where enabled.
 - Nylas for connected inbox and calendar features.
 - Flutterwave and Paystack for paid Learning flows.
 - Per-user ChatGPT/Codex connected-account sessions.
 - Azure Blob or Cloudflare R2 for off-host backups.
+
+Azure Speech is configured centrally in Identity for AI Interview voice
+features; retain the encrypted access-vault recovery entry during rotations.
 
 ## Administrative follow-up
 

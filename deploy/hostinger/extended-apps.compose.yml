@@ -93,6 +93,11 @@ services:
   ai-interview-backend:
     <<: *defaults
     image: ${AI_INTERVIEW_BACKEND_IMAGE:-seemplify/ai-interview-backend:hostinger}
+    # The host-owned platform integration secret remains root:root 0640. The
+    # application runs as UID/GID 1000, so grant only the root supplemental
+    # group needed to read that single bind-mounted file.
+    group_add:
+      - "0"
     environment:
       NODE_ENV: production
       AI_INTERVIEW_BACKEND_PORT: "5101"
