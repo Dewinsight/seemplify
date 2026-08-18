@@ -64,10 +64,10 @@ jobs:
       - name: Build and test AI Interview frontend
         working-directory: ai-interview/frontend
         run: |
-          npm ci --ignore-scripts
-          npm run typecheck
-          npm run test:cv-upload
-          npm run build
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+          corepack pnpm run typecheck
+          corepack pnpm run test:cv-upload
+          corepack pnpm run build
       - name: Build marketing site
         working-directory: marketing-site
         run: |
@@ -256,6 +256,17 @@ jobs:
           wait_healthy seemplify-extended-marketing-1
           "${core[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
+          for container in \
+            seemplify-core-identity-provider-1 \
+            seemplify-core-recruiter-backend-1 \
+            seemplify-extended-experience-1 \
+            seemplify-extended-knowledge-runtime-1 \
+            seemplify-extended-ai-interview-backend-1 \
+            seemplify-extended-ai-interview-frontend-1 \
+            seemplify-extended-marketing-1; do
+            revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container")
+            [[ "$revision" == "$RELEASE_SHA" ]]
+          done
           /usr/local/sbin/seemplify-smoke
           rm -f "$archive"
           REMOTE
