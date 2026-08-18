@@ -39,6 +39,7 @@ jobs:
           node --test \
             test/auth-redirects.test.mjs \
             test/hub-pins.test.mjs \
+            test/nylas-platform-configuration.test.mjs \
             test/organization-deletion-fallback.test.mjs \
             test/shared-ai-admin-client.test.mjs
 
@@ -123,6 +124,9 @@ jobs:
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /usr/local/sbin/seemplify-smoke
           /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
+
+          test -s /opt/seemplify/secrets/platform-integrations/credential-encryption-key
+          test -s /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
 
           export IDENTITY_PROVIDER_IMAGE="$identity_image"
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"

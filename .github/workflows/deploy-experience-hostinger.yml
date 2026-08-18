@@ -44,8 +44,8 @@ jobs:
       - name: Test IdP Hub contracts
         working-directory: Identityprovider
         run: |
-          npm install --ignore-scripts
-          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs
+          npm ci --ignore-scripts
+          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs test/nylas-platform-configuration.test.mjs
       - name: Test shared gateway authentication
         working-directory: recruiter/backend
         run: node --test tests/internalServiceAuth.test.js
@@ -106,6 +106,9 @@ jobs:
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /usr/local/sbin/seemplify-smoke
           /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
+
+          test -s /opt/seemplify/secrets/platform-integrations/credential-encryption-key
+          test -s /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
 
           export EXPERIENCE_IMAGE="$experience_image"
           export IDENTITY_PROVIDER_IMAGE="$identity_image"

@@ -45,6 +45,8 @@ services:
       EXPERIENCE_MANAGEMENT_URL: https://experience.seemplifyai.com
       EXPERIENCE_OIDC_CLIENT_SECRET: ${OIDC_EXPERIENCE_SECRET:?required}
       EXPERIENCE_ADMIN_SSO_SECRET: ${EXPERIENCE_ADMIN_SSO_SECRET:?required}
+      IDP_PLATFORM_CREDENTIAL_ENCRYPTION_KEY_FILE: /run/seemplify/platform-integration-credential-key
+      IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /run/seemplify/platform-integration-experience-hmac
       MESSAGING_OIDC_CLIENT_SECRET: ${OIDC_MESSAGING_SECRET:?required}
       MESSAGING_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
       RECRUITER_ADMIN_URL: https://app.seemplifyai.com
@@ -71,6 +73,8 @@ services:
     volumes:
       - /opt/seemplify/secrets/idp-clients.json:/run/seemplify/idp-clients.json:ro
       - /opt/seemplify/secrets/automation-hub/identity-hmac-secret:/run/seemplify/automation-hub-hmac-secret:ro
+      - /opt/seemplify/secrets/platform-integrations/credential-encryption-key:/run/seemplify/platform-integration-credential-key:ro
+      - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-experience-hmac:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5008/.well-known/openid-configuration').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
