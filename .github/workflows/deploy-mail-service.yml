@@ -117,7 +117,7 @@ jobs:
             revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container")
             [[ "$revision" == "$RELEASE_SHA" ]]
           done
-          curl -fsS --max-time 15 https://mail-control.seemplifyai.com/health >/dev/null
+          curl -fsS --max-time 15 https://mail-control.seemplifyai.com/health/live >/dev/null
           /usr/local/sbin/seemplify-smoke
           rm -f "$archive"
           REMOTE
