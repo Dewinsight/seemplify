@@ -115,6 +115,12 @@ jobs:
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"
           core=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/core-apps.compose.yml)
           extended=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/extended-apps.compose.yml)
+          docker volume create seemplify-extended_experience_runtime >/dev/null
+          docker run --rm --user 0:0 --entrypoint sh \
+            -v /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/source-hmac:ro \
+            -v seemplify-extended_experience_runtime:/target \
+            "$experience_image" \
+            -c 'install -o 1000 -g 1000 -m 0400 /source-hmac /target/platform-integration-experience-hmac'
           wait_healthy() {
             local container="$1"
             for _ in $(seq 1 60); do

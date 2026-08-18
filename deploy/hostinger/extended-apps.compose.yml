@@ -43,7 +43,7 @@ services:
       OIDC_REDIRECT_URI: https://experience.seemplifyai.com/api/auth/oidc/callback
       EXPERIENCE_ADMIN_SSO_SECRET: ${EXPERIENCE_ADMIN_SSO_SECRET:?required}
       IDP_PLATFORM_CONFIGURATION_URL: http://identity-provider:5008
-      IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /run/seemplify/platform-integration-experience-hmac
+      IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE: /app/runtime/platform-integration-experience-hmac
       SEEMPLIFY_SHARED_AI_URL: http://recruiter-backend:5001
       EXPERIENCE_AI_SHARED_SECRET: ${EXPERIENCE_AI_SHARED_SECRET:?required}
       DATABASE_PROVIDER: postgres
@@ -71,7 +71,6 @@ services:
       AI_WORKER_CONCURRENCY: "1"
     volumes:
       - experience_runtime:/app/runtime
-      - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-experience-hmac:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
