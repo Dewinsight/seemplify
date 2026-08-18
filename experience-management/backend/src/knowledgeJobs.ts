@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { publishEvent } from './events.js';
 import { deleteKnowledgeIndex, indexKnowledgeDocument } from './knowledgeClient.js';
+import { sharedAiIdentityForUser } from './sharedAiGateway.js';
 import {
   claimNextKnowledgeJob, completeKnowledgeDelete, completeKnowledgeIndex, failKnowledgeJob,
   getKnowledgeBase, getKnowledgeDocument, knowledgeDocumentSourcePath,
@@ -29,8 +30,12 @@ async function executeKnowledgeJob(job: KnowledgeJobRecord) {
     publishKnowledgeJob(markKnowledgeJobStage(job, 'indexing', 45));
     const metadata = job.input.metadata && typeof job.input.metadata === 'object' && !Array.isArray(job.input.metadata)
       ? job.input.metadata as Record<string, unknown> : {};
+    const requesterUserId = knowledgeJobAudienceUserId(job);
+    if (!requesterUserId) throw new KnowledgeError('Knowledge graph extraction requires an authenticated requester.',
+      409, 'KNOWLEDGE_AI_IDENTITY_REQUIRED', false);
     const result = await indexKnowledgeDocument({
       jobId: job.id, spaceId: job.spaceId, targetVersion: job.targetVersion,
+      aiIdentity: sharedAiIdentityForUser(requesterUserId),
       targetEmbeddingProfiles: embeddingSnapshot.targetEmbeddingProfiles,
       dualWrite: embeddingSnapshot.dualWrite,
       knowledgeBase: {

@@ -249,6 +249,7 @@ function invalidRuntimeOutput(name: string, error: z.ZodError) {
 export async function indexKnowledgeDocument(input: {
   jobId: string;
   spaceId: string;
+  aiIdentity: { sub: string; email: string; displayName: string; organizationId?: string; organizationName?: string };
   knowledgeBase: KnowledgeBaseRef;
   targetEmbeddingProfiles: KnowledgeEmbeddingProfile[];
   dualWrite: boolean;
@@ -261,6 +262,7 @@ export async function indexKnowledgeDocument(input: {
   const raw = await postRuntime('/v1/index', {
     jobId: input.jobId,
     spaceId: input.spaceId,
+    aiIdentity: input.aiIdentity,
     knowledgeBase: { ...input.knowledgeBase, indexVersion: input.targetVersion,
       targetEmbeddingProfiles: input.targetEmbeddingProfiles, dualWrite: input.dualWrite },
     document: input.document

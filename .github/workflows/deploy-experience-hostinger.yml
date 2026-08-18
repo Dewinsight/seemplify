@@ -179,27 +179,11 @@ jobs:
             chown root:root "$target"
             chmod 0640 "$target"
           done
-          gateway_master_file=$(mktemp "$knowledge_secret_dir/.chatgpt-master.XXXXXX")
-          trap 'rm -f "$gateway_master_file"' EXIT
           docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
-            seemplify-extended-chatgpt-gateway-1 \
-            | awk -F= '$1=="CHATGPT_GATEWAY_SHARED_SECRET"{sub(/^[^=]*=/,""); print; exit}' \
-            >"$gateway_master_file"
-          test -s "$gateway_master_file"
-          chmod 0600 "$gateway_master_file"
-          docker run --rm --user 0:0 --entrypoint node \
-            -v "$gateway_master_file:/run/seemplify/chatgpt-master:ro" \
-            -v "$knowledge_secret_dir:/run/seemplify/knowledge-output" \
-            "$knowledge_image" -e '
-              const fs = require("node:fs");
-              const { deriveServiceSecret } = require("/local-llm/service-auth.cjs");
-              const masterSecret = fs.readFileSync("/run/seemplify/chatgpt-master", "utf8").trim();
-              if (!masterSecret) throw new Error("The ChatGPT gateway master secret is unavailable.");
-              fs.writeFileSync("/run/seemplify/knowledge-output/chatgpt-gateway",
-                deriveServiceSecret(masterSecret, "experience-management"), { encoding: "utf8", mode: 0o640 });
-            '
-          rm -f "$gateway_master_file"
-          trap - EXIT
+            seemplify-core-recruiter-backend-1 \
+            | awk -F= '$1=="EXPERIENCE_AI_SHARED_SECRET"{sub(/^[^=]*=/,""); print; exit}' \
+            >"$knowledge_secret_dir/chatgpt-gateway"
+          test -s "$knowledge_secret_dir/chatgpt-gateway"
           chown root:root "$knowledge_secret_dir/chatgpt-gateway"
           chmod 0640 "$knowledge_secret_dir/chatgpt-gateway"
           for name in arango-app arango-provisioner; do
@@ -265,6 +249,7 @@ jobs:
             seemplify-extended-ai-interview-frontend-1 \
             seemplify-extended-marketing-1; do
             revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container")
+            printf 'release %-48s expected=%s actual=%s\n' "$container" "$RELEASE_SHA" "${revision:-missing}"
             [[ "$revision" == "$RELEASE_SHA" ]]
           done
           /usr/local/sbin/seemplify-smoke

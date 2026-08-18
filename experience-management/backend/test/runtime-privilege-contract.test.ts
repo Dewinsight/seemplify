@@ -147,15 +147,14 @@ test('runtime-33 replaces fresh and cutover provider checks before seeding Azure
   assert.ok(source.indexOf('DROP CONSTRAINT %I') < source.indexOf("'azure-text-embedding-3-large-v1','azure-openai'"));
 });
 
-test('production provisions only the Experience-scoped ChatGPT credential for knowledge graph extraction', () => {
+test('production provisions only the Experience shared-AI credential for knowledge graph extraction', () => {
   const workflow = fs.readFileSync(
     path.resolve(backendRoot, '..', '..', '.github', 'workflows', 'deploy-experience-hostinger.yml'), 'utf8');
-  assert.match(workflow, /deriveServiceSecret\(masterSecret, "experience-management"\)/u);
+  assert.match(workflow, /\$1=="EXPERIENCE_AI_SHARED_SECRET"/u);
   assert.doesNotMatch(workflow, /printf '%s' "\$gateway_secret" >"\$knowledge_secret_dir\/chatgpt-gateway"/u);
-  assert.match(workflow, /docker run --rm --user 0:0 --entrypoint node/u);
-  assert.match(workflow, /\.chatgpt-master\.XXXXXX/u);
-  assert.match(workflow, /trap 'rm -f "\$gateway_master_file"' EXIT/u);
-  assert.doesNotMatch(workflow, /^\s*node - /mu, 'the Hostinger host does not provide a global Node runtime');
+  assert.match(workflow, /seemplify-core-recruiter-backend-1/u);
+  assert.doesNotMatch(workflow, /CHATGPT_GATEWAY_SHARED_SECRET/u,
+    'the knowledge runtime must not receive the hosted gateway master secret');
 });
 
 test('the runtime contracts stay pinned to the shipped compatibility window', () => {

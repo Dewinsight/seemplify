@@ -33,7 +33,7 @@ function decodeIdpOrganizationId(slug: unknown) {
   } catch { return null; }
 }
 
-function identityForUser(userId: string): GatewayIdentity {
+export function sharedAiIdentityForUser(userId: string): GatewayIdentity {
   const user = db.prepare('SELECT id,email,name,password_hash,active_space_id FROM users WHERE id=?').get(userId) as {
     email?: string; name?: string; password_hash?: string; active_space_id?: string | null;
   } | undefined;
@@ -86,7 +86,7 @@ export class SharedAiGatewayClient {
 
   private async request(operation: string, payload: Record<string, unknown> = {}, timeoutMs = 30_000) {
     const pathname = `${internalPath}/${operation.replace(/^\/+/, '')}`;
-    const body = JSON.stringify({ ...payload, identity: identityForUser(this.userId) });
+    const body = JSON.stringify({ ...payload, identity: sharedAiIdentityForUser(this.userId) });
     const response = await fetch(`${config.sharedAiBaseUrl}${pathname}`, {
       method: 'POST', headers: signedHeaders(pathname, body), body,
       signal: AbortSignal.timeout(Math.max(1_000, timeoutMs))

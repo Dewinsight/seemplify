@@ -70,7 +70,8 @@ const activities = {
   'experience.assistant.email_draft': ['Assistant email draft', 'Experience', 'medium', 'experience'],
   'experience.assistant.knowledge_answer': ['Assistant knowledge answer', 'Experience', 'high', 'experience'],
   'experience.assistant.work_product': ['Assistant work product', 'Experience', 'high', 'experience'],
-  'experience.knowledge.answer': ['Knowledge and research answer', 'Experience', 'high', 'experience']
+  'experience.knowledge.answer': ['Knowledge and research answer', 'Experience', 'high', 'experience'],
+  'experience.knowledge.graph_extract': ['Knowledge graph extraction', 'Experience', 'high', 'experience']
 };
 
 const ACTIVITY_DEFINITIONS = Object.freeze(Object.fromEntries(

@@ -6,9 +6,7 @@ const { AQL } = require('./aql.cjs');
 const { CONFIG } = require('./config.cjs');
 const { assertId, assertStagedSource, tenantDatabaseName } = require('./auth.cjs');
 const { EmbeddingMigrationController } = require('./migration-controller.cjs');
-const { signatureForServiceSecret } = require('../local-llm/service-auth.cjs');
 
-const LOCAL_LLM_SERVICE_ID = 'experience-management';
 
 const COLLECTIONS = Object.freeze([
   ['documents', 2], ['chunks', 2], ['experience_chunks_gte_v1', 2], ['entities', 2], ['claims', 2], ['relations', 3], ['operation_receipts', 2],
@@ -170,9 +168,20 @@ function validateIndexInput(input, config = CONFIG) {
   if (!config.supportedMimeTypes.includes(mimeType)) {
     throw runtimeError('This document type is not supported by the local knowledge runtime.', { code: 'UNSUPPORTED_DOCUMENT_TYPE', status: 415 });
   }
+  const identity = input.aiIdentity;
+  if (!identity || typeof identity !== 'object') {
+    throw runtimeError('A signed Experience AI identity is required for graph extraction.', { code: 'AI_IDENTITY_REQUIRED', status: 400 });
+  }
   return {
     jobId: assertId(input.jobId, 'jobId'),
     spaceId: assertId(input.spaceId, 'spaceId'),
+    aiIdentity: {
+      sub: boundedText(identity.sub, 300, 'aiIdentity.sub'),
+      email: boundedText(identity.email, 320, 'aiIdentity.email').toLowerCase(),
+      displayName: boundedText(identity.displayName, 300, 'aiIdentity.displayName'),
+      ...(identity.organizationId ? { organizationId: boundedText(identity.organizationId, 300, 'aiIdentity.organizationId') } : {}),
+      ...(identity.organizationName ? { organizationName: boundedText(identity.organizationName, 300, 'aiIdentity.organizationName') } : {}),
+    },
     knowledgeBase: {
       id: assertId(input.knowledgeBase?.id, 'knowledgeBase.id'),
       indexVersion: positiveInteger(input.knowledgeBase?.indexVersion, 'knowledgeBase.indexVersion'),
@@ -800,38 +809,30 @@ function groundedMentions(items, source, windowOffset) {
   });
 }
 
-async function chatgptGraphWindow(source, { jobId, windowIndex, windowOffset, fetchImpl = fetch, gatewaySecret, config = CONFIG }) {
-  const requestPath = '/v1/complete';
+async function chatgptGraphWindow(source, { jobId, windowIndex, windowOffset, fetchImpl = fetch, gatewaySecret, identity, config = CONFIG }) {
+  const requestPath = '/api/internal/ai/v1/complete';
+  const serviceId = 'experience-management';
   const eventId = `usage_${stableKey('knowledge-graph', jobId, windowIndex).slice(0, 48)}`;
   const body = JSON.stringify({
-    activity: 'experience.knowledge_graph_extract', executionMode: 'local-only', runtimeProfile: 'experience-management', requestSource: 'knowledge-runtime',
-    metering: { record: true, eventId, gatewayExecutionId: `localexec_${stableKey(eventId).slice(0, 48)}`, requestId: `${jobId}:${windowIndex}`, sourceApp: 'experience-management' },
+    activity: 'experience.knowledge.graph_extract', identity,
     messages: [
       { role: 'system', content: 'Extract only entities, factual claims, and semantic relations explicitly supported by the supplied source. Every item must cite an exact source quote and zero-based start/end offsets relative to this source window. Do not infer missing facts. Keep relation types concise and stable.' },
       { role: 'user', content: `SOURCE WINDOW ${windowIndex}\n${source}` },
     ],
     jsonSchema: GRAPH_SCHEMA, schemaName: 'experience_knowledge_graph_v1', temperature: 0, maxTokens: 8_000,
+    promptVersion: 'experience-knowledge-graph-v1',
+    context: { requestId: `${jobId}:${windowIndex}`, sourceApp: serviceId, eventId },
   });
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(24).toString('base64url');
-  const signed = {
-    timestamp,
-    nonce,
-    signature: signatureForServiceSecret(gatewaySecret, {
-      timestamp,
-      nonce,
-      serviceId: LOCAL_LLM_SERVICE_ID,
-      method: 'POST',
-      requestPath,
-      rawBody: body
-    })
-  };
+  const signed = { timestamp, nonce, signature: crypto.createHmac('sha256', gatewaySecret)
+    .update([timestamp, nonce, serviceId, 'POST', requestPath, body].join('\n')).digest('hex') };
   let response;
   try {
-    response = await fetchImpl(`${config.services?.chatgpt || `http://${config.host}:11435`}${requestPath}`, {
+    response = await fetchImpl(`${config.services?.sharedAi || 'http://recruiter-backend:5001/api/internal/ai/v1'}/complete`, {
       method: 'POST', headers: {
         'content-type': 'application/json',
-        'x-seemplify-service': LOCAL_LLM_SERVICE_ID,
+        'x-seemplify-service': serviceId,
         'x-seemplify-signature-version': '2',
         'x-seemplify-timestamp': signed.timestamp,
         'x-seemplify-nonce': signed.nonce,
@@ -1179,7 +1180,9 @@ function createKnowledgeRuntime(options = {}) {
       for (const profile of targets) {
         vectorsByProvider.set(profile.provider, await embedForProfile(profile, chunks.map((chunk) => chunk.text), { priority: 'live-index', requestId: `${input.jobId}:${profile.provider}` }));
       }
-      const graph = await (options.extractGraph || extractGraph)(extracted.text, { jobId: input.jobId, config, fetchImpl, gatewaySecret });
+      const graph = await (options.extractGraph || extractGraph)(extracted.text, {
+        jobId: input.jobId, config, fetchImpl, gatewaySecret, identity: input.aiIdentity
+      });
       const canonical = canonicalizeGraph(graph, input, chunks);
       const now = new Date().toISOString();
       const revisionKey = stableKey(input.document.id, input.knowledgeBase.indexVersion);

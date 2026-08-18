@@ -120,6 +120,7 @@ const CONFIG = Object.freeze({
     azureEmbedding: String(process.env.AZURE_OPENAI_EMBEDDING_URL || '').trim(),
     docling: String(process.env.DOCLING_URL || `http://${SERVICE_HOST}:11543`).replace(/\/$/u, ''),
     chatgpt: String(process.env.CHATGPT_GATEWAY_URL || `http://${SERVICE_HOST}:11435`).replace(/\/$/u, ''),
+    sharedAi: String(process.env.SHARED_AI_GATEWAY_URL || 'http://recruiter-backend:5001/api/internal/ai/v1').replace(/\/$/u, ''),
   }),
   limits: Object.freeze({
     requestBytes: 1024 * 1024,

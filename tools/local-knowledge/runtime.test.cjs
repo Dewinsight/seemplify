@@ -103,13 +103,16 @@ test('only transport, 429, and upstream 5xx failures are retryable', () => {
   assert.equal(upstreamResponseError('chatgpt_graph', { status: 500 }, 'offline').retryable, true);
 });
 
-test('Experience knowledge graph calls use its v2 Local LLM service credential', async () => {
+test('Experience knowledge graph calls use the central shared AI gateway and service credential', async () => {
   let captured;
   const serviceSecret = 'experience-local-service-secret';
   await extractGraph('Acme supports Beta.', {
     jobId: 'job-service-auth',
     gatewaySecret: serviceSecret,
-    config: { ...CONFIG, host: '127.0.0.1', limits: { ...CONFIG.limits, graphWindowCharacters: 1000 } },
+    identity: { sub: 'idp-user-1', email: 'user@example.test', displayName: 'Test User' },
+    config: { ...CONFIG, host: '127.0.0.1',
+      services: { ...CONFIG.services, sharedAi: 'http://127.0.0.1:5001/api/internal/ai/v1' },
+      limits: { ...CONFIG.limits, graphWindowCharacters: 1000 } },
     fetchImpl: async (url, init) => {
       captured = { url, init };
       return new Response(JSON.stringify({ data: { entities: [], claims: [], relations: [] } }), {
@@ -118,7 +121,7 @@ test('Experience knowledge graph calls use its v2 Local LLM service credential',
       });
     }
   });
-  assert.equal(captured.url, 'http://127.0.0.1:11435/v1/complete');
+  assert.equal(captured.url, 'http://127.0.0.1:5001/api/internal/ai/v1/complete');
   assert.equal(captured.init.headers['x-seemplify-service'], 'experience-management');
   assert.equal(captured.init.headers['x-seemplify-signature-version'], '2');
   const body = captured.init.body;
@@ -126,10 +129,13 @@ test('Experience knowledge graph calls use its v2 Local LLM service credential',
     .update([
       captured.init.headers['x-seemplify-timestamp'],
       captured.init.headers['x-seemplify-nonce'],
-      'experience-management', 'POST', '/v1/complete', body
+      'experience-management', 'POST', '/api/internal/ai/v1/complete', body
     ].join('\n'))
-    .digest('base64url');
+    .digest('hex');
   assert.equal(captured.init.headers['x-seemplify-signature'], expected);
+  const payload = JSON.parse(body);
+  assert.equal(payload.activity, 'experience.knowledge.graph_extract');
+  assert.equal(payload.identity.sub, 'idp-user-1');
 });
 
 test('Arango ingesting is treated as an in-progress vector training state', async () => {
@@ -355,6 +361,7 @@ test('index response exposes canonical relationshipCount and scoped receipt meta
     });
     const result = await runtime.index({
       jobId: 'job_contract', spaceId: 'space_contract',
+      aiIdentity: { sub: 'idp-user-1', email: 'user@example.test', displayName: 'Test User' },
       knowledgeBase: { id: 'base_contract', indexVersion: 1, embeddingModel: config.models.embedding.id, embeddingDimension: 2, chunkerVersion: 'structured-v1' },
       document: { id: 'doc_contract', sourcePath: filename, originalName: 'source.md', mimeType: 'text/markdown', sizeBytes: fs.statSync(filename).size, sha256: crypto.createHash('sha256').update(fs.readFileSync(filename)).digest('hex'), metadata: {} },
     });
