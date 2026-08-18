@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
       - name: Install Recruiter test dependencies
         working-directory: recruiter/backend
-        run: npm install --ignore-scripts --no-package-lock
+        run: npm install --ignore-scripts --no-package-lock --legacy-peer-deps
       - name: Verify gateway metering and Recruiter ingestion
         run: |
           node --test \
