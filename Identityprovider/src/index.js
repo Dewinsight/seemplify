@@ -161,7 +161,8 @@ async function getCachedClaims(acc) {
       branchName: currentOrganizationClaim.branchName || null,
       branchCode: currentOrganizationClaim.branchCode || null,
       designation: currentOrganizationClaim.designation || null,
-      employeeId: currentOrganizationClaim.employeeId || null
+      employeeId: currentOrganizationClaim.employeeId || null,
+      appAccess: currentOrganizationClaim.appAccess
     }
     : (acc.currentOrganization
       ? {

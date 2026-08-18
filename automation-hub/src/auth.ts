@@ -77,11 +77,11 @@ async function client() {
 
 type OrganizationClaim = { id?: unknown; name?: unknown; role?: unknown; appAccess?: { mode?: unknown; appIds?: unknown } };
 
-function actorFromClaims(claims: Record<string, unknown>): SessionActor {
+export function actorFromClaims(claims: Record<string, unknown>): SessionActor {
   const organizations = Array.isArray(claims.organizations) ? claims.organizations as OrganizationClaim[] : [];
   const current = (claims.current_organization || claims.currentOrganization) as OrganizationClaim | undefined;
   const currentId = String(current?.id || "").trim();
-  const organization = organizations.find((item) => String(item.id || "") === currentId) || organizations[0];
+  const organization = organizations.find((item) => String(item.id || "") === currentId) || organizations[0] || current;
   const appAccess = organization?.appAccess;
   const appIds = Array.isArray(appAccess?.appIds) ? appAccess.appIds.map(String) : [];
   const selected = String(appAccess?.mode || "all").toLowerCase() === "selected";

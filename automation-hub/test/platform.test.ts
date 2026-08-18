@@ -78,6 +78,25 @@ before(async () => {
 
 after(async () => { await closeHub?.(); await closeMock?.(); });
 
+test("OIDC accepts the canonical current organization claim", async () => {
+  const { actorFromClaims } = await import("../src/auth.js");
+  const actor = actorFromClaims({
+    sub: "identity-user-1",
+    email: "member@example.test",
+    email_verified: true,
+    name: "Member One",
+    current_organization: {
+      id: "org-current",
+      name: "Current Org",
+      role: "admin",
+      appAccess: { mode: "selected", appIds: ["automation-hub"] },
+    },
+  });
+
+  assert.equal(actor.organizationId, "org-current");
+  assert.equal(actor.role, "admin");
+});
+
 test("compiler rejects unsafe and nonsensical workflows", async () => {
   const { compileWorkflow } = await import("../src/compiler.js");
   const exactApprovalMissing = compileWorkflow({
