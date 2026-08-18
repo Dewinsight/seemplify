@@ -139,6 +139,14 @@ test('runtime-32 snapshots managed storage coordinates on every persisted upload
   }
 });
 
+test('runtime-33 replaces fresh and cutover provider checks before seeding Azure embeddings', () => {
+  const source = fs.readFileSync(path.join(migrationRoot, '0033_azure_knowledge_embeddings.sql'), 'utf8');
+  assert.match(source, /pg_get_constraintdef\(constraint_record\.oid\) ILIKE '%provider%'/u);
+  assert.match(source, /DROP CONSTRAINT %I/u);
+  assert.match(source, /CHECK\(provider IN \('azure-openai','qwen-tei','gte-node'\)\)/u);
+  assert.ok(source.indexOf('DROP CONSTRAINT %I') < source.indexOf("'azure-text-embedding-3-large-v1','azure-openai'"));
+});
+
 test('the runtime contracts stay pinned to the shipped compatibility window', () => {
   const compatibility = JSON.parse(
     fs.readFileSync(path.join(migrationRoot, 'runtime-compatibility.json'), 'utf8')) as {

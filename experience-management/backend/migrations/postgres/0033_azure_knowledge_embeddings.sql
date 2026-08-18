@@ -1,6 +1,23 @@
 ALTER TABLE knowledge_embedding_profiles
   DROP CONSTRAINT IF EXISTS knowledge_embedding_profiles_provider_check;
 
+-- SQLite-to-PostgreSQL cutovers assign deterministic hashed names to imported
+-- checks. Remove only provider checks regardless of their historical name so
+-- both fresh and migrated databases converge on the same Azure-capable rule.
+DO $$
+DECLARE provider_constraint TEXT;
+BEGIN
+  FOR provider_constraint IN
+    SELECT constraint_record.conname
+    FROM pg_constraint constraint_record
+    WHERE constraint_record.conrelid='knowledge_embedding_profiles'::regclass
+      AND constraint_record.contype='c'
+      AND pg_get_constraintdef(constraint_record.oid) ILIKE '%provider%'
+  LOOP
+    EXECUTE format('ALTER TABLE knowledge_embedding_profiles DROP CONSTRAINT %I', provider_constraint);
+  END LOOP;
+END $$;
+
 ALTER TABLE knowledge_embedding_profiles
   ADD CONSTRAINT knowledge_embedding_profiles_provider_check
   CHECK(provider IN ('azure-openai','qwen-tei','gte-node'));
