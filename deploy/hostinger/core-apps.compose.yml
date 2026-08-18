@@ -40,6 +40,7 @@ services:
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
       AUTOMATION_HUB_URL: https://automations.seemplifyai.com
       AUTOMATION_HUB_API_URL: https://automations.seemplifyai.com
+      AUTOMATION_HUB_OIDC_CLIENT_SECRET_FILE: /run/seemplify/automation-hub-oidc-client-secret
       AUTOMATION_HUB_HMAC_SECRET_FILE: /run/seemplify/automation-hub-hmac-secret
       APPROVER_URL: https://approver.seemplifyai.com
       EXPERIENCE_MANAGEMENT_URL: https://experience.seemplifyai.com
@@ -80,6 +81,7 @@ services:
       AI_GATEWAY_ADMIN_ANALYTICS_SECRET: ${AI_GATEWAY_ADMIN_ANALYTICS_SECRET:?required}
     volumes:
       - /opt/seemplify/secrets/idp-clients.json:/run/seemplify/idp-clients.json:ro
+      - /opt/seemplify/secrets/automation-hub/oidc-client-secret:/run/seemplify/automation-hub-oidc-client-secret:ro
       - /opt/seemplify/secrets/automation-hub/identity-hmac-secret:/run/seemplify/automation-hub-hmac-secret:ro
       - /opt/seemplify/secrets/platform-integrations/credential-encryption-key:/run/seemplify/platform-integration-credential-key:ro
       - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-experience-hmac:ro

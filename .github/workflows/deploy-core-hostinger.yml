@@ -46,6 +46,7 @@ jobs:
       - name: Verify identity, admin analytics, and organization switching
         run: |
           node --test \
+            test/automation-hub-oidc-client.test.mjs \
             test/auth-redirects.test.mjs \
             test/hub-pins.test.mjs \
             test/nylas-platform-configuration.test.mjs \
