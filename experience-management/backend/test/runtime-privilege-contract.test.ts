@@ -129,6 +129,13 @@ test('runtime-32 snapshots managed storage coordinates on every persisted upload
     assert.match(source, new RegExp(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS storage_key`, 'u'));
     assert.match(source, new RegExp(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS storage_container`, 'u'));
     assert.match(source, new RegExp(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS storage_resource_type`, 'u'));
+    assert.match(source, new RegExp(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS storage_url`, 'u'));
+  }
+
+  const outboxContract = /journey_asset_blob_purge_outbox:\s*\[([\s\S]*?)\n\s*\],/u.exec(contractSource)?.[1] ?? '';
+  for (const column of ['storage_provider', 'storage_key', 'storage_container', 'storage_resource_type', 'storage_url']) {
+    assert.match(outboxContract, new RegExp(`\\['${column}'`, 'u'),
+      `the runtime-32 exact column contract must include ${column}`);
   }
 });
 
