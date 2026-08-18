@@ -38,12 +38,6 @@ export function fingerprintNylasGrant(grantId: string) {
   return crypto.createHmac('sha256', encryptionKey()).update(`nylas-grant\n${grantId}`).digest('base64url');
 }
 
-export function deriveNylasPkceVerifier(oauthState: string) {
-  return crypto.createHmac('sha256', encryptionKey())
-    .update(`nylas-pkce\n${oauthState}`)
-    .digest('base64url');
-}
-
 export function resetNylasSecretKeyCacheForTests() { cachedKey = null; }
 
 export function nylasSecretEncryptionConfigured() {
