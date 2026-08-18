@@ -101,7 +101,11 @@ const SubscriptionSchema = new mongoose.Schema({
     timeAttendance: { type: Boolean },
     outlineDocs: { type: Boolean },
     aiChat: { type: Boolean },
-    lms: { type: Boolean }
+    lms: { type: Boolean },
+    workspace: { type: Boolean },
+    automationHub: { type: Boolean },
+    experienceManagement: { type: Boolean },
+    approver: { type: Boolean }
   },
 
   // Audit Trail
@@ -204,7 +208,11 @@ SubscriptionSchema.methods.getEffectiveFeatures = async function() {
       timeAttendance: false,
       outlineDocs: false,
       aiChat: false,
-      lms: false
+      lms: false,
+      workspace: false,
+      automationHub: false,
+      experienceManagement: false,
+      approver: false
     }
   }
 

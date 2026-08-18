@@ -26,6 +26,7 @@ import {
 } from '../services/campaignOperationsService.js'
 import { brevoMarketingService } from '../services/brevoMarketingService.js'
 import { compileCampaignTemplateContent } from '../services/campaignRenderer.js'
+import { loadCampaignAudienceSummaries } from '../services/campaignWorkspaceService.js'
 
 const router = express.Router()
 const upload = multer({
@@ -223,7 +224,9 @@ router.use(adminRateLimit({ maxRequests: 240, windowMs: 15 * 60 * 1000, keyPrefi
 
 router.get('/campaign-templates', async (req, res) => {
   try {
-    await ensureSystemCampaignTemplates()
+    await ensureSystemCampaignTemplates().catch((error) => {
+      console.error('Campaign template sync failed; using persisted templates:', error)
+    })
     const templates = await CampaignTemplate.find()
       .sort({ systemTemplate: -1, updatedAt: -1 })
       .lean()
@@ -236,17 +239,8 @@ router.get('/campaign-templates', async (req, res) => {
 
 router.get('/campaign-audiences', async (req, res) => {
   try {
-    const audiences = await CampaignAudience.find()
-      .sort({ updatedAt: -1 })
-      .select('name slug description sourceType sourceFileName columnMap importSummary contacts createdAt updatedAt')
-      .lean()
-
-    res.json({
-      audiences: audiences.map((audience) => ({
-        ...audience,
-        contactCount: Array.isArray(audience.contacts) ? audience.contacts.length : 0
-      }))
-    })
+    const audiences = await loadCampaignAudienceSummaries(CampaignAudience)
+    res.json({ audiences })
   } catch (error) {
     console.error('List campaign audiences error:', error)
     res.status(500).json({ error: 'Failed to load campaign audiences.' })

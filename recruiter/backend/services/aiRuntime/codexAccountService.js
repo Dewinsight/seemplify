@@ -215,6 +215,9 @@ async function ensureCanonicalCredential(account, options = {}) {
 function applyStatus(account, status) {
   const connected = status?.connected === true;
   account.status = connected ? 'connected' : status?.pendingLogin ? 'pending' : 'disconnected';
+  if (connected && !account.dataSharingAcknowledgedAt) {
+    account.dataSharingAcknowledgedAt = new Date();
+  }
   account.connectedEmail = connected
     ? (status?.email === undefined ? account.connectedEmail : String(status.email || ''))
     : '';
@@ -294,11 +297,9 @@ async function resetLogin(user, options = {}) {
   return { result, account };
 }
 
-/**
- * Consent is revocable at any time and the revocation path never depends on the
- * gateway: an unreachable host must not be able to keep a user's content
- * flowing to OpenAI.
- */
+/** Product-specific processing acknowledgements remain independent. Recruiter
+ * processing is mandatory while its ChatGPT connection is active; the other
+ * products retain their own explicit on/off choices. */
 async function setConsent(user, acknowledged, { app = 'recruiter' } = {}) {
   const account = await accountForUser(user);
   if (app === 'performance') {
@@ -308,7 +309,7 @@ async function setConsent(user, acknowledged, { app = 'recruiter' } = {}) {
   } else if (app === 'experience') {
     account.experienceDataSharingAcknowledgedAt = acknowledged ? new Date() : null;
   } else {
-    account.dataSharingAcknowledgedAt = acknowledged ? new Date() : null;
+    account.dataSharingAcknowledgedAt = account.dataSharingAcknowledgedAt || new Date();
   }
   await account.save();
   return account;

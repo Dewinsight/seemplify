@@ -200,20 +200,6 @@ export default function AiAccountPage() {
     } finally { setWorking("") }
   }
 
-  async function setConsent(acknowledged: boolean) {
-    setWorking("consent")
-    try {
-      const { account: next } = await aiAccountService.setConsent(acknowledged)
-      setAccount(next)
-      toast.success(acknowledged
-        ? "ChatGPT may now run your AI tasks."
-        : "Consent withdrawn. Your AI tasks will not use ChatGPT.")
-    } catch (reason: any) {
-      const message = reason?.message || "Your consent choice could not be saved."
-      setError(message); toast.error(message)
-    } finally { setWorking("") }
-  }
-
   async function disconnect() {
     setWorking("disconnect")
     try {
@@ -447,9 +433,8 @@ export default function AiAccountPage() {
                 <Checkbox
                   id="ai-account-consent"
                   data-testid="ai-account-consent"
-                  checked={Boolean(account?.dataSharingAcknowledgedAt)}
-                  disabled={working === "consent"}
-                  onCheckedChange={(value) => void setConsent(value === true)}
+                  checked
+                  disabled
                 />
                 <div className="space-y-1">
                   <Label htmlFor="ai-account-consent" className="text-sm font-medium">
@@ -458,13 +443,8 @@ export default function AiAccountPage() {
                   <p className="text-xs leading-5 text-muted-foreground">
                     Candidate data, job descriptions, and interview content in the tasks you run will be sent to OpenAI
                     using this connection. This consent applies only to Recruiter; Performance and Workspace ask separately.
-                    If you withdraw consent, Recruiter&apos;s ChatGPT-powered tasks pause until consent is restored.
+                    Recruiter AI processing remains enabled while this ChatGPT account is connected.
                   </p>
-                  {!account?.routable && (
-                    <p className="text-xs font-medium text-amber-600">
-                      Consent is required before anything is routed to your account.
-                    </p>
-                  )}
                 </div>
               </div>
             </div>

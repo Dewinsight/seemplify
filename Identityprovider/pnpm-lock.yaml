@@ -4,19 +4,19 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  axios: ^1.14.0
+
 importers:
 
   .:
     dependencies:
       '@node-saml/passport-saml':
         specifier: ^5.1.0
-        version: 5.1.0(supports-color@5.5.0)
+        version: 5.1.0
       axios:
         specifier: ^1.14.0
-        version: 1.14.0(debug@4.4.3(supports-color@5.5.0))
-      bcrypt:
-        specifier: ^5.1.1
-        version: 5.1.1(supports-color@5.5.0)
+        version: 1.14.0
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -34,28 +34,28 @@ importers:
         version: 3.1.10
       express:
         specifier: ^4.21.2
-        version: 4.22.1(supports-color@5.5.0)
+        version: 4.22.1
       express-session:
         specifier: ^1.18.0
-        version: 1.19.0(supports-color@5.5.0)
+        version: 1.19.0
       jose:
         specifier: ^5.9.0
         version: 5.10.0
       mongoose:
         specifier: ^8.15.1
-        version: 8.20.2(supports-color@5.5.0)
+        version: 8.20.2
       multer:
         specifier: ^1.4.5-lts.1
         version: 1.4.5-lts.2
       oidc-provider:
         specifier: ^8.4.2
-        version: 8.8.1(supports-color@5.5.0)
+        version: 8.8.1
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
       pdfjs-dist:
         specifier: ^3.11.174
-        version: 3.11.174(supports-color@5.5.0)
+        version: 3.11.174
       pg:
         specifier: ^8.11.3
         version: 8.20.0
@@ -67,7 +67,7 @@ importers:
         version: 2.12.0
       web-push:
         specifier: ^3.6.7
-        version: 3.6.7(supports-color@5.5.0)
+        version: 3.6.7
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -265,10 +265,6 @@ packages:
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
-
-  bcrypt@5.1.1:
-    resolution: {integrity: sha512-AGBHOG5hPYZ5Xl9KXzU5iKq9516yEmvCKDg3ecP5kX2aB6UqTeXZxk2ELnDgDm6BQSMlLt9rDB4LoSMx0rYwww==}
-    engines: {node: '>= 10.0.0'}
 
   bcryptjs@3.0.3:
     resolution: {integrity: sha512-GlF5wPWnSa/X5LKM1o0wz0suXIINz1iHRLvTS+sLyi7XPbe5ycmYI3DlZqVGZZtDgl4DmasFg7gOB3JYbphV5g==}
@@ -935,9 +931,6 @@ packages:
     resolution: {integrity: sha512-+EUsqGPLsM+j/zdChZjsnX51g4XrHFOIXwfnCVPGlQk/k5giakcKsuxCObBRu6DSm9opw/O6slWbJdghQM4bBg==}
     engines: {node: '>= 0.6'}
 
-  node-addon-api@5.1.0:
-    resolution: {integrity: sha512-eh0GgfEkpnoWDq+VY8OyvYhFEzBk6jIYbRKdIlyTiAXIVJ8PyBaKb0rp7oDtoddbdoHWhq8wwr+XZ81F1rpNdA==}
-
   node-fetch@2.7.0:
     resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
     engines: {node: 4.x || >=6.0.0}
@@ -1503,7 +1496,7 @@ snapshots:
     dependencies:
       vary: 1.1.2
 
-  '@koa/router@13.1.1(supports-color@5.5.0)':
+  '@koa/router@13.1.1':
     dependencies:
       debug: 4.4.3(supports-color@5.5.0)
       http-errors: 2.0.1
@@ -1512,10 +1505,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@mapbox/node-pre-gyp@1.0.11(supports-color@5.5.0)':
+  '@mapbox/node-pre-gyp@1.0.11':
     dependencies:
       detect-libc: 2.1.2
-      https-proxy-agent: 5.0.1(supports-color@5.5.0)
+      https-proxy-agent: 5.0.1
       make-dir: 3.1.0
       node-fetch: 2.7.0
       nopt: 5.0.0
@@ -1526,12 +1519,13 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - supports-color
+    optional: true
 
   '@mongodb-js/saslprep@1.4.0':
     dependencies:
       sparse-bitfield: 3.0.3
 
-  '@node-saml/node-saml@5.1.0(supports-color@5.5.0)':
+  '@node-saml/node-saml@5.1.0':
     dependencies:
       '@types/debug': 4.1.13
       '@types/qs': 6.15.0
@@ -1548,9 +1542,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@node-saml/passport-saml@5.1.0(supports-color@5.5.0)':
+  '@node-saml/passport-saml@5.1.0':
     dependencies:
-      '@node-saml/node-saml': 5.1.0(supports-color@5.5.0)
+      '@node-saml/node-saml': 5.1.0
       '@types/express': 4.17.25
       '@types/passport': 1.0.17
       '@types/passport-strategy': 0.2.38
@@ -1664,7 +1658,8 @@ snapshots:
 
   '@xmldom/xmldom@0.8.12': {}
 
-  abbrev@1.1.1: {}
+  abbrev@1.1.1:
+    optional: true
 
   accepts@1.3.8:
     dependencies:
@@ -1673,15 +1668,17 @@ snapshots:
 
   adler-32@1.3.1: {}
 
-  agent-base@6.0.2(supports-color@5.5.0):
+  agent-base@6.0.2:
     dependencies:
       debug: 4.4.3(supports-color@5.5.0)
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   agent-base@7.1.4: {}
 
-  ansi-regex@5.0.1: {}
+  ansi-regex@5.0.1:
+    optional: true
 
   anymatch@3.1.3:
     dependencies:
@@ -1690,12 +1687,14 @@ snapshots:
 
   append-field@1.0.0: {}
 
-  aproba@2.1.0: {}
+  aproba@2.1.0:
+    optional: true
 
   are-we-there-yet@2.0.0:
     dependencies:
       delegates: 1.0.0
       readable-stream: 3.6.2
+    optional: true
 
   array-flatten@1.1.1: {}
 
@@ -1716,9 +1715,9 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
-  axios@1.14.0(debug@4.4.3(supports-color@5.5.0)):
+  axios@1.14.0:
     dependencies:
-      follow-redirects: 1.15.11(debug@4.4.3(supports-color@5.5.0))
+      follow-redirects: 1.15.11
       form-data: 4.0.5
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
@@ -1726,25 +1725,17 @@ snapshots:
 
   balanced-match@1.0.2: {}
 
-  bcrypt@5.1.1(supports-color@5.5.0):
-    dependencies:
-      '@mapbox/node-pre-gyp': 1.0.11(supports-color@5.5.0)
-      node-addon-api: 5.1.0
-    transitivePeerDependencies:
-      - encoding
-      - supports-color
-
   bcryptjs@3.0.3: {}
 
   binary-extensions@2.3.0: {}
 
   bn.js@4.12.5: {}
 
-  body-parser@1.20.4(supports-color@5.5.0):
+  body-parser@1.20.4:
     dependencies:
       bytes: 3.1.2
       content-type: 1.0.5
-      debug: 2.6.9(supports-color@5.5.0)
+      debug: 2.6.9
       depd: 2.0.0
       destroy: 1.2.0
       http-errors: 2.0.1
@@ -1809,9 +1800,9 @@ snapshots:
       call-bind-apply-helpers: 1.0.2
       get-intrinsic: 1.3.0
 
-  canvas@2.11.2(supports-color@5.5.0):
+  canvas@2.11.2:
     dependencies:
-      '@mapbox/node-pre-gyp': 1.0.11(supports-color@5.5.0)
+      '@mapbox/node-pre-gyp': 1.0.11
       nan: 2.26.2
       simple-get: 3.1.1
     transitivePeerDependencies:
@@ -1836,7 +1827,8 @@ snapshots:
     optionalDependencies:
       fsevents: 2.3.3
 
-  chownr@2.0.0: {}
+  chownr@2.0.0:
+    optional: true
 
   cloudinary@2.9.0:
     dependencies:
@@ -1846,7 +1838,8 @@ snapshots:
 
   codepage@1.15.0: {}
 
-  color-support@1.1.3: {}
+  color-support@1.1.3:
+    optional: true
 
   combined-stream@1.0.8:
     dependencies:
@@ -1861,7 +1854,8 @@ snapshots:
       readable-stream: 2.3.8
       typedarray: 0.0.6
 
-  console-control-strings@1.1.0: {}
+  console-control-strings@1.1.0:
+    optional: true
 
   content-disposition@0.5.4:
     dependencies:
@@ -1889,11 +1883,9 @@ snapshots:
 
   crc-32@1.2.2: {}
 
-  debug@2.6.9(supports-color@5.5.0):
+  debug@2.6.9:
     dependencies:
       ms: 2.0.0
-    optionalDependencies:
-      supports-color: 5.5.0
 
   debug@4.4.3(supports-color@5.5.0):
     dependencies:
@@ -1924,7 +1916,8 @@ snapshots:
 
   destroy@1.2.0: {}
 
-  detect-libc@2.1.2: {}
+  detect-libc@2.1.2:
+    optional: true
 
   dotenv@16.6.1: {}
 
@@ -1944,7 +1937,8 @@ snapshots:
     dependencies:
       jake: 10.9.4
 
-  emoji-regex@8.0.0: {}
+  emoji-regex@8.0.0:
+    optional: true
 
   encodeurl@1.0.2: {}
 
@@ -1971,11 +1965,11 @@ snapshots:
 
   etag@1.8.1: {}
 
-  express-session@1.19.0(supports-color@5.5.0):
+  express-session@1.19.0:
     dependencies:
       cookie: 0.7.2
       cookie-signature: 1.0.7
-      debug: 2.6.9(supports-color@5.5.0)
+      debug: 2.6.9
       depd: 2.0.0
       on-headers: 1.1.0
       parseurl: 1.3.3
@@ -1984,21 +1978,21 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  express@4.22.1(supports-color@5.5.0):
+  express@4.22.1:
     dependencies:
       accepts: 1.3.8
       array-flatten: 1.1.1
-      body-parser: 1.20.4(supports-color@5.5.0)
+      body-parser: 1.20.4
       content-disposition: 0.5.4
       content-type: 1.0.5
       cookie: 0.7.2
       cookie-signature: 1.0.7
-      debug: 2.6.9(supports-color@5.5.0)
+      debug: 2.6.9
       depd: 2.0.0
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
-      finalhandler: 1.3.2(supports-color@5.5.0)
+      finalhandler: 1.3.2
       fresh: 0.5.2
       http-errors: 2.0.1
       merge-descriptors: 1.0.3
@@ -2010,8 +2004,8 @@ snapshots:
       qs: 6.14.0
       range-parser: 1.2.1
       safe-buffer: 5.2.1
-      send: 0.19.1(supports-color@5.5.0)
-      serve-static: 1.16.2(supports-color@5.5.0)
+      send: 0.19.1
+      serve-static: 1.16.2
       setprototypeof: 1.2.0
       statuses: 2.0.2
       type-is: 1.6.18
@@ -2028,9 +2022,9 @@ snapshots:
     dependencies:
       to-regex-range: 5.0.1
 
-  finalhandler@1.3.2(supports-color@5.5.0):
+  finalhandler@1.3.2:
     dependencies:
-      debug: 2.6.9(supports-color@5.5.0)
+      debug: 2.6.9
       encodeurl: 2.0.0
       escape-html: 1.0.3
       on-finished: 2.4.1
@@ -2040,9 +2034,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  follow-redirects@1.15.11(debug@4.4.3(supports-color@5.5.0)):
-    optionalDependencies:
-      debug: 4.4.3(supports-color@5.5.0)
+  follow-redirects@1.15.11: {}
 
   form-data-encoder@2.1.4: {}
 
@@ -2063,8 +2055,10 @@ snapshots:
   fs-minipass@2.1.0:
     dependencies:
       minipass: 3.3.6
+    optional: true
 
-  fs.realpath@1.0.0: {}
+  fs.realpath@1.0.0:
+    optional: true
 
   fsevents@2.3.2:
     optional: true
@@ -2085,6 +2079,7 @@ snapshots:
       string-width: 4.2.3
       strip-ansi: 6.0.1
       wide-align: 1.1.5
+    optional: true
 
   generator-function@2.0.1: {}
 
@@ -2120,6 +2115,7 @@ snapshots:
       minimatch: 3.1.2
       once: 1.4.0
       path-is-absolute: 1.0.1
+    optional: true
 
   gopd@1.2.0: {}
 
@@ -2145,7 +2141,8 @@ snapshots:
     dependencies:
       has-symbols: 1.1.0
 
-  has-unicode@2.0.1: {}
+  has-unicode@2.0.1:
+    optional: true
 
   hasown@2.0.2:
     dependencies:
@@ -2189,14 +2186,15 @@ snapshots:
 
   http_ece@1.2.0: {}
 
-  https-proxy-agent@5.0.1(supports-color@5.5.0):
+  https-proxy-agent@5.0.1:
     dependencies:
-      agent-base: 6.0.2(supports-color@5.5.0)
+      agent-base: 6.0.2
       debug: 4.4.3(supports-color@5.5.0)
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
-  https-proxy-agent@7.0.6(supports-color@5.5.0):
+  https-proxy-agent@7.0.6:
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@5.5.0)
@@ -2217,6 +2215,7 @@ snapshots:
     dependencies:
       once: 1.4.0
       wrappy: 1.0.2
+    optional: true
 
   inherits@2.0.4: {}
 
@@ -2228,7 +2227,8 @@ snapshots:
 
   is-extglob@2.1.1: {}
 
-  is-fullwidth-code-point@3.0.0: {}
+  is-fullwidth-code-point@3.0.0:
+    optional: true
 
   is-generator-function@1.1.2:
     dependencies:
@@ -2293,7 +2293,7 @@ snapshots:
       co: 4.6.0
       koa-compose: 4.1.0
 
-  koa@2.16.3(supports-color@5.5.0):
+  koa@2.16.3:
     dependencies:
       accepts: 1.3.8
       cache-content-type: 1.0.1
@@ -2328,6 +2328,7 @@ snapshots:
   make-dir@3.1.0:
     dependencies:
       semver: 6.3.1
+    optional: true
 
   math-intrinsics@1.1.0: {}
 
@@ -2369,19 +2370,23 @@ snapshots:
   minipass@3.3.6:
     dependencies:
       yallist: 4.0.0
+    optional: true
 
-  minipass@5.0.0: {}
+  minipass@5.0.0:
+    optional: true
 
   minizlib@2.1.2:
     dependencies:
       minipass: 3.3.6
       yallist: 4.0.0
+    optional: true
 
   mkdirp@0.5.6:
     dependencies:
       minimist: 1.2.8
 
-  mkdirp@1.0.4: {}
+  mkdirp@1.0.4:
+    optional: true
 
   mongodb-connection-string-url@3.0.2:
     dependencies:
@@ -2394,13 +2399,13 @@ snapshots:
       bson: 6.10.4
       mongodb-connection-string-url: 3.0.2
 
-  mongoose@8.20.2(supports-color@5.5.0):
+  mongoose@8.20.2:
     dependencies:
       bson: 6.10.4
       kareem: 2.6.3
       mongodb: 6.20.0
       mpath: 0.9.0
-      mquery: 5.0.0(supports-color@5.5.0)
+      mquery: 5.0.0
       ms: 2.1.3
       sift: 17.1.3
     transitivePeerDependencies:
@@ -2415,7 +2420,7 @@ snapshots:
 
   mpath@0.9.0: {}
 
-  mquery@5.0.0(supports-color@5.5.0):
+  mquery@5.0.0:
     dependencies:
       debug: 4.4.3(supports-color@5.5.0)
     transitivePeerDependencies:
@@ -2442,11 +2447,10 @@ snapshots:
 
   negotiator@0.6.3: {}
 
-  node-addon-api@5.1.0: {}
-
   node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
+    optional: true
 
   node-rsa@1.1.1:
     dependencies:
@@ -2468,6 +2472,7 @@ snapshots:
   nopt@5.0.0:
     dependencies:
       abbrev: 1.1.1
+    optional: true
 
   normalize-path@3.0.0: {}
 
@@ -2479,6 +2484,7 @@ snapshots:
       console-control-strings: 1.1.0
       gauge: 3.0.2
       set-blocking: 2.0.0
+    optional: true
 
   object-assign@4.1.1: {}
 
@@ -2486,16 +2492,16 @@ snapshots:
 
   object-inspect@1.13.4: {}
 
-  oidc-provider@8.8.1(supports-color@5.5.0):
+  oidc-provider@8.8.1:
     dependencies:
       '@koa/cors': 5.0.0
-      '@koa/router': 13.1.1(supports-color@5.5.0)
+      '@koa/router': 13.1.1
       debug: 4.4.3(supports-color@5.5.0)
       eta: 3.5.0
       got: 13.0.0
       jose: 5.10.0
       jsesc: 3.1.0
-      koa: 2.16.3(supports-color@5.5.0)
+      koa: 2.16.3
       nanoid: 5.1.6
       object-hash: 3.0.0
       oidc-token-hash: 5.2.0
@@ -2517,6 +2523,7 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
+    optional: true
 
   only@0.0.2: {}
 
@@ -2534,7 +2541,8 @@ snapshots:
       pause: 0.0.1
       utils-merge: 1.0.1
 
-  path-is-absolute@1.0.1: {}
+  path-is-absolute@1.0.1:
+    optional: true
 
   path-to-regexp@0.1.12: {}
 
@@ -2552,9 +2560,9 @@ snapshots:
       pako: 1.0.11
       tslib: 1.14.1
 
-  pdfjs-dist@3.11.174(supports-color@5.5.0):
+  pdfjs-dist@3.11.174:
     optionalDependencies:
-      canvas: 2.11.2(supports-color@5.5.0)
+      canvas: 2.11.2
       path2d-polyfill: 2.0.1
     transitivePeerDependencies:
       - encoding
@@ -2695,6 +2703,7 @@ snapshots:
       inherits: 2.0.4
       string_decoder: 1.3.0
       util-deprecate: 1.0.2
+    optional: true
 
   readdirp@3.6.0:
     dependencies:
@@ -2711,6 +2720,7 @@ snapshots:
   rimraf@3.0.2:
     dependencies:
       glob: 7.2.3
+    optional: true
 
   safe-buffer@5.1.2: {}
 
@@ -2738,13 +2748,14 @@ snapshots:
 
   sax@1.6.0: {}
 
-  semver@6.3.1: {}
+  semver@6.3.1:
+    optional: true
 
   semver@7.7.3: {}
 
-  send@0.19.0(supports-color@5.5.0):
+  send@0.19.0:
     dependencies:
-      debug: 2.6.9(supports-color@5.5.0)
+      debug: 2.6.9
       depd: 2.0.0
       destroy: 1.2.0
       encodeurl: 1.0.2
@@ -2760,9 +2771,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  send@0.19.1(supports-color@5.5.0):
+  send@0.19.1:
     dependencies:
-      debug: 2.6.9(supports-color@5.5.0)
+      debug: 2.6.9
       depd: 2.0.0
       destroy: 1.2.0
       encodeurl: 2.0.0
@@ -2778,16 +2789,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  serve-static@1.16.2(supports-color@5.5.0):
+  serve-static@1.16.2:
     dependencies:
       encodeurl: 2.0.0
       escape-html: 1.0.3
       parseurl: 1.3.3
-      send: 0.19.0(supports-color@5.5.0)
+      send: 0.19.0
     transitivePeerDependencies:
       - supports-color
 
-  set-blocking@2.0.0: {}
+  set-blocking@2.0.0:
+    optional: true
 
   setprototypeof@1.2.0: {}
 
@@ -2821,7 +2833,8 @@ snapshots:
 
   sift@17.1.3: {}
 
-  signal-exit@3.0.7: {}
+  signal-exit@3.0.7:
+    optional: true
 
   simple-concat@1.0.1:
     optional: true
@@ -2864,6 +2877,7 @@ snapshots:
       emoji-regex: 8.0.0
       is-fullwidth-code-point: 3.0.0
       strip-ansi: 6.0.1
+    optional: true
 
   string_decoder@1.1.1:
     dependencies:
@@ -2872,10 +2886,12 @@ snapshots:
   string_decoder@1.3.0:
     dependencies:
       safe-buffer: 5.2.1
+    optional: true
 
   strip-ansi@6.0.1:
     dependencies:
       ansi-regex: 5.0.1
+    optional: true
 
   supports-color@5.5.0:
     dependencies:
@@ -2889,6 +2905,7 @@ snapshots:
       minizlib: 2.1.2
       mkdirp: 1.0.4
       yallist: 4.0.0
+    optional: true
 
   thread-stream@3.1.0:
     dependencies:
@@ -2902,7 +2919,8 @@ snapshots:
 
   touch@3.1.1: {}
 
-  tr46@0.0.3: {}
+  tr46@0.0.3:
+    optional: true
 
   tr46@5.1.1:
     dependencies:
@@ -2935,17 +2953,18 @@ snapshots:
 
   vary@1.1.2: {}
 
-  web-push@3.6.7(supports-color@5.5.0):
+  web-push@3.6.7:
     dependencies:
       asn1.js: 5.4.1
       http_ece: 1.2.0
-      https-proxy-agent: 7.0.6(supports-color@5.5.0)
+      https-proxy-agent: 7.0.6
       jws: 4.0.1
       minimist: 1.2.8
     transitivePeerDependencies:
       - supports-color
 
-  webidl-conversions@3.0.1: {}
+  webidl-conversions@3.0.1:
+    optional: true
 
   webidl-conversions@7.0.0: {}
 
@@ -2958,16 +2977,19 @@ snapshots:
     dependencies:
       tr46: 0.0.3
       webidl-conversions: 3.0.1
+    optional: true
 
   wide-align@1.1.5:
     dependencies:
       string-width: 4.2.3
+    optional: true
 
   wmf@1.0.2: {}
 
   word@0.3.0: {}
 
-  wrappy@1.0.2: {}
+  wrappy@1.0.2:
+    optional: true
 
   xlsx@0.18.5:
     dependencies:
@@ -3012,6 +3034,7 @@ snapshots:
 
   xtend@4.0.2: {}
 
-  yallist@4.0.0: {}
+  yallist@4.0.0:
+    optional: true
 
   ylru@1.4.0: {}

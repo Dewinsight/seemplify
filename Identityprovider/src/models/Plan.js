@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { PLAN_FEATURES } from '../config/planFeatures.js'
 
 const PlanSchema = new mongoose.Schema({
   // Basic Info
@@ -52,7 +53,13 @@ const PlanSchema = new mongoose.Schema({
     timeAttendance: { type: Boolean, default: false },
     outlineDocs: { type: Boolean, default: false },
     aiChat: { type: Boolean, default: false },
-    lms: { type: Boolean, default: false }
+    lms: { type: Boolean, default: false },
+    // These apps predate their plan controls, so enabled defaults preserve access
+    // for existing plan documents that do not have the fields yet.
+    workspace: { type: Boolean, default: true },
+    automationHub: { type: Boolean, default: true },
+    experienceManagement: { type: Boolean, default: true },
+    approver: { type: Boolean, default: true }
   },
 
   // Additional Feature Flags (for extensibility)
@@ -84,7 +91,6 @@ const PlanSchema = new mongoose.Schema({
 })
 
 // Indexes
-PlanSchema.index({ slug: 1 })
 PlanSchema.index({ isActive: 1, isPublic: 1 })
 PlanSchema.index({ displayOrder: 1 })
 PlanSchema.index({ 'pricing.monthly': 1 })
@@ -122,16 +128,7 @@ PlanSchema.virtual('formattedYearlyPrice').get(function() {
 
 // Virtual: Get feature list as array
 PlanSchema.virtual('featureList').get(function() {
-  const featureNames = {
-    recruiter: 'Recruiter (SmartHR)',
-    leaveManagement: 'Leave Management',
-    payrollManagement: 'Payroll Management',
-    performanceManagement: 'Performance Management',
-    timeAttendance: 'Time & Attendance',
-    outlineDocs: 'Outline Docs',
-    aiChat: 'AI Chat Assistant',
-    lms: 'Learning Management System'
-  }
+  const featureNames = Object.fromEntries(PLAN_FEATURES.map(feature => [feature.key, feature.label]))
 
   return Object.entries(this.features.toObject())
     .filter(([, enabled]) => enabled)

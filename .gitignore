@@ -40,6 +40,7 @@ logs/
 .local-runtime/
 __pycache__/
 *.py[cod]
+/tmp/
 platform/email/.env.runtime
 **/eng.traineddata
 output/

@@ -14,6 +14,7 @@
     "test:admin-activity": "node --test scripts/admin-activity-formatters.test.js",
     "test:ai-account": "node --test scripts/ai-account-preferences.test.js",
     "test:ai-errors": "node --test scripts/ai-error-messages.test.js",
+    "test:theme-surfaces": "node --test scripts/theme-surface-contract.test.js",
     "test:candidate-emails": "node --test scripts/candidate-email-template-presets.test.js",
     "test:platform-features": "node --test scripts/platform-features.test.js",
     "test:cv-processing": "node --test scripts/cv-upload-progress.test.js"

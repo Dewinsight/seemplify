@@ -84,7 +84,7 @@ test('durable webhook retries only failed consumers after partial fanout', async
     })
     const deliveredAfterFirstAttempt = record.deliveries.filter(item => item.status === 'delivered')
     const pendingAfterFirstAttempt = record.deliveries.filter(item => item.status === 'pending')
-    assert.equal(deliveredAfterFirstAttempt.length, 7)
+    assert.equal(deliveredAfterFirstAttempt.length, 8)
     assert.equal(pendingAfterFirstAttempt.length, 1)
 
     await service.processWebhookOutboxRecord(record, {

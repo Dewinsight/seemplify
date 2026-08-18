@@ -23,7 +23,8 @@ const WEBHOOK_ENDPOINTS = {
   payroll: process.env.PAYROLL_WEBHOOK_URL || 'http://localhost:5006/api/webhooks/idp',
   performance: process.env.PERFORMANCE_WEBHOOK_URL || 'http://localhost:5004/api/webhooks/idp',
   timeAttendance: process.env.TIME_ATTENDANCE_WEBHOOK_URL || 'http://localhost:5010/api/webhooks/idp',
-  messaging: process.env.MESSAGING_WEBHOOK_URL || 'http://localhost:5009/api/webhooks/idp',
+  recruiter: process.env.RECRUITER_WEBHOOK_URL || 'http://localhost:5001/api/webhooks/idp-lifecycle',
+  messaging: process.env.MESSAGING_WEBHOOK_URL || 'http://localhost:3333/api/webhooks/idp',
   approver: process.env.APPROVER_WEBHOOK_URL || 'http://localhost:5000/api/webhooks/idp',
   automationHub: process.env.AUTOMATION_HUB_WEBHOOK_URL || 'http://localhost:5420/hooks/identity',
 }
@@ -34,7 +35,8 @@ const WEBHOOK_TARGET_SECRET_ENV = {
   leaveManagement: 'IDP_WEBHOOK_SECRET_LEAVE_MANAGEMENT',
   payroll: 'IDP_WEBHOOK_SECRET_PAYROLL',
   performance: 'IDP_WEBHOOK_SECRET_PERFORMANCE_MANAGEMENT',
-  timeAttendance: 'IDP_WEBHOOK_SECRET_TIME_ATTENDANCE',
+  timeAttendance: 'IDP_WEBHOOK_SECRET',
+  recruiter: 'IDP_WEBHOOK_SECRET_RECRUITER',
   messaging: 'IDP_WEBHOOK_SECRET_MESSAGING',
   approver: 'IDP_WEBHOOK_SECRET_APPROVER',
   automationHub: 'AUTOMATION_HUB_HMAC_SECRET'

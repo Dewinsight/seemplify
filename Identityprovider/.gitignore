@@ -24,6 +24,8 @@ pids/
 coverage/
 *.lcov
 .nyc_output/
+playwright-report/
+test-results/
 
 # Build artifacts
 dist/
@@ -33,7 +35,10 @@ build/
 # Local Netlify folder
 .netlify
 
-# Test files
+# Test files and Playwright scaffolding
+/test/
+/e2e/
+playwright*.config.*
 test_*.js
 *.test.js
 *.spec.js

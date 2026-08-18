@@ -170,12 +170,36 @@ test('an already-connected login response does not erase account details it omit
     });
     assert.equal(result.account.connectedEmail, 'person@example.test');
     assert.equal(result.account.planType, 'pro');
+    assert.ok(result.account.dataSharingAcknowledgedAt instanceof Date);
   } finally {
     AIUserRuntimeAccount.findOne = originalFindOne;
     if (originalUrl === undefined) delete process.env.CHATGPT_GATEWAY_BASE_URL;
     else process.env.CHATGPT_GATEWAY_BASE_URL = originalUrl;
     if (originalSecret === undefined) delete process.env.CHATGPT_GATEWAY_SHARED_SECRET;
     else process.env.CHATGPT_GATEWAY_SHARED_SECRET = originalSecret;
+  }
+});
+
+test('Recruiter processing cannot be disabled while the account exists', async () => {
+  const originalFindOne = AIUserRuntimeAccount.findOne;
+  const account = {
+    user: '507f191e810c19729de860c1',
+    idpSubject: 'idp-mandatory-recruiter-processing',
+    organization: '507f191e810c19729de860c2',
+    subjectKey: codexAccountService.subjectKeyForUser('507f191e810c19729de860c1'),
+    dataSharingAcknowledgedAt: null,
+    credentialNamespaceVersion: 2,
+    async save() { return this; }
+  };
+  AIUserRuntimeAccount.findOne = async () => account;
+  try {
+    const result = await codexAccountService.setConsent(
+      { id: account.user, idpSubject: account.idpSubject },
+      false
+    );
+    assert.ok(result.dataSharingAcknowledgedAt instanceof Date);
+  } finally {
+    AIUserRuntimeAccount.findOne = originalFindOne;
   }
 });
 

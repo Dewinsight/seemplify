@@ -1339,7 +1339,7 @@ export default function AIInterviewsPage() {
             <div className="ai-interviews-create-grid grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
               <div className="space-y-6">
                 <Card className="ai-interviews-panel ai-interviews-wizard overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
-                  <CardHeader className="ai-interviews-wizard__header border-b bg-slate-950 px-5 py-4 text-white dark:border-slate-800">
+                  <CardHeader className="ai-interviews-wizard__header border-b px-5 py-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base">
@@ -1769,8 +1769,8 @@ export default function AIInterviewsPage() {
               </div>
 
               <aside className="ai-interviews-summary-wrap space-y-6 xl:sticky xl:top-6 xl:self-start">
-                <Card className="ai-interviews-summary overflow-hidden border-0 bg-slate-950 text-white shadow-xl shadow-slate-300/60 dark:shadow-none">
-                  <CardHeader className="ai-interviews-summary__header border-b border-white/10 px-5 py-4">
+                <Card className="ai-interviews-summary overflow-hidden">
+                  <CardHeader className="ai-interviews-summary__header border-b px-5 py-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <ShieldCheck className="h-4 w-4 text-emerald-300" />
                       Schedule Summary
@@ -1915,7 +1915,7 @@ export default function AIInterviewsPage() {
             ) : jobRankingGroups.length ? (
               selectedJobRanking ? (
                 <div className="space-y-5">
-                  <Card className="ai-interviews-panel ai-interviews-ranking-header overflow-hidden border-0 bg-slate-950 text-white shadow-xl shadow-slate-200/70 dark:shadow-none">
+                  <Card className="ai-interviews-panel ai-interviews-ranking-header overflow-hidden">
                     <CardContent className="p-5">
                       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0 space-y-3">

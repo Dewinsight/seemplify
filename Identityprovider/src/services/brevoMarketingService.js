@@ -3,7 +3,7 @@ import { URLSearchParams } from 'url'
 class BrevoMarketingService {
   constructor() {
     this.apiKey = process.env.BREVO_API_KEY || ''
-    this.apiBase = 'https://api.brevo.com/v3'
+    this.apiBase = String(process.env.BREVO_API_BASE_URL || 'https://api.brevo.com/v3').replace(/\/+$/, '')
   }
 
   isConfigured() {

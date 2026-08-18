@@ -39,8 +39,8 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
   connectedAt: { type: Date, default: null },
   lastVerifiedAt: { type: Date, default: null },
   disconnectedAt: { type: Date, default: null },
-  /** Routing to a personal plan requires an explicit acknowledgement that task
-   * content leaves for OpenAI. Revoking it stops routing immediately. */
+  /** Recruiter processing is acknowledged automatically while its ChatGPT
+   * connection is active. Disconnecting clears this timestamp. */
   dataSharingAcknowledgedAt: { type: Date, default: null },
   /** Performance has its own disclosure/consent. Connecting ChatGPT is global,
    * but approving Performance content must not implicitly approve Recruiter

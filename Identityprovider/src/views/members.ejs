@@ -383,6 +383,12 @@
       white-space: nowrap;
     }
     .member-record__role-select { width: 100%; min-width: 0; height: 36px; font-size: 12px; }
+    .member-record__update-error {
+      margin-top: 5px;
+      color: var(--badge-error-text);
+      font-size: 11px;
+      line-height: 1.4;
+    }
     .member-record__manage {
       display: inline-flex;
       align-items: center;
@@ -984,6 +990,13 @@
                   <option value="interviewer" <%= member.role === 'interviewer' ? 'selected' : '' %>>Interviewer</option>
                   <option value="staff" <%= member.role === 'staff' ? 'selected' : '' %>>Staff</option>
                 </select>
+                <div
+                  id="member-error-<%= member.id %>"
+                  class="member-record__update-error"
+                  role="alert"
+                  aria-live="polite"
+                  hidden
+                ></div>
               <% } else { %>
                 <span class="role-badge role-<%= member.role %>"><%= member.role.replace('_', ' ') %></span>
               <% } %>
@@ -1616,7 +1629,26 @@
       }
     }
 
+    function clearMemberUpdateError(memberId) {
+      const errorElement = document.getElementById(`member-error-${normalizeId(memberId)}`);
+      if (!errorElement) return;
+      errorElement.hidden = true;
+      errorElement.textContent = '';
+    }
+
+    function showMemberUpdateError(memberId, message, requestId = '') {
+      const errorElement = document.getElementById(`member-error-${normalizeId(memberId)}`);
+      const detail = String(message || 'The member update could not be completed. Please try again.');
+      if (!errorElement) {
+        alert(detail);
+        return;
+      }
+      errorElement.textContent = requestId ? `${detail} Reference: ${requestId}` : detail;
+      errorElement.hidden = false;
+    }
+
     async function updateMember(memberId, payload, errorMessage) {
+      clearMemberUpdateError(memberId);
       try {
         const response = await fetch(`/api/organizations/${orgId}/members/${memberId}`, {
           method: 'PUT',
@@ -1625,9 +1657,8 @@
         });
 
         if (!response.ok) {
-          const data = await response.json();
-          alert(data.error || errorMessage);
-          window.location.reload();
+          const data = await response.json().catch(() => ({}));
+          showMemberUpdateError(memberId, data.error || errorMessage, data.requestId);
           return false;
         }
 
@@ -1658,8 +1689,7 @@
         syncMemberState(memberId);
         return true;
       } catch (error) {
-        alert(errorMessage);
-        window.location.reload();
+        showMemberUpdateError(memberId, errorMessage);
         return false;
       }
     }
@@ -1673,7 +1703,8 @@
         return;
       }
       const updated = await updateMember(memberId, { role: newRole }, 'Failed to update role');
-      if (updated) select.dataset.previousRole = newRole;
+      if (!updated) select.value = previousRole;
+      else select.dataset.previousRole = newRole;
     }
 
     async function updateDesignation(memberId, designation) {

@@ -338,14 +338,16 @@ router.post('/demo-requests/:requestId/update', async (req, res) => {
  */
 router.get('/plans', async (req, res) => {
   try {
-    const { getHubApps, getAllComingSoonCards } = await import('../config/hubApps.js')
-    const hubApps = getHubApps()
+    const { getAllHubApps, getAllComingSoonCards } = await import('../config/hubApps.js')
+    const { PLAN_FEATURES } = await import('../config/planFeatures.js')
+    const hubApps = getAllHubApps()
     const comingSoonCards = getAllComingSoonCards()
     const plans = await subscriptionService.getAllPlans()
 
     res.render('admin/plans', {
       plans,
       hubApps,
+      planFeatures: PLAN_FEATURES,
       comingSoonCards,
       simpleLmsExternalWorkspaceUrl: SIMPLE_LMS_EXTERNAL_WORKSPACE_URL,
       user: req.user

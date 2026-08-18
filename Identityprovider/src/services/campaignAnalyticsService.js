@@ -32,8 +32,8 @@ export async function getCampaignConsoleSummary(limit = 20) {
   const campaigns = await Campaign.find()
     .sort({ updatedAt: -1 })
     .limit(limit)
+    .select('name slug description status sender audience audienceSnapshot pacing metrics launchedAt completedAt createdAt updatedAt')
     .populate('audience', 'name')
-    .populate('createdBy', 'email profile.name')
     .lean()
 
   return campaigns

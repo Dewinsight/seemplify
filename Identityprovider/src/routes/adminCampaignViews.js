@@ -7,18 +7,15 @@ import { getCampaignAnalytics, getCampaignConsoleSummary, getCampaignHomeSummary
 import { CAMPAIGN_AUDIENCE_FIELDS } from '../services/campaignAudienceService.js'
 import { buildCampaignStats, loadCampaignHomeData } from '../services/campaignHomeService.js'
 import { ensureSystemCampaignTemplates, getSenderHealthSummary } from '../services/campaignOperationsService.js'
+import {
+  loadCampaignAudienceSummaries,
+  loadCampaignWorkspaceData as loadWorkspaceDependencies
+} from '../services/campaignWorkspaceService.js'
 
 const router = express.Router()
 
 router.use(requireAdminAuth)
 router.use(setAdminContext)
-
-function mapAudiences(audiences = []) {
-  return audiences.map((audience) => ({
-    ...audience,
-    contactCount: Array.isArray(audience.contacts) ? audience.contacts.length : 0
-  }))
-}
 
 function filterCampaigns(campaigns = [], { search = '', status = 'all' } = {}) {
   const needle = String(search || '').trim().toLowerCase()
@@ -42,24 +39,18 @@ function filterCampaigns(campaigns = [], { search = '', status = 'all' } = {}) {
 }
 
 async function loadCampaignWorkspaceData(limit = 50) {
-  await ensureSystemCampaignTemplates()
-  const [campaigns, audiences, templates, senderHealth] = await Promise.all([
-    getCampaignConsoleSummary(limit),
-    CampaignAudience.find()
-      .sort({ updatedAt: -1 })
-      .select('name slug description sourceType sourceFileName columnMap importSummary contacts updatedAt')
-      .lean(),
-    CampaignTemplate.find()
+  const workspaceData = await loadWorkspaceDependencies({
+    syncTemplates: () => ensureSystemCampaignTemplates(),
+    loadCampaigns: () => getCampaignConsoleSummary(limit),
+    loadAudiences: () => loadCampaignAudienceSummaries(CampaignAudience),
+    loadTemplates: () => CampaignTemplate.find()
       .sort({ systemTemplate: -1, updatedAt: -1 })
       .lean(),
-    getSenderHealthSummary()
-  ])
+    loadSenderHealth: () => getSenderHealthSummary()
+  })
 
   return {
-    campaigns,
-    audiences: mapAudiences(audiences),
-    templates,
-    senderHealth,
+    ...workspaceData,
     audienceFields: CAMPAIGN_AUDIENCE_FIELDS
   }
 }

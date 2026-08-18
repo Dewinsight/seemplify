@@ -77,7 +77,7 @@ test('the activity UI exposes both inheritance levels and resolution provenance'
   assert.match(source, /not in live catalogue/)
 })
 
-test('connecting ChatGPT does not silently acknowledge data sharing', () => {
+test('the connection gate keeps its disclosure without duplicating mandatory Recruiter processing', () => {
   const source = fs.readFileSync(
     path.join(__dirname, '..', 'components', 'ChatGptConnectionGate.tsx'),
     'utf8'
@@ -97,5 +97,8 @@ test('Recruiter settings describe consent as app scoped', () => {
     'utf8'
   )
   assert.match(source, /This consent applies only to Recruiter/)
-  assert.match(source, /Performance Management asks separately/)
+  assert.match(source, /Performance and Workspace ask separately/)
+  assert.match(source, /data-testid="ai-account-consent"\s+checked\s+disabled/)
+  assert.doesNotMatch(source, /onCheckedChange=\{\(value\) => void setConsent/)
+  assert.match(source, /Recruiter AI processing remains enabled while this ChatGPT account is connected/)
 })

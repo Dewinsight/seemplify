@@ -1,18 +1,9 @@
 import express from 'express'
 import { requireAdminAuth, auditLog, adminRateLimit } from '../middleware/adminAuth.js'
 import { subscriptionService } from '../services/subscriptionService.js'
+import { PLAN_FEATURE_KEYS } from '../config/planFeatures.js'
 
 const router = express.Router()
-const PLAN_FEATURE_KEYS = [
-  'recruiter',
-  'leaveManagement',
-  'payrollManagement',
-  'performanceManagement',
-  'timeAttendance',
-  'outlineDocs',
-  'aiChat',
-  'lms'
-]
 
 const parseLimitValue = (value, label) => {
   if (value === undefined) return undefined

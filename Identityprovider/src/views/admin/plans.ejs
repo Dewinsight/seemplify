@@ -213,40 +213,14 @@
           <div class="admin-form-group">
             <label class="admin-form-label">Features</label>
             <div class="feature-grid">
-              <label class="feature-toggle">
-                <input type="checkbox" id="featureRecruiter" name="features.recruiter">
-                <span class="feature-toggle-label">Recruiter (SmartHR)</span>
-              </label>
-              <label class="feature-toggle">
-                <input type="checkbox" id="featureLeaveManagement" name="features.leaveManagement">
-                <span class="feature-toggle-label">Leave Management</span>
-              </label>
-              <label class="feature-toggle">
-                <input type="checkbox" id="featurePayrollManagement" name="features.payrollManagement">
-                <span class="feature-toggle-label">Payroll Management</span>
-              </label>
-              <label class="feature-toggle">
-                <input type="checkbox" id="featurePerformanceManagement" name="features.performanceManagement">
-                <span class="feature-toggle-label">Performance Management</span>
-              </label>
-              <label class="feature-toggle">
-                <input type="checkbox" id="featureTimeAttendance" name="features.timeAttendance">
-                <span class="feature-toggle-label">Time & Attendance</span>
-              </label>
-              <label class="feature-toggle">
-                <input type="checkbox" id="featureOutlineDocs" name="features.outlineDocs">
-                <span class="feature-toggle-label">Outline Docs</span>
-              </label>
-              <label class="feature-toggle">
-                <input type="checkbox" id="featureAiChat" name="features.aiChat">
-                <span class="feature-toggle-label">AI Chat</span>
-              </label>
-              <label class="feature-toggle">
-                <input type="checkbox" id="featureLms" name="features.lms">
-                <span class="feature-toggle-label">Seemplify Learning</span>
-              </label>
+              <% planFeatures.forEach(feature => { %>
+                <label class="feature-toggle">
+                  <input type="checkbox" name="features.<%= feature.key %>" data-plan-feature="<%= feature.key %>">
+                  <span class="feature-toggle-label"><%= feature.label %></span>
+                </label>
+              <% }) %>
             </div>
-            <small style="color: var(--muted); display:block; margin-top:8px;">This toggle controls access to the external Seemplify Learning app.</small>
+            <small style="color: var(--muted); display:block; margin-top:8px;">Learning access applies to both the legacy Simple LMS card and the external Seemplify Learning app.</small>
           </div>
 
           <div class="admin-form-group">
@@ -404,14 +378,9 @@
           document.getElementById('isFeatured').checked = plan.isFeatured;
 
           const features = plan.features || {};
-          document.getElementById('featureRecruiter').checked = features.recruiter;
-          document.getElementById('featureLeaveManagement').checked = features.leaveManagement;
-          document.getElementById('featurePayrollManagement').checked = features.payrollManagement;
-          document.getElementById('featurePerformanceManagement').checked = features.performanceManagement;
-          document.getElementById('featureTimeAttendance').checked = features.timeAttendance;
-          document.getElementById('featureOutlineDocs').checked = features.outlineDocs;
-          document.getElementById('featureAiChat').checked = features.aiChat;
-          document.getElementById('featureLms').checked = features.lms;
+          document.querySelectorAll('[data-plan-feature]').forEach(checkbox => {
+            checkbox.checked = features[checkbox.dataset.planFeature] === true;
+          });
 
           const hideHubCards = plan.hideHubCards || [];
           document.querySelectorAll('[data-hide-app]').forEach(cb => {
@@ -465,16 +434,10 @@
           maxTeams: document.getElementById('maxTeams').value ? parseInt(document.getElementById('maxTeams').value) : null,
           maxSystemCourses: document.getElementById('maxSystemCourses').value ? parseInt(document.getElementById('maxSystemCourses').value) : null
         },
-        features: {
-          recruiter: document.getElementById('featureRecruiter').checked,
-          leaveManagement: document.getElementById('featureLeaveManagement').checked,
-          payrollManagement: document.getElementById('featurePayrollManagement').checked,
-          performanceManagement: document.getElementById('featurePerformanceManagement').checked,
-          timeAttendance: document.getElementById('featureTimeAttendance').checked,
-          outlineDocs: document.getElementById('featureOutlineDocs').checked,
-          aiChat: document.getElementById('featureAiChat').checked,
-          lms: document.getElementById('featureLms').checked
-        },
+        features: Object.fromEntries(
+          Array.from(document.querySelectorAll('[data-plan-feature]'))
+            .map(checkbox => [checkbox.dataset.planFeature, checkbox.checked])
+        ),
         displayOrder: parseInt(document.getElementById('displayOrder').value) || 0,
         color: document.getElementById('planColor').value,
         badgeText: document.getElementById('badgeText').value,

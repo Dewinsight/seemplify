@@ -1,7 +1,7 @@
 param(
   [ValidateSet('development', 'staging', 'all')]
   [string]$Environment = 'all',
-  [string]$GatewayUrl = 'https://cv-llm.aiinnigeria.com',
+  [string]$GatewayUrl = 'http://host.docker.internal:11435',
   [switch]$Json
 )
 
@@ -16,6 +16,19 @@ if (-not (Test-Path -LiteralPath $SharedSecretFile -PathType Leaf)) {
 }
 $SharedSecret = (Get-Content -LiteralPath $SharedSecretFile -Raw).Trim()
 if (-not $SharedSecret) { throw 'The managed AI gateway shared-secret file is empty.' }
+$ServiceAuthModule = Join-Path $PSScriptRoot 'service-auth.cjs'
+if (-not (Test-Path -LiteralPath $ServiceAuthModule -PathType Leaf)) {
+  throw 'The managed AI gateway service-auth module is missing.'
+}
+$ServiceSecret = (& node.exe -e @'
+const fs = require('node:fs');
+const { deriveServiceSecret } = require(process.argv[1]);
+const master = fs.readFileSync(process.argv[2], 'utf8').trim();
+process.stdout.write(deriveServiceSecret(master, 'xplorer-crm'));
+'@ $ServiceAuthModule $SharedSecretFile).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $ServiceSecret) {
+  throw 'Could not derive the scoped xplorer-crm gateway credential.'
+}
 
 $targets = if ($Environment -eq 'all') { @('development', 'staging') } else { @($Environment) }
 $results = foreach ($target in $targets) {
@@ -36,8 +49,18 @@ $results = foreach ($target in $targets) {
     $lines.Add("$Name=$Value")
   }
 
+  function Remove-EnvironmentValue([string]$Name) {
+    for ($index = $lines.Count - 1; $index -ge 0; $index -= 1) {
+      if ($lines[$index] -match "^$([regex]::Escape($Name))=") {
+        $lines.RemoveAt($index)
+      }
+    }
+  }
+
   Set-EnvironmentValue 'M20_AI_RUNTIME_URL' $GatewayUrl.TrimEnd('/')
-  Set-EnvironmentValue 'M20_INTERNAL_TOKEN' $SharedSecret
+  Set-EnvironmentValue 'LOCAL_LLM_SERVICE_SECRET' $ServiceSecret
+  Remove-EnvironmentValue 'M20_INTERNAL_TOKEN'
+  Remove-EnvironmentValue 'M20_INTERNAL_TOKEN_FILE'
   [IO.File]::WriteAllLines($environmentFile, $lines, (New-Object Text.UTF8Encoding($false)))
 
   [pscustomobject]@{
@@ -45,6 +68,7 @@ $results = foreach ($target in $targets) {
     configured = $true
     gatewayUrl = $GatewayUrl.TrimEnd('/')
     secretConfigured = $true
+    credentialVersion = '2'
   }
 }
 

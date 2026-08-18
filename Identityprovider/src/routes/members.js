@@ -14,6 +14,10 @@ import {
   normalizeAppAccess
 } from '../utils/appAccess.js'
 import { buildMemberStructureMap, getMemberStructure } from '../utils/memberStructure.js'
+import {
+  classifyMemberUpdateError,
+  serializeMemberUpdateError
+} from '../utils/memberUpdateErrors.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import { buildOnboardingStateMap, getMemberOnboardingState } from '../utils/onboardingStatus.js'
 import { buildPayrollProfileSyncData, getProfileCompletionForAccount } from '../utils/profileCompletion.js'
@@ -842,6 +846,13 @@ router.put('/:orgId/members/:memberId',
         member.account?.toString() === req.params.memberId
       ))
 
+      if ((hasRole || hasAppAccess) && (!targetAccount || !targetMember)) {
+        return res.status(404).json({
+          error: 'This member could not be found in the organization.',
+          code: 'MEMBER_NOT_FOUND'
+        })
+      }
+
       try {
         if (hasRole) {
           const previousRole = targetMember?.role || null
@@ -913,7 +924,26 @@ router.put('/:orgId/members/:memberId',
           if (targetAccount?.sub) invalidateClaimsCache(targetAccount.sub)
         }
       } catch (err) {
-        return res.status(400).json({ error: err.message })
+        const classified = classifyMemberUpdateError(err)
+        const requestId = req.get('x-request-id') || req.id || null
+        console.error('Member update mutation failed', {
+          organizationId: req.params.orgId,
+          memberId: req.params.memberId,
+          attemptedFields: Object.keys(body).filter(field => [
+            'role',
+            'designation',
+            'employeeId',
+            'appAccess',
+            'branch'
+          ].includes(field)),
+          requestId,
+          error: serializeMemberUpdateError(err)
+        })
+        return res.status(classified.status).json({
+          error: classified.publicMessage,
+          code: classified.code,
+          ...(requestId ? { requestId } : {})
+        })
       }
 
       console.log('Member updated in', req.organization.name, 'by', req.user.email, {

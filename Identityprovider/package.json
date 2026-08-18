@@ -25,7 +25,6 @@
     "@azure/storage-blob": "^12.28.0",
     "@node-saml/passport-saml": "^5.1.0",
     "axios": "^1.14.0",
-    "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.5.0",
     "cookie-parser": "^1.4.7",

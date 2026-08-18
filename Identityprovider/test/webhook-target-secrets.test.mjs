@@ -47,11 +47,11 @@ test('readiness probe is signed by the running IdP for every target receiver', a
         }), { status: 200 })
       }
     })
-    assert.equal(calls.length, 8)
+    assert.equal(calls.length, 9)
     assert.deepEqual(result.results.map(item => item.name).sort(), [
-      'approver', 'automationHub', 'leaveManagement', 'messaging', 'payroll', 'performance', 'smarthr', 'timeAttendance'
+      'approver', 'automationHub', 'leaveManagement', 'messaging', 'payroll', 'performance', 'recruiter', 'smarthr', 'timeAttendance'
     ])
-    assert.equal(new Set(calls.map(call => call.init.headers['X-IDP-Signature-V2'])).size, 8)
+    assert.equal(new Set(calls.map(call => call.init.headers['X-IDP-Signature-V2'])).size, 9)
     assert.ok(calls.every(call => call.init.headers['X-IDP-Delivery-Timestamp']))
   } finally {
     for (const [key, value] of Object.entries(prior)) {

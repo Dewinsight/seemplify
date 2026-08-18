@@ -57,6 +57,9 @@ coverage/
 temp/
 tmp/
 
+# Local test files
+/tests/
+
 # Large files that shouldn't be deployed
 package-lock.json
 *.tsbuildinfo

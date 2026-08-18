@@ -93,8 +93,7 @@ const developmentApps = [
     isPublic: true,
     category: 'hr',
     order: 3,
-    badge: 'Beta',
-    isBeta: true
+    badge: 'New'
   },
   {
     appId: 'payroll-management',
@@ -109,8 +108,7 @@ const developmentApps = [
     isPublic: true,
     category: 'hr',
     order: 4,
-    badge: 'Beta',
-    isBeta: true
+    badge: 'New'
   },
   {
     appId: 'time-attendance',
@@ -142,7 +140,7 @@ const developmentApps = [
   },
   {
     appId: 'seemplify-learning',
-    name: 'Seemplify Learning',
+    name: 'Learning',
     description: 'Organisation learning, internal courses, and staff development',
     icon: 'academic-cap',
     color: '#0f766e',
@@ -152,7 +150,9 @@ const developmentApps = [
     isActive: true,
     isPublic: true,
     category: 'productivity',
-    order: 7.5
+    order: 7.5,
+    badge: 'Beta',
+    isBeta: true
   },
   {
     appId: 'messaging',
@@ -166,7 +166,9 @@ const developmentApps = [
     isActive: true,
     isPublic: true,
     category: 'productivity',
-    order: 8
+    order: 8,
+    badge: 'Beta',
+    isBeta: true
   },
   {
     appId: 'automation-hub',
@@ -283,8 +285,7 @@ const productionApps = [
     isPublic: true,
     category: 'hr',
     order: 3,
-    badge: 'Beta',
-    isBeta: true
+    badge: 'New'
   },
   {
     appId: 'payroll-management',
@@ -299,8 +300,7 @@ const productionApps = [
     isPublic: true,
     category: 'hr',
     order: 4,
-    badge: 'Beta',
-    isBeta: true
+    badge: 'New'
   },
   {
     appId: 'time-attendance',
@@ -332,7 +332,7 @@ const productionApps = [
   },
   {
     appId: 'seemplify-learning',
-    name: 'Seemplify Learning',
+    name: 'Learning',
     description: 'Organisation learning, internal courses, and staff development',
     icon: 'academic-cap',
     color: '#0f766e',
@@ -342,7 +342,9 @@ const productionApps = [
     isActive: true,
     isPublic: true,
     category: 'productivity',
-    order: 7.5
+    order: 7.5,
+    badge: 'Beta',
+    isBeta: true
   },
   {
     appId: 'messaging',
@@ -356,7 +358,9 @@ const productionApps = [
     isActive: hasConfiguredUrl(process.env.MESSAGING_URL),
     isPublic: true,
     category: 'productivity',
-    order: 8
+    order: 8,
+    badge: 'Beta',
+    isBeta: true
   },
   {
     appId: 'automation-hub',
@@ -422,6 +426,16 @@ export function getHubApps(options = {}) {
   }
 
   return filtered
+}
+
+/**
+ * Get every registered hub app, including apps disabled in the current environment.
+ * Admin plan configuration uses this so an app can be configured before activation.
+ * @returns {Array} Array of app configurations
+ */
+export function getAllHubApps() {
+  const apps = isProduction ? productionApps : developmentApps
+  return [...apps].sort((a, b) => a.order - b.order)
 }
 
 /**

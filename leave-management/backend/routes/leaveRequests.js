@@ -31,6 +31,7 @@ const { queueLeaveSubmittedEvent } = require('../services/automationEventService
 const { normalizeLeaveTypeKey } = require('../services/leaveEntitlementService');
 const { fetchOrganizationRoster } = require('../services/rosterService');
 const { buildCalendarAnalytics, daysInRange } = require('../services/calendarAnalyticsService');
+const { persistLeaveRequestAndBalance } = require('../services/leaveRequestPersistence');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
@@ -504,20 +505,9 @@ router.post('/',
     balance.reserveBalance(leaveType, numberOfDays);
     if (leaveRequest.status === 'approved') balance.useBalance(leaveType, numberOfDays);
 
-    // Save both in transaction
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-      await leaveRequest.save({ session });
-      await balance.save({ session });
-      await session.commitTransaction();
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    // Use a transaction on replica sets and a compensating write on the
+    // standalone MongoDB topology used by the production core stack.
+    await persistLeaveRequestAndBalance(leaveRequest, balance);
 
     // Log audit
     await logLeaveRequestCreated(leaveRequest, req.user, req);

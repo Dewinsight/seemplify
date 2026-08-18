@@ -12,17 +12,9 @@ import {
   DEFAULT_TRIAL_PLAN_SLUG,
   LEGACY_DEFAULT_TRIAL_PLAN_SLUG
 } from '../config/defaultTrialPlan.js'
+import { createEmptyPlanFeatures } from '../config/planFeatures.js'
 
-const EMPTY_EFFECTIVE_FEATURES = Object.freeze({
-  recruiter: false,
-  leaveManagement: false,
-  payrollManagement: false,
-  performanceManagement: false,
-  timeAttendance: false,
-  outlineDocs: false,
-  aiChat: false,
-  lms: false
-})
+const EMPTY_EFFECTIVE_FEATURES = Object.freeze(createEmptyPlanFeatures())
 
 const EMPTY_EFFECTIVE_LIMITS = Object.freeze({
   maxMembers: 0,

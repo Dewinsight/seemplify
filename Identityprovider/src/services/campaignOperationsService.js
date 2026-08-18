@@ -602,8 +602,12 @@ export async function processCampaignBatch(batchId) {
   }
 }
 
-export async function getSenderHealthSummary() {
-  const campaigns = await Campaign.find().select('sender').lean()
+export async function getSenderHealthSummary({
+  loadCampaignSenders = () => Campaign.find().select('sender').lean(),
+  checkSender = computeSenderReadiness,
+  logger = console
+} = {}) {
+  const campaigns = await loadCampaignSenders()
   const uniqueSenders = Array.from(new Set(
     campaigns
       .map((campaign) => String(campaign?.sender?.email || '').trim().toLowerCase())
@@ -612,11 +616,27 @@ export async function getSenderHealthSummary() {
 
   const results = []
   for (const senderEmail of uniqueSenders) {
-    const health = await computeSenderReadiness(senderEmail)
-    results.push({
-      email: senderEmail,
-      ...health
-    })
+    try {
+      const health = await checkSender(senderEmail)
+      results.push({
+        email: senderEmail,
+        ...health
+      })
+    } catch (error) {
+      logger.error?.('Campaign sender health check failed:', {
+        senderEmail,
+        message: error?.message || String(error)
+      })
+      results.push({
+        email: senderEmail,
+        readinessBand: 'red',
+        readinessReasons: ['Sender health is temporarily unavailable. Verify the sender again before launch.'],
+        sender: null,
+        domain: null,
+        webhookConfigured: false,
+        unavailable: true
+      })
+    }
   }
 
   return results.sort((left, right) => left.email.localeCompare(right.email))

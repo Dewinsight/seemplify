@@ -24,6 +24,7 @@ import {
   getComingSoonCards,
   getOidcLaunchApiUrl
 } from './config/hubApps.js'
+import { getPlanFeatureKeyForApp } from './config/planFeatures.js'
 import bcrypt from 'bcryptjs'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
@@ -4406,22 +4407,8 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(`/?error=app_not_assigned&app=${redirectMessage}`)
     }
 
-    // Check subscription access for apps that require it
-    // Map app IDs to subscription feature keys
-    const appFeatureMap = {
-      'smarthr': 'recruiter',
-      'recruiter': 'recruiter',
-      'leave-management': 'leaveManagement',
-      'payroll-management': 'payrollManagement',
-      'performance-management': 'performanceManagement',
-      'time-attendance': 'timeAttendance',
-      'outline': 'outlineDocs',
-      'openwebui': 'aiChat',
-      'lms': 'lms',
-      'seemplify-learning': 'lms'
-    }
-
-    const featureKey = appFeatureMap[appId]
+    // Check subscription access using the same app-to-feature catalog as the admin plan UI.
+    const featureKey = getPlanFeatureKeyForApp(appId)
     if (!featureKey) {
       console.warn(`No subscription feature mapping for appId: ${appId} - subscription check skipped`)
     }
