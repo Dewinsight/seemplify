@@ -33,5 +33,6 @@ test('each settings screen uses the shared tab navigation with its own active ta
     const view = read(path)
     assert.match(view, /<h1>Platform Settings<\/h1>/)
     assert.ok(view.includes(`activeSettingsTab: '${tab}'`))
+    assert.match(view, /href="\/css\/admin\.css\?v=4"/)
   }
 })
