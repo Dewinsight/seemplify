@@ -752,8 +752,8 @@ export default function AIInterviewDetailPage() {
               </div>
 
               <TabsContent value="transcript">
-                <Card className="overflow-hidden border-0 bg-white shadow-sm">
-                  <CardHeader className="space-y-4 border-b bg-gradient-to-br from-slate-50 to-white">
+                <Card className="ai-interview-transcript-panel overflow-hidden border-0 bg-white shadow-sm">
+                  <CardHeader className="ai-interview-transcript-panel__header space-y-4 border-b bg-gradient-to-br from-slate-50 to-white">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base">
@@ -783,7 +783,7 @@ export default function AIInterviewDetailPage() {
                         { label: "Interviewer", value: transcriptStats.aiCount },
                         { label: "Stages", value: transcriptStats.questionCount || (transcriptStats.total ? 1 : 0) }
                       ].map((item) => (
-                        <div key={item.label} className="rounded-xl border bg-white px-3 py-2">
+                        <div key={item.label} className="ai-interview-transcript-panel__stat rounded-xl border bg-white px-3 py-2">
                           <div className="text-xs text-muted-foreground">{item.label}</div>
                           <div className="mt-1 text-lg font-semibold text-slate-950">{item.value}</div>
                         </div>
@@ -799,7 +799,7 @@ export default function AIInterviewDetailPage() {
                       />
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-4 p-4 sm:p-5">
+                  <CardContent className="ai-interview-transcript-panel__body space-y-4 p-4 sm:p-5">
                     {transcriptGroups.length ? (
                       transcriptGroups.map((group) => (
                         <section key={group.key} className="overflow-hidden rounded-2xl border bg-slate-50/70">

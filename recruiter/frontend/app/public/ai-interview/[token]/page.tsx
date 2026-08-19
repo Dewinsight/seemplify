@@ -2106,7 +2106,7 @@ function PublicAIInterviewExperience() {
             <div className="min-h-[100dvh] overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:min-h-[calc(100dvh-32px)] sm:p-5 lg:p-7">
               <div className="mx-auto grid max-w-7xl gap-3 lg:gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-                  <div className="border-b bg-slate-950 px-4 py-5 text-white sm:px-6 sm:py-6">
+                  <div className="candidate-interview-briefing__hero border-b bg-slate-950 px-4 py-5 text-white sm:px-6 sm:py-6">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -2192,7 +2192,7 @@ function PublicAIInterviewExperience() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
+                    <div className="candidate-interview-proctoring rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div>
                           <div className="flex items-center gap-2 text-sm font-semibold text-amber-950">
@@ -2213,14 +2213,14 @@ function PublicAIInterviewExperience() {
                           "Keep this interview tab visible while the interview is in progress.",
                           "Leaving the tab or browser triggers warnings; the third screen-leave ends the interview."
                         ].map((rule) => (
-                          <div key={rule} className="rounded-2xl border border-amber-100 bg-white/85 p-3 text-sm font-medium leading-6 text-slate-900">
+                          <div key={rule} className="candidate-interview-proctoring__rule rounded-2xl border border-amber-100 bg-white/85 p-3 text-sm font-medium leading-6 text-slate-900">
                             {rule}
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:p-5">
+                    <div className="candidate-interview-guidelines rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:p-5">
                       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-950">
                         <ShieldCheck className="h-4 w-4" />
                         Guidelines from the recruiter
@@ -2273,7 +2273,7 @@ function PublicAIInterviewExperience() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl bg-slate-950 p-5 text-white shadow-xl xl:sticky xl:top-6">
+                  <div className="candidate-interview-start-panel rounded-3xl bg-slate-950 p-5 text-white shadow-xl xl:sticky xl:top-6">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-sm text-slate-300">Ready to begin</div>

@@ -407,6 +407,35 @@
   content: "";
 }
 
+.ai-interview-detail .ai-interview-transcript-panel {
+  border: 1px solid var(--ai-line) !important;
+  background: var(--ai-surface) !important;
+  box-shadow: none !important;
+}
+
+.ai-interview-detail .ai-interview-transcript-panel__header {
+  border-color: var(--ai-line) !important;
+  background: var(--ai-surface-muted) !important;
+  color: var(--ai-text) !important;
+}
+
+.ai-interview-detail .ai-interview-transcript-panel__stat {
+  border-color: var(--ai-line) !important;
+  background: var(--ai-surface) !important;
+  color: var(--ai-text) !important;
+}
+
+.ai-interview-detail .ai-interview-transcript-panel__body {
+  background: var(--ai-surface) !important;
+  color: var(--ai-text) !important;
+}
+
+.ai-interview-detail .ai-interview-transcript-panel__header input {
+  border-color: var(--ai-line) !important;
+  background: var(--ai-surface) !important;
+  color: var(--ai-text) !important;
+}
+
 /* Candidate experience */
 .candidate-interview-page {
   background: var(--suite-canvas) !important;
@@ -539,6 +568,50 @@
 .candidate-interview-page select:focus {
   border-color: var(--ai-violet) !important;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ai-violet) 14%, transparent) !important;
+}
+
+.candidate-interview-page .candidate-interview-briefing__hero {
+  border-color: var(--ai-line) !important;
+  background: var(--ai-ink) !important;
+}
+
+.candidate-interview-page .candidate-interview-proctoring,
+.candidate-interview-page .candidate-interview-guidelines {
+  border-color: color-mix(in srgb, var(--suite-attention) 34%, var(--ai-line)) !important;
+  background: var(--suite-attention-soft) !important;
+  color: var(--ai-text) !important;
+}
+
+.candidate-interview-page .candidate-interview-proctoring [class*="text-amber"],
+.candidate-interview-page .candidate-interview-guidelines [class*="text-amber"] {
+  color: var(--suite-attention) !important;
+}
+
+.candidate-interview-page .candidate-interview-proctoring p,
+.candidate-interview-page .candidate-interview-guidelines [class*="text-slate"] {
+  color: var(--ai-muted) !important;
+}
+
+.candidate-interview-page .candidate-interview-proctoring__rule {
+  border-color: color-mix(in srgb, var(--suite-attention) 20%, var(--ai-line)) !important;
+  background: var(--ai-surface) !important;
+  color: var(--ai-text) !important;
+}
+
+.candidate-interview-page .candidate-interview-start-panel {
+  border: 1px solid var(--ai-line) !important;
+  background: var(--ai-ink) !important;
+  box-shadow: none !important;
+}
+
+.dark .candidate-interview-page .candidate-interview-briefing__hero,
+.dark .candidate-interview-page .candidate-interview-start-panel {
+  background: var(--ai-surface-muted) !important;
+}
+
+.dark .candidate-interview-page .candidate-interview-proctoring,
+.dark .candidate-interview-page .candidate-interview-guidelines {
+  background: color-mix(in srgb, var(--suite-attention-soft) 72%, var(--ai-surface)) !important;
 }
 
 /* Candidate ChatGPT connection modal */
