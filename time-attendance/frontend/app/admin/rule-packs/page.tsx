@@ -73,7 +73,7 @@ export default function RulePackStudioPage() {
         const data = await rulePacksApi.get(id);
         selectedId.current = id;
         setSelected(data.pack);
-        const nextRules = data.pack.rules || {};
+        const nextRules = data.resolved?.rules || data.pack.rules || {};
         setRules(nextRules);
         setJsonDraft(JSON.stringify(nextRules, null, 2));
         setValidation(null);
@@ -182,6 +182,27 @@ export default function RulePackStudioPage() {
         try { setCoverage((await rulePacksApi.coverage()).coverage || []); }
         catch (error) { setErrorMessage(getApiErrorMessage(error, 'Rule-pack coverage could not be calculated.')); }
     };
+    const syncDefaults = async () => {
+        setSeeding(true); setErrorMessage('');
+        try {
+            const result = await rulePacksApi.seedDefaults();
+            setMessage(`${result.total} baseline rule packs are configured and published.`);
+            await load();
+            if (coverage) await showCoverage();
+        } catch (error) { setErrorMessage(getApiErrorMessage(error, 'The published baseline catalogue could not be synchronized.')); }
+        finally { setSeeding(false); }
+    };
+    const bulkAssign = async (userIds: string[], rulePackId: string) => {
+        setErrorMessage('');
+        try {
+            const result = await rulePacksApi.bulkAssign({ userIds, rulePackId });
+            setMessage(`${result.matched} employee${result.matched === 1 ? '' : 's'} assigned to ${result.rulePack.name}.`);
+            await Promise.all([showCoverage(), rulePacksApi.assignmentOptions().then(setOptions)]);
+        } catch (error) {
+            setErrorMessage(getApiErrorMessage(error, 'The employee rule-pack assignment could not be saved.'));
+            throw error;
+        }
+    };
     const compare = async (id: string) => {
         setCompareId(id);
         if (!id) return setComparison(null);
@@ -203,11 +224,11 @@ export default function RulePackStudioPage() {
     return <div className="space-y-6">
         <header className="flex flex-wrap items-start justify-between gap-4">
             <div><h1 className="text-2xl font-semibold text-white">Rule Pack Studio</h1><p className="mt-1 text-sm text-zinc-400">Set working-time rules and assign them to an organization, country, team, or employee.</p></div>
-            <div className="flex gap-2"><button onClick={showCoverage} className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800"><Users className="h-4 w-4" />View coverage</button><button onClick={() => setCreateOpen(true)} className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800"><Plus className="h-4 w-4" />New custom pack</button></div>
+            <div className="flex flex-wrap gap-2"><button onClick={syncDefaults} disabled={seeding} className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800 disabled:opacity-50">{seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />}Publish baseline catalogue</button><button onClick={showCoverage} className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800"><Users className="h-4 w-4" />Assign employees</button><button onClick={() => setCreateOpen(true)} className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800"><Plus className="h-4 w-4" />New custom pack</button></div>
         </header>
         {message && <div role="status" className="rounded-md border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-sm text-teal-200">{message}</div>}
         {errorMessage && <div role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{errorMessage}</div>}
-        {coverage && <CoverageTable coverage={coverage} packs={packs} onClose={() => setCoverage(null)} />}
+        {coverage && <CoverageTable coverage={coverage} packs={packs} onAssign={bulkAssign} onClose={() => setCoverage(null)} />}
 
         {loading ? <div className="flex min-h-[420px] items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40 text-sm text-zinc-400"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{seeding ? 'Adding baseline templates…' : 'Loading rule packs…'}</div> : packs.length === 0 ?
             <EmptyState onSeed={() => void load(true)} onCreate={() => setCreateOpen(true)} seeding={seeding} /> :
@@ -258,9 +279,27 @@ function RuleEditor({ rules, editable, updateRule, setRules }: any) {
 function Toggle({ label, checked, disabled, onChange }: any) { return <label className="mt-4 inline-flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} className="h-4 w-4 accent-teal-500" />{label}</label>; }
 function InfoPanel({ title, children }: any) { return <section className="rounded-md border border-zinc-800 bg-zinc-950/40 p-4 text-xs leading-5 text-zinc-500"><h3 className="mb-2 text-sm font-semibold text-white">{title}</h3>{children}</section>; }
 
-function CoverageTable({ coverage, packs, onClose }: any) {
+function CoverageTable({ coverage, packs, onAssign, onClose }: any) {
     const names = new Map<string, string>(packs.map((pack: any) => [String(pack._id), String(pack.name)]));
-    return <section className="rounded-md border border-zinc-700 bg-zinc-900"><div className="flex items-start justify-between border-b border-zinc-800 px-4 py-3"><div><h2 className="text-sm font-semibold text-white">Employee rule coverage</h2><p className="mt-1 text-xs text-zinc-500">The effective published rule pack for each active employee.</p></div><button onClick={onClose} aria-label="Close coverage"><X className="h-4 w-4 text-zinc-500" /></button></div><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs text-zinc-500"><tr><th className="px-4 py-3 font-medium">Employee</th><th className="px-4 py-3 font-medium">Jurisdiction</th><th className="px-4 py-3 font-medium">Effective rule pack</th></tr></thead><tbody>{coverage.map((row: any) => <tr key={row.userId} className="border-t border-zinc-800"><td className="px-4 py-3 text-zinc-200">{row.name || row.email}<div className="text-xs text-zinc-600">{row.email}</div></td><td className="px-4 py-3 text-zinc-400">{row.jurisdiction?.subdivisionCode || row.jurisdiction?.countryCode || 'Not set'}</td><td className="px-4 py-3 text-zinc-300">{row.effectiveRulePack ? names.get(String(row.effectiveRulePack.id)) || `${row.effectiveRulePack.key} v${row.effectiveRulePack.version}` : <span className="text-amber-300">No published pack</span>}</td></tr>)}</tbody></table>{coverage.length === 0 && <p className="px-4 py-8 text-center text-sm text-zinc-500">No active employees were found in the roster.</p>}</div></section>;
+    const published = packs.filter((pack: any) => pack.status === 'published');
+    const nigeria = published.find((pack: any) => pack.key === 'ng-default');
+    const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
+    const [packId, setPackId] = useState(nigeria?._id || published[0]?._id || '');
+    const [assigning, setAssigning] = useState(false);
+    const allSelected = coverage.length > 0 && selectedPeople.length === coverage.length;
+    const toggleAll = () => setSelectedPeople(allSelected ? [] : coverage.map((row: any) => row.userId));
+    const togglePerson = (userId: string) => setSelectedPeople(current => current.includes(userId) ? current.filter(id => id !== userId) : [...current, userId]);
+    const assign = async () => {
+        if (!selectedPeople.length || !packId) return;
+        setAssigning(true);
+        try { await onAssign(selectedPeople, packId); setSelectedPeople([]); }
+        finally { setAssigning(false); }
+    };
+    return <section className="rounded-md border border-zinc-700 bg-zinc-900">
+        <div className="flex items-start justify-between border-b border-zinc-800 px-4 py-3"><div><h2 className="text-sm font-semibold text-white">Employee rule assignments</h2><p className="mt-1 text-xs text-zinc-500">Profile country is used automatically. Employees without one fall back to Nigeria; an explicit assignment takes priority.</p></div><button onClick={onClose} aria-label="Close coverage"><X className="h-4 w-4 text-zinc-500" /></button></div>
+        <div className="flex flex-wrap items-end gap-3 border-b border-zinc-800 px-4 py-3"><label className="min-w-64 text-xs text-zinc-400">Assign selected employees to<select aria-label="Rule pack for selected employees" value={packId} onChange={event => setPackId(event.target.value)} className={inputClass}><option value="">Choose a published pack</option>{published.map((pack: any) => <option key={pack._id} value={pack._id}>{pack.name}</option>)}</select></label><button onClick={assign} disabled={!selectedPeople.length || !packId || assigning} className="inline-flex items-center gap-2 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">{assigning && <Loader2 className="h-4 w-4 animate-spin" />}Assign {selectedPeople.length || ''}</button></div>
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs text-zinc-500"><tr><th className="w-10 px-4 py-3"><input aria-label="Select all employees" type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-teal-500" /></th><th className="px-4 py-3 font-medium">Employee</th><th className="px-4 py-3 font-medium">Jurisdiction</th><th className="px-4 py-3 font-medium">Effective rule pack</th></tr></thead><tbody>{coverage.map((row: any) => <tr key={row.userId} className="border-t border-zinc-800"><td className="px-4 py-3"><input aria-label={`Select ${row.name || row.email}`} type="checkbox" checked={selectedPeople.includes(row.userId)} onChange={() => togglePerson(row.userId)} className="h-4 w-4 accent-teal-500" /></td><td className="px-4 py-3 text-zinc-200">{row.name || row.email}<div className="text-xs text-zinc-600">{row.email}</div></td><td className="px-4 py-3 text-zinc-400">{row.jurisdiction?.subdivisionCode || row.jurisdiction?.countryCode || <span>NG <span className="text-zinc-600">(default)</span></span>}</td><td className="px-4 py-3 text-zinc-300">{row.effectiveRulePack ? names.get(String(row.effectiveRulePack.id)) || `${row.effectiveRulePack.key} v${row.effectiveRulePack.version}` : <span className="text-amber-300">No published pack</span>}{row.assignment && <div className="text-xs text-teal-500">Explicit assignment</div>}</td></tr>)}</tbody></table>{coverage.length === 0 && <p className="px-4 py-8 text-center text-sm text-zinc-500">No active employees were found in the roster.</p>}</div>
+    </section>;
 }
 
 function EmptyState({ onSeed, onCreate, seeding }: any) { return <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-6 py-12 text-center"><Scale className="mx-auto h-9 w-9 text-zinc-500" /><h2 className="mt-4 text-lg font-semibold text-white">No rule packs available</h2><p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-zinc-400">Add the baseline catalog or create an organization-specific pack.</p><div className="mt-5 flex justify-center gap-3"><button onClick={onSeed} disabled={seeding} className="inline-flex items-center gap-2 rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />}Add baseline templates</button><button onClick={onCreate} className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-200">Create custom pack</button></div></div>; }

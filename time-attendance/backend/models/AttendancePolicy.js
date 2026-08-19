@@ -121,8 +121,6 @@ const AttendancePolicySchema = new Schema({
     organizationName: {
         type: String
     },
-    timezone: { type: String, default: 'UTC' },
-
     // Work Schedule
     workSchedule: {
         type: {
@@ -317,7 +315,7 @@ const AttendancePolicySchema = new Schema({
     // Organization defaults used by calculations and rule selection.
     timezone: {
         type: String,
-        default: 'UTC',
+        default: 'Africa/Lagos',
         trim: true,
     },
     jurisdiction: {
@@ -362,6 +360,8 @@ AttendancePolicySchema.statics.getOrCreateDefault = async function (organization
             organizationId,
             organizationName,
             createdBy: creatorId,
+            timezone: 'Africa/Lagos',
+            jurisdiction: { countryCode: 'NG' },
             workSchedule: {
                 type: 'fixed',
                 standardHoursPerDay: 8,

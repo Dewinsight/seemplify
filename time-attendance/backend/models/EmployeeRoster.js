@@ -24,6 +24,13 @@ const EmployeeRosterSchema = new Schema({
         countryCode: { type: String, uppercase: true },
         subdivisionCode: { type: String, uppercase: true },
     },
+    rulePackAssignment: {
+        rulePackId: { type: Schema.Types.ObjectId, ref: 'AttendanceRulePack' },
+        key: String,
+        version: Number,
+        assignedAt: Date,
+        assignedBy: String,
+    },
     appAccess: {
         mode: { type: String, enum: ['all', 'selected'], default: 'all' },
         appIds: [String],

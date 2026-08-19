@@ -1,28 +1,35 @@
 const { assignmentSignature, deepMerge, selectEffectiveCandidate, validateRulePack } = require('../services/rulePackService');
-const { AttendanceRulePack } = require('../models');
+const { AttendancePolicy, AttendanceRulePack } = require('../models');
 const { EU_COUNTRIES, definitions, seedDefaultRulePacks } = require('../services/rulePackSeedService');
 
 describe('rule-pack governance', () => {
-    test('seeds Nigeria, UK, EU baseline and all 27 national overlays as reviewable drafts', () => {
+    test('seeds Nigeria, UK, EU baseline and all 27 national overlays as complete published packs', () => {
         const packs = definitions();
         expect(EU_COUNTRIES).toHaveLength(27);
         expect(packs).toHaveLength(31);
         expect(packs.map(pack => pack.key)).toEqual(expect.arrayContaining(['global-fallback', 'ng-default', 'gb-default', 'eu-baseline']));
         expect(packs.filter(pack => pack.parent?.key === 'eu-baseline')).toHaveLength(27);
-        expect(packs.every(pack => pack.status === 'draft' && pack.reviewRequired === true)).toBe(true);
+        expect(packs.every(pack => pack.status === 'published' && pack.reviewRequired === false)).toBe(true);
+        expect(packs.every(pack => pack.rules.work?.standardHoursPerWeek && pack.rules.breaks?.minimumBreakMinutes)).toBe(true);
     });
 
-    test('adds missing templates idempotently without overwriting existing packs', async () => {
+    test('adds missing templates and upgrades existing seeded versions idempotently', async () => {
         const update = jest.spyOn(AttendanceRulePack, 'updateOne').mockResolvedValue({ upsertedCount: 1 });
+        const updatePolicies = jest.spyOn(AttendancePolicy, 'updateMany').mockResolvedValue({ modifiedCount: 1 });
         await expect(seedDefaultRulePacks({ actorId: 'admin-1' })).resolves.toEqual({ total: 31, inserted: 31, existing: 0 });
         expect(update).toHaveBeenCalledTimes(31);
+        expect(update.mock.calls[0][1]).toHaveProperty('$set.status', 'published');
         expect(update.mock.calls[0][1]).toHaveProperty('$setOnInsert');
 
         update.mockClear();
         update.mockResolvedValue({ upsertedCount: 0 });
         await expect(seedDefaultRulePacks({ actorId: 'admin-1' })).resolves.toEqual({ total: 31, inserted: 0, existing: 31 });
         expect(update).toHaveBeenCalledTimes(31);
+        expect(updatePolicies).toHaveBeenCalledWith(expect.objectContaining({ $and: expect.any(Array) }), {
+            $set: expect.objectContaining({ timezone: 'Africa/Lagos', 'jurisdiction.countryCode': 'NG' }),
+        });
         update.mockRestore();
+        updatePolicies.mockRestore();
     });
 
     test('rejects incomplete jurisdiction data and unsafe raw-presence retention', () => {
@@ -61,6 +68,18 @@ describe('rule-pack governance', () => {
         expect(selectEffectiveCandidate(candidates, context).pack._id).toBe('employee');
         expect(selectEffectiveCandidate(candidates.filter(pack => pack._id !== 'employee'), context).pack._id).toBe('team');
         expect(selectEffectiveCandidate(candidates.filter(pack => !['employee', 'team'].includes(pack._id)), context).pack._id).toBe('country');
+    });
+
+    test('an explicit roster assignment overrides employee, team, and country matching', () => {
+        const candidates = [
+            { _id: 'nigeria', version: 1, effectiveFrom: '2026-01-01', jurisdiction: { kind: 'country', countryCode: 'NG' }, scope: {} },
+            { _id: 'team', version: 1, effectiveFrom: '2026-01-01', jurisdiction: { kind: 'global' }, scope: { organizationId: 'org-1', teamId: 'team-1' } },
+            { _id: 'assigned', version: 1, effectiveFrom: '2026-01-01', jurisdiction: { kind: 'country', countryCode: 'AU' }, scope: {} },
+        ];
+        const selected = selectEffectiveCandidate(candidates, {
+            organizationId: 'org-1', countryCode: 'NG', teamId: 'team-1', rulePackId: 'assigned',
+        });
+        expect(selected.pack._id).toBe('assigned');
     });
 
     test('does not treat organization ownership as more specific than an employee jurisdiction', () => {

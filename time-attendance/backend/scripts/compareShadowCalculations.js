@@ -49,6 +49,7 @@ async function shadowTimesheet(timesheet) {
         teamId: timesheet.teamId || roster?.teamIds?.[0],
         countryCode: roster?.jurisdiction?.countryCode,
         subdivisionCode: roster?.jurisdiction?.subdivisionCode,
+        rulePackId: roster?.rulePackAssignment?.rulePackId,
         at: timesheet.endDate,
     });
     const calculation = calculatePeriod(entries, { start: timesheet.startDate, end: timesheet.endDate }, effective.policy, { leaves, holidays });

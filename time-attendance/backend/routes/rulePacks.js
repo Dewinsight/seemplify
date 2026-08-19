@@ -53,7 +53,7 @@ router.post('/seed-defaults', async (req, res) => {
 router.get('/assignment-options', async (req, res) => {
     try {
         const people = await EmployeeRoster.find({ organizationId: req.organizationId, status: 'active' })
-            .select('userId name email teamIds teamAssignments jurisdiction')
+            .select('userId name email teamIds teamAssignments jurisdiction rulePackAssignment')
             .sort({ name: 1, email: 1 })
             .lean();
         const teamsById = new Map();
@@ -73,8 +73,9 @@ router.get('/assignment-options', async (req, res) => {
 
 router.get('/coverage', async (req, res) => {
     try {
+        const policy = await AttendancePolicy.getOrCreateDefault(req.organizationId, req.organization?.name, req.user.id);
         const people = await EmployeeRoster.find({ organizationId: req.organizationId, status: 'active' })
-            .select('userId name email teamIds teamAssignments jurisdiction')
+            .select('userId name email teamIds teamAssignments jurisdiction rulePackAssignment')
             .sort({ name: 1, email: 1 })
             .lean();
         const coverage = await Promise.all(people.map(async person => {
@@ -82,8 +83,9 @@ router.get('/coverage', async (req, res) => {
                 organizationId: req.organizationId,
                 userId: person.userId,
                 teamId: person.teamIds?.[0],
-                countryCode: person.jurisdiction?.countryCode,
+                countryCode: person.jurisdiction?.countryCode || policy.jurisdiction?.countryCode || 'NG',
                 subdivisionCode: person.jurisdiction?.subdivisionCode,
+                rulePackId: person.rulePackAssignment?.rulePackId,
             });
             return {
                 userId: person.userId,
@@ -91,6 +93,8 @@ router.get('/coverage', async (req, res) => {
                 email: person.email,
                 teamIds: person.teamIds || [],
                 jurisdiction: person.jurisdiction || {},
+                fallbackJurisdiction: person.jurisdiction?.countryCode ? null : (policy.jurisdiction?.countryCode || 'NG'),
+                assignment: person.rulePackAssignment || null,
                 applied: result.applied,
                 effectiveRulePack: result.applied.at(-1) || null,
             };
@@ -98,6 +102,44 @@ router.get('/coverage', async (req, res) => {
         return res.json({ coverage });
     } catch (error) {
         return res.status(500).json({ error: error.message || 'Failed to calculate rule-pack coverage' });
+    }
+});
+
+router.post('/bulk-assign', async (req, res) => {
+    try {
+        const userIds = [...new Set((Array.isArray(req.body.userIds) ? req.body.userIds : [])
+            .map(value => String(value || '').trim()).filter(Boolean))];
+        if (!userIds.length) return res.status(400).json({ error: 'Select at least one employee' });
+        if (userIds.length > 1000) return res.status(400).json({ error: 'No more than 1,000 employees can be assigned at once' });
+
+        const pack = await AttendanceRulePack.findOne({
+            _id: req.body.rulePackId,
+            status: 'published',
+            $or: [
+                { 'scope.organizationId': { $exists: false } },
+                { 'scope.organizationId': null },
+                { 'scope.organizationId': req.organizationId },
+            ],
+        }).lean();
+        if (!pack) return res.status(404).json({ error: 'Choose an available published rule pack' });
+
+        const result = await EmployeeRoster.updateMany(
+            { organizationId: req.organizationId, status: 'active', userId: { $in: userIds } },
+            { $set: { rulePackAssignment: {
+                rulePackId: pack._id,
+                key: pack.key,
+                version: pack.version,
+                assignedAt: new Date(),
+                assignedBy: req.user.id,
+            } } }
+        );
+        return res.json({
+            assigned: result.modifiedCount || 0,
+            matched: result.matchedCount || 0,
+            rulePack: { id: pack._id, key: pack.key, name: pack.name, version: pack.version },
+        });
+    } catch (error) {
+        return res.status(400).json({ error: error.message || 'Employees could not be assigned to the rule pack' });
     }
 });
 
@@ -257,7 +299,7 @@ router.post('/:id/simulate', async (req, res) => {
             return res.status(400).json({ error: 'Valid startDate and endDate are required' });
         }
         const calculationPolicy = {
-            timezone: req.body.timezone || 'UTC',
+            timezone: req.body.timezone || 'Africa/Lagos',
             workSchedule: {
                 workDays: resolved.rules?.work?.workDays,
                 standardHoursPerDay: resolved.rules?.work?.standardHoursPerDay,

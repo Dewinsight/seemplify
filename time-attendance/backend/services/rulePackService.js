@@ -51,6 +51,7 @@ function candidateSpecificity(pack, context) {
     const scope = pack.scope || {};
     const jurisdiction = pack.jurisdiction || {};
     if (scope.organizationId && String(scope.organizationId) !== String(context.organizationId || '')) return -1;
+    if (context.rulePackId && String(pack._id) === String(context.rulePackId)) return 70;
 
     if (scope.userId) return String(scope.userId) === String(context.userId || '') ? 60 : -1;
     if (scope.teamId) return String(scope.teamId) === String(context.teamId || '') ? 50 : -1;
@@ -124,7 +125,8 @@ async function resolvePack(pack, seen = new Set()) {
     };
 }
 
-async function resolveEffectiveRulePack({ organizationId, countryCode, subdivisionCode, locationId, teamId, userId, at = new Date() }) {
+async function resolveEffectiveRulePack({ organizationId, countryCode = 'NG', subdivisionCode, locationId, teamId, userId, rulePackId, at = new Date() }) {
+    const effectiveCountryCode = countryCode || 'NG';
     const active = {
         status: 'published',
         effectiveFrom: { $lte: at },
@@ -135,15 +137,16 @@ async function resolveEffectiveRulePack({ organizationId, countryCode, subdivisi
         $and: [{
             $or: [
                 { 'jurisdiction.kind': 'global' },
-                { 'jurisdiction.countryCode': String(countryCode || '').toUpperCase() },
+                { 'jurisdiction.countryCode': String(effectiveCountryCode).toUpperCase() },
                 { 'jurisdiction.subdivisionCode': String(subdivisionCode || '').toUpperCase() },
                 { 'scope.organizationId': organizationId },
+                ...(rulePackId ? [{ _id: rulePackId }] : []),
             ],
         }],
     }).sort({ version: 1 });
 
     const selected = selectEffectiveCandidate(candidates, {
-        organizationId, countryCode, subdivisionCode, locationId, teamId, userId,
+        organizationId, countryCode: effectiveCountryCode, subdivisionCode, locationId, teamId, userId, rulePackId,
     });
     if (!selected) return { rules: {}, applied: [] };
     const resolved = await resolvePack(selected.pack);
@@ -151,15 +154,16 @@ async function resolveEffectiveRulePack({ organizationId, countryCode, subdivisi
     return { rules: resolved.rules || {}, applied };
 }
 
-async function resolveCalculationPolicy({ policy, organizationId, userId, teamId, locationId, countryCode, subdivisionCode, at = new Date() }) {
+async function resolveCalculationPolicy({ policy, organizationId, userId, teamId, locationId, countryCode, subdivisionCode, rulePackId, at = new Date() }) {
     const base = policy?.toObject ? policy.toObject() : JSON.parse(JSON.stringify(policy || {}));
     const resolved = await resolveEffectiveRulePack({
         organizationId,
         userId,
         teamId,
         locationId,
-        countryCode: countryCode || base.jurisdiction?.countryCode,
+        countryCode: countryCode || base.jurisdiction?.countryCode || 'NG',
         subdivisionCode: subdivisionCode || base.jurisdiction?.subdivisionCode,
+        rulePackId,
         at,
     });
     const rules = resolved.rules || {};

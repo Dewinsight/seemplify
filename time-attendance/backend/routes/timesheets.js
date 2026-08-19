@@ -85,7 +85,7 @@ router.get('/current', async (req, res) => {
             organizationName: req.organizationName,
             teamId: userTeam?.id,
             teamName: userTeam?.name,
-            timezone: req.user.userinfo?.zoneinfo || 'UTC',
+            timezone: req.user.userinfo?.zoneinfo || 'Africa/Lagos',
         }, policy);
 
         // Refresh daily entries with actual time data
@@ -422,6 +422,7 @@ async function refreshTimesheetEntries(timesheet, suppliedPolicy = null, options
         teamId: timesheet.teamId || roster?.teamIds?.[0],
         countryCode: roster?.jurisdiction?.countryCode,
         subdivisionCode: roster?.jurisdiction?.subdivisionCode,
+        rulePackId: roster?.rulePackAssignment?.rulePackId,
         at: timesheet.endDate,
     });
     const calculationPolicy = effective.policy;

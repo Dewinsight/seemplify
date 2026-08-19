@@ -382,6 +382,7 @@ export const rulePacksApi = {
     list: async (params?: any) => (await api.get('/v1/rule-packs', { params })).data,
     assignmentOptions: async () => (await api.get('/v1/rule-packs/assignment-options')).data,
     coverage: async () => (await api.get('/v1/rule-packs/coverage')).data,
+    bulkAssign: async (data: { userIds: string[]; rulePackId: string }) => (await api.post('/v1/rule-packs/bulk-assign', data)).data,
     seedDefaults: async () => (await api.post('/v1/rule-packs/seed-defaults')).data,
     get: async (id: string) => (await api.get(`/v1/rule-packs/${id}`)).data,
     create: async (data: any) => (await api.post('/v1/rule-packs', data)).data,
