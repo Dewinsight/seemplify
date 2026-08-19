@@ -20,6 +20,8 @@ type MockState = {
     coverRequested: boolean;
     requestReviewed: boolean;
     approvalConflict: boolean;
+    timesheetStatus: string;
+    timesheetPayrollState: string;
     timesheetCorrectionRequested: boolean;
     managerExceptionFlagged: boolean;
     rulePacks: any[];
@@ -191,10 +193,15 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'GET' && path === '/api/timesheets/current') return json(route, { timesheet });
         if (method === 'GET' && path === '/api/timesheets/timesheet-1') return json(route, { timesheet: {
             ...timesheet,
-            status: state.approvalConflict ? 'submitted' : timesheet.status,
+            status: state.approvalConflict ? 'submitted' : state.timesheetStatus,
+            payrollIntegration: { state: state.timesheetPayrollState, exported: false },
             summary: { ...timesheet.summary, incompleteEntries: state.approvalConflict ? 2 : 0 },
         } });
-        if (method === 'POST' && /^\/api\/timesheets\/timesheet-1\/(submit|recall)$/.test(path)) return json(route, { timesheet: { ...timesheet, status: path.endsWith('/submit') ? 'submitted' : 'draft' } });
+        if (method === 'POST' && /^\/api\/timesheets\/timesheet-1\/(submit|recall)$/.test(path)) {
+            state.timesheetStatus = path.endsWith('/submit') ? 'submitted' : 'draft';
+            state.timesheetPayrollState = 'not_ready';
+            return json(route, { timesheet: { ...timesheet, status: state.timesheetStatus } });
+        }
         if (method === 'GET' && path === '/api/timesheets/timesheet-1/export') return route.fulfill({ status: 200, headers: { ...corsHeaders(route), 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'content-disposition': 'attachment; filename="timesheet-1.xlsx"' }, body: 'mock workbook' });
 
         if (method === 'GET' && path === '/api/approvals') return json(route, { timesheets: [{
@@ -360,6 +367,7 @@ const test = base.extend<{ mockState: MockState }>({
             notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false, rulePacks: [rulePack],
             rosterSynced: false, rosterSyncCount: 0, coverRequested: false, requestReviewed: false,
             approvalConflict: false,
+            timesheetStatus: 'draft', timesheetPayrollState: 'not_ready',
             timesheetCorrectionRequested: false, managerExceptionFlagged: false,
             locationEnabled: false, clockBodies: [], shiftBodies: [], policyBodies: [], rulePackBodies: [], rulePackAssignmentBodies: [],
         };
@@ -873,6 +881,20 @@ test('recovers an empty rule-pack catalog and creates a custom draft', async ({ 
 
     await expect(page.getByRole('heading', { name: 'London operations rules' })).toBeVisible();
     expect(mockState.calls).toContain('POST /api/v1/rule-packs');
+});
+
+test('lets an employee recall and redo an approved timesheet before payroll accepts attendance', async ({ page, mockState }) => {
+    mockState.timesheetStatus = 'payroll_pending';
+    mockState.timesheetPayrollState = 'failed';
+    await authenticate(page);
+    await page.goto('/timesheets/timesheet-1');
+
+    await expect(page.getByRole('button', { name: 'Recall' })).toBeVisible();
+    page.once('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: 'Recall' }).click();
+
+    await expect(page.getByRole('button', { name: 'Submit for Approval' })).toBeVisible();
+    expect(mockState.calls).toContain('POST /api/timesheets/timesheet-1/recall');
 });
 
 test('assigns a structured rule pack to a specific employee without exposing JSON by default', async ({ page, mockState }) => {

@@ -11,6 +11,7 @@ const { resolveCalculationPolicy } = require('../services/rulePackService');
 const { buildApprovalWorkflow } = require('../services/approvalConfigurationService');
 const { getTimesheetSubmissionError } = require('../services/timesheetSubmissionService');
 const { queueTimesheetEvent } = require('../services/automationEventService');
+const { canRecallTimesheet, resetTimesheetForRecall } = require('../services/timesheetRecallService');
 
 // Apply auth middleware
 router.use(requireAuth);
@@ -326,14 +327,16 @@ router.post('/:id/recall', async (req, res) => {
             return res.status(404).json({ error: 'Timesheet not found' });
         }
 
-        if (timesheet.status !== 'submitted') {
+        if (!canRecallTimesheet(timesheet)) {
             return res.status(400).json({
-                error: 'Only submitted timesheets can be recalled',
+                error: timesheet.payrollIntegration?.exported || timesheet.payrollIntegration?.state === 'accepted'
+                    ? 'This timesheet has already been accepted by Payroll and must be corrected with a versioned adjustment'
+                    : 'This timesheet cannot be recalled in its current status',
                 code: 'INVALID_STATUS',
             });
         }
 
-        timesheet.status = 'draft';
+        resetTimesheetForRecall(timesheet);
         timesheet.addAuditLog('recalled', userId, req.user.name, 'Recalled for editing');
 
         await timesheet.save();

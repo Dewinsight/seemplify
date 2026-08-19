@@ -424,7 +424,16 @@ export default function TimesheetDetailPage() {
                         </button>
                     )}
 
-                    {!isManagementView && (timesheet.status === 'submitted' || timesheet.status === 'pending') && (
+                    {!isManagementView && (
+                        ['submitted', 'pending'].includes(timesheet.status)
+                        || (
+                            ['approved', 'payroll_pending'].includes(timesheet.status)
+                            && ['not_ready', 'failed', 'no_data'].includes(timesheet.payrollIntegration?.state || 'not_ready')
+                            && !timesheet.payrollIntegration?.exported
+                            && !timesheet.payrollIntegration?.acceptedAt
+                            && !timesheet.payrollIntegration?.payrollRunId
+                        )
+                    ) && (
                         <button
                             onClick={handleRecall}
                             disabled={submitting}
