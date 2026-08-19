@@ -94,4 +94,24 @@ test("AI interview dark mode uses semantic transcript and candidate notice surfa
     interviewBrandTheme,
     /\.dark \.candidate-interview-page \.candidate-interview-proctoring,[\s\S]*background:\s*color-mix\(/s
   );
+  assert.match(
+    interviewTheme,
+    /\.ai-interview-detail \.text-slate-950,\s*\.ai-interview-detail \.text-slate-900,[\s\S]*color:\s*var\(--suite-ink\)/s
+  );
+  assert.match(
+    interviewTheme,
+    /\.ai-interview-detail \.bg-slate-100\s*\{[^}]*background:\s*var\(--suite-surface-muted\)/s
+  );
+  assert.match(
+    interviewTheme,
+    /\.ai-interview-detail \.bg-slate-200\s*\{[^}]*background:\s*var\(--suite-line\)/s
+  );
+  assert.match(
+    interviewTheme,
+    /\.dark \.ai-interview-detail \.bg-slate-950\s*\{[^}]*background:\s*#7047eb/s
+  );
+  assert.match(
+    interviewDetailPage,
+    /isCandidate \? "text-white" : "text-muted-foreground"/
+  );
 });

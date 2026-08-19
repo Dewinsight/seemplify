@@ -390,7 +390,16 @@
   background: var(--suite-surface-muted) !important;
 }
 
+.ai-interview-detail .bg-slate-100 {
+  background: var(--suite-surface-muted) !important;
+}
+
+.ai-interview-detail .bg-slate-200 {
+  background: var(--suite-line) !important;
+}
+
 .ai-interview-detail .text-slate-950,
+.ai-interview-detail .text-slate-900,
 .ai-interview-detail [class~="text-card-foreground"] {
   color: var(--suite-ink) !important;
 }
@@ -411,6 +420,10 @@
 
 .ai-interview-detail .bg-slate-950 {
   background: var(--suite-accent) !important;
+}
+
+.dark .ai-interview-detail .bg-slate-950 {
+  background: #7047eb !important;
 }
 
 .ai-interview-detail input {
