@@ -10,7 +10,7 @@ import {
   completeAssistantComposeDelivery, createAssistantComposeDraftRun, createAssistantComposeRun, createAssistantEmailRun,
   createAssistantKnowledgeRun, createAssistantWorkProductRun, failAssistantComposeDelivery,
   createNylasOAuthState, getAssistantRun, listAssistantRuns, listNylasConnections,
-  markNylasConnectionRevoked, ownedNylasConnection, publishAssistantChanged, replayAssistantIdempotency,
+  markNylasConnectionRevoked, markNylasGrantRevoked, ownedNylasConnection, publishAssistantChanged, replayAssistantIdempotency,
   saveNylasConnection, updateAssistantDraft, type AssistantEvidenceSnapshot
 } from './assistant.js';
 import {
@@ -27,9 +27,10 @@ import {
   KnowledgeError, resolveKnowledgeBaseRefs, saveKnowledgeQuerySnapshot
 } from './knowledgeRepository.js';
 import {
-  createNylasAuthorizeUrl, exchangeNylasCode, getNylasCalendarEvent, getNylasThreadSnapshot,
-  listNylasCalendarEvents, listNylasCalendars, listNylasFolders, listNylasThreadPage, listNylasThreads,
-  NylasError, nylasConfigured, nylasRedirectUri, revokeNylasGrant, sendNylasMessage, sendNylasReply,
+  createNylasAuthorizeUrl, exchangeNylasCodeWithOldestGrantRotation, getNylasCalendarEvent, getNylasThreadSnapshot,
+  listNylasCalendarEvents, listNylasCalendars, listNylasFolders,
+  listNylasThreadPage, listNylasThreads, NylasError, nylasConfigured, nylasRedirectUri,
+  revokeNylasGrant, sendNylasMessage, sendNylasReply,
   type AssistantThreadSnapshot, type NylasReplyRecipient
 } from './nylasClient.js';
 import { nylasSecretEncryptionConfigured } from './nylasSecrets.js';
@@ -1135,7 +1136,23 @@ export async function nylasCallback(request: Request, response: Response) {
       });
       return callbackRedirect(response, 'cancelled');
     }
-    const grant = await exchangeNylasCode(query.code, authorization.provider);
+    const callbackAuthorization = authorization;
+    const grant = await exchangeNylasCodeWithOldestGrantRotation(
+      query.code,
+      callbackAuthorization.provider,
+      (removed) => {
+        const localConnections = markNylasGrantRevoked(removed.grantId);
+        recordAssistantAudit({
+          spaceId: callbackAuthorization.spaceId, actorUserId: callbackAuthorization.userId,
+          action: 'assistant.oauth.capacity_rotated', targetType: 'nylas_connection',
+          detail: {
+            requestedProvider: callbackAuthorization.provider,
+            removedProvider: removed.provider,
+            localConnectionsRevoked: localConnections.length
+          }
+        });
+      }
+    );
     const connection = saveNylasConnection({
       spaceId: authorization.spaceId, userId: authorization.userId, provider: authorization.provider,
       grantId: grant.grantId, email: grant.email, scopes: grant.scopes

@@ -60,6 +60,7 @@ let knowledgeSourceRef = '';
 let invalidKnowledge = false;
 let nylasReadUnavailable = false;
 let nylasAuthorizationRejected = false;
+let nylasGrantCapacityFailuresRemaining = 0;
 let assistantKnowledgeBaseId = '';
 let assistantKnowledgeDocumentId = '';
 let assistantKnowledgeSourceRef = '';
@@ -203,7 +204,20 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
     throw new Error('Nylas read endpoint is intentionally offline for idempotency replay.');
   }
   if (url.pathname === '/v3/connect/token' && method === 'POST') {
+    if (nylasGrantCapacityFailuresRemaining > 0) {
+      nylasGrantCapacityFailuresRemaining -= 1;
+      return json({ error: { type: 'invalid_request_error', message: 'Maximum number of grants reached for Organization authentication' } }, 400);
+    }
     return json({ data: { grant_id: 'grant-private-123', email: 'owner-mailbox@example.test', provider: 'google' } });
+  }
+  if (url.pathname === '/v3/grants' && method === 'GET') {
+    return json({ data: [{
+      id: 'grant-oldest-001', email: 'oldest@example.test', provider: 'microsoft',
+      grant_status: 'valid', created_at: 1_700_000_000
+    }] });
+  }
+  if (url.pathname === '/v3/grants/grant-oldest-001' && method === 'DELETE') {
+    return json({ data: { id: 'grant-oldest-001' } });
   }
   if (url.pathname === '/v3/grants/grant-private-123/threads' && method === 'GET') {
     return json({ data: [{
@@ -448,9 +462,22 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   assert.match(String(wrongState.headers.location), /nylas=error/u);
   assert.equal(fetchCalls.filter((call) => call.url.endsWith('/v3/connect/token')).length, tokenCallsBeforeWrongState);
 
+  nylasGrantCapacityFailuresRemaining = 1;
+  const tokenCallsBeforeCapacityRecovery = fetchCalls.filter((call) => call.url.endsWith('/v3/connect/token')).length;
   const callback = await request(app).get('/api/integrations/nylas/callback')
     .query({ state, code: 'oauth-code-1', userId: 'attacker', spaceId: 'attacker-space' }).redirects(0).expect(302);
   assert.match(String(callback.headers.location), /nylas=connected/u);
+  assert.equal(
+    fetchCalls.filter((call) => call.url.endsWith('/v3/connect/token')).length,
+    tokenCallsBeforeCapacityRecovery + 2
+  );
+  const oldestGrantLookup = fetchCalls.find((call) => new URL(call.url).pathname === '/v3/grants')!;
+  const oldestGrantLookupUrl = new URL(oldestGrantLookup.url);
+  assert.equal(oldestGrantLookupUrl.searchParams.get('limit'), '1');
+  assert.equal(oldestGrantLookupUrl.searchParams.get('sort_by'), 'created_at');
+  assert.equal(oldestGrantLookupUrl.searchParams.get('order_by'), 'asc');
+  assert.ok(fetchCalls.some((call) => call.method === 'DELETE'
+    && new URL(call.url).pathname === '/v3/grants/grant-oldest-001'));
   const exchange = fetchCalls.find((call) => call.url.endsWith('/v3/connect/token'))!;
   assert.equal('code_verifier' in exchange.body, false);
   assert.deepEqual(exchange.body, {
@@ -1139,6 +1166,7 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   const auditActions = new Set(audit.body.items.map((item: any) => item.action));
   for (const expected of [
     'assistant.oauth.connected',
+    'assistant.oauth.capacity_rotated',
     'assistant.mailbox.threads_read',
     'assistant.mailbox.thread_read',
     'assistant.calendar.events_read',

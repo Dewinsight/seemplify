@@ -115,10 +115,14 @@ async function nylasRequest(path: string, init: RequestInit, maximumBytes?: numb
   if (!response.ok) {
     const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
     const authorizationFailed = response.status === 401 || response.status === 403;
+    const grantCapacityReached = isGrantCapacityPayload(payload);
     throw new NylasError(
-      retryable ? 'Nylas is temporarily unavailable.' : 'Nylas rejected the request.',
-      retryable ? 503 : authorizationFailed ? 409 : response.status,
-      authorizationFailed ? 'NYLAS_AUTHORIZATION_FAILED' : 'NYLAS_REQUEST_FAILED',
+      retryable ? 'Nylas is temporarily unavailable.'
+        : grantCapacityReached ? 'The Nylas grant capacity has been reached.'
+          : 'Nylas rejected the request.',
+      retryable ? 503 : grantCapacityReached || authorizationFailed ? 409 : response.status,
+      grantCapacityReached ? 'NYLAS_GRANT_CAPACITY_REACHED'
+        : authorizationFailed ? 'NYLAS_AUTHORIZATION_FAILED' : 'NYLAS_REQUEST_FAILED',
       retryable
     );
   }
@@ -126,6 +130,60 @@ async function nylasRequest(path: string, init: RequestInit, maximumBytes?: numb
 }
 
 function payloadData(value: any) { return value?.data ?? value ?? {}; }
+
+function isGrantCapacityPayload(payload: any) {
+  const error = payload?.error;
+  const text = [
+    typeof error === 'string' ? error : '',
+    error?.type,
+    error?.message,
+    error?.event_code,
+    error?.error_code,
+    error?.provider_error?.error?.message,
+    payload?.error_description,
+    payload?.message
+  ].filter(Boolean).join(' ').toLocaleLowerCase('en-US');
+  return /maximum number of grants|grant(?:s)?\s+(?:limit|capacity).*(?:reached|exceeded|full)|(?:reached|exceeded)\s+(?:the\s+)?(?:maximum\s+)?(?:number of\s+)?grants|too many grants/u.test(text);
+}
+
+export function isNylasGrantCapacityError(error: unknown): error is NylasError {
+  return error instanceof NylasError && error.code === 'NYLAS_GRANT_CAPACITY_REACHED';
+}
+
+export async function removeOldestNylasGrant() {
+  const query = new URLSearchParams({ limit: '1', offset: '0', sort_by: 'created_at', order_by: 'asc' });
+  const payload = await nylasRequest(`/v3/grants?${query}`, {
+    method: 'GET', headers: { authorization: 'Bearer managed-platform-key' }
+  }, 256 * 1024);
+  const data = payloadData(payload);
+  const grants = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+  const oldest = grants[0];
+  const grantId = cleanText(oldest?.id || oldest?.grant_id || oldest?.grantId, 500);
+  if (!grantId) {
+    throw new NylasError('Nylas reported full grant capacity but returned no grant to remove.', 409, 'NYLAS_GRANT_ROTATION_EMPTY');
+  }
+  await revokeNylasGrant(grantId);
+  return {
+    grantId,
+    provider: cleanText(oldest?.provider, 80) || null,
+    createdAt: isoTimestamp(oldest?.created_at) || null
+  };
+}
+
+export async function exchangeNylasCodeWithOldestGrantRotation(
+  code: string,
+  expectedProvider: NylasProvider,
+  onGrantRemoved?: (grant: Awaited<ReturnType<typeof removeOldestNylasGrant>>) => void | Promise<void>
+) {
+  try {
+    return await exchangeNylasCode(code, expectedProvider);
+  } catch (error) {
+    if (!isNylasGrantCapacityError(error)) throw error;
+    const removed = await removeOldestNylasGrant();
+    await onGrantRemoved?.(removed);
+    return exchangeNylasCode(code, expectedProvider);
+  }
+}
 
 export async function exchangeNylasCode(code: string, expectedProvider: NylasProvider) {
   const runtime = await requireConfiguration();

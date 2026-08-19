@@ -324,6 +324,20 @@ export function markNylasConnectionRevoked(userId: string, spaceId: string, id: 
   publishAssistantChanged(spaceId);
 }
 
+export function markNylasGrantRevoked(grantId: string) {
+  const fingerprint = fingerprintNylasGrant(grantId);
+  const rows = db.prepare(`SELECT id,space_id,user_id FROM assistant_nylas_connections
+    WHERE grant_fingerprint=? AND status='connected'`).all(fingerprint) as Array<{
+      id: string; space_id: string; user_id: string;
+    }>;
+  if (!rows.length) return [];
+  const timestamp = new Date().toISOString();
+  db.prepare(`UPDATE assistant_nylas_connections SET status='revoked',revoked_at=?,updated_at=?
+    WHERE grant_fingerprint=? AND status='connected'`).run(timestamp, timestamp, fingerprint);
+  for (const spaceId of new Set(rows.map((row) => row.space_id))) publishAssistantChanged(spaceId);
+  return rows.map((row) => ({ id: row.id, spaceId: row.space_id, userId: row.user_id }));
+}
+
 function jobKind(kind: AssistantRunKind): AiJobKind {
   if (kind === 'email_summary') return 'assistant.email_summary';
   if (kind === 'email_draft') return 'assistant.email_draft';
