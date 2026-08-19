@@ -6,6 +6,9 @@ const CANONICAL_QUESTION =
   "Describe a production incident where a Node.js service's p99 latency increased after a Kubernetes deployment. How did you isolate whether PostgreSQL contention, network saturation, or application code was responsible, and what evidence guided your mitigation?";
 const PRIVATE_SPEECH_RENDITION =
   "Describe a production incident where a Node.js service's P ninety-nine latency increased after a Kubernetes deployment. How did you isolate whether PostgreSQL contention, network saturation, or application code was responsible... and what evidence guided your mitigation?";
+const CANDIDATE_CLARIFICATION = 'Can you explain that? Explain the question a bit more for me please.';
+const SAFE_CLARIFICATION =
+  `Of course. I will restate the question without changing what it assesses. ${CANONICAL_QUESTION} You can answer in your own words, or ask about a specific term.`;
 
 type RecordedRequest = {
   method: string;
@@ -156,6 +159,30 @@ async function installInterviewMocks(page: Page, requests: RecordedRequest[]) {
     if (url.pathname === `/api/ai-interviews/public/${TOKEN}/start` && request.method() === 'POST') {
       return json(route, publicState('in_progress'));
     }
+    if (url.pathname === `/api/ai-interviews/public/${TOKEN}/message` && request.method() === 'POST') {
+      const response = publicState('in_progress');
+      response.session.messages.push(
+        {
+          _id: 'candidate-message-1',
+          role: 'candidate',
+          content: CANDIDATE_CLARIFICATION,
+          speechContent: '',
+          questionIndex: 0,
+          messageType: 'clarification',
+          createdAt: '2026-08-19T10:00:02.000Z',
+        },
+        {
+          _id: 'clarification-message-1',
+          role: 'ai',
+          content: SAFE_CLARIFICATION,
+          speechContent: '',
+          questionIndex: 0,
+          messageType: 'clarification',
+          createdAt: '2026-08-19T10:00:03.000Z',
+        },
+      );
+      return json(route, response);
+    }
     if (url.pathname === `/api/ai-interviews/public/${TOKEN}/speech` && request.method() === 'POST') {
       return route.fulfill({
         status: 200,
@@ -193,6 +220,15 @@ test('@smoke @deep candidate sees the canonical question while voice uses its pr
   ));
   expect(speechRequest?.body).toEqual({
     messageId: QUESTION_MESSAGE_ID,
+  });
+
+  await page.getByRole('textbox').fill(CANDIDATE_CLARIFICATION);
+  await page.getByRole('button', { name: 'Send answer', exact: true }).click();
+
+  await expect(page.getByText(CANDIDATE_CLARIFICATION, { exact: true })).toBeVisible();
+  await expect(page.getByText(SAFE_CLARIFICATION, { exact: true })).toBeVisible();
+  expect(requests.find((request) => request.path === `/api/ai-interviews/public/${TOKEN}/message`)?.body).toEqual({
+    message: CANDIDATE_CLARIFICATION,
   });
   expect(pageErrors).toEqual([]);
 });

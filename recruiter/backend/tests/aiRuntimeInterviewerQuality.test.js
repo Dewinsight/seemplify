@@ -49,6 +49,39 @@ test('live clarification quality rejects answer leakage and generic restatement'
     { question, candidateMessage: 'Can you rephrase that?' }
   );
   assert.equal(broadRephrase.passed, true);
+
+  const broadExplanation = assessClarification(
+    'The question presents a release that caused a production slowdown. Explain how you would investigate the cause, decide whether to reverse the release, and verify that the service recovered.',
+    { question, candidateMessage: 'Can you explain that? Explain the question a bit more for me please.' }
+  );
+  assert.equal(broadExplanation.passed, true);
+});
+
+test('clarification model failures fall back without blocking the candidate turn', async (t) => {
+  const originalComplete = aiInterviewerService.completeWithQualityGate;
+  t.after(() => { aiInterviewerService.completeWithQualityGate = originalComplete; });
+  aiInterviewerService.completeWithQualityGate = async () => {
+    const error = new Error('semantic quality failure');
+    error.code = 'AI_RESPONSE_QUALITY_FAILED';
+    throw error;
+  };
+
+  const fallback = await aiInterviewerService.clarifyQuestion({
+    interview: {
+      title: 'Platform interview',
+      questionSnapshots: [{ question }],
+      timers: { perQuestionMinutes: 10 },
+      guidelines: 'Answer in your own words.'
+    },
+    session: { candidateSnapshot: { name: 'Candidate' }, messages: [] },
+    question: { question, timeLimit: 10 },
+    questionNumber: 1,
+    candidateMessage: 'Can you explain that? Explain the question a bit more for me please.'
+  });
+
+  assert.match(fallback, /restate the question without changing what it assesses/i);
+  assert.match(fallback, /Kubernetes release doubles checkout latency/i);
+  assert.doesNotMatch(fallback, /ideal answer|scoring criteria|rubric/i);
 });
 
 test('speech rendition quality preserves an intelligent canonical question without adding another ask', () => {

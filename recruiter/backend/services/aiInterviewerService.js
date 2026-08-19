@@ -271,6 +271,14 @@ Return only the speech rendition of the original question.`
     return text.endsWith('?') && wordCount <= 24;
   }
 
+  buildClarificationFallback({ question }) {
+    const canonicalQuestion = String(question?.question || '').trim();
+    if (!canonicalQuestion) {
+      return 'I could not clarify that just now. Please ask me to repeat the current question, or answer when you are ready.';
+    }
+    return `Of course. I will restate the question without changing what it assesses. ${canonicalQuestion} You can answer in your own words, or ask about a specific term.`;
+  }
+
   async clarifyQuestion({ interview, session, question, questionNumber, candidateMessage }) {
     try {
       const context = this.buildBaseContext({ interview, session, question, questionNumber });
@@ -316,8 +324,7 @@ Good pattern for "What does rollback threshold mean?": "A rollback threshold is 
       });
     } catch (error) {
       console.warn('AI clarification failed:', error.message);
-      if (error.code === 'AI_MODEL_UNAVAILABLE') throw error;
-      throw new AIModelUnavailableError('question clarification', error);
+      return this.buildClarificationFallback({ question, candidateMessage });
     }
   }
 

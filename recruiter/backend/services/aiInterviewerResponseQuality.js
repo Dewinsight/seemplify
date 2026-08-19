@@ -1,7 +1,7 @@
 const STOP_WORDS = new Set([
   'about', 'answer', 'ask', 'candidate', 'could', 'current', 'for', 'from', 'have',
   'interview', 'question', 'that', 'the', 'this', 'what', 'when', 'which', 'with',
-  'would', 'your', 'you'
+  'would', 'your', 'you', 'bit', 'detail', 'details', 'further', 'little', 'more'
 ]);
 const CLARIFICATION_INTENT_WORDS = new Set([
   'again', 'can', 'clarification', 'clarify', 'define', 'explain', 'mean', 'meaning',
@@ -14,7 +14,8 @@ function normalize(value) {
 
 function tokens(value) {
   return new Set((normalize(value).toLowerCase().match(/[a-z0-9+#.-]{3,}/g) || [])
-    .filter((token) => !STOP_WORDS.has(token)));
+    .map((token) => token.replace(/^\.+|\.+$/g, ''))
+    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token)));
 }
 
 function overlapCount(left, right) {
