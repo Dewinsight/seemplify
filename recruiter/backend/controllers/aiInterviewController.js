@@ -1243,10 +1243,6 @@ exports.startPublicInterview = async (req, res) => {
       return res.json({ success: true, ...buildPublicState(session, interview) });
     }
 
-    if (!['sent', 'opened', 'in_progress'].includes(session.status)) {
-      return res.status(400).json({ error: 'NOT_READY', message: 'This interview link is not ready to start' });
-    }
-
     if (session.status !== 'in_progress') {
       const now = new Date();
       const firstQuestion = interview.questionSnapshots[0];
