@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, Loader2, Plus, Save } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, Loader2, Pencil, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
 
 import { useUserContext } from '@/lib/hooks';
 import { PAYROLL_BANK_JURISDICTIONS } from '@/lib/payrollBankJurisdictions.mjs';
@@ -12,6 +12,8 @@ import {
   listPayrollEmployerEntities,
   listTaxAdapterCandidates,
   PayrollEmployerEntity,
+  PayrollEmployerEntityPayload,
+  PayrollTaxRegistration,
   TaxAdapterCandidate,
   updatePayrollEmployerEntity,
 } from '@/lib/payrollEmployerEntities';
@@ -23,7 +25,7 @@ type EmployerForm = {
   countryCode: string;
   jurisdictionCode: string;
   defaultCurrency: string;
-  status: 'draft';
+  status: 'draft' | 'active' | 'inactive';
   taxJurisdictionConfigId: string;
   taxJurisdictionVersionId: string;
   taxAdapterCandidateId: string;
@@ -32,6 +34,8 @@ type EmployerForm = {
   registrationReference: string;
   evidenceReference: string;
   effectiveFrom: string;
+  registrationStatus: 'unverified' | 'reviewed' | 'revoked';
+  existingRegistrations: PayrollTaxRegistration[];
 };
 
 const supportedCountries = PAYROLL_BANK_JURISDICTIONS.filter((country: any) => country.code !== 'OTHER');
@@ -65,6 +69,31 @@ function defaultForm(
     registrationReference: '',
     evidenceReference: '',
     effectiveFrom: `${new Date().getFullYear()}-01-01`,
+    registrationStatus: 'unverified',
+    existingRegistrations: [],
+  };
+}
+
+function formFromEntity(entity: PayrollEmployerEntity): EmployerForm {
+  const registration = entity.taxRegistrations?.[0];
+  return {
+    code: entity.code,
+    legalName: entity.legalName,
+    employerType: entity.employerType,
+    countryCode: entity.countryCode,
+    jurisdictionCode: entity.jurisdictionCode,
+    defaultCurrency: entity.defaultCurrency,
+    status: entity.status,
+    taxJurisdictionConfigId: entity.taxJurisdictionConfigId || '',
+    taxJurisdictionVersionId: entity.taxJurisdictionVersionId || '',
+    taxAdapterCandidateId: entity.taxAdapterCandidateId || '',
+    authorityCode: registration?.authorityCode || '',
+    registrationType: registration?.registrationType || 'Employer payroll tax registration',
+    registrationReference: registration?.registrationReference || '',
+    evidenceReference: registration?.evidenceReference || '',
+    effectiveFrom: registration?.effectiveFrom ? new Date(registration.effectiveFrom).toISOString().slice(0, 10) : `${new Date().getFullYear()}-01-01`,
+    registrationStatus: registration?.status || 'unverified',
+    existingRegistrations: (entity.taxRegistrations || []).map((item) => ({ ...item })),
   };
 }
 
@@ -75,6 +104,7 @@ export default function EmployerEntitiesPage() {
   const [jurisdictions, setJurisdictions] = useState<TaxJurisdictionSummary[]>([]);
   const [form, setForm] = useState<EmployerForm>(() => defaultForm());
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activatingId, setActivatingId] = useState('');
@@ -121,19 +151,39 @@ export default function EmployerEntitiesPage() {
 
   const selectCountry = (countryCode: string) => {
     const next = defaultForm(countryCode, form.legalName || organization?.name || '', candidates, jurisdictions);
+    const preserveRegistration = countryCode === form.countryCode;
     setForm({
       ...next,
+      status: editingId ? form.status : 'draft',
       employerType: form.employerType,
-      authorityCode: form.authorityCode,
-      registrationReference: form.registrationReference,
-      evidenceReference: form.evidenceReference,
+      authorityCode: preserveRegistration ? form.authorityCode : '',
+      registrationType: preserveRegistration ? form.registrationType : next.registrationType,
+      registrationReference: preserveRegistration ? form.registrationReference : '',
+      evidenceReference: preserveRegistration ? form.evidenceReference : '',
+      effectiveFrom: preserveRegistration ? form.effectiveFrom : next.effectiveFrom,
+      registrationStatus: preserveRegistration ? form.registrationStatus : 'unverified',
+      existingRegistrations: preserveRegistration ? form.existingRegistrations : [],
     });
   };
 
   const openNewForm = () => {
+    setEditingId('');
     setForm(defaultForm('NG', organization?.name || '', candidates, jurisdictions));
     setError('');
     setShowForm(true);
+  };
+
+  const openEditForm = (entity: PayrollEmployerEntity) => {
+    setEditingId(entity._id);
+    setForm(formFromEntity(entity));
+    setError('');
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setEditingId('');
+    setShowForm(false);
+    setError('');
   };
 
   const save = async (event: FormEvent) => {
@@ -149,7 +199,15 @@ export default function EmployerEntitiesPage() {
     setSaving(true);
     setError('');
     try {
-      await createPayrollEmployerEntity({
+      const originalRegistration = form.existingRegistrations[0];
+      const registrationChanged = !!originalRegistration && (
+        originalRegistration.authorityCode !== form.authorityCode
+        || originalRegistration.registrationType !== form.registrationType
+        || originalRegistration.registrationReference !== form.registrationReference
+        || originalRegistration.evidenceReference !== form.evidenceReference
+        || new Date(originalRegistration.effectiveFrom).toISOString().slice(0, 10) !== form.effectiveFrom
+      );
+      const payload: PayrollEmployerEntityPayload = {
         code: form.code,
         legalName: form.legalName,
         employerType: form.employerType,
@@ -161,20 +219,37 @@ export default function EmployerEntitiesPage() {
         taxJurisdictionVersionId: form.taxJurisdictionVersionId || null,
         taxAdapterCandidateId: form.taxAdapterCandidateId,
         taxRegistrations: hasCompleteRegistration ? [{
+          ...originalRegistration,
           authorityCode: form.authorityCode,
           registrationType: form.registrationType,
           registrationReference: form.registrationReference,
           evidenceReference: form.evidenceReference,
           effectiveFrom: form.effectiveFrom,
-          status: 'unverified',
-        }] : [],
-      });
-      setShowForm(false);
+          status: registrationChanged ? 'unverified' : form.registrationStatus,
+        }, ...form.existingRegistrations.slice(1)] : form.existingRegistrations,
+      };
+      if (editingId) await updatePayrollEmployerEntity(editingId, payload);
+      else await createPayrollEmployerEntity(payload);
+      closeForm();
       await load();
     } catch (saveError: any) {
       setError(saveError?.response?.data?.error || saveError?.message || 'Failed to save legal employer.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const setEntityStatus = async (entity: PayrollEmployerEntity, status: 'active' | 'inactive') => {
+    if (status === 'inactive' && !window.confirm(`Remove ${entity.legalName} from active payroll setup? Historical payroll records will be preserved.`)) return;
+    setActivatingId(entity._id);
+    setError('');
+    try {
+      await updatePayrollEmployerEntity(entity._id, { status });
+      await load();
+    } catch (statusError: any) {
+      setError(statusError?.response?.data?.error || statusError?.message || 'Failed to update this employer.');
+    } finally {
+      setActivatingId('');
     }
   };
 
@@ -217,10 +292,10 @@ export default function EmployerEntitiesPage() {
           <form onSubmit={save} className="mb-6 border border-zinc-800 bg-zinc-900 p-5">
             <div className="flex flex-col gap-2 border-b border-zinc-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h2 className="text-base font-semibold text-zinc-100">Employer details</h2>
-                <p className="mt-1 text-sm text-zinc-500">Defaults are saved as a draft until the real tax registration is verified.</p>
+                <h2 className="text-base font-semibold text-zinc-100">{editingId ? 'Edit employer' : 'Employer details'}</h2>
+                <p className="mt-1 text-sm text-zinc-500">{editingId ? 'Update the legal identity, registration evidence, or payroll tax binding.' : 'Defaults are saved as a draft until the real tax registration is verified.'}</p>
               </div>
-              <span className="text-xs font-medium text-amber-300">Draft - not yet runnable</span>
+              <button type="button" onClick={closeForm} aria-label="Close employer form" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-zinc-700 text-zinc-400 hover:text-zinc-100"><X className="h-4 w-4" /></button>
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -268,9 +343,9 @@ export default function EmployerEntitiesPage() {
             </fieldset>
 
             <div className="mt-5 flex justify-end gap-3">
-              {entities.length ? <button type="button" onClick={() => setShowForm(false)} className="min-h-11 rounded-lg border border-zinc-700 px-4 text-sm">Cancel</button> : null}
+              {entities.length ? <button type="button" onClick={closeForm} className="min-h-11 rounded-lg border border-zinc-700 px-4 text-sm">Cancel</button> : null}
               <button disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-amber-500 px-4 text-sm font-medium text-zinc-950 disabled:opacity-60">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save employer setup
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} {editingId ? 'Save changes' : 'Save employer setup'}
               </button>
             </div>
           </form>
@@ -282,7 +357,7 @@ export default function EmployerEntitiesPage() {
               <thead className="bg-zinc-900 text-zinc-400"><tr><th className="px-4 py-3 font-medium">Legal employer</th><th className="px-4 py-3 font-medium">Jurisdiction</th><th className="px-4 py-3 font-medium">Automatic tax setup</th><th className="px-4 py-3 font-medium">Readiness</th><th className="px-4 py-3 font-medium">Action</th></tr></thead>
               <tbody className="divide-y divide-zinc-800">
                 {entities.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-zinc-500">Save the employer setup above to begin.</td></tr> : null}
-                {entities.map((entity) => <tr key={entity._id} className="bg-zinc-950"><td className="px-4 py-4"><div className="flex items-start gap-3"><Building2 className="mt-0.5 h-5 w-5 text-zinc-500" /><div><p className="font-medium text-zinc-100">{entity.legalName}</p><p className="mt-1 text-xs text-zinc-500">{entity.code} - {entity.employerType.replace(/_/g, ' ')}</p></div></div></td><td className="px-4 py-4"><p>{entity.jurisdictionCode}</p><p className="mt-1 text-xs text-zinc-500">{entity.defaultCurrency}</p></td><td className="px-4 py-4"><p>{entity.payrollReadiness.taxPack?.label || 'No published pack yet'}</p><p className="mt-1 text-xs text-zinc-500">{entity.taxAdapterCandidateId || 'No tested adapter yet'}</p></td><td className="px-4 py-4"><div className="flex items-center gap-2">{entity.payrollReadiness.payrollRunnable ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className="h-4 w-4 text-amber-400" />}<span className="font-medium capitalize">{entity.payrollReadiness.mode.replace(/_/g, ' ')}</span></div>{entity.payrollReadiness.blockingIssues.length ? <ul className="mt-2 max-w-lg space-y-1 text-xs text-zinc-500">{entity.payrollReadiness.blockingIssues.map((issue) => <li key={issue}>- {issue}</li>)}</ul> : null}</td><td className="px-4 py-4">{entity.status === 'draft' && entity.payrollReadiness.taxPack ? <button type="button" disabled={activatingId === entity._id} onClick={() => void enablePreview(entity)} className="min-h-9 rounded-lg border border-amber-500/40 px-3 text-xs font-medium text-amber-300 hover:bg-amber-500/10 disabled:opacity-60">{activatingId === entity._id ? 'Enabling...' : 'Enable preview'}</button> : <span className="text-xs capitalize text-zinc-500">{entity.status === 'active' ? 'Active' : 'Awaiting tax pack'}</span>}</td></tr>)}
+                {entities.map((entity) => <tr key={entity._id} className="bg-zinc-950"><td className="px-4 py-4"><div className="flex items-start gap-3"><Building2 className="mt-0.5 h-5 w-5 text-zinc-500" /><div><p className="font-medium text-zinc-100">{entity.legalName}</p><p className="mt-1 text-xs text-zinc-500">{entity.code} - {entity.employerType.replace(/_/g, ' ')}</p></div></div></td><td className="px-4 py-4"><p>{entity.jurisdictionCode}</p><p className="mt-1 text-xs text-zinc-500">{entity.defaultCurrency}</p></td><td className="px-4 py-4"><p>{entity.payrollReadiness.taxPack?.label || 'No published pack yet'}</p><p className="mt-1 text-xs text-zinc-500">{entity.taxAdapterCandidateId || 'No tested adapter yet'}</p></td><td className="px-4 py-4"><div className="flex items-center gap-2">{entity.payrollReadiness.payrollRunnable ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className="h-4 w-4 text-amber-400" />}<span className="font-medium capitalize">{entity.payrollReadiness.mode.replace(/_/g, ' ')}</span></div>{entity.payrollReadiness.blockingIssues.length ? <ul className="mt-2 max-w-lg space-y-1 text-xs text-zinc-500">{entity.payrollReadiness.blockingIssues.map((issue) => <li key={issue}>- {issue}</li>)}</ul> : null}</td><td className="px-4 py-4"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditForm(entity)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-zinc-700 px-3 text-xs font-medium text-zinc-200 hover:border-zinc-500"><Pencil className="h-3.5 w-3.5" />Edit</button>{entity.status === 'inactive' ? <button type="button" disabled={activatingId === entity._id} onClick={() => void setEntityStatus(entity, 'active')} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-emerald-500/40 px-3 text-xs font-medium text-emerald-300"><RotateCcw className="h-3.5 w-3.5" />Restore</button> : <button type="button" disabled={activatingId === entity._id} onClick={() => void setEntityStatus(entity, 'inactive')} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-500/30 px-3 text-xs font-medium text-red-300"><Trash2 className="h-3.5 w-3.5" />Remove</button>}{entity.status === 'draft' && entity.payrollReadiness.taxPack ? <button type="button" disabled={activatingId === entity._id} onClick={() => void enablePreview(entity)} className="min-h-9 rounded-lg border border-amber-500/40 px-3 text-xs font-medium text-amber-300 hover:bg-amber-500/10 disabled:opacity-60">{activatingId === entity._id ? 'Enabling...' : 'Enable preview'}</button> : null}</div></td></tr>)}
               </tbody>
             </table>
           </div>

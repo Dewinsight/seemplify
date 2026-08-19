@@ -15,7 +15,7 @@ const readiness = (mode, issues) => ({
   },
 });
 
-const entities = [
+const baselineEntities = [
   {
     _id: 'entity-ng',
     organizationId: 'org-e2e',
@@ -54,6 +54,8 @@ const entities = [
   },
 ];
 
+const entities = structuredClone(baselineEntities);
+
 const candidates = [
   {
     id: 'NG_2026_WAVE_1',
@@ -79,7 +81,7 @@ const candidates = [
   },
 ];
 
-const jurisdictions = [
+const baselineJurisdictions = [
   {
     _id: 'tax-ng',
     scope: 'organization',
@@ -194,6 +196,8 @@ const jurisdictions = [
     reviewTeam: [],
   },
 ];
+
+const jurisdictions = structuredClone(baselineJurisdictions);
 
 const idpMembers = [
   {
@@ -432,7 +436,8 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'DELETE') {
       requests.splice(0, requests.length);
       compensationRequests.splice(0, compensationRequests.length);
-      entities.splice(2);
+      entities.splice(0, entities.length, ...structuredClone(baselineEntities));
+      jurisdictions.splice(0, jurisdictions.length, ...structuredClone(baselineJurisdictions));
       for (const key of Object.keys(profiles)) delete profiles[key];
       Object.assign(profiles, structuredClone(baselineProfiles));
       runStates['run-ng'] = { status: 'calculated' };
@@ -505,14 +510,59 @@ const server = http.createServer(async (request, response) => {
     entities.push(entity);
     return json(response, 201, { entity });
   }
-  if (path === '/payroll/tax/jurisdictions') return json(response, 200, { jurisdictions });
+  const employerEntityMatch = path.match(/^\/payroll\/employer-entities\/([^/]+)$/);
+  if (employerEntityMatch && request.method === 'PUT') {
+    const entity = entities.find((row) => row._id === employerEntityMatch[1]);
+    if (!entity) return json(response, 404, { error: 'Legal employer not found' });
+    Object.assign(entity, body);
+    if (body.status === 'inactive') entity.payrollReadiness = readiness('blocked', ['Legal employer is not active.']);
+    return json(response, 200, { entity });
+  }
+  if (path === '/payroll/tax/jurisdictions' && request.method === 'GET') return json(response, 200, { jurisdictions });
+  if (path === '/payroll/tax/jurisdictions' && request.method === 'POST') {
+    const source = body.cloneFromId ? jurisdictions.find((entry) => entry._id === body.cloneFromId) : null;
+    const sequence = jurisdictions.length + 1;
+    const created = source ? {
+      ...structuredClone(source),
+      _id: `tax-clone-${sequence}`,
+      scope: 'organization',
+      status: 'draft',
+      displayName: body.displayName || `${source.displayName} Override`,
+      publishedVersion: null,
+      publishedVersionId: null,
+      versions: (source.versions || []).slice(0, 1).map((version, index) => ({
+        ...version,
+        _id: `tax-clone-${sequence}-v${index + 1}`,
+        versionNumber: index + 1,
+        status: 'draft',
+        validationStatus: 'draft',
+        calculationStatus: 'blocked',
+        platformRelease: undefined,
+        certification: { ready: false, requiredRoles: ['tax_law', 'payroll_calculation', 'independent_qa'], approvedRoles: [], reviews: [], staleReviewCount: 0, problems: ['Organization certification required.'] },
+      })),
+      reviewTeam: [],
+    } : {
+      _id: `tax-created-${sequence}`,
+      scope: 'organization',
+      status: 'draft',
+      countryCode: body.countryCode || body.backlogReference?.entryCode || 'OTHER',
+      countryName: body.countryName || (body.backlogReference?.entryCode === 'JP' ? 'Japan' : 'Custom jurisdiction'),
+      displayName: body.displayName,
+      description: body.description,
+      jurisdictionLevel: body.jurisdictionLevel || 'national',
+      versions: [{ _id: `tax-created-${sequence}-v1`, versionNumber: 1, status: 'draft', validationStatus: 'draft', calculationStatus: 'blocked', ...(body.version || {}) }],
+      reviewTeam: [],
+    };
+    jurisdictions.push(created);
+    return json(response, 201, { jurisdiction: created });
+  }
   if (path === '/payroll/tax/jurisdiction-backlog') return json(response, 200, { groups: [{
     id: 'GLOBAL_COUNTRY_OR_TERRITORY_PACKS',
     label: 'Remaining country and territory payroll-tax systems',
     source: 'https://unstats.un.org/unsd/methodology/m49/',
     requiredModules: ['national income-tax withholding'],
     additionalScope: 'Governed country setup coverage.',
-    entries: [{ code: 'JP', name: 'Japan', countryCode: 'JP', countryName: 'Japan', jurisdictionLevel: 'national', implementationStatus: 'dynamic_pack_backlog', payrollRunnable: false }],
+    entries: [{ code: 'JP', name: 'Japan', displayName: 'Japan payroll', countryCode: 'JP', countryName: 'Japan', jurisdictionLevel: 'national', implementationStatus: 'dynamic_pack_backlog', payrollRunnable: false }],
   }] });
   const taxJurisdictionMatch = path.match(/^\/payroll\/tax\/jurisdictions\/([^/]+)$/);
   if (taxJurisdictionMatch && request.method === 'GET') {

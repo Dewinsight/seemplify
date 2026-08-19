@@ -75,13 +75,60 @@ test('shows a published platform pack as fully payroll-ready without human revie
   await expect(platformPack).toContainText('Payroll ready');
   await platformPack.click();
 
-  await expect(page.getByText('Published platform pack')).toBeVisible();
+  await expect(page.getByText('Published platform pack', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Platform release certification' })).toBeVisible();
   await expect(page.getByText('Published and certified')).toBeVisible();
   await expect(page.getByText('production release approved')).toBeVisible();
   await expect(page.getByText('PAYROLL-NG-2026-RELEASE')).toBeVisible();
   await expect(page.getByText('Not submitted')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Jurisdiction review team' })).toHaveCount(0);
+});
+
+test('creates an editable organization copy of a protected platform pack', async ({ page, request }) => {
+  await page.goto('/admin/settings/tax');
+  await dismissPageGuide(page);
+
+  await page.getByRole('button', { name: /Nigeria statutory platform release/i }).click();
+  await expect(page.getByPlaceholder('Display name')).toBeDisabled();
+  await page.getByRole('button', { name: 'Customize editable copy' }).click();
+
+  await expect(page.getByPlaceholder('Display name')).toBeEnabled();
+  await expect(page.getByPlaceholder('Display name')).toHaveValue('Nigeria statutory platform release Override');
+  await page.getByText('Advanced rule definition', { exact: true }).click();
+  await expect(page.locator('details').filter({ hasText: 'Advanced rule definition' }).getByLabel('Rule type').first()).toBeEnabled();
+
+  const logged = await requests(request);
+  expect(logged).toContainEqual(expect.objectContaining({
+    method: 'POST',
+    path: '/payroll/tax/jurisdictions',
+    body: expect.objectContaining({ cloneFromId: 'tax-ng-platform' }),
+  }));
+});
+
+test('creates a new governed jurisdiction draft from the global backlog', async ({ page, request }) => {
+  await page.goto('/admin/settings/tax');
+  await dismissPageGuide(page);
+
+  await page.getByRole('button', { name: 'New jurisdiction' }).click();
+  await page.getByLabel('Rollout backlog item').selectOption('GLOBAL_COUNTRY_OR_TERRITORY_PACKS:JP');
+  await page.getByLabel('Display name').fill('Japan payroll research draft');
+  await page.getByPlaceholder('ISO 4217').fill('JPY');
+  await page.getByRole('button', { name: 'Create blocked draft' }).click();
+
+  await expect(page.getByText('Created a blocked organization draft. It cannot run payroll until its legal and certification gates pass.')).toBeVisible();
+  await expect(page.getByPlaceholder('Display name')).toHaveValue('Japan payroll research draft');
+  await expect(page.getByPlaceholder('Display name')).toBeEnabled();
+
+  const logged = await requests(request);
+  expect(logged).toContainEqual(expect.objectContaining({
+    method: 'POST',
+    path: '/payroll/tax/jurisdictions',
+    body: expect.objectContaining({
+      backlogReference: { groupId: 'GLOBAL_COUNTRY_OR_TERRITORY_PACKS', entryCode: 'JP' },
+      displayName: 'Japan payroll research draft',
+      version: expect.objectContaining({ calculationCurrency: 'JPY' }),
+    }),
+  }));
 });
 
 test('separates Nigerian company and UK subsidiary tax presence', async ({ page }, testInfo) => {
@@ -200,6 +247,32 @@ test('persists next-run exclusion and re-includes a payroll-ready onboarded empl
       excludeFromNextRun: false,
     },
   });
+});
+
+test('edits, removes, and restores a legal employer without deleting payroll history', async ({ page, request }) => {
+  await page.goto('/admin/settings/employer-entities');
+  await dismissPageGuide(page);
+
+  const row = page.getByRole('row').filter({ hasText: 'Seemplify Nigeria Limited (synthetic)' });
+  await row.getByRole('button', { name: 'Edit' }).click();
+  await expect(page.getByRole('heading', { name: 'Edit employer' })).toBeVisible();
+  await page.getByLabel('Registered legal name').fill('Seemplify Nigeria Payroll Limited (synthetic)');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Seemplify Nigeria Payroll Limited (synthetic)')).toBeVisible();
+
+  const updatedRow = page.getByRole('row').filter({ hasText: 'Seemplify Nigeria Payroll Limited (synthetic)' });
+  page.once('dialog', (dialog) => dialog.accept());
+  await updatedRow.getByRole('button', { name: 'Remove' }).click();
+  await expect(updatedRow.getByText('blocked', { exact: true })).toBeVisible();
+  await updatedRow.getByRole('button', { name: 'Restore' }).click();
+
+  const logged = await requests(request);
+  const updates = logged.filter((entry) => entry.method === 'PUT' && entry.path === '/payroll/employer-entities/entity-ng');
+  expect(updates.map((entry) => entry.body)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ legalName: 'Seemplify Nigeria Payroll Limited (synthetic)' }),
+    { status: 'inactive' },
+    { status: 'active' },
+  ]));
 });
 
 test('configures an existing IDP member manually without creating a second employee', async ({ page, request }) => {

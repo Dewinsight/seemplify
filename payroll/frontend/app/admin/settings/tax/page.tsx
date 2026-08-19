@@ -328,7 +328,7 @@ export default function TaxSettingsPage() {
       localityCode: '',
       localityName: '',
       jurisdictionLevel: entry.jurisdictionLevel,
-      displayName: entry.displayName,
+      displayName: entry.displayName || `${entry.name || entry.countryName} payroll`,
       calculationCurrency: defaultCurrency,
       provenanceReference: `${group.id}:${entry.code}`,
     }));
@@ -618,7 +618,7 @@ export default function TaxSettingsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => loadData(selected?._id)} className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-200 text-sm flex items-center gap-2"><RefreshCw className="w-4 h-4" />Refresh</button>
           <button onClick={() => setShowNewPackForm((current) => !current)} disabled={saving} className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-200 text-sm flex items-center gap-2"><Plus className="w-4 h-4" />New jurisdiction</button>
-          <button onClick={cloneSelected} disabled={!selected?._id || saving} className="px-3 py-2 rounded-lg bg-amber-600 text-white text-sm flex items-center gap-2"><Copy className="w-4 h-4" />Clone Selected</button>
+          <button onClick={cloneSelected} disabled={!selected?._id || saving} className="px-3 py-2 rounded-lg bg-amber-600 text-white text-sm flex items-center gap-2"><Copy className="w-4 h-4" />{selected?.scope === 'global' ? 'Customize copy' : 'Clone selected'}</button>
         </div>
       </div>
       {feedback ? <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{feedback}</div> : null}
@@ -735,7 +735,7 @@ export default function TaxSettingsPage() {
             <>
               <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 space-y-4">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div><h2 className="text-lg font-semibold text-zinc-100">{selected.displayName}</h2><p className="text-sm text-zinc-500 mt-1">{selected.scope === 'global' ? 'Platform seed. Clone before editing.' : 'Organization-owned rule. Owners and administrators publish reviewed versions.'}</p></div>
+                  <div><h2 className="text-lg font-semibold text-zinc-100">{selected.displayName}</h2><p className="text-sm text-zinc-500 mt-1">{selected.scope === 'global' ? 'Published platform packs are protected. Create an editable organization copy to customize fields, formulas, and advanced rules.' : 'Organization-owned rule. Owners and administrators publish reviewed versions.'}</p></div>
                   {canManage ? (
                     <div className="flex items-center gap-2 flex-wrap">
                       <button onClick={newDraftVersion} disabled={saving} className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-200 text-sm disabled:opacity-50">New Draft Version</button>
@@ -743,9 +743,14 @@ export default function TaxSettingsPage() {
                       <button onClick={publishVersion} disabled={!canEdit || saving || !selectedVersionId} className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />Publish</button>
                     </div>
                   ) : (
-                    <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-                      <CheckCircle2 className="h-4 w-4" />Published platform pack
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+                        <CheckCircle2 className="h-4 w-4" />Published platform pack
+                      </span>
+                      <button type="button" onClick={cloneSelected} disabled={saving} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-amber-500/50 px-3 text-sm font-medium text-amber-200 hover:bg-amber-500/10 disabled:opacity-50">
+                        <Copy className="h-4 w-4" />Customize editable copy
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
