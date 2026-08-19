@@ -103,7 +103,6 @@ const SubscriptionSchema = new mongoose.Schema({
     aiChat: { type: Boolean },
     lms: { type: Boolean },
     workspace: { type: Boolean },
-    automationHub: { type: Boolean },
     experienceManagement: { type: Boolean },
     approver: { type: Boolean }
   },
@@ -210,7 +209,6 @@ SubscriptionSchema.methods.getEffectiveFeatures = async function() {
       aiChat: false,
       lms: false,
       workspace: false,
-      automationHub: false,
       experienceManagement: false,
       approver: false
     }

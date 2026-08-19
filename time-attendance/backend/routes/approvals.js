@@ -5,6 +5,7 @@ const { Timesheet, AttendancePolicy, AttendanceException } = require('../models'
 const { createNotification } = require('../services/notificationService');
 const { refreshTimesheetEntries } = require('./timesheets');
 const { PERMISSIONS, hasAttendancePermission } = require('../services/attendanceAccessService');
+const { queueTimesheetEvent } = require('../services/automationEventService');
 
 // Apply auth middleware
 router.use(requireAuth);
@@ -333,6 +334,13 @@ router.post('/:id/approve', async (req, res) => {
         }, comment);
 
         await timesheet.save();
+        if (outcome.completed) {
+            try {
+                await queueTimesheetEvent(timesheet, 'time.timesheet_approved.v1', userId);
+            } catch (automationError) {
+                console.error('Failed to queue timesheet automation event:', automationError.message);
+            }
+        }
 
         if (outcome.completed) {
             await createNotification({

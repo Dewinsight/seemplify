@@ -13,6 +13,7 @@ const { initializeOIDC } = require('./config/oidc');
 const { initializeEmailService } = require('./services/emailService');
 const { startBackgroundWorker } = require('./services/backgroundJobService');
 const { registerCoreJobHandlers } = require('./services/registerJobHandlers');
+const { startAutomationEventWorker } = require('./services/automationEventService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -131,6 +132,7 @@ const startServer = async () => {
         // Connect to database
         await connectDatabase();
         await require('./models/AutomationRequestNonce').init();
+        await require('./models/AutomationEventOutbox').init();
 
         // Initialize OIDC client
         await initializeOIDC();
@@ -145,6 +147,7 @@ const startServer = async () => {
             console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
             
             startBackgroundWorker().catch(error => console.error('Failed to start background worker:', error));
+            startAutomationEventWorker();
         });
     } catch (error) {
         console.error('Failed to start server:', error);

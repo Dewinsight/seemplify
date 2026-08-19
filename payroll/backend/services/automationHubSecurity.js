@@ -4,15 +4,15 @@ const fs = require('fs');
 const REQUEST_TTL_MS = 5 * 60 * 1000;
 
 function readSecret() {
-  const file = String(process.env.AUTOMATION_HUB_HMAC_SECRET_FILE || '').trim();
+  const file = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || process.env.AUTOMATION_HUB_HMAC_SECRET_FILE || '').trim();
   if (file) {
     const value = fs.readFileSync(file, 'utf8').trim();
-    if (value.length < 24) throw new Error('AUTOMATION_HUB_HMAC_SECRET_FILE is too short');
+    if (value.length < 24) throw new Error('WORKSPACE_AUTOMATION_HMAC_SECRET_FILE is too short');
     return value;
   }
-  const value = String(process.env.AUTOMATION_HUB_HMAC_SECRET || '').trim();
+  const value = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || process.env.AUTOMATION_HUB_HMAC_SECRET || '').trim();
   if (process.env.NODE_ENV === 'production' || value) {
-    if (value.length < 24) throw new Error('AUTOMATION_HUB_HMAC_SECRET must contain at least 24 characters');
+    if (value.length < 24) throw new Error('WORKSPACE_AUTOMATION_HMAC_SECRET must contain at least 24 characters');
     return value;
   }
   return 'payroll-automation-development-secret';

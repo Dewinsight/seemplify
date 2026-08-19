@@ -4,10 +4,10 @@ const fs = require('fs');
 const REQUEST_TTL_MS = 5 * 60 * 1000;
 
 function readSecret() {
-  const file = String(process.env.AUTOMATION_HUB_HMAC_SECRET_FILE || '').trim();
-  const value = file ? fs.readFileSync(file, 'utf8').trim() : String(process.env.AUTOMATION_HUB_HMAC_SECRET || '').trim();
+  const file = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || process.env.AUTOMATION_HUB_HMAC_SECRET_FILE || '').trim();
+  const value = file ? fs.readFileSync(file, 'utf8').trim() : String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || process.env.AUTOMATION_HUB_HMAC_SECRET || '').trim();
   if (process.env.NODE_ENV === 'production' || file || value) {
-    if (value.length < 24) throw new Error('Automation Hub HMAC secret must contain at least 24 characters');
+    if (value.length < 24) throw new Error('Workspace automation HMAC secret must contain at least 24 characters');
     return value;
   }
   return 'leave-automation-development-secret';

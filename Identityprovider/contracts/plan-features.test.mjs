@@ -19,7 +19,6 @@ test('every registered hub app has a plan feature', () => {
 
 test('newly added hub apps have independent access controls', () => {
   assert.equal(getPlanFeatureKeyForApp('messaging'), 'workspace')
-  assert.equal(getPlanFeatureKeyForApp('automation-hub'), 'automationHub')
   assert.equal(getPlanFeatureKeyForApp('experience-management'), 'experienceManagement')
   assert.equal(getPlanFeatureKeyForApp('approver'), 'approver')
 })
@@ -36,7 +35,6 @@ test('existing plans retain access to apps that previously bypassed plan gating'
   const plan = new Plan({ name: 'Legacy plan', slug: 'legacy-plan' })
 
   assert.equal(plan.features.workspace, true)
-  assert.equal(plan.features.automationHub, true)
   assert.equal(plan.features.experienceManagement, true)
   assert.equal(plan.features.approver, true)
 })

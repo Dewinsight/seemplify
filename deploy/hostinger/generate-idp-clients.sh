@@ -43,8 +43,7 @@ docker run --rm \
       ["seemplify-learning", process.env.OIDC_LEARNING_SECRET],
       ["messaging", process.env.OIDC_MESSAGING_SECRET],
       ["approver", process.env.OIDC_APPROVER_SECRET],
-      ["experience-management", process.env.OIDC_EXPERIENCE_SECRET],
-      ["automation-hub", process.env.OIDC_AUTOMATION_SECRET]
+      ["experience-management", process.env.OIDC_EXPERIENCE_SECRET]
     ]);
     source.clients = source.clients
       .filter((client) => secretByClient.has(client.client_id))

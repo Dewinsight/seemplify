@@ -1,4 +1,4 @@
-name: seemplify-automation
+name: seemplify-connectors
 
 x-defaults: &defaults
   restart: unless-stopped
@@ -73,59 +73,6 @@ services:
       - traefik.http.routers.seemplify-nango-connect-secure.service=seemplify-nango-connect
       - traefik.http.services.seemplify-nango-connect.loadbalancer.server.port=3009
 
-  automation-hub:
-    <<: *defaults
-    image: ${AUTOMATION_HUB_IMAGE:?required}
-    environment:
-      NODE_ENV: production
-      PORT: "5420"
-      PUBLIC_URL: https://automations.seemplifyai.com
-      DATABASE_PATH: /app/data/automation.sqlite
-      OIDC_ISSUER_URL: https://auth.seemplifyai.com
-      OIDC_CLIENT_ID: automation-hub
-      OIDC_REDIRECT_URI: https://automations.seemplifyai.com/auth/callback
-      OIDC_CLIENT_SECRET_FILE: /run/seemplify/automation-hub/oidc-client-secret
-      SESSION_SECRET_FILE: /run/seemplify/automation-hub/session-secret
-      WEBHOOK_ENCRYPTION_KEY_FILE: /run/seemplify/automation-hub/webhook-encryption-key
-      NANGO_BASE_URL: http://nango-server:3003
-      NANGO_SECRET_KEY_FILE: /run/seemplify/automation-hub/nango-api-key
-      IDENTITY_API_URL: http://identity-provider:5008
-      IDENTITY_HMAC_SECRET_FILE: /run/seemplify/automation-hub/identity-hmac-secret
-      WORKSPACE_API_URL: http://workspace-backend:5009
-      WORKSPACE_HMAC_SECRET_FILE: /run/seemplify/automation-hub/workspace-hmac-secret
-      PAYROLL_API_URL: http://payroll-backend:5006
-      PAYROLL_HMAC_SECRET_FILE: /run/seemplify/automation-hub/payroll-hmac-secret
-      LEAVE_API_URL: http://leave-backend:5002
-      LEAVE_HMAC_SECRET_FILE: /run/seemplify/automation-hub/leave-hmac-secret
-      TIME_API_URL: http://time-backend:5010
-      TIME_HMAC_SECRET_FILE: /run/seemplify/automation-hub/time-hmac-secret
-      LEARNING_API_URL: http://learning:5012
-      LEARNING_HMAC_SECRET_FILE: /run/seemplify/automation-hub/learning-hmac-secret
-    volumes:
-      - automation-data:/app/data
-      - /opt/seemplify/secrets/automation-hub:/run/seemplify/automation-hub:ro
-    depends_on:
-      nango-server:
-        condition: service_healthy
-    networks:
-      - automation-private
-      - dokploy-network
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5420/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
-      interval: 15s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=dokploy-network
-      - traefik.http.routers.seemplify-automations-secure.rule=Host(`automations.seemplifyai.com`)
-      - traefik.http.routers.seemplify-automations-secure.entrypoints=websecure
-      - traefik.http.routers.seemplify-automations-secure.tls=true
-      - traefik.http.routers.seemplify-automations-secure.tls.certresolver=letsencrypt
-      - traefik.http.routers.seemplify-automations-secure.service=seemplify-automations
-      - traefik.http.services.seemplify-automations.loadbalancer.server.port=5420
-
 networks:
   automation-private:
     internal: true
@@ -133,5 +80,4 @@ networks:
     external: true
 
 volumes:
-  automation-data:
   nango-data:

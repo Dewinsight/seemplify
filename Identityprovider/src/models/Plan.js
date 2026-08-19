@@ -57,7 +57,6 @@ const PlanSchema = new mongoose.Schema({
     // These apps predate their plan controls, so enabled defaults preserve access
     // for existing plan documents that do not have the fields yet.
     workspace: { type: Boolean, default: true },
-    automationHub: { type: Boolean, default: true },
     experienceManagement: { type: Boolean, default: true },
     approver: { type: Boolean, default: true }
   },

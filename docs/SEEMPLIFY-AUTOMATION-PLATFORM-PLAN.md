@@ -1,22 +1,30 @@
 # Seemplify Platform Automation Plan
 
-**Status:** Foundation implemented and locally accepted on 2026-08-17; staged product/provider rollout remains
+**Status:** Requirements retained; the standalone application boundary was superseded by Workspace Automations on 2026-08-19
 **Scope:** Every Seemplify product, the Workspace surfaces, public developer
 integrations, and external providers
 **Companion plans:** `AI_AUTOMATION_ROADMAP.md` and the Experience Management
 orchestration safety ADR
 
+> Architecture correction: Automations is a native Workspace capability, not a
+> separately entitled Seemplify application. The old `automation-hub/` service,
+> OIDC client, plan feature, app card, and hostname were retired. Workflow
+> definitions, runs, approvals, internal actions, product ingress, developer
+> applications, and connector references now live in the Workspace backend and
+> `/automations` Workspace route. Nango remains a replaceable OAuth/connector
+> boundary and is not the workflow engine.
+
 ## Implementation snapshot
 
-The first platform tranche now exists in `automation-hub/` with the catalogue,
-semantic compiler, immutable workflow versions, exact approvals, execution
-engine, retries/reconciliation, audit, administration UI, signed product
+The canonical platform now exists inside Workspace with the catalogue, typed
+graph validation, immutable workflow versions, exact approvals, execution
+engine, retries/reconciliation, audit, Slack-like builder, signed product
 adapters, webhook APIs, command registry, and Nango connection boundary.
 
 Identity, Payroll, Leave, and Time contain the first target-side authorization
 and authoritative-action contracts. Gmail and Google Drive are the first
-reviewed Nango-backed adapters. The local full browser journey and focused
-contract suites are recorded in `AUTOMATION-HUB-ACCEPTANCE-2026-08-17.md`.
+reviewed Nango-backed adapters. Focused Workspace backend and frontend suites
+are the acceptance authority.
 
 The catalogue intentionally describes more of the destination architecture
 than is enabled in production. A product or provider is enabled only after its
