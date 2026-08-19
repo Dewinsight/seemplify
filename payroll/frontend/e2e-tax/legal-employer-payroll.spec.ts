@@ -24,6 +24,10 @@ async function requests(request: import('@playwright/test').APIRequestContext) {
   return (await response.json()).requests as Array<{ method: string; path: string; body: any }>;
 }
 
+function employeeCard(page: import('@playwright/test').Page, name: string) {
+  return page.locator('div.group').filter({ has: page.getByRole('heading', { name }) });
+}
+
 test.beforeEach(async ({ page, request }) => {
   await request.delete(`${mockApi}/__e2e__/requests`);
   await signIn(page);
@@ -33,7 +37,7 @@ test('separates Nigerian company and UK subsidiary tax presence', async ({ page 
   await page.goto('/admin/settings/employer-entities');
   await dismissPageGuide(page);
 
-  await expect(page.getByRole('heading', { name: 'Legal employers' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Employer setup' })).toBeVisible();
   await expect(page.getByText('Seemplify Nigeria Limited (synthetic)')).toBeVisible();
   await expect(page.getByText('Seemplify UK Subsidiary Limited (synthetic)')).toBeVisible();
   await expect(page.getByText('NG-LA', { exact: true })).toBeVisible();
@@ -49,13 +53,13 @@ test('separates Nigerian company and UK subsidiary tax presence', async ({ page 
 test('creates a blocked legal-employer draft without self-certifying it', async ({ page, request }) => {
   await page.goto('/admin/settings/employer-entities');
   await dismissPageGuide(page);
-  await page.getByRole('button', { name: 'Add legal employer' }).click();
-  await page.getByLabel('Code', { exact: true }).fill('NG-BRANCH');
+  await page.getByRole('button', { name: 'Add employer' }).click();
+  await page.getByLabel('Internal reference').fill('NG-BRANCH');
   await page.getByLabel('Registered legal name').fill('Synthetic Nigeria Branch Limited');
-  await page.getByLabel('Tax authority code').fill('LIRS');
+  await page.getByLabel('Tax authority').fill('LIRS');
   await page.getByLabel('Registration reference').fill('SYN-REG-001');
   await page.getByLabel('Evidence reference').fill('SYN-EVIDENCE-001');
-  await page.getByRole('button', { name: 'Save draft' }).click();
+  await page.getByRole('button', { name: 'Save employer setup' }).click();
 
   await expect(page.getByText('Synthetic Nigeria Branch Limited')).toBeVisible();
   await expect(page.getByText('blocked', { exact: true })).toBeVisible();
@@ -99,14 +103,21 @@ test('assigns employees to the correct legal employer and jurisdiction', async (
   });
 });
 
-test('configures an existing IDP member without creating a second employee', async ({ page, request }) => {
+test('configures an existing IDP member manually without creating a second employee', async ({ page, request }) => {
   await page.goto('/admin/employees');
   await dismissPageGuide(page);
 
-  await expect(page.getByText('Chidi Existing IDP Member (synthetic)')).toBeVisible();
-  await expect(page.getByText('Payroll Setup Needed')).toBeVisible();
+  const card = employeeCard(page, 'Chidi Existing IDP Member (synthetic)');
+  await expect(card).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Resolve Onboarding' })).toBeVisible();
+  await card.getByRole('button', { name: 'Resolve Onboarding' }).click();
 
-  await page.goto('/admin/employees/configure/user-unconfigured');
+  const dialog = page.getByRole('dialog', { name: 'Chidi Existing IDP Member (synthetic)' });
+  await expect(dialog.getByRole('button', { name: 'Request Details' })).toBeVisible();
+  const enterManually = dialog.getByRole('link', { name: 'Enter Manually' });
+  await expect(enterManually).toHaveAttribute('href', '/admin/employees/configure/user-unconfigured');
+
+  await enterManually.click();
   await expect(page).toHaveURL(/\/admin\/employees\/user-unconfigured$/);
   await dismissPageGuide(page);
   await expect(page.getByText('Chidi Existing IDP Member (synthetic)')).toBeVisible();
@@ -118,6 +129,93 @@ test('configures an existing IDP member without creating a second employee', asy
     body: { userId: 'user-unconfigured' },
   }));
   expect(logged.some((entry) => entry.method === 'POST' && entry.path === '/payroll/profiles')).toBe(false);
+});
+
+test('starts required onboarding in Recruiter or allows the same member to be entered manually', async ({ page, request }) => {
+  const browserErrors: string[] = [];
+  const serverErrors: string[] = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('response', (response) => {
+    if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.goto('/admin/employees');
+  await dismissPageGuide(page);
+
+  const card = employeeCard(page, 'Dayo New Hire (synthetic)');
+  await expect(card).toBeVisible();
+  await expect(card.getByText('Not Started', { exact: true }).first()).toBeVisible();
+  await card.getByRole('button', { name: 'Resolve Onboarding' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Dayo New Hire (synthetic)' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Request Details' })).toBeVisible();
+  await expect(dialog.getByRole('link', { name: 'Enter Manually' }))
+    .toHaveAttribute('href', '/admin/employees/configure/user-onboarding-new');
+  await expect(page.getByText('Mark Onboarded', { exact: true })).toHaveCount(0);
+
+  await dialog.getByRole('button', { name: 'Request Details' }).click();
+  await expect(dialog).toBeHidden();
+
+  await expect.poll(async () => {
+    const logged = await requests(request);
+    return logged.find((entry) => entry.method === 'POST' && entry.path === '/payroll/idp/onboarding/assign')?.body;
+  }).toMatchObject({
+    memberId: 'member-onboarding-new',
+    email: 'dayo.new-hire@example.invalid',
+    name: 'Dayo New Hire (synthetic)',
+    employeeId: 'SYN-NG-003',
+    designation: 'People Operations Associate',
+    departmentId: 'department-operations',
+    departmentName: 'Operations',
+  });
+
+  const logged = await requests(request);
+  expect(logged.some((entry) => entry.method === 'PATCH' && entry.path.includes('/payroll/idp/onboarding/'))).toBe(false);
+  expect(browserErrors).toEqual([]);
+  expect(serverErrors).toEqual([]);
+});
+
+test('reminds active onboarding and exposes retirement closeout in People Transitions', async ({ page, request }) => {
+  const browserErrors: string[] = [];
+  const serverErrors: string[] = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('response', (response) => {
+    if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.goto('/admin/employees');
+  await dismissPageGuide(page);
+
+  const onboardingCard = employeeCard(page, 'Imani Active Transition (synthetic)');
+  await expect(onboardingCard.getByText('In Progress', { exact: true }).first()).toBeVisible();
+  await onboardingCard.getByRole('button', { name: 'Resolve Onboarding' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Imani Active Transition (synthetic)' });
+  await expect(dialog.getByRole('button', { name: 'Send Reminder' })).toBeVisible();
+  await expect(dialog.getByRole('link', { name: 'Open People Transition' })).toHaveAttribute(
+    'href',
+    'https://app.seemplifyai.com/people-transitions/tasks?transitionId=transition-onboarding-active',
+  );
+  await dialog.getByRole('button', { name: 'Send Reminder' }).click();
+  await expect(dialog).toBeHidden();
+
+  await expect.poll(async () => {
+    const logged = await requests(request);
+    return logged.some((entry) => (
+      entry.method === 'POST'
+      && entry.path === '/payroll/idp/onboarding/members/member-onboarding-active/reminder'
+    ));
+  }).toBe(true);
+
+  const retirementCard = employeeCard(page, 'Ravi Retirement Closeout (synthetic)');
+  await expect(retirementCard.getByText('Retirement Pending', { exact: true })).toBeVisible();
+  await expect(retirementCard.getByRole('link', { name: 'Open Retirement' })).toHaveAttribute(
+    'href',
+    'https://app.seemplifyai.com/people-transitions/tasks?transitionId=transition-retirement-active',
+  );
+  expect(browserErrors).toEqual([]);
+  expect(serverErrors).toEqual([]);
 });
 
 test('captures off-system overtime with business context before payroll approval', async ({ page, request }) => {
@@ -168,7 +266,7 @@ test('runs Nigeria and UK payroll separately and blocks preview finalization', a
   await employer.selectOption('entity-ng');
   await expect(currency).toHaveValue('NGN');
   await expect(currency).toBeDisabled();
-  await expect(page.getByText(/Preview-only: calculations can be inspected/)).toBeVisible();
+  await expect(page.getByText('Preview-only calculation', { exact: true })).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: /^Calculate / }).click();

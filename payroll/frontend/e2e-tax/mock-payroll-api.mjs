@@ -145,6 +145,64 @@ const idpMembers = [
     teamIds: ['team-operations'],
     teamNames: ['Operations'],
   },
+  {
+    id: 'member-onboarding-new',
+    sub: 'user-onboarding-new',
+    name: 'Dayo New Hire (synthetic)',
+    email: 'dayo.new-hire@example.invalid',
+    employeeId: 'SYN-NG-003',
+    designation: 'People Operations Associate',
+    departmentId: 'department-operations',
+    departmentName: 'Operations',
+    onboardingStatus: 'completed',
+    teamIds: ['team-operations'],
+    teamNames: ['Operations'],
+    peopleTransition: null,
+  },
+  {
+    id: 'member-onboarding-active',
+    sub: 'user-onboarding-active',
+    name: 'Imani Active Transition (synthetic)',
+    email: 'imani.transition@example.invalid',
+    employeeId: 'SYN-NG-004',
+    designation: 'Implementation Specialist',
+    departmentId: 'department-product',
+    departmentName: 'Product',
+    onboardingStatus: 'not_started',
+    teamIds: ['team-product'],
+    teamNames: ['Product'],
+    peopleTransition: {
+      subjectId: 'member-onboarding-active',
+      status: 'in_progress',
+      processType: 'onboarding',
+      transitionId: 'transition-onboarding-active',
+      activeTransitionCount: 1,
+      pendingTaskCount: 3,
+      deepLink: 'https://app.seemplifyai.com/people-transitions/tasks?transitionId=transition-onboarding-active',
+    },
+  },
+  {
+    id: 'member-retiring',
+    sub: 'user-retiring',
+    name: 'Ravi Retirement Closeout (synthetic)',
+    email: 'ravi.retirement@example.invalid',
+    employeeId: 'SYN-UK-002',
+    designation: 'Principal Engineer',
+    departmentId: 'department-product',
+    departmentName: 'Product',
+    onboardingStatus: 'completed',
+    teamIds: ['team-product'],
+    teamNames: ['Product'],
+    peopleTransition: {
+      subjectId: 'member-retiring',
+      status: 'in_progress',
+      processType: 'retirement',
+      transitionId: 'transition-retirement-active',
+      activeTransitionCount: 1,
+      pendingTaskCount: 2,
+      deepLink: 'https://app.seemplifyai.com/people-transitions/tasks?transitionId=transition-retirement-active',
+    },
+  },
 ];
 
 const profiles = {
@@ -208,6 +266,32 @@ const profiles = {
       evidenceReference: 'SYN-UK-CONTRACT-001',
       effectiveFrom: '2026-04-06',
     },
+    payrollFlags: { includeInNextRun: true, holdPayment: false },
+    allowances: [],
+    benefitItems: [],
+    recurringDeductions: [],
+    bankAccounts: [],
+    statutoryContributions: {},
+    taxConfig: { jurisdictionCode: 'GB', jurisdictionConfigId: 'tax-gb' },
+  },
+  'employee-retiring': {
+    _id: 'employee-retiring',
+    userId: 'user-retiring',
+    employeeInfo: {
+      name: 'Ravi Retirement Closeout (synthetic)',
+      email: 'ravi.retirement@example.invalid',
+      employeeId: 'SYN-UK-002',
+      designation: 'Principal Engineer',
+      department: 'Product',
+      employmentType: 'full_time',
+      dateOfJoining: '2018-03-12',
+      country: 'United Kingdom',
+    },
+    basicSalary: 8_000,
+    currency: 'GBP',
+    payFrequency: 'monthly',
+    isActive: true,
+    employerEntityId: 'entity-uk',
     payrollFlags: { includeInNextRun: true, holdPayment: false },
     allowances: [],
     benefitItems: [],
@@ -296,6 +380,17 @@ const server = http.createServer(async (request, response) => {
       ],
       syncAvailable: true,
     });
+  }
+  if (path === '/payroll/idp/onboarding/assign' && request.method === 'POST') {
+    return json(response, 201, {
+      success: true,
+      transitionId: 'transition-onboarding-created',
+      status: 'pending',
+      deepLink: 'https://app.seemplifyai.com/people-transitions/tasks?transitionId=transition-onboarding-created',
+    });
+  }
+  if (/^\/payroll\/idp\/onboarding\/members\/[^/]+\/reminder$/.test(path) && request.method === 'POST') {
+    return json(response, 200, { success: true, reminded: true });
   }
   if (path === '/payroll/employer-entities' && request.method === 'GET') {
     const status = url.searchParams.get('status');
