@@ -45,6 +45,12 @@ function initialState() {
       processedInRunId: 'run-1',
       processedAt: new Date('2026-08-31T11:00:00.000Z'),
     }],
+    imports: [{
+      _id: 'attendance-1',
+      organizationId: 'org-1',
+      status: 'applied',
+      appliedPayrollRunId: 'run-1',
+    }],
   };
 }
 
@@ -57,7 +63,7 @@ function matchesValue(actual, expected) {
 
 function matchesIdentity(row, filter) {
   if (!row) return false;
-  for (const key of ['_id', 'organizationId', 'userId', 'payrollRunId', 'status', 'processedInRunId']) {
+  for (const key of ['_id', 'organizationId', 'userId', 'payrollRunId', 'status', 'processedInRunId', 'appliedPayrollRunId']) {
     if (filter[key] !== undefined && !matchesValue(row[key], filter[key])) return false;
   }
   return true;
@@ -80,6 +86,7 @@ function createHarness(seed = initialState()) {
     sessionsEnded: 0,
     profileSaves: 0,
     requestUpdates: 0,
+    attendanceUpdates: 0,
     payslipDeletes: 0,
   };
 
@@ -190,12 +197,24 @@ function createHarness(seed = initialState()) {
     }),
   };
 
+  const TimeAttendanceImport = {
+    updateMany: jest.fn(async (filter, update, options) => {
+      const state = transactionState(options);
+      stats.attendanceUpdates += 1;
+      if (failAt === 'attendanceUpdate') throw new Error('Injected attendance update failure');
+      const matches = state.imports.filter((item) => matchesIdentity(item, filter));
+      for (const item of matches) applyUpdate(item, update);
+      return { matchedCount: matches.length, modifiedCount: matches.length };
+    }),
+  };
+
   const service = new PayrollRetractionService({
     mongoose,
     PayrollRun,
     Payslip,
     PayrollProfile,
     CompensationRequest,
+    TimeAttendanceImport,
     now: () => new Date('2026-09-02T12:00:00.000Z'),
   });
 
@@ -243,6 +262,7 @@ describe('PayrollRetractionService', () => {
     expect(result).toMatchObject({
       deletedPayslips: 1,
       resetCompensationRequests: 1,
+      resetTimeAttendanceImports: 1,
       alreadyRetracted: false,
       run: { status: 'cancelled' },
     });
@@ -255,6 +275,7 @@ describe('PayrollRetractionService', () => {
         originalStatus: 'exported',
         deletedPayslips: 1,
         resetCompensationRequests: 1,
+        resetTimeAttendanceImports: 1,
       },
     });
     expect(state.run.activePeriodKey).toBeUndefined();
@@ -271,12 +292,15 @@ describe('PayrollRetractionService', () => {
     expect(state.profiles[0].recurringDeductions[0].notes).toContain('[Retracted via Run PR-2026-08-001]');
     expect(state.requests[0]).toMatchObject({ status: 'approved', processedInRunId: null });
     expect(state.requests[0].processedAt).toBeUndefined();
+    expect(state.imports[0]).toMatchObject({ status: 'accepted' });
+    expect(state.imports[0].appliedPayrollRunId).toBeUndefined();
     expect(state.payslips).toHaveLength(0);
     expect(harness.stats).toMatchObject({
       sessionsStarted: 1,
       sessionsEnded: 1,
       profileSaves: 1,
       requestUpdates: 1,
+      attendanceUpdates: 1,
       payslipDeletes: 1,
     });
   });
@@ -291,6 +315,7 @@ describe('PayrollRetractionService', () => {
     expect(retryResult).toMatchObject({
       deletedPayslips: 1,
       resetCompensationRequests: 1,
+      resetTimeAttendanceImports: 1,
       alreadyRetracted: true,
       run: { status: 'cancelled' },
     });
@@ -298,6 +323,7 @@ describe('PayrollRetractionService', () => {
     expect(state.run.approvals).toHaveLength(2);
     expect(harness.stats.profileSaves).toBe(1);
     expect(harness.stats.requestUpdates).toBe(1);
+    expect(harness.stats.attendanceUpdates).toBe(1);
     expect(harness.stats.payslipDeletes).toBe(1);
   });
 
@@ -331,6 +357,15 @@ describe('PayrollRetractionService', () => {
     const recoveredState = harness.state();
     expect(recoveredState.profiles[0].recurringDeductions[0].remainingAmount).toBe(200);
     expect(recoveredState.run.approvals).toHaveLength(2);
+  });
+
+  test('rolls the retraction back when attendance reopening fails', async () => {
+    const harness = createHarness();
+    harness.failAt('attendanceUpdate');
+
+    await expect(harness.service.retractRun(retractionInput))
+      .rejects.toThrow('Injected attendance update failure');
+    expect(harness.state()).toEqual(initialState());
   });
 
   test('organization scope is applied to the run claim and every mutation', async () => {

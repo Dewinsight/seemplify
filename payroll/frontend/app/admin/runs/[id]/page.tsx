@@ -140,11 +140,14 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
     setError(null);
     try {
       const res = await api.get(`/payroll/runs/${runId}/payslips`);
-      setRun(res.data?.run);
+      const refreshedRun = res.data?.run || null;
+      setRun(refreshedRun);
       setPayslips(Array.isArray(res.data?.payslips) ? res.data.payslips : []);
       setWorkInputDrafts(Array.isArray(res.data?.run?.workInputs) ? res.data.run.workInputs : []);
+      return refreshedRun as PayrollRun | null;
     } catch (err: any) {
       setError(err?.response?.data?.error || err?.message || 'Failed to load payroll run');
+      return null;
     }
   };
 
@@ -322,7 +325,10 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
       await api.post(`/payroll/runs/${runId}/retract`, { comments });
       await refresh();
     } catch (err: any) {
-      alert(err?.response?.data?.error || err?.message || 'Failed to retract payroll run');
+      const authoritativeRun = await refresh();
+      if (authoritativeRun?.status !== 'cancelled') {
+        alert(err?.response?.data?.error || err?.message || 'Failed to retract payroll run');
+      }
     } finally {
       setBusy(null);
     }

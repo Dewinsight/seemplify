@@ -348,3 +348,27 @@ test('runs Nigeria and UK payroll separately and blocks preview finalization', a
     fullPage: true,
   });
 });
+
+test('reconciles a committed retraction when the POST response is ambiguous', async ({ page, request }) => {
+  const dialogs: Array<{ type: string; message: string }> = [];
+  page.on('dialog', async (dialog) => {
+    dialogs.push({ type: dialog.type(), message: dialog.message() });
+    if (dialog.type() === 'prompt') {
+      await dialog.accept('Correct imported attendance');
+      return;
+    }
+    await dialog.accept();
+  });
+
+  await page.goto('/admin/runs/run-ng');
+  await dismissPageGuide(page);
+  await page.getByRole('button', { name: 'Retract Run' }).click();
+
+  await expect(page.getByText('This payroll run has been retracted.')).toBeVisible();
+  await expect(page.getByText('Reason: Correct imported attendance')).toBeVisible();
+  expect(dialogs.map((dialog) => dialog.type)).toEqual(['confirm', 'prompt']);
+
+  const logged = await requests(request);
+  expect(logged.some((entry) => entry.method === 'POST' && entry.path === '/payroll/runs/run-ng/retract')).toBe(true);
+  expect(logged.filter((entry) => entry.method === 'GET' && entry.path === '/payroll/runs/run-ng/payslips')).toHaveLength(2);
+});

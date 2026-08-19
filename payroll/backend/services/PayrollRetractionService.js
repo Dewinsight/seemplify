@@ -3,6 +3,7 @@ const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
+const TimeAttendanceImport = require('../models/TimeAttendanceImport');
 
 const RETRACTION_BLOCKED_STATUSES = new Set([
   'calculating',
@@ -74,6 +75,7 @@ class PayrollRetractionService {
     this.Payslip = dependencies.Payslip || Payslip;
     this.PayrollProfile = dependencies.PayrollProfile || PayrollProfile;
     this.CompensationRequest = dependencies.CompensationRequest || CompensationRequest;
+    this.TimeAttendanceImport = dependencies.TimeAttendanceImport || TimeAttendanceImport;
     this.now = dependencies.now || (() => new Date());
   }
 
@@ -126,6 +128,7 @@ class PayrollRetractionService {
         run: currentRun,
         deletedPayslips: Number(currentRun.retractionSummary?.deletedPayslips || 0),
         resetCompensationRequests: Number(currentRun.retractionSummary?.resetCompensationRequests || 0),
+        resetTimeAttendanceImports: Number(currentRun.retractionSummary?.resetTimeAttendanceImports || 0),
         alreadyRetracted: true,
       };
     }
@@ -190,6 +193,11 @@ class PayrollRetractionService {
       requireLinkedRequests: FINALIZED_STATUSES.has(originalStatus),
       session,
     });
+    const resetTimeAttendanceImports = await this.resetTimeAttendanceImports({
+      organizationId,
+      run: claimedRun,
+      session,
+    });
 
     const deleteResult = await this.Payslip.deleteMany(
       { payrollRunId: claimedRun._id, organizationId },
@@ -218,6 +226,7 @@ class PayrollRetractionService {
       `Retracted on ${retractedAt.toISOString()} by ${adminName || adminId}.`,
       `Removed ${deletedPayslips} payslip(s).`,
       `Reset ${resetCompensationRequests} processed compensation request(s).`,
+      `Reopened ${resetTimeAttendanceImports} Time and Attendance import(s).`,
     ];
     const internalNotes = [claimedRun.internalNotes, ...warningNotes].filter(Boolean).join(' ');
 
@@ -234,6 +243,7 @@ class PayrollRetractionService {
             originalStatus,
             deletedPayslips,
             resetCompensationRequests,
+            resetTimeAttendanceImports,
           },
           internalNotes,
         },
@@ -254,6 +264,7 @@ class PayrollRetractionService {
       run: retractedRun,
       deletedPayslips,
       resetCompensationRequests,
+      resetTimeAttendanceImports,
       alreadyRetracted: false,
     };
   }
@@ -372,6 +383,15 @@ class PayrollRetractionService {
       );
     }
     return ids.length;
+  }
+
+  async resetTimeAttendanceImports({ organizationId, run, session }) {
+    const result = await this.TimeAttendanceImport.updateMany(
+      { organizationId, appliedPayrollRunId: run._id, status: 'applied' },
+      { $set: { status: 'accepted' }, $unset: { appliedPayrollRunId: '' } },
+      { session }
+    );
+    return writeMatchedCount(result);
   }
 }
 

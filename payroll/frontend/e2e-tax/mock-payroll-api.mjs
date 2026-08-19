@@ -309,6 +309,10 @@ const profiles = {
 };
 
 const baselineProfiles = structuredClone(profiles);
+const runStates = {
+  'run-ng': { status: 'calculated' },
+  'run-uk': { status: 'calculated' },
+};
 
 function json(response, status, payload) {
   response.writeHead(status, {
@@ -344,6 +348,8 @@ const server = http.createServer(async (request, response) => {
       entities.splice(2);
       for (const key of Object.keys(profiles)) delete profiles[key];
       Object.assign(profiles, structuredClone(baselineProfiles));
+      runStates['run-ng'] = { status: 'calculated' };
+      runStates['run-uk'] = { status: 'calculated' };
       return json(response, 200, { ok: true });
     }
     return json(response, 200, { requests });
@@ -493,6 +499,7 @@ const server = http.createServer(async (request, response) => {
   if (path === '/payroll/runs' && request.method === 'POST') {
     const entity = entities.find((row) => row._id === body?.employerEntityId) || entities[0];
     const runId = entity._id === 'entity-uk' ? 'run-uk' : 'run-ng';
+    runStates[runId] = { status: 'calculated' };
     return json(response, 201, {
       run: {
         _id: runId,
@@ -508,15 +515,26 @@ const server = http.createServer(async (request, response) => {
       },
     });
   }
+  const retractMatch = path.match(/^\/payroll\/runs\/(run-ng|run-uk)\/retract$/);
+  if (retractMatch && request.method === 'POST') {
+    runStates[retractMatch[1]] = {
+      status: 'cancelled',
+      retractedAt: '2026-08-19T12:38:33.000Z',
+      retractedByName: 'Payroll Test Owner',
+      retractionReason: body?.comments,
+    };
+    return json(response, 500, { error: 'Simulated ambiguous post-commit response' });
+  }
   const runMatch = path.match(/^\/payroll\/runs\/(run-ng|run-uk)\/payslips$/);
   if (runMatch) {
     const entity = runMatch[1] === 'run-uk' ? entities[1] : entities[0];
     const profile = runMatch[1] === 'run-uk' ? profiles['employee-uk'] : profiles['employee-ng'];
+    const runState = runStates[runMatch[1]];
     return json(response, 200, {
       run: {
         _id: runMatch[1],
         runNumber: `SYN-${entity.code}-2026-08`,
-        status: 'calculated',
+        ...runState,
         month: 8,
         year: 2026,
         workInputs: [],

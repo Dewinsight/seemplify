@@ -5,7 +5,6 @@ const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
-const TimeAttendanceImport = require('../models/TimeAttendanceImport');
 const PayrollEngineService = require('../services/PayrollEngineService');
 const taxService = require('../services/TaxCalculationService');
 const organizationCurrencyService = require('../services/OrganizationCurrencyService');
@@ -2117,10 +2116,6 @@ async function retractPayrollRun(runId, organizationId, adminId, adminName, comm
     comments,
   });
 
-  await TimeAttendanceImport.updateMany(
-    { organizationId, appliedPayrollRunId: result.run._id, status: 'applied' },
-    { $set: { status: 'accepted' }, $unset: { appliedPayrollRunId: '' } }
-  );
   return result;
 }
 
@@ -2208,9 +2203,11 @@ router.post('/runs/:id/retract', requireOrganizationAdminOnly, async (req, res) 
       run: result.run,
       deletedPayslips: result.deletedPayslips,
       resetCompensationRequests: result.resetCompensationRequests,
+      resetTimeAttendanceImports: result.resetTimeAttendanceImports,
       warnings: [
         'Generated payslips for this run were removed.',
         'Compensation requests finalized by this run were reopened.',
+        'Time and Attendance imports applied by this run were reopened.',
         'Use this only when you need to re-run payroll for the month.'
       ]
     });

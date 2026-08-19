@@ -240,7 +240,8 @@ const PayrollRunSchema = new Schema({
   retractionSummary: {
     originalStatus: String,
     deletedPayslips: { type: Number, min: 0 },
-    resetCompensationRequests: { type: Number, min: 0 }
+    resetCompensationRequests: { type: Number, min: 0 },
+    resetTimeAttendanceImports: { type: Number, min: 0 }
   },
   
   // Error tracking
