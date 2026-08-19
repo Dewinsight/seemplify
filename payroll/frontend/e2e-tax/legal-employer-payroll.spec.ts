@@ -305,6 +305,7 @@ test('shows an active payroll-ready employer setup for every released platform j
 
   await expect(page.getByRole('row')).toHaveCount(9);
   await expect(page.getByText('runnable', { exact: true })).toHaveCount(8);
+  await expect(page.getByText('Built into released tax pack', { exact: true })).toHaveCount(8);
   for (const [countryCode] of released) {
     await expect(page.getByText(`${countryCode}-DEFAULT - company`, { exact: true })).toBeVisible();
   }
