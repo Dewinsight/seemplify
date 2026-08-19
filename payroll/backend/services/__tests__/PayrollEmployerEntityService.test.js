@@ -155,6 +155,38 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
     expect(result).toMatchObject({ payrollRunnable: true, mode: 'runnable', blockingIssues: [] });
   });
 
+  test('upgrades a preview binding to the current published platform release', async () => {
+    const currentVersionId = objectId();
+    const publishedVersionId = objectId();
+    const row = entity({ taxJurisdictionVersionId: currentVersionId });
+    jest.spyOn(PayrollEmployerEntity, 'find').mockResolvedValue([row]);
+    jest.spyOn(taxJurisdictionService, 'getJurisdictionById').mockResolvedValue({
+      publishedVersionId,
+      versions: [
+        { _id: currentVersionId, calculationStatus: 'preview_only', calculationCurrency: 'NGN' },
+        {
+          _id: publishedVersionId,
+          status: 'published',
+          validationStatus: 'validated',
+          calculationStatus: 'runnable',
+          calculationCurrency: 'NGN',
+          effectiveFrom: '2026-01-01',
+          platformRelease: { releaseId: 'platform:NG-2026-NTA:2026-08-19' },
+        },
+      ],
+      getPublishedVersion() {
+        return this.versions[1];
+      },
+    });
+    const save = jest.spyOn(row, 'save').mockResolvedValue(row);
+
+    await expect(employerEntityService.upgradePlatformTaxBindings(new Date('2026-08-19')))
+      .resolves.toBe(1);
+    expect(row.taxJurisdictionVersionId).toEqual(publishedVersionId);
+    expect(row.lastModifiedBy).toBe('system-tax-release-migration');
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
   test('runs the source-pinned Nigeria candidate through the entity preview boundary', () => {
     const result = employerEntityService.calculateCandidatePreview(entity(), nigeriaFixtures.buildBaseInput());
 

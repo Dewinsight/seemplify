@@ -66,10 +66,20 @@ function employmentPeriod(profile, payStart, payEnd) {
     return { eligible: false, periodDays: 0, employedDays: 0, factor: 0 };
   }
 
-  const starts = [profile?.employeeInfo?.dateOfJoining, profile?.workTerms?.contractStartDate]
+  const usesContractPeriod = profile?.workTerms?.payBasis === 'fixed_contract'
+    || profile?.employeeInfo?.employmentType === 'contract';
+  const starts = [
+    profile?.employeeInfo?.dateOfJoining,
+    usesContractPeriod ? profile?.workTerms?.contractStartDate : null,
+  ]
+    .filter(Boolean)
     .map(startOfDay)
     .filter(Boolean);
-  const ends = [profile?.terminationDate, profile?.workTerms?.contractEndDate]
+  const ends = [
+    profile?.terminationDate,
+    usesContractPeriod ? profile?.workTerms?.contractEndDate : null,
+  ]
+    .filter(Boolean)
     .map(startOfDay)
     .filter(Boolean);
   const employedStart = starts.reduce(
@@ -89,6 +99,28 @@ function employmentPeriod(profile, payStart, payEnd) {
     employedDays: eligible ? employedDays : 0,
     factor: eligible && periodDays > 0 ? Math.min(1, employedDays / periodDays) : 0,
   };
+}
+
+function refreshMutableRunEmployerSnapshot(run, employerContext) {
+  const entity = employerContext?.entity;
+  const readiness = employerContext?.readiness;
+  if (!run || !entity || !readiness) return run;
+  run.employerEntitySnapshot = {
+    ...(run.employerEntitySnapshot?.toObject?.() || run.employerEntitySnapshot || {}),
+    code: entity.code,
+    legalName: entity.legalName,
+    employerType: entity.employerType,
+    countryCode: entity.countryCode,
+    jurisdictionCode: entity.jurisdictionCode,
+    currency: entity.defaultCurrency,
+    taxJurisdictionConfigId: entity.taxJurisdictionConfigId,
+    taxJurisdictionVersionId: entity.taxJurisdictionVersionId,
+    taxAdapterCandidateId: entity.taxAdapterCandidateId,
+    taxPackContentHash: readiness.taxPack?.contentHash || '',
+    payrollRunnableAtCreation: readiness.payrollRunnable,
+    blockingIssuesAtCreation: readiness.blockingIssues || [],
+  };
+  return run;
 }
 
 function inPeriod(payStart, payEnd, itemStart, itemEnd) {
@@ -498,6 +530,10 @@ class PayrollEngineService {
       organizationId,
       payPeriod?.paymentDate
     );
+    // Draft/calculated runs are intentionally mutable. Refresh their pinned
+    // employer evidence during calculation so a newly released platform pack
+    // can be adopted by Recalculate without altering finalized history.
+    refreshMutableRunEmployerSnapshot(run, employerContext);
     if ((payPeriod?.type || 'monthly') !== 'monthly') {
       const error = new Error('Only monthly payroll runs are currently certified. Non-monthly payroll requires a reviewed salary-frequency and period-overlap configuration.');
       error.code = 'PAY_FREQUENCY_NOT_CERTIFIED';
@@ -1384,3 +1420,4 @@ module.exports = PayrollEngineService;
 module.exports.isVariableCompensationEnabled = isVariableCompensationEnabled;
 module.exports.daysBetweenInclusive = daysBetweenInclusive;
 module.exports.employmentPeriod = employmentPeriod;
+module.exports.refreshMutableRunEmployerSnapshot = refreshMutableRunEmployerSnapshot;

@@ -76,6 +76,7 @@ export type TaxJurisdictionVersion = {
   };
   authoredBy?: { userId?: string; name?: string };
   legalOpenIssues?: string[];
+  platformRelease?: TaxPlatformReleaseEvidence;
   automatedTechnicalReviews?: Array<{
     _id?: string;
     runReference: string;
@@ -89,8 +90,8 @@ export type TaxJurisdictionVersion = {
       outputDigestSha256?: string;
     };
     objectiveStatus: 'passed' | 'failed';
-    productionApproval: false;
-    humanReviewRequired: true;
+    productionApproval: boolean;
+    humanReviewRequired: boolean;
     checks: Array<{ code: string; status: 'passed' | 'failed'; details?: string[] }>;
     unresolvedLegalContradictions?: string[];
     summary?: string;
@@ -121,6 +122,13 @@ export type TaxJurisdictionVersion = {
 };
 
 export type TaxCertificationReviewRole = 'tax_law' | 'payroll_calculation' | 'independent_qa';
+export type TaxPlatformReleaseEvidence = {
+  releaseId: string;
+  channel?: string;
+  releasedAt?: string;
+  evidenceReference?: string;
+  fixtureSuite?: string;
+};
 export type TaxCertificationReview = {
   _id?: string;
   role: TaxCertificationReviewRole;
@@ -142,11 +150,13 @@ export type TaxCertificationStatus = {
   contentHash: string;
   ready: boolean;
   requiredRoles: TaxCertificationReviewRole[];
-  approvedRoles: TaxCertificationReviewRole[];
+  approvedRoles: Array<TaxCertificationReviewRole | 'platform_release'>;
   reviews: TaxCertificationReview[];
   staleReviewCount: number;
   authorizationInvalidReviewCount?: number;
   problems: string[];
+  certificationMode?: 'human_reviews' | 'platform_release';
+  platformRelease?: TaxPlatformReleaseEvidence;
 };
 export type TaxReviewerAuthorization = {
   _id: string;

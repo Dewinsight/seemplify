@@ -58,6 +58,34 @@ describe('contractPayService', () => {
     expect(overlap.active).toBe(false);
   });
 
+  test('ignores stale hidden contract dates for a salaried permanent employee', () => {
+    const result = calculateContractBasePay({
+      basicSalary: 1_000_000,
+      employeeInfo: { employmentType: 'full_time' },
+      workTerms: {
+        payBasis: 'salary',
+        contractStartDate: '2025-01-01',
+        contractEndDate: '2025-12-31',
+      },
+    }, february);
+
+    expect(result).toMatchObject({ eligible: true, amount: 1_000_000, payBasis: 'salary' });
+  });
+
+  test('continues to enforce contract dates for contract employees', () => {
+    const result = calculateContractBasePay({
+      basicSalary: 1_000_000,
+      employeeInfo: { employmentType: 'contract' },
+      workTerms: {
+        payBasis: 'salary',
+        contractStartDate: '2025-01-01',
+        contractEndDate: '2025-12-31',
+      },
+    }, february);
+
+    expect(result).toMatchObject({ eligible: false, amount: 0, payBasis: 'salary' });
+  });
+
   test('recognizes non-salary profiles as payroll-ready', () => {
     expect(hasPayConfiguration({ basicSalary: 0, workTerms: { payBasis: 'hourly', rate: 20 } })).toBe(true);
     expect(hasPayConfiguration({ basicSalary: 0, workTerms: { payBasis: 'fixed_contract', contractAmount: 5000 } })).toBe(true);

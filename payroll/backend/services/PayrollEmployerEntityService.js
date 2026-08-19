@@ -270,6 +270,47 @@ class PayrollEmployerEntityService {
     }
   }
 
+  async upgradePlatformTaxBindings(now = new Date()) {
+    const employers = await PayrollEmployerEntity.find({
+      status: { $ne: 'inactive' },
+      taxJurisdictionConfigId: { $ne: null },
+      taxJurisdictionVersionId: { $ne: null },
+    });
+    let upgradedCount = 0;
+
+    for (const employer of employers) {
+      const jurisdiction = await taxJurisdictionService.getJurisdictionById(
+        employer.taxJurisdictionConfigId,
+        employer.organizationId
+      );
+      const published = jurisdiction?.getPublishedVersion?.()
+        || (jurisdiction?.versions || []).find((version) => (
+          idText(version._id) === idText(jurisdiction?.publishedVersionId)
+        ));
+      const current = (jurisdiction?.versions || []).find((version) => (
+        idText(version._id) === idText(employer.taxJurisdictionVersionId)
+      ));
+      const effectiveFrom = published?.effectiveFrom ? new Date(published.effectiveFrom) : null;
+      const canAutoUpgrade = published
+        && idText(published._id) !== idText(employer.taxJurisdictionVersionId)
+        && published.status === 'published'
+        && published.validationStatus === 'validated'
+        && published.calculationStatus === 'runnable'
+        && published.platformRelease
+        && upper(published.calculationCurrency) === upper(employer.defaultCurrency)
+        && (!effectiveFrom || effectiveFrom <= now)
+        && (current?.calculationStatus !== 'runnable' || current?.platformRelease);
+
+      if (!canAutoUpgrade) continue;
+      employer.taxJurisdictionVersionId = published._id;
+      employer.lastModifiedBy = 'system-tax-release-migration';
+      await employer.save();
+      upgradedCount += 1;
+    }
+
+    return upgradedCount;
+  }
+
   async update(id, organizationId, payload, actor = {}) {
     const row = await PayrollEmployerEntity.findOne({ _id: id, organizationId });
     if (!row) throw serviceError('Legal employer not found.', 404, 'PAYROLL_EMPLOYER_ENTITY_NOT_FOUND');

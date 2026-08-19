@@ -4,7 +4,12 @@ const taxCalculationService = require('../TaxCalculationService');
 const taxJurisdictionService = require('../TaxJurisdictionService');
 const PayrollEngineService = require('../PayrollEngineService');
 const organizationCurrencyService = require('../OrganizationCurrencyService');
-const { isVariableCompensationEnabled, daysBetweenInclusive, employmentPeriod } = require('../PayrollEngineService');
+const {
+  isVariableCompensationEnabled,
+  daysBetweenInclusive,
+  employmentPeriod,
+  refreshMutableRunEmployerSnapshot,
+} = require('../PayrollEngineService');
 
 describe('payroll compliance calculations', () => {
   afterEach(() => {
@@ -155,5 +160,60 @@ describe('payroll compliance calculations', () => {
       .toMatchObject({ eligible: false, employedDays: 0, factor: 0 });
     expect(employmentPeriod({ employeeInfo: { dateOfJoining: '2026-08-16' } }, '2026-08-01', '2026-08-31'))
       .toMatchObject({ eligible: true, employedDays: 16, factor: 16 / 31 });
+  });
+
+  test('employment proration ignores legacy contract dates for normal salary employees', () => {
+    const staleContract = {
+      employeeInfo: { employmentType: 'full_time' },
+      workTerms: {
+        payBasis: 'salary',
+        contractStartDate: '2025-01-01',
+        contractEndDate: '2025-12-31',
+      },
+    };
+    expect(employmentPeriod(staleContract, '2026-02-01', '2026-02-28'))
+      .toMatchObject({ eligible: true, employedDays: 28, factor: 1 });
+    expect(employmentPeriod({
+      ...staleContract,
+      workTerms: { ...staleContract.workTerms, payBasis: 'fixed_contract' },
+    }, '2026-02-01', '2026-02-28'))
+      .toMatchObject({ eligible: false, employedDays: 0, factor: 0 });
+  });
+
+  test('recalculation refreshes mutable run evidence to the current employer tax pack', () => {
+    const run = {
+      employerEntitySnapshot: {
+        code: 'AIIN',
+        taxJurisdictionVersionId: 'preview-v1',
+        payrollRunnableAtCreation: false,
+        blockingIssuesAtCreation: ['Tax pack is preview_only and cannot finalize payroll.'],
+      },
+    };
+    refreshMutableRunEmployerSnapshot(run, {
+      entity: {
+        code: 'AIIN',
+        legalName: 'AIIN',
+        employerType: 'company',
+        countryCode: 'NG',
+        jurisdictionCode: 'NG-LA',
+        defaultCurrency: 'NGN',
+        taxJurisdictionConfigId: 'nigeria-pack',
+        taxJurisdictionVersionId: 'published-v2',
+        taxAdapterCandidateId: 'NG_2026_WAVE_1',
+      },
+      readiness: {
+        payrollRunnable: true,
+        blockingIssues: [],
+        taxPack: { contentHash: 'b'.repeat(64) },
+      },
+    });
+
+    expect(run.employerEntitySnapshot).toMatchObject({
+      code: 'AIIN',
+      taxJurisdictionVersionId: 'published-v2',
+      taxPackContentHash: 'b'.repeat(64),
+      payrollRunnableAtCreation: true,
+      blockingIssuesAtCreation: [],
+    });
   });
 });

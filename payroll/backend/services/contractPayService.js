@@ -48,7 +48,16 @@ function calculateContractBasePay(profile, payPeriod, workInput = {}) {
   const workTerms = profile?.workTerms || {};
   const payBasis = workTerms.payBasis || 'salary';
   const rate = Math.max(0, toNumber(workTerms.rate));
-  const overlap = getContractOverlap(workTerms, payPeriod.startDate, payPeriod.endDate);
+  const usesContractPeriod = payBasis === 'fixed_contract'
+    || profile?.employeeInfo?.employmentType === 'contract';
+  // Contract dates can remain on legacy profiles after an employee moves to a
+  // normal salary basis. Do not let those hidden, stale values exclude a
+  // permanent employee from payroll.
+  const overlap = getContractOverlap(
+    usesContractPeriod ? workTerms : {},
+    payPeriod.startDate,
+    payPeriod.endDate
+  );
 
   if (!overlap.active) {
     return { eligible: false, amount: 0, payBasis, rate, units: 0, unitLabel: '' };

@@ -36,6 +36,7 @@ const {
 const MonthlyPayrollScheduler = require('./jobs/MonthlyPayrollScheduler');
 const ExchangeRateScheduler = require('./jobs/ExchangeRateScheduler');
 const taxJurisdictionService = require('./services/TaxJurisdictionService');
+const payrollEmployerEntityService = require('./services/PayrollEmployerEntityService');
 const payrollSequenceMigrationService = require('./services/PayrollSequenceMigrationService');
 const { getPayrollLeaveSigningReadiness } = require('./services/PayrollLeaveRequestSigner');
 const { startAutomationEventWorker } = require('./services/automationEventService');
@@ -229,6 +230,10 @@ async function startServer() {
     await migratePayrollIndexes();
     await taxJurisdictionService.seedGlobalDefaults();
     console.log('Seeded global tax jurisdictions');
+    const upgradedEmployerBindings = await payrollEmployerEntityService.upgradePlatformTaxBindings();
+    if (upgradedEmployerBindings > 0) {
+      console.log(`Upgraded ${upgradedEmployerBindings} legal employer tax-pack binding(s)`);
+    }
 
     const payrollScheduler = new MonthlyPayrollScheduler();
     payrollScheduler.initializeScheduler();

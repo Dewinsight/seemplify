@@ -67,6 +67,23 @@ test('configures every supported tax rule shape without raw JSON', async ({ page
   expect(browserErrors).toEqual([]);
 });
 
+test('shows a published platform pack as fully payroll-ready without human review placeholders', async ({ page }) => {
+  await page.goto('/admin/settings/tax');
+  await dismissPageGuide(page);
+
+  const platformPack = page.getByRole('button', { name: /Nigeria statutory platform release/i });
+  await expect(platformPack).toContainText('Payroll ready');
+  await platformPack.click();
+
+  await expect(page.getByText('Published platform pack')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Platform release certification' })).toBeVisible();
+  await expect(page.getByText('Published and certified')).toBeVisible();
+  await expect(page.getByText('production release approved')).toBeVisible();
+  await expect(page.getByText('PAYROLL-NG-2026-RELEASE')).toBeVisible();
+  await expect(page.getByText('Not submitted')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Jurisdiction review team' })).toHaveCount(0);
+});
+
 test('separates Nigerian company and UK subsidiary tax presence', async ({ page }, testInfo) => {
   await page.goto('/admin/settings/employer-entities');
   await dismissPageGuide(page);

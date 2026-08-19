@@ -1277,6 +1277,13 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (employeeInfo !== undefined) {
       profile.employeeInfo = { ...(profile.employeeInfo || {}), ...(employeeInfo || {}) };
     }
+    const usesContractPeriod = profile.workTerms?.payBasis === 'fixed_contract'
+      || profile.employeeInfo?.employmentType === 'contract';
+    if (!usesContractPeriod && profile.workTerms) {
+      profile.workTerms.contractStartDate = null;
+      profile.workTerms.contractEndDate = null;
+      profile.workTerms.contractReference = '';
+    }
     if (allowances !== undefined) profile.allowances = allowances;
     if (recurringDeductions !== undefined) profile.recurringDeductions = recurringDeductions;
     if (benefits !== undefined) profile.benefits = benefits;

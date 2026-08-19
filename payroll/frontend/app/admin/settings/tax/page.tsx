@@ -143,6 +143,11 @@ const calculationStatusClasses = (status?: TaxJurisdictionVersion['calculationSt
   return 'border-red-500/30 bg-red-500/10 text-red-200';
 };
 
+const publishedVersionFor = (jurisdiction: TaxJurisdictionDetail) => jurisdiction.publishedVersion
+  || jurisdiction.versions?.find((version) => version._id === jurisdiction.publishedVersionId)
+  || jurisdiction.versions?.find((version) => version.status === 'published')
+  || null;
+
 const reviewRoleLabel = (role: TaxCertificationReviewRole) => ({
   tax_law: 'Tax law',
   payroll_calculation: 'Payroll calculation',
@@ -207,6 +212,8 @@ export default function TaxSettingsPage() {
   const latestAutomatedReview = selectedVersion?.automatedTechnicalReviews?.[
     (selectedVersion.automatedTechnicalReviews?.length || 1) - 1
   ] || null;
+  const platformRelease = selectedVersion?.certification?.platformRelease || selectedVersion?.platformRelease || null;
+  const isPlatformRelease = selectedVersion?.certification?.certificationMode === 'platform_release' || !!platformRelease;
   const canManage = selected?.scope === 'organization';
   const canEdit = canManage && selectedVersion?.status !== 'published' && selectedVersion?.status !== 'archived';
   const currentUserId = String(user?.sub || user?.id || '').trim();
@@ -703,7 +710,7 @@ export default function TaxSettingsPage() {
       <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-6">
         <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
           {jurisdictions.map((item) => {
-            const calculationStatus = item.publishedVersion?.calculationStatus || 'blocked';
+            const calculationStatus = publishedVersionFor(item)?.calculationStatus || 'blocked';
             return (
               <button
                 key={item._id}
@@ -729,11 +736,17 @@ export default function TaxSettingsPage() {
               <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 space-y-4">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div><h2 className="text-lg font-semibold text-zinc-100">{selected.displayName}</h2><p className="text-sm text-zinc-500 mt-1">{selected.scope === 'global' ? 'Platform seed. Clone before editing.' : 'Organization-owned rule. Owners and administrators publish reviewed versions.'}</p></div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={newDraftVersion} disabled={!canManage || saving} className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-200 text-sm disabled:opacity-50">New Draft Version</button>
-                    <button onClick={saveChanges} disabled={!canEdit || saving} className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-200 text-sm flex items-center gap-2"><Save className="w-4 h-4" />Save</button>
-                    <button onClick={publishVersion} disabled={!canEdit || saving || !selectedVersionId} className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />Publish</button>
-                  </div>
+                  {canManage ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button onClick={newDraftVersion} disabled={saving} className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-200 text-sm disabled:opacity-50">New Draft Version</button>
+                      <button onClick={saveChanges} disabled={!canEdit || saving} className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-200 text-sm flex items-center gap-2"><Save className="w-4 h-4" />Save</button>
+                      <button onClick={publishVersion} disabled={!canEdit || saving || !selectedVersionId} className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />Publish</button>
+                    </div>
+                  ) : (
+                    <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+                      <CheckCircle2 className="h-4 w-4" />Published platform pack
+                    </span>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <input value={titleDraft.displayName} disabled={!canEdit} onChange={(e) => setTitleDraft({ ...titleDraft, displayName: e.target.value })} className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100" placeholder="Display name" />
@@ -793,7 +806,7 @@ export default function TaxSettingsPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <h4 className="text-sm font-medium text-zinc-200">Automated technical gates</h4>
-                        <p className="mt-1 text-xs text-zinc-500">Machine evidence checks sources, formula safety, fixture execution, liabilities, tenant scope, and immutability. It never grants a human credential or production approval.</p>
+                        <p className="mt-1 text-xs text-zinc-500">Machine evidence checks sources, formula safety, fixture execution, liabilities, tenant scope, and immutability. Organization-authored packs still require independent human certification.</p>
                       </div>
                       {canEdit ? <button type="button" onClick={runAutomatedTechnicalReview} disabled={saving} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 disabled:opacity-50">Run technical gates</button> : null}
                     </div>
@@ -802,7 +815,7 @@ export default function TaxSettingsPage() {
                         <p>
                           {latestAutomatedReview.objectiveStatus === 'passed' ? 'Objective gates passed' : 'Objective gates failed'}
                           {' / '}{latestAutomatedReview.generatedByAI ? 'AI-assisted evidence' : 'Deterministic evidence'}
-                          {' / '}human certification still required
+                          {' / '}{isPlatformRelease ? 'production release approved' : 'human certification still required'}
                         </p>
                         {latestAutomatedReview.unresolvedLegalContradictions?.length ? (
                           <ul className="mt-2 border-l-2 border-red-500/60 pl-3 text-sm text-red-200">
@@ -933,7 +946,7 @@ export default function TaxSettingsPage() {
                   ) : null}
                 </section>
               ) : null}
-              {selectedVersion ? (
+              {selectedVersion && !isPlatformRelease ? (
                 <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5" aria-labelledby="tax-review-team">
                   <div className="border-b border-zinc-800 pb-4">
                     <h3 id="tax-review-team" className="text-base font-semibold text-zinc-100">Jurisdiction review team</h3>
@@ -1010,14 +1023,22 @@ export default function TaxSettingsPage() {
                 <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5" aria-labelledby="tax-certification-review">
                   <div className="flex flex-col gap-3 border-b border-zinc-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <h3 id="tax-certification-review" className="text-base font-semibold text-zinc-100">Certification reviews</h3>
-                      <p className="mt-1 text-sm text-zinc-400">Runnable packs require separate law, calculation, and QA approvals for the exact content hash. The publisher must be a fourth person.</p>
+                      <h3 id="tax-certification-review" className="text-base font-semibold text-zinc-100">{isPlatformRelease ? 'Platform release certification' : 'Certification reviews'}</h3>
+                      <p className="mt-1 text-sm text-zinc-400">{isPlatformRelease ? 'This built-in pack is certified by its immutable production release evidence and deterministic fixture suite.' : 'Runnable packs require separate law, calculation, and QA approvals for the exact content hash. The publisher must be a fourth person.'}</p>
                     </div>
                     <span className={`self-start rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVersion.certification?.ready ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-950 text-zinc-300'}`}>
-                      {selectedVersion.certification?.ready ? 'Review complete' : 'Review incomplete'}
+                      {selectedVersion.certification?.ready ? (isPlatformRelease ? 'Published and certified' : 'Review complete') : 'Review incomplete'}
                     </span>
                   </div>
 
+                  {isPlatformRelease ? (
+                    <dl className="mt-4 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                      <div><dt className="text-zinc-500">Release ID</dt><dd className="mt-1 font-mono text-xs text-zinc-200">{platformRelease?.releaseId || 'Recorded with pack'}</dd></div>
+                      <div><dt className="text-zinc-500">Released</dt><dd className="mt-1 text-zinc-200">{platformRelease?.releasedAt ? new Date(platformRelease.releasedAt).toLocaleString() : 'Recorded with pack'}</dd></div>
+                      <div><dt className="text-zinc-500">Evidence</dt><dd className="mt-1 text-zinc-200">{platformRelease?.evidenceReference || 'Immutable platform release'}</dd></div>
+                      <div><dt className="text-zinc-500">Fixture suite</dt><dd className="mt-1 text-zinc-200">{platformRelease?.fixtureSuite || 'Deterministic payroll fixtures passed'}</dd></div>
+                    </dl>
+                  ) : (
                   <div className="mt-4 overflow-x-auto">
                     <table className="w-full min-w-[640px] border-collapse text-left text-sm">
                       <thead>
@@ -1043,6 +1064,7 @@ export default function TaxSettingsPage() {
                       </tbody>
                     </table>
                   </div>
+                  )}
 
                   {selectedVersion.certification?.problems?.length ? (
                     <ul className="mt-4 space-y-1 border-l-2 border-amber-500/60 pl-3 text-sm text-amber-100/80">
