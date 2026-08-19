@@ -133,15 +133,86 @@ body.idp-workspace-page .widget-card:hover {
 
 body.idp-workspace-page .org-card {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(360px, 1.45fr);
+  grid-template-columns: minmax(220px, .75fr) minmax(440px, 1.25fr);
   align-items: center;
-  gap: 32px;
-  min-height: 126px;
-  padding: 22px;
+  gap: 24px;
+  min-height: 0;
+  padding: 20px 22px;
 }
 
 body.idp-workspace-page .org-actions {
   justify-content: flex-end;
+}
+
+body.organizations-page .top-nav {
+  margin-bottom: 28px;
+}
+
+body.organizations-page .header {
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+}
+
+body.organizations-page .header h1 {
+  font-size: clamp(28px, 2.5vw, 34px);
+}
+
+body.organizations-page .header-actions {
+  gap: 8px;
+}
+
+body.organizations-page .organizations-list {
+  display: grid;
+  gap: 12px;
+}
+
+body.organizations-page .organizations-list .org-card {
+  margin: 0;
+}
+
+body.organizations-page .org-info {
+  min-width: 0;
+}
+
+body.organizations-page .org-name {
+  margin-bottom: 8px;
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+body.organizations-page .org-description {
+  max-width: 540px;
+  margin: -2px 0 10px;
+  line-height: 1.45;
+}
+
+body.organizations-page .org-meta {
+  gap: 10px;
+  line-height: 1.4;
+}
+
+body.organizations-page .org-actions {
+  gap: 8px;
+}
+
+body.organizations-page .org-actions .btn {
+  min-height: 36px;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
+body.organizations-page .org-switch-form {
+  display: inline-flex;
+  margin: 0;
+}
+
+body.organizations-page .org-card-current {
+  border-color: color-mix(in srgb, var(--brand) 36%, var(--border));
+}
+
+body.organizations-page .empty-state {
+  margin: 0;
 }
 
 body.idp-workspace-page .current-badge,
@@ -274,6 +345,22 @@ body.idp-workspace-page .modal-content {
     justify-content: flex-start;
   }
 
+  body.organizations-page .org-card {
+    gap: 18px;
+  }
+
+  body.organizations-page .org-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  body.organizations-page .org-actions .btn,
+  body.organizations-page .org-switch-form,
+  body.organizations-page .org-switch-form .btn {
+    width: 100%;
+  }
+
   body.idp-workspace-page .subscription-grid + .card,
   body.idp-workspace-page .requests-section {
     width: 100%;
@@ -299,6 +386,23 @@ body.idp-workspace-page .modal-content {
   body.idp-workspace-page .personal-summary {
     grid-template-columns: 1fr;
     gap: 18px;
+  }
+
+  body.organizations-page .top-nav {
+    margin-bottom: 22px;
+  }
+
+  body.organizations-page .header {
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  body.organizations-page .org-card {
+    padding: 18px;
+  }
+
+  body.organizations-page .org-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

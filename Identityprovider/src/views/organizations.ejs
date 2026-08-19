@@ -12,7 +12,7 @@
   <script src="/js/theme.js?v=3"></script>
 </head>
 
-<body class="idp-workspace-page">
+<body class="idp-workspace-page organizations-page">
   <%- include('partials/nav', { activePage: 'organizations' }) %>
 
   <div class="container">
@@ -32,11 +32,11 @@
           </div>
           <% } %>
             <a href="/invitations/pending" class="btn btn-secondary">
-              📧 My Invitations<% if (typeof pendingInvitationsCount !=='undefined' && pendingInvitationsCount> 0) { %>
+              My Invitations<% if (typeof pendingInvitationsCount !=='undefined' && pendingInvitationsCount> 0) { %>
                 (<%= pendingInvitationsCount %>)<% } %>
             </a>
             <button class="btn btn-primary" onclick="showCreateModal()">
-              + Create Organization
+              Create Organization
             </button>
       </div>
     </div>
@@ -54,8 +54,9 @@
           <% } %>
 
             <% if (organizations && organizations.length> 0) { %>
+              <div class="organizations-list">
               <% organizations.forEach(org=> { %>
-                <div class="card org-card">
+                <div class="card org-card<%= org.isCurrentOrganization ? ' org-card-current' : '' %>">
                   <div class="org-info">
                     <div class="org-name">
                       <%= org.name %>
@@ -79,7 +80,7 @@
                   </div>
                   <div class="org-actions">
                     <% if (!org.isCurrentOrganization) { %>
-                      <form action="/organizations/<%= org.id %>/switch" method="POST" style="display: inline;">
+                      <form action="/organizations/<%= org.id %>/switch" method="POST" class="org-switch-form">
                         <button type="submit" class="btn btn-secondary">Switch</button>
                       </form>
                       <% } %>
@@ -103,12 +104,13 @@
                             <% if (org.role==='owner' ) { %>
                               <button class="btn btn-danger"
                                 onclick="deleteOrganization('<%= org.id %>', '<%= org.name.replace(/'/g, " \\'") %>')">
-                                🗑️ Delete
+                                Delete
                               </button>
                               <% } %>
                   </div>
                 </div>
                 <% }) %>
+              </div>
                   <% } else { %>
                     <div class="card empty-state">
                       <h3>No organizations yet</h3>
