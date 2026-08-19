@@ -1620,7 +1620,7 @@ class EmbeddingService {
       });
       
       const metadata = candidateMatch?.metadata || {};
-      const similarity = candidateMatch?.similarity || 0;
+      const similarity = candidateMatch?.vectorSimilarity ?? candidateMatch?.similarity ?? 0;
       
       // Enhanced skills analysis using job skills and candidate technologies
       const jobSkills = this.parseSkills(job?.skills);
@@ -1710,20 +1710,69 @@ class EmbeddingService {
     } catch (error) {
       console.error('❌ Error generating match explanation:', error);
       console.error('Stack trace:', error.stack);
-      // Return a fallback explanation
+      // Preserve authoritative profile evidence even if a secondary analyzer
+      // fails. An internal explanation error must never turn a rich candidate
+      // into a fabricated zero-data profile.
+      const metadata = candidateMatch?.metadata || {};
+      const candidateSkills = this.parseSkills(metadata.skills);
+      const profile = metadata._matchingProfile || {
+        skills: candidateSkills,
+        evidenceItems: candidateSkills
+      };
+      const skillsMatch = assessSkillEvidence(this.parseSkills(job?.skills), profile);
+      const candidateYears = this.extractYearsFromExperience(metadata.totalYearsExp ?? metadata.experience);
+      const requiredYears = this.extractYearsFromExperience(job?.experience);
+      const companies = Array.isArray(metadata.companiesWorkedAt) ? metadata.companiesWorkedAt : [];
+      const positions = Array.isArray(metadata.positionsHeld) ? metadata.positionsHeld : [];
+      const completeness = Number(metadata.dataCompleteness) || [
+        metadata.hasDetailedWorkHistory,
+        metadata.hasAIAnalysis,
+        candidateSkills.length > 0,
+        positions.length > 0
+      ].filter(Boolean).length * 25;
+      const similarity = candidateMatch?.vectorSimilarity ?? candidateMatch?.similarity ?? 0;
       return {
-        skillsMatch: { matchedSkills: [], missingSkills: [], bonusSkills: [], matchPercentage: 0, totalRequired: 0, totalMatched: 0 },
-        experienceMatch: { isMatch: false, required: 0, candidate: 0, difference: 0, category: 'Unknown' },
-        locationMatch: { isMatch: false, type: 'Unknown', job: '', candidate: '' },
-        industryMatch: { hasRelevantIndustry: false, matchedIndustries: [], allIndustries: [], relevanceScore: 0 },
-        leadershipMatch: { requiresLeadership: false, hasLeadership: false, isMatch: true, gap: false },
-        aiInsights: { hasAIAnalysis: false, summary: '', strengths: [], potentialFlags: [], strengthsCount: 0, flagsCount: 0 },
-        careerFit: { totalYearsExp: 0, hasCareerProgression: false, hasAchievements: false, companiesWorkedAt: 0, positionsHeld: 0, avgTenureYears: 0, stabilityScore: 'Unknown', progressionIndicators: { multiplePositions: false, multipleCompanies: false, documentedGrowth: false } },
-        matchStrength: 'Low',
-        overallScore: Math.round((candidateMatch?.similarity || 0) * 100),
-        dataQuality: { completeness: 0, hasDetailedHistory: false, hasAIAnalysis: false, hasCoverLetter: false },
-        reasons: ['Basic similarity match available'],
-        concerns: ['Limited data available for detailed analysis']
+        skillsMatch: { ...skillsMatch, bonusSkills: candidateSkills.slice(0, 5) },
+        experienceMatch: {
+          isMatch: candidateYears >= requiredYears,
+          required: requiredYears,
+          candidate: candidateYears,
+          difference: candidateYears - requiredYears,
+          category: candidateYears >= requiredYears ? 'Meets Requirements' : 'Under-experienced'
+        },
+        locationMatch: this.analyzeLocationMatch(job?.location, metadata.location || candidateMatch?.candidate?.location),
+        industryMatch: {
+          hasRelevantIndustry: (metadata.industryExp || []).length > 0,
+          matchedIndustries: metadata.industryExp || [],
+          allIndustries: metadata.industryExp || [],
+          relevanceScore: skillsMatch.matchPercentage
+        },
+        leadershipMatch: this.analyzeLeadershipMatch(job?.level, metadata.hasLeadershipExp),
+        aiInsights: this.analyzeAIInsights(metadata),
+        careerFit: {
+          totalYearsExp: candidateYears,
+          hasCareerProgression: Boolean(metadata.careerProgression),
+          hasAchievements: (metadata.keyAchievements || []).length > 0,
+          companiesWorkedAt: companies.length,
+          positionsHeld: positions.length,
+          avgTenureYears: companies.length ? Math.round((candidateYears / companies.length) * 10) / 10 : 0,
+          stabilityScore: companies.length && candidateYears / companies.length > 2 ? 'High' : 'Medium',
+          progressionIndicators: {
+            multiplePositions: positions.length > 1,
+            multipleCompanies: companies.length > 1,
+            documentedGrowth: Boolean(metadata.careerProgression)
+          }
+        },
+        matchStrength: this.categorizeMatchStrength(similarity),
+        overallScore: Math.round(similarity * 100),
+        dataQuality: {
+          completeness,
+          hasDetailedHistory: Boolean(metadata.hasDetailedWorkHistory),
+          hasAIAnalysis: Boolean(metadata.hasAIAnalysis),
+          hasCoverLetter: Boolean(metadata.hasCoverLetter)
+        },
+        reasons: ['Full profile evidence retained while detailed analysis was unavailable'],
+        concerns: ['Detailed explanation temporarily unavailable']
       };
     }
   }
@@ -2223,7 +2272,7 @@ class EmbeddingService {
    */
   parseSkills(skills) {
     if (!skills) return [];
-    if (Array.isArray(skills)) return skills.filter(s => s && s.trim());
+    if (Array.isArray(skills)) return skills.map((skill) => String(skill || '').trim()).filter(Boolean);
     if (typeof skills === 'string') {
       return skills.split(',').map(s => s.trim()).filter(s => s.length > 0);
     }
@@ -2234,17 +2283,21 @@ class EmbeddingService {
    * Extract years of experience from text
    */
   extractYearsFromExperience(experienceStr) {
-    if (!experienceStr) return 0;
+    if (experienceStr == null || experienceStr === '') return 0;
+    if (typeof experienceStr === 'number') {
+      return Number.isFinite(experienceStr) ? Math.max(0, experienceStr) : 0;
+    }
+    const experienceText = String(experienceStr);
     
     // Look for patterns like "3 years", "3-5 years", "5+ years"
     const patterns = [
-      /(\d+)\+?\s*(?:years?|yrs?)/i,
       /(\d+)-\d+\s*(?:years?|yrs?)/i,
+      /(\d+)\+?\s*(?:years?|yrs?)/i,
       /(\d+)/
     ];
     
     for (const pattern of patterns) {
-      const match = experienceStr.match(pattern);
+      const match = experienceText.match(pattern);
       if (match) {
         return parseInt(match[1]);
       }

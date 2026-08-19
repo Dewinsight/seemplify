@@ -3,6 +3,7 @@ const test = require('node:test');
 
 const { GPTAnalysisCache, GPTAnalysisService } = require('../services/gptAnalysisService');
 const rankingService = require('../services/rankingService');
+const embeddingService = require('../services/embeddingService');
 const {
   assessSkillEvidence,
   buildCandidateMatchingProfile,
@@ -66,7 +67,7 @@ test('matching maps model results by exact ID regardless of response order', () 
   assert.equal(formatted.find((item) => item.candidate._id === 'candidate-a').gptAnalysis.explanation, payload.analysis[1].contextual_explanation);
 });
 
-test('full-profile matching grounds the screenshot skill gaps and career history', () => {
+test('full-profile matching grounds the screenshot skill gaps and career history', async () => {
   const requiredSkills = [
     'product discovery', 'product prioritisation', 'roadmap planning',
     'requirements definition', 'user needs analysis', 'decision documentation',
@@ -120,4 +121,29 @@ test('full-profile matching grounds the screenshot skill gaps and career history
   assert.equal(result.gptAnalysis.skillMatchPercentage, 100);
   assert.deepEqual(result.gptAnalysis.skillGaps, []);
   assert.ok(result.relevanceScore >= 0.8, `expected strong deep match, got ${result.relevanceScore}`);
+
+  const explanation = await embeddingService.generateMatchExplanation(job, ranked);
+  assert.equal(explanation.experienceMatch.candidate, 13);
+  assert.equal(explanation.careerFit.totalYearsExp, 13);
+  assert.equal(explanation.careerFit.companiesWorkedAt, 2);
+  assert.equal(explanation.skillsMatch.matchPercentage, 100);
+  assert.ok(explanation.dataQuality.completeness > 0);
+  assert.ok(!explanation.reasons.includes('Basic similarity match available'));
+  assert.equal(embeddingService.extractYearsFromExperience(13), 13);
+  assert.equal(embeddingService.extractYearsFromExperience('3-5 years'), 3);
+
+  const originalFinder = embeddingService.findMatchingCandidatesForJob;
+  const gptService = require('../services/gptAnalysisService');
+  const originalEnabled = gptService.isEnabled;
+  try {
+    gptService.isEnabled = false;
+    embeddingService.findMatchingCandidatesForJob = async () => ({ matches: [ranked], fromCache: false });
+    const deepResult = await embeddingService.findMatchingCandidatesWithExplanation(job, 1);
+    assert.equal(deepResult.matches[0].explanation.careerFit.totalYearsExp, 13);
+    assert.equal(deepResult.matches[0].explanation.skillsMatch.matchPercentage, 100);
+    assert.ok(deepResult.matches[0].relevanceScore >= 0.7);
+  } finally {
+    embeddingService.findMatchingCandidatesForJob = originalFinder;
+    gptService.isEnabled = originalEnabled;
+  }
 });

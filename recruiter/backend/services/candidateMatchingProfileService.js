@@ -223,6 +223,18 @@ function assessSkillEvidence(requiredSkills, profile = {}) {
 
 function mergeProfileIntoMatch(match, candidate) {
   const profile = buildCandidateMatchingProfile(candidate);
+  const completeness = Math.round(([
+    profile.skills.length > 0,
+    profile.jobHistory.length > 0,
+    profile.totalYearsExp > 0,
+    Boolean(profile.aiSummary),
+    Boolean(profile.education || profile.educationHistory.length),
+    profile.certifications.length > 0,
+    profile.projects.length > 0,
+    profile.keyAchievements.length > 0,
+    Boolean(profile.leadershipExperience),
+    Boolean(profile.careerProgression)
+  ].filter(Boolean).length / 10) * 100);
   const metadata = {
     ...(match.metadata || {}),
     candidateId: profile.id,
@@ -250,7 +262,8 @@ function mergeProfileIntoMatch(match, candidate) {
     aiSummary: profile.aiSummary,
     aiStrengths: profile.aiStrengths,
     hasAIAnalysis: Boolean(profile.aiSummary),
-    hasDetailedWorkHistory: profile.jobHistory.length > 0
+    hasDetailedWorkHistory: profile.jobHistory.length > 0,
+    dataCompleteness: completeness
   };
   Object.defineProperty(metadata, '_matchingProfile', { value: profile, enumerable: false });
   return {
