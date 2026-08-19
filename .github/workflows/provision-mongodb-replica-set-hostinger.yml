@@ -1,0 +1,175 @@
+name: Provision MongoDB Replica Set
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-production-deployments
+  cancel-in-progress: false
+
+jobs:
+  provision-mongodb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shared infrastructure compose
+        run: |
+          mkdir -p /tmp/seemplify-secrets/knowledge
+          touch /tmp/mongodb-keyfile
+          for name in arango-root arango-app arango-provisioner; do
+            printf 'validation-only-secret-value-with-sufficient-length\n' > "/tmp/seemplify-secrets/knowledge/$name"
+          done
+          sed \
+            -e 's#/opt/seemplify/secrets/knowledge#/tmp/seemplify-secrets/knowledge#g' \
+            -e 's#/opt/seemplify/secrets/mongodb-keyfile#/tmp/mongodb-keyfile#g' \
+            deploy/hostinger/shared-infrastructure.compose.yml >/tmp/shared-infrastructure.compose.yml
+          MONGO_ROOT_PASSWORD=validation REDIS_PASSWORD=validation WEAVIATE_API_KEY=validation \
+            QDRANT_API_KEY=validation EXPERIENCE_POSTGRES_OWNER_PASSWORD=validation \
+            docker compose -f /tmp/shared-infrastructure.compose.yml config --quiet
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+      - name: Upload shared infrastructure definition
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_upload_with_lock deploy/hostinger/shared-infrastructure.compose.yml "$SSH_USER@$SSH_HOST" "/tmp/seemplify-shared-infrastructure-${GITHUB_SHA}.yml"
+      - name: Enable and verify MongoDB replica set
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" \
+            "RELEASE_SHA='$GITHUB_SHA' flock --exclusive --wait 1800 /var/lock/seemplify-production-deploy.lock bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+
+          source_file="/tmp/seemplify-shared-infrastructure-$RELEASE_SHA.yml"
+          target_file=/opt/seemplify/deploy/hostinger/shared-infrastructure.compose.yml
+          rollback_file="/tmp/seemplify-shared-infrastructure-rollback-$RELEASE_SHA.yml"
+          key_file=/opt/seemplify/secrets/mongodb-keyfile
+          env_file=/opt/seemplify/secrets/shared-infrastructure.env
+          backup_dir="/var/backups/seemplify/mongodb-replica-set-migration-$RELEASE_SHA"
+          migration_started=0
+
+          rollback() {
+            local exit_code=$?
+            trap - ERR
+            if (( migration_started == 1 )) && [[ -s "$rollback_file" ]]; then
+              printf 'MongoDB migration failed; restoring the previous service definition.\n' >&2
+              install -o root -g root -m 0644 "$rollback_file" "$target_file"
+              docker compose --env-file "$env_file" -f "$target_file" up -d --no-deps mongodb || true
+            fi
+            exit "$exit_code"
+          }
+          trap rollback ERR
+
+          install -d -o root -g root -m 0700 /opt/seemplify/secrets
+          if [[ ! -s "$key_file" ]]; then
+            openssl rand -base64 756 | tr -d '\n' >"$key_file"
+          fi
+          chown 999:999 "$key_file"
+          chmod 0400 "$key_file"
+          install -o root -g root -m 0600 "$target_file" "$rollback_file"
+
+          install -d -o root -g root -m 0700 "$backup_dir"
+          docker exec seemplify-shared-mongodb-1 sh -lc \
+            'exec mongodump --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip' \
+            >"$backup_dir/mongodb.archive.gz"
+          [[ -s "$backup_dir/mongodb.archive.gz" ]]
+          sha256sum "$backup_dir/mongodb.archive.gz" >"$backup_dir/mongodb.archive.gz.sha256"
+
+          install -o root -g root -m 0644 "$source_file" "$target_file"
+
+          compose=(docker compose --env-file "$env_file" -f "$target_file")
+          "${compose[@]}" config --quiet
+          "${compose[@]}" pull mongodb
+          migration_started=1
+          "${compose[@]}" up -d --no-deps mongodb
+
+          container=seemplify-shared-mongodb-1
+          mongo_eval() {
+            docker exec "$container" bash -ec '
+              exec mongosh --quiet --host 127.0.0.1 \
+                --username seemplify_root --password "$MONGO_INITDB_ROOT_PASSWORD" \
+                --authenticationDatabase admin --eval "$1"
+            ' _ "$1"
+          }
+
+          for _ in $(seq 1 60); do
+            if mongo_eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 2)' >/dev/null 2>&1; then
+              break
+            fi
+            state=$(docker inspect --format '{{.State.Status}}' "$container")
+            if [[ "$state" == exited || "$state" == dead ]]; then
+              docker logs --tail 120 "$container" >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+          mongo_eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 2)' >/dev/null
+
+          mongo_eval '
+            try {
+              const status = rs.status();
+              if (status.set !== "rs0") throw new Error(`Unexpected replica set ${status.set}`);
+            } catch (error) {
+              if (error.codeName !== "NotYetInitialized" && error.code !== 94) throw error;
+              const result = rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] });
+              if (!result.ok) throw new Error(`rs.initiate failed: ${JSON.stringify(result)}`);
+            }
+          ' >/dev/null
+
+          for _ in $(seq 1 60); do
+            if mongo_eval 'quit(db.hello().isWritablePrimary ? 0 : 2)' >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          mongo_eval '
+            const hello = db.hello();
+            if (!hello.isWritablePrimary || hello.setName !== "rs0") {
+              throw new Error(`MongoDB is not writable primary for rs0: ${JSON.stringify(hello)}`);
+            }
+          ' >/dev/null
+          mongo_eval '
+            const databaseName = "seemplify_transaction_probe";
+            const session = db.getMongo().startSession();
+            try {
+              const probeDb = session.getDatabase(databaseName);
+              session.startTransaction();
+              probeDb.probe.insertOne({ release: "replica-set-migration" });
+              session.commitTransaction();
+              const count = db.getSiblingDB(databaseName).probe.countDocuments({});
+              if (count !== 1) throw new Error(`Expected one committed transaction probe, got ${count}`);
+            } finally {
+              session.endSession();
+              db.getSiblingDB(databaseName).dropDatabase();
+            }
+          ' >/dev/null
+          for _ in $(seq 1 45); do
+            [[ "$(docker inspect --format '{{.State.Health.Status}}' "$container")" == healthy ]] && break
+            sleep 2
+          done
+          [[ "$(docker inspect --format '{{.State.Health.Status}}' "$container")" == healthy ]]
+
+          migration_started=0
+          trap - ERR
+          rm -f "$source_file" "$rollback_file"
+          printf 'MongoDB replica set rs0 is initialized, writable, and healthy.\n'
+          REMOTE

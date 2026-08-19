@@ -11,9 +11,14 @@ services:
       - mongod
       - --auth
       - --bind_ip_all
+      - --replSet
+      - rs0
+      - --keyFile
+      - /run/secrets/mongodb-keyfile
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
+      - /opt/seemplify/secrets/mongodb-keyfile:/run/secrets/mongodb-keyfile:ro
     ulimits:
       nofile:
         soft: 65536
@@ -24,7 +29,7 @@ services:
         - >-
           mongosh --quiet --host 127.0.0.1 --username seemplify_root
           --password "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin
-          --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 2)'
+          --eval 'quit(db.hello().isWritablePrimary ? 0 : 2)'
       interval: 15s
       timeout: 10s
       retries: 10
