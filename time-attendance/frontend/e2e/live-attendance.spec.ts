@@ -89,7 +89,7 @@ test('runs the complete clock, break and clock-out lifecycle against MongoDB', a
     expect(ownSequence).toEqual(['clock_in', 'break_start', 'break_end', 'clock_out']);
 });
 
-test('persists a manager-entered punch through the Punch Log UI', async ({ page, request, diagnostics: _diagnostics }, testInfo) => {
+test('persists a manager-entered punch pair through the Punch Log UI', async ({ page, request, diagnostics: _diagnostics }, testInfo) => {
     test.skip(!testInfo.project.name.startsWith('desktop'), 'Desktop live-flow coverage');
     await authenticate(page);
     await page.goto('/entries');
@@ -106,9 +106,20 @@ test('persists a manager-entered punch through the Punch Log UI', async ({ page,
     expect((await createResponse).status()).toBe(200);
     await expect(page.getByRole('heading', { name: 'Add Manual Entry' })).toHaveCount(0);
 
+    await page.getByRole('button', { name: 'Add Manual Entry' }).click();
+    await page.getByRole('combobox').selectOption('clock_out');
+    await page.locator('input[type="date"]').fill(yesterday);
+    await page.locator('input[type="time"]').fill('17:00');
+    await page.getByPlaceholder('Explain why this manual entry is needed...').fill('Live browser verification clock-out.');
+    const createClockOutResponse = page.waitForResponse(response => response.url().endsWith('/api/clock/manual'));
+    await page.getByRole('button', { name: 'Add Entry' }).click();
+    expect((await createClockOutResponse).status()).toBe(200);
+    await expect(page.getByRole('heading', { name: 'Add Manual Entry' })).toHaveCount(0);
+
     const entriesResponse = await request.get(`${API_ORIGIN}/api/clock/entries`, { headers: apiHeaders() });
     const entries = (await entriesResponse.json()).entries as any[];
     expect(entries.some(entry => entry.isManualEntry && entry.note === 'Live browser verification entry.')).toBe(true);
+    expect(entries.some(entry => entry.isManualEntry && entry.note === 'Live browser verification clock-out.')).toBe(true);
 });
 
 test('submits a completed open timesheet without waiting for the period to end', async ({ page, request, diagnostics: _diagnostics }, testInfo) => {
@@ -246,11 +257,11 @@ test('submits an exception correction request with an audit trail', async ({ pag
     await authenticate(page);
     await page.goto('/exceptions');
     await page.getByRole('button', { name: 'Request correction' }).first().click();
-    await page.getByRole('textbox').fill('Train cancellation delayed my arrival during the live test.');
+    await page.getByRole('textbox', { name: 'Why should this be corrected?' }).fill('Train cancellation delayed my arrival during the live test.');
     const correctionResponse = page.waitForResponse(response => /\/api\/v1\/exceptions\/[^/]+\/correction-requests$/.test(response.url()));
-    await page.getByRole('button', { name: 'Submit request' }).click();
+    await page.getByRole('button', { name: 'Send correction request' }).click();
     expect((await correctionResponse).status()).toBe(201);
-    await expect(page.getByText('Correction request submitted with a full audit trail.')).toBeVisible();
+    await expect(page.getByText(/Correction request sent to/)).toBeVisible();
 
     const listResponse = await request.get(`${API_ORIGIN}/api/v1/exceptions`, { headers: apiHeaders() });
     const items = (await listResponse.json()).exceptions as any[];
@@ -297,7 +308,8 @@ test('loads team status and approves a persisted employee timesheet', async ({ p
     await page.goto('/team');
     await expect(page.getByRole('heading', { name: 'Team Attendance' })).toBeVisible();
     await expect(page.getByText('Jamie Live')).toBeVisible();
-    await page.getByRole('button', { name: 'View' }).click();
+    const jamieRow = page.getByRole('row').filter({ hasText: 'Jamie Live' });
+    await jamieRow.getByRole('button', { name: 'View' }).click();
     await expect(page.getByRole('heading', { name: 'Jamie Live' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Today Activity Timeline' })).toBeVisible();
 
@@ -383,7 +395,7 @@ test('runs reports, real Excel exports, rule simulation and policy persistence',
     await page.goto('/admin/settings');
     await expect(page.getByRole('heading', { name: 'Attendance Settings' })).toBeVisible();
     const saveResponse = page.waitForResponse(response => response.url().endsWith('/api/admin/attendance-policy') && response.request().method() === 'PUT');
-    await page.getByRole('button', { name: /Save/i }).click();
+    await page.getByRole('button', { name: 'Save Changes' }).click();
     expect((await saveResponse).status()).toBe(200);
 
     const policyResponse = await request.get(`${API_ORIGIN}/api/admin/attendance-policy`, { headers: apiHeaders() });
