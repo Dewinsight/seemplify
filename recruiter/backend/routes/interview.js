@@ -63,6 +63,7 @@ router.delete('/:interviewId/comments/:commentId', authMiddleware, requireOrgani
 router.post('/:interviewId/analyze-comments', authMiddleware, requireOrganization, interviewController.analyzeTeamComments);
 
 // Question-based feedback routes
+router.post('/:interviewId/feedback/access', authMiddleware, requireOrganization, interviewController.issuePublicFeedbackAccess);
 router.get('/:interviewId/feedback/questions', requirePublicFeedbackAccess, interviewController.getInterviewQuestions);
 router.get('/:interviewId/feedback/summary', authMiddleware, requireOrganization, interviewController.getFeedbackSummary);
 router.post('/:interviewId/feedback/question', authMiddleware, requireOrganization, interviewController.addQuestionFeedback);

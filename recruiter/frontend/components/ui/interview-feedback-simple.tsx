@@ -123,6 +123,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [comprehensiveAnalytics, setComprehensiveAnalytics] = useState<ComprehensiveAnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [openingFeedback, setOpeningFeedback] = useState(false);
 
 
   useEffect(() => {
@@ -212,9 +213,34 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
     }
   };
 
-  const getPublicFeedbackUrl = () => {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/public/feedback/${interviewId}`;
+  const openPublicFeedbackForm = async () => {
+    const feedbackWindow = window.open('', '_blank');
+    if (!feedbackWindow) {
+      toast.error('Allow pop-ups to open the feedback form');
+      return;
+    }
+
+    try {
+      setOpeningFeedback(true);
+      const response = await apiRequest(`/api/interviews/${interviewId}/feedback/access`, {
+        method: 'POST'
+      });
+      const data = await response.clone().json().catch(() => ({}));
+      if (!response.ok || !data.accessToken) {
+        throw new Error(data.msg || 'Unable to open the feedback form');
+      }
+
+      const feedbackUrl = new URL(`/public/feedback/${interviewId}`, window.location.origin);
+      feedbackUrl.searchParams.set('accessToken', data.accessToken);
+      feedbackWindow.opener = null;
+      feedbackWindow.location.replace(feedbackUrl.toString());
+    } catch (error) {
+      feedbackWindow.close();
+      console.error('Error opening public feedback form:', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to open the feedback form');
+    } finally {
+      setOpeningFeedback(false);
+    }
   };
 
   // Generate PDF report
@@ -656,10 +682,11 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
           )}
           <Button
             size="sm"
-            onClick={() => window.open(getPublicFeedbackUrl(), '_blank')}
+            onClick={openPublicFeedbackForm}
+            disabled={openingFeedback}
             className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
           >
-            <ExternalLink className="h-4 w-4 mr-2" />
+            {openingFeedback ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ExternalLink className="h-4 w-4 mr-2" />}
             Submit Feedback
           </Button>
         </div>
@@ -1145,11 +1172,12 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
               Be the first to provide comprehensive feedback for this interview. Your assessment will help make better hiring decisions.
             </p>
             <Button 
-              onClick={() => window.open(getPublicFeedbackUrl(), '_blank')}
+              onClick={openPublicFeedbackForm}
+              disabled={openingFeedback}
               size="lg"
               className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
             >
-              <ExternalLink className="h-5 w-5 mr-2" />
+              {openingFeedback ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <ExternalLink className="h-5 w-5 mr-2" />}
               Submit Detailed Feedback
             </Button>
           </CardContent>

@@ -4124,6 +4124,49 @@ const getInterviewQuestions = async (req, res) => {
   }
 };
 
+// Issue an interview-scoped capability for an authenticated recruiter opening
+// the public feedback form. Public pages remain closed to bare identifiers;
+// the internal UI must request the same revocable credential used in emails.
+const issuePublicFeedbackAccess = async (req, res) => {
+  try {
+    const { interviewId } = req.params;
+    const organizationId = req.user?.currentOrganization;
+    const interview = await Interview.findById(interviewId)
+      .select('candidateId organizationId jobId status publicFeedbackRevokedAt');
+
+    if (
+      !interview
+      || !organizationId
+      || !(await publicFeedbackCapability.belongsToOrganization(interview, organizationId))
+    ) {
+      return res.status(404).json({
+        code: 'PUBLIC_FEEDBACK_ACCESS_NOT_FOUND',
+        msg: 'Public feedback access was not found'
+      });
+    }
+
+    const capability = await publicFeedbackCapability.issue(interview._id);
+    if (!capability) {
+      return res.status(404).json({
+        code: 'PUBLIC_FEEDBACK_ACCESS_NOT_FOUND',
+        msg: 'Public feedback access was not found'
+      });
+    }
+
+    return res.json({
+      success: true,
+      accessToken: capability.token,
+      expiresAt: capability.expiresAt
+    });
+  } catch (error) {
+    console.error('Issue public feedback access error:', error.message);
+    return res.status(500).json({
+      code: 'PUBLIC_FEEDBACK_ACCESS_FAILED',
+      msg: 'Unable to open the feedback form'
+    });
+  }
+};
+
 // Get aggregated feedback summary (per-assessor and totals)
 const getFeedbackSummary = async (req, res) => {
   try {
@@ -6703,6 +6746,7 @@ module.exports = {
   deleteInterviewComment,
   // New Question-Based Feedback functionality
   getInterviewQuestions,
+  issuePublicFeedbackAccess,
   addQuestionFeedback,
   addPublicFeedback,
   addBulkPublicFeedback,
