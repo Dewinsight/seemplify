@@ -1,0 +1,97 @@
+name: Deploy Connector Runtime to Hostinger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/hostinger/automation-nango.compose.yml'
+      - 'deploy/hostinger/github-actions-ssh-retry.sh'
+      - '.github/workflows/deploy-connectors-hostinger.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-connectors-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate connector-only Compose definition
+        run: |
+          docker compose \
+            -f deploy/hostinger/automation-nango.compose.yml \
+            config --no-interpolate --quiet
+          ! grep -q 'automation-hub' deploy/hostinger/automation-nango.compose.yml
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Hostinger SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+      - name: Package connector release
+        run: |
+          tar -czf connectors-release.tgz \
+            deploy/hostinger/automation-nango.compose.yml
+      - name: Upload connector release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_upload_with_lock connectors-release.tgz "$SSH_USER@$SSH_HOST" "/opt/seemplify/build/connectors-release-${GITHUB_SHA}.tgz"
+      - name: Deploy and verify exact connector release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" \
+            "RELEASE_SHA='$GITHUB_SHA' flock --exclusive --wait 1800 /var/lock/seemplify-production-deploy.lock bash -s" <<'REMOTE'
+          set -euo pipefail
+          release_root="/opt/seemplify/releases/$RELEASE_SHA"
+          archive="/opt/seemplify/build/connectors-release-$RELEASE_SHA.tgz"
+          install -d -m 700 "$release_root"
+          tar -xzf "$archive" -C "$release_root"
+          install -m 644 "$release_root/deploy/hostinger/automation-nango.compose.yml" \
+            /opt/seemplify/deploy/hostinger/automation-nango.compose.yml
+          export SEEMPLIFY_RELEASE_SHA="$RELEASE_SHA"
+          compose=(docker compose \
+            -f /opt/seemplify/deploy/hostinger/automation-nango.compose.yml)
+          "${compose[@]}" config --quiet
+          "${compose[@]}" pull nango-db nango-server
+          "${compose[@]}" up -d nango-db
+          "${compose[@]}" up -d --no-deps --force-recreate nango-server
+          container="seemplify-connectors-nango-server-1"
+          state=""
+          for _ in $(seq 1 90); do
+            state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
+            [[ "$state" == healthy ]] && break
+            [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && {
+              docker logs --tail 150 "$container" >&2 || true
+              exit 1
+            }
+            sleep 2
+          done
+          [[ "$state" == healthy ]]
+          revision=$(docker inspect --format '{{index .Config.Labels "com.seemplify.release"}}' "$container")
+          [[ "$revision" == "$RELEASE_SHA" ]]
+          curl -fsS --max-time 15 https://nango.seemplifyai.com/health >/dev/null
+          rm -f "$archive"
+          REMOTE
