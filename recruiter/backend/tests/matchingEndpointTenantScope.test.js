@@ -6,6 +6,7 @@ const aiMatchCacheService = require('../services/aiMatchCacheService');
 const aiController = require('../controllers/aiController');
 const jobController = require('../controllers/jobController');
 const AiJobService = require('../services/aiJobService');
+const embeddingService = require('../services/embeddingService');
 
 function responseRecorder() {
   return {
@@ -104,4 +105,77 @@ test('assistant matching service cannot load a job without tenant scope', async 
   } finally {
     Job.findOne = originalFindOne;
   }
+});
+
+test('matching endpoint dispatches explicit quick and deep modes without crossing tenants', async () => {
+  const originalFindOne = Job.findOne;
+  const originalQuick = embeddingService.findMatchingCandidatesForJob;
+  const originalDeep = embeddingService.findMatchingCandidatesWithExplanation;
+  const calls = [];
+  try {
+    Job.findOne = async (query) => {
+      assert.deepEqual(query, { _id: 'job-a', organization: 'org-a' });
+      return { _id: 'job-a', title: 'Platform Engineer', organization: 'org-a', isEmbedded: true };
+    };
+    embeddingService.findMatchingCandidatesForJob = async (_job, topK) => {
+      calls.push(['quick', topK]);
+      return {
+        matches: [{ candidateId: 'candidate-a', similarity: 0.8, relevanceScore: 0.87 }],
+        fromCache: false
+      };
+    };
+    embeddingService.findMatchingCandidatesWithExplanation = async (_job, topK) => {
+      calls.push(['deep', topK]);
+      return {
+        matches: [{ candidateId: 'candidate-b', similarity: 0.78, relevanceScore: 0.92, explanation: 'Evidence-backed fit.' }],
+        fromCache: true
+      };
+    };
+
+    const quickResponse = responseRecorder();
+    await jobController.getMatchingCandidates({
+      params: { id: 'job-a' },
+      query: { topK: '25', analysisMode: 'quick' },
+      user: { currentOrganization: 'org-a' }
+    }, quickResponse);
+    assert.equal(quickResponse.statusCode, 200);
+    assert.equal(quickResponse.body.mode, 'quick-ranking');
+    assert.equal(quickResponse.body.explanationsIncluded, false);
+    assert.equal(quickResponse.body.matches[0].similarityPercentage, 87);
+
+    const deepResponse = responseRecorder();
+    await jobController.getMatchingCandidates({
+      params: { id: 'job-a' },
+      query: { topK: '10', analysisMode: 'deep' },
+      user: { currentOrganization: 'org-a' }
+    }, deepResponse);
+    assert.equal(deepResponse.statusCode, 200);
+    assert.equal(deepResponse.body.mode, 'deep-analysis');
+    assert.equal(deepResponse.body.explanationsIncluded, true);
+    assert.deepEqual(calls, [['quick', 25], ['deep', 10]]);
+  } finally {
+    Job.findOne = originalFindOne;
+    embeddingService.findMatchingCandidatesForJob = originalQuick;
+    embeddingService.findMatchingCandidatesWithExplanation = originalDeep;
+  }
+});
+
+test('matching endpoint validates analysis mode and bounds deep analysis', async () => {
+  const invalidModeResponse = responseRecorder();
+  await jobController.getMatchingCandidates({
+    params: { id: 'job-a' },
+    query: { analysisMode: 'turbo' },
+    user: { currentOrganization: 'org-a' }
+  }, invalidModeResponse);
+  assert.equal(invalidModeResponse.statusCode, 400);
+  assert.equal(invalidModeResponse.body.code, 'INVALID_MATCHING_MODE');
+
+  const oversizedDeepResponse = responseRecorder();
+  await jobController.getMatchingCandidates({
+    params: { id: 'job-a' },
+    query: { analysisMode: 'deep', topK: '101' },
+    user: { currentOrganization: 'org-a' }
+  }, oversizedDeepResponse);
+  assert.equal(oversizedDeepResponse.statusCode, 400);
+  assert.equal(oversizedDeepResponse.body.code, 'DEEP_MATCHING_LIMIT');
 });

@@ -20,6 +20,7 @@ const {
 const JobAgent = require('../agents/jobAgent');
 const embeddingService = require('../services/embeddingService');
 const gptAnalysisService = require('../services/gptAnalysisService');
+const rankingService = require('../services/rankingService');
 
 function queryResult(value) {
   return {
@@ -195,6 +196,64 @@ test('shortlist AI ranking derives vector scores from a generated job query embe
     gptAnalysisService.isEnabled = originalEnabled;
     gptAnalysisService.batchAnalyzeCandidates = originalBatch;
   }
+});
+
+test('quick matching reuses the stored job vector instead of generating it again', async () => {
+  const service = Object.create(Object.getPrototypeOf(embeddingService));
+  let generated = false;
+  service.weaviateService = {
+    getJobVector: async (jobId) => {
+      assert.equal(jobId, 'job-a');
+      return [0.25, 0.75];
+    },
+    searchSimilarCandidates: async (queryVector, organizationId, topK) => {
+      assert.deepEqual(queryVector, [0.25, 0.75]);
+      assert.equal(organizationId, 'org-a');
+      assert.equal(topK, 10);
+      return [{
+        candidateId: 'candidate-a',
+        organizationId: 'org-a',
+        firstName: 'Alex',
+        lastName: 'A',
+        skills: ['Node.js'],
+        totalYearsExperience: 5,
+        _additional: { distance: 0.12 }
+      }];
+    }
+  };
+  service.generateEmbedding = async () => {
+    generated = true;
+    return [1, 0];
+  };
+
+  const matches = await service.searchSimilarCandidates('job text', 10, 'org-a', { jobId: 'job-a' });
+  assert.equal(generated, false);
+  assert.equal(matches[0].score, 0.88);
+  assert.equal(matches[0].metadata.totalYearsExp, 5);
+});
+
+test('quick reranking keeps semantic similarity dominant while improving explicit skill fit', () => {
+  const ranked = rankingService.rerankQuickCandidates([
+    {
+      candidateId: 'semantic-only',
+      similarity: 0.91,
+      metadata: { skills: ['Ruby'], totalYearsExp: 5, location: 'London' }
+    },
+    {
+      candidateId: 'grounded-fit',
+      similarity: 0.84,
+      metadata: { skills: ['Node.js', 'PostgreSQL'], totalYearsExp: 5, location: 'London' }
+    }
+  ], {
+    skills: ['Node.js', 'PostgreSQL'],
+    experience: '3-5 years',
+    location: 'London'
+  });
+
+  assert.equal(ranked[0].candidateId, 'grounded-fit');
+  assert.equal(ranked[0].vectorSimilarity, 0.84);
+  assert.equal(ranked[0].quickSignals.skillCoverage, 1);
+  assert.ok(ranked[0].relevanceScore > ranked[1].relevanceScore);
 });
 
 test('enrichment treats browser matches as IDs and rebuilds fields from scoped records', () => {

@@ -257,14 +257,35 @@ exports.updateJob = async (req, res) => {
     }
 
     // Invalidate AI match cache if relevant fields changed
-    const cacheInvalidatingFields = ['description', 'requirements', 'skills', 'experience', 'education', 'level'];
+    const cacheInvalidatingFields = [
+      'title', 'description', 'requirements', 'responsibilities', 'skills',
+      'experience', 'education', 'level', 'location', 'department', 'type', 'remote'
+    ];
     const shouldInvalidateCache = cacheInvalidatingFields.some(field => otherUpdateData[field] !== undefined);
     if (shouldInvalidateCache) {
       const aiMatchCacheService = require('../services/aiMatchCacheService');
-      aiMatchCacheService.invalidateJobCache(job._id)
-        .then(result => console.log(`🗑️ Auto-invalidated ${result.deletedCount} AI match cache entries for updated job`))
-        .catch(err => console.error('Failed to auto-invalidate cache:', err));
+      try {
+        const invalidation = await aiMatchCacheService.invalidateJobCache(job._id);
+        console.log(`🗑️ Auto-invalidated ${invalidation.deletedCount} AI match cache entries for updated job`);
+      } catch (cacheError) {
+        console.error('Failed to auto-invalidate cache:', cacheError);
+      }
       require('../services/gptAnalysisService').cache.invalidateJob(job._id);
+
+      // Cache invalidation alone is not sufficient: quick matching reuses the
+      // stored job vector. Refresh it now so the next match cannot use stale
+      // job content.
+      try {
+        job.isEmbedded = false;
+        job.embeddingCreatedAt = null;
+        await job.save();
+        await embeddingService.createJobEmbedding(job);
+        job.isEmbedded = true;
+        job.embeddingCreatedAt = new Date();
+        await job.save();
+      } catch (embeddingError) {
+        console.error(`Failed to refresh job embedding for ${job._id}:`, embeddingError.message);
+      }
     }
 
     res.json({ msg: 'Job updated successfully', job });
@@ -469,17 +490,35 @@ exports.getMatchingCandidates = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const topK = Math.min(Math.max(Number.parseInt(req.query.topK, 10) || 10, 1), 5000);
     const includeExplanations = req.query.includeExplanations !== 'false';
+    const requestedMode = String(req.query.analysisMode || '').trim().toLowerCase();
+    if (requestedMode && !['quick', 'deep'].includes(requestedMode)) {
+      return res.status(400).json({ msg: 'analysisMode must be quick or deep', code: 'INVALID_MATCHING_MODE' });
+    }
+    // Explicit mode is preferred. The includeExplanations fallback preserves
+    // behavior for older API clients that have not adopted quick/deep yet.
+    const analysisMode = requestedMode || (includeExplanations && topK <= 100 ? 'deep' : 'quick');
+    if (analysisMode === 'deep' && topK > 100) {
+      return res.status(400).json({
+        msg: 'Deep analysis supports up to 100 candidates per request. Use quick matching for larger result sets.',
+        code: 'DEEP_MATCHING_LIMIT'
+      });
+    }
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
 
-    const LARGE_SCALE_THRESHOLD = 100;
-    const isLargeScale = topK > LARGE_SCALE_THRESHOLD;
+    if (!job.isEmbedded) {
+      await embeddingService.createJobEmbedding(job);
+      job.isEmbedded = true;
+      job.embeddingCreatedAt = new Date();
+      await job.save();
+    }
 
     let matchResult;
-    if (isLargeScale || !includeExplanations) {
-      console.log(`🔍 Large-scale vector-only matching: topK=${topK} for job ${job.title}`);
-      matchResult = await embeddingService.findMatchingCandidatesForJob(job, topK, { skipCache: topK > 500 });
+    if (analysisMode === 'quick') {
+      console.log(`⚡ Quick deterministic matching: topK=${topK} for job ${job.title}`);
+      matchResult = await embeddingService.findMatchingCandidatesForJob(job, topK);
     } else {
+      console.log(`🧠 Deep AI matching: topK=${topK} for job ${job.title}`);
       matchResult = await embeddingService.findMatchingCandidatesWithExplanation(job, topK);
     }
 
@@ -495,13 +534,14 @@ exports.getMatchingCandidates = async (req, res) => {
       matches: matches.map(m => ({
         ...m,
         relevanceScore: m.relevanceScore ?? m.similarity ?? 0,
-        similarityPercentage: Math.round((m.similarity || 0) * 100),
+        similarityPercentage: Math.round((m.relevanceScore ?? m.similarity ?? 0) * 100),
       })),
       fromCache,
       cacheAge,
       cacheAgeMinutes,
-      mode: isLargeScale || !includeExplanations ? 'vector-ranked' : 'full-analysis',
-      explanationsIncluded: !isLargeScale && includeExplanations,
+      mode: analysisMode === 'deep' ? 'deep-analysis' : 'quick-ranking',
+      analysisMode,
+      explanationsIncluded: analysisMode === 'deep',
     });
   } catch (error) {
     console.error('❌ Error getting matching candidates:', error);

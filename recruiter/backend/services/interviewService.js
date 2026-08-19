@@ -325,24 +325,44 @@ class InterviewService {
         includeTypes = ['technical', 'behavioral', 'situational'],
         focusAreas = []
       } = options;
+      const normalizedQuestionCount = Number(questionCount);
+      const normalizedTypes = Array.isArray(includeTypes)
+        ? [...new Set(includeTypes.map((type) => String(type || '').trim()).filter(Boolean))]
+        : [];
+      const normalizedFocusAreas = Array.isArray(focusAreas)
+        ? focusAreas.map((area) => String(area || '').trim()).filter(Boolean)
+        : [];
+      if (!Number.isInteger(normalizedQuestionCount) || normalizedQuestionCount < 1 || normalizedQuestionCount > 50) {
+        const error = new Error('questionCount must be an integer between 1 and 50');
+        error.code = 'INVALID_QUESTION_COUNT';
+        error.statusCode = 400;
+        throw error;
+      }
+      if (!normalizedTypes.length) {
+        const error = new Error('At least one interview question type is required');
+        error.code = 'INTERVIEW_QUESTION_TYPES_REQUIRED';
+        error.statusCode = 400;
+        throw error;
+      }
 
       // Prepare job context for AI
       const jobContext = this._prepareJobContext(job);
       
-      // Generate different types of questions
-      const questionTypes = this._distributeQuestionTypes(includeTypes, questionCount);
-      const allQuestions = [];
-
-      for (const [type, count] of Object.entries(questionTypes)) {
-        if (count > 0) {
-          const questions = await this._generateQuestionsByType(type, count, jobContext, difficulty, focusAreas, job);
-          allQuestions.push(...questions);
-        }
-      }
+      // Generate the complete mixed-type set in one structured request. The
+      // previous implementation made one sequential model call per type.
+      const questionTypes = this._distributeQuestionTypes(normalizedTypes, normalizedQuestionCount);
+      const allQuestions = await this._generateQuestionSet(
+        questionTypes,
+        normalizedQuestionCount,
+        jobContext,
+        difficulty,
+        normalizedFocusAreas,
+        job
+      );
 
       const setAssessment = assessQuestionSet(allQuestions, {
         job,
-        expectedCount: questionCount,
+        expectedCount: normalizedQuestionCount,
         difficulty
       });
       if (!setAssessment.passed) {
@@ -363,6 +383,61 @@ class InterviewService {
   }
 
   /**
+   * Generate a complete ordered question set in one call while retaining the
+   * same deterministic semantic gate and one quality regeneration attempt.
+   */
+  async _generateQuestionSet(questionTypes, questionCount, jobContext, difficulty, focusAreas, job) {
+    const expectedTypes = Object.entries(questionTypes)
+      .flatMap(([type, count]) => Array(Math.max(0, Number(count) || 0)).fill(type));
+    const basePrompt = this._buildPromptForSet(
+      questionTypes,
+      questionCount,
+      jobContext,
+      difficulty,
+      focusAreas
+    );
+    let prompt = basePrompt;
+    let lastAssessment = null;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      console.log(`🎯 Generating ${questionCount} mixed interview questions (quality attempt ${attempt}/2)...`);
+      const response = await this.aiModelService.generateInterviewQuestions(prompt, { questionCount });
+      const parsedQuestions = this._parseAIResponse(response, null, difficulty);
+      const assessment = assessQuestionSet(parsedQuestions, {
+        job,
+        expectedCount: questionCount,
+        expectedTypes,
+        difficulty
+      });
+      lastAssessment = assessment;
+
+      if (assessment.passed) {
+        console.log(`✅ Generated ${parsedQuestions.length} mixed questions at ${Math.round(assessment.score * 100)}% semantic quality`);
+        return parsedQuestions.map((question, index) => ({
+          ...question,
+          order: index,
+          qualityMetrics: {
+            ...question.qualityMetrics,
+            semanticQualityScore: assessment.questions[index]?.score ?? assessment.score,
+            qualityIssues: assessment.questions[index]?.issues || [],
+            analysisStatus: 'pending'
+          }
+        }));
+      }
+
+      if (attempt === 1) {
+        console.warn('⚠️ Mixed question set failed semantic quality; regenerating once', assessment.issues);
+        prompt = basePrompt + buildQualityRepairInstructions(assessment);
+      }
+    }
+
+    const error = new Error(`AI returned a low-quality interview question set after one regeneration: ${lastAssessment?.issues?.join(' ') || 'unknown quality failure'}`);
+    error.code = 'AI_QUESTION_QUALITY_FAILED';
+    error.statusCode = 503;
+    throw error;
+  }
+
+  /**
    * Generate questions by specific type using AI
    */
   async _generateQuestionsByType(type, count, jobContext, difficulty, focusAreas, job) {
@@ -372,7 +447,7 @@ class InterviewService {
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       console.log(`🎯 Generating ${count} ${type} questions (quality attempt ${attempt}/2)...`);
-      const response = await this.aiModelService.generateInterviewQuestions(prompt);
+      const response = await this.aiModelService.generateInterviewQuestions(prompt, { questionCount: count });
       const parsedQuestions = this._parseAIResponse(response, type, difficulty);
       const assessment = assessQuestionSet(parsedQuestions, {
         job,
@@ -405,6 +480,31 @@ class InterviewService {
     error.code = 'AI_QUESTION_QUALITY_FAILED';
     error.statusCode = 503;
     throw error;
+  }
+
+  _buildPromptForSet(questionTypes, questionCount, jobContext, difficulty, focusAreas) {
+    const orderedPlan = Object.entries(questionTypes)
+      .filter(([, count]) => Number(count) > 0)
+      .map(([type, count]) => `${count} ${type}`)
+      .join(', ');
+
+    return `Generate exactly ${questionCount} interview questions at ${difficulty} difficulty.
+
+Return the questions in this exact type order: ${orderedPlan}.
+${focusAreas.length ? `Prioritize these focus areas: ${focusAreas.join(', ')}.` : ''}
+
+Requirements:
+- Ground every question in a named skill, responsibility, deliverable, stakeholder, metric, system, or constraint from the source job context.
+- Technical questions must test practical application of the supplied tools or responsibilities.
+- Behavioral questions must request a concrete past example using evidence and measurable results.
+- Situational questions must present a realistic hypothetical decision or trade-off.
+- Make every scenario and expected-answer rubric materially different.
+- Include 3 or 4 distinct scoring criteria totalling 100, 1 or 2 probing follow-ups, 2 or 3 grounded tags, and detailed question-specific answer guidance.
+- Avoid protected-characteristic, personal-status, leading, or discriminatory content.
+- Silently verify the exact count, ordered type distribution, difficulty, criteria totals, grounding, uniqueness, and safety before returning the structured response.
+
+SOURCE JOB CONTEXT (do not invent missing facts):
+${jobContext}`;
   }
 
   /**
@@ -638,7 +738,7 @@ ADDITIONAL CONTEXT:
         }
         return {
           question: decodeHtmlEntities(q.question),
-          type: type,
+          type: type || decodeHtmlEntities(q.type || ''),
           difficulty: difficulty,
           category: decodeHtmlEntities(q.category || ''),
           expectedAnswer: decodeHtmlEntities(q.expectedAnswer),
@@ -659,7 +759,7 @@ ADDITIONAL CONTEXT:
             generatedAt: new Date(),
             model: CHATGPT_MODEL,
             confidence: 0.9,
-            questionType: type,
+            questionType: type || q.type,
             promptVersion: 'interview-questions-v4'
           },
           qualityMetrics: {
@@ -1279,26 +1379,43 @@ ADDITIONAL CONTEXT:
 
       const job = await this._getJobForOrganization(jobId, options.organizationId);
 
-      // Generate questions for each stage
-      const questionsByStage = {};
+      // Generate one complete set per stage with bounded concurrency. This
+      // replaces the former stage × type sequence while avoiding an
+      // unbounded burst against the connected-account runtime.
       const questionsPerStage = Math.floor(total / selectedStages.length);
       const stageRemainder = total % selectedStages.length;
 
-      for (const [stageIndex, stage] of selectedStages.entries()) {
-        const stageQuestionCount = questionsPerStage + (stageIndex < stageRemainder ? 1 : 0);
-        if (stageQuestionCount === 0) continue;
-        const stageOptions = {
-          ...options,
-          stage,
-          questionCount: stageQuestionCount,
-          includeTypes: this._getOptimalTypesForStage(stage)
-        };
+      const stageEntries = await this._mapWithConcurrency(
+        selectedStages.map((stage, stageIndex) => ({ stage, stageIndex })),
+        2,
+        async ({ stage, stageIndex }) => {
+          const stageQuestionCount = questionsPerStage + (stageIndex < stageRemainder ? 1 : 0);
+          if (stageQuestionCount === 0) return [stage, []];
+          const stageOptions = {
+            ...options,
+            stage,
+            questionCount: stageQuestionCount,
+            includeTypes: this._getOptimalTypesForStage(stage)
+          };
 
-        questionsByStage[stage] = await this._generateAdvancedQuestionsWithAI(job, stageOptions);
-      }
+          return [stage, await this._generateAdvancedQuestionsWithAI(job, stageOptions)];
+        }
+      );
+      const questionsByStage = Object.fromEntries(stageEntries);
 
       // Flatten and optimize
       let allQuestions = Object.values(questionsByStage).flat();
+
+      const globalAssessment = assessQuestionSet(allQuestions, {
+        job,
+        expectedCount: total
+      });
+      if (!globalAssessment.passed) {
+        const error = new Error(`Generated multi-stage questions failed the global quality gate: ${globalAssessment.issues.join(' ')}`);
+        error.code = 'AI_QUESTION_QUALITY_FAILED';
+        error.statusCode = 422;
+        throw error;
+      }
 
       if (ensureDiversity) {
         allQuestions = await this._optimizeQuestionDiversity(allQuestions, job);
@@ -1341,6 +1458,23 @@ ADDITIONAL CONTEXT:
       console.error('❌ Error generating optimized question set:', error);
       throw error;
     }
+  }
+
+  async _mapWithConcurrency(items, concurrency, mapper) {
+    const values = Array.isArray(items) ? items : [];
+    const results = new Array(values.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(Math.max(1, Number(concurrency) || 1), values.length || 1);
+
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (nextIndex < values.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(values[currentIndex], currentIndex);
+      }
+    });
+    await Promise.all(workers);
+    return results;
   }
 
   /**

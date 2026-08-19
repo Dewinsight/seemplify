@@ -79,6 +79,88 @@ class RankingService {
 
     return totalScore / totalWeight;
   }
+
+  /**
+   * Fast, deterministic second-stage ranking for the quick matching mode.
+   * Vector similarity remains the dominant signal while explicit job
+   * constraints provide a small, explainable correction without an LLM call.
+   */
+  rerankQuickCandidates(candidates, job = {}) {
+    const jobSkills = this.normalizeSkills(job.skills);
+    const requiredYears = this.minimumYears(job.experience);
+    const jobLocation = this.normalizeText(job.location);
+    const remoteAllowed = job.remote === true || /remote|hybrid/.test(jobLocation);
+
+    return (Array.isArray(candidates) ? candidates : [])
+      .map((candidate) => {
+        const vectorScore = this.clamp(candidate.similarity);
+        const candidateSkills = this.normalizeSkills(candidate.metadata?.skills || candidate.candidate?.skills);
+        const skillScore = this.skillCoverage(jobSkills, candidateSkills);
+        const candidateYears = Number(
+          candidate.metadata?.totalYearsExp
+          ?? candidate.metadata?.experience
+          ?? candidate.candidate?.experience
+          ?? 0
+        ) || 0;
+        const experienceScore = requiredYears > 0
+          ? this.clamp(candidateYears / requiredYears)
+          : 1;
+        const candidateLocation = this.normalizeText(candidate.metadata?.location || candidate.candidate?.location);
+        const locationScore = !jobLocation || remoteAllowed
+          ? 1
+          : candidateLocation && (
+            candidateLocation.includes(jobLocation)
+            || jobLocation.includes(candidateLocation)
+          ) ? 1 : 0;
+
+        const relevanceScore = jobSkills.length
+          ? (vectorScore * 0.72) + (skillScore * 0.20) + (experienceScore * 0.06) + (locationScore * 0.02)
+          : (vectorScore * 0.90) + (experienceScore * 0.08) + (locationScore * 0.02);
+
+        return {
+          ...candidate,
+          vectorSimilarity: vectorScore,
+          relevanceScore: this.clamp(relevanceScore),
+          quickSignals: {
+            skillCoverage: skillScore,
+            experienceFit: experienceScore,
+            locationFit: locationScore
+          }
+        };
+      })
+      .sort((left, right) => right.relevanceScore - left.relevanceScore);
+  }
+
+  normalizeText(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  normalizeSkills(value) {
+    const values = Array.isArray(value) ? value : String(value || '').split(/[,;|\n]/);
+    return [...new Set(values.map((skill) => this.normalizeText(skill)).filter(Boolean))];
+  }
+
+  skillCoverage(requiredSkills, candidateSkills) {
+    if (!requiredSkills.length) return 1;
+    const matches = requiredSkills.filter((required) => candidateSkills.some((candidate) => (
+      candidate === required
+      || (
+        required.length >= 3
+        && candidate.length >= 3
+        && (candidate.includes(required) || required.includes(candidate))
+      )
+    )));
+    return matches.length / requiredSkills.length;
+  }
+
+  minimumYears(value) {
+    const match = String(value || '').match(/\d+(?:\.\d+)?/);
+    return match ? Number(match[0]) : 0;
+  }
+
+  clamp(value) {
+    return Math.min(1, Math.max(0, Number(value) || 0));
+  }
 }
 
 module.exports = new RankingService();

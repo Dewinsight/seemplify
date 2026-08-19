@@ -140,12 +140,76 @@ test('interview question statistics use the tenant-owned ObjectId in aggregation
 });
 
 function passingQuestion(stage, index) {
+  const stageOffset = { screening: 0, first_round: 4, technical: 7 }[stage] || 0;
+  const scenarios = [
+    {
+      question: 'A production API latency metric doubles after a Node.js deployment. How would you triage the incident, decide whether to roll back, and confirm recovery?',
+      answer: 'The response should correlate Node.js deployment timing with latency traces, compare affected endpoints, define a rollback threshold, communicate incident ownership, and validate recovery through percentile latency and error-rate metrics.',
+      tags: ['Node.js', 'latency']
+    },
+    {
+      question: 'A PostgreSQL migration blocks customer writes before a deadline. How would you identify the locking failure, choose a recovery path, and protect data integrity?',
+      answer: 'The response should inspect PostgreSQL lock graphs and transaction age, explain the migration failure, select a reversible recovery action, preserve write integrity, and verify completion using row counts and application error metrics.',
+      tags: ['PostgreSQL', 'migration']
+    },
+    {
+      question: 'A Kubernetes service exhausts memory while traffic scales unexpectedly. How would you diagnose the constraint, select a mitigation, and validate stable capacity?',
+      answer: 'The response should use Kubernetes memory metrics, pod events, and traffic evidence to distinguish a leak from capacity pressure, justify limits or scaling changes, and validate stable capacity with a controlled load test.',
+      tags: ['Kubernetes', 'capacity']
+    },
+    {
+      question: 'A payments queue starts delivering duplicate events during an incident. How would you isolate the failure, restore idempotency, and measure the customer outcome?',
+      answer: 'The response should trace payments queue delivery identifiers, locate the duplicate-processing failure, design an idempotency safeguard and replay plan, quantify affected customers, and prove the outcome with reconciliation metrics.',
+      tags: ['payments', 'idempotency']
+    },
+    {
+      question: 'A cache hit rate collapses during a product launch and database load becomes a production risk. How would you find the cause, prioritize safeguards, and measure improvement?',
+      answer: 'The response should segment cache hit-rate evidence by key and request path, identify eviction or invalidation causes, prioritize a safe database protection measure, and demonstrate improvement through cache and query-load metrics.',
+      tags: ['cache', 'database']
+    },
+    {
+      question: 'A security review finds an authorization gap in a public API days before a deadline. How would you assess exposure, choose a remediation trade-off, and coordinate stakeholders?',
+      answer: 'The response should reproduce the API authorization gap, bound the exposed actions and users, compare remediation and release options, assign stakeholder decisions, and confirm closure with negative permission tests and audit evidence.',
+      tags: ['authorization', 'API']
+    },
+    {
+      question: 'A monitoring alert creates repeated false incidents for an otherwise healthy service. How would you redesign the signal, preserve failure detection, and verify the operational outcome?',
+      answer: 'The response should compare monitoring alerts with service-level symptoms, explain the false-positive pattern, tune thresholds or multi-window logic, preserve sensitivity to real failures, and validate the outcome against alert history.',
+      tags: ['monitoring', 'alerts']
+    },
+    {
+      question: 'A distributed worker loses tasks whenever a region fails. How would you model the reliability risk, design recovery semantics, and test the system under competing constraints?',
+      answer: 'The response should map distributed worker acknowledgement and persistence boundaries, choose explicit retry and deduplication semantics, address regional recovery constraints, and validate reliability through fault injection and task-accounting checks.',
+      tags: ['distributed systems', 'reliability']
+    },
+    {
+      question: 'A TypeScript service accepts malformed events that later break a reporting pipeline. How would you strengthen the contract, migrate producers, and measure a safe outcome?',
+      answer: 'The response should identify the TypeScript event contract mismatch, introduce runtime schema validation and versioning, sequence producer migration with compatibility telemetry, and prove safety through rejection and reporting-completeness metrics.',
+      tags: ['TypeScript', 'schema']
+    },
+    {
+      question: 'A deployment pipeline takes forty minutes and causes missed recovery targets during incidents. How would you locate the bottleneck, change the workflow, and validate the deadline improvement?',
+      answer: 'The response should decompose deployment pipeline duration using stage evidence, identify the critical bottleneck, compare parallelization and caching trade-offs, protect release quality, and verify faster recovery with percentile timing metrics.',
+      tags: ['deployment', 'pipeline']
+    }
+  ];
+  const scenario = scenarios[stageOffset + index];
   return {
     jobId: jobA,
-    question: `${stage} grounded question ${index}`,
+    question: scenario.question,
     type: 'technical',
     category: `${stage}-${index}`,
     difficulty: 'medium',
+    expectedAnswer: scenario.answer,
+    scoringCriteria: [
+      { criterion: 'Evidence', weight: 35, description: 'Uses concrete system evidence to isolate the stated failure.' },
+      { criterion: 'Decision', weight: 35, description: 'Justifies a safe response while addressing the scenario trade-offs.' },
+      { criterion: 'Validation', weight: 30, description: 'Defines measurable checks that demonstrate the intended outcome.' }
+    ],
+    followUpQuestions: [
+      { question: 'Which observation would most strongly challenge your initial diagnosis?', condition: 'Ask after the candidate proposes a cause.' }
+    ],
+    tags: scenario.tags,
     qualityMetrics: {
       semanticQualityScore: 0.9,
       analysisStatus: 'complete',
@@ -157,8 +221,14 @@ function passingQuestion(stage, index) {
 test('optimized generation distributes the remainder and saves the exact requested count', async () => {
   const service = new InterviewService();
   const requestedCounts = [];
+  let activeStages = 0;
+  let maxActiveStages = 0;
   service._generateAdvancedQuestionsWithAI = async (_job, options) => {
     requestedCounts.push(options.questionCount);
+    activeStages += 1;
+    maxActiveStages = Math.max(maxActiveStages, activeStages);
+    await new Promise((resolve) => setImmediate(resolve));
+    activeStages -= 1;
     return Array.from({ length: options.questionCount }, (_, index) => passingQuestion(options.stage, index));
   };
   service.bulkCreateQuestions = async (questions, _userId, tenantId) => {
@@ -174,6 +244,7 @@ test('optimized generation distributes the remainder and saves the exact request
   });
 
   assert.deepEqual(requestedCounts, [4, 3, 3]);
+  assert.equal(maxActiveStages, 2);
   assert.equal(result.questions.length, 10);
   assert.equal(result.optimization.totalSaved, 10);
 });

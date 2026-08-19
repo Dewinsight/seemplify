@@ -50,11 +50,17 @@ class WeaviateService {
       resumeText: (metadata.resumeText || '').substring(0, 50000),
       coverLetter: (metadata.coverLetter || '').substring(0, 10000),
       skills: Array.isArray(metadata.skills) ? metadata.skills : [],
-      totalYearsExperience: metadata.totalYearsExperience || 0,
-      jobHistory: JSON.stringify(metadata.jobHistory || []),
-      education: JSON.stringify(metadata.education || []),
+      totalYearsExperience: Number(metadata.totalYearsExp ?? metadata.totalYearsExperience ?? 0) || 0,
+      jobHistory: typeof metadata.jobHistory_summary === 'string'
+        ? metadata.jobHistory_summary
+        : JSON.stringify(metadata.jobHistory || []),
+      education: typeof metadata.educationHistory_summary === 'string'
+        ? metadata.educationHistory_summary
+        : JSON.stringify(metadata.education || []),
       aiSummary: metadata.aiSummary || '',
-      strengths: Array.isArray(metadata.strengths) ? metadata.strengths : [],
+      strengths: Array.isArray(metadata.aiStrengths)
+        ? metadata.aiStrengths
+        : (Array.isArray(metadata.strengths) ? metadata.strengths : []),
       updatedAt: new Date().toISOString(),
       isActive: true,
       fullMetadata: JSON.stringify(metadata), // NO SIZE LIMIT!
@@ -140,6 +146,27 @@ class WeaviateService {
       return candidates;
     } catch (error) {
       console.error('❌ Error searching candidates in Weaviate:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch an already-generated job vector so quick matching does not pay for
+   * the same embedding again on every cache miss.
+   */
+  async getJobVector(jobId) {
+    if (!this.client) throw new Error('Weaviate client not initialized');
+
+    try {
+      const result = await this.client.data
+        .getterById()
+        .withClassName('Job')
+        .withId(this._toUuid(jobId))
+        .withVector()
+        .do();
+      return Array.isArray(result?.vector) && result.vector.length ? result.vector : null;
+    } catch (error) {
+      if (error.message?.includes('not found')) return null;
       throw error;
     }
   }
@@ -247,12 +274,14 @@ class WeaviateService {
       title: metadata.title || '',
       department: metadata.department || '',
       location: metadata.location || '',
-      type: metadata.type || '',
+      type: metadata.type || metadata.jobType || '',
       level: metadata.level || '',
       description: (metadata.description || '').substring(0, 20000),
       requirements: (metadata.requirements || '').substring(0, 10000),
       responsibilities: (metadata.responsibilities || '').substring(0, 10000),
-      requiredSkills: Array.isArray(metadata.requiredSkills) ? metadata.requiredSkills : [],
+      requiredSkills: Array.isArray(metadata.requiredSkills)
+        ? metadata.requiredSkills
+        : (Array.isArray(metadata.skills) ? metadata.skills : []),
       preferredSkills: Array.isArray(metadata.preferredSkills) ? metadata.preferredSkills : [],
       salaryMin: metadata.salaryMin || 0,
       salaryMax: metadata.salaryMax || 0,

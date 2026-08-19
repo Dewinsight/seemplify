@@ -66,11 +66,15 @@ class JobEmbeddingService {
 
   /**
    * Get matching candidates for a job
-   * For topK > 100, uses vector-only mode (no AI explanations upfront)
+   * Quick mode uses deterministic vector reranking; deep mode adds AI analysis.
    */
-  async getMatchingCandidates(jobId, topK = 10) {
+  async getMatchingCandidates(jobId, topK = 10, analysisMode = 'quick') {
     try {
-      const response = await apiRequest(`/api/jobs/${jobId}/matching-candidates?topK=${topK}`, {
+      const query = new URLSearchParams({
+        topK: String(topK),
+        analysisMode: analysisMode === 'deep' ? 'deep' : 'quick'
+      });
+      const response = await apiRequest(`/api/jobs/${jobId}/matching-candidates?${query.toString()}`, {
         method: 'GET',
       });
 
@@ -114,4 +118,4 @@ class JobEmbeddingService {
   }
 }
 
-export default new JobEmbeddingService(); 
+export default new JobEmbeddingService();

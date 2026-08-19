@@ -1333,9 +1333,19 @@ exports.updateCandidate = async (req, res) => {
 
     if (shouldInvalidateCache) {
       const aiMatchCacheService = require('../services/aiMatchCacheService');
-      aiMatchCacheService.invalidateCandidateCache(candidate._id)
-        .then(result => console.log(`🗑️ Auto-invalidated ${result.deletedCount} AI match cache entries for updated candidate`))
-        .catch(err => console.error('Failed to auto-invalidate candidate cache:', err));
+      try {
+        const invalidation = await aiMatchCacheService.invalidateCandidateCache(candidate._id, organizationId);
+        console.log(`🗑️ Auto-invalidated ${invalidation.deletedCount} AI match cache entries for updated candidate`);
+        await Candidate.findByIdAndUpdate(candidate._id, {
+          isEmbedded: false,
+          embeddingCreatedAt: null
+        });
+        await createCandidateEmbedding(candidate, true);
+        candidate.isEmbedded = true;
+        candidate.embeddingCreatedAt = new Date();
+      } catch (embeddingError) {
+        console.error(`Failed to refresh candidate embedding for ${candidate._id}:`, embeddingError.message);
+      }
     }
 
     res.json({ msg: 'Candidate updated successfully', candidate });

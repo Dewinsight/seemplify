@@ -68,8 +68,8 @@ function vectorMatchingIdentity(job) {
   return {
     provider: 'weaviate',
     model: getEmbeddingRuntimeConfig().model,
-    routeVersion: 'vector-v2',
-    promptVersion: 'job-candidate-embedding-v2',
+    routeVersion: 'quick-rerank-v3',
+    promptVersion: 'job-candidate-embedding-v3',
     inputFingerprint: matchingJobFingerprint(job)
   };
 }

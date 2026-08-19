@@ -874,9 +874,18 @@ class EmbeddingService {
    * @param {number} topK - Number of top matches to return
    * @param {string} organizationId - Organization ID to filter candidates by
    */
-  async searchSimilarCandidates(queryText, topK = 10, organizationId = null) {
+  async searchSimilarCandidates(queryText, topK = 10, organizationId = null, options = {}) {
     try {
-      const queryEmbedding = await this.generateEmbedding(queryText);
+      let queryEmbedding = options.queryEmbedding;
+      if (!queryEmbedding && options.jobId) {
+        queryEmbedding = await this.weaviateService.getJobVector(options.jobId);
+        if (queryEmbedding) {
+          console.log(`⚡ Reusing stored job vector for ${options.jobId}`);
+        }
+      }
+      if (!queryEmbedding) {
+        queryEmbedding = await this.generateEmbedding(queryText);
+      }
 
       console.log(`🔀 Searching candidates via Weaviate (topK=${topK})...`);
       const weaviateResults = await this.weaviateService.searchSimilarCandidates(queryEmbedding, organizationId, topK);
@@ -1027,16 +1036,24 @@ class EmbeddingService {
       const metadata = {
         type: 'job',
         jobId: job._id.toString(),
+        organizationId: job.organization?.toString() || job.organization || '',
         title: job.title || '',
         department: job.department || '',
         location: job.location || '',
         jobType: job.type || '',
+        description: job.description || '',
+        requirements: job.requirements || '',
+        responsibilities: job.responsibilities || '',
         level: job.level || '',
         experience: job.experience || '',
         education: job.education || '',
         skills: Array.isArray(job.skills) ? job.skills : (job.skills ? job.skills.split(',').map(s => s.trim()) : []),
+        requiredSkills: Array.isArray(job.skills) ? job.skills : (job.skills ? job.skills.split(',').map(s => s.trim()) : []),
         remote: job.remote || false,
-        status: job.status || ''
+        status: job.status || '',
+        salaryMin: job.salary?.min || 0,
+        salaryMax: job.salary?.max || 0,
+        salaryCurrency: job.salary?.currency || 'USD'
       };
 
       await this.storeEmbedding(job._id.toString(), embedding, metadata, this.jobIndexName);
@@ -1097,27 +1114,25 @@ class EmbeddingService {
         throw new Error('Organization context is required for candidate matching');
       }
 
-      // Search for similar candidates within the same organization
-      const matches = await this.searchSimilarCandidates(jobText, requestedTopK, organizationId);
+      // Retrieve a slightly wider semantic pool, then use a deterministic
+      // constraint-aware reranker. This keeps quick mode fast while improving
+      // exact skill and experience alignment.
+      const retrievalTopK = requestedTopK < 100
+        ? Math.min(5000, Math.max(50, requestedTopK * 3))
+        : requestedTopK;
+      const matches = await this.searchSimilarCandidates(jobText, retrievalTopK, organizationId, {
+        jobId: job.isEmbedded ? job._id.toString() : null
+      });
       
       console.log(`🔍 Found ${matches.length} matching candidates for job ${job._id}`);
       
       // Format results with similarity scores and full metadata
-      const formattedMatches = matches.map((match, index) => {
-        console.log(`Match ${index + 1}: Candidate ${match.metadata.candidateId} with score ${match.score}`);
-        console.log(`Metadata available:`, {
-          totalYearsExp: match.metadata.totalYearsExp,
-          companiesCount: match.metadata.companiesWorkedAt?.length || 0,
-          hasAIAnalysis: match.metadata.hasAIAnalysis,
-          dataCompleteness: match.metadata.dataCompleteness
-        });
-        
-        return {
+      const formattedMatches = matches.map((match) => ({
         candidateId: match.metadata.candidateId,
         similarity: match.score,
-          // Include full metadata for explanation generation
-          metadata: match.metadata,
-          // Keep candidate info for backward compatibility
+        // Include full metadata for explanation generation
+        metadata: match.metadata,
+        // Keep candidate info for backward compatibility
         candidate: {
           name: `${match.metadata.firstName} ${match.metadata.lastName}`.trim(),
           position: match.metadata.position,
@@ -1127,15 +1142,17 @@ class EmbeddingService {
           email: match.metadata.email,
           phone: match.metadata.phone
         }
-        };
-      });
+      }));
+      const rankedMatches = rankingService
+        .rerankQuickCandidates(formattedMatches, job)
+        .slice(0, requestedTopK);
 
       // Cache the results (fire and forget - don't block response)
       const generationTime = Date.now() - startTime;
-      aiMatchCacheService.setCachedBulkMatch(job._id, formattedMatches, {
-        candidateCount: formattedMatches.length,
+      aiMatchCacheService.setCachedBulkMatch(job._id, rankedMatches, {
+        candidateCount: rankedMatches.length,
         requestedTopK,
-        exhausted: formattedMatches.length < requestedTopK,
+        exhausted: matches.length < requestedTopK,
         generationTime,
         modelUsed: cacheIdentity.model,
         identity: cacheIdentity,
@@ -1143,11 +1160,11 @@ class EmbeddingService {
       }).catch(err => console.error('Failed to cache matches:', err));
 
       return {
-        matches: formattedMatches,
+        matches: rankedMatches,
         fromCache: false,
         generationTime,
         metadata: {
-          candidateCount: formattedMatches.length,
+          candidateCount: rankedMatches.length,
           requestedTopK,
           modelUsed: cacheIdentity.model,
           cacheIdentity

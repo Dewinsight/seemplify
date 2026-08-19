@@ -152,7 +152,8 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
   
   // Large-scale matching state
   const [topK, setTopK] = useState(10)
-  const [matchMode, setMatchMode] = useState<'full-analysis' | 'vector-ranked'>('full-analysis')
+  const [analysisMode, setAnalysisMode] = useState<'quick' | 'deep'>('quick')
+  const [matchMode, setMatchMode] = useState<'quick-ranking' | 'deep-analysis'>('quick-ranking')
   const [loadingExplanations, setLoadingExplanations] = useState<Set<string>>(new Set())
   const [lazyExplanations, setLazyExplanations] = useState<Record<string, any>>({})
   const [enrichCount, setEnrichCount] = useState(50)
@@ -184,7 +185,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     } else {
       newExpanded.add(candidateId)
 
-      // Lazy-load explanation when missing (vector-ranked, or full-analysis rows without embedded explanation)
+      // Quick results load a deep explanation only when the recruiter asks.
       const match = matchingCandidates.find(m => m.candidateId === candidateId)
       if (!match?.explanation && !lazyExplanations[candidateId]) {
         setLoadingExplanations(prev => new Set(prev).add(candidateId))
@@ -295,8 +296,9 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     }
   }
 
-  const fetchMatchingCandidates = async (requestedTopK?: number) => {
+  const fetchMatchingCandidates = async (requestedTopK?: number, requestedMode?: 'quick' | 'deep') => {
     const k = requestedTopK ?? topK
+    const mode = requestedMode ?? analysisMode
     try {
       setLoadingMatches(true)
       setLazyExplanations({})
@@ -306,9 +308,9 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       setEnrichmentStatus(null)
       setEnrichmentEstimate(null)
       setEnrichmentStarting(false)
-      const response = await jobEmbeddingService.getMatchingCandidates(jobId, k)
+      const response = await jobEmbeddingService.getMatchingCandidates(jobId, k, mode)
       setMatchingCandidates(response.matches || [])
-      setMatchMode(response.mode || (k > 100 ? 'vector-ranked' : 'full-analysis'))
+      setMatchMode(response.mode || (mode === 'deep' ? 'deep-analysis' : 'quick-ranking'))
       
       setFromCache(response.fromCache || false)
       setCacheAge(response.cacheAge || null)
@@ -468,7 +470,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
   }, [jobId])
 
   useEffect(() => {
-    if (matchMode !== 'vector-ranked' || matchingCandidates.length === 0) return
+    if (matchMode !== 'quick-ranking' || matchingCandidates.length === 0) return
     if (!enrichOptions.length) return
     if (!enrichOptions.includes(enrichCount)) {
       setEnrichCount(enrichOptions[0])
@@ -477,7 +479,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
   useEffect(() => {
     const loadEstimate = async () => {
-      if (!candidateEnrichmentEnabled || matchMode !== 'vector-ranked' || matchingCandidates.length === 0) {
+      if (!candidateEnrichmentEnabled || matchMode !== 'quick-ranking' || matchingCandidates.length === 0 || topK <= 100) {
         setEnrichmentEstimate(null)
         return
       }
@@ -495,7 +497,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     }
 
     loadEstimate()
-  }, [candidateEnrichmentEnabled, jobId, matchMode, matchingCandidates.length, selectedEnrichCount])
+  }, [candidateEnrichmentEnabled, jobId, matchMode, matchingCandidates.length, selectedEnrichCount, topK])
 
   useEffect(() => {
     if (candidateEnrichmentEnabled) return
@@ -522,7 +524,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
           if (rankedMatches.length > 0) {
             setMatchingCandidates(rankedMatches)
-            setMatchMode('full-analysis')
+            setMatchMode('deep-analysis')
             setLazyExplanations({})
             setExpandedCandidates(new Set())
           }
@@ -694,25 +696,46 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                 <Users className="h-5 w-5 text-purple-600" />
                 <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">Top Matching Candidates</h3>
                 <Badge variant="secondary">{matchingCandidates.length} found</Badge>
-                {matchMode === 'vector-ranked' && (
-                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-                    <Zap className="h-3 w-3 mr-1" />Vector Ranked
-                  </Badge>
-                )}
+                <Badge variant="outline" className="text-xs">
+                  {matchMode === 'deep-analysis' ? (
+                    <><Brain className="h-3 w-3 mr-1" />Deep analysis</>
+                  ) : (
+                    <><Zap className="h-3 w-3 mr-1" />Quick ranking</>
+                  )}
+                </Badge>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor={`matching-mode-${jobId}`} className="text-xs text-muted-foreground whitespace-nowrap">
+                  Analysis:
+                </label>
+                <select
+                  id={`matching-mode-${jobId}`}
+                  value={analysisMode}
+                  onChange={(event) => {
+                    const nextMode = event.target.value === 'deep' ? 'deep' : 'quick'
+                    const nextTopK = nextMode === 'deep' && topK > 100 ? 100 : topK
+                    setAnalysisMode(nextMode)
+                    if (nextTopK !== topK) setTopK(nextTopK)
+                    fetchMatchingCandidates(nextTopK, nextMode)
+                  }}
+                  disabled={loadingMatches || enrichmentStarting || isEnrichmentProcessing}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="quick">Quick ranking</option>
+                  <option value="deep">Deep analysis (slower)</option>
+                </select>
                 <span className="text-xs text-muted-foreground whitespace-nowrap">Show top:</span>
                 <select
                   value={topK}
                   onChange={(e) => {
                     const val = parseInt(e.target.value)
                     setTopK(val)
-                    fetchMatchingCandidates(val)
+                    fetchMatchingCandidates(val, analysisMode)
                   }}
                   disabled={loadingMatches || enrichmentStarting || isEnrichmentProcessing}
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
                 >
-                  {TOP_K_OPTIONS.map(n => (
+                  {TOP_K_OPTIONS.filter(n => analysisMode === 'quick' || n <= 100).map(n => (
                     <option key={n} value={n}>{n.toLocaleString()} candidates</option>
                   ))}
                 </select>
@@ -760,11 +783,11 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                 </div>
               </div>
             )}
-            {candidateEnrichmentEnabled && matchMode === 'vector-ranked' && matchingCandidates.length > 0 && (
+            {candidateEnrichmentEnabled && matchMode === 'quick-ranking' && topK > 100 && matchingCandidates.length > 0 && (
               <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-3 space-y-3">
                 <div className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
                   <Brain className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>Large-scale mode is vector-ranked. Enrich selected candidates with GPT for higher-accuracy ranking and full match analysis.</span>
+                  <span>Large quick rankings can be enriched in the background for deeper candidate analysis.</span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-end gap-3">
@@ -1076,6 +1099,13 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                     variant="ghost"
                                     size="sm"
                                     type="button"
+                                    aria-label={
+                                      isLoadingExplanation
+                                        ? `Analyzing match for ${match.candidate.name}`
+                                        : isExpanded
+                                          ? `Hide match explanation for ${match.candidate.name}`
+                                          : `Explain match for ${match.candidate.name}`
+                                    }
                                     disabled={isLoadingExplanation}
                                     onClick={(e) => {
                                       e.preventDefault()

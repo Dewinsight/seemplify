@@ -1397,7 +1397,7 @@ Always provide structured, detailed analysis covering sentiment, skills, concern
     }
   }
 
-  async generateInterviewQuestions(prompt) {
+  async generateInterviewQuestions(prompt, options = {}) {
     try {
       console.log("Generating interview questions with the managed AI runtime.");
 
@@ -1472,7 +1472,10 @@ QUALITY CONTRAST:
         activity: 'interview.questions',
         promptVersion: 'interview-questions-v4',
         messages: messages,
-        max_completion_tokens: 4000,
+        max_completion_tokens: Math.min(
+          12000,
+          Math.max(4000, (Number(options.questionCount) || 1) * 900)
+        ),
         temperature: 0.6,
         top_p: 0.9,
         frequency_penalty: 0.1,
@@ -1916,8 +1919,15 @@ Calibration examples:
 Return concise evidence-based assessments. Never infer candidate characteristics and never expose hidden reasoning.`;
     const boundedJobContext = String(jobContext || 'No specific job context supplied; use general professional hiring standards.').slice(0, 8000);
 
+    const batches = [];
     for (let start = 0; start < questions.length; start += batchSize) {
-      const batchQuestions = questions.slice(start, start + batchSize);
+      batches.push({ start, batchQuestions: questions.slice(start, start + batchSize) });
+    }
+
+    // Bias batches are independent. Running them concurrently removes the
+    // batch-count multiplier from user-visible latency while keeping the
+    // small, reliable five-question structured contract.
+    const batchResults = await Promise.all(batches.map(async ({ start, batchQuestions }) => {
       try {
         const response = await this.structuredCompletion([
           { role: 'system', content: systemPrompt },
@@ -1946,17 +1956,28 @@ Return concise evidence-based assessments. Never infer candidate characteristics
           || [...expectedIndexes].some((questionIndex) => !returnedIndexes.has(questionIndex))) {
           throw new Error('Bias analysis returned missing or duplicate question indexes.');
         }
-        for (const rawAnalysis of batchAnalyses) {
-          const questionIndex = Number(rawAnalysis.questionIndex);
-          analyses[questionIndex] = this._normalizeBiasAnalysis(rawAnalysis);
-        }
+        const normalizedAnalyses = batchAnalyses.map((rawAnalysis) => ({
+          questionIndex: Number(rawAnalysis.questionIndex),
+          analysis: this._normalizeBiasAnalysis(rawAnalysis)
+        }));
+        return { start, batchQuestions, batchAnalyses: normalizedAnalyses };
       } catch (error) {
-        errors.push(`Questions ${start + 1}-${start + batchQuestions.length}: ${error.message}`);
-        if (!runtimeErrorCode && error.code) {
-          runtimeErrorCode = error.code;
-          runtimeErrorStatus = error.statusCode;
-        }
         console.error('AI bias analysis batch failed:', error.message);
+        return { start, batchQuestions, error };
+      }
+    }));
+
+    for (const result of batchResults) {
+      if (result.error) {
+        errors.push(`Questions ${result.start + 1}-${result.start + result.batchQuestions.length}: ${result.error.message}`);
+        if (!runtimeErrorCode && result.error.code) {
+          runtimeErrorCode = result.error.code;
+          runtimeErrorStatus = result.error.statusCode;
+        }
+        continue;
+      }
+      for (const normalized of result.batchAnalyses) {
+        analyses[normalized.questionIndex] = normalized.analysis;
       }
     }
 

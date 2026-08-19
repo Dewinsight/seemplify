@@ -18,9 +18,15 @@ function neutralAnalysis(questionIndex) {
 test('bias analysis batches questions, preserves indexes, and allocates a reasoning-safe token budget', async () => {
   const service = new AIModelService();
   const calls = [];
+  let activeCalls = 0;
+  let maxActiveCalls = 0;
   service.structuredCompletion = async (messages, options) => {
     const input = JSON.parse(messages.at(-1).content);
     calls.push({ input, options });
+    activeCalls += 1;
+    maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+    await new Promise((resolve) => setImmediate(resolve));
+    activeCalls -= 1;
     return { data: { analyses: input.questions.map(({ questionIndex }) => neutralAnalysis(questionIndex)) } };
   };
 
@@ -36,6 +42,7 @@ test('bias analysis batches questions, preserves indexes, and allocates a reason
   assert.equal(result.success, true);
   assert.equal(result.analyses.length, 6);
   assert.equal(calls.length, 2);
+  assert.equal(maxActiveCalls, 2);
   assert.deepEqual(calls.map((call) => call.input.questions.length), [5, 1]);
   assert.ok(calls[0].options.maxTokens > 3000);
   assert.equal(calls[0].options.promptVersion, 'interview-bias-v3');

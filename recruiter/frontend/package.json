@@ -17,7 +17,11 @@
     "test:theme-surfaces": "node --test scripts/theme-surface-contract.test.js",
     "test:candidate-emails": "node --test scripts/candidate-email-template-presets.test.js",
     "test:platform-features": "node --test scripts/platform-features.test.js",
-    "test:cv-processing": "node --test scripts/cv-upload-progress.test.js"
+    "test:cv-processing": "node --test scripts/cv-upload-progress.test.js",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep @smoke",
+    "test:e2e:deep": "playwright test --grep @deep",
+    "test:e2e:regression": "playwright test"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
@@ -95,6 +99,7 @@
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.1",
+    "@playwright/test": "^1.55.0",
     "@types/jspdf": "^2.0.0",
     "@types/node": "^22",
     "@types/react": "^19",

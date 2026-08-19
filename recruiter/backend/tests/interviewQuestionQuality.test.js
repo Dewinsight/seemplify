@@ -168,6 +168,41 @@ test('recruiter generation retries once when the first set is semantically weak'
   assert.ok(result[0].qualityMetrics.semanticQualityScore >= 0.8);
 });
 
+test('mixed-type generation uses one structured call and preserves the requested type order', async () => {
+  const service = new InterviewService();
+  let calls = 0;
+  const questions = [
+    strongQuestion(),
+    strongQuestion({
+      question: 'Tell us about a time when a PostgreSQL incident created a delivery risk and you had to align stakeholders on a recovery trade-off. What evidence and measurable outcome did you produce?',
+      type: 'behavioral',
+      expectedAnswer: 'Look for a specific PostgreSQL incident, the delivery risk and stakeholder positions, evidence used to select the recovery trade-off, concrete actions owned by the candidate, and a measurable reliability or delivery outcome.',
+      followUpQuestions: [{ question: 'Which stakeholder concern was hardest to resolve, and what evidence changed it?', condition: 'Ask after the candidate describes the decision.' }],
+      tags: ['PostgreSQL', 'stakeholders']
+    }),
+    strongQuestion({
+      question: 'If a TypeScript deployment introduced inconsistent events across a scaling platform, how would you contain the production risk, choose a compatibility strategy, and validate recovery?',
+      type: 'situational',
+      expectedAnswer: 'Look for containment of the TypeScript event failure, evidence that bounds affected producers and consumers, a justified compatibility or rollback strategy, explicit scaling trade-offs, and measurable validation of platform recovery.',
+      followUpQuestions: [{ question: 'How would you change the plan if one legacy producer could not be redeployed?', condition: 'Ask after a compatibility strategy is selected.' }],
+      tags: ['TypeScript', 'platform']
+    })
+  ];
+  service.aiModelService = {
+    generateInterviewQuestions: async (_prompt, options) => {
+      calls += 1;
+      assert.equal(options.questionCount, 3);
+      return questions;
+    }
+  };
+
+  const distribution = service._distributeQuestionTypes(['technical', 'behavioral', 'situational'], 3);
+  const generated = await service._generateQuestionSet(distribution, 3, 'job context', 'hard', [], job);
+  assert.equal(calls, 1);
+  assert.deepEqual(generated.map(({ type }) => type), ['technical', 'behavioral', 'situational']);
+  assert.ok(generated.every((question) => question.qualityMetrics.semanticQualityScore >= 0.78));
+});
+
 test('recruiter generation saves no generic fallback after two weak sets', async () => {
   const service = new InterviewService();
   service.aiModelService = {
