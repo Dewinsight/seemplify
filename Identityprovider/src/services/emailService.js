@@ -48,6 +48,23 @@ class EmailService {
     })
   }
 
+  async sendAccountActivationEmail(to, token, name) {
+    const displayName = name || to.split('@')[0]
+    const resetUrl = `${this.identityProviderUrl}/reset-password/${token}`
+    return this.sendEmail({
+      to,
+      subject: 'Activate your Seemplify account',
+      html: `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
+        <h2>Your Seemplify account is ready</h2>
+        <p>Hello ${displayName},</p>
+        <p>Your onboarding has been approved and your account is now active.</p>
+        <p><a href="${resetUrl}">Create your password and open Seemplify</a></p>
+        <p>This secure activation link expires in 24 hours.</p>
+      </body></html>`,
+      text: `Hello ${displayName}, your onboarding has been approved and your Seemplify account is active. Create your password within 24 hours: ${resetUrl}`
+    })
+  }
+
   async sendEmailVerificationOTP(to, otp, name) {
     const displayName = name || to.split('@')[0]
     return this.sendEmail({

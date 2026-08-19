@@ -20,6 +20,7 @@ const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 const { createPayslipPdf } = require('../services/payslipPdfService');
 const { hasPayConfiguration } = require('../services/contractPayService');
 const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
+const peopleTransitionsClient = require('../services/peopleTransitionsClient');
 const payrollEngineService = new PayrollEngineService();
 const PAY_FREQUENCIES = new Set(['monthly', 'semi-monthly', 'bi-weekly', 'weekly']);
 
@@ -243,43 +244,6 @@ async function addIdpTeamMember(accessToken, teamId, payload) {
   return res.data;
 }
 
-async function assignIdpOnboarding(accessToken, organizationId, payload) {
-  const idpBaseUrl = getIdpBaseUrl();
-  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/assign`;
-
-  const res = await axios.post(url, payload, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    timeout: 15000,
-  });
-
-  return res.data;
-}
-
-async function sendIdpOnboardingReminder(accessToken, organizationId, memberId) {
-  const idpBaseUrl = getIdpBaseUrl();
-  const encodedMemberId = encodeURIComponent(String(memberId || '').trim());
-  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/members/${encodedMemberId}/reminder`;
-
-  const res = await axios.post(url, {}, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    timeout: 15000,
-  });
-
-  return res.data;
-}
-
-async function updateIdpOnboardingStatus(accessToken, organizationId, memberId, payload) {
-  const idpBaseUrl = getIdpBaseUrl();
-  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/members/${memberId}/status`;
-
-  const res = await axios.patch(url, payload, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    timeout: 15000,
-  });
-
-  return res.data;
-}
-
 function getPrimaryMemberTeam(member = {}) {
   const teamIds = Array.isArray(member?.teamIds) ? member.teamIds.map((value) => String(value || '').trim()).filter(Boolean) : [];
   const teamNames = Array.isArray(member?.teamNames) ? member.teamNames.map((value) => String(value || '').trim()).filter(Boolean) : [];
@@ -376,11 +340,13 @@ function applyPayrollSyncFromMember(profile, member = {}) {
   profile.bankAccounts = buildPayrollBankAccountsFromMember(member, profile.bankAccounts);
   profile.emergencyContact = buildEmergencyContactFromMember(member, profile.emergencyContact);
 
+  const taxId = String(member?.payrollSync?.taxInfo?.taxId || '').trim();
   const dependentsCount = Number(member?.payrollSync?.dependentsCount || 0);
-  if (dependentsCount > 0 && Number(profile?.taxConfig?.dependents || 0) === 0) {
+  if (taxId || (dependentsCount > 0 && Number(profile?.taxConfig?.dependents || 0) === 0)) {
     profile.taxConfig = {
       ...(profile.taxConfig || {}),
-      dependents: dependentsCount,
+      ...(taxId ? { taxId } : {}),
+      ...(dependentsCount > 0 ? { dependents: dependentsCount } : {}),
     };
   }
 
@@ -769,11 +735,37 @@ router.get('/idp/members', requireHRAdmin, async (req, res) => {
     }
 
     const data = await fetchIdpOrgMembers(accessToken, organizationId);
+    const members = Array.isArray(data?.members) ? data.members : [];
+    let transitionSyncAvailable = true;
+    let transitionSyncError = '';
+    let summaries = [];
+    try {
+      const subjectIds = members
+        .map((member) => String(member?.id || member?.sub || '').trim())
+        .filter(Boolean);
+      if (subjectIds.length) {
+        const transitionData = await peopleTransitionsClient.getTransitionSummaries({
+          idpOrganizationId: organizationId,
+          subjectIds,
+        });
+        summaries = Array.isArray(transitionData?.summaries) ? transitionData.summaries : [];
+      }
+    } catch (transitionError) {
+      transitionSyncAvailable = false;
+      transitionSyncError = transitionError.message || 'People Transitions sync is unavailable';
+      console.error('People Transitions Summary Error:', transitionError.response || transitionError.message || transitionError);
+    }
+    const summaryBySubjectId = new Map(summaries.map((summary) => [String(summary.subjectId), summary]));
     res.json({
       ...data,
       organizationId: data?.organizationId || organizationId,
-      members: Array.isArray(data?.members) ? data.members : [],
-      syncAvailable: true
+      members: members.map((member) => ({
+        ...member,
+        peopleTransition: summaryBySubjectId.get(String(member?.id || member?.sub || '')) || null,
+      })),
+      syncAvailable: true,
+      transitionSyncAvailable,
+      transitionSyncError,
     });
   } catch (err) {
     console.error('IDP Members Proxy Error:', err?.response?.data || err.message || err);
@@ -855,8 +847,8 @@ router.post('/idp/teams/:teamId/members', requireHRAdmin, async (req, res) => {
 
 router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
   try {
-    const { organizationId } = getUserInfo(req);
-    const accessToken = getIdpAccessToken(req);
+    const userInfo = getUserInfo(req);
+    const { organizationId } = userInfo;
     const memberId = String(req.body?.memberId || '').trim();
     const dueAt = req.body?.dueAt;
 
@@ -864,93 +856,76 @@ router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
       return res.status(400).json({ error: 'No organization selected' });
     }
 
-    if (!accessToken) {
-      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
-    }
-
     if (!memberId) {
       return res.status(400).json({ error: 'memberId is required' });
     }
 
-    const data = await assignIdpOnboarding(accessToken, organizationId, {
-      memberId,
-      workflowType: 'onboarding',
-      useDefaultTemplate: true,
-      dueAt
+    const data = await peopleTransitionsClient.startMemberOnboarding({
+      idpOrganizationId: organizationId,
+      member: {
+        id: memberId,
+        email: req.body?.email,
+        name: req.body?.name,
+        phone: req.body?.phone,
+        employeeId: req.body?.employeeId,
+        designation: req.body?.designation,
+        departmentId: req.body?.departmentId,
+        departmentName: req.body?.departmentName,
+        role: req.body?.role,
+      },
+      dueAt,
+      requestedBy: {
+        subjectId: userInfo.userId,
+        email: req.session?.user?.email,
+        name: userInfo.name,
+      },
     });
 
     res.status(201).json(data);
   } catch (err) {
-    console.error('IDP Onboarding Assign Proxy Error:', err?.response?.data || err.message || err);
-    const status = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
-    res.status(status).json({
-      error: getIdpProxyErrorMessage(err, 'Failed to assign onboarding')
+    console.error('People Transitions Start Error:', err?.response || err.message || err);
+    res.status(err.statusCode || 502).json({
+      error: err.message || 'Failed to start onboarding in People Transitions'
     });
   }
 });
 
 router.post('/idp/onboarding/members/:memberId/reminder', requireHRAdmin, async (req, res) => {
   try {
-    const { organizationId } = getUserInfo(req);
-    const accessToken = getIdpAccessToken(req);
+    const userInfo = getUserInfo(req);
+    const { organizationId } = userInfo;
     const memberId = String(req.params?.memberId || '').trim();
 
     if (!organizationId) {
       return res.status(400).json({ error: 'No organization selected' });
     }
 
-    if (!accessToken) {
-      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
-    }
-
     if (!memberId) {
       return res.status(400).json({ error: 'memberId is required' });
     }
 
-    const data = await sendIdpOnboardingReminder(accessToken, organizationId, memberId);
+    const data = await peopleTransitionsClient.remindMemberOnboarding({
+      idpOrganizationId: organizationId,
+      subjectId: memberId,
+      requestedBy: {
+        subjectId: userInfo.userId,
+        email: req.session?.user?.email,
+        name: userInfo.name,
+      },
+    });
     res.json(data);
   } catch (err) {
-    console.error('IDP Onboarding Reminder Proxy Error:', err?.response?.data || err.message || err);
-    const status = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
-    res.status(status).json({
-      error: getIdpProxyErrorMessage(err, 'Failed to send onboarding reminder')
+    console.error('People Transitions Reminder Error:', err?.response || err.message || err);
+    res.status(err.statusCode || 502).json({
+      error: err.message || 'Failed to send onboarding reminder'
     });
   }
 });
 
 router.patch('/idp/onboarding/members/:memberId/status', requireHRAdmin, async (req, res) => {
-  try {
-    const { organizationId } = getUserInfo(req);
-    const accessToken = getIdpAccessToken(req);
-    const memberId = String(req.params?.memberId || '').trim();
-    const status = String(req.body?.status || '').trim().toLowerCase();
-    const clearOverride = req.body?.clearOverride === true;
-
-    if (!organizationId) {
-      return res.status(400).json({ error: 'No organization selected' });
-    }
-
-    if (!accessToken) {
-      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
-    }
-
-    if (!memberId) {
-      return res.status(400).json({ error: 'memberId is required' });
-    }
-
-    const data = await updateIdpOnboardingStatus(accessToken, organizationId, memberId, {
-      status,
-      clearOverride
-    });
-
-    res.json(data);
-  } catch (err) {
-    console.error('IDP Onboarding Status Proxy Error:', err?.response?.data || err.message || err);
-    const statusCode = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
-    res.status(statusCode).json({
-      error: getIdpProxyErrorMessage(err, 'Failed to update onboarding status')
-    });
-  }
+  res.status(410).json({
+    error: 'Manual onboarding status overrides have been retired. Complete and approve onboarding in Recruiter People Transitions, or configure the employee manually in Payroll.',
+  });
 });
 
 /**
@@ -1421,9 +1396,14 @@ async function syncPayrollProfileFromIdp(req, res) {
       employeeInfo: buildEmployeeSnapshotFromMember(member),
       bankAccounts: buildPayrollBankAccountsFromMember(member, []),
       emergencyContact: buildEmergencyContactFromMember(member, null),
-      taxConfig: Number(member?.payrollSync?.dependentsCount || 0) > 0
-        ? { dependents: Number(member.payrollSync.dependentsCount) }
-        : {},
+      taxConfig: {
+        ...(String(member?.payrollSync?.taxInfo?.taxId || '').trim()
+          ? { taxId: String(member.payrollSync.taxInfo.taxId).trim() }
+          : {}),
+        ...(Number(member?.payrollSync?.dependentsCount || 0) > 0
+          ? { dependents: Number(member.payrollSync.dependentsCount) }
+          : {}),
+      },
       payrollFlags: normalizePayrollFlagsPayload({}, 0, {}),
       createdBy: adminId,
       status: 'active',

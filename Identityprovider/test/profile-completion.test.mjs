@@ -63,3 +63,18 @@ test('IDP profile completion ignores legacy onboarding document assignments', ()
   assert.equal(completion.onboarding.requiresAction, false)
   assert.equal(completion.summary.onboarding, null)
 })
+
+test('an approved dependents count completes the dependents declaration', () => {
+  const account = structuredClone(completeAccount)
+  account.profile.dependentsDeclaration = {
+    status: 'provided',
+    count: 2,
+    confirmedAt: new Date('2026-08-19T00:00:00.000Z')
+  }
+
+  const completion = getProfileCompletion(account)
+
+  assert.equal(completion.complete, true)
+  assert.equal(completion.dependentsCount, 2)
+  assert.equal(completion.steps.find(step => step.key === 'dependents')?.complete, true)
+})

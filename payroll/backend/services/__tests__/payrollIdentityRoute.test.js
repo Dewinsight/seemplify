@@ -3,6 +3,12 @@ const axios = require('axios');
 
 jest.mock('axios');
 
+jest.mock('../peopleTransitionsClient', () => ({
+  getTransitionSummaries: jest.fn().mockResolvedValue({ summaries: [] }),
+  startMemberOnboarding: jest.fn(),
+  remindMemberOnboarding: jest.fn(),
+}));
+
 jest.mock('../../middleware/rbac', () => {
   const allow = (req, _res, next) => {
     req.session = {
@@ -59,6 +65,7 @@ jest.mock('../PayrollCountryAutomationService', () => ({
 }));
 
 const PayrollProfile = require('../../models/PayrollProfile');
+const peopleTransitionsClient = require('../peopleTransitionsClient');
 const payrollRouter = require('../../routes/payroll');
 
 async function startApp() {
@@ -134,6 +141,10 @@ describe('payroll identity ownership routes', () => {
         departmentName: 'Operations',
         teamIds: ['team-ops'],
         teamNames: ['Operations'],
+        payrollSync: {
+          taxInfo: { taxId: 'TAX-0042' },
+          dependentsCount: 2,
+        },
       },
     });
     PayrollProfile.findOne.mockResolvedValueOnce(null);
@@ -161,6 +172,10 @@ describe('payroll identity ownership routes', () => {
           employeeId: 'IDP-0042',
         },
         basicSalary: 0,
+        taxConfig: {
+          taxId: 'TAX-0042',
+          dependents: 2,
+        },
       },
     });
     expect(payload.profile.employeeInfo.name).not.toBe('Forged Browser Name');
@@ -207,5 +222,43 @@ describe('payroll identity ownership routes', () => {
         headers: { Authorization: 'Bearer verified-session-token' },
       })
     );
+  });
+
+  test('starts onboarding in Recruiter People Transitions instead of the retired IDP workflow', async () => {
+    peopleTransitionsClient.startMemberOnboarding.mockResolvedValueOnce({
+      transitionId: 'transition-1',
+      status: 'pending',
+    });
+
+    const response = await fetch(`${baseUrl}/api/payroll/idp/onboarding/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        memberId: 'member-1',
+        email: 'member@example.invalid',
+        name: 'Example Member',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(peopleTransitionsClient.startMemberOnboarding).toHaveBeenCalledWith(expect.objectContaining({
+      idpOrganizationId: 'org-idp',
+      member: expect.objectContaining({
+        id: 'member-1',
+        email: 'member@example.invalid',
+      }),
+    }));
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('retires the manual legacy onboarding status override', async () => {
+    const response = await fetch(`${baseUrl}/api/payroll/idp/onboarding/members/member-1/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    });
+
+    expect(response.status).toBe(410);
+    expect(axios.patch).not.toHaveBeenCalled();
   });
 });

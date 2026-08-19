@@ -397,6 +397,7 @@ const AccountSchema = new mongoose.Schema({
 
     // Tax withholding information
     taxInfo: {
+      taxId: String,
       filingStatus: {
         type: String,
         enum: ['single', 'married_jointly', 'married_separately', 'head_of_household']
@@ -466,7 +467,8 @@ const AccountSchema = new mongoose.Schema({
         default: 'pending'
       },
       confirmedAt: Date,
-      lastUpdated: Date
+      lastUpdated: Date,
+      count: { type: Number, default: 0, min: 0 }
     },
     completionReminders: {
       lastSentAt: Date,

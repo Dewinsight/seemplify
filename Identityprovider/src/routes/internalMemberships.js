@@ -9,6 +9,7 @@ import { ScheduledMembershipAction } from '../models/ScheduledMembershipAction.j
 import { normalizeAppAccess } from '../utils/appAccess.js'
 import { serializeReconciliationTeams } from '../utils/reconciliationTeams.js'
 import { subscriptionService } from '../services/subscriptionService.js'
+import { emailService } from '../services/emailService.js'
 import { forceUserLogout, sendWebhook } from '../services/webhookService.js'
 import { invalidateClaimsCache } from '../index.js'
 
@@ -110,6 +111,61 @@ function memberData(account, organization, member, extra = {}) {
     appAccess: member?.appAccess,
     ...extra,
   }
+}
+
+function cleanText(value) {
+  return String(value ?? '').trim()
+}
+
+function applyPayrollSync(account, payrollSync = {}) {
+  if (!payrollSync || typeof payrollSync !== 'object') return false
+  const profile = account.profile?.toObject?.() || account.profile || {}
+  const personal = payrollSync.personalInfo || {}
+  const emergency = personal.emergencyContact || {}
+  const banking = payrollSync.banking || {}
+  const accounts = Array.isArray(banking.accounts) ? banking.accounts : []
+  const declaration = payrollSync.dependentsDeclaration || {}
+
+  account.profile = {
+    ...profile,
+    name: cleanText(payrollSync.name) || profile.name || account.email,
+    personalInfo: {
+      ...(profile.personalInfo || {}),
+      dateOfBirth: personal.dateOfBirth || profile.personalInfo?.dateOfBirth,
+      mailingAddress: {
+        ...(profile.personalInfo?.mailingAddress || {}),
+        ...(personal.mailingAddress || {}),
+      },
+      phoneNumbers: {
+        ...(profile.personalInfo?.phoneNumbers || {}),
+        ...(personal.phoneNumbers || {}),
+      },
+      emergencyContacts: cleanText(emergency.name) || cleanText(emergency.phone)
+        ? [{ ...emergency, isPrimary: true }]
+        : (profile.personalInfo?.emergencyContacts || []),
+    },
+    taxInfo: {
+      ...(profile.taxInfo || {}),
+      ...(payrollSync.taxInfo || {}),
+      lastUpdated: new Date(),
+    },
+    banking: {
+      ...(profile.banking || {}),
+      country: cleanText(banking.country) || profile.banking?.country || 'Other',
+      accounts: accounts.length
+        ? accounts.map(item => ({ ...item, updatedAt: new Date() }))
+        : (profile.banking?.accounts || []),
+    },
+    dependentsDeclaration: {
+      ...(profile.dependentsDeclaration || {}),
+      status: ['none', 'provided'].includes(declaration.status) ? declaration.status : 'pending',
+      count: Math.max(0, Number(declaration.count || 0)),
+      confirmedAt: declaration.confirmedAt || new Date(),
+      lastUpdated: new Date(),
+    },
+  }
+  account.markModified('profile')
+  return true
 }
 
 async function revokeProviderSessions(account) {
@@ -283,6 +339,14 @@ router.post('/provision', (req, res) => executeIdempotently('provision', req, re
       requiresPasswordReset: true,
       authProvider: 'local',
     })
+  }
+  if (applyPayrollSync(account, body.payrollSync)) await account.save()
+  if (account.requiresPasswordReset && !account.emailVerified) {
+    const activationToken = crypto.randomBytes(32).toString('hex')
+    account.resetPasswordToken = activationToken
+    account.resetPasswordExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    await account.save()
+    await emailService.sendAccountActivationEmail(account.email, activationToken, account.profile?.name)
   }
   const currentMember = organization.members.find(member => member.account.toString() === account._id.toString())
   const wasActive = currentMember?.status === 'active'

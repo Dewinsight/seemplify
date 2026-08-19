@@ -503,6 +503,7 @@ router.put('/:orgId/members/:memberId/payroll-sync',
       const hasDesignation = Object.prototype.hasOwnProperty.call(body, 'designation')
       const hasEmployeeId = Object.prototype.hasOwnProperty.call(body, 'employeeId')
       const hasPersonalInfo = body.personalInfo && typeof body.personalInfo === 'object'
+      const hasTaxInfo = body.taxInfo && typeof body.taxInfo === 'object'
       const hasBanking = body.banking && typeof body.banking === 'object'
       const hasDependentsDeclaration = body.dependentsDeclaration && typeof body.dependentsDeclaration === 'object'
 
@@ -603,6 +604,16 @@ router.put('/:orgId/members/:memberId/payroll-sync',
         }
       }
 
+      if (hasTaxInfo) {
+        const currentTaxInfo = accountSnapshot.profile.taxInfo || {}
+        accountSnapshot.profile.taxInfo = {
+          ...currentTaxInfo,
+          taxId: normalizeText(body.taxInfo.taxId ?? currentTaxInfo.taxId),
+          lastUpdated: new Date()
+        }
+        accountUpdateSet['profile.taxInfo'] = accountSnapshot.profile.taxInfo
+      }
+
       if (hasBanking) {
         const banking = body.banking || {}
         const currentBanking = accountSnapshot.profile.banking || {}
@@ -631,18 +642,24 @@ router.put('/:orgId/members/:memberId/payroll-sync',
 
       if (hasDependentsDeclaration) {
         const nextStatus = normalizeText(body.dependentsDeclaration.status).toLowerCase()
-        if (!['pending', 'none'].includes(nextStatus)) {
-          return res.status(400).json({ error: 'Dependents declaration status must be pending or none' })
+        if (!['pending', 'none', 'provided'].includes(nextStatus)) {
+          return res.status(400).json({ error: 'Dependents declaration status must be pending, none or provided' })
         }
 
-        const dependentsDeclaration = nextStatus === 'none'
+        const declaredCount = Math.max(0, Number(body.dependentsDeclaration.count || 0))
+        if (nextStatus === 'provided' && declaredCount === 0) {
+          return res.status(400).json({ error: 'Dependents count is required when dependents are provided' })
+        }
+        const dependentsDeclaration = ['none', 'provided'].includes(nextStatus)
           ? {
-              status: 'none',
+              status: nextStatus,
+              count: nextStatus === 'none' ? 0 : declaredCount,
               confirmedAt: new Date(),
               lastUpdated: new Date()
             }
           : {
               status: 'pending',
+              count: 0,
               confirmedAt: null,
               lastUpdated: new Date()
             }

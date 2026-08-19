@@ -16,7 +16,6 @@ import {
     Loader2,
     UserPlus,
     AlertCircle,
-    CheckCircle2,
     FolderOpen,
     X
 } from 'lucide-react';
@@ -48,6 +47,16 @@ type IdpMember = {
     onboardingStatus?: string;
     onboardingStatusSource?: string;
     onboardingLatestAssignmentId?: string | null;
+    peopleTransition?: {
+        subjectId: string;
+        status: string;
+        processType?: string | null;
+        transitionId?: string | null;
+        activeTransitionCount?: number;
+        pendingTaskCount?: number;
+        dueAt?: string | null;
+        deepLink?: string;
+    } | null;
 };
 
 type EmployeeRow = {
@@ -68,7 +77,7 @@ function getIdpBaseUrl(): string {
     return resolveIdpUrl();
 }
 
-function buildIdpWorkspaceUrl(organizationId: string, path: 'members' | 'onboarding'): string {
+function buildIdpWorkspaceUrl(organizationId: string, path: 'members'): string {
     const baseUrl = getIdpBaseUrl();
     if (!organizationId) return baseUrl;
     return `${baseUrl}/organizations/${organizationId}/${path}`;
@@ -106,8 +115,10 @@ function resolveDepartmentName(row: EmployeeRow): string {
 }
 
 function resolveOnboardingStatus(row: EmployeeRow): string {
-    const memberStatus = String(row.member?.onboardingStatus || '').trim().toLowerCase();
-    if (memberStatus) return memberStatus;
+    const transition = row.member?.peopleTransition;
+    if (transition?.processType === 'onboarding' && transition.status) {
+        return String(transition.status).trim().toLowerCase();
+    }
     return row.profile ? 'completed' : 'not_started';
 }
 
@@ -118,7 +129,23 @@ function formatOnboardingStatus(status: string): string {
 }
 
 function isOnboardingComplete(row: EmployeeRow): boolean {
-    return resolveOnboardingStatus(row) === 'completed';
+    return ['completed', 'provisioned'].includes(resolveOnboardingStatus(row));
+}
+
+function hasActiveOnboardingTransition(row: EmployeeRow): boolean {
+    const transition = row.member?.peopleTransition;
+    return transition?.processType === 'onboarding'
+        && !['completed', 'cancelled', 'provisioned', 'not_started'].includes(String(transition.status || '').toLowerCase());
+}
+
+function getPeopleTransitionUrl(row: EmployeeRow): string {
+    return String(row.member?.peopleTransition?.deepLink || '').trim();
+}
+
+function getManualPayrollSetupUrl(row: EmployeeRow): string {
+    return row.profile
+        ? `/admin/employees/${row.userId}`
+        : `/admin/employees/configure/${row.userId}`;
 }
 
 function getEmployeeName(row: EmployeeRow): string {
@@ -251,6 +278,9 @@ export default function EmployeesPage() {
                 } else if (idpPayload?.syncAvailable === false) {
                     notices.push(String(idpPayload?.syncError || 'Identity Provider member sync is unavailable right now.'));
                 }
+                if (idpPayload?.transitionSyncAvailable === false) {
+                    notices.push(String(idpPayload?.transitionSyncError || 'Recruiter People Transitions sync is unavailable right now.'));
+                }
 
                 if (profilesResult.status !== 'fulfilled') {
                     notices.push('Payroll profile sync is unavailable right now. Employees without a loaded payroll profile will appear as needing setup.');
@@ -328,11 +358,6 @@ export default function EmployeesPage() {
 
         fetchEmployees();
     }, [router]);
-
-    const onboardingWorkspaceUrl = useMemo(
-        () => buildIdpWorkspaceUrl(idpOrganizationId, 'onboarding'),
-        [idpOrganizationId]
-    );
 
     const peopleStructureUrl = useMemo(
         () => buildIdpWorkspaceUrl(idpOrganizationId, 'members'),
@@ -635,14 +660,25 @@ export default function EmployeesPage() {
 
         const memberId = getMemberAccountId(row);
         if (!memberId) return;
-        const isReminder = resolveOnboardingStatus(row) === 'pending';
+        const isReminder = hasActiveOnboardingTransition(row);
 
         setOnboardingActionBusy(true);
         try {
+            let createdTransition: any = null;
             if (isReminder) {
                 await api.post(`/payroll/idp/onboarding/members/${memberId}/reminder`);
             } else {
-                await api.post('/payroll/idp/onboarding/assign', { memberId });
+                const result = await api.post('/payroll/idp/onboarding/assign', {
+                    memberId,
+                    email: row.member.email,
+                    name: row.member.name,
+                    employeeId: row.member.employeeId,
+                    designation: row.member.designation,
+                    departmentId: row.member.departmentId,
+                    departmentName: row.member.departmentName,
+                    role: row.member.role,
+                });
+                createdTransition = result.data;
             }
 
             if (!isReminder) {
@@ -650,8 +686,16 @@ export default function EmployeesPage() {
                     ...currentRow,
                     member: currentRow.member ? {
                         ...currentRow.member,
-                        onboardingStatus: 'pending',
-                        onboardingStatusSource: 'assignment',
+                        peopleTransition: {
+                            subjectId: memberId,
+                            status: String(createdTransition?.status || 'pending'),
+                            processType: 'onboarding',
+                            transitionId: createdTransition?.transitionId || null,
+                            activeTransitionCount: 1,
+                            pendingTaskCount: 1,
+                            dueAt: null,
+                            deepLink: createdTransition?.deepLink || '',
+                        }
                     } : currentRow.member
                 }));
             }
@@ -660,37 +704,6 @@ export default function EmployeesPage() {
             }
         } catch (error: any) {
             alert(error?.response?.data?.error || error?.message || (isReminder ? 'Failed to send onboarding reminder' : 'Failed to assign onboarding'));
-        } finally {
-            setOnboardingActionBusy(false);
-        }
-    };
-
-    const handleMarkOnboarded = async (targetRow: EmployeeRow | null = null) => {
-        const row = targetRow || resolutionRow || activeOnboardingRow;
-        if (!row || !row.member) return;
-
-        const memberId = getMemberAccountId(row);
-        if (!memberId) return;
-
-        setOnboardingActionBusy(true);
-        try {
-            await api.patch(`/payroll/idp/onboarding/members/${memberId}/status`, {
-                status: 'completed'
-            });
-
-            updateEmployeeRow(row.userId, (currentRow) => ({
-                ...currentRow,
-                member: currentRow.member ? {
-                    ...currentRow.member,
-                    onboardingStatus: 'completed',
-                    onboardingStatusSource: 'manual',
-                } : currentRow.member
-            }));
-            if (resolutionUserId === row.userId) {
-                setResolutionUserId('');
-            }
-        } catch (error: any) {
-            alert(error?.response?.data?.error || error?.message || 'Failed to mark employee as onboarded');
         } finally {
             setOnboardingActionBusy(false);
         }
@@ -747,7 +760,7 @@ export default function EmployeesPage() {
                                     {getEmployeeName(activeOnboardingRow)}{resolveEmployeeId(activeOnboardingRow) ? ` • ${resolveEmployeeId(activeOnboardingRow)}` : ''}{getEmployeeEmail(activeOnboardingRow) ? ` • ${getEmployeeEmail(activeOnboardingRow)}` : ''}
                                 </p>
                                 <p className="text-sm text-zinc-300">
-                                    This employee is available in payroll but is not fully onboarded yet. Send them into the document workspace onboarding flow, or mark them as onboarded if HR already completed that process manually.
+                                    This employee is available in Payroll but is not fully onboarded. Request the required details through Recruiter People Transitions, or enter the payroll details manually.
                                 </p>
                             </div>
                             <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -758,25 +771,23 @@ export default function EmployeesPage() {
                                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     {onboardingActionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
-                                    Send Onboarding
+                                    {hasActiveOnboardingTransition(activeOnboardingRow) ? 'Send Reminder' : 'Request Details'}
                                 </button>
-                                <button
-                                    type="button"
-                                    onClick={() => { void handleMarkOnboarded(); }}
-                                    disabled={onboardingActionBusy}
+                                <Link
+                                    href={getManualPayrollSetupUrl(activeOnboardingRow)}
                                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                    {onboardingActionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                                    Mark As Onboarded
-                                </button>
+                                    <UserPlus className="h-4 w-4" />
+                                    Enter Manually
+                                </Link>
                                 <a
-                                    href={`${onboardingWorkspaceUrl}?workflow=onboarding`}
+                                    href={getPeopleTransitionUrl(activeOnboardingRow) || peopleStructureUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-900"
                                 >
                                     <FolderOpen className="h-4 w-4" />
-                                    Open Document Workspace
+                                    Open People Transition
                                 </a>
                                 <button
                                     type="button"
@@ -954,9 +965,9 @@ export default function EmployeesPage() {
                                     <>
                                         <p className="payroll-dialog-title mb-2 text-sm font-medium">This user is not fully onboarded.</p>
                                         <p className="payroll-dialog-copy text-sm">
-                                            {resolveOnboardingStatus(resolutionRow) === 'pending'
-                                                ? 'Their onboarding flow is already in progress, but it is still pending. You can send a reminder, or mark them as onboarded if HR completed the process outside the workflow.'
-                                                : 'They have not started onboarding yet. Create onboarding for them now, or mark them as onboarded if HR completed it manually.'}
+                                            {hasActiveOnboardingTransition(resolutionRow)
+                                                ? 'Their Recruiter People Transition is in progress. You can send a reminder, open the transition for HR review, or complete payroll setup manually.'
+                                                : 'Request their required details through Recruiter People Transitions, or enter and verify the same information manually in Payroll.'}
                                         </p>
                                     </>
                                 )}
@@ -988,17 +999,15 @@ export default function EmployeesPage() {
                                             className="payroll-button-primary"
                                         >
                                             {onboardingActionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
-                                            {resolveOnboardingStatus(resolutionRow) === 'pending' ? 'Send Reminder' : 'Create Onboarding'}
+                                            {hasActiveOnboardingTransition(resolutionRow) ? 'Send Reminder' : 'Request Details'}
                                         </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleMarkOnboarded(resolutionRow)}
-                                            disabled={onboardingActionBusy}
+                                        <Link
+                                            href={getManualPayrollSetupUrl(resolutionRow)}
                                             className="payroll-button-secondary"
                                         >
-                                            {onboardingActionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                                            Mark As Onboarded
-                                        </button>
+                                            <UserPlus className="h-4 w-4" />
+                                            Enter Manually
+                                        </Link>
                                     </>
                                 )}
 
@@ -1022,15 +1031,17 @@ export default function EmployeesPage() {
                                     </Link>
                                 )}
 
-                                <a
-                                    href={`${onboardingWorkspaceUrl}?workflow=onboarding`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="payroll-button-secondary"
-                                >
-                                    <FolderOpen className="h-4 w-4" />
-                                    Open Document Workspace
-                                </a>
+                                {getPeopleTransitionUrl(resolutionRow) && (
+                                    <a
+                                        href={getPeopleTransitionUrl(resolutionRow)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="payroll-button-secondary"
+                                    >
+                                        <FolderOpen className="h-4 w-4" />
+                                        Open People Transition
+                                    </a>
+                                )}
 
                                 <button
                                     type="button"
@@ -1097,7 +1108,10 @@ export default function EmployeesPage() {
                     const member = row.member;
                     const hasProfile = !!employee;
                     const onboardingStatus = resolveOnboardingStatus(row);
-                    const onboardingComplete = onboardingStatus === 'completed';
+                    const onboardingComplete = isOnboardingComplete(row);
+                    const transitionType = String(member?.peopleTransition?.processType || '').toLowerCase();
+                    const hasActivePayrollCloseout = ['exit', 'retirement'].includes(transitionType)
+                        && !['completed', 'cancelled'].includes(String(member?.peopleTransition?.status || '').toLowerCase());
                     const missingPayrollProfile = needsPayrollProfile(row);
                     const needsSetup = needsPayrollSetup(row);
                     const resolveIssueLabel = getResolveIssueLabel(row);
@@ -1156,6 +1170,12 @@ export default function EmployeesPage() {
                                     {holdPayment && (
                                         <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
                                             Hold Payment
+                                        </span>
+                                    )}
+                                    {hasActivePayrollCloseout && (
+                                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20">
+                                            <AlertCircle className="w-3 h-3" />
+                                            {formatOnboardingStatus(transitionType)} Pending
                                         </span>
                                     )}
                                 </div>
@@ -1249,25 +1269,14 @@ export default function EmployeesPage() {
                                         {employee?.isActive !== false ? 'Active' : 'Inactive'}
                                     </span>
                                     {!onboardingComplete ? (
-                                        <div className="flex flex-wrap items-center justify-end gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleMarkOnboarded(row)}
-                                                disabled={onboardingActionBusy}
-                                                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-                                            >
-                                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                                Mark Onboarded
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => openResolutionModal(row)}
-                                                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
-                                            >
-                                                {resolveIssueLabel}
-                                                <ChevronRight className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => openResolutionModal(row)}
+                                            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
+                                        >
+                                            {resolveIssueLabel}
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
                                     ) : missingPayrollProfile ? (
                                         <button
                                             type="button"
@@ -1286,6 +1295,16 @@ export default function EmployeesPage() {
                                             {resolveIssueLabel}
                                             <ChevronRight className="w-3.5 h-3.5" />
                                         </button>
+                                    ) : hasActivePayrollCloseout && getPeopleTransitionUrl(row) ? (
+                                        <a
+                                            href={getPeopleTransitionUrl(row)}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/15 transition-colors"
+                                        >
+                                            Open {formatOnboardingStatus(transitionType)}
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </a>
                                     ) : (
                                         <Link
                                             href={`/admin/employees/${row.userId}`}

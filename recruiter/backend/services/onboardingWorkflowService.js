@@ -478,16 +478,23 @@ function defaultFormFields(processType = 'onboarding') {
     { id: 'legal-name', key: 'legalName', label: 'Legal name', type: 'text', required: true, defaultValuePath: 'candidate.name', order: 10 },
     { id: 'preferred-name', key: 'preferredName', label: 'Preferred name', type: 'text', defaultValuePath: 'candidate.firstName', order: 20 },
     { id: 'email', key: 'email', label: 'Email', type: 'email', required: true, defaultValuePath: 'candidate.email', order: 30 },
-    { id: 'phone', key: 'phone', label: 'Phone', type: 'phone', defaultValuePath: 'candidate.phone', order: 40 },
-    { id: 'address', key: 'address', label: 'Home address', type: 'address', required: true, order: 50 },
-    { id: 'emergency-contact-name', key: 'emergencyContactName', label: 'Emergency contact name', type: 'text', required: true, order: 60 },
-    { id: 'emergency-contact-phone', key: 'emergencyContactPhone', label: 'Emergency contact phone', type: 'phone', required: true, order: 70 },
-    { id: 'bank-account-name', key: 'bankAccountName', label: 'Bank account name', type: 'text', required: true, sensitive: true, order: 80 },
-    { id: 'bank-routing-number', key: 'bankRoutingNumber', label: 'Bank routing number', type: 'routing_number', required: true, sensitive: true, order: 90 },
-    { id: 'bank-account-number', key: 'bankAccountNumber', label: 'Bank account number', type: 'bank_account', required: true, sensitive: true, order: 100 },
-    { id: 'tax-id', key: 'taxId', label: 'Tax or national insurance ID', type: 'tax_id', sensitive: true, order: 110 },
-    { id: 'profile-or-id-image', key: 'profileOrIdImage', label: 'Profile or ID image', type: 'image', helpText: 'Upload a clear image requested by HR, such as a profile photo or ID scan.', order: 120 },
-    { id: 'supporting-document', key: 'supportingDocument', label: 'Supporting document', type: 'file', order: 130 }
+    { id: 'phone', key: 'phone', label: 'Mobile phone', type: 'phone', required: true, defaultValuePath: 'candidate.phone', order: 40 },
+    { id: 'date-of-birth', key: 'dateOfBirth', label: 'Date of birth', type: 'date', required: true, sensitive: true, order: 50 },
+    { id: 'address', key: 'address', label: 'Home address', type: 'address', required: true, order: 60 },
+    { id: 'emergency-contact-name', key: 'emergencyContactName', label: 'Emergency contact name', type: 'text', required: true, order: 70 },
+    { id: 'emergency-contact-relationship', key: 'emergencyContactRelationship', label: 'Emergency contact relationship', type: 'text', required: true, order: 80 },
+    { id: 'emergency-contact-phone', key: 'emergencyContactPhone', label: 'Emergency contact phone', type: 'phone', required: true, order: 90 },
+    { id: 'emergency-contact-email', key: 'emergencyContactEmail', label: 'Emergency contact email', type: 'email', order: 100 },
+    { id: 'bank-country', key: 'bankCountry', label: 'Bank country', type: 'select', required: true, options: ['USA', 'UK', 'EU', 'Nigeria', 'Ghana', 'Kenya', 'South Africa', 'Other'], order: 110 },
+    { id: 'bank-name', key: 'bankName', label: 'Bank name', type: 'text', required: true, sensitive: true, order: 120 },
+    { id: 'bank-account-name', key: 'bankAccountName', label: 'Account holder name', type: 'text', required: true, sensitive: true, order: 130 },
+    { id: 'bank-identifier', key: 'bankIdentifier', label: 'Routing, sort, bank, BIC or SWIFT code', type: 'routing_number', required: true, sensitive: true, order: 140 },
+    { id: 'bank-account-number', key: 'bankAccountNumber', label: 'Account number or IBAN', type: 'bank_account', required: true, sensitive: true, order: 150 },
+    { id: 'tax-id', key: 'taxId', label: 'Tax or national insurance ID', type: 'tax_id', required: true, sensitive: true, order: 160 },
+    { id: 'dependents-status', key: 'dependentsStatus', label: 'Dependents declaration', type: 'select', required: true, options: ['none', 'provided'], order: 170 },
+    { id: 'dependents-count', key: 'dependentsCount', label: 'Number of dependents', type: 'number', required: true, helpText: 'Enter 0 when you have no dependents.', order: 180 },
+    { id: 'profile-or-id-image', key: 'profileOrIdImage', label: 'Profile or ID image', type: 'image', helpText: 'Upload a clear image requested by HR, such as a profile photo or ID scan.', order: 190 },
+    { id: 'supporting-document', key: 'supportingDocument', label: 'Supporting document', type: 'file', order: 200 }
   ];
 }
 
@@ -524,6 +531,17 @@ async function ensureDefaultFormTemplate({ organization, userId, processType = '
       fields: defaultFormFields(normalizedProcessType),
       createdBy: userId
     });
+  } else if (template.isSystem) {
+    const expectedFields = defaultFormFields(normalizedProcessType);
+    const currentSignature = (template.fields || []).map((field) => `${field.key}:${field.required}`).join('|');
+    const expectedSignature = expectedFields.map((field) => `${field.key}:${field.required}`).join('|');
+    if (currentSignature !== expectedSignature) {
+      template.fields = expectedFields;
+      template.description = copy.defaultDescription;
+      template.updatedBy = userId;
+      template.version = Number(template.version || 1) + 1;
+      await template.save();
+    }
   }
 
   return template;

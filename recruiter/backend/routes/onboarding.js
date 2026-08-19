@@ -971,6 +971,36 @@ async function ensureCandidateAccount(candidate, organization) {
   return { account, created };
 }
 
+async function ensureMemberCandidate({ organization, member, userId }) {
+  const email = String(member.email || '').trim().toLowerCase();
+  if (!email) {
+    const error = new Error('An email address is required so the member can complete transition tasks');
+    error.statusCode = 400;
+    throw error;
+  }
+  const nameParts = String(member.name || email).trim().split(/\s+/).filter(Boolean);
+  const firstName = nameParts.shift() || 'Employee';
+  const lastName = nameParts.join(' ') || 'Member';
+  let candidate = await Candidate.findOne({ organization: organization._id, email });
+  if (!candidate) {
+    candidate = await Candidate.create({
+      organization: organization._id,
+      firstName,
+      lastName,
+      email,
+      phone: String(member.phone || '').trim() || 'Not provided',
+      position: String(member.position || member.designation || '').trim() || 'Employee',
+      experience: '0-2',
+      education: 'not-provided',
+      source: 'People Transition',
+      status: 'Hired',
+      createdBy: userId
+    });
+  }
+  const candidateAccount = await ensureCandidateAccount(candidate, organization);
+  return { candidate, ...candidateAccount };
+}
+
 async function serializeOnboarding(onboarding) {
   const populated = await onboarding.populate([
     { path: 'candidate', select: 'firstName lastName email phone position status resumeUrl' },
@@ -1407,10 +1437,24 @@ router.post('/members/:idpAccountId/start', requireTransitionAdministrator, asyn
     const packetTemplate = req.body.templateId
       ? await OnboardingTemplate.findOne({ _id: req.body.templateId, organization: organizationId(req), ...processTypeFilter(processType), status: 'active' })
       : null;
+    const memberCandidate = await ensureMemberCandidate({
+      organization,
+      member: {
+        email,
+        name,
+        phone: req.body.phone,
+        position: req.body.position,
+        designation: req.body.designation
+      },
+      userId: req.user.id
+    });
     const transition = await CandidateOnboarding.create({
       organization: organizationId(req),
+      candidate: memberCandidate.candidate._id,
+      candidateAccount: memberCandidate.account._id,
       subject: {
         type: 'idp_member',
+        candidateId: memberCandidate.candidate._id,
         idpAccountId: req.params.idpAccountId,
         email,
         name,
@@ -1449,16 +1493,28 @@ router.post('/members/:idpAccountId/start', requireTransitionAdministrator, asyn
         lastWorkingAt
       }
     });
-    const memberSubject = {
-      email,
-      firstName: name.split(/\s+/)[0] || name,
-      lastName: name.split(/\s+/).slice(1).join(' '),
-      phone: req.body.phone,
-      position: req.body.position
-    };
+    const transitionPath = `/transitions/${transition._id}`;
+    let portalPath = `/login?email=${encodeURIComponent(email)}&next=${encodeURIComponent(transitionPath)}`;
+    if (memberCandidate.created) {
+      const inviteToken = crypto.randomBytes(32).toString('base64url');
+      transition.inviteTokenHash = sha256(inviteToken);
+      transition.inviteTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      portalPath = `/signup?token=${encodeURIComponent(inviteToken)}`;
+    }
+    transition.portalInviteUrl = await onboardingEmailService.sendCandidateInvite({
+      candidate: memberCandidate.candidate,
+      organization,
+      onboarding: transition,
+      portalPath,
+      request: req
+    }).catch((emailError) => {
+      console.error('Failed to send member transition portal email:', emailError);
+      return onboardingEmailService.candidatePortalUrl(portalPath, { organization, request: req });
+    });
+    await transition.save();
     await initializeDefaultWorkflow({
       onboarding: transition,
-      candidate: memberSubject,
+      candidate: memberCandidate.candidate,
       userId: req.user.id,
       req,
       packetTemplate,
@@ -1477,7 +1533,11 @@ router.post('/members/:idpAccountId/start', requireTransitionAdministrator, asyn
       action: `${processType}_started`,
       metadata: { subjectType: 'idp_member', idpAccountId: req.params.idpAccountId, deactivationMode: mode }
     });
-    res.status(201).json({ data: await serializeOnboarding(transition), idpDeepLink: `/people-transitions/${transition._id}` });
+    res.status(201).json({
+      data: await serializeOnboarding(transition),
+      idpDeepLink: `/people-transitions/${transition._id}`,
+      inviteUrl: transition.portalInviteUrl
+    });
   } catch (error) {
     console.error('Start member transition failed:', error);
     res.status(error.statusCode || 500).json({ msg: 'Failed to start member transition', error: error.message });

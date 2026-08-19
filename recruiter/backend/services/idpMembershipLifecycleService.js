@@ -1,5 +1,6 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const { buildApprovedPayrollSync } = require('./approvedPayrollSyncService');
 
 function baseUrl() {
   return String(process.env.IDP_INTERNAL_API_URL || process.env.IDP_ISSUER_URL || 'http://localhost:4000').replace(/\/$/, '');
@@ -61,6 +62,9 @@ async function performIdentityAction({ transition, organization, action, actorId
   if (action !== 'provision' && !subject.idpAccountId && !subject.email) throw new Error('An IDP account identifier or email is required');
   const idempotencyKey = transition.identityAction?.idempotencyKey || `people-transition:${transition._id}:${action}:${transition.identityAction?.effectiveAt?.toISOString?.() || 'now'}`;
   const occurredAt = new Date().toISOString();
+  const payrollSync = action === 'provision'
+    ? await buildApprovedPayrollSync(transition)
+    : undefined;
   const body = {
     schemaVersion: '1.0',
     eventId: idempotencyKey,
@@ -82,6 +86,7 @@ async function performIdentityAction({ transition, organization, action, actorId
     reason,
     transitionId: transition._id.toString(),
     requestedBy: actorId?.toString?.() || actorId,
+    payrollSync,
   };
 
   transition.identityAction = {

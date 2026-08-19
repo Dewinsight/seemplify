@@ -76,6 +76,7 @@ function getDependentsDeclaration(profile = {}) {
   if (status === 'none' || status === 'provided') {
     return {
       status,
+      count: Math.max(0, Number(profile?.dependentsDeclaration?.count || 0)),
       confirmedAt: normalizeDate(profile?.dependentsDeclaration?.confirmedAt),
       lastUpdated: normalizeDate(profile?.dependentsDeclaration?.lastUpdated)
     }
@@ -83,6 +84,7 @@ function getDependentsDeclaration(profile = {}) {
 
   return {
     status: 'pending',
+    count: 0,
     confirmedAt: null,
     lastUpdated: null
   }
@@ -155,7 +157,9 @@ export function getProfileCompletion(account = {}, options = {}) {
     primaryEmergencyContact
   )
   const bankingComplete = activeBankAccounts.some(account => hasRequiredBankFields(account, profile?.banking?.country))
-  const dependentsComplete = validDependents.length > 0 || dependentsDeclaration.status === 'none'
+  const dependentsComplete = validDependents.length > 0
+    || dependentsDeclaration.status === 'none'
+    || (dependentsDeclaration.status === 'provided' && dependentsDeclaration.count > 0)
 
   const completionByKey = {
     personal: personalComplete,
@@ -178,7 +182,7 @@ export function getProfileCompletion(account = {}, options = {}) {
     percent: Math.round((completedCount / steps.length) * 100),
     steps,
     nextIncompleteStep,
-    dependentsCount: validDependents.length,
+    dependentsCount: validDependents.length || dependentsDeclaration.count,
     hasDeclaredNoDependents: dependentsDeclaration.status === 'none',
     reminder: {
       lastSentAt: normalizeDate(reminder?.lastSentAt),
@@ -225,6 +229,9 @@ export function buildPayrollProfileSyncData(account = {}) {
   const primaryEmergencyContact = getPrimaryEmergencyContact(profile)
 
   return {
+    taxInfo: {
+      taxId: profile?.taxInfo?.taxId || '',
+    },
     personalInfo: {
       dateOfBirth: normalizeDate(personalInfo?.dateOfBirth),
       mailingAddress: {
@@ -273,7 +280,7 @@ export function buildPayrollProfileSyncData(account = {}) {
           email: primaryEmergencyContact.email || ''
         }
       : null,
-    dependentsCount: validDependents.length,
+    dependentsCount: validDependents.length || getDependentsDeclaration(profile).count,
     profileCompletion: completion
   }
 }

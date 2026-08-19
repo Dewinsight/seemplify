@@ -1116,6 +1116,9 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                         ...(setupData.personalInfo?.emergencyContact || {})
                     }
                 },
+                taxInfo: {
+                    taxId: formData.taxConfig.taxId || ''
+                },
                 banking: {
                     country: bankCountry,
                     account: hasBankingDetails ? {
@@ -1134,7 +1137,10 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 },
                 ...(canUpdateDependentsDeclaration ? {
                     dependentsDeclaration: {
-                        status: setupData.dependentsDeclarationStatus
+                        status: Number(formData.taxConfig.dependents || 0) > 0
+                            ? 'provided'
+                            : setupData.dependentsDeclarationStatus,
+                        count: Number(formData.taxConfig.dependents || 0)
                     }
                 } : {})
             } : undefined;

@@ -26,9 +26,13 @@ function initSessionStore(store) {
 
 async function sessionCollection() {
   if (!sessionStore) throw new Error('Payroll session store is not initialized');
-  const collection = sessionStore.collectionPromise
-    ? await sessionStore.collectionPromise
-    : sessionStore.collection;
+  // connect-mongo v5 exposes its lazily initialized collection as collectionP.
+  // Keep the older names for compatible stores and test doubles.
+  const collection = sessionStore.collectionP
+    ? await sessionStore.collectionP
+    : sessionStore.collectionPromise
+      ? await sessionStore.collectionPromise
+      : sessionStore.collection;
   if (!collection) throw new Error('Payroll session collection is unavailable');
   return collection;
 }
