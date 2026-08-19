@@ -41,6 +41,33 @@ const VOICE_TIERS = {
 
 const AI_INTERVIEW_VOICE_OPTIONS = [
   {
+    id: 'en-NG-EzinneNeural',
+    name: 'Ezinne',
+    displayName: 'Ezinne',
+    tier: 'standard',
+    language: 'en-NG',
+    gender: 'female',
+    avatarTone: 'purple',
+    isDefault: true,
+    description: 'Warm Nigerian English voice with a clear, confident interview style.',
+    samplePhrase: 'Welcome. I will guide you through this interview one question at a time.',
+    traits: ['nigerian english', 'warm', 'confident'],
+    sortOrder: 0
+  },
+  {
+    id: 'en-NG-AbeoNeural',
+    name: 'Abeo',
+    displayName: 'Abeo',
+    tier: 'standard',
+    language: 'en-NG',
+    gender: 'male',
+    avatarTone: 'emerald',
+    description: 'Calm Nigerian English voice with a composed, professional delivery.',
+    samplePhrase: 'Take your time, and share a clear example when you are ready.',
+    traits: ['nigerian english', 'calm', 'professional'],
+    sortOrder: 1
+  },
+  {
     id: 'en-US-JennyMultilingualNeural',
     name: 'Jenny',
     displayName: 'Jenny',
@@ -48,7 +75,6 @@ const AI_INTERVIEW_VOICE_OPTIONS = [
     language: DEFAULT_LANGUAGE,
     gender: 'female',
     avatarTone: 'emerald',
-    isDefault: true,
     description: 'Warm, polished, and clear. Good default for candidate-facing interviews.',
     samplePhrase: 'Hello, I will guide you through this interview one question at a time.',
     traits: ['warm', 'clear', 'balanced'],

@@ -1298,7 +1298,7 @@ app.post('/api/ai-interviews/estimate', authenticate, asyncHandler(async (req, r
 app.post('/api/ai-interviews/voice-preview', authenticate, asyncHandler(async (req, res) => {
   const voice = findAIInterviewVoiceOption(req.body?.voiceId);
   const text = req.body?.text || voice.samplePhrase || 'Hello. I will guide you through this AI interview.';
-  const result = await azureSpeechTtsService.synthesize(text, { voice: voice.id, language: voice.language });
+  const result = await azureSpeechTtsService.synthesize(text, { voice: voice.id, language: voice.language, messageType: 'preview' });
   res.setHeader('Content-Type', result.contentType || 'audio/mpeg');
   res.send(result.buffer);
 }));
@@ -1638,9 +1638,14 @@ app.post('/api/ai-interviews/public/:token/speech', asyncHandler(async (req, res
   const session = findSessionByToken(store, req.params.token);
   if (!session) return sendError(res, 404, 'NOT_FOUND', 'Interview link not found');
   const interview = getInterview(store, session);
-  const message = req.body?.messageId ? session.messages.find((item) => item._id === req.body.messageId)?.content : req.body?.text;
+  const storedMessage = req.body?.messageId ? session.messages.find((item) => item._id === req.body.messageId) : null;
+  const message = storedMessage?.content || req.body?.text;
   const voice = interview?.voice || findAIInterviewVoiceOption();
-  const result = await azureSpeechTtsService.synthesize(message, { voice: voice.voiceId || voice.id, language: voice.language });
+  const result = await azureSpeechTtsService.synthesize(message, {
+    voice: voice.voiceId || voice.id,
+    language: voice.language,
+    messageType: storedMessage?.messageType || 'default'
+  });
   res.setHeader('Content-Type', result.contentType || 'audio/mpeg');
   res.send(result.buffer);
 }));

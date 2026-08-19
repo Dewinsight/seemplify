@@ -143,7 +143,7 @@ function seedStore() {
     candidateCount: 1,
     questionCount: questions.length,
     totalMinutes: 45,
-    voiceId: 'en-US-JennyMultilingualNeural',
+    voiceId: 'en-NG-EzinneNeural',
     unitPriceCents: AI_INTERVIEW_PRICE_CENTS
   });
   const openingBalanceCents = 10000;
@@ -178,7 +178,7 @@ function seedStore() {
       ledgerEntryId: demoDebitLedgerId
     },
     costEstimate: estimate,
-    voice: findAIInterviewVoiceOption('en-US-JennyMultilingualNeural'),
+    voice: findAIInterviewVoiceOption('en-NG-EzinneNeural'),
     stats: { sent: 1, opened: 0, inProgress: 0, completed: 0, blocked: 0, failed: 0, proctorFailed: 0 },
     createdBy: 'user_recruiter',
     createdAt: nowText,

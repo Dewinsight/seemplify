@@ -149,6 +149,9 @@ Hard questions must include ambiguity, scale, failure, risk, or competing trade-
 Do not treat the role title alone as grounding; anchor each question in a named skill, deliverable, stakeholder, metric, system, or responsibility.
 Expected-answer guidance must be unique to the question and identify evidence, decisions, trade-offs, and measurable outcomes.
 Follow-ups must probe missing evidence rather than paraphrase the main question.
+Write every candidate-facing question for natural speech: use one to three short sentences, each under about 28 words.
+Put scenario context first, then finish with one clear primary ask ending in a question mark.
+Prefer familiar spoken phrasing. Avoid headings, bullet-like lists, nested brackets, slashes, semicolons, and unexplained abbreviations in question text.
 Weak example: "Describe your approach to solving complex technical problems."
 Strong pattern: give a realistic job-specific situation with a concrete constraint, then ask for the decision process, evidence, trade-offs, and success measure.
 Silently self-check count, type, difficulty, distinct scenarios, protected-trait safety, criteria weights, and grounding before returning JSON.
@@ -162,7 +165,7 @@ Return valid JSON only.`;
         { role: 'user', content: userMessage }
       ], {
         activity: 'ai_interview.question_generation',
-        promptVersion: 'ai-interview-questions-v3',
+        promptVersion: 'ai-interview-questions-v4',
         temperature: 0.6,
         maxTokens: 3600,
         response_format: { type: 'json_object' },
@@ -189,7 +192,7 @@ Return valid JSON only.`;
         aiGenerationMetadata: {
           model: result.model,
           generatedAt: new Date().toISOString(),
-          promptVersion: 'ai-interview-questions-v3',
+          promptVersion: 'ai-interview-questions-v4',
           requestId: result.requestId
         }
       };

@@ -57,7 +57,7 @@ async function startSession(interview, session) {
     addMessage(
       session,
       'ai',
-      `Hello ${getCandidateName(session)}. Thanks for joining this AI interview. There are ${interview.questionSnapshots.length} questions, and I will guide you through them one at a time.`,
+      `Hello, ${getCandidateName(session)}. Thanks for joining me. We have ${interview.questionSnapshots.length} questions, and we'll take them one at a time.`,
       null,
       'greeting'
     );
@@ -194,7 +194,7 @@ async function confirmQuestion(interview, session, status = 'skipped') {
   session.questionStartedAt = iso(startedAt);
   session.questionDeadlineAt = iso(addMinutes(startedAt, interview.timers?.perQuestionMinutes || 10));
   session.lastActivityAt = iso(startedAt);
-  addMessage(session, 'ai', `We are moving to question ${session.currentQuestionIndex + 1} of ${interview.questionSnapshots.length}.`, session.currentQuestionIndex, 'transition');
+  addMessage(session, 'ai', `All right. Let's move to question ${session.currentQuestionIndex + 1} of ${interview.questionSnapshots.length}.`, session.currentQuestionIndex, 'transition');
   await introduceCurrentQuestion(interview, session);
 }
 

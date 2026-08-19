@@ -31,6 +31,11 @@ function sentenceCount(value) {
   return normalize(value).split(/(?<=[.!?])\s+/).filter(Boolean).length;
 }
 
+function isInterviewProcessRequest(value) {
+  const text = normalize(value).toLowerCase();
+  return /(?:how many|questions? (?:left|remain)|time (?:left|remain)|how (?:long|much time)|go back|previous question|repeat (?:that|it|the question)|remind me|confirm button|microphone|\bmic\b|interview (?:work|finish|end)|what did (?:i|we|you) (?:say|mention|discuss)|what (?:we|you) (?:said|discussed)|(?:said|discussed|mentioned) (?:earlier|before))/i.test(text);
+}
+
 function assessIntroduction(content, question) {
   const text = normalize(content);
   const issues = [];
@@ -51,11 +56,12 @@ function assessIntroduction(content, question) {
 function assessClarification(content, { question, candidateMessage }) {
   const text = normalize(content);
   const issues = [];
+  const processRequest = isInterviewProcessRequest(candidateMessage);
   if (text.length < 20 || text.length > 900) issues.push('Keep the clarification brief but useful.');
   if (sentenceCount(text) > 5) issues.push('Use no more than five sentences.');
-  if (overlapCount(text, question) < 1) issues.push('Keep the clarification anchored to the selected question.');
+  if (!processRequest && overlapCount(text, question) < 1) issues.push('Keep the clarification anchored to the selected question.');
   const requestedSubjects = subjectTokens(candidateMessage);
-  if (requestedSubjects.size && ![...tokens(text)].some((token) => requestedSubjects.has(token))) {
+  if (!processRequest && requestedSubjects.size && ![...tokens(text)].some((token) => requestedSubjects.has(token))) {
     issues.push('Address the exact term or request raised by the candidate.');
   }
   if ((text.match(/\?/g) || []).length > 1) issues.push('Do not introduce additional assessment questions.');
@@ -82,5 +88,6 @@ module.exports = {
   assessAcknowledgement,
   assessClarification,
   assessIntroduction,
+  isInterviewProcessRequest,
   repairInstruction
 };

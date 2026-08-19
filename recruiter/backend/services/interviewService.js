@@ -499,6 +499,9 @@ Requirements:
 - Behavioral questions must request a concrete past example using evidence and measurable results.
 - Situational questions must present a realistic hypothetical decision or trade-off.
 - Make every scenario and expected-answer rubric materially different.
+- Write each candidate-facing question for speech: use 1 to 3 short sentences, each under about 28 words.
+- Put the scenario or context first, then finish with one clear primary ask ending in a question mark.
+- Prefer familiar spoken phrasing. Avoid headings, bullet-like lists, nested brackets, slashes, semicolons, and unexplained abbreviations in the question text.
 - Include 3 or 4 distinct scoring criteria totalling 100, 1 or 2 probing follow-ups, 2 or 3 grounded tags, and detailed question-specific answer guidance.
 - Avoid protected-characteristic, personal-status, leading, or discriminatory content.
 - Silently verify the exact count, ordered type distribution, difficulty, criteria totals, grounding, uniqueness, and safety before returning the structured response.
@@ -563,6 +566,8 @@ QUALITY STANDARDS:
 - Every question must mention or unmistakably apply at least one concrete skill, responsibility, outcome, or constraint from the job context
 - Hard questions must involve ambiguity, scale, failure, trade-offs, risk, or competing constraints
 - Make every question materially different from every other question
+- Write each candidate-facing question for speech: 1 to 3 short sentences, each under about 28 words, with context first and one clear final ask
+- Avoid headings, bullet-like lists, nested brackets, slashes, semicolons, and unexplained abbreviations in the question text
 - Expected-answer guidance must be unique to the question and identify evidence, decisions, trade-offs, and measurable outcomes
 - Follow-ups must probe missing evidence rather than paraphrase the main question
 - Silently self-check question count, type, difficulty, criteria weights, protected-trait safety, and grounding before returning JSON
@@ -760,7 +765,7 @@ ADDITIONAL CONTEXT:
             model: CHATGPT_MODEL,
             confidence: 0.9,
             questionType: type || q.type,
-            promptVersion: 'interview-questions-v4'
+            promptVersion: 'interview-questions-v5'
           },
           qualityMetrics: {
             analysisStatus: 'pending',

@@ -43,3 +43,51 @@ test('Azure TTS derives the Nigerian locale from the default voice', () => {
     });
   }
 });
+
+test('Nigerian interview questions use a measured voice-specific pace', () => {
+  const question = azureSpeechTtsService.getConfig({
+    voice: 'en-NG-EzinneNeural',
+    language: 'en-NG',
+    messageType: 'question'
+  });
+  const acknowledgement = azureSpeechTtsService.getConfig({
+    voice: 'en-NG-EzinneNeural',
+    language: 'en-NG',
+    messageType: 'acknowledgement'
+  });
+
+  assert.equal(question.rate, '-5%');
+  assert.equal(acknowledgement.rate, '-2%');
+});
+
+test('all voice families receive natural pacing while an explicit operator rate wins', () => {
+  assert.equal(azureSpeechTtsService.getConfig({
+    voice: 'en-US-JennyMultilingualNeural',
+    messageType: 'question'
+  }).rate, '-4%');
+  assert.equal(azureSpeechTtsService.getConfig({
+    voice: 'en-US-Ava:DragonHDLatestNeural',
+    messageType: 'question'
+  }).rate, '-3%');
+  assert.equal(azureSpeechTtsService.getConfig({
+    voice: 'en-us-Joy:MAI-Voice-1',
+    messageType: 'question',
+    rate: '+6%'
+  }).rate, '+6%');
+});
+
+test('SSML turns written formatting into safe spoken phrasing and breathing points', () => {
+  const ssml = azureSpeechTtsService.buildSsml(
+    '## Question\n- Tell me about `Node.js`, R&D & delivery; what changed?\n\nTake your time.',
+    { voice: 'en-NG-AbeoNeural', language: 'en-NG', messageType: 'question' }
+  );
+
+  assert.doesNotMatch(ssml, /##|`|•/);
+  assert.match(ssml, /Node\.js, R&amp;D and delivery/);
+  assert.doesNotMatch(ssml, /Node\.<break/);
+  assert.match(ssml, /<prosody rate='-5%'>/);
+  assert.match(ssml, /<break time='180ms'\/>/);
+  assert.match(ssml, /<break time='380ms'\/>/);
+  assert.match(ssml, /<break time='560ms'\/>/);
+  assert.match(ssml, /<break time='260ms'\/>/);
+});

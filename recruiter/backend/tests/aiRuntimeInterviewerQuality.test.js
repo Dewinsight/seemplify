@@ -7,6 +7,7 @@ const {
   assessIntroduction,
   repairInstruction
 } = require('../services/aiInterviewerResponseQuality');
+const aiInterviewerService = require('../services/aiInterviewerService');
 
 const question = 'A Kubernetes release doubles checkout latency. How would you diagnose the incident, decide whether to roll back, and validate recovery?';
 
@@ -47,6 +48,57 @@ test('live clarification quality rejects answer leakage and generic restatement'
     { question, candidateMessage: 'Can you rephrase that?' }
   );
   assert.equal(broadRephrase.passed, true);
+});
+
+test('live clarification quality permits interview-process and memory questions', () => {
+  const progress = assessClarification(
+    'There are three questions remaining after this one. We are currently on question two.',
+    { question, candidateMessage: 'How many questions are left?' }
+  );
+  assert.equal(progress.passed, true);
+
+  const remembered = assessClarification(
+    'Earlier, you said the rollback threshold should use checkout latency. I can clarify how that term applies here, but I cannot choose the answer for you.',
+    { question, candidateMessage: 'What did I say earlier?' }
+  );
+  assert.equal(remembered.passed, true);
+  assert.equal(aiInterviewerService.isLikelyClarification('Please remind me what I said earlier'), true);
+  assert.equal(aiInterviewerService.isLikelyClarification('Earlier in my career, I led a deployment migration.'), false);
+});
+
+test('interviewer conversation history preserves a short session and avoids duplicating the latest turn', () => {
+  const session = {
+    messages: [
+      { role: 'ai', content: 'Welcome to the interview.' },
+      { role: 'candidate', content: 'Could you explain rollback threshold?' },
+      { role: 'ai', content: 'It is the signal used to reverse a release.' },
+      { role: 'candidate', content: 'What did you say about that signal?' }
+    ]
+  };
+
+  assert.deepEqual(
+    aiInterviewerService.buildConversationHistory(session, {
+      excludeLatestCandidateMessage: 'What did you say about that signal?'
+    }),
+    [
+      { role: 'assistant', content: 'Welcome to the interview.' },
+      { role: 'user', content: 'Could you explain rollback threshold?' },
+      { role: 'assistant', content: 'It is the signal used to reverse a release.' }
+    ]
+  );
+});
+
+test('interviewer conversation history remains bounded while retaining the newest context', () => {
+  const messages = Array.from({ length: 50 }, (_, index) => ({
+    role: index % 2 ? 'candidate' : 'ai',
+    content: `turn-${index} ${'context '.repeat(500)}`
+  }));
+  const history = aiInterviewerService.buildConversationHistory({ messages });
+
+  assert.ok(history.length <= 32);
+  assert.ok(history.reduce((sum, item) => sum + item.content.length, 0) <= 12000);
+  assert.match(history.at(-1).content, /turn-49/);
+  assert.doesNotMatch(history[0].content, /turn-0/);
 });
 
 test('live acknowledgement quality stays neutral and never asks another question', () => {

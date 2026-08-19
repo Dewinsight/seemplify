@@ -413,7 +413,7 @@ async function advanceQuestion(session, interview, mode = 'answered') {
   session.lastActivityAt = now;
   session.messages.push({
     role: 'ai',
-    content: `Confirmed. We are moving to question ${nextIndex + 1} of ${interview.questionSnapshots.length}.`,
+    content: `All right. Let's move to question ${nextIndex + 1} of ${interview.questionSnapshots.length}.`,
     questionIndex: nextIndex,
     messageType: 'transition'
   });
@@ -561,7 +561,8 @@ exports.previewAIInterviewVoice = async (req, res) => {
 
     const speech = await azureSpeechTtsService.synthesize(text, {
       voice: voice.voiceId,
-      language: voice.language
+      language: voice.language,
+      messageType: 'preview'
     });
 
     res.set({
@@ -1253,9 +1254,10 @@ exports.startPublicInterview = async (req, res) => {
       session.questionStartedAt = now;
       session.questionDeadlineAt = addMinutes(now, getQuestionLimitMinutes(interview, firstQuestion));
       session.totalDeadlineAt = addMinutes(now, interview.timers?.totalMinutes || 60);
+      const greetingName = String(session.candidateSnapshot?.firstName || '').trim();
       session.messages.push({
         role: 'ai',
-        content: `Hello ${session.candidateSnapshot?.firstName || ''}. Thanks for joining this AI interview. There are ${interview.questionSnapshots.length} questions, and I will guide you through them one at a time.`,
+        content: `${greetingName ? `Hello, ${greetingName}.` : 'Hello.'} Thanks for joining me. We have ${interview.questionSnapshots.length} questions, and we'll take them one at a time.`,
         questionIndex: null,
         messageType: 'greeting'
       });
@@ -1558,12 +1560,14 @@ exports.synthesizePublicSpeech = async (req, res) => {
     // matching can never reject a legitimate playback request.
     const rawMessageId = req.body?.messageId ? String(req.body.messageId).trim() : '';
     let content = '';
+    let messageType = 'default';
     if (rawMessageId) {
       const message = session.messages.id(rawMessageId);
       if (!message || message.role !== 'ai') {
         return res.status(404).json({ error: 'MESSAGE_NOT_FOUND', message: 'Interview message not found' });
       }
       content = normalizeTranscriptText(message.content || '');
+      messageType = message.messageType || 'default';
     }
 
     // Fallback: accept raw text and approve it against the stored AI messages.
@@ -1592,7 +1596,8 @@ exports.synthesizePublicSpeech = async (req, res) => {
 
     const speech = await azureSpeechTtsService.synthesize(content, {
       voice: interview.voice?.voiceId,
-      language: interview.voice?.language
+      language: interview.voice?.language,
+      messageType
     });
     console.log('[ai-interview/speech] synthesized', {
       contentType: speech.contentType,
