@@ -840,7 +840,7 @@ export default function AIInterviewDetailPage() {
                                         ? "border bg-white text-slate-700"
                                         : "rounded-bl-md border bg-white text-slate-900"
                                   }`}>
-                                    <div className={`mb-1 flex flex-wrap items-center gap-2 text-xs ${isCandidate ? "text-slate-300" : "text-muted-foreground"}`}>
+                                    <div className={`mb-1 flex flex-wrap items-center gap-2 text-xs ${isCandidate ? "text-white" : "text-muted-foreground"}`}>
                                       <span className={`h-1.5 w-1.5 rounded-full ${isCandidate ? "bg-white/70" : isSystem ? "bg-slate-400" : "bg-blue-500"}`} />
                                       <span className="font-medium">{transcriptRoleLabel(message.role)}</span>
                                       {message.messageType && <span className="capitalize">{message.messageType.replace(/_/g, " ")}</span>}
