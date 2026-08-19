@@ -1005,7 +1005,7 @@ function PublicAIInterviewExperience() {
     // negatives for some messages.
     const audioBlob = await aiInterviewService.synthesizePublicSpeech(
       token,
-      options.messageId ? { messageId: options.messageId, text: cleaned } : { text: cleaned }
+      options.messageId ? { messageId: options.messageId } : { text: cleaned }
     );
     if (speechRequestIdRef.current !== requestId) return;
 
