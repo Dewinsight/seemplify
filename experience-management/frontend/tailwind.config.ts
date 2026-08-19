@@ -8,7 +8,7 @@ export default {
     container: { center: true, padding: '1.25rem', screens: { '2xl': '1380px' } },
     extend: {
       colors: {
-        border: 'hsl(var(--border) / 0.5)', input: 'hsl(var(--input) / 0.5)', ring: 'hsl(var(--ring))',
+        border: 'hsl(var(--border))', input: 'hsl(var(--input))', ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))',
         primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
         secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
@@ -19,7 +19,7 @@ export default {
         card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' }
       },
       borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
-      boxShadow: { panel: '0 1px 2px rgba(29, 35, 31, 0.04), 0 4px 14px rgba(29, 35, 31, 0.04)' }
+      boxShadow: { panel: 'var(--panel-shadow)' }
     }
   },
   plugins: [forms]
