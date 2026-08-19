@@ -1,0 +1,42 @@
+name: Diagnose Identity Member Removal
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes of recent Identity logs to inspect
+        required: false
+        default: '30'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Print redacted member-removal failures
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          [[ "$MINUTES" =~ ^[0-9]+$ ]] && (( MINUTES >= 1 && MINUTES <= 120 ))
+          ssh "$SSH_USER@$SSH_HOST" \
+            "docker logs --since '${MINUTES}m' seemplify-core-identity-provider-1 2>&1" \
+            | grep -E -A 14 -B 2 'Member removal mutation failed|Remove member error' \
+            | sed -E \
+                -e 's/[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}/[email]/g' \
+                -e 's/[[:xdigit:]]{24}/[object-id]/g' \
+                -e 's#(mongodb(\+srv)?://)[^@[:space:]]+@#\1[credentials]@#g' \
+            | tail -200
