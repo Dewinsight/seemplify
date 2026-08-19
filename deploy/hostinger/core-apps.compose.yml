@@ -14,7 +14,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "5008"
-      MONGO_URI: mongodb://identity_app:${MONGO_IDENTITY_PASSWORD:?required}@mongodb:27017/identity?authSource=identity
+      MONGO_URI: mongodb://identity_app:${MONGO_IDENTITY_PASSWORD:?required}@mongodb:27017/identity?authSource=identity&replicaSet=rs0&retryWrites=true&w=majority
       ISSUER_URL: https://auth.seemplifyai.com
       API_AUDIENCE: https://auth.seemplifyai.com
       OIDC_COOKIE_SECRET: ${IDP_COOKIE_SECRET:?required}
@@ -115,7 +115,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "5001"
-      MONGO_URI: mongodb://recruiter_app:${MONGO_RECRUITER_PASSWORD:?required}@mongodb:27017/smarthr?authSource=smarthr
+      MONGO_URI: mongodb://recruiter_app:${MONGO_RECRUITER_PASSWORD:?required}@mongodb:27017/smarthr?authSource=smarthr&replicaSet=rs0&retryWrites=true&w=majority
       FRONTEND_URL: https://app.seemplifyai.com
       FRONTEND_URLS: https://app.seemplifyai.com,https://candidate.seemplifyai.com
       CANDIDATE_PORTAL_URL: https://candidate.seemplifyai.com
@@ -235,7 +235,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "5002"
-      MONGODB_URI: mongodb://leave_app:${MONGO_LEAVE_PASSWORD:?required}@mongodb:27017/leave-management?authSource=leave-management
+      MONGODB_URI: mongodb://leave_app:${MONGO_LEAVE_PASSWORD:?required}@mongodb:27017/leave-management?authSource=leave-management&replicaSet=rs0&retryWrites=true&w=majority
       IDP_ISSUER_URL: https://auth.seemplifyai.com
       IDP_INTERNAL_API_URL: http://identity-provider:5008
       LEAVE_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
@@ -304,7 +304,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "5004"
-      MONGO_URI: mongodb://performance_app:${MONGO_PERFORMANCE_PASSWORD:?required}@mongodb:27017/performance_db?authSource=performance_db
+      MONGO_URI: mongodb://performance_app:${MONGO_PERFORMANCE_PASSWORD:?required}@mongodb:27017/performance_db?authSource=performance_db&replicaSet=rs0&retryWrites=true&w=majority
       FRONTEND_URL: https://performance.seemplifyai.com
       BACKEND_URL: https://api-performance.seemplifyai.com
       IDP_ISSUER_URL: https://auth.seemplifyai.com
@@ -380,7 +380,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "5006"
-      MONGODB_URI: mongodb://payroll_app:${MONGO_PAYROLL_PASSWORD:?required}@mongodb:27017/payroll-management?authSource=payroll-management
+      MONGODB_URI: mongodb://payroll_app:${MONGO_PAYROLL_PASSWORD:?required}@mongodb:27017/payroll-management?authSource=payroll-management&replicaSet=rs0&retryWrites=true&w=majority
       FRONTEND_URL: https://payroll.seemplifyai.com
       IDP_ISSUER_URL: https://auth.seemplifyai.com
       OIDC_CLIENT_ID: payroll-management
@@ -453,7 +453,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "5010"
-      MONGODB_URI: mongodb://time_app:${MONGO_TIME_PASSWORD:?required}@mongodb:27017/time-attendance?authSource=time-attendance
+      MONGODB_URI: mongodb://time_app:${MONGO_TIME_PASSWORD:?required}@mongodb:27017/time-attendance?authSource=time-attendance&replicaSet=rs0&retryWrites=true&w=majority
       FRONTEND_URL: https://time.seemplifyai.com
       IDP_ISSUER_URL: https://auth.seemplifyai.com
       IDP_INTERNAL_API_URL: http://identity-provider:5008
@@ -517,7 +517,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "80"
-      MONGO_URI: mongodb://approver_app:${MONGO_APPROVER_PASSWORD:?required}@mongodb:27017/approver?authSource=approver
+      MONGO_URI: mongodb://approver_app:${MONGO_APPROVER_PASSWORD:?required}@mongodb:27017/approver?authSource=approver&replicaSet=rs0&retryWrites=true&w=majority
       JWT_SECRET: ${APPROVER_JWT_SECRET:?required}
       OIDC_STATE_SECRET: ${APPROVER_OIDC_STATE_SECRET:?required}
       IDP_ISSUER_URL: https://auth.seemplifyai.com
@@ -563,8 +563,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: "5012"
-      MONGODB_URI: mongodb://learning_app:${MONGO_LEARNING_PASSWORD:?required}@mongodb:27017/seemplify-learning?authSource=seemplify-learning
-      MONGO_URI: mongodb://learning_app:${MONGO_LEARNING_PASSWORD:?required}@mongodb:27017/seemplify-learning?authSource=seemplify-learning
+      MONGODB_URI: mongodb://learning_app:${MONGO_LEARNING_PASSWORD:?required}@mongodb:27017/seemplify-learning?authSource=seemplify-learning&replicaSet=rs0&retryWrites=true&w=majority
+      MONGO_URI: mongodb://learning_app:${MONGO_LEARNING_PASSWORD:?required}@mongodb:27017/seemplify-learning?authSource=seemplify-learning&replicaSet=rs0&retryWrites=true&w=majority
       SESSION_SECRET: ${LEARNING_SESSION_SECRET:?required}
       APP_BASE_URL: https://learning.seemplifyai.com
       IDP_ISSUER_URL: https://auth.seemplifyai.com

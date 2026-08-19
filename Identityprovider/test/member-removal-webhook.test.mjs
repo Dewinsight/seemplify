@@ -47,3 +47,35 @@ test('member removal payload uses the stable subject and both remove/leave route
     else process.env.IDP_WEBHOOK_SECRET = priorSecret
   }
 })
+
+test('member removal returns classified errors instead of masking infrastructure failures as bad requests', () => {
+  const routeSource = fs.readFileSync(new URL('../src/routes/members.js', import.meta.url), 'utf8')
+  const routeStart = routeSource.indexOf("router.delete('/:orgId/members/:memberId'")
+  const routeEnd = routeSource.indexOf("router.post('/:orgId/leave'", routeStart)
+  const removeMemberRoute = routeSource.slice(routeStart, routeEnd)
+
+  assert.notEqual(routeStart, -1)
+  assert.notEqual(routeEnd, -1)
+  assert.match(removeMemberRoute, /classifyMemberUpdateError\(err\)/)
+  assert.match(removeMemberRoute, /Member removal mutation failed/)
+  assert.match(removeMemberRoute, /status\(classified\.status\)/)
+  assert.doesNotMatch(removeMemberRoute, /res\.status\(400\)\.json\(\{ error: err\.message \}\)/)
+})
+
+test('every production Mongo client explicitly uses the transaction-capable replica set', () => {
+  const composeFiles = [
+    fs.readFileSync(new URL('../../deploy/hostinger/core-apps.compose.yml', import.meta.url), 'utf8'),
+    fs.readFileSync(new URL('../../deploy/hostinger/extended-apps.compose.yml', import.meta.url), 'utf8')
+  ]
+  const connectionStrings = composeFiles
+    .flatMap(source => source.split('\n'))
+    .map(line => line.trim())
+    .filter(line => line.includes('mongodb://'))
+
+  assert.ok(connectionStrings.length > 0)
+  for (const connectionString of connectionStrings) {
+    assert.match(connectionString, /[?&]replicaSet=rs0(?:&|$)/)
+    assert.match(connectionString, /[?&]retryWrites=true(?:&|$)/)
+    assert.match(connectionString, /[?&]w=majority(?:&|$)/)
+  }
+})

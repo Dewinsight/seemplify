@@ -49,10 +49,12 @@ jobs:
           node --test \
             test/auth-redirects.test.mjs \
             test/hub-pins.test.mjs \
+            test/member-removal-webhook.test.mjs \
             test/nylas-platform-configuration.test.mjs \
             test/media-platform-configuration.test.mjs \
             test/messaging-oidc-client.test.mjs \
             test/organization-deletion-fallback.test.mjs \
+            test/organization-transaction.test.mjs \
             test/internal-membership-service-auth.test.mjs \
             test/recruiter-admin-sso-secret.test.mjs \
             test/shared-ai-admin-client.test.mjs
@@ -355,6 +357,28 @@ jobs:
           docker exec seemplify-core-time-backend-1 npm run rules:seed
           "${compose[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1
+          docker exec -i seemplify-core-identity-provider-1 node --input-type=module <<'NODE'
+          import mongoose from 'mongoose'
+
+          await mongoose.connect(process.env.MONGO_URI)
+          const hello = await mongoose.connection.db.admin().command({ hello: 1 })
+          if (hello.setName !== 'rs0' || !hello.isWritablePrimary) {
+            throw new Error(`Identity MongoDB is not the writable rs0 primary (set=${hello.setName || 'none'})`)
+          }
+
+          const session = await mongoose.startSession()
+          try {
+            await session.withTransaction(async () => {
+              const probes = mongoose.connection.db.collection('deployment_transaction_probes')
+              const probe = { createdAt: new Date() }
+              const { insertedId } = await probes.insertOne(probe, { session })
+              await probes.deleteOne({ _id: insertedId }, { session })
+            })
+          } finally {
+            await session.endSession()
+            await mongoose.disconnect()
+          }
+          NODE
           "${compose[@]}" up -d --no-deps --force-recreate \
             recruiter-frontend candidate-portal leave-frontend \
             performance-frontend payroll-frontend time-frontend

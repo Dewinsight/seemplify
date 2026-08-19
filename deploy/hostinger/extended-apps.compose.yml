@@ -179,7 +179,7 @@ services:
       PORT: "5101"
       AI_INTERVIEW_FRONTEND_URL: https://interview.seemplifyai.com
       CORS_ORIGIN: https://interview.seemplifyai.com
-      AI_INTERVIEW_MONGO_URI: mongodb://ai_interview_app:${MONGO_AI_INTERVIEW_PASSWORD:?required}@mongodb:27017/ai-interview?authSource=ai-interview
+      AI_INTERVIEW_MONGO_URI: mongodb://ai_interview_app:${MONGO_AI_INTERVIEW_PASSWORD:?required}@mongodb:27017/ai-interview?authSource=ai-interview&replicaSet=rs0&retryWrites=true&w=majority
       AI_INTERVIEW_MONGO_DB: ai-interview
       AI_INTERVIEW_SESSION_SECRET: ${AI_INTERVIEW_SESSION_SECRET:?required}
       SEEMPLIFY_PLATFORM_API_URL: http://recruiter-backend:5001

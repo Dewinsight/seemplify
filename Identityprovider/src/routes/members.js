@@ -1048,7 +1048,19 @@ router.delete('/:orgId/members/:memberId',
           )
         })
       } catch (err) {
-        return res.status(400).json({ error: err.message })
+        const classified = classifyMemberUpdateError(err)
+        const requestId = req.get('x-request-id') || req.id || null
+        console.error('Member removal mutation failed', {
+          organizationId: req.params.orgId,
+          memberId,
+          requestId,
+          error: serializeMemberUpdateError(err)
+        })
+        return res.status(classified.status).json({
+          error: classified.publicMessage,
+          code: classified.code,
+          ...(requestId ? { requestId } : {})
+        })
       }
       console.log('Member removed from', req.organization.name, 'by', req.user.email)
 

@@ -12,6 +12,12 @@ const DOMAIN_ERRORS = [
     publicMessage: 'The last organization owner cannot be demoted. Transfer ownership first.'
   },
   {
+    pattern: /^Cannot remove the last owner\b/i,
+    status: 409,
+    code: 'LAST_OWNER_CONFLICT',
+    publicMessage: 'The last organization owner cannot be removed. Transfer ownership first.'
+  },
+  {
     pattern: /^Only current owner can assign owner role$/i,
     status: 403,
     code: 'OWNER_ROLE_REQUIRED',
@@ -62,7 +68,7 @@ export function classifyMemberUpdateError(error) {
     return {
       status: 503,
       code: 'MEMBER_UPDATE_RETRY',
-      publicMessage: 'The role change could not be completed just now. Please try again.'
+      publicMessage: 'The member change could not be completed just now. Please try again.'
     }
   }
 
