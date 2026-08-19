@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, requireHRAdmin } = require('../middleware/auth');
-const { AttendanceRulePack, AttendancePolicy } = require('../models');
-const { resolvePack, validateRulePack } = require('../services/rulePackService');
+const { AttendanceRulePack, AttendancePolicy, EmployeeRoster } = require('../models');
+const { assignmentSignature, resolveEffectiveRulePack, resolvePack, validateRulePack } = require('../services/rulePackService');
 const { seedDefaultRulePacks } = require('../services/rulePackSeedService');
 const { calculatePeriod } = require('../services/timeCalculationService');
 
@@ -50,6 +50,57 @@ router.post('/seed-defaults', async (req, res) => {
     }
 });
 
+router.get('/assignment-options', async (req, res) => {
+    try {
+        const people = await EmployeeRoster.find({ organizationId: req.organizationId, status: 'active' })
+            .select('userId name email teamIds teamAssignments jurisdiction')
+            .sort({ name: 1, email: 1 })
+            .lean();
+        const teamsById = new Map();
+        for (const person of people) {
+            for (const assignment of person.teamAssignments || []) {
+                teamsById.set(String(assignment.teamId), { id: String(assignment.teamId), name: assignment.name || String(assignment.teamId) });
+            }
+            for (const teamId of person.teamIds || []) {
+                if (!teamsById.has(String(teamId))) teamsById.set(String(teamId), { id: String(teamId), name: String(teamId) });
+            }
+        }
+        return res.json({ people, teams: [...teamsById.values()].sort((a, b) => a.name.localeCompare(b.name)) });
+    } catch (error) {
+        return res.status(500).json({ error: 'Failed to load rule-pack assignment options' });
+    }
+});
+
+router.get('/coverage', async (req, res) => {
+    try {
+        const people = await EmployeeRoster.find({ organizationId: req.organizationId, status: 'active' })
+            .select('userId name email teamIds teamAssignments jurisdiction')
+            .sort({ name: 1, email: 1 })
+            .lean();
+        const coverage = await Promise.all(people.map(async person => {
+            const result = await resolveEffectiveRulePack({
+                organizationId: req.organizationId,
+                userId: person.userId,
+                teamId: person.teamIds?.[0],
+                countryCode: person.jurisdiction?.countryCode,
+                subdivisionCode: person.jurisdiction?.subdivisionCode,
+            });
+            return {
+                userId: person.userId,
+                name: person.name,
+                email: person.email,
+                teamIds: person.teamIds || [],
+                jurisdiction: person.jurisdiction || {},
+                applied: result.applied,
+                effectiveRulePack: result.applied.at(-1) || null,
+            };
+        }));
+        return res.json({ coverage });
+    } catch (error) {
+        return res.status(500).json({ error: error.message || 'Failed to calculate rule-pack coverage' });
+    }
+});
+
 router.get('/:id', async (req, res) => {
     try {
         const pack = await AttendanceRulePack.findById(req.params.id);
@@ -93,7 +144,7 @@ router.post('/:id/clone', async (req, res) => {
             name: req.body.name || `${source.name} copy`,
             version: (latest?.version || 0) + 1,
             status: 'draft',
-            scope: { organizationId: req.organizationId },
+            scope: { ...(req.body.scope || {}), organizationId: req.organizationId },
             parent: undefined,
             rules: resolvedSource.rules,
             createdBy: req.user.id,
@@ -113,7 +164,9 @@ router.patch('/:id', async (req, res) => {
         if (!pack) return res.status(404).json({ error: 'Rule pack not found' });
         if (pack.status === 'published') return res.status(409).json({ error: 'Published versions are immutable; clone a new version' });
         if (!isOrganizationPack(pack, req.organizationId)) return res.status(403).json({ error: 'Seeded rule packs are read-only; clone the pack before editing' });
-        Object.assign(pack, editableFields(req.body), { updatedBy: req.user.id });
+        const fields = editableFields(req.body);
+        if (fields.scope) fields.scope = { ...fields.scope, organizationId: req.organizationId };
+        Object.assign(pack, fields, { updatedBy: req.user.id });
         await pack.save();
         return res.json({ pack, validation: validateRulePack(pack.toObject()) });
     } catch (error) {
@@ -144,16 +197,35 @@ router.post('/:id/publish', async (req, res) => {
         if (pack.reviewRequired && req.body.confirmReviewed !== true) {
             return res.status(400).json({ error: 'Confirm jurisdictional review before publishing', code: 'LEGAL_REVIEW_REQUIRED' });
         }
-        await AttendanceRulePack.updateMany({ key: pack.key, status: 'published', _id: { $ne: pack._id } }, { $set: { status: 'superseded' } });
+        const publishedForOrganization = await AttendanceRulePack.find({
+            'scope.organizationId': req.organizationId,
+            status: 'published',
+            _id: { $ne: pack._id },
+        }).select('_id scope jurisdiction').lean();
+        const signature = assignmentSignature(pack);
+        const conflictingIds = publishedForOrganization
+            .filter(candidate => assignmentSignature(candidate) === signature)
+            .map(candidate => candidate._id);
+        const effectiveFrom = new Date(pack.effectiveFrom);
+        if (effectiveFrom <= new Date()) {
+            await AttendanceRulePack.updateMany({ _id: { $in: conflictingIds } }, { $set: { status: 'superseded' } });
+        } else {
+            await AttendanceRulePack.updateMany({
+                _id: { $in: conflictingIds },
+                $or: [{ effectiveTo: null }, { effectiveTo: { $exists: false } }, { effectiveTo: { $gt: effectiveFrom } }],
+            }, { $set: { effectiveTo: effectiveFrom } });
+        }
         pack.status = 'published';
         pack.approvedAt = new Date();
         pack.approvedBy = req.user.id;
         pack.lastReviewedAt = req.body.reviewedAt || new Date();
         pack.reviewedBy = req.body.reviewedBy || req.user.name;
         await pack.save();
-        await AttendancePolicy.updateOne({ organizationId: req.organizationId }, {
-            $set: { activeRulePack: { rulePackId: pack._id, version: pack.version, appliedAt: new Date() } },
-        });
+        if (assignmentSignature(pack) === 'organization') {
+            await AttendancePolicy.updateOne({ organizationId: req.organizationId }, {
+                $set: { activeRulePack: { rulePackId: pack._id, version: pack.version, appliedAt: new Date() } },
+            });
+        }
         return res.json({ pack });
     } catch (error) {
         return res.status(400).json({ error: error.message || 'Failed to publish rule pack' });

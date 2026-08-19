@@ -27,6 +27,7 @@ type MockState = {
     clockBodies: any[];
     shiftBodies: any[];
     policyBodies: any[];
+    rulePackBodies: any[];
 };
 
 const organization = { id: 'org-1', name: 'Seemplify Test Org', role: 'admin' };
@@ -287,6 +288,16 @@ async function installApiMock(page: Page, state: MockState) {
         if (path.startsWith('/api/admin/geofence-locations')) return json(route, { policy });
 
         if (method === 'GET' && path === '/api/v1/rule-packs') return json(route, { packs: state.rulePacks });
+        if (method === 'GET' && path === '/api/v1/rule-packs/assignment-options') return json(route, {
+            people: [
+                { userId: 'employee-2', name: 'Jamie Lee', email: 'jamie@example.com', teamIds: ['team-1'], jurisdiction: { countryCode: 'AU' } },
+                { userId: 'employee-3', name: 'Morgan Reed', email: 'morgan@example.com', teamIds: ['team-2'], jurisdiction: { countryCode: 'MX' } },
+            ],
+            teams: [{ id: 'team-1', name: 'Operations' }, { id: 'team-2', name: 'Finance' }],
+        });
+        if (method === 'GET' && path === '/api/v1/rule-packs/coverage') return json(route, { coverage: [
+            { userId: 'employee-2', name: 'Jamie Lee', email: 'jamie@example.com', jurisdiction: { countryCode: 'AU' }, effectiveRulePack: { id: 'rule-pack-1', key: 'ng-default', version: 1 } },
+        ] });
         if (method === 'POST' && path === '/api/v1/rule-packs/seed-defaults') {
             const inserted = state.rulePacks.length ? 0 : 31;
             if (!state.rulePacks.length) state.rulePacks = [rulePack];
@@ -300,8 +311,18 @@ async function installApiMock(page: Page, state: MockState) {
         }
         const requestedRulePack = state.rulePacks.find(pack => path === `/api/v1/rule-packs/${pack._id}`);
         if (method === 'GET' && requestedRulePack) return json(route, { pack: requestedRulePack, resolved: { rules: requestedRulePack.rules } });
+        if (method === 'PATCH' && requestedRulePack) {
+            const body = request.postDataJSON();
+            state.rulePackBodies.push(body);
+            Object.assign(requestedRulePack, body);
+            return json(route, { pack: requestedRulePack, validation: { valid: true, errors: [] } });
+        }
         if (method === 'POST' && path === '/api/v1/rule-packs/rule-pack-1/simulate') return json(route, { result: { totals: { regularHours: 8, overtimeHours: 0, exceptionCount: 0 }, dailyEntries: [] } });
-        if (method === 'POST' && path === '/api/v1/rule-packs/rule-pack-1/clone') return json(route, { pack: { ...rulePack, _id: 'rule-pack-org', name: 'Nigeria default — organization copy', status: 'draft', scope: { organizationId: 'org-1' } } });
+        if (method === 'POST' && path === '/api/v1/rule-packs/rule-pack-1/clone') {
+            const pack = { ...rulePack, _id: 'rule-pack-org', name: 'Nigeria default — organization copy', status: 'draft', scope: { organizationId: 'org-1' } };
+            state.rulePacks.push(pack);
+            return json(route, { pack });
+        }
 
         if (method === 'GET' && path === '/api/reports/exceptions') return json(route, {
             summary: { totalExceptions: 1, affectedPeople: 1, affectedDays: 1 },
@@ -330,7 +351,7 @@ const test = base.extend<{ mockState: MockState }>({
             rosterSynced: false, rosterSyncCount: 0, coverRequested: false, requestReviewed: false,
             approvalConflict: false,
             timesheetCorrectionRequested: false, managerExceptionFlagged: false,
-            locationEnabled: false, clockBodies: [], shiftBodies: [], policyBodies: [],
+            locationEnabled: false, clockBodies: [], shiftBodies: [], policyBodies: [], rulePackBodies: [],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
         page.on('console', message => {
@@ -832,6 +853,31 @@ test('recovers an empty rule-pack catalog and creates a custom draft', async ({ 
 
     await expect(page.getByRole('heading', { name: 'London operations rules' })).toBeVisible();
     expect(mockState.calls).toContain('POST /api/v1/rule-packs');
+});
+
+test('assigns a structured rule pack to a specific employee without exposing JSON by default', async ({ page, mockState }) => {
+    await authenticate(page);
+    await page.goto('/admin/rule-packs');
+
+    await expect(page.getByRole('heading', { name: 'Working schedule' })).toBeVisible();
+    await expect(page.getByLabel('Advanced rules JSON')).toBeHidden();
+    await page.getByRole('button', { name: 'Clone to edit' }).click();
+    await expect(page.getByRole('heading', { name: 'Nigeria default — organization copy' })).toBeVisible();
+
+    await page.getByLabel('Applies to').selectOption('employee');
+    await page.getByLabel('Employee').selectOption('employee-2');
+    await page.getByLabel('Hours per day').fill('7.5');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await expect(page.getByRole('status')).toContainText('Draft saved');
+    expect(mockState.rulePackBodies.at(-1)).toEqual(expect.objectContaining({
+        scope: { organizationId: 'org-1', userId: 'employee-2' },
+        rules: expect.objectContaining({ work: expect.objectContaining({ standardHoursPerDay: 7.5 }) }),
+    }));
+
+    await page.getByRole('button', { name: 'View coverage' }).click();
+    await expect(page.getByRole('heading', { name: 'Employee rule coverage' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Jamie Lee jamie@example.com' })).toBeVisible();
 });
 
 test('renders navigation and core workflows at a mobile viewport', async ({ page, mockState: _mockState }, testInfo) => {

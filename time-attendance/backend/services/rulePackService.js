@@ -33,7 +33,67 @@ function validateRulePack(pack) {
     if (!Array.isArray(pack.sources) || pack.sources.length === 0) {
         errors.push({ path: 'sources', message: 'At least one source or internal policy reference is required' });
     }
+    const assignmentTargets = ['locationId', 'teamId', 'userId'].filter(key => pack.scope?.[key]);
+    if (assignmentTargets.length > 1) {
+        errors.push({ path: 'scope', message: 'Choose only one location, team, or employee assignment' });
+    }
+    if (assignmentTargets.length && !pack.scope?.organizationId) {
+        errors.push({ path: 'scope.organizationId', message: 'Employee, team, and location assignments require an organization' });
+    }
     return { valid: errors.length === 0, errors };
+}
+
+function normalized(value) {
+    return String(value || '').trim().toUpperCase();
+}
+
+function candidateSpecificity(pack, context) {
+    const scope = pack.scope || {};
+    const jurisdiction = pack.jurisdiction || {};
+    if (scope.organizationId && String(scope.organizationId) !== String(context.organizationId || '')) return -1;
+
+    if (scope.userId) return String(scope.userId) === String(context.userId || '') ? 60 : -1;
+    if (scope.teamId) return String(scope.teamId) === String(context.teamId || '') ? 50 : -1;
+    if (scope.locationId) return String(scope.locationId) === String(context.locationId || '') ? 50 : -1;
+
+    if (jurisdiction.kind === 'subdivision') {
+        return normalized(jurisdiction.subdivisionCode) === normalized(context.subdivisionCode) ? 30 : -1;
+    }
+    if (jurisdiction.kind === 'country') {
+        return normalized(jurisdiction.countryCode) === normalized(context.countryCode) ? 20 : -1;
+    }
+    if (jurisdiction.kind === 'regional') {
+        return normalized(jurisdiction.regionCode) === normalized(context.regionCode) ? 10 : -1;
+    }
+    if (scope.organizationId) return 5;
+    return jurisdiction.kind === 'global' ? 0 : -1;
+}
+
+function selectEffectiveCandidate(candidates, context) {
+    return candidates.map(pack => ({ pack, score: candidateSpecificity(pack, context) }))
+        .filter(item => item.score >= 0)
+        .sort((a, b) => {
+            if (a.score !== b.score) return b.score - a.score;
+            const aOwned = Boolean(a.pack.scope?.organizationId);
+            const bOwned = Boolean(b.pack.scope?.organizationId);
+            if (aOwned !== bOwned) return bOwned ? 1 : -1;
+            const effectiveDifference = new Date(b.pack.effectiveFrom || 0) - new Date(a.pack.effectiveFrom || 0);
+            if (effectiveDifference) return effectiveDifference;
+            if ((b.pack.version || 0) !== (a.pack.version || 0)) return (b.pack.version || 0) - (a.pack.version || 0);
+            return String(b.pack._id || '').localeCompare(String(a.pack._id || ''));
+        })[0] || null;
+}
+
+function assignmentSignature(pack) {
+    const scope = pack.scope || {};
+    if (scope.userId) return `user:${scope.userId}`;
+    if (scope.teamId) return `team:${scope.teamId}`;
+    if (scope.locationId) return `location:${scope.locationId}`;
+    const jurisdiction = pack.jurisdiction || {};
+    if (jurisdiction.kind === 'subdivision') return `subdivision:${normalized(jurisdiction.subdivisionCode)}`;
+    if (jurisdiction.kind === 'country') return `country:${normalized(jurisdiction.countryCode)}`;
+    if (jurisdiction.kind === 'regional') return `region:${normalized(jurisdiction.regionCode)}`;
+    return 'organization';
 }
 
 async function resolvePack(pack, seen = new Set()) {
@@ -82,34 +142,13 @@ async function resolveEffectiveRulePack({ organizationId, countryCode, subdivisi
         }],
     }).sort({ version: 1 });
 
-    const scored = candidates.map(pack => {
-        let score = pack.jurisdiction?.kind === 'global' ? 0 : 10;
-        if (pack.jurisdiction?.countryCode === String(countryCode || '').toUpperCase()) score = 20;
-        if (pack.jurisdiction?.subdivisionCode === String(subdivisionCode || '').toUpperCase()) score = 30;
-        if (pack.scope?.organizationId === organizationId) score = 40;
-        if (pack.scope?.locationId && pack.scope.locationId === locationId) score = 50;
-        if (pack.scope?.teamId && pack.scope.teamId === teamId) score = 50;
-        if (pack.scope?.userId && pack.scope.userId === userId) score = 60;
-        return { pack, score };
-    }).filter(item => !item.pack.scope?.locationId || item.pack.scope.locationId === locationId)
-        .filter(item => !item.pack.scope?.teamId || item.pack.scope.teamId === teamId)
-        .filter(item => !item.pack.scope?.userId || item.pack.scope.userId === userId)
-        .sort((a, b) => a.score - b.score || a.pack.version - b.pack.version);
-
-    let effective = {};
-    const applied = [];
-    const appliedMarkers = new Set();
-    for (const item of scored) {
-        const resolved = await resolvePack(item.pack);
-        effective = deepMerge(effective, resolved.rules || {});
-        for (const inherited of resolved.inheritedRulePacks || [{ id: item.pack._id, key: item.pack.key, version: item.pack.version }]) {
-            const marker = `${inherited.key}:${inherited.version}`;
-            if (appliedMarkers.has(marker)) continue;
-            appliedMarkers.add(marker);
-            applied.push({ ...inherited, score: item.score });
-        }
-    }
-    return { rules: effective, applied };
+    const selected = selectEffectiveCandidate(candidates, {
+        organizationId, countryCode, subdivisionCode, locationId, teamId, userId,
+    });
+    if (!selected) return { rules: {}, applied: [] };
+    const resolved = await resolvePack(selected.pack);
+    const applied = (resolved.inheritedRulePacks || []).map(pack => ({ ...pack, score: selected.score }));
+    return { rules: resolved.rules || {}, applied };
 }
 
 async function resolveCalculationPolicy({ policy, organizationId, userId, teamId, locationId, countryCode, subdivisionCode, at = new Date() }) {
@@ -157,4 +196,13 @@ async function resolveCalculationPolicy({ policy, organizationId, userId, teamId
     return { policy: calculationPolicy, applied: resolved.applied };
 }
 
-module.exports = { deepMerge, resolveCalculationPolicy, resolveEffectiveRulePack, resolvePack, validateRulePack };
+module.exports = {
+    assignmentSignature,
+    candidateSpecificity,
+    deepMerge,
+    resolveCalculationPolicy,
+    resolveEffectiveRulePack,
+    resolvePack,
+    selectEffectiveCandidate,
+    validateRulePack,
+};
