@@ -29,6 +29,7 @@ shell history. Password SSH is disabled; use the Hostinger root SSH key.
 | Learning | `learning.seemplifyai.com` | Core apps |
 | Experience Management | `experience.seemplifyai.com` | Extended apps |
 | Workspace | `api-workspace.seemplifyai.com`, `workspace.seemplifyai.com` | Workspace stack |
+| Community (staged, disabled by default) | `community.seemplifyai.com` (shared `api-workspace.seemplifyai.com` API) | Workspace stack |
 | AI Interview | `api-interview.seemplifyai.com`, `interview.seemplifyai.com` | Extended apps |
 | TURN credentials and Coturn | `turn.seemplifyai.com`, ports `3478` and `49152-49252` | Coturn stack |
 | Postal control UI | `postal.seemplifyai.com` | Mail stack |
@@ -49,6 +50,19 @@ core stack, and the Identity hub receives it through `MESSAGING_URL` and
 `MESSAGING_API_URL`. It uses the shared ChatGPT/Codex account authority already
 used by the other Seemplify applications. Experience Management opens at
 `experience.seemplifyai.com`.
+
+Community is a second, account-level lens on the same Workspace deployment. It
+is dormant by default: existing production deployments do not need Community
+DNS, URLs, or a secret, and the IdP client generator omits the `community`
+client. Once enabled, the Identity hub receives it through `COMMUNITY_URL` and
+`COMMUNITY_API_URL` and uses the separate OIDC client `community`. Store one
+generated `OIDC_COMMUNITY_SECRET` value in both the protected core-apps
+environment and the protected Workspace environment; never copy that value
+into source. The IdP generator writes it into the root-only
+`idp-clients.json`, while the Workspace backend receives the matching client
+secret. Individual Community accounts may launch this app without first
+creating or joining an organization; the existing Workspace launch remains
+organization-, membership-, plan-, and app-access-gated.
 
 ## Stack operations
 
@@ -91,6 +105,19 @@ docker compose \
 
 Use `--force-recreate` after a protected environment value changes. A plain
 restart does not reload container environment variables.
+
+Before the first Community rollout, provision `community.seemplifyai.com` at
+the Workspace frontend edge and verify its DNS/TLS. Then add all four values to
+the protected core-apps environment: `COMMUNITY_PRODUCTION_ENABLED=true`,
+`COMMUNITY_URL=https://community.seemplifyai.com`,
+`COMMUNITY_API_URL=https://api-workspace.seemplifyai.com`, and the generated
+`OIDC_COMMUNITY_SECRET`. Put the matching secret in the protected Workspace
+environment, regenerate `/opt/seemplify/secrets/idp-clients.json`, and recreate
+Identity and Workspace. The generator fails closed if the flag is true while a
+URL or secret is missing. The production smoke suite skips Community while the
+flag is false; once true, it verifies Community HTTPS, its dedicated OIDC start
+path, the shared API health, the Hub catalog, and the Community release
+manifest.
 
 ## Deployment coordination
 
@@ -184,9 +211,10 @@ Recruiter and AI Interview must both use shared Redis database `1` for
 `CV_GLOBAL_DISPATCH_REDIS_URL`; their cross-service inference limit is one
 persisted fail-closed contract, not two independent queues.
 
-Do not use only container status as an acceptance test. The smoke script now
-checks the OIDC launches and browser-facing API dependencies that previously
-allowed a healthy container to mask a broken user journey.
+Do not use only container status as an acceptance test. The smoke script checks
+the Workspace and, when enabled, Community OIDC launches plus the
+browser-facing API dependencies that previously allowed a healthy container to
+mask a broken user journey.
 
 ## Shared AI administration
 

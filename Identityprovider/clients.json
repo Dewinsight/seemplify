@@ -226,6 +226,42 @@
       "token_endpoint_auth_method": "client_secret_basic"
     },
     {
+      "client_id": "community",
+      "client_secret": "community-development-secret",
+      "redirect_uri_patterns": [
+        "http://localhost:3333/api/auth/oidc/community/callback",
+        "http://localhost:5009/api/auth/oidc/community/callback",
+        "http://localhost:8080/api/auth/oidc/community/callback",
+        "http://127.0.0.1:3333/api/auth/oidc/community/callback",
+        "https://api-workspace.seemplifyai.com/api/auth/oidc/community/callback",
+        "https://api-messaging.seemplifyai.com/api/auth/oidc/community/callback",
+        "https://api-messaging-dev.seemplifyai.com/api/auth/oidc/community/callback"
+      ],
+      "allowed_origins": [
+        "http://localhost:3333",
+        "http://localhost:4200",
+        "http://localhost:4300",
+        "http://127.0.0.1:3333",
+        "https://community.seemplifyai.com",
+        "https://workspace.seemplifyai.com",
+        "https://api-workspace.seemplifyai.com",
+        "https://messaging.seemplifyai.com",
+        "https://api-messaging.seemplifyai.com",
+        "https://messaging-dev.seemplifyai.com",
+        "https://api-messaging-dev.seemplifyai.com",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "token_endpoint_auth_method": "client_secret_basic"
+    },
+    {
       "client_id": "time-attendance",
       "client_secret": "time-attendance-secret",
       "redirect_uri_patterns": [

@@ -23,7 +23,9 @@ import {
   getAppApiUrl,
   getComingSoonCards,
   getOidcLaunchApiUrl,
-  getOidcLaunchPath
+  getOidcLaunchPath,
+  appRequiresOrganization,
+  getOrganizationManagedHubApps
 } from './config/hubApps.js'
 import { getPlanFeatureKeyForApp } from './config/planFeatures.js'
 import bcrypt from 'bcryptjs'
@@ -36,6 +38,14 @@ import { emailService } from './services/emailService.js'
 import { issueAttendanceHubToken } from './services/attendanceHubService.js'
 import { renderOidcRecoveryPage } from './services/oidcRecoveryPage.js'
 import { buildInternalLoginRedirect, normalizeInternalReturnTo, renderInternalReturnToInput, serializeForInlineScript } from './utils/authRedirects.js'
+import {
+  buildEmailVerificationPath,
+  buildInteractionVerificationPath,
+  getEmailVerificationErrorCode,
+  getInteractionSignupCredentialError,
+  isMatchingLoginInteraction,
+  normalizeInteractionUid
+} from './utils/oidcInteractionResume.js'
 import { isLegacyIdpOnboardingUiPath } from './utils/legacyUiRedirects.js'
 import { notifyOrgMemberAdded, startWebhookDeliveryWorker } from './services/webhookService.js'
 import { otpService } from './services/otpService.js'
@@ -1337,7 +1347,7 @@ app.get('/interaction/:uid', async (req, res) => {
             }
             console.log(`⏱️ Account DB lookup took ${Date.now() - dbLookupStart}ms`)
 
-            if (account) {
+            if (account?.emailVerified) {
               console.log('🎯 SSO: Hub token verified for', account.email, '- auto-completing login')
               console.log(`⏱️ Total SSO processing: ${Date.now() - interactionStartTime}ms`)
               const result = {
@@ -1348,8 +1358,10 @@ app.get('/interaction/:uid', async (req, res) => {
               }
               await provider.interactionFinished(req, res, result, { mergeWithLastSubmission: false })
               return
-            } else {
+            } else if (!account) {
               console.log('⚠️ Hub token valid but account not found:', decoded.email)
+            } else {
+              console.log('⚠️ Hub token account still requires email verification:', account.email)
             }
           }
         } catch (tokenErr) {
@@ -1360,7 +1372,7 @@ app.get('/interaction/:uid', async (req, res) => {
       // Fallback: Check for hub session cookie (same-domain only) - ONLY for IdP-initiated flows
       if (hubToken) {
         const account = await getSessionFromCookies(req)
-        if (account) {
+        if (account?.emailVerified) {
           console.log('🎯 SSO: Hub session cookie found for', account.email, '- auto-completing login (IdP-initiated)')
           const result = {
             login: {
@@ -1380,7 +1392,7 @@ app.get('/interaction/:uid', async (req, res) => {
     let lastLoggedInEmail = null
     if (session && session.accountId) {
       const acc = await Account.findOne({ sub: session.accountId })
-      if (acc) {
+      if (acc?.emailVerified) {
         lastLoggedInEmail = acc.email
         console.log('👤 Found existing OIDC session for:', lastLoggedInEmail)
       }
@@ -1390,6 +1402,7 @@ app.get('/interaction/:uid', async (req, res) => {
     const errorMessages = {
       account_not_found: 'Account not found. Please sign up first.',
       invalid_password: 'Invalid password. Please try again.',
+      email_unverified: 'Please sign in again to finish verifying your email.',
       login_failed: 'Login failed. Please try again.',
       session_expired: 'Session expired. Please try again.'
     }
@@ -1733,7 +1746,9 @@ app.get('/signup/:uid', async (req, res) => {
   const errorMessages = {
     account_exists: 'An account with this email already exists. Please sign in instead.',
     signup_failed: 'Signup failed. Please try again.',
-    passwords_mismatch: 'Passwords do not match.'
+    passwords_mismatch: 'Passwords do not match.',
+    invalid_email: 'Enter a valid email address.',
+    weak_password: 'Password must be at least 8 characters.'
   }
   const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
   const hiddenAttributionInputs = buildHiddenAttributionInputs(req.query)
@@ -1957,6 +1972,40 @@ app.get('/signup/:uid', async (req, res) => {
   `)
 })
 
+async function requireMatchingLoginInteraction(req, res) {
+  const interactionUid = normalizeInteractionUid(req.params.uid)
+  if (!interactionUid) {
+    const error = new Error('Invalid authorization interaction')
+    error.error = 'invalid_request'
+    error.statusCode = 400
+    throw error
+  }
+
+  const details = await provider.interactionDetails(req, res)
+  if (!isMatchingLoginInteraction(interactionUid, details)) {
+    const error = new Error('Authorization interaction does not match the pending login')
+    error.error = 'invalid_request'
+    error.statusCode = 400
+    throw error
+  }
+
+  return { interactionUid, details }
+}
+
+function sendOidcInteractionRecovery(res, error, fallbackDescription) {
+  if (res.headersSent) return
+  const requestId = crypto.randomUUID()
+  const page = renderOidcRecoveryPage({
+    error: error?.error || error?.name || 'server_error',
+    description: error?.error_description || error?.message || fallbackDescription,
+    requestId,
+    statusCode: error?.statusCode || 400
+  })
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('X-SSO-Request-ID', requestId)
+  return res.status(page.statusCode).send(page.html)
+}
+
 app.post('/interaction/:uid/continue', async (req, res) => {
   try {
     const details = await provider.interactionDetails(req, res)
@@ -1965,6 +2014,11 @@ app.post('/interaction/:uid/continue', async (req, res) => {
     if (!session || !session.accountId) {
       console.log('❌ No session found for continue')
       return res.redirect(`/interaction/${req.params.uid}?error=session_expired`)
+    }
+
+    const account = await Account.findOne({ sub: session.accountId }).select('emailVerified')
+    if (!account?.emailVerified) {
+      return res.redirect(`/interaction/${req.params.uid}?error=email_unverified`)
     }
 
     console.log('✅ Continuing with existing session:', session.accountId)
@@ -1986,27 +2040,82 @@ app.post('/interaction/:uid/continue', async (req, res) => {
 })
 
 app.post('/interaction/:uid/login', async (req, res) => {
+  let interactionUid
+  try {
+    ({ interactionUid } = await requireMatchingLoginInteraction(req, res))
+  } catch (error) {
+    console.error('OIDC login interaction validation error:', error)
+    return sendOidcInteractionRecovery(res, error, 'The sign-in request has expired or is no longer valid.')
+  }
+
   try {
     console.log('🔐 Login attempt for:', req.body.email)
-    const { email, password, remember } = req.body
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const password = String(req.body?.password || '')
+    const remember = req.body?.remember
     const acc = await Account.findOne({ email })
 
     if (!acc) {
       console.log('❌ Account not found:', email)
       // Redirect back to login with error
-      return res.redirect(`/interaction/${req.params.uid}?error=account_not_found`)
+      return res.redirect(`/interaction/${interactionUid}?error=account_not_found`)
     }
 
     const ok = await bcrypt.compare(password, acc.passwordHash)
     if (!ok) {
       console.log('❌ Invalid password for:', email)
       // Redirect back to login with error
-      return res.redirect(`/interaction/${req.params.uid}?error=invalid_password`)
+      return res.redirect(`/interaction/${interactionUid}?error=invalid_password`)
+    }
+
+    if (!acc.emailVerified) {
+      let verificationError = ''
+      const lockedUntil = acc.security?.otpLockedUntil
+        ? new Date(acc.security.otpLockedUntil)
+        : null
+      if (lockedUntil && lockedUntil > new Date()) {
+        return res.redirect(buildEmailVerificationPath({
+          accountId: acc.sub,
+          email: acc.email,
+          interactionUid,
+          error: 'account_locked'
+        }))
+      }
+
+      if (!otpService.hasActiveOTP(acc.sub, 'email_verification')) {
+        const otp = otpService.generateOTP()
+        otpService.storeOTP(acc.sub, otp, 'email_verification')
+        acc.security = acc.security || {}
+        acc.security.lastOtpSent = new Date()
+        await acc.save()
+
+        try {
+          await emailService.sendEmailVerificationOTP(acc.email, otp, acc.profile?.name)
+          console.log('✉️ Verification OTP sent while resuming sign-in for:', acc.email)
+        } catch (emailError) {
+          console.error('❌ Failed to send resumed verification email:', emailError.message)
+          otpService.clearOTP(acc.sub, 'email_verification')
+          acc.security.lastOtpSent = null
+          try {
+            await acc.save()
+          } catch (resetError) {
+            console.error('❌ Failed to reset verification delivery state:', resetError.message)
+          }
+          verificationError = 'delivery_failed'
+        }
+      }
+
+      return res.redirect(buildEmailVerificationPath({
+        accountId: acc.sub,
+        email: acc.email,
+        interactionUid,
+        error: verificationError
+      }))
     }
 
     console.log('✅ Login successful for:', email)
     console.log('📍 Remember me:', remember === 'true' ? 'Yes' : 'No')
-    console.log('📍 Finishing interaction for UID:', req.params.uid)
+    console.log('📍 Finishing interaction for UID:', interactionUid)
     console.log('📍 Account sub:', acc.sub)
 
     const result = {
@@ -2025,24 +2134,33 @@ app.post('/interaction/:uid/login', async (req, res) => {
     console.error('💥 Error stack:', err.stack)
     if (!res.headersSent) {
       // Redirect back with error instead of JSON
-      res.redirect(`/interaction/${req.params.uid}?error=login_failed`)
+      res.redirect(`/interaction/${interactionUid}?error=login_failed`)
     }
   }
 })
 
 app.post('/interaction/:uid/signup', async (req, res) => {
+  const attributionQuery = collectSignupAttribution(req.body)
+  let interactionUid
+  try {
+    ({ interactionUid } = await requireMatchingLoginInteraction(req, res))
+  } catch (error) {
+    console.error('OIDC signup interaction validation error:', error)
+    return sendOidcInteractionRecovery(res, error, 'The account creation request has expired or is no longer valid.')
+  }
+
   try {
     const email = String(req.body?.email || '').trim().toLowerCase()
     const password = String(req.body?.password || '')
     const confirmPassword = String(req.body?.confirmPassword || '')
     const name = String(req.body?.name || '').trim()
-    const attributionQuery = collectSignupAttribution(req.body)
 
     console.log('📝 Signup attempt for:', email)
 
-    if (password !== confirmPassword) {
-      return res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, attributionQuery, {
-        error: 'passwords_mismatch'
+    const credentialError = getInteractionSignupCredentialError({ email, password, confirmPassword })
+    if (credentialError) {
+      return res.redirect(buildPathWithQuery(`/signup/${interactionUid}`, attributionQuery, {
+        error: credentialError
       }))
     }
 
@@ -2050,7 +2168,7 @@ app.post('/interaction/:uid/signup', async (req, res) => {
     const existing = await Account.findOne({ email })
     if (existing) {
       console.log('❌ Account already exists:', email)
-      return res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, attributionQuery, {
+      return res.redirect(buildPathWithQuery(`/signup/${interactionUid}`, attributionQuery, {
         error: 'account_exists'
       }))
     }
@@ -2128,22 +2246,36 @@ app.post('/interaction/:uid/signup', async (req, res) => {
     await acc.save()
 
     // Send verification email
+    let verificationError = ''
     try {
       await emailService.sendEmailVerificationOTP(email, otp, name || email.split('@')[0])
       console.log('✉️ Verification OTP sent to:', email)
     } catch (emailError) {
       console.error('❌ Failed to send verification email:', emailError.message)
-      // Continue anyway - user can resend
+      otpService.clearOTP(acc.sub, 'email_verification')
+      acc.security.lastOtpSent = null
+      try {
+        await acc.save()
+      } catch (resetError) {
+        console.error('❌ Failed to reset verification delivery state:', resetError.message)
+      }
+      verificationError = 'delivery_failed'
     }
 
-    // Redirect to verification page instead of logging in
-    res.redirect(`/verify-email/${acc.sub}?email=${encodeURIComponent(email)}`)
+    // Keep the provider interaction attached to verification so successful
+    // signup can return to the original OIDC client authorization request.
+    res.redirect(buildEmailVerificationPath({
+      accountId: acc.sub,
+      email,
+      interactionUid,
+      error: verificationError
+    }))
 
   } catch (err) {
     console.error('💥 Signup error:', err)
     console.error('💥 Error stack:', err.stack)
     if (!res.headersSent) {
-      res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, req.body, {
+      res.redirect(buildPathWithQuery(`/signup/${interactionUid}`, attributionQuery, {
         error: 'signup_failed'
       }))
     }
@@ -2159,25 +2291,33 @@ app.get('/verify-email/:accountId', async (req, res) => {
   const { accountId } = req.params
   const email = req.query.email || ''
   const error = req.query.error
+  const interactionUid = normalizeInteractionUid(req.query.interaction_uid)
+  const interactionVerificationPath = buildInteractionVerificationPath(interactionUid)
   const safeEmail = escapeAttribute(email)
+  const safeInteractionVerificationPath = escapeAttribute(interactionVerificationPath)
+  const safeAccountId = escapeAttribute(accountId)
   const serializedAccountId = serializeForInlineScript(accountId)
   const serializedIssuerUrl = serializeForInlineScript(ISSUER_URL)
+  const serializedInteractionResume = interactionUid ? 'true' : 'false'
 
   const errorMessages = {
     invalid_code: 'Invalid verification code. Please try again.',
     expired_code: 'Verification code has expired. Please request a new one.',
     too_many_attempts: 'Too many invalid attempts. Please request a new code.',
     account_locked: 'Account is temporarily locked. Please try again later.',
+    delivery_failed: 'We could not send the code. Select Resend code to try again.',
     already_verified: 'This account is already verified!'
   }
   const errorMsg = error ? errorMessages[error] || 'An error occurred' : ''
 
+  res.setHeader('Cache-Control', 'no-store')
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
       <title>Verify Email - Seemplify Identity</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="referrer" content="no-referrer">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
       <script src="/js/theme.js?v=5"></script>
       <style>
@@ -2301,7 +2441,8 @@ app.get('/verify-email/:accountId', async (req, res) => {
         ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
         <div class="success" id="success"></div>
 
-        <form id="verifyForm">
+        <form id="verifyForm"${interactionUid ? ` action="${safeInteractionVerificationPath}" method="POST"` : ''}>
+          ${interactionUid ? `<input type="hidden" name="accountId" value="${safeAccountId}" />` : ''}
           <div class="form-group">
             <label for="code">Enter Verification Code</label>
             <input 
@@ -2336,6 +2477,7 @@ app.get('/verify-email/:accountId', async (req, res) => {
         const resendLink = document.getElementById('resendLink');
         const verificationAccountId = ${serializedAccountId};
         const identityProviderUrl = ${serializedIssuerUrl};
+        const interactionResume = ${serializedInteractionResume};
 
         // Auto-submit when 6 digits entered
         codeInput.addEventListener('input', (e) => {
@@ -2346,11 +2488,15 @@ app.get('/verify-email/:accountId', async (req, res) => {
         });
 
         form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          
           submitBtn.disabled = true;
           btnText.innerHTML = '<span class="spinner"></span>Verifying...';
           successDiv.classList.remove('show');
+
+          // Interaction signups use a normal form POST. The server verifies the
+          // OTP and calls oidc-provider to resume the pending authorization.
+          if (interactionResume) return;
+
+          e.preventDefault();
 
           const formData = new FormData(e.target);
           
@@ -2421,48 +2567,105 @@ app.get('/verify-email/:accountId', async (req, res) => {
   `)
 })
 
-// Verify email POST endpoint
+async function verifyPendingEmailAccount(accountId, code) {
+  if (!accountId || !code) {
+    return {
+      verified: false,
+      status: 400,
+      error: 'Account ID and code are required',
+      errorCode: 'invalid_code'
+    }
+  }
+
+  const account = await Account.findOne({ sub: accountId })
+  if (!account) {
+    return {
+      verified: false,
+      status: 404,
+      error: 'Account not found',
+      errorCode: 'invalid_code'
+    }
+  }
+
+  if (account.emailVerified) {
+    return {
+      verified: false,
+      alreadyVerified: true,
+      status: 200,
+      error: 'Email already verified',
+      errorCode: 'already_verified',
+      account
+    }
+  }
+
+  const result = otpService.verifyOTP(accountId, code, 'email_verification')
+  if (!result.valid) {
+    await otpService.updateOTPAttempts(account, true)
+    return {
+      verified: false,
+      status: 400,
+      error: result.reason,
+      errorCode: getEmailVerificationErrorCode(result.reason),
+      remainingAttempts: result.remainingAttempts,
+      account
+    }
+  }
+
+  account.emailVerified = true
+  await otpService.updateOTPAttempts(account, false)
+  await account.save()
+
+  console.log('✅ Email verified for:', account.email)
+  return { verified: true, status: 200, account }
+}
+
+// Complete email verification and resume the exact OIDC interaction that
+// initiated individual signup. A previously verified account is deliberately
+// not enough to finish login here; a fresh successful OTP is required.
+app.post('/interaction/:uid/verify-email', async (req, res) => {
+  const accountId = String(req.body?.accountId || '').trim()
+
+  try {
+    const { interactionUid } = await requireMatchingLoginInteraction(req, res)
+
+    const verification = await verifyPendingEmailAccount(accountId, req.body?.code)
+    if (!verification.verified) {
+      return res.redirect(buildEmailVerificationPath({
+        accountId: accountId || 'unknown',
+        email: verification.account?.email || '',
+        interactionUid,
+        error: verification.errorCode
+      }))
+    }
+
+    await provider.interactionFinished(req, res, {
+      login: {
+        accountId: verification.account.sub
+      }
+    }, { mergeWithLastSubmission: false })
+  } catch (error) {
+    console.error('Interaction email verification error:', error)
+    return sendOidcInteractionRecovery(res, error, 'The authorization request could not be resumed.')
+  }
+})
+
+// Standalone email verification retains its existing JSON contract.
 app.post('/verify-email', async (req, res) => {
   try {
-    const { accountId, code } = req.body
-
-    if (!accountId || !code) {
-      return res.status(400).json({ error: 'Account ID and code are required' })
-    }
-
-    // Find account
-    const account = await Account.findOne({ sub: accountId })
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found' })
-    }
-
-    // Check if already verified
-    if (account.emailVerified) {
+    const verification = await verifyPendingEmailAccount(req.body?.accountId, req.body?.code)
+    if (verification.alreadyVerified) {
       return res.json({ message: 'Email already verified' })
     }
-
-    // Verify OTP
-    const result = otpService.verifyOTP(accountId, code, 'email_verification')
-
-    if (!result.valid) {
-      await otpService.updateOTPAttempts(account, true)
-      return res.status(400).json({
-        error: result.reason,
-        remainingAttempts: result.remainingAttempts
+    if (!verification.verified) {
+      return res.status(verification.status).json({
+        error: verification.error,
+        remainingAttempts: verification.remainingAttempts
       })
     }
-
-    // Mark as verified
-    account.emailVerified = true
-    await otpService.updateOTPAttempts(account, false)
-    await account.save()
-
-    console.log('✅ Email verified for:', account.email)
-
-    res.json({ message: 'Email verified successfully' })
+    return res.json({ message: 'Email verified successfully' })
   } catch (error) {
     console.error('Email verification error:', error)
-    res.status(500).json({ error: 'Verification failed' })
+    return res.status(500).json({ error: 'Verification failed' })
   }
 })
 
@@ -3371,7 +3574,7 @@ async function getSessionFromCookies(req) {
 }
 
 function getHubAppMetadata() {
-  const apps = getHubApps().map(app => ({
+  const apps = getOrganizationManagedHubApps().map(app => ({
     appId: app.appId,
     name: app.name,
     description: app.description || ''
@@ -3432,11 +3635,17 @@ async function getVisibleHubPinAppIdSet(req, account, organization) {
   let visibleApps = pinEligibleApps
   if (memberAppAccess.mode === APP_ACCESS_MODE_SELECTED) {
     const allowedAppIds = new Set(memberAppAccess.appIds)
-    visibleApps = visibleApps.filter(app => allowedAppIds.has(app.accessAppId || app.appId))
+    visibleApps = visibleApps.filter(app =>
+      !appRequiresOrganization(app) || allowedAppIds.has(app.accessAppId || app.appId)
+    )
   }
 
   const subscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account)
-  if (!subscriptionAccess || subscriptionAccess.isLocked) return new Set()
+  if (!subscriptionAccess || subscriptionAccess.isLocked) {
+    return new Set(
+      visibleApps.filter(app => !appRequiresOrganization(app)).map(app => app.appId)
+    )
+  }
 
   const subscription = await subscriptionService.getSubscriptionForOrg(currentOrgId)
   const hiddenAppIds = new Set(
@@ -3445,7 +3654,8 @@ async function getVisibleHubPinAppIdSet(req, account, organization) {
       .filter(Boolean)
   )
   visibleApps = visibleApps.filter(app =>
-    !hiddenAppIds.has(app.appId) && !hiddenAppIds.has(app.accessAppId || '')
+    !appRequiresOrganization(app)
+    || (!hiddenAppIds.has(app.appId) && !hiddenAppIds.has(app.accessAppId || ''))
   )
 
   return new Set([
@@ -3871,7 +4081,9 @@ app.get('/', async (req, res) => {
     // Filter hub cards by per-member access scope
     if (memberAppAccess.mode === APP_ACCESS_MODE_SELECTED) {
       const allowedAppIds = new Set(memberAppAccess.appIds)
-      apps = apps.filter(app => allowedAppIds.has(app.accessAppId || app.appId))
+      apps = apps.filter(app =>
+        !appRequiresOrganization(app) || allowedAppIds.has(app.accessAppId || app.appId)
+      )
     }
 
     // Filter hub cards by plan's hideHubCards (dynamically hide cards per plan)
@@ -3883,7 +4095,8 @@ app.get('/', async (req, res) => {
       if (hideHubCards && Array.isArray(hideHubCards) && hideHubCards.length > 0) {
         const hideSet = new Set(hideHubCards.map(id => String(id).trim()).filter(Boolean))
         apps = apps.filter(app =>
-          !hideSet.has(app.appId) && !hideSet.has(app.accessAppId || '')
+          !appRequiresOrganization(app)
+          || (!hideSet.has(app.appId) && !hideSet.has(app.accessAppId || ''))
         )
       }
       const showComingSoonCards = subscription?.plan?.showComingSoonCards
@@ -3923,7 +4136,7 @@ app.get('/', async (req, res) => {
     }))
 
     if (!hasOrganizations || currentSubscriptionAccess?.isLocked) {
-      apps = []
+      apps = apps.filter(app => !appRequiresOrganization(app))
       comingSoonCards = []
     }
 
@@ -4326,7 +4539,7 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     app = getAppById(appId)
-    if (!app) {
+    if (!app || !app.isActive) {
       await logAppLaunchActivity({
         req,
         account,
@@ -4337,7 +4550,8 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || null
-    if (!currentOrgId) {
+    const organizationRequired = appRequiresOrganization(app)
+    if (organizationRequired && !currentOrgId) {
       await logAppLaunchActivity({
         req,
         account,
@@ -4351,13 +4565,15 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     // Membership and subscription are independent reads; run them together to keep launches responsive.
-    const [currentSubscriptionAccess, currentOrganization] = await Promise.all([
-      getCurrentOrganizationSubscriptionAccessState(account, { includeFeatures: true }),
-      Organization.findById(currentOrgId)
-        .select('members.account members.status members.appAccess')
-        .lean()
-    ])
-    if (!currentSubscriptionAccess || currentSubscriptionAccess.isLocked) {
+    const [currentSubscriptionAccess, currentOrganization] = organizationRequired
+      ? await Promise.all([
+        getCurrentOrganizationSubscriptionAccessState(account, { includeFeatures: true }),
+        Organization.findById(currentOrgId)
+          .select('members.account members.status members.appAccess')
+          .lean()
+      ])
+      : [null, null]
+    if (organizationRequired && (!currentSubscriptionAccess || currentSubscriptionAccess.isLocked)) {
       await logAppLaunchActivity({
         req,
         account,
@@ -4377,7 +4593,7 @@ app.get('/launch/:appId', async (req, res) => {
       m => m?.status === 'active' && m?.account?.toString() === account._id.toString()
     )
 
-    if (!currentMember) {
+    if (organizationRequired && !currentMember) {
       await logAppLaunchActivity({
         req,
         account,
@@ -4390,9 +4606,9 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect('/')
     }
 
-    const currentMemberAppAccess = normalizeAppAccess(currentMember.appAccess, appIdSet)
+    const currentMemberAppAccess = normalizeAppAccess(currentMember?.appAccess, appIdSet)
 
-    if (!memberCanAccessApp(currentMemberAppAccess, appId)) {
+    if (organizationRequired && !memberCanAccessApp(currentMemberAppAccess, appId)) {
       await logAppLaunchActivity({
         req,
         account,
@@ -4410,12 +4626,12 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     // Check subscription access using the same app-to-feature catalog as the admin plan UI.
-    const featureKey = getPlanFeatureKeyForApp(appId)
-    if (!featureKey) {
+    const featureKey = organizationRequired ? getPlanFeatureKeyForApp(appId) : null
+    if (organizationRequired && !featureKey) {
       console.warn(`No subscription feature mapping for appId: ${appId} - subscription check skipped`)
     }
 
-    if (featureKey && currentOrgId) {
+    if (organizationRequired && featureKey && currentOrgId) {
       // Reuse the subscription loaded above instead of repeating the same database query.
       const canAccess = currentSubscriptionAccess.features?.[featureKey] === true
 

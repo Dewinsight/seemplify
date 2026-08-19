@@ -59,12 +59,35 @@ class OTPService {
     console.log(`🔐 OTP stored for account ${accountId.slice(-8)} (purpose: ${purpose})`)
     
     // Auto-cleanup after expiry
-    setTimeout(() => {
-      if (global.otpStore.has(key)) {
+    const expiryTimer = setTimeout(() => {
+      if (global.otpStore?.has(key)) {
         global.otpStore.delete(key)
         console.log(`🧹 OTP expired and cleaned up for ${accountId.slice(-8)}`)
       }
     }, this.otpExpiry)
+    expiryTimer.unref?.()
+  }
+
+  /**
+   * Check whether a usable OTP already exists without consuming an attempt.
+   * This lets an interrupted OIDC signup resume verification without sending
+   * a new code on every successful password retry.
+   */
+  hasActiveOTP(accountId, purpose = 'email_verification') {
+    if (!global.otpStore) return false
+
+    const key = `${accountId}_${purpose}`
+    const storedData = global.otpStore.get(key)
+    if (!storedData) return false
+
+    const expired = Date.now() - storedData.createdAt > this.otpExpiry
+    const exhausted = storedData.attempts >= this.maxAttempts
+    if (expired || exhausted) {
+      global.otpStore.delete(key)
+      return false
+    }
+
+    return true
   }
   
   /**

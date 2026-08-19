@@ -338,9 +338,9 @@ router.post('/demo-requests/:requestId/update', async (req, res) => {
  */
 router.get('/plans', async (req, res) => {
   try {
-    const { getAllHubApps, getAllComingSoonCards } = await import('../config/hubApps.js')
+    const { getAllOrganizationManagedHubApps, getAllComingSoonCards } = await import('../config/hubApps.js')
     const { PLAN_FEATURES } = await import('../config/planFeatures.js')
-    const hubApps = getAllHubApps()
+    const hubApps = getAllOrganizationManagedHubApps()
     const comingSoonCards = getAllComingSoonCards()
     const plans = await subscriptionService.getAllPlans()
 

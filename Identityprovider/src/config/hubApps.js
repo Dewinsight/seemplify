@@ -22,6 +22,22 @@ function hasConfiguredUrl(value) {
   return Boolean(String(value || '').trim())
 }
 
+function environmentFlagEnabled(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase())
+}
+
+/**
+ * Community is intentionally dormant in production until its public DNS,
+ * Workspace routes, and protected OIDC client secret have all been deployed.
+ * Development keeps its existing zero-configuration local defaults.
+ */
+export function isCommunityProductionReady(env = process.env) {
+  return environmentFlagEnabled(env.COMMUNITY_PRODUCTION_ENABLED) &&
+    Boolean(productionSafeUrl(env.COMMUNITY_URL, '')) &&
+    Boolean(productionSafeUrl(env.COMMUNITY_API_URL, '')) &&
+    Boolean(String(env.COMMUNITY_OIDC_CLIENT_SECRET || '').trim())
+}
+
 // Development apps configuration
 const developmentApps = [
   {
@@ -171,6 +187,39 @@ const developmentApps = [
     isBeta: true
   },
   {
+    appId: 'community',
+    name: 'Community',
+    description: 'Public conversations, communities, articles, events, and connections',
+    icon: 'users',
+    color: '#5f6654',
+    url: process.env.COMMUNITY_URL || 'http://localhost:4200',
+    apiUrl: process.env.COMMUNITY_API_URL || process.env.MESSAGING_API_URL || 'http://localhost:3333',
+    oidcStartPath: '/api/auth/oidc/community/start',
+    clientId: 'community',
+    organizationRequired: false,
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 8.1,
+    badge: 'Beta',
+    isBeta: true
+  },
+  {
+    appId: 'automation-hub',
+    name: 'Automations',
+    description: 'Build governed workflows across Seemplify and connected external tools',
+    icon: 'bolt',
+    color: '#545c47',
+    url: process.env.AUTOMATION_HUB_URL || 'http://localhost:5421',
+    apiUrl: process.env.AUTOMATION_HUB_API_URL || 'http://localhost:5420',
+    oidcStartPath: '/auth/login',
+    clientId: 'automation-hub',
+    isActive: true,
+    isPublic: true,
+    category: 'productivity',
+    order: 8.2
+  },
+   {
     appId: 'approver',
     name: 'Approver',
     description: 'Govern AI initiatives, policies, reviews, and executive approvals',
@@ -349,6 +398,39 @@ const productionApps = [
     isBeta: true
   },
   {
+    appId: 'community',
+    name: 'Community',
+    description: 'Public conversations, communities, articles, events, and connections',
+    icon: 'users',
+    color: '#5f6654',
+    url: productionSafeUrl(process.env.COMMUNITY_URL, ''),
+    apiUrl: productionSafeUrl(process.env.COMMUNITY_API_URL, ''),
+    oidcStartPath: '/api/auth/oidc/community/start',
+    clientId: 'community',
+    organizationRequired: false,
+    isActive: isCommunityProductionReady(process.env),
+    isPublic: true,
+    category: 'productivity',
+    order: 8.1,
+    badge: 'Beta',
+    isBeta: true
+  },
+  {
+    appId: 'automation-hub',
+    name: 'Automations',
+    description: 'Build governed workflows across Seemplify and connected external tools',
+    icon: 'bolt',
+    color: '#545c47',
+    url: productionSafeUrl(process.env.AUTOMATION_HUB_URL, 'https://automations.seemplifyai.com'),
+    apiUrl: productionSafeUrl(process.env.AUTOMATION_HUB_API_URL, 'https://automations.seemplifyai.com'),
+    oidcStartPath: '/auth/login',
+    clientId: 'automation-hub',
+    isActive: hasConfiguredUrl(process.env.AUTOMATION_HUB_URL),
+    isPublic: true,
+    category: 'productivity',
+    order: 8.2
+  },
+   {
     appId: 'approver',
     name: 'Approver',
     description: 'Govern AI initiatives, policies, reviews, and executive approvals',
@@ -453,6 +535,23 @@ export function getOidcLaunchPath(app) {
   const configuredPath = String(app?.oidcStartPath || '').trim()
   if (configuredPath.startsWith('/') && !configuredPath.startsWith('//')) return configuredPath
   return '/api/auth/oidc/start'
+}
+
+/**
+ * Organization access remains required unless an app explicitly opts out.
+ * This additive default preserves the existing launch contract for every
+ * registered app while allowing account-level products such as Community.
+ */
+export function appRequiresOrganization(app) {
+  return app?.organizationRequired !== false
+}
+
+export function getOrganizationManagedHubApps(options = {}) {
+  return getHubApps(options).filter(appRequiresOrganization)
+}
+
+export function getAllOrganizationManagedHubApps() {
+  return getAllHubApps().filter(appRequiresOrganization)
 }
 
 /**

@@ -5,7 +5,7 @@ import { Account } from '../models/Account.js'
 import { Team } from '../models/Team.js'
 import { emailService } from '../services/emailService.js'
 import { notifyOrgMemberAdded } from '../services/webhookService.js'
-import { getHubApps } from '../config/hubApps.js'
+import { getOrganizationManagedHubApps } from '../config/hubApps.js'
 import {
   APP_ACCESS_MODE_SELECTED,
   buildValidAppIdSet,
@@ -22,7 +22,7 @@ import { invalidateClaimsCache } from '../index.js'
 const router = express.Router()
 
 function getHubAppMetadata() {
-  const apps = getHubApps().map(app => ({
+  const apps = getOrganizationManagedHubApps().map(app => ({
     appId: app.appId,
     name: app.name
   }))

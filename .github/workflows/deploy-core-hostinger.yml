@@ -51,6 +51,7 @@ jobs:
             test/hub-pins.test.mjs \
             test/nylas-platform-configuration.test.mjs \
             test/media-platform-configuration.test.mjs \
+            test/messaging-oidc-client.test.mjs \
             test/organization-deletion-fallback.test.mjs \
             test/internal-membership-service-auth.test.mjs \
             test/recruiter-admin-sso-secret.test.mjs \

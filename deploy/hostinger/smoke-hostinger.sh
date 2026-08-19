@@ -6,6 +6,19 @@ fail() {
   exit 1
 }
 
+community_production_enabled="${COMMUNITY_PRODUCTION_ENABLED:-}"
+if [[ -z "${community_production_enabled}" && -r /opt/seemplify/secrets/core-apps.env ]]; then
+  community_production_enabled="$({
+    awk -F= '$1 == "COMMUNITY_PRODUCTION_ENABLED" { value = substr($0, index($0, "=") + 1) } END { print value }' \
+      /opt/seemplify/secrets/core-apps.env
+  } | tr -d '\r"' | xargs)"
+fi
+
+case "${community_production_enabled}" in
+  1|true|TRUE|True|yes|YES|Yes|on|ON|On) community_smoke_enabled=true ;;
+  *) community_smoke_enabled=false ;;
+esac
+
 check_status() {
   local host="$1"
   local expected="$2"
@@ -64,6 +77,12 @@ postal.seemplifyai.com 302
 turn.seemplifyai.com 404
 HOSTS
 
+if [[ "${community_smoke_enabled}" == "true" ]]; then
+  check_status community.seemplifyai.com 200
+else
+  echo "community production smoke skipped (COMMUNITY_PRODUCTION_ENABLED is not true)"
+fi
+
 while read -r label url expected; do
   check_status_path "${label}" "${url}" "${expected}"
 done <<'HEALTH_ENDPOINTS'
@@ -94,12 +113,13 @@ check_oidc_start() {
   local app="$1"
   local api_host="$2"
   local return_to="$3"
+  local start_path="${4:-/api/auth/oidc/start}"
   local actual
   local redirect_url
 
   read -r actual redirect_url < <(
     curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' \
-      "https://${api_host}/api/auth/oidc/start?returnTo=${return_to}" \
+      "https://${api_host}${start_path}?returnTo=${return_to}" \
       --max-time 20
   )
   [[ "${actual}" == "302" ]] || fail "${app} OIDC start returned ${actual}; expected 302"
@@ -108,8 +128,8 @@ check_oidc_start() {
   printf 'oidc  %-38s 302 -> auth\n' "${app}"
 }
 
-while read -r app api_host return_to; do
-  check_oidc_start "${app}" "${api_host}" "${return_to}"
+while read -r app api_host return_to start_path; do
+  check_oidc_start "${app}" "${api_host}" "${return_to}" "${start_path:-/api/auth/oidc/start}"
 done <<'OIDC_APPS'
 Recruiter api.seemplifyai.com https%3A%2F%2Fapp.seemplifyai.com
 Workspace api-workspace.seemplifyai.com https%3A%2F%2Fworkspace.seemplifyai.com
@@ -122,6 +142,11 @@ Approver approver.seemplifyai.com https%3A%2F%2Fapprover.seemplifyai.com
 Experience experience.seemplifyai.com https%3A%2F%2Fexperience.seemplifyai.com
 OIDC_APPS
 
+if [[ "${community_smoke_enabled}" == "true" ]]; then
+  check_oidc_start Community api-workspace.seemplifyai.com \
+    https%3A%2F%2Fcommunity.seemplifyai.com /api/auth/oidc/community/start
+fi
+
 curl -fsS 'https://api-workspace.seemplifyai.com/socket.io/?EIO=4&transport=polling' --max-time 20 \
   | grep -q '^0{' \
   || fail "Workspace Socket.IO handshake failed"
@@ -131,6 +156,13 @@ curl -fsS https://workspace.seemplifyai.com/release.json --max-time 20 \
   | python3 -c 'import json, re, sys; release=json.load(sys.stdin); assert re.fullmatch(r"[0-9a-f]{40}", release["sha"])' \
   || fail "Workspace release manifest is missing a full Git commit SHA"
 echo "workspace release manifest ok"
+
+if [[ "${community_smoke_enabled}" == "true" ]]; then
+  curl -fsS https://community.seemplifyai.com/release.json --max-time 20 \
+    | python3 -c 'import json, re, sys; release=json.load(sys.stdin); assert re.fullmatch(r"[0-9a-f]{40}", release["sha"])' \
+    || fail "Community release manifest is missing a full Git commit SHA"
+  echo "community release manifest ok"
+fi
 
 curl -fsS https://turn.seemplifyai.com/api/health \
   | python3 -c 'import json, sys; assert json.load(sys.stdin)["status"] == "ok"' \
@@ -167,6 +199,15 @@ docker exec seemplify-core-identity-provider-1 node --input-type=module -e '
       ["messaging", "MESSAGING_URL"]
     ];
     if (configured.some(([appId, key]) => !process.env[key] && active.has(appId))) process.exit(1);
+    const communityExpected = ["1", "true", "yes", "on"]
+      .includes(String(process.env.COMMUNITY_PRODUCTION_ENABLED || "").trim().toLowerCase());
+    const communityActive = active.has("community");
+    if (communityExpected !== communityActive) process.exit(1);
+    if (communityExpected && [
+      "COMMUNITY_URL",
+      "COMMUNITY_API_URL",
+      "COMMUNITY_OIDC_CLIENT_SECRET"
+    ].some((key) => !String(process.env[key] || "").trim())) process.exit(1);
   });
 ' || fail "Hub exposes an app without a configured live service"
 echo "hub live-app catalog ok"

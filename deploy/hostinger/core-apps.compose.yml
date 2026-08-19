@@ -38,6 +38,13 @@ services:
       SEEMPLIFY_LEARNING_URL: https://learning.seemplifyai.com
       MESSAGING_URL: https://workspace.seemplifyai.com
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
+      COMMUNITY_PRODUCTION_ENABLED: "${COMMUNITY_PRODUCTION_ENABLED:-false}"
+      COMMUNITY_URL: "${COMMUNITY_URL:-}"
+      COMMUNITY_API_URL: "${COMMUNITY_API_URL:-}"
+      AUTOMATION_HUB_URL: https://automations.seemplifyai.com
+      AUTOMATION_HUB_API_URL: https://automations.seemplifyai.com
+      AUTOMATION_HUB_OIDC_CLIENT_SECRET_FILE: /run/seemplify/automation-hub-oidc-client-secret
+      AUTOMATION_HUB_HMAC_SECRET_FILE: /run/seemplify/automation-hub-hmac-secret
       APPROVER_URL: https://approver.seemplifyai.com
       EXPERIENCE_MANAGEMENT_URL: https://experience.seemplifyai.com
       EXPERIENCE_OIDC_CLIENT_SECRET: ${OIDC_EXPERIENCE_SECRET:?required}
@@ -53,6 +60,7 @@ services:
       AZURE_SPEECH_LANGUAGE: ${AZURE_SPEECH_LANGUAGE:-en-US}
       AZURE_SPEECH_VOICE: ${AZURE_SPEECH_VOICE:-en-US-AvaNeural}
       MESSAGING_OIDC_CLIENT_SECRET: ${OIDC_MESSAGING_SECRET:?required}
+      COMMUNITY_OIDC_CLIENT_SECRET: "${OIDC_COMMUNITY_SECRET:-}"
       MESSAGING_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
       RECRUITER_ADMIN_URL: https://app.seemplifyai.com
       RECRUITER_ADMIN_SSO_SECRET: ${RECRUITER_ADMIN_SSO_SECRET:?required}

@@ -3,7 +3,7 @@ import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { Team } from '../models/Team.js'
-import { getHubApps } from '../config/hubApps.js'
+import { getOrganizationManagedHubApps } from '../config/hubApps.js'
 import {
   getPayrollBankAccountTypes,
   normalizePayrollBankCountry
@@ -36,7 +36,7 @@ import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
 const router = express.Router()
 
 function getHubAppMetadata() {
-  const apps = getHubApps().map(app => ({
+  const apps = getOrganizationManagedHubApps().map(app => ({
     appId: app.appId,
     name: app.name
   }))

@@ -2319,12 +2319,12 @@
 
     <% if (!hasOrganizations) { %>
       <section class="apps">
-        <div class="section-title">Organization required</div>
+        <div class="section-title">Workspace setup</div>
         <div class="card org-setup-card">
-          <div class="org-setup-card__eyebrow">Complete setup to continue</div>
-          <h1 class="org-setup-card__title">Create an organization or accept an invite before you can use any apps.</h1>
+          <div class="org-setup-card__eyebrow">Optional for Community members</div>
+          <h1 class="org-setup-card__title">Community is ready. Create an organization when you want a team workspace.</h1>
           <p class="org-setup-card__copy">
-            Your dashboard stays locked until your account belongs to an organization. Once you create one or join one, app access will appear here automatically.
+            Your individual account can use Community now. Organization-managed apps remain locked until you create an organization or accept an invitation.
           </p>
 
           <div class="org-setup-options">
@@ -2388,7 +2388,7 @@
             </div>
           <% } else { %>
             <div class="org-setup-empty">
-              No invitations are waiting right now. Create an organization to unlock the dashboard.
+              No invitations are waiting right now. Create an organization when you are ready to unlock organization-managed apps.
             </div>
           <% } %>
         </div>
@@ -2467,6 +2467,44 @@
               <button type="button" class="ghost-btn" onclick="openOrgModal()">Switch Organization</button>
             <% } %>
           </div>
+        </div>
+      </section>
+    <% } %>
+
+    <% if ((!hasOrganizations || (currentSubscriptionAccess && currentSubscriptionAccess.isLocked)) && apps && apps.length > 0) { %>
+      <section class="workspace-section apps" aria-labelledby="account-applications-heading">
+        <div class="apps-heading-row">
+          <div>
+            <h2 class="section-title" id="account-applications-heading">Available to your account</h2>
+            <p class="section-description">These account-level apps do not require an organization or an active organization plan.</p>
+          </div>
+        </div>
+        <div class="app-grid">
+          <% apps.forEach(app => { %>
+            <article class="app-card" style="--app-color: <%= app.color || '#7048e8' %>">
+              <div class="app-card__header">
+                <div class="app-card__identity">
+                  <div class="app-card__icon"><%- app.iconSvg %></div>
+                  <div>
+                    <div class="app-card__title-row">
+                      <h3 class="app-card__title"><%= app.name %></h3>
+                      <% if (app.badge) { %><span class="app-card__badge"><%= app.badge %></span><% } %>
+                    </div>
+                    <p class="app-card__subtitle">Your public Seemplify network</p>
+                  </div>
+                </div>
+              </div>
+              <p class="app-card__desc"><%= app.description || 'Secure single sign-on' %></p>
+              <div class="app-card__footer">
+                <div class="app-card__metric"><span>Access</span><strong>Individual</strong></div>
+                <% if (app.isBeta) { %>
+                  <button type="button" class="app-card__open" onclick="showBetaWarning('<%= app.appId %>', '<%= app.name %>')">Open <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 5 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <% } else { %>
+                  <a href="/launch/<%= app.appId %>" class="app-card__open">Open <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 5 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+                <% } %>
+              </div>
+            </article>
+          <% }) %>
         </div>
       </section>
     <% } %>
@@ -2850,6 +2888,7 @@
     </div>
   </div>
   <form id="org-switch-form" method="POST" style="display: none;"></form>
+  <% } %>
 
   <!-- Beta Warning Modal -->
   <div id="betaWarningModal" class="custom-modal-overlay">
@@ -2885,7 +2924,6 @@
       </div>
     </div>
   </div>
-  <% } %>
 
   <script>
     function escapeHtml(value) {

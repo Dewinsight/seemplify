@@ -10,6 +10,18 @@ set -a
 . "$apps_env"
 set +a
 
+case "${COMMUNITY_PRODUCTION_ENABLED:-false}" in
+  1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+    : "${COMMUNITY_URL:?COMMUNITY_URL is required when COMMUNITY_PRODUCTION_ENABLED=true}"
+    : "${COMMUNITY_API_URL:?COMMUNITY_API_URL is required when COMMUNITY_PRODUCTION_ENABLED=true}"
+    : "${OIDC_COMMUNITY_SECRET:?OIDC_COMMUNITY_SECRET is required when COMMUNITY_PRODUCTION_ENABLED=true}"
+    ;;
+  *)
+    # A stale secret must not register the client while the staged rollout is dormant.
+    unset OIDC_COMMUNITY_SECRET
+    ;;
+esac
+
 output_dir=$(dirname "$output_clients")
 output_name=$(basename "$output_clients")
 install -d -m 700 "$output_dir"
@@ -24,6 +36,7 @@ docker run --rm \
   -e OIDC_TIME_SECRET \
   -e OIDC_LEARNING_SECRET \
   -e OIDC_MESSAGING_SECRET \
+  -e OIDC_COMMUNITY_SECRET \
   -e OIDC_APPROVER_SECRET \
   -e OIDC_EXPERIENCE_SECRET \
   -e OIDC_AUTOMATION_SECRET \
@@ -31,23 +44,23 @@ docker run --rm \
   -v "$source_clients:/input/clients.json:ro" \
   -v "$output_dir:/output" \
   "$identity_provider_image" \
-  node -e '
-    const fs = require("node:fs");
+  node --input-type=module -e '
+    import fs from "node:fs";
+    import { materializeProductionOidcClients } from "./src/config/productionOidcClients.js";
     const source = JSON.parse(fs.readFileSync("/input/clients.json", "utf8"));
-    const secretByClient = new Map([
-      ["smarthr-backend", process.env.OIDC_RECRUITER_SECRET],
-      ["leave-management", process.env.OIDC_LEAVE_SECRET],
-      ["performance-management", process.env.OIDC_PERFORMANCE_SECRET],
-      ["payroll-management", process.env.OIDC_PAYROLL_SECRET],
-      ["time-attendance", process.env.OIDC_TIME_SECRET],
-      ["seemplify-learning", process.env.OIDC_LEARNING_SECRET],
-      ["messaging", process.env.OIDC_MESSAGING_SECRET],
-      ["approver", process.env.OIDC_APPROVER_SECRET],
-      ["experience-management", process.env.OIDC_EXPERIENCE_SECRET]
-    ]);
-    source.clients = source.clients
-      .filter((client) => secretByClient.has(client.client_id))
-      .map((client) => ({ ...client, client_secret: secretByClient.get(client.client_id) }));
+    source.clients = materializeProductionOidcClients(source.clients, {
+      "smarthr-backend": process.env.OIDC_RECRUITER_SECRET,
+      "leave-management": process.env.OIDC_LEAVE_SECRET,
+      "performance-management": process.env.OIDC_PERFORMANCE_SECRET,
+      "payroll-management": process.env.OIDC_PAYROLL_SECRET,
+      "time-attendance": process.env.OIDC_TIME_SECRET,
+      "seemplify-learning": process.env.OIDC_LEARNING_SECRET,
+      messaging: process.env.OIDC_MESSAGING_SECRET,
+      community: process.env.OIDC_COMMUNITY_SECRET,
+      approver: process.env.OIDC_APPROVER_SECRET,
+      "experience-management": process.env.OIDC_EXPERIENCE_SECRET,
+      "automation-hub": process.env.OIDC_AUTOMATION_SECRET
+    });
     fs.writeFileSync(`/output/${process.env.OUTPUT_NAME}`, `${JSON.stringify(source, null, 2)}\n`, { mode: 0o600 });
   '
 
