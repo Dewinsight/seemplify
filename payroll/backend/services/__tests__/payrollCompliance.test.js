@@ -98,8 +98,8 @@ describe('payroll compliance calculations', () => {
     expect(result.payrollCurrency).toBe('USD');
     expect(result.currencyConversion).toMatchObject({ from: 'USD', to: 'KES', rate: 130, exchangeRateId: 'rate-1' });
     expect(employerAhl).toMatchObject({ calculationAmount: 1950, amount: 15, calculationCurrency: 'KES', payrollCurrency: 'USD' });
-    expect(result.payrollRunnable).toBe(false);
-    expect(result.compliance.calculationStatus).toBe('preview_only');
+    expect(result.payrollRunnable).toBe(true);
+    expect(result.compliance.calculationStatus).toBe('runnable');
   });
 
   test('stored and reporting amounts preserve zero- and three-decimal units', () => {
