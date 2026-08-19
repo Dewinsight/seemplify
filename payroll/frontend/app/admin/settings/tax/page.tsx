@@ -27,6 +27,13 @@ import {
 import { formatPayrollMoney } from '@/lib/payrollMoney';
 import api from '@/lib/api';
 import { useUserContext } from '@/lib/hooks';
+import {
+  StructuredRuleEditor,
+  incomeTaxDefaults,
+  incomeTaxStrategyOptions,
+  statutoryRuleDefaults,
+  statutoryStrategyOptions,
+} from '@/components/tax/StructuredRuleEditor';
 
 type Draft = {
   label: string;
@@ -41,25 +48,23 @@ type Draft = {
   coverageExclusionsText: string;
   supportedSubdivisionsText: string;
   fields: TaxFieldDefinition[];
-  sourceLinksText: string;
-  constantsText: string;
-  incomeTaxText: string;
-  statutoryText: string;
+  sourceLinks: NonNullable<TaxJurisdictionVersion['sourceLinks']>;
+  constants: Record<string, any>;
+  incomeTax: Record<string, any>;
+  statutoryRules: any[];
   notesText: string;
-  testCasesText: string;
+  testCases: any[];
   legalOpenIssuesText: string;
 };
 
 const types: TaxFieldDefinition['type'][] = ['currency', 'percent', 'integer', 'boolean', 'select', 'text', 'date'];
 
-const json = (value: any) => JSON.stringify(value ?? {}, null, 2);
 const dateValue = (value?: string | null) => value ? new Date(value).toISOString().slice(0, 10) : '';
 const optionsText = (options?: { value: string; label: string }[]) => (options || []).map((option) => `${option.value}|${option.label}`).join('\n');
 const parseOptions = (value: string) => value.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
   const [rawValue, rawLabel] = line.split('|');
   return { value: String(rawValue || '').trim(), label: String(rawLabel || rawValue || '').trim() };
 }).filter((option) => option.value);
-const parseJson = <T,>(value: string, fallback: T): T => value.trim() ? JSON.parse(value) : fallback;
 const lines = (values?: string[]) => (values || []).join('\n');
 const parseLines = (value: string) => value.split('\n').map((line) => line.trim()).filter(Boolean);
 const emptyField = (): TaxFieldDefinition => ({ key: '', label: '', type: 'text', required: false, defaultValue: '', options: [] });
@@ -99,12 +104,12 @@ const createDraft = (version?: TaxJurisdictionVersion | null): Draft => ({
   coverageExclusionsText: lines(version?.coverage?.exclusions),
   supportedSubdivisionsText: lines(version?.coverage?.supportedSubdivisions),
   fields: Array.isArray(version?.fieldDefinitions) ? version.fieldDefinitions : [],
-  sourceLinksText: json(version?.sourceLinks || []),
-  constantsText: json(version?.constants || {}),
-  incomeTaxText: json(version?.incomeTax || {}),
-  statutoryText: json(version?.statutoryRules || []),
+  sourceLinks: (version?.sourceLinks || []).map((source) => ({ ...source })),
+  constants: { ...(version?.constants || {}) },
+  incomeTax: { ...(version?.incomeTax || { strategy: 'none' }) },
+  statutoryRules: (version?.statutoryRules || []).map((rule) => ({ ...rule })),
   notesText: (version?.notes || []).join('\n'),
-  testCasesText: json(version?.testCases || []),
+  testCases: (version?.testCases || []).map((testCase) => ({ ...testCase })),
   legalOpenIssuesText: lines(version?.legalOpenIssues),
 });
 
@@ -128,8 +133,8 @@ const createNewPackDraft = (): NewPackDraft => ({
 
 const calculationStatusLabel = (status?: TaxJurisdictionVersion['calculationStatus']) => {
   if (status === 'runnable') return 'Payroll ready';
-  if (status === 'preview_only') return 'Preview only';
-  return 'Blocked';
+  if (status === 'preview_only') return 'Test only';
+  return 'Needs setup';
 };
 
 const calculationStatusClasses = (status?: TaxJurisdictionVersion['calculationStatus']) => {
@@ -407,12 +412,12 @@ export default function TaxSettingsPage() {
             supportedSubdivisions: parseLines(draft.supportedSubdivisionsText),
           },
           fieldDefinitions: draft.fields,
-          sourceLinks: parseJson(draft.sourceLinksText, []),
-          constants: parseJson(draft.constantsText, {}),
-          incomeTax: parseJson(draft.incomeTaxText, {}),
-          statutoryRules: parseJson(draft.statutoryText, []),
+          sourceLinks: draft.sourceLinks,
+          constants: draft.constants,
+          incomeTax: draft.incomeTax,
+          statutoryRules: draft.statutoryRules,
           notes: draft.notesText.split('\n').map((line) => line.trim()).filter(Boolean),
-          testCases: parseJson(draft.testCasesText, []),
+          testCases: draft.testCases,
           legalOpenIssues: parseLines(draft.legalOpenIssuesText),
         },
       });
@@ -558,7 +563,7 @@ export default function TaxSettingsPage() {
   const runPreview = async () => {
     setPreviewing(true); setError('');
     try {
-      const constants = parseJson<Record<string, any>>(draft.constantsText, {});
+      const constants = draft.constants;
       const taxYearMode = typeof constants?.taxYearMode === 'string'
         ? constants.taxYearMode
         : (selectedVersion?.taxYear?.mode || 'calendar');
@@ -583,11 +588,11 @@ export default function TaxSettingsPage() {
             supportedSubdivisions: parseLines(draft.supportedSubdivisionsText),
           },
           fieldDefinitions: draft.fields,
-          sourceLinks: parseJson(draft.sourceLinksText, []),
+          sourceLinks: draft.sourceLinks,
           constants,
-          incomeTax: parseJson(draft.incomeTaxText, {}),
-          statutoryRules: parseJson(draft.statutoryText, []),
-          testCases: parseJson(draft.testCasesText, []),
+          incomeTax: draft.incomeTax,
+          statutoryRules: draft.statutoryRules,
+          testCases: draft.testCases,
           legalOpenIssues: parseLines(draft.legalOpenIssuesText),
           taxYear: { mode: taxYearMode },
         } as any,
@@ -891,7 +896,7 @@ export default function TaxSettingsPage() {
                       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
                         <label className="text-sm text-zinc-400">Calculation status
                           <select value={draft.calculationStatus} onChange={(event) => setDraft({ ...draft, calculationStatus: event.target.value as Draft['calculationStatus'] })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-zinc-100">
-                            <option value="blocked">Blocked</option><option value="preview_only">Preview only</option><option value="runnable">Payroll ready</option>
+                            <option value="blocked">Needs setup</option><option value="preview_only">Test only</option><option value="runnable">Payroll ready</option>
                           </select>
                         </label>
                         <label className="text-sm text-zinc-400">Calculation currency
@@ -1160,33 +1165,61 @@ export default function TaxSettingsPage() {
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <details className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
                   <summary className="cursor-pointer text-sm font-semibold text-zinc-200">Advanced rule definition</summary>
-                  <p className="mt-2 text-xs text-zinc-500">Edit structured rule data only when updating a draft calculation pack.</p>
-                  <div className="mt-4 space-y-3">
-                    <label className="block text-xs text-zinc-500">Official source links (JSON)
-                      <textarea value={draft.sourceLinksText} disabled={!canEdit} onChange={(e) => setDraft({ ...draft, sourceLinksText: e.target.value })} className="mt-1.5 w-full min-h-[96px] bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100" />
-                      <span className="mt-1.5 block text-[11px] leading-5 text-zinc-600">
-                        Runnable primary sources require authorityType, checkedAt, retrievedAt, a SHA-256 contentDigestSha256, and preferably an archiveReference.
-                      </span>
-                    </label>
-                    <label className="block text-xs text-zinc-500">Constants (JSON)
-                      <textarea value={draft.constantsText} disabled={!canEdit} onChange={(e) => setDraft({ ...draft, constantsText: e.target.value })} className="mt-1.5 w-full min-h-[120px] bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100" />
-                    </label>
-                    <label className="block text-xs text-zinc-500">Income tax definition (JSON)
-                      <textarea value={draft.incomeTaxText} disabled={!canEdit} onChange={(e) => setDraft({ ...draft, incomeTaxText: e.target.value })} className="mt-1.5 w-full min-h-[180px] bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100" />
-                    </label>
-                    <label className="block text-xs text-zinc-500">Statutory rules (JSON)
-                      <textarea value={draft.statutoryText} disabled={!canEdit} onChange={(e) => setDraft({ ...draft, statutoryText: e.target.value })} className="mt-1.5 w-full min-h-[160px] bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100" />
-                    </label>
+                  <p className="mt-2 text-xs text-zinc-500">Configure sources, formulas, bands, contributions, and test fixtures without editing JSON.</p>
+                  <div className="mt-5 space-y-6">
+                    <section className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><h4 className="text-sm font-medium text-zinc-200">Official sources</h4><p className="mt-1 text-xs text-zinc-500">Production rules require checked, traceable primary authority material.</p></div>
+                        <button type="button" disabled={!canEdit} onClick={() => setDraft({ ...draft, sourceLinks: [...draft.sourceLinks, { label: '', url: '', authorityType: 'official_guidance', isPrimary: true }] })} className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-300 disabled:opacity-40"><Plus className="h-3.5 w-3.5" />Add source</button>
+                      </div>
+                      {draft.sourceLinks.map((source, index) => {
+                        const setSource = (changes: Partial<(typeof draft.sourceLinks)[number]>) => setDraft({ ...draft, sourceLinks: draft.sourceLinks.map((entry, sourceIndex) => sourceIndex === index ? { ...entry, ...changes } : entry) });
+                        return (
+                          <div key={`${source.url || 'source'}-${index}`} className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <label className="text-xs text-zinc-500">Source label<input value={source.label || ''} disabled={!canEdit} onChange={(event) => setSource({ label: event.target.value })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100" /></label>
+                              <label className="text-xs text-zinc-500">Authority type<select value={source.authorityType || 'official_guidance'} disabled={!canEdit} onChange={(event) => setSource({ authorityType: event.target.value as NonNullable<typeof source.authorityType> })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100"><option value="legislation">Legislation</option><option value="tax_authority">Tax authority</option><option value="social_security_authority">Social security authority</option><option value="official_guidance">Official guidance</option><option value="court_or_ruling">Court or ruling</option><option value="secondary">Secondary source</option></select></label>
+                              <label className="text-xs text-zinc-500 md:col-span-2">Official URL<input type="url" value={source.url || ''} disabled={!canEdit} onChange={(event) => setSource({ url: event.target.value })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100" /></label>
+                              <label className="text-xs text-zinc-500">Checked on<input type="date" value={dateValue(source.checkedAt)} disabled={!canEdit} onChange={(event) => setSource({ checkedAt: event.target.value || null })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100" /></label>
+                              <label className="text-xs text-zinc-500">Retrieved on<input type="date" value={dateValue(source.retrievedAt)} disabled={!canEdit} onChange={(event) => setSource({ retrievedAt: event.target.value || null })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100" /></label>
+                              <label className="text-xs text-zinc-500">Effective from<input type="date" value={dateValue(source.effectiveFrom)} disabled={!canEdit} onChange={(event) => setSource({ effectiveFrom: event.target.value || null })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100" /></label>
+                              <label className="text-xs text-zinc-500">Effective to<input type="date" value={dateValue(source.effectiveTo)} disabled={!canEdit} onChange={(event) => setSource({ effectiveTo: event.target.value || null })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100" /></label>
+                              <label className="text-xs text-zinc-500 md:col-span-2">SHA-256 content digest<input value={source.contentDigestSha256 || ''} disabled={!canEdit} onChange={(event) => setSource({ contentDigestSha256: event.target.value })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-xs text-zinc-100" /></label>
+                              <label className="text-xs text-zinc-500 md:col-span-2">Archive reference<input value={source.archiveReference || ''} disabled={!canEdit} onChange={(event) => setSource({ archiveReference: event.target.value })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100" /></label>
+                            </div>
+                            <div className="flex items-center justify-between"><label className="flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={source.isPrimary !== false} disabled={!canEdit} onChange={(event) => setSource({ isPrimary: event.target.checked })} />Primary authority</label><button type="button" disabled={!canEdit} onClick={() => setDraft({ ...draft, sourceLinks: draft.sourceLinks.filter((_, sourceIndex) => sourceIndex !== index) })} className="text-xs text-red-300 disabled:opacity-40">Remove source</button></div>
+                          </div>
+                        );
+                      })}
+                    </section>
+
+                    <section className="space-y-3 border-t border-zinc-800 pt-5"><div><h4 className="text-sm font-medium text-zinc-200">Calculation constants</h4><p className="mt-1 text-xs text-zinc-500">Add named rates, thresholds, allowances, tables, or formula inputs.</p></div><StructuredRuleEditor value={draft.constants} disabled={!canEdit} onChange={(constants) => setDraft({ ...draft, constants })} /></section>
+
+                    <section className="space-y-3 border-t border-zinc-800 pt-5">
+                      <div><h4 className="text-sm font-medium text-zinc-200">Income tax</h4><p className="mt-1 text-xs text-zinc-500">Choose a supported calculation model, then configure its formulas, bands, tables, and conditions.</p></div>
+                      <label className="block text-xs text-zinc-500">Rule type<select value={String(draft.incomeTax.strategy || 'none')} disabled={!canEdit} onChange={(event) => setDraft({ ...draft, incomeTax: incomeTaxDefaults(event.target.value) })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100">{incomeTaxStrategyOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                      <StructuredRuleEditor value={Object.fromEntries(Object.entries(draft.incomeTax).filter(([key]) => key !== 'strategy'))} disabled={!canEdit} onChange={(settings) => setDraft({ ...draft, incomeTax: { strategy: draft.incomeTax.strategy || 'none', ...settings } })} />
+                    </section>
+
+                    <section className="space-y-3 border-t border-zinc-800 pt-5">
+                      <div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-medium text-zinc-200">Statutory contributions</h4><p className="mt-1 text-xs text-zinc-500">Configure employee and employer liabilities independently.</p></div><button type="button" disabled={!canEdit} onClick={() => setDraft({ ...draft, statutoryRules: [...draft.statutoryRules, statutoryRuleDefaults()] })} className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-300 disabled:opacity-40"><Plus className="h-3.5 w-3.5" />Add rule</button></div>
+                      {draft.statutoryRules.map((rule, index) => (
+                        <div key={`${rule.name || 'rule'}-${index}`} className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+                          <label className="block text-xs text-zinc-500">Rule type<select value={String(rule.strategy || 'flat_percent')} disabled={!canEdit} onChange={(event) => setDraft({ ...draft, statutoryRules: draft.statutoryRules.map((entry, ruleIndex) => ruleIndex === index ? statutoryRuleDefaults(event.target.value) : entry) })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100">{statutoryStrategyOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                          <StructuredRuleEditor value={Object.fromEntries(Object.entries(rule).filter(([key]) => key !== 'strategy'))} disabled={!canEdit} onChange={(settings) => setDraft({ ...draft, statutoryRules: draft.statutoryRules.map((entry, ruleIndex) => ruleIndex === index ? { strategy: rule.strategy || 'flat_percent', ...settings } : entry) })} />
+                          <button type="button" disabled={!canEdit} onClick={() => setDraft({ ...draft, statutoryRules: draft.statutoryRules.filter((_, ruleIndex) => ruleIndex !== index) })} className="text-xs text-red-300 disabled:opacity-40">Remove rule</button>
+                        </div>
+                      ))}
+                    </section>
+
                     <label className="block text-xs text-zinc-500">Notes (one per line)
                       <textarea value={draft.notesText} disabled={!canEdit} onChange={(e) => setDraft({ ...draft, notesText: e.target.value })} className="mt-1.5 w-full min-h-[72px] bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100" />
                     </label>
-                    <label className="block text-xs text-zinc-500">Test cases (JSON)
-                      <textarea value={draft.testCasesText} disabled={!canEdit} onChange={(e) => setDraft({ ...draft, testCasesText: e.target.value })} className="mt-1.5 w-full min-h-[120px] bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100" />
-                    </label>
+                    <section className="space-y-3 border-t border-zinc-800 pt-5"><div><h4 className="text-sm font-medium text-zinc-200">Certification test cases</h4><p className="mt-1 text-xs text-zinc-500">Maintain inputs and expected results used by the deterministic release gates.</p></div><StructuredRuleEditor value={draft.testCases} disabled={!canEdit} onChange={(testCases) => setDraft({ ...draft, testCases })} /></section>
                   </div>
                 </details>
                 <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 space-y-4">
-                  <div className="flex items-center justify-between"><h3 className="text-base font-semibold text-zinc-100">Preview Sandbox</h3><button onClick={runPreview} disabled={previewing} className="px-3 py-2 rounded-lg bg-amber-600 text-white text-sm">{previewing ? 'Previewing...' : 'Run Preview'}</button></div>
+                  <div className="flex items-center justify-between"><div><h3 className="text-base font-semibold text-zinc-100">Calculation tester</h3><p className="mt-1 text-xs text-zinc-500">Validate draft and published calculations before payroll.</p></div><button onClick={runPreview} disabled={previewing} className="px-3 py-2 rounded-lg bg-amber-600 text-white text-sm">{previewing ? 'Calculating...' : 'Calculate'}</button></div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <label className="text-xs text-zinc-500">Basic salary ({draft.calculationCurrency || 'calculation currency'})<input type="number" value={previewBase.basicSalary} onChange={(event) => setPreviewBase({ ...previewBase, basicSalary: Number(event.target.value) })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-zinc-100" /></label>
                     <label className="text-xs text-zinc-500">Gross pay ({draft.calculationCurrency || 'calculation currency'})<input type="number" value={previewBase.grossPay} onChange={(event) => setPreviewBase({ ...previewBase, grossPay: Number(event.target.value) })} className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-zinc-100" /></label>

@@ -33,6 +33,40 @@ test.beforeEach(async ({ page, request }) => {
   await signIn(page);
 });
 
+test('configures every supported tax rule shape without raw JSON', async ({ page, request }) => {
+  const browserErrors: string[] = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  await page.goto('/admin/settings/tax');
+  await dismissPageGuide(page);
+
+  expect(browserErrors).toEqual([]);
+  await expect(page.getByRole('heading', { name: 'Tax Rules' })).toBeVisible();
+  await page.getByText('Advanced rule definition', { exact: true }).click();
+  const advancedRules = page.locator('details').filter({ hasText: 'Advanced rule definition' });
+  await expect(advancedRules.getByRole('heading', { name: 'Official sources' })).toBeVisible();
+  await expect(page.getByText(/\(JSON\)/i)).toHaveCount(0);
+
+  const incomeTaxType = advancedRules.getByLabel('Rule type').first();
+  await expect(incomeTaxType.locator('option')).toHaveCount(6);
+  await incomeTaxType.selectOption('conditional');
+  await expect(advancedRules.locator('textarea').first()).toHaveValue('false');
+
+  const statutoryType = advancedRules.getByLabel('Rule type').nth(1);
+  await expect(statutoryType.locator('option')).toHaveCount(4);
+  await statutoryType.selectOption('fixed_amount');
+  await expect(advancedRules.locator('input[value="New statutory contribution"]')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect.poll(async () => {
+    const logged = await requests(request);
+    return logged.find((entry) => entry.method === 'PUT' && entry.path === '/payroll/tax/jurisdictions/tax-ng')?.body?.version;
+  }).toMatchObject({
+    incomeTax: { strategy: 'conditional' },
+    statutoryRules: [{ strategy: 'fixed_amount' }],
+  });
+  expect(browserErrors).toEqual([]);
+});
+
 test('separates Nigerian company and UK subsidiary tax presence', async ({ page }, testInfo) => {
   await page.goto('/admin/settings/employer-entities');
   await dismissPageGuide(page);
@@ -80,6 +114,8 @@ test('assigns employees to the correct legal employer and jurisdiction', async (
   await page.goto('/admin/employees/employee-uk');
   await dismissPageGuide(page);
   await expect(page.getByText('Ben United Kingdom (synthetic)')).toBeVisible();
+  const payrollCountry = page.getByText('Payroll Country', { exact: true }).locator('..').locator('select');
+  await expect(payrollCountry.locator('option[value="JP"]')).toHaveText('Japan');
 
   await page.getByLabel('Legal employer').selectOption('entity-uk');
   await page.getByLabel('Determination evidence reference').fill('SYN-UK-CONTRACT-REVIEW-002');

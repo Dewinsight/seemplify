@@ -3,6 +3,7 @@
 const {
   EU_MEMBER_STATES,
   AFRICA_FUTURE_DYNAMIC_PACKS,
+  GLOBAL_COUNTRY_OR_TERRITORY_PACKS,
   OTHER_AMERICAS_SOVEREIGN_STATES,
   CANADA_PROVINCES_AND_TERRITORIES,
   US_STATES_AND_DC,
@@ -16,13 +17,23 @@ describe('TaxJurisdictionRolloutInventory', () => {
     expect(OTHER_AMERICAS_SOVEREIGN_STATES).toHaveLength(33);
     expect(CANADA_PROVINCES_AND_TERRITORIES).toHaveLength(13);
     expect(US_STATES_AND_DC).toHaveLength(51);
-    expect(AFRICA_FUTURE_DYNAMIC_PACKS).toHaveLength(2);
+    expect(AFRICA_FUTURE_DYNAMIC_PACKS).toHaveLength(0);
+    expect(GLOBAL_COUNTRY_OR_TERRITORY_PACKS.length).toBeGreaterThan(100);
   });
 
   test('contains unique codes and never asserts runnable coverage', () => {
     const all = getRolloutInventory().flatMap((group) => group.entries);
     expect(new Set(all.map((item) => item.code)).size).toBe(all.length);
     expect(all.some((item) => item.payrollRunnable)).toBe(false);
+  });
+
+  test('provides a setup or released-pack path for every ISO country and territory', () => {
+    const nationalBacklogCodes = getRolloutInventory()
+      .flatMap((group) => group.entries)
+      .map((item) => item.code)
+      .filter((code) => !/^(US|CA)-/.test(code));
+    const releasedCodes = ['CM', 'GB', 'GH', 'KE', 'MZ', 'NG', 'US', 'ZA'];
+    expect(new Set([...nationalBacklogCodes, ...releasedCodes]).size).toBe(249);
   });
 
   test('records Ontario as a quarantined candidate without treating Canada as complete', () => {
@@ -59,8 +70,9 @@ describe('TaxJurisdictionRolloutInventory', () => {
     });
     expect(getDynamicPackBacklogEntry('US-CA').requiredModules).toContain('state unemployment insurance');
     expect(getDynamicPackBacklogEntry('CA-QC').requiredModules).toContain('CPP/CPP2 and EI or Quebec QPP/QPIP/Quebec EI treatment');
-    expect(getDynamicPackBacklogEntry('CM')).toMatchObject({
-      groupId: 'AFRICA_FUTURE_DYNAMIC_PACKS',
+    expect(getDynamicPackBacklogEntry('CM')).toBeNull();
+    expect(getDynamicPackBacklogEntry('JP')).toMatchObject({
+      groupId: 'GLOBAL_COUNTRY_OR_TERRITORY_PACKS',
       implementationStatus: 'dynamic_pack_backlog',
     });
     expect(getDynamicPackBacklogEntry('ZZ')).toBeNull();

@@ -5,12 +5,11 @@
  * payroll-tax jurisdictions. This is planning metadata only; it has no
  * calculation or publication path.
  *
- * Product scope decision (2026-08-09): country-specific Wave 1 engineering
- * stops after Ghana and Nigeria. Cameroon, Mozambique, EU members, US
- * states/DC, Canadian provinces/territories beyond the existing Ontario
- * candidate, and Other Americas remain governed dynamic-pack backlogs. They
- * must be created or cloned as blocked drafts and pass the ordinary legal,
- * fixture and publication gates; this inventory is never a formula fallback.
+ * Released platform packs are deliberately excluded. Every remaining ISO
+ * country or territory is represented so employee and employer setup always
+ * has a governed configuration path. An inventory entry is not a calculation
+ * fallback: it starts as a non-runnable draft and must pass the ordinary
+ * source, fixture and publication gates.
  */
 
 function entry(code, name, implementationStatus = 'dynamic_pack_backlog') {
@@ -54,10 +53,10 @@ const DYNAMIC_PACK_REQUIREMENTS = Object.freeze({
     'subnational or municipal payroll liabilities where applicable', 'benefits, bonuses and termination pay',
     'worker-class, residency and expatriate rules', 'filing and remittance outputs',
   ]),
-  AFRICA_FUTURE_DYNAMIC_PACKS: Object.freeze([
+  GLOBAL_COUNTRY_OR_TERRITORY_PACKS: Object.freeze([
     'national income-tax withholding', 'employee and employer social-security systems',
-    'training, housing, community, broadcasting and other payroll levies where applicable',
-    'benefits, allowances, bonuses and annual reconciliation',
+    'subnational, municipal, sector and other payroll levies where applicable',
+    'benefits, allowances, bonuses, termination pay and annual reconciliation',
     'worker-class, sector, age and expatriate rules', 'filing and remittance outputs',
   ]),
 });
@@ -89,10 +88,29 @@ const OTHER_AMERICAS_SOVEREIGN_STATES = Object.freeze([
   entry('VE', 'Venezuela'),
 ]);
 
-const AFRICA_FUTURE_DYNAMIC_PACKS = Object.freeze([
-  entry('CM', 'Cameroon'),
-  entry('MZ', 'Mozambique'),
+const RELEASED_PLATFORM_COUNTRY_CODES = new Set(['CM', 'GB', 'GH', 'KE', 'MZ', 'NG', 'US', 'ZA']);
+const INVENTORIED_NATIONAL_COUNTRY_CODES = new Set([
+  ...EU_MEMBER_STATES.map((item) => item.code),
+  ...OTHER_AMERICAS_SOVEREIGN_STATES.map((item) => item.code),
 ]);
+const ISO_COUNTRY_OR_TERRITORY_CODES = Object.freeze((
+  'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ '
+  + 'CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR '
+  + 'GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP '
+  + 'KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT '
+  + 'MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW '
+  + 'SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG '
+  + 'UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'
+).split(/\s+/));
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+const GLOBAL_COUNTRY_OR_TERRITORY_PACKS = Object.freeze(
+  ISO_COUNTRY_OR_TERRITORY_CODES
+    .filter((code) => !RELEASED_PLATFORM_COUNTRY_CODES.has(code) && !INVENTORIED_NATIONAL_COUNTRY_CODES.has(code))
+    .map((code) => entry(code, regionNames.of(code) || code))
+);
+// Kept as an empty compatibility export for integrations that consumed the
+// former backlog group. Cameroon and Mozambique are platform releases now.
+const AFRICA_FUTURE_DYNAMIC_PACKS = Object.freeze([]);
 
 const CANADA_PROVINCES_AND_TERRITORIES = Object.freeze([
   entry('CA-AB', 'Alberta'), entry('CA-BC', 'British Columbia'),
@@ -126,12 +144,12 @@ const US_STATES_AND_DC = Object.freeze([
 
 const GROUPS = Object.freeze([
   Object.freeze({
-    id: 'AFRICA_FUTURE_DYNAMIC_PACKS',
-    label: 'Remaining requested African country packs',
-    source: 'https://au.int/en/member_states/countryprofiles2',
-    entries: AFRICA_FUTURE_DYNAMIC_PACKS,
-    additionalScope: 'Cameroon and Mozambique remain governed dynamic-pack backlogs; their legacy previews are not certification evidence.',
-    requiredModules: DYNAMIC_PACK_REQUIREMENTS.AFRICA_FUTURE_DYNAMIC_PACKS,
+    id: 'GLOBAL_COUNTRY_OR_TERRITORY_PACKS',
+    label: 'Remaining country and territory payroll-tax systems',
+    source: 'https://unstats.un.org/unsd/methodology/m49/',
+    entries: GLOBAL_COUNTRY_OR_TERRITORY_PACKS,
+    additionalScope: 'Every country or territory without a released platform pack has a governed setup path; local and sector liabilities must be layered where applicable.',
+    requiredModules: DYNAMIC_PACK_REQUIREMENTS.GLOBAL_COUNTRY_OR_TERRITORY_PACKS,
     dynamicCreationTemplate: DYNAMIC_CREATION_TEMPLATE,
   }),
   Object.freeze({
@@ -201,6 +219,7 @@ function getDynamicPackBacklogEntry(code) {
 module.exports = Object.freeze({
   EU_MEMBER_STATES,
   AFRICA_FUTURE_DYNAMIC_PACKS,
+  GLOBAL_COUNTRY_OR_TERRITORY_PACKS,
   OTHER_AMERICAS_SOVEREIGN_STATES,
   CANADA_PROVINCES_AND_TERRITORIES,
   US_STATES_AND_DC,

@@ -18,6 +18,7 @@ import {
   getTaxCertificationReviewContext,
   submitTaxCertificationReview,
 } from '@/lib/payrollTax';
+import { StructuredRuleEditor } from '@/components/tax/StructuredRuleEditor';
 
 const roleLabel: Record<TaxCertificationReviewRole, string> = {
   tax_law: 'Tax law',
@@ -279,7 +280,7 @@ export default function TaxCertificationReviewPage() {
               ].map(([label, value]) => (
                 <div key={String(label)}>
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{String(label)}</h3>
-                  <pre className="max-h-96 overflow-auto border border-border bg-muted/30 p-3 text-xs leading-5 text-foreground">{JSON.stringify(value ?? {}, null, 2)}</pre>
+                  <div className="max-h-[32rem] overflow-auto border border-border bg-muted/30 p-3"><StructuredRuleEditor value={value ?? {}} onChange={() => undefined} disabled /></div>
                 </div>
               ))}
             </div>

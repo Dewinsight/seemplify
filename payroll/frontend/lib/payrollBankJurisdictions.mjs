@@ -24,7 +24,7 @@ export const NIGERIAN_BANK_OPTIONS = [
   { code: '057', name: 'Zenith Bank' },
 ];
 
-export const PAYROLL_BANK_JURISDICTIONS = [
+const SPECIALIZED_PAYROLL_BANK_JURISDICTIONS = [
   {
     value: 'USA',
     code: 'US',
@@ -272,6 +272,50 @@ export const PAYROLL_BANK_JURISDICTIONS = [
     bankDirectory: null,
     accountTypes: CURRENT_AND_SAVINGS_ACCOUNT_TYPES,
   },
+];
+
+const ISO_COUNTRY_OR_TERRITORY_CODES = (
+  'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ '
+  + 'CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR '
+  + 'GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP '
+  + 'KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT '
+  + 'MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW '
+  + 'SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG '
+  + 'UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'
+).split(/\s+/);
+const specializedCodes = new Set(SPECIALIZED_PAYROLL_BANK_JURISDICTIONS.map((entry) => entry.code));
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+const GENERIC_PAYROLL_BANK_JURISDICTIONS = ISO_COUNTRY_OR_TERRITORY_CODES
+  .filter((code) => !specializedCodes.has(code))
+  .map((code) => ({
+    value: code,
+    code,
+    currency: '',
+    label: regionNames.of(code) || code,
+    description: 'Confirm the local payout rail, payroll currency, tax pack, and statutory registration before running payroll.',
+    accountNumberLabel: 'Account Number',
+    accountNumberPlaceholder: 'Domestic account number',
+    accountNumberHint: 'Enter the account identifier exactly as issued by the employee’s bank.',
+    requiresAccountNumber: true,
+    localField: null,
+    supportsIban: true,
+    requiresIban: false,
+    ibanHint: 'Add IBAN when the employee’s bank or payment rail uses it.',
+    supportsSwift: true,
+    swiftRequired: false,
+    swiftHint: 'Add SWIFT/BIC when finance uses cross-border or correspondent banking.',
+    bankDirectory: null,
+    accountTypes: [
+      { value: 'checking', label: 'Checking' },
+      { value: 'current', label: 'Current Account' },
+      { value: 'savings', label: 'Savings Account' },
+    ],
+  }))
+  .sort((left, right) => left.label.localeCompare(right.label));
+
+export const PAYROLL_BANK_JURISDICTIONS = [
+  ...SPECIALIZED_PAYROLL_BANK_JURISDICTIONS,
+  ...GENERIC_PAYROLL_BANK_JURISDICTIONS,
   {
     value: 'Other',
     code: 'OTHER',

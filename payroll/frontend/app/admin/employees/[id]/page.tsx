@@ -1806,7 +1806,9 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         ))}
                                     </select>
                                     <p className="mt-1.5 text-xs text-zinc-500">
-                                        {automaticCountryDefaults.label} sets {automaticCountryDefaults.currency || 'the local currency'}, the matching tax rules, statutory defaults, and local bank fields. {automaticEmployer ? `Employer: ${automaticEmployer.legalName}.` : 'A safe draft employer setup will be created when you save.'}
+                                        {automaticCountryDefaults.currency
+                                            ? `${automaticCountryDefaults.label} sets ${automaticCountryDefaults.currency}, matching tax rules, statutory defaults, and local bank fields.`
+                                            : `${automaticCountryDefaults.label} is available for governed setup. Confirm the payroll currency, tax rule pack, statutory registrations, and payout fields before the first run.`} {automaticEmployer ? `Employer: ${automaticEmployer.legalName}.` : 'A safe draft employer setup will be created when you save.'}
                                     </p>
                                 </div>
                             </div>

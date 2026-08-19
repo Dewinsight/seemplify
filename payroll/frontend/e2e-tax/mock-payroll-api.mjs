@@ -82,6 +82,8 @@ const candidates = [
 const jurisdictions = [
   {
     _id: 'tax-ng',
+    scope: 'organization',
+    status: 'draft',
     countryCode: 'NG',
     countryName: 'Nigeria',
     displayName: 'Nigeria 2026',
@@ -92,6 +94,27 @@ const jurisdictions = [
       calculationStatus: 'preview_only',
       calculationCurrency: 'NGN',
     },
+    versions: [{
+      _id: 'tax-ng-draft-v2',
+      versionNumber: 2,
+      status: 'draft',
+      label: 'Nigeria configurable draft',
+      effectiveFrom: '2026-01-01',
+      validationStatus: 'draft',
+      calculationStatus: 'blocked',
+      calculationCurrency: 'NGN',
+      coverage: { level: 'national', modules: ['income_tax', 'statutory_contributions'], exclusions: ['draft_changes'] },
+      fieldDefinitions: [],
+      sourceLinks: [{ label: 'Nigeria Tax Act 2025', url: 'https://example.invalid/nigeria-tax-act', authorityType: 'legislation', isPrimary: true, checkedAt: '2026-08-01', retrievedAt: '2026-08-01', contentDigestSha256: 'a'.repeat(64) }],
+      constants: { periodsPerYear: 12, pensionRate: 8 },
+      incomeTax: { strategy: 'progressive_bands', taxableAnnualFormula: 'annualizedTaxableIncome', brackets: [{ min: 0, max: null, rate: 0 }], annualTaxAfterFormula: 'annualTaxBeforeAdjustments' },
+      statutoryRules: [{ strategy: 'flat_percent', type: 'social_security', name: 'Pension employee', liabilityCode: 'NG_PENSION_EMPLOYEE', payer: 'employee', rate: 8, baseFormula: 'grossPay', whenFormula: 'true' }],
+      notes: [],
+      testCases: [{ name: 'Ordinary monthly payroll', category: 'ordinary_period', inputs: { grossPay: 100000 }, expected: { taxAmount: 0 } }],
+      legalOpenIssues: ['draft_changes'],
+      certification: { ready: false, requiredRoles: ['tax_law', 'payroll_calculation', 'independent_qa'], approvedRoles: [], reviews: [], staleReviewCount: 0, problems: ['Draft changes require certification.'] },
+    }],
+    reviewTeam: [],
   },
   {
     _id: 'tax-gb',
@@ -419,6 +442,23 @@ const server = http.createServer(async (request, response) => {
     return json(response, 201, { entity });
   }
   if (path === '/payroll/tax/jurisdictions') return json(response, 200, { jurisdictions });
+  if (path === '/payroll/tax/jurisdiction-backlog') return json(response, 200, { groups: [{
+    id: 'GLOBAL_COUNTRY_OR_TERRITORY_PACKS',
+    label: 'Remaining country and territory payroll-tax systems',
+    source: 'https://unstats.un.org/unsd/methodology/m49/',
+    requiredModules: ['national income-tax withholding'],
+    additionalScope: 'Governed country setup coverage.',
+    entries: [{ code: 'JP', name: 'Japan', countryCode: 'JP', countryName: 'Japan', jurisdictionLevel: 'national', implementationStatus: 'dynamic_pack_backlog', payrollRunnable: false }],
+  }] });
+  const taxJurisdictionMatch = path.match(/^\/payroll\/tax\/jurisdictions\/([^/]+)$/);
+  if (taxJurisdictionMatch && request.method === 'GET') {
+    const jurisdiction = jurisdictions.find((entry) => entry._id === taxJurisdictionMatch[1]);
+    return jurisdiction ? json(response, 200, { jurisdiction }) : json(response, 404, { error: 'Tax jurisdiction not found' });
+  }
+  if (taxJurisdictionMatch && request.method === 'PUT') {
+    const jurisdiction = jurisdictions.find((entry) => entry._id === taxJurisdictionMatch[1]);
+    return jurisdiction ? json(response, 200, { jurisdiction }) : json(response, 404, { error: 'Tax jurisdiction not found' });
+  }
   if (path === '/currencies' || path === '/payroll/currencies') {
     const currencyRows = [
       { code: 'NGN', name: 'Nigerian Naira', label: 'NGN - Nigerian Naira', enabled: true, paymentEnabled: true, statutoryEligible: true, kind: 'fiat' },
