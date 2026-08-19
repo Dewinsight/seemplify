@@ -10,6 +10,7 @@ import { normalizeAppAccess } from '../utils/appAccess.js'
 import { serializeReconciliationTeams } from '../utils/reconciliationTeams.js'
 import { subscriptionService } from '../services/subscriptionService.js'
 import { emailService } from '../services/emailService.js'
+import { resolveInternalMembershipSecret } from '../services/internalMembershipAuthService.js'
 import { forceUserLogout, sendWebhook } from '../services/webhookService.js'
 import { invalidateClaimsCache } from '../index.js'
 
@@ -17,19 +18,13 @@ const router = express.Router()
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 const VALID_ROLES = new Set(['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'])
 
-function configuredSecret() {
-  return process.env.MESSAGING_IDP_SERVICE_SECRET
-    || process.env.INTERNAL_SERVICE_SECRET
-    || process.env.RECRUITER_IDP_SERVICE_SECRET
-    || ''
-}
-
 function requestHash(body) {
   return crypto.createHash('sha256').update(JSON.stringify(body || {})).digest('hex')
 }
 
 function serviceAuth(req, res, next) {
-  const secret = configuredSecret()
+  const serviceId = String(req.get('x-service-id') || 'unknown-service')
+  const secret = resolveInternalMembershipSecret(serviceId)
   if (!secret) {
     if (process.env.NODE_ENV === 'production') return res.status(503).json({ error: 'Internal service authentication is not configured' })
     return next()
@@ -46,7 +41,7 @@ function serviceAuth(req, res, next) {
   if (!/^[a-f0-9]{64}$/i.test(received) || !crypto.timingSafeEqual(Buffer.from(received, 'hex'), Buffer.from(expected, 'hex'))) {
     return res.status(401).json({ error: 'Invalid service signature' })
   }
-  req.serviceId = String(req.get('x-service-id') || 'unknown-service')
+  req.serviceId = serviceId
   next()
 }
 

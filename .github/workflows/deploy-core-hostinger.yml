@@ -52,6 +52,7 @@ jobs:
             test/nylas-platform-configuration.test.mjs \
             test/media-platform-configuration.test.mjs \
             test/organization-deletion-fallback.test.mjs \
+            test/internal-membership-service-auth.test.mjs \
             test/recruiter-admin-sso-secret.test.mjs \
             test/shared-ai-admin-client.test.mjs
 
