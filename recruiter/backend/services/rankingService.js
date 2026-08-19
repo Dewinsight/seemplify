@@ -26,8 +26,23 @@ class RankingService {
         return { ...candidate, relevanceScore: 0 };
       }
 
-      const relevanceScore = this.calculateRelevanceScore(explanation);
-      return { ...candidate, relevanceScore };
+      const explanationScore = this.calculateRelevanceScore(explanation);
+      // Deep mode must not downgrade a candidate when the optional LLM
+      // analysis is unavailable. The quick-stage score is already grounded in
+      // the canonical profile, calibrated semantic similarity, role, skills,
+      // experience, and location. Legacy explanations add evidence, so retain
+      // the stronger of the two deterministic assessments.
+      const relevanceScore = Math.max(
+        explanationScore,
+        this.clamp(candidate.relevanceScore)
+      );
+      const updatedExplanation = {
+        ...explanation,
+        overallScore: Math.round(relevanceScore * 100),
+        matchStrength: this.categorizeMatchStrength(relevanceScore)
+      };
+      explanations[candidate.candidateId] = updatedExplanation;
+      return { ...candidate, relevanceScore, explanation: updatedExplanation };
     });
 
     // Sort candidates by the new relevance score in descending order
@@ -199,6 +214,16 @@ class RankingService {
 
   clamp(value) {
     return Math.min(1, Math.max(0, Number(value) || 0));
+  }
+
+  categorizeMatchStrength(score) {
+    const value = this.clamp(score);
+    if (value >= 0.9) return 'Excellent Match';
+    if (value >= 0.8) return 'Strong Match';
+    if (value >= 0.7) return 'Good Match';
+    if (value >= 0.6) return 'Moderate Match';
+    if (value >= 0.5) return 'Weak Match';
+    return 'Poor Match';
   }
 }
 

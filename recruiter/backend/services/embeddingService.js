@@ -1625,7 +1625,7 @@ class EmbeddingService {
       // Enhanced skills analysis using job skills and candidate technologies
       const jobSkills = this.parseSkills(job?.skills);
       const candidateSkills = this.parseSkills(metadata.skills);
-      const candidateTechnologies = metadata.technologiesUsed || [];
+      const candidateTechnologies = this.parseSkills(metadata.technologiesUsed);
       
       console.log('📊 Skills Analysis:');
       console.log('- Job Skills:', jobSkills);
@@ -1781,7 +1781,8 @@ class EmbeddingService {
    * Analyze industry experience match
    */
   analyzeIndustryMatch(jobContext, candidateIndustries) { // Changed jobDepartment to jobContext
-    if (!candidateIndustries || candidateIndustries.length === 0) {
+    const industries = this.parseSkills(candidateIndustries);
+    if (industries.length === 0) {
       return {
         hasRelevantIndustry: false,
         matchedIndustries: [],
@@ -1796,7 +1797,7 @@ class EmbeddingService {
     
     // Check title for fintech keywords
     if (jobContext.title) {
-      const titleLower = jobContext.title.toLowerCase();
+      const titleLower = String(jobContext.title).toLowerCase();
       // Add full title words
       titleLower.split(/[\s,\-]+/).forEach(k => k.trim() && k.length > 2 && jobKeywords.add(k.trim()));
       
@@ -1814,11 +1815,11 @@ class EmbeddingService {
     }
     
     if (jobContext.department) {
-      jobContext.department.toLowerCase().split(/[\s,\-]+/).forEach(k => k.trim() && k.length > 2 && jobKeywords.add(k.trim()));
+      String(jobContext.department).toLowerCase().split(/[\s,\-]+/).forEach(k => k.trim() && k.length > 2 && jobKeywords.add(k.trim()));
     }
     
     if (jobContext.description) {
-      const descLower = jobContext.description.toLowerCase();
+      const descLower = String(jobContext.description).toLowerCase();
       // Look for fintech keywords specifically
       fintechKeywords.forEach(keyword => {
         if (descLower.includes(keyword)) {
@@ -1827,9 +1828,10 @@ class EmbeddingService {
       });
     }
     
-    if (jobContext.skills && jobContext.skills.length > 0) {
-      jobContext.skills.forEach(skill => {
-        const skillLower = skill.toLowerCase().trim();
+    const jobSkills = this.parseSkills(jobContext.skills);
+    if (jobSkills.length > 0) {
+      jobSkills.forEach(skill => {
+        const skillLower = String(skill).toLowerCase().trim();
         jobKeywords.add(skillLower);
         // Check for fintech-related skills
         fintechKeywords.forEach(keyword => {
@@ -1846,14 +1848,14 @@ class EmbeddingService {
         return { // Fallback if no job keywords found
             hasRelevantIndustry: false,
             matchedIndustries: [],
-            allIndustries: candidateIndustries,
+            allIndustries: industries,
             relevanceScore: 0
         };
     }
 
     // Enhanced matching logic
-    const matchedIndustries = candidateIndustries.filter(industry => {
-      const candIndustryLower = industry.toLowerCase().trim();
+    const matchedIndustries = industries.filter(industry => {
+      const candIndustryLower = String(industry).toLowerCase().trim();
       
       // Direct keyword match
       const directMatch = jobIndustryKeywords.some(keyword =>
@@ -1875,8 +1877,8 @@ class EmbeddingService {
     return {
       hasRelevantIndustry: matchedIndustries.length > 0,
       matchedIndustries: matchedIndustries,
-      allIndustries: candidateIndustries,
-      relevanceScore: candidateIndustries.length > 0 ? Math.round((matchedIndustries.length / candidateIndustries.length) * 100) : 0
+      allIndustries: industries,
+      relevanceScore: industries.length > 0 ? Math.round((matchedIndustries.length / industries.length) * 100) : 0
     };
   }
 
@@ -1885,8 +1887,9 @@ class EmbeddingService {
    */
   analyzeLeadershipMatch(jobLevel, hasLeadershipExp) {
     const leadershipLevels = ['lead', 'senior', 'manager', 'director', 'head', 'chief', 'executive'];
+    const normalizedLevel = String(jobLevel || '').toLowerCase();
     const requiresLeadership = leadershipLevels.some(level => 
-      jobLevel?.toLowerCase().includes(level)
+      normalizedLevel.includes(level)
     );
     
     return {
@@ -1901,13 +1904,15 @@ class EmbeddingService {
    * Analyze AI insights for additional context
    */
   analyzeAIInsights(metadata) {
+    const strengths = this.parseSkills(metadata.aiStrengths);
+    const potentialFlags = this.parseSkills(metadata.aiFlags);
     return {
-      hasAIAnalysis: metadata.hasAIAnalysis,
-      summary: metadata.aiSummary || '',
-      strengths: metadata.aiStrengths || [],
-      potentialFlags: metadata.aiFlags || [],
-      strengthsCount: (metadata.aiStrengths || []).length,
-      flagsCount: (metadata.aiFlags || []).length
+      hasAIAnalysis: Boolean(metadata.hasAIAnalysis),
+      summary: String(metadata.aiSummary || ''),
+      strengths,
+      potentialFlags,
+      strengthsCount: strengths.length,
+      flagsCount: potentialFlags.length
     };
   }
 
@@ -1915,11 +1920,11 @@ class EmbeddingService {
    * Analyze career fit and progression
    */
   analyzeCareerFit(job, metadata) {
-    const totalYears = metadata.totalYearsExp || 0;
-    const hasProgression = !!(metadata.careerProgression && metadata.careerProgression.trim());
-    const hasAchievements = (metadata.keyAchievements || []).length > 0;
-    const companiesCount = (metadata.companiesWorkedAt || []).length;
-    const positionsCount = (metadata.positionsHeld || []).length;
+    const totalYears = this.extractYearsFromExperience(metadata.totalYearsExp ?? metadata.experience);
+    const hasProgression = String(metadata.careerProgression || '').trim().length > 0;
+    const hasAchievements = this.parseSkills(metadata.keyAchievements).length > 0;
+    const companiesCount = this.parseSkills(metadata.companiesWorkedAt).length;
+    const positionsCount = this.parseSkills(metadata.positionsHeld).length;
     
     // Calculate career stability (longer tenures generally better)
     const avgTenure = companiesCount > 0 ? totalYears / companiesCount : 0;
@@ -2033,8 +2038,9 @@ class EmbeddingService {
     }
     
     // AI flags
-    if (metadata.aiFlags && metadata.aiFlags.length > 0) {
-      concerns.push(`AI-identified considerations: ${metadata.aiFlags.slice(0, 2).join(', ')}`);
+    const aiFlags = this.parseSkills(metadata.aiFlags);
+    if (aiFlags.length > 0) {
+      concerns.push(`AI-identified considerations: ${aiFlags.slice(0, 2).join(', ')}`);
     }
     
     // Career stability concerns
@@ -2169,8 +2175,8 @@ class EmbeddingService {
    */
   analyzeLocationMatch(jobLocation, candidateLocation) {
     // Clean and normalize inputs
-    const cleanJobLoc = (jobLocation || '').trim();
-    const cleanCandidateLoc = (candidateLocation || '').trim();
+    const cleanJobLoc = String(jobLocation || '').trim();
+    const cleanCandidateLoc = String(candidateLocation || '').trim();
     
     // Handle missing locations
     if (!cleanJobLoc && !cleanCandidateLoc) {

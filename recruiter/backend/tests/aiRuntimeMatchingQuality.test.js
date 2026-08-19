@@ -141,9 +141,46 @@ test('full-profile matching grounds the screenshot skill gaps and career history
     const deepResult = await embeddingService.findMatchingCandidatesWithExplanation(job, 1);
     assert.equal(deepResult.matches[0].explanation.careerFit.totalYearsExp, 13);
     assert.equal(deepResult.matches[0].explanation.skillsMatch.matchPercentage, 100);
-    assert.ok(deepResult.matches[0].relevanceScore >= 0.7);
+    assert.ok(deepResult.matches[0].relevanceScore >= ranked.relevanceScore);
+    assert.equal(deepResult.matches[0].explanation.overallScore, Math.round(deepResult.matches[0].relevanceScore * 100));
+    assert.equal(deepResult.matches[0].explanation.matchStrength, 'Strong Match');
   } finally {
     embeddingService.findMatchingCandidatesForJob = originalFinder;
     gptService.isEnabled = originalEnabled;
   }
+});
+
+test('matching analyzers tolerate structured production metadata without discarding the profile', async () => {
+  const explanation = await embeddingService.generateMatchExplanation({
+    title: { rendered: 'Product Manager' },
+    department: { name: 'Engineering' },
+    description: { rendered: 'Build useful products' },
+    skills: ['product discovery'],
+    experience: '1-3 years',
+    location: { rendered: 'Milton Keynes' },
+    level: 3
+  }, {
+    candidateId: 'structured-profile',
+    vectorSimilarity: 0.55,
+    metadata: {
+      skills: ['product discovery'],
+      technologiesUsed: 'TypeScript, Node.js',
+      totalYearsExp: 13,
+      location: 'London, UK',
+      industryExp: 'FinTech, AI',
+      aiStrengths: 'Product leadership, Engineering leadership',
+      aiFlags: 'Overqualified',
+      careerProgression: { summary: 'Developer to Head of Product' },
+      keyAchievements: 'Shipped products to 500,000 users',
+      companiesWorkedAt: 'Dewinsight, Farntech',
+      positionsHeld: 'Head of Product, Lead Product Manager',
+      dataCompleteness: 100,
+      hasAIAnalysis: true,
+      hasDetailedWorkHistory: true
+    }
+  });
+
+  assert.equal(explanation.careerFit.totalYearsExp, 13);
+  assert.equal(explanation.dataQuality.completeness, 100);
+  assert.ok(!explanation.reasons.includes('Full profile evidence retained while detailed analysis was unavailable'));
 });
