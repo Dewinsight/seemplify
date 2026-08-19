@@ -131,13 +131,19 @@ const createNewPackDraft = (): NewPackDraft => ({
   provenanceReference: '',
 });
 
-const calculationStatusLabel = (status?: TaxJurisdictionVersion['calculationStatus']) => {
+type TaxCatalogueKind = 'jurisdiction' | 'candidate' | 'template';
+
+const calculationStatusLabel = (status?: TaxJurisdictionVersion['calculationStatus'], kind: TaxCatalogueKind = 'jurisdiction') => {
+  if (kind === 'template') return 'Setup template';
+  if (kind === 'candidate') return 'Certification pending';
   if (status === 'runnable') return 'Payroll ready';
   if (status === 'preview_only') return 'Test only';
   return 'Needs setup';
 };
 
-const calculationStatusClasses = (status?: TaxJurisdictionVersion['calculationStatus']) => {
+const calculationStatusClasses = (status?: TaxJurisdictionVersion['calculationStatus'], kind: TaxCatalogueKind = 'jurisdiction') => {
+  if (kind === 'template') return 'border-zinc-600 bg-zinc-800/70 text-zinc-300';
+  if (kind === 'candidate') return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
   if (status === 'runnable') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
   if (status === 'preview_only') return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
   return 'border-red-500/30 bg-red-500/10 text-red-200';
@@ -147,6 +153,13 @@ const publishedVersionFor = (jurisdiction: TaxJurisdictionDetail) => jurisdictio
   || jurisdiction.versions?.find((version) => version._id === jurisdiction.publishedVersionId)
   || jurisdiction.versions?.find((version) => version.status === 'published')
   || null;
+
+const taxCatalogueKind = (jurisdiction: TaxJurisdictionDetail): TaxCatalogueKind => {
+  const published = publishedVersionFor(jurisdiction);
+  if (published?.coverage?.level === 'template' || ['EU', 'OTHER'].includes(jurisdiction.countryCode)) return 'template';
+  if (/implementation template/i.test(jurisdiction.displayName)) return 'candidate';
+  return 'jurisdiction';
+};
 
 const reviewRoleLabel = (role: TaxCertificationReviewRole) => ({
   tax_law: 'Tax law',
@@ -711,6 +724,7 @@ export default function TaxSettingsPage() {
         <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
           {jurisdictions.map((item) => {
             const calculationStatus = publishedVersionFor(item)?.calculationStatus || 'blocked';
+            const catalogueKind = taxCatalogueKind(item);
             return (
               <button
                 key={item._id}
@@ -722,8 +736,8 @@ export default function TaxSettingsPage() {
                     <span className="block text-sm font-semibold text-zinc-100">{item.displayName}</span>
                     <span className="mt-1 block text-xs text-zinc-500">{item.countryCode} · {item.scope}</span>
                   </span>
-                  <span className={`rounded-md border px-2 py-1 text-[11px] font-medium ${calculationStatusClasses(calculationStatus)}`}>
-                    {calculationStatusLabel(calculationStatus)}
+                  <span className={`rounded-md border px-2 py-1 text-[11px] font-medium ${calculationStatusClasses(calculationStatus, catalogueKind)}`}>
+                    {calculationStatusLabel(calculationStatus, catalogueKind)}
                   </span>
                 </span>
               </button>
@@ -787,7 +801,11 @@ export default function TaxSettingsPage() {
                       <div>
                         <h3 id="tax-pack-readiness" className="text-base font-semibold text-zinc-100">Payroll readiness</h3>
                         <p className="mt-1 text-sm text-zinc-400">
-                          {selectedVersion.calculationStatus === 'runnable'
+                          {taxCatalogueKind(selected) === 'template'
+                            ? 'This is a starting template for creating a jurisdiction-specific organization rule. It is not an unfinished payroll jurisdiction.'
+                            : taxCatalogueKind(selected) === 'candidate'
+                              ? 'This implementation candidate remains outside payroll runs until its statutory scope and certification are complete.'
+                              : selectedVersion.calculationStatus === 'runnable'
                             ? 'This published calculation pack may be used in payroll runs for its stated coverage.'
                             : selectedVersion.calculationStatus === 'preview_only'
                               ? 'Calculations are available for review, but payroll runs are blocked until the pack is certified.'
@@ -795,8 +813,8 @@ export default function TaxSettingsPage() {
                         </p>
                       </div>
                     </div>
-                    <span className={`self-start rounded-md border px-2.5 py-1 text-xs font-medium ${calculationStatusClasses(selectedVersion.calculationStatus)}`}>
-                      {calculationStatusLabel(selectedVersion.calculationStatus)}
+                    <span className={`self-start rounded-md border px-2.5 py-1 text-xs font-medium ${calculationStatusClasses(selectedVersion.calculationStatus, taxCatalogueKind(selected))}`}>
+                      {calculationStatusLabel(selectedVersion.calculationStatus, taxCatalogueKind(selected))}
                     </span>
                   </div>
 
