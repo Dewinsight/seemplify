@@ -1,5 +1,5 @@
-const { Timesheet, Shift, EmployeeRoster } = require('../models');
-const { buildTransferPayload } = require('../services/payrollTransferService');
+const { Timesheet, AttendancePolicy, Shift, EmployeeRoster } = require('../models');
+const { buildTransferPayload, transferOne } = require('../services/payrollTransferService');
 
 function queryResult(value) {
     return { lean: async () => value };
@@ -50,4 +50,32 @@ test('a corrected approved version sends payroll deltas instead of replacing his
         expect.objectContaining({ category: 'adjustment', quantity: 1, metadata: expect.objectContaining({ adjustmentCategory: 'regular' }) }),
         expect.objectContaining({ category: 'adjustment', quantity: 0.5, metadata: expect.objectContaining({ adjustmentCategory: 'unpaid_break' }) }),
     ]));
+});
+
+test('an approved timesheet with no payable data is settled without calling or blocking payroll', async () => {
+    jest.spyOn(AttendancePolicy, 'findOne').mockResolvedValue({ payroll: { enabled: true, payCodes: {} } });
+    jest.spyOn(Shift, 'find').mockReturnValue(queryResult([]));
+    jest.spyOn(EmployeeRoster, 'findOne').mockReturnValue(queryResult({ employeeId: 'EMP-001' }));
+    const fetchSpy = jest.spyOn(global, 'fetch');
+    const timesheet = {
+        _id: 'timesheet-empty', version: 1, organizationId: 'org-1', userId: 'employee-1', userEmail: 'employee@example.test',
+        startDate: new Date('2026-08-17'), endDate: new Date('2026-08-24'), periodType: 'weekly', status: 'payroll_pending',
+        summary: { regularHours: 0, overtimeHours: 0, breakTime: 0, totalHours: 0 }, dailyEntries: [],
+        payrollIntegration: { state: 'failed', exported: false, lastError: 'old failure', nextAttemptAt: new Date() },
+        addAuditLog: jest.fn(),
+        save: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(transferOne(timesheet)).resolves.toEqual({ skipped: true, reason: 'no_payable_data' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(timesheet.status).toBe('approved');
+    expect(timesheet.payrollIntegration).toMatchObject({ state: 'no_data', exported: false, lastError: '', nextAttemptAt: null });
+    expect(timesheet.addAuditLog).toHaveBeenCalledWith(
+        'payroll_skipped',
+        'system',
+        'Payroll integration',
+        null,
+        expect.stringMatching(/payroll remains independent/)
+    );
+    expect(timesheet.save).toHaveBeenCalledTimes(1);
 });

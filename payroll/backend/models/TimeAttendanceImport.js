@@ -35,7 +35,7 @@ const TimeAttendanceImportSchema = new Schema({
   idempotencyKey: { type: String, required: true, unique: true, index: true },
   correlationId: String,
   schemaVersion: { type: String, default: '1.0' },
-  status: { type: String, enum: ['accepted', 'applied', 'superseded', 'rejected'], default: 'accepted', index: true },
+  status: { type: String, enum: ['accepted', 'no_data', 'applied', 'superseded', 'rejected'], default: 'accepted', index: true },
   acceptedAt: { type: Date, default: Date.now },
   appliedPayrollRunId: { type: Schema.Types.ObjectId, ref: 'PayrollRun' },
   sourcePayloadHash: { type: String, required: true },

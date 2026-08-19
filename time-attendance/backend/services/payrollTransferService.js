@@ -104,7 +104,22 @@ async function transferOne(timesheet) {
     const policy = await AttendancePolicy.findOne({ organizationId: timesheet.organizationId });
     if (policy?.payroll?.enabled === false) return { skipped: true, reason: 'disabled' };
     const payload = await buildTransferPayload(timesheet, policy);
-    if (!payload.payCodeLines.length) throw new Error('Approved timesheet has no payable or allocatable time');
+    if (!payload.payCodeLines.length) {
+        timesheet.payrollIntegration.state = 'no_data';
+        timesheet.payrollIntegration.exported = false;
+        timesheet.payrollIntegration.lastError = '';
+        timesheet.payrollIntegration.nextAttemptAt = null;
+        if (timesheet.status === 'payroll_pending') timesheet.status = 'approved';
+        timesheet.addAuditLog(
+            'payroll_skipped',
+            'system',
+            'Payroll integration',
+            null,
+            'No payable or allocatable attendance data; payroll remains independent and will run without a timesheet import'
+        );
+        await timesheet.save();
+        return { skipped: true, reason: 'no_payable_data' };
+    }
     const serialized = JSON.stringify(payload);
     const timestamp = new Date().toISOString();
     const secret = payrollSecret();
@@ -156,10 +171,12 @@ async function transferPendingTimesheets() {
     }).sort({ 'payrollIntegration.lastAttemptAt': 1 }).limit(50);
     let accepted = 0;
     let failed = 0;
+    let skipped = 0;
     for (const timesheet of pending) {
         try {
-            await transferOne(timesheet);
-            accepted += 1;
+            const result = await transferOne(timesheet);
+            if (result?.skipped) skipped += 1;
+            else accepted += 1;
         } catch (error) {
             timesheet.payrollIntegration.state = timesheet.payrollIntegration.attempts >= 10 ? 'dead' : (timesheet.supersedesTimesheetId ? 'adjustment_pending' : 'failed');
             timesheet.payrollIntegration.lastError = String(error.message || error).slice(0, 2000);
@@ -170,7 +187,7 @@ async function transferPendingTimesheets() {
             failed += 1;
         }
     }
-    return { processed: pending.length, accepted, failed };
+    return { processed: pending.length, accepted, skipped, failed };
 }
 
 module.exports = { buildTransferPayload, transferOne, transferPendingTimesheets };

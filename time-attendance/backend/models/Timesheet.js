@@ -113,6 +113,7 @@ const AuditLogSchema = new Schema({
             'reminder_sent', 'locked', 'payroll_queued', 'payroll_exported', 'payroll_failed',
             'adjustment_created', 'adjustment_approved', 'auto_submitted', 'auto_approved',
             'integration_retried', 'attendance_event_appended', 'cancelled',
+            'payroll_skipped',
         ],
         required: true,
     },
@@ -295,7 +296,7 @@ const TimesheetSchema = new Schema({
         payrollRunId: String,
         state: {
             type: String,
-            enum: ['not_ready', 'pending', 'accepted', 'failed', 'dead', 'adjustment_pending'],
+            enum: ['not_ready', 'pending', 'accepted', 'failed', 'dead', 'adjustment_pending', 'no_data'],
             default: 'not_ready',
         },
         idempotencyKey: String,
