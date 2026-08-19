@@ -147,6 +147,8 @@ test('publishes public X-aware terms and privacy links at authentication surface
   const authLayout = fs.readFileSync(path.join(source, 'components', 'auth', 'AuthLayout.tsx'), 'utf8');
   for (const phrase of ['X credentials and data', 'Terms of Service', 'Privacy Policy', 'support@seemplify.com']) assert.match(legal, new RegExp(phrase));
   for (const page of [login, signup]) assert.match(page, /AuthLayout/);
+  assert.match(login, /href="\/api\/auth\/hub"/);
+  assert.match(login, />Go to Hub<\/a>/);
   assert.match(authLayout, /\/legal\/terms/);
   assert.match(authLayout, /\/legal\/privacy/);
 });

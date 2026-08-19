@@ -1,4 +1,4 @@
-import { ArrowRight, LockKeyhole } from 'lucide-react';
+import { ArrowRight, House, LockKeyhole } from 'lucide-react';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { Button } from '@/components/ui/button';
 
@@ -20,6 +20,9 @@ export function LoginPage() {
     {error && <div className="mt-5 border border-destructive/35 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert">{error}</div>}
     <Button className="mt-7 h-10 w-full" asChild>
       <a href={startUrl}>Continue with Seemplify <ArrowRight /></a>
+    </Button>
+    <Button className="mt-3 h-10 w-full" variant="outline" asChild>
+      <a href="/api/auth/hub"><House />Go to Hub</a>
     </Button>
     <p className="mt-6 border-t pt-5 text-center text-xs leading-5 text-muted-foreground">Published surveys and public signing links remain available without signing in.</p>
   </div></AuthLayout>;
