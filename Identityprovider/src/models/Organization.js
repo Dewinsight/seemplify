@@ -192,6 +192,18 @@ const OrganizationSchema = new mongoose.Schema({
       trim: true,
       maxLength: 100
     },
+    countryCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxLength: 2
+    },
+    stateCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxLength: 10
+    },
     managerAccount: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'AiinAccount',
@@ -478,6 +490,8 @@ OrganizationSchema.methods.addBranch = async function(data = {}) {
     city: String(data.city || '').trim(),
     state: String(data.state || '').trim(),
     country: String(data.country || '').trim(),
+    countryCode: String(data.countryCode || '').trim().toUpperCase(),
+    stateCode: String(data.stateCode || '').trim().toUpperCase(),
     managerAccount: data.managerAccount || null,
     isHeadOffice: !!data.isHeadOffice,
     createdAt: new Date(),
@@ -516,6 +530,12 @@ OrganizationSchema.methods.updateBranch = async function(branchId, updates = {})
   for (const field of ['address', 'city', 'state', 'country']) {
     if (Object.prototype.hasOwnProperty.call(updates, field)) {
       branch[field] = String(updates[field] || '').trim()
+    }
+  }
+
+  for (const field of ['countryCode', 'stateCode']) {
+    if (Object.prototype.hasOwnProperty.call(updates, field)) {
+      branch[field] = String(updates[field] || '').trim().toUpperCase()
     }
   }
 

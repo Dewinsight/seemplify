@@ -509,6 +509,7 @@ export function invalidateClaimsCache(accountSub) {
 }
 import { setProviderInstance } from './middleware/apiAuth.js'
 import organizationsRouter from './routes/organizations.js'
+import geographyRouter from './routes/geography.js'
 import invitationsRouter from './routes/invitations.js'
 import membersRouter from './routes/members.js'
 import teamsRouter from './routes/teams.js'
@@ -6130,6 +6131,7 @@ const loadOnboardingAdminContext = async (req, organizationId, options = {}) => 
 }
 
 // API Routes (JSON responses)
+app.use('/api/geography', geographyRouter)
 app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
@@ -6811,6 +6813,8 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         city: branch.city || '',
         state: branch.state || '',
         country: branch.country || '',
+        countryCode: branch.countryCode || '',
+        stateCode: branch.stateCode || '',
         managerAccount: branch.managerAccount?.toString() || '',
         managerName: orgMembers.find((orgMember) => orgMember._id.toString() === branch.managerAccount?.toString())?.profile?.name || '',
         isHeadOffice: !!branch.isHeadOffice,

@@ -1202,15 +1202,19 @@
           </div>
           <div class="form-group">
             <label for="branchCity">City</label>
-            <input type="text" id="branchCity" maxlength="100" autocomplete="address-level2">
+            <input type="text" id="branchCity" maxlength="100" autocomplete="address-level2" list="branchCityOptions" placeholder="Start typing a city">
+            <datalist id="branchCityOptions"></datalist>
           </div>
           <div class="form-group">
             <label for="branchState">State / region</label>
-            <input type="text" id="branchState" maxlength="100" autocomplete="address-level1">
+            <input type="text" id="branchState" maxlength="100" autocomplete="address-level1" list="branchStateOptions" placeholder="Select or enter a region">
+            <datalist id="branchStateOptions"></datalist>
           </div>
           <div class="form-group">
             <label for="branchCountry">Country</label>
-            <input type="text" id="branchCountry" maxlength="100" autocomplete="country-name">
+            <select id="branchCountry" required autocomplete="country">
+              <option value="">Loading countries…</option>
+            </select>
           </div>
           <div class="form-group">
             <label for="branchManager">Location manager</label>
@@ -1315,6 +1319,62 @@
     const teams = <%- JSON.stringify(teams || []) %>;
     const branches = <%- JSON.stringify(branches || []) %>;
     let activeMembersTeamId = '';
+    let geographyCountries = [];
+    let geographyStates = [];
+    let cityLookupTimer = null;
+
+    async function geographyRequest(path) {
+      const response = await fetch(`/api/geography/${path}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Location directory is unavailable');
+      return data;
+    }
+
+    async function loadCountries(selectedCode = '', selectedName = '') {
+      const countrySelect = document.getElementById('branchCountry');
+      if (!geographyCountries.length) {
+        const data = await geographyRequest('countries');
+        geographyCountries = data.countries || [];
+      }
+      countrySelect.innerHTML = '<option value="">Select a country</option>';
+      geographyCountries.forEach((country) => {
+        countrySelect.add(new Option(country.name, country.code));
+      });
+      const match = geographyCountries.find((country) =>
+        country.code === selectedCode || country.name.toLocaleLowerCase() === String(selectedName || '').toLocaleLowerCase()
+      );
+      countrySelect.value = match?.code || '';
+      return match?.code || '';
+    }
+
+    async function loadStates(countryCode, selectedState = '') {
+      const stateList = document.getElementById('branchStateOptions');
+      stateList.replaceChildren();
+      geographyStates = [];
+      if (!countryCode) return;
+      const data = await geographyRequest(`states?country=${encodeURIComponent(countryCode)}`);
+      geographyStates = data.states || [];
+      geographyStates.forEach((state) => stateList.append(new Option(state.name, state.name)));
+      document.getElementById('branchState').value = selectedState || '';
+    }
+
+    function selectedStateCode() {
+      const stateName = document.getElementById('branchState').value.trim().toLocaleLowerCase();
+      return geographyStates.find((state) => state.name.toLocaleLowerCase() === stateName)?.code || '';
+    }
+
+    async function updateCitySuggestions() {
+      const query = document.getElementById('branchCity').value.trim();
+      const countryCode = document.getElementById('branchCountry').value;
+      const cityList = document.getElementById('branchCityOptions');
+      cityList.replaceChildren();
+      if (!countryCode || query.length < 2) return;
+      const params = new URLSearchParams({ country: countryCode, q: query });
+      const stateCode = selectedStateCode();
+      if (stateCode) params.set('state', stateCode);
+      const data = await geographyRequest(`cities?${params.toString()}`);
+      (data.cities || []).forEach((city) => cityList.append(new Option(city, city)));
+    }
 
     function selectDepartment(departmentId, updateHistory = false) {
       const normalizedId = normalizeId(departmentId);
@@ -1962,15 +2022,21 @@
       document.getElementById('departmentModal').classList.remove('active');
     }
 
-    function showBranchModal() {
+    async function showBranchModal() {
       document.getElementById('branchModalTitle').textContent = 'Add location';
       document.getElementById('branchForm').reset();
       document.getElementById('branchId').value = '';
       document.getElementById('branchModal').classList.add('active');
+      try {
+        await loadCountries();
+        await loadStates('');
+      } catch (error) {
+        alert(error.message);
+      }
       document.getElementById('branchName').focus();
     }
 
-    function editBranch(branch) {
+    async function editBranch(branch) {
       document.getElementById('branchModalTitle').textContent = 'Edit location';
       document.getElementById('branchForm').reset();
       document.getElementById('branchId').value = branch.id || '';
@@ -1978,11 +2044,15 @@
       document.getElementById('branchCode').value = branch.code || '';
       document.getElementById('branchAddress').value = branch.address || '';
       document.getElementById('branchCity').value = branch.city || '';
-      document.getElementById('branchState').value = branch.state || '';
-      document.getElementById('branchCountry').value = branch.country || '';
       document.getElementById('branchManager').value = branch.managerAccount || '';
       document.getElementById('branchIsHeadOffice').checked = !!branch.isHeadOffice;
       document.getElementById('branchModal').classList.add('active');
+      try {
+        const countryCode = await loadCountries(branch.countryCode || '', branch.country || '');
+        await loadStates(countryCode, branch.state || '');
+      } catch (error) {
+        alert(error.message);
+      }
       document.getElementById('branchName').focus();
     }
 
@@ -1994,6 +2064,28 @@
     function hideBranchModal() {
       document.getElementById('branchModal').classList.remove('active');
     }
+
+    document.getElementById('branchCountry').addEventListener('change', async (event) => {
+      document.getElementById('branchState').value = '';
+      document.getElementById('branchCity').value = '';
+      try {
+        await loadStates(event.target.value);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+
+    document.getElementById('branchState').addEventListener('change', () => {
+      document.getElementById('branchCity').value = '';
+      document.getElementById('branchCityOptions').replaceChildren();
+    });
+
+    document.getElementById('branchCity').addEventListener('input', () => {
+      clearTimeout(cityLookupTimer);
+      cityLookupTimer = setTimeout(() => {
+        updateCitySuggestions().catch((error) => console.warn('City lookup failed:', error.message));
+      }, 180);
+    });
 
     function showCreateModal(departmentId = '') {
       document.getElementById('createForm').reset();
@@ -2110,13 +2202,16 @@
     document.getElementById('branchForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       const branchId = document.getElementById('branchId').value;
+      const countrySelect = document.getElementById('branchCountry');
       const payload = {
         name: document.getElementById('branchName').value,
         code: document.getElementById('branchCode').value,
         address: document.getElementById('branchAddress').value,
         city: document.getElementById('branchCity').value,
         state: document.getElementById('branchState').value,
-        country: document.getElementById('branchCountry').value,
+        country: countrySelect.selectedOptions[0]?.textContent || '',
+        countryCode: countrySelect.value,
+        stateCode: selectedStateCode(),
         managerAccount: document.getElementById('branchManager').value || null,
         isHeadOffice: document.getElementById('branchIsHeadOffice').checked
       };

@@ -30,6 +30,8 @@ const serializeBranch = (branch) => ({
   city: branch.city || '',
   state: branch.state || '',
   country: branch.country || '',
+  countryCode: branch.countryCode || '',
+  stateCode: branch.stateCode || '',
   managerAccount: branch.managerAccount || null,
   isHeadOffice: !!branch.isHeadOffice
 })
