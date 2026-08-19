@@ -8,6 +8,7 @@ const router = express.Router();
 function actor(req) {
   return {
     organizationId: req.currentOrganization?.id || req.session?.currentOrganizationId,
+    organizationName: req.currentOrganization?.name || req.session?.currentOrganizationName || '',
     userId: req.session?.user?.sub || req.session?.user?.id,
     name: req.session?.user?.name || '',
   };
@@ -31,6 +32,7 @@ router.get('/adapter-candidates', requireHRAdmin, (req, res) => {
 router.get('/', requireHRAdmin, async (req, res) => {
   try {
     const current = actor(req);
+    await employerEntityService.ensurePlatformDefaults(current.organizationId, current);
     const entities = await employerEntityService.list(current.organizationId, { status: req.query.status });
     res.json({ entities });
   } catch (error) {

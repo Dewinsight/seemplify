@@ -52,6 +52,7 @@ function defaultForm(
     entry.countryCode === country.code
     && entry.publishedVersion?.calculationCurrency === country.currency
   ));
+  const isPayrollReady = jurisdiction?.publishedVersion?.calculationStatus === 'runnable';
 
   return {
     code: `${country.code}-DEFAULT`,
@@ -60,7 +61,7 @@ function defaultForm(
     countryCode: country.code,
     jurisdictionCode: candidate?.jurisdictionCode || country.code,
     defaultCurrency: country.currency,
-    status: 'draft',
+    status: isPayrollReady ? 'active' : 'draft',
     taxJurisdictionConfigId: jurisdiction?._id || '',
     taxJurisdictionVersionId: jurisdiction?.publishedVersion?._id || '',
     taxAdapterCandidateId: candidate?.id || '',
@@ -154,7 +155,7 @@ export default function EmployerEntitiesPage() {
     const preserveRegistration = countryCode === form.countryCode;
     setForm({
       ...next,
-      status: editingId ? form.status : 'draft',
+      status: editingId ? form.status : next.status,
       employerType: form.employerType,
       authorityCode: preserveRegistration ? form.authorityCode : '',
       registrationType: preserveRegistration ? form.registrationType : next.registrationType,
@@ -276,7 +277,7 @@ export default function EmployerEntitiesPage() {
             </Link>
             <h1 className="text-2xl font-semibold text-zinc-100">Employer setup</h1>
             <p className="mt-1 max-w-3xl text-sm text-zinc-400">
-              Choose the payroll country once. Currency, jurisdiction, tax pack, and calculation adapter are filled automatically.
+              Every released platform jurisdiction is provisioned automatically. Currency, tax pack, and calculation bindings remain editable per legal employer.
             </p>
           </div>
           {!showForm ? (
@@ -293,7 +294,7 @@ export default function EmployerEntitiesPage() {
             <div className="flex flex-col gap-2 border-b border-zinc-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-base font-semibold text-zinc-100">{editingId ? 'Edit employer' : 'Employer details'}</h2>
-                <p className="mt-1 text-sm text-zinc-500">{editingId ? 'Update the legal identity, registration evidence, or payroll tax binding.' : 'Defaults are saved as a draft until the real tax registration is verified.'}</p>
+                <p className="mt-1 text-sm text-zinc-500">{editingId ? 'Update the legal identity, registration evidence, or payroll tax binding.' : form.status === 'active' ? 'This released tax pack is activated immediately; add the real registration evidence when it is available.' : 'Unreleased jurisdictions remain drafts until their statutory pack is certified.'}</p>
               </div>
               <button type="button" onClick={closeForm} aria-label="Close employer form" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-zinc-700 text-zinc-400 hover:text-zinc-100"><X className="h-4 w-4" /></button>
             </div>
@@ -333,7 +334,7 @@ export default function EmployerEntitiesPage() {
             </div>
 
             <fieldset className="mt-5">
-              <legend className="text-sm font-medium text-zinc-200">Tax registration (optional for the draft)</legend>
+              <legend className="text-sm font-medium text-zinc-200">Tax registration</legend>
               <p className="mt-1 text-xs text-zinc-500">These values come from official employer documents, so payroll will never invent them.</p>
               <div className="mt-3 grid gap-4 md:grid-cols-3">
                 <label className="text-sm text-zinc-300">Tax authority<input value={form.authorityCode} onChange={(event) => setForm({ ...form, authorityCode: event.target.value })} placeholder="For example, LIRS or HMRC" className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>

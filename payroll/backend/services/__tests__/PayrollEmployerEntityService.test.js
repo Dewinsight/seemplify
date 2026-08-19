@@ -93,6 +93,27 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
     expect(result).toEqual({ _id: 'default-ng' });
   });
 
+  test('provisions an employer setup for every immutable runnable platform pack', async () => {
+    const ensureDefaultDraft = jest.spyOn(employerEntityService, 'ensureDefaultDraft')
+      .mockImplementation(async (_organizationId, countryCode) => ({ _id: `default-${countryCode}` }));
+
+    const result = await employerEntityService.ensurePlatformDefaults('org-1', {
+      userId: 'admin-1',
+      organizationName: 'Example Limited',
+    });
+
+    expect(result.supportedCountries).toEqual(['GB', 'US', 'NG', 'GH', 'KE', 'ZA', 'CM', 'MZ']);
+    expect(result.provisionedCountries).toEqual(result.supportedCountries);
+    expect(ensureDefaultDraft).toHaveBeenCalledTimes(8);
+    expect(ensureDefaultDraft).toHaveBeenCalledWith('org-1', 'GB', {
+      userId: 'admin-1',
+      organizationName: 'Example Limited',
+    });
+    expect(ensureDefaultDraft).not.toHaveBeenCalledWith('org-1', 'CA', expect.anything());
+    expect(ensureDefaultDraft).not.toHaveBeenCalledWith('org-1', 'EU', expect.anything());
+    expect(ensureDefaultDraft).not.toHaveBeenCalledWith('org-1', 'OTHER', expect.anything());
+  });
+
   test('rejects a jurisdiction that does not belong to the legal employer country', () => {
     expect(() => normalizePayload({
       code: 'WRONG', legalName: 'Wrong entity', countryCode: 'NG', jurisdictionCode: 'GB', defaultCurrency: 'NGN',

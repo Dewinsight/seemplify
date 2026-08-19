@@ -84,6 +84,21 @@ test('shows a published platform pack as fully payroll-ready without human revie
   await expect(page.getByRole('heading', { name: 'Jurisdiction review team' })).toHaveCount(0);
 });
 
+test('keeps every payroll jurisdiction in the ready list and moves non-runnable resources out of it', async ({ page }) => {
+  await page.goto('/admin/settings/tax');
+  await dismissPageGuide(page);
+
+  await expect(page.getByRole('button', { name: /Nigeria statutory platform release.*Payroll ready/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Canada 2026 implementation template/i })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Implementation resources (4)' }).click();
+  await expect(page.getByRole('button', { name: /Canada 2026 implementation template.*Certification pending/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /EU country-pack template.*Setup template/i })).toBeVisible();
+
+  const readyList = page.getByRole('button', { name: /Payroll ready/i });
+  await expect(readyList).toHaveCount(1);
+  await expect(readyList.first()).toContainText('Nigeria statutory platform release');
+});
+
 test('creates an editable organization copy of a protected platform pack', async ({ page, request }) => {
   await page.goto('/admin/settings/tax');
   await dismissPageGuide(page);
@@ -247,6 +262,52 @@ test('persists next-run exclusion and re-includes a payroll-ready onboarded empl
       excludeFromNextRun: false,
     },
   });
+});
+
+test('shows an active payroll-ready employer setup for every released platform jurisdiction', async ({ page }) => {
+  const released = [
+    ['GB', 'GBP'], ['US', 'USD'], ['NG', 'NGN'], ['GH', 'GHS'],
+    ['KE', 'KES'], ['ZA', 'ZAR'], ['CM', 'XAF'], ['MZ', 'MZN'],
+  ];
+  await page.route('**/api/payroll/employer-entities', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        entities: released.map(([countryCode, currency]) => ({
+          _id: `entity-${countryCode.toLowerCase()}`,
+          organizationId: 'org-e2e',
+          code: `${countryCode}-DEFAULT`,
+          legalName: `Seemplify Test Organization - ${countryCode}`,
+          employerType: 'company',
+          countryCode,
+          jurisdictionCode: countryCode === 'NG' ? 'NG-LA' : countryCode,
+          defaultCurrency: currency,
+          status: 'active',
+          taxJurisdictionConfigId: `tax-${countryCode.toLowerCase()}`,
+          taxJurisdictionVersionId: `tax-${countryCode.toLowerCase()}-published`,
+          taxAdapterCandidateId: '',
+          taxRegistrations: [],
+          payrollReadiness: {
+            payrollRunnable: true,
+            mode: 'runnable',
+            blockingIssues: [],
+            warnings: ['Employer registration reference has not been added.'],
+            taxPack: { label: `${countryCode} platform release`, calculationStatus: 'runnable' },
+          },
+        })),
+      }),
+    });
+  });
+
+  await page.goto('/admin/settings/employer-entities');
+  await dismissPageGuide(page);
+
+  await expect(page.getByRole('row')).toHaveCount(9);
+  await expect(page.getByText('runnable', { exact: true })).toHaveCount(8);
+  for (const [countryCode] of released) {
+    await expect(page.getByText(`${countryCode}-DEFAULT - company`, { exact: true })).toBeVisible();
+  }
 });
 
 test('edits, removes, and restores a legal employer without deleting payroll history', async ({ page, request }) => {

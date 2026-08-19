@@ -270,6 +270,42 @@ class PayrollEmployerEntityService {
     }
   }
 
+  /**
+   * Provision one operational legal-employer binding for every platform-owned
+   * tax pack that has passed the immutable release gates. Blank templates and
+   * certification candidates are intentionally excluded: they cannot produce
+   * a valid statutory payroll run.
+   *
+   * Existing country setups are preserved, including an administrator's
+   * deliberate decision to inactivate one. This method only fills missing
+   * platform defaults and is therefore safe to run whenever the setup page is
+   * opened.
+   */
+  async ensurePlatformDefaults(organizationId, actor = {}) {
+    if (!text(organizationId)) {
+      throw serviceError('An organization is required to provision payroll employers.', 400, 'PAYROLL_ORGANIZATION_REQUIRED');
+    }
+
+    const releasedCountries = taxJurisdictionService.seedDefinitions
+      .filter((seed) => (
+        seed?.version?.calculationStatus === 'runnable'
+        && seed?.version?.validationStatus === 'validated'
+        && seed?.version?.platformRelease
+      ))
+      .map((seed) => seed.countryCode);
+
+    const results = [];
+    for (const countryCode of releasedCountries) {
+      const entity = await this.ensureDefaultDraft(organizationId, countryCode, actor);
+      results.push({ countryCode, entity });
+    }
+
+    return {
+      supportedCountries: releasedCountries,
+      provisionedCountries: results.filter((entry) => entry.entity).map((entry) => entry.countryCode),
+    };
+  }
+
   async upgradePlatformTaxBindings(now = new Date()) {
     const employers = await PayrollEmployerEntity.find({
       status: { $ne: 'inactive' },

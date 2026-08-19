@@ -185,6 +185,7 @@ export default function TaxSettingsPage() {
   });
   const [backlogGroups, setBacklogGroups] = useState<TaxJurisdictionBacklogGroup[]>([]);
   const [showNewPackForm, setShowNewPackForm] = useState(false);
+  const [showImplementationResources, setShowImplementationResources] = useState(false);
   const [newPackDraft, setNewPackDraft] = useState<NewPackDraft>(createNewPackDraft());
   const [draft, setDraft] = useState<Draft>(createDraft());
   const [previewFields, setPreviewFields] = useState<Record<string, any>>({});
@@ -622,6 +623,14 @@ export default function TaxSettingsPage() {
     } finally { setPreviewing(false); }
   };
 
+  const payrollReadyJurisdictions = jurisdictions.filter((jurisdiction) => (
+    taxCatalogueKind(jurisdiction) === 'jurisdiction'
+    && publishedVersionFor(jurisdiction)?.calculationStatus === 'runnable'
+  ));
+  const implementationResources = jurisdictions.filter((jurisdiction) => (
+    !payrollReadyJurisdictions.some((ready) => ready._id === jurisdiction._id)
+  ));
+
   if (loading) return <div className="min-h-[60vh] flex items-center justify-center text-zinc-400"><Loader2 className="w-5 h-5 animate-spin mr-2" />Loading tax jurisdictions...</div>;
 
   return (
@@ -721,8 +730,9 @@ export default function TaxSettingsPage() {
         </section>
       ) : null}
       <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-6">
-        <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
-          {jurisdictions.map((item) => {
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+          <div className="space-y-2">
+          {payrollReadyJurisdictions.map((item) => {
             const calculationStatus = publishedVersionFor(item)?.calculationStatus || 'blocked';
             const catalogueKind = taxCatalogueKind(item);
             return (
@@ -743,6 +753,43 @@ export default function TaxSettingsPage() {
               </button>
             );
           })}
+          </div>
+          {implementationResources.length > 0 ? (
+            <div className="mt-4 border-t border-zinc-800 pt-4">
+              <button
+                type="button"
+                aria-expanded={showImplementationResources}
+                onClick={() => setShowImplementationResources((current) => !current)}
+                className="w-full rounded-lg border border-zinc-700 px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:border-zinc-600"
+              >
+                Implementation resources ({implementationResources.length})
+              </button>
+              {showImplementationResources ? <div className="mt-3 space-y-2">
+                <p className="text-xs leading-5 text-zinc-500">Templates and certification candidates are not selectable for payroll runs or employer bindings.</p>
+                {implementationResources.map((item) => {
+                  const calculationStatus = publishedVersionFor(item)?.calculationStatus || 'blocked';
+                  const catalogueKind = taxCatalogueKind(item);
+                  return (
+                    <button
+                      key={item._id}
+                      onClick={() => applySelection(item)}
+                      className={`w-full rounded-lg border px-3 py-3 text-left ${selected?._id === item._id ? 'border-zinc-600 bg-zinc-800/70' : 'border-zinc-800 bg-zinc-950/50 hover:bg-zinc-900'}`}
+                    >
+                      <span className="flex items-start justify-between gap-3">
+                        <span>
+                          <span className="block text-sm font-medium text-zinc-200">{item.displayName}</span>
+                          <span className="mt-1 block text-xs text-zinc-500">{item.countryCode} · reference only</span>
+                        </span>
+                        <span className={`rounded-md border px-2 py-1 text-[11px] font-medium ${calculationStatusClasses(calculationStatus, catalogueKind)}`}>
+                          {calculationStatusLabel(calculationStatus, catalogueKind)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div> : null}
+            </div>
+          ) : null}
         </div>
         <div className="space-y-6">
           {selected ? (
