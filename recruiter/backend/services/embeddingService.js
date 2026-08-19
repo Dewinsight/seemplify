@@ -1,6 +1,11 @@
 const axios = require('axios');
 const rankingService = require('./rankingService');
 const { requireEmbeddingRuntimeConfig } = require('../config/embeddingRuntimeConfig');
+const {
+  MATCHING_CANDIDATE_PROJECTION,
+  assessSkillEvidence,
+  mergeProfileIntoMatch
+} = require('./candidateMatchingProfileService');
 
 class EmbeddingService {
   constructor() {
@@ -14,6 +19,30 @@ class EmbeddingService {
       console.error('❌ weaviateService failed to load:', err.message);
       throw new Error('Weaviate is required. Set WEAVIATE_HOST, WEAVIATE_SCHEME, and WEAVIATE_API_KEY.');
     }
+  }
+
+  /**
+   * Replace lossy vector-store metadata with the current analyzed candidate
+   * profile from MongoDB. Vector search remains the retrieval stage; scoring
+   * and explanations use the authoritative profile.
+   */
+  async hydrateMatchesWithCurrentProfiles(matches, organizationId) {
+    if (!Array.isArray(matches) || matches.length === 0) return [];
+    const Candidate = require('../models/Candidate');
+    const candidateIds = matches.map((match) => match.candidateId || match.id).filter(Boolean);
+    const candidates = await Candidate.find({
+      _id: { $in: candidateIds },
+      organization: organizationId,
+      publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+      deletionState: { $ne: 'tombstoned' }
+    }).select(MATCHING_CANDIDATE_PROJECTION).lean();
+    const byId = new Map(candidates.map((candidate) => [String(candidate._id), candidate]));
+    return matches
+      .map((match) => {
+        const candidate = byId.get(String(match.candidateId || match.id));
+        return candidate ? mergeProfileIntoMatch(match, candidate) : null;
+      })
+      .filter(Boolean);
   }
 
   /**
@@ -1088,8 +1117,10 @@ class EmbeddingService {
         });
         if (cached) {
           console.log(`⚡ Cache hit! Returning cached matches for job ${job._id} (${cached.cacheAgeMinutes} minutes old)`);
+          const organizationId = job.organization?.toString() || job.organization;
+          const hydrated = await this.hydrateMatchesWithCurrentProfiles(cached.data, organizationId);
           return {
-            matches: cached.data,
+            matches: rankingService.rerankQuickCandidates(hydrated, job).slice(0, requestedTopK),
             fromCache: true,
             cacheAge: cached.cacheAge,
             cacheAgeMinutes: cached.cacheAgeMinutes,
@@ -1143,8 +1174,9 @@ class EmbeddingService {
           phone: match.metadata.phone
         }
       }));
+      const hydratedMatches = await this.hydrateMatchesWithCurrentProfiles(formattedMatches, organizationId);
       const rankedMatches = rankingService
-        .rerankQuickCandidates(formattedMatches, job)
+        .rerankQuickCandidates(hydratedMatches, job)
         .slice(0, requestedTopK);
 
       // Cache the results (fire and forget - don't block response)
@@ -1220,6 +1252,7 @@ class EmbeddingService {
         // Convert matches to candidate objects for GPT analysis
         const candidatesForAnalysis = matches.map(match => {
           const candidateSkills = this.parseSkills(match.metadata?.skills);
+          const profile = match.metadata?._matchingProfile;
           return {
             _id: match.candidateId,
             id: match.candidateId,
@@ -1230,7 +1263,11 @@ class EmbeddingService {
             currentRole: match.metadata?.currentPosition || '',
             education: match.metadata?.education || '',
             bio: match.metadata?.aiSummary || '',
-            score: match.similarity // Include vector similarity score
+            profileText: profile?.profileText || '',
+            matchingProfile: profile,
+            matchingSignals: match.quickSignals || null,
+            deterministicScore: match.relevanceScore,
+            score: match.vectorSimilarity ?? match.similarity
           };
         });
 
@@ -1243,6 +1280,8 @@ class EmbeddingService {
         // Format results for backward compatibility with existing frontend
         const formattedResults = gptResults.map(result => {
           const originalMatch = matches.find(m => m.candidateId === (result.candidate._id || result.candidate.id));
+          const requiredSkills = this.parseSkills(job.skills);
+          const requiredExperienceYears = this.extractYearsFromExperience(String(job.experience || ''));
           
           return {
             candidateId: result.candidate._id || result.candidate.id,
@@ -1258,14 +1297,14 @@ class EmbeddingService {
                 missingSkills: result.gptAnalysis.skillGaps || [],
                 bonusSkills: result.gptAnalysis.transferableSkills || [],
                 matchPercentage: result.gptAnalysis.skillMatchPercentage || 0,
-                totalRequired: (job.skills || []).length,
+                totalRequired: requiredSkills.length,
                 totalMatched: result.gptAnalysis.technicalStrengths?.length || 0
               },
               experienceMatch: {
                 isMatch: result.gptAnalysis.experienceFit >= 6,
-                required: job.experience || 0,
+                required: requiredExperienceYears,
                 candidate: result.candidate.experience || 0,
-                difference: (result.candidate.experience || 0) - (job.experience || 0),
+                difference: (result.candidate.experience || 0) - requiredExperienceYears,
                 category: result.gptAnalysis.experienceFit >= 8 ? 'Strong' : result.gptAnalysis.experienceFit >= 6 ? 'Good' : 'Below'
               },
               locationMatch: {
@@ -1275,16 +1314,16 @@ class EmbeddingService {
                 candidate: result.candidate.location || ''
               },
               industryMatch: {
-                hasRelevantIndustry: result.gptAnalysis.skillMatchPercentage > 50,
-                matchedIndustries: [],
-                allIndustries: [],
+                hasRelevantIndustry: (originalMatch?.metadata?.industryExp || []).length > 0,
+                matchedIndustries: originalMatch?.metadata?.industryExp || [],
+                allIndustries: originalMatch?.metadata?.industryExp || [],
                 relevanceScore: result.gptAnalysis.skillMatchPercentage
               },
               leadershipMatch: {
                 requiresLeadership: (job.level || '').toLowerCase().includes('senior') || (job.level || '').toLowerCase().includes('lead'),
-                hasLeadership: result.gptAnalysis.experienceFit >= 7,
-                isMatch: true,
-                gap: false
+                hasLeadership: Boolean(originalMatch?.metadata?.hasLeadershipExp),
+                isMatch: Boolean(originalMatch?.metadata?.hasLeadershipExp) || !(job.level || '').toLowerCase().match(/senior|lead|head/),
+                gap: !originalMatch?.metadata?.hasLeadershipExp && Boolean((job.level || '').toLowerCase().match(/senior|lead|head/))
               },
               aiInsights: {
                 hasAIAnalysis: true,
@@ -1295,25 +1334,35 @@ class EmbeddingService {
                 flagsCount: result.gptAnalysis.skillGaps?.length || 0
               },
               careerFit: {
-                totalYearsExp: result.candidate.experience || 0,
-                hasCareerProgression: result.gptAnalysis.growthPotential >= 7,
-                hasAchievements: result.gptAnalysis.culturalAlignment >= 7,
-                companiesWorkedAt: 1,
-                positionsHeld: 1,
-                avgTenureYears: result.candidate.experience || 0,
-                stabilityScore: result.gptAnalysis.culturalAlignment >= 7 ? 'High' : 'Medium',
+                totalYearsExp: originalMatch?.metadata?.totalYearsExp || result.candidate.experience || 0,
+                hasCareerProgression: Boolean(originalMatch?.metadata?.careerProgression),
+                hasAchievements: (originalMatch?.metadata?.keyAchievements || []).length > 0,
+                companiesWorkedAt: (originalMatch?.metadata?.companiesWorkedAt || []).length,
+                positionsHeld: (originalMatch?.metadata?.positionsHeld || []).length,
+                avgTenureYears: (originalMatch?.metadata?.companiesWorkedAt || []).length
+                  ? Math.round(((originalMatch?.metadata?.totalYearsExp || 0) / originalMatch.metadata.companiesWorkedAt.length) * 10) / 10
+                  : 0,
+                stabilityScore: (originalMatch?.metadata?.companiesWorkedAt || []).length
+                  && ((originalMatch?.metadata?.totalYearsExp || 0) / originalMatch.metadata.companiesWorkedAt.length) > 2
+                  ? 'High'
+                  : 'Medium',
                 progressionIndicators: {
-                  multiplePositions: true,
-                  multipleCompanies: true,
-                  documentedGrowth: result.gptAnalysis.growthPotential >= 7
+                  multiplePositions: (originalMatch?.metadata?.positionsHeld || []).length > 1,
+                  multipleCompanies: (originalMatch?.metadata?.companiesWorkedAt || []).length > 1,
+                  documentedGrowth: Boolean(originalMatch?.metadata?.careerProgression)
                 }
               },
               matchStrength: this.categorizeMatchStrength(result.relevanceScore),
               overallScore: Math.round(result.relevanceScore * 100),
               dataQuality: {
-                completeness: 90, // GPT provides rich analysis
-                hasDetailedHistory: true,
-                hasAIAnalysis: true,
+                completeness: [
+                  originalMatch?.metadata?.hasDetailedWorkHistory,
+                  originalMatch?.metadata?.hasAIAnalysis,
+                  (originalMatch?.metadata?.skills || []).length > 0,
+                  (originalMatch?.metadata?.positionsHeld || []).length > 0
+                ].filter(Boolean).length * 25,
+                hasDetailedHistory: Boolean(originalMatch?.metadata?.hasDetailedWorkHistory),
+                hasAIAnalysis: Boolean(originalMatch?.metadata?.hasAIAnalysis),
                 hasCoverLetter: false
               },
               
@@ -1584,11 +1633,24 @@ class EmbeddingService {
       console.log('- Candidate Technologies:', candidateTechnologies);
       
       // Combine skills and technologies for comprehensive analysis
-      const allCandidateSkills = [...candidateSkills, ...candidateTechnologies];
-      const skillsAnalysis = await this.analyzeSkillsMatch(jobSkills, allCandidateSkills);
+      const profile = metadata._matchingProfile || {
+        skills: [...candidateSkills, ...candidateTechnologies],
+        evidenceItems: [...candidateSkills, ...candidateTechnologies]
+      };
+      const groundedSkills = assessSkillEvidence(jobSkills, profile);
+      const matchedEvidence = new Set(Object.values(groundedSkills.evidenceBySkill || {}).map((item) => String(item).toLowerCase()));
+      const skillsAnalysis = {
+        ...groundedSkills,
+        bonusSkills: [...candidateSkills, ...candidateTechnologies]
+          .filter((skill) => !matchedEvidence.has(String(skill).toLowerCase()))
+          .slice(0, 5)
+      };
       
       // Enhanced experience analysis
-      const experienceAnalysis = this.analyzeExperienceMatch(job?.experience, metadata.experience);
+      const experienceAnalysis = this.analyzeExperienceMatch(
+        job?.experience,
+        metadata.totalYearsExp ?? metadata.experience
+      );
       
       // Location analysis - check multiple possible location fields
       const candidateLocation = metadata.location || candidateMatch.candidate?.location || '';

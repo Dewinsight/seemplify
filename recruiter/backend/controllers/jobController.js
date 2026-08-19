@@ -9,6 +9,11 @@ const xlsx = require('xlsx');
 const fs = require('fs');
 const util = require('util');
 const embeddingService = require('../services/embeddingService');
+const rankingService = require('../services/rankingService');
+const {
+  MATCHING_CANDIDATE_PROJECTION,
+  mergeProfileIntoMatch
+} = require('../services/candidateMatchingProfileService');
 const InterviewService = require('../services/interviewService');
 const pipelineProgressionService = require('../services/pipelineProgressionService');
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
@@ -558,26 +563,32 @@ exports.getCandidateExplanation = async (req, res) => {
     if (!job) return res.status(404).json({ msg: 'Job not found' });
 
     const Candidate = require('../models/Candidate');
-    const candidate = await Candidate.findOne({ _id: candidateId, organization: organizationId });
+    const candidate = await Candidate.findOne({ _id: candidateId, organization: organizationId })
+      .select(MATCHING_CANDIDATE_PROJECTION);
     if (!candidate) return res.status(404).json({ msg: 'Candidate not found' });
 
     const gptAnalysisService = require('../services/gptAnalysisService');
+    const authoritativeMatch = rankingService.rerankQuickCandidates([
+      mergeProfileIntoMatch({ candidateId, similarity: 0.5, metadata: {} }, candidate.toObject())
+    ], job)[0];
+    const profile = authoritativeMatch.metadata._matchingProfile;
 
     if (gptAnalysisService.isEnabled) {
-      const candidateSkills = Array.isArray(candidate.skills)
-        ? candidate.skills
-        : (candidate.skills ? candidate.skills.split(',').map(s => s.trim()) : []);
-
       const candidateObj = {
         _id: candidate._id.toString(),
         id: candidate._id.toString(),
-        name: `${candidate.firstName} ${candidate.lastName}`.trim(),
-        skills: candidateSkills,
-        experience: candidate.workExperience?.totalYearsExperience || 0,
-        location: candidate.location || '',
-        currentRole: candidate.position || '',
-        education: candidate.education || '',
-        bio: candidate.aiAnalysis?.summary || '',
+        name: profile.name,
+        skills: profile.skills,
+        experience: profile.totalYearsExp,
+        location: profile.location,
+        currentRole: profile.currentRole,
+        education: profile.education,
+        bio: profile.aiSummary,
+        profileText: profile.profileText,
+        matchingProfile: profile,
+        matchingSignals: authoritativeMatch.quickSignals,
+        deterministicScore: authoritativeMatch.relevanceScore,
+        score: authoritativeMatch.vectorSimilarity,
       };
 
       const gptResults = await gptAnalysisService.batchAnalyzeCandidates(job, [candidateObj]);
@@ -615,6 +626,17 @@ exports.getCandidateExplanation = async (req, res) => {
               strengthsCount: (result.gptAnalysis.technicalStrengths || []).length,
               flagsCount: (result.gptAnalysis.skillGaps || []).length,
             },
+            careerFit: {
+              totalYearsExp: profile.totalYearsExp,
+              hasCareerProgression: Boolean(profile.careerProgression),
+              hasAchievements: profile.keyAchievements.length > 0,
+              companiesWorkedAt: profile.companies.length,
+              positionsHeld: profile.positions.length,
+              avgTenureYears: profile.companies.length
+                ? Math.round((profile.totalYearsExp / profile.companies.length) * 10) / 10
+                : 0,
+              stabilityScore: profile.companies.length && profile.totalYearsExp / profile.companies.length > 2 ? 'High' : 'Medium',
+            },
             matchStrength: (result.relevanceScore || 0) >= 0.9 ? 'Excellent Match' : (result.relevanceScore || 0) >= 0.8 ? 'Strong Match' : (result.relevanceScore || 0) >= 0.7 ? 'Good Match' : (result.relevanceScore || 0) >= 0.6 ? 'Moderate Match' : (result.relevanceScore || 0) >= 0.5 ? 'Weak Match' : 'Poor Match',
             overallScore: Math.round((result.relevanceScore || 0) * 100),
             gptEnhanced: {
@@ -638,28 +660,7 @@ exports.getCandidateExplanation = async (req, res) => {
       }
     }
 
-    const explanation = await embeddingService.generateMatchExplanation(job, {
-      candidateId,
-      similarity: 0,
-      metadata: {
-        skills: candidate.skills,
-        experience: candidate.experience,
-        location: candidate.location,
-        totalYearsExp: candidate.workExperience?.totalYearsExperience || 0,
-        aiSummary: candidate.aiAnalysis?.summary || '',
-        aiStrengths: candidate.aiAnalysis?.strengths || [],
-        aiFlags: candidate.aiAnalysis?.potentialFlags || [],
-        hasAIAnalysis: !!candidate.aiAnalysis?.summary,
-        dataCompleteness: 70,
-      },
-      candidate: {
-        name: `${candidate.firstName} ${candidate.lastName}`,
-        position: candidate.position,
-        experience: candidate.experience,
-        skills: candidate.skills,
-        location: candidate.location,
-      },
-    });
+    const explanation = await embeddingService.generateMatchExplanation(job, authoritativeMatch);
 
     res.json({ candidateId, jobId, explanation });
   } catch (error) {

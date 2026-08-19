@@ -1,3 +1,5 @@
+const { assessSkillEvidence, normalizeTerm } = require('./candidateMatchingProfileService');
+
 class RankingService {
   constructor() {
     // Default weights, can be overridden for specific jobs
@@ -93,9 +95,15 @@ class RankingService {
 
     return (Array.isArray(candidates) ? candidates : [])
       .map((candidate) => {
-        const vectorScore = this.clamp(candidate.similarity);
+        const vectorScore = this.clamp(candidate.vectorSimilarity ?? candidate.similarity);
+        const calibratedVectorScore = this.calibrateSemanticScore(vectorScore);
         const candidateSkills = this.normalizeSkills(candidate.metadata?.skills || candidate.candidate?.skills);
-        const skillScore = this.skillCoverage(jobSkills, candidateSkills);
+        const profile = candidate.metadata?._matchingProfile || {
+          skills: candidateSkills,
+          evidenceItems: candidateSkills
+        };
+        const skillEvidence = assessSkillEvidence(jobSkills, profile);
+        const skillScore = jobSkills.length ? skillEvidence.matchPercentage / 100 : 1;
         const candidateYears = Number(
           candidate.metadata?.totalYearsExp
           ?? candidate.metadata?.experience
@@ -112,10 +120,15 @@ class RankingService {
             candidateLocation.includes(jobLocation)
             || jobLocation.includes(candidateLocation)
           ) ? 1 : 0;
+        const roleScore = this.roleAlignment(job.title, [
+          candidate.metadata?.position,
+          candidate.candidate?.position,
+          ...(profile.positions || [])
+        ]);
 
         const relevanceScore = jobSkills.length
-          ? (vectorScore * 0.72) + (skillScore * 0.20) + (experienceScore * 0.06) + (locationScore * 0.02)
-          : (vectorScore * 0.90) + (experienceScore * 0.08) + (locationScore * 0.02);
+          ? (calibratedVectorScore * 0.27) + (skillScore * 0.38) + (experienceScore * 0.14) + (roleScore * 0.16) + (locationScore * 0.05)
+          : (calibratedVectorScore * 0.55) + (experienceScore * 0.20) + (roleScore * 0.20) + (locationScore * 0.05);
 
         return {
           ...candidate,
@@ -124,7 +137,10 @@ class RankingService {
           quickSignals: {
             skillCoverage: skillScore,
             experienceFit: experienceScore,
-            locationFit: locationScore
+            locationFit: locationScore,
+            roleAlignment: roleScore,
+            calibratedSemanticSimilarity: calibratedVectorScore,
+            skillEvidence
           }
         };
       })
@@ -151,6 +167,29 @@ class RankingService {
       )
     )));
     return matches.length / requiredSkills.length;
+  }
+
+  calibrateSemanticScore(value) {
+    // Cosine scores from broad CV/job prose occupy a compressed range. Treat
+    // them as retrieval confidence rather than a literal percentage.
+    return this.clamp((this.clamp(value) - 0.18) / 0.62);
+  }
+
+  roleAlignment(jobTitle, candidateTitles) {
+    const stopWords = new Set(['and', 'of', 'the', 'senior', 'junior', 'lead', 'head', 'principal', 'associate']);
+    const tokens = (value) => normalizeTerm(value)
+      .split(' ')
+      .filter((token) => token.length > 2 && !stopWords.has(token));
+    const required = new Set(tokens(jobTitle));
+    if (!required.size) return 1;
+    let best = 0;
+    for (const title of candidateTitles || []) {
+      const available = new Set(tokens(title));
+      const overlap = [...required].filter((token) => available.has(token)).length / required.size;
+      best = Math.max(best, overlap);
+      if (best === 1) break;
+    }
+    return best;
   }
 
   minimumYears(value) {

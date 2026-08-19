@@ -11,6 +11,7 @@ const {
   selectAuthoritativeMatches
 } = require('./matchingEnrichmentInputService');
 const { resolveEnrichmentRedisConnection } = require('../config/enrichmentRedis');
+const { MATCHING_CANDIDATE_PROJECTION } = require('./candidateMatchingProfileService');
 
 const redisConfig = resolveEnrichmentRedisConnection();
 const REDIS_ENABLED = Boolean(redisConfig);
@@ -57,6 +58,9 @@ function createGptExplanation(result, job) {
   const gpt = result.gptAnalysis || {};
   const candidateExperience = result.candidate?.experience || 0;
   const requiredExperience = job?.experience || 0;
+  const profile = result.candidate?.matchingProfile || {};
+  const companies = profile.companies || [];
+  const positions = profile.positions || [];
 
   return {
     skillsMatch: {
@@ -87,6 +91,17 @@ function createGptExplanation(result, job) {
       potentialFlags: gpt.skillGaps || [],
       strengthsCount: (gpt.technicalStrengths || []).length,
       flagsCount: (gpt.skillGaps || []).length,
+    },
+    careerFit: {
+      totalYearsExp: profile.totalYearsExp || candidateExperience,
+      hasCareerProgression: Boolean(profile.careerProgression),
+      hasAchievements: (profile.keyAchievements || []).length > 0,
+      companiesWorkedAt: companies.length,
+      positionsHeld: positions.length,
+      avgTenureYears: companies.length
+        ? Math.round(((profile.totalYearsExp || candidateExperience) / companies.length) * 10) / 10
+        : 0,
+      stabilityScore: companies.length && ((profile.totalYearsExp || candidateExperience) / companies.length) > 2 ? 'High' : 'Medium',
     },
     matchStrength: embeddingService.categorizeMatchStrength(score),
     overallScore: Math.round(score * 100),
@@ -120,6 +135,7 @@ function normalizeCandidateForGpt(match) {
   const name = candidate.name || metadata.name || `${metadata.firstName || ''} ${metadata.lastName || ''}`.trim() || 'Unknown';
   const skills = parseSkills(candidate.skills || metadata.skills);
   const experience = Number(candidate.experience ?? metadata.totalYearsExp ?? metadata.experience ?? 0) || 0;
+  const profile = metadata._matchingProfile;
 
   return {
     _id: String(candidateId),
@@ -131,7 +147,11 @@ function normalizeCandidateForGpt(match) {
     currentRole: candidate.position || metadata.currentPosition || metadata.position || '',
     education: candidate.education || metadata.education || '',
     bio: metadata.aiSummary || '',
-    score: Number(match.similarity ?? match.relevanceScore ?? 0) || 0,
+    profileText: profile?.profileText || '',
+    matchingProfile: profile,
+    matchingSignals: match.quickSignals || null,
+    deterministicScore: Number(match.relevanceScore ?? match.similarity ?? 0) || 0,
+    score: Number(match.vectorSimilarity ?? match.similarity ?? match.relevanceScore ?? 0) || 0,
   };
 }
 
@@ -294,10 +314,10 @@ async function persistFinalCache(status) {
     identity: {
       provider: 'matching-enrichment',
       model: gptAnalysisService.modelName || 'enrichment-service',
-      promptVersion: 'matching-v3',
-      routeVersion: 'background-v2'
+      promptVersion: 'matching-v4',
+      routeVersion: 'background-v3'
     },
-    version: 2,
+    version: 3,
   });
 }
 
@@ -333,10 +353,7 @@ async function processEnrichmentBatch(job) {
     organization: organizationId,
     publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
     deletionState: { $ne: 'tombstoned' }
-  }).select(
-    '_id firstName lastName email phone position experience skills education location status '
-    + 'workExperience.totalYearsExperience aiAnalysis.summary'
-  ).lean();
+  }).select(MATCHING_CANDIDATE_PROJECTION).lean();
   const refreshedMatches = selectAuthoritativeMatches(originalMatches, dbCandidates, candidateIds);
   if (refreshedMatches.length !== candidateIds.length) {
     throw new Error('One or more enrichment candidates are no longer available in this organization');
@@ -375,7 +392,7 @@ async function processEnrichmentBatch(job) {
     ...identityContext,
     jobId,
     requestId: `matching-enrichment:${enrichmentId}:${batchIndex}`,
-    promptVersion: 'matching-v2'
+    promptVersion: 'matching-v4'
   }, () => gptAnalysisService.batchAnalyzeCandidates(dbJob, candidates));
   const resultById = mapResultsByCandidateId(gptResults);
 

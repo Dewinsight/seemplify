@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, CheckCircle, XCircle, RefreshCw, AlertTriangle, Sparkles } from "lucide-react"
 import * as candidateService from "@/services/candidateService"
@@ -43,7 +42,7 @@ export function CandidateEmbeddingCard({
       
       toast({
         title: "Success",
-        description: `Enhanced embedding refreshed for ${result.candidateName}`,
+        description: `AI matching profile refreshed for ${result.candidateName}`,
       })
       
       // The parent component should handle refreshing the status
@@ -130,54 +129,13 @@ export function CandidateEmbeddingCard({
               ) : (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh with Enhanced Data
+                  Refresh AI Matching Profile
                 </>
               )}
             </Button>
           )}
         </div>
 
-        {/* Enhanced Features Notice */}
-        {embeddingStatus.isEmbedded && candidateId && (
-          <div className="p-4 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
-              <div>
-                <h4 className="font-medium text-amber-800 mb-1">Enhanced Matching Available</h4>
-                <p className="text-sm text-amber-700 mb-3">
-                  Click "Refresh with Enhanced Data" to upgrade your embedding with:
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-xs text-amber-700">
-                  <div className="flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    Detailed work experience
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    Career progression analysis
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    Industry experience mapping
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    AI-powered insights
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    Leadership assessment
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    Technology expertise
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        
         <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
           <p className="mb-1"><strong>Database:</strong> {embeddingStatus.isEmbedded ? "✓ Flagged" : "✗ Not flagged"}</p>
           <p><strong>Vector index:</strong> {embeddingStatus.existsInVectorStore ? "✓ Stored" : "✗ Not stored"}</p>
@@ -217,4 +175,4 @@ export function CandidateEmbeddingCard({
       </p>
     </div>
   )
-} 
+}

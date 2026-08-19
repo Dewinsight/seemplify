@@ -1012,6 +1012,8 @@ exports.createEmbedding = async (req, res) => {
       isEmbedded: true,
       embeddingCreatedAt: new Date()
     });
+    await require('../services/aiMatchCacheService').invalidateCandidateCache(id, organizationId);
+    gptAnalysisService.cache.onCandidateAdded(id);
 
     res.json({
       msg: 'Embedding created successfully',
@@ -1749,9 +1751,11 @@ exports.refreshEmbedding = async (req, res) => {
       isEmbedded: true,
       embeddingCreatedAt: new Date()
     });
+    await require('../services/aiMatchCacheService').invalidateCandidateCache(id, organizationId);
+    gptAnalysisService.cache.onCandidateAdded(id);
 
     res.json({
-      msg: 'Embedding refreshed successfully with enhanced metadata',
+      msg: 'AI matching profile refreshed successfully',
       candidateId: id,
       embeddingCreatedAt: new Date(),
       candidateName: `${candidate.firstName} ${candidate.lastName}`

@@ -2,6 +2,10 @@ const mongoose = require('mongoose');
 const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
 const embeddingService = require('./embeddingService');
+const {
+  MATCHING_CANDIDATE_PROJECTION,
+  mergeProfileIntoMatch
+} = require('./candidateMatchingProfileService');
 
 const MAX_ENRICHMENT_CANDIDATES = 5000;
 
@@ -41,47 +45,13 @@ function uniqueSubmittedCandidateIds(matches) {
 }
 
 function authoritativeMatch(vectorMatch, candidate) {
-  const id = String(candidate._id);
-  const name = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim();
-  return {
-    candidateId: id,
-    similarity: Number(vectorMatch.similarity ?? vectorMatch.relevanceScore ?? 0) || 0,
-    relevanceScore: Number(vectorMatch.similarity ?? vectorMatch.relevanceScore ?? 0) || 0,
-    metadata: {
-      ...(vectorMatch.metadata || {}),
-      candidateId: id,
-      firstName: candidate.firstName || '',
-      lastName: candidate.lastName || '',
-      name,
-      email: candidate.email || '',
-      phone: candidate.phone || '',
-      position: candidate.position || '',
-      currentPosition: candidate.position || '',
-      experience: candidate.experience || '',
-      totalYearsExp: candidate.workExperience?.totalYearsExperience || 0,
-      skills: candidate.skills || [],
-      education: candidate.education || '',
-      location: candidate.location || '',
-      status: candidate.status || '',
-      aiSummary: candidate.aiAnalysis?.summary || ''
-    },
-    candidate: {
-      _id: id,
-      id,
-      name,
-      firstName: candidate.firstName || '',
-      lastName: candidate.lastName || '',
-      email: candidate.email || '',
-      phone: candidate.phone || '',
-      position: candidate.position || '',
-      experience: candidate.experience || '',
-      skills: candidate.skills || [],
-      education: candidate.education || '',
-      location: candidate.location || '',
-      status: candidate.status || '',
-      aiAnalysis: candidate.aiAnalysis || null
-    }
-  };
+  const score = Number(vectorMatch.similarity ?? vectorMatch.relevanceScore ?? 0) || 0;
+  return mergeProfileIntoMatch({
+    ...vectorMatch,
+    candidateId: String(candidate._id),
+    similarity: score,
+    relevanceScore: score
+  }, candidate);
 }
 
 function selectAuthoritativeMatches(vectorMatches, candidates, submittedIds) {
@@ -124,10 +94,7 @@ class MatchingEnrichmentInputService {
         organization: organizationId,
         publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
         deletionState: { $ne: 'tombstoned' }
-      }).select(
-        '_id firstName lastName email phone position experience skills education location status '
-        + 'workExperience.totalYearsExperience aiAnalysis.summary'
-      ).lean()
+      }).select(MATCHING_CANDIDATE_PROJECTION).lean()
     ]);
 
     const vectorMatches = Array.isArray(vectorResult) ? vectorResult : (vectorResult?.matches || []);

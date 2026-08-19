@@ -474,10 +474,12 @@ class WeaviateService {
           
           if (result) {
             // Normalize to embeddingService match shape
+            const fullMetadata = this._safeJsonParse(result.properties.fullMetadata) || {};
             results.push({
               id: result.properties.candidateId, // Original MongoDB ID
               values: result.vector,
               metadata: {
+                ...fullMetadata,
                 candidateId: result.properties.candidateId,
                 organizationId: result.properties.organizationId,
                 firstName: result.properties.firstName,
