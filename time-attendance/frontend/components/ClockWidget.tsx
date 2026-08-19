@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { Coffee, Loader2, Play, Square } from 'lucide-react';
 import { clockApi } from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError';
 
 interface ClockStatus {
     isClockedIn: boolean;
@@ -91,8 +92,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
             setTimeout(() => setMessage(null), 2400);
             return true;
         } catch (actionError: any) {
-            const payload = actionError.response?.data;
-            setError(payload?.details?.reason || payload?.error || 'The clock could not be updated.');
+            setError(getApiErrorMessage(actionError, 'The clock could not be updated.'));
             setMessage(null);
             return false;
         } finally {
@@ -129,7 +129,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
             onStatusChange?.();
             setTimeout(() => setMessage(null), 2400);
         } catch (actionError: any) {
-            setError(actionError.response?.data?.error || 'The break status could not be updated.');
+            setError(getApiErrorMessage(actionError, 'The break status could not be updated.'));
         } finally {
             setLoading(false);
         }

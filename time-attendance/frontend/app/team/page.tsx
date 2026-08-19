@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { attendanceApi } from '@/lib/api';
 import { formatDuration, cn } from '@/lib/utils';
+import { getApiErrorMessage } from '@/lib/apiError';
 import {
     Users,
     Search,
@@ -185,7 +186,7 @@ export default function TeamPage() {
         } catch (error: any) {
             setActionFeedback({
                 type: 'error',
-                text: error?.response?.data?.error || 'Failed to send clock-out reminder.',
+                text: getApiErrorMessage(error, 'Failed to send clock-out reminder.'),
             });
         } finally {
             setReminderSendingFor(null);
@@ -212,7 +213,7 @@ export default function TeamPage() {
         } catch (error: any) {
             setActionFeedback({
                 type: 'error',
-                text: error?.response?.data?.error || 'Failed to export team attendance.',
+                text: getApiErrorMessage(error, 'Failed to export team attendance.'),
             });
         } finally {
             setExporting(false);

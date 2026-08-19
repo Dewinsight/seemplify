@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { reportsApi } from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError';
 import {
     BarChart3,
     Download,
@@ -15,9 +16,22 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 
+type ReportTab = 'exceptions' | 'attendance' | 'overtime' | 'lateness' | 'geofence-violations' | 'location-accuracy' | 'location-history' | 'analytics' | 'capacity';
+
+const ARRAY_REPORT_TABS: ReportTab[] = ['attendance', 'overtime', 'lateness'];
+
+function getReportRows(payload: unknown): any[] | null {
+    if (Array.isArray(payload)) return payload;
+    if (payload && typeof payload === 'object' && Array.isArray((payload as { report?: unknown }).report)) {
+        return (payload as { report: any[] }).report;
+    }
+    return null;
+}
+
 export default function ReportsPage() {
-    const [activeTab, setActiveTab] = useState<'exceptions' | 'attendance' | 'overtime' | 'lateness' | 'geofence-violations' | 'location-accuracy' | 'location-history' | 'analytics' | 'capacity'>('exceptions');
+    const [activeTab, setActiveTab] = useState<ReportTab>('exceptions');
     const [data, setData] = useState<any>(null);
+    const [errorMessage, setErrorMessage] = useState('');
     const [loading, setLoading] = useState(false);
     const [month, setMonth] = useState(new Date());
     const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -29,6 +43,8 @@ export default function ReportsPage() {
     const fetchReport = async () => {
         try {
             setLoading(true);
+            setData(null);
+            setErrorMessage('');
             const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString();
             const end = new Date(month.getFullYear(), month.getMonth() + 1, 0).toISOString();
 
@@ -66,24 +82,43 @@ export default function ReportsPage() {
                     response = await reportsApi.getCapacityForecast(start, end);
                     break;
             }
+
+            if (ARRAY_REPORT_TABS.includes(activeTab) && getReportRows(response) === null) {
+                throw new Error('The report returned an unexpected response. Please refresh and try again.');
+            }
             setData(response);
         } catch (error) {
             console.error('Failed to fetch report', error);
+            setData(null);
+            setErrorMessage(getApiErrorMessage(error, 'Failed to load the report.'));
         } finally {
             setLoading(false);
         }
     };
 
     const handleExport = async () => {
-        const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString().slice(0, 10);
-        const end = new Date(month.getFullYear(), month.getMonth() + 1, 0).toISOString().slice(0, 10);
-        const { blob, filename } = activeTab === 'exceptions'
-            ? await reportsApi.exportExceptions(start, end)
-            : await reportsApi.exportAttendance(start, end);
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url; link.download = filename; link.click();
-        URL.revokeObjectURL(url);
+        try {
+            setErrorMessage('');
+            const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString().slice(0, 10);
+            const end = new Date(month.getFullYear(), month.getMonth() + 1, 0).toISOString().slice(0, 10);
+            const { blob, filename } = activeTab === 'exceptions'
+                ? await reportsApi.exportExceptions(start, end)
+                : await reportsApi.exportAttendance(start, end);
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url; link.download = filename; link.click();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            setErrorMessage(getApiErrorMessage(error, 'Failed to export the report.'));
+        }
+    };
+
+    const reportRows = getReportRows(data) || [];
+
+    const selectTab = (tab: ReportTab) => {
+        setData(null);
+        setErrorMessage('');
+        setActiveTab(tab);
     };
 
     return (
@@ -118,7 +153,7 @@ export default function ReportsPage() {
                     ] as const).map(({ key, label, icon: Icon }) => (
                         <button
                             key={key}
-                            onClick={() => setActiveTab(key as any)}
+                            onClick={() => selectTab(key)}
                             className={`flex items-center gap-1.5 flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === key
                                     ? 'bg-zinc-800 text-white shadow-sm'
                                     : 'text-zinc-400 hover:text-white'
@@ -154,7 +189,13 @@ export default function ReportsPage() {
 
             {/* Content Area */}
             <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-6 min-h-[400px]">
-                {loading ? (
+                {errorMessage ? (
+                    <div role="alert" className="flex min-h-[300px] flex-col items-center justify-center gap-3 text-center">
+                        <AlertTriangle className="h-7 w-7 text-amber-400" />
+                        <p className="max-w-xl text-sm text-zinc-300">{errorMessage}</p>
+                        <button type="button" onClick={() => void fetchReport()} className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800">Try again</button>
+                    </div>
+                ) : loading ? (
                     <div className="flex items-center justify-center h-full min-h-[300px]">
                         <div className="animate-spin h-8 w-8 border-2 border-teal-500 rounded-full border-t-transparent"></div>
                     </div>
@@ -219,7 +260,7 @@ export default function ReportsPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-800/50">
-                                        {(data.report || data || []).map((row: any, i: number) => (
+                                        {reportRows.map((row: any, i: number) => (
                                             <tr key={i} className="hover:bg-zinc-800/30">
                                                 <td className="px-4 py-3 font-medium text-white">{row.user?.name || row.userName || 'Unknown'}</td>
                                                 <td className="px-4 py-3 text-zinc-400">{row.user?.department || row.teamName || 'N/A'}</td>
@@ -246,7 +287,7 @@ export default function ReportsPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-800/50">
-                                        {(data.report || data || []).map((row: any, i: number) => (
+                                        {reportRows.map((row: any, i: number) => (
                                             <tr key={i} className="hover:bg-zinc-800/30">
                                                 <td className="px-4 py-3 font-medium text-white">{row.user?.name || row.userName}</td>
                                                 <td className="px-4 py-3 text-right text-amber-400 font-bold">{row.totalOvertimeMinutes != null ? Math.round(row.totalOvertimeMinutes / 60) : Number(row.totalOvertimeHours || 0).toFixed(1)}h</td>
@@ -261,7 +302,7 @@ export default function ReportsPage() {
 
                         {activeTab === 'lateness' && (
                             <div className="grid grid-cols-1 gap-4">
-                                {(data.report || data || []).map((row: any, i: number) => (
+                                {reportRows.map((row: any, i: number) => (
                                     <div key={i} className="flex items-center justify-between p-4 bg-zinc-950/50 border border-zinc-800 rounded-lg">
                                         <div className="flex items-center gap-4">
                                             <div className="p-2 bg-red-500/10 text-red-500 rounded-lg">

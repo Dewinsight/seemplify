@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CorrectionRequestDialog, { CorrectionRequestPayload } from '@/components/CorrectionRequestDialog';
+import { getApiErrorMessage } from '@/lib/apiError';
 
 // Safe date parsing - handles ISO strings, Date objects, and invalid dates
 const safeParseDate = (dateValue: any): Date | null => {
@@ -147,17 +148,19 @@ export default function TimesheetDetailPage() {
 
         const timesheetId = timesheet._id || timesheet.id || id as string;
         if (!timesheetId) {
-            alert('Unable to submit: timesheet ID not found');
+            setActionError('Unable to submit: timesheet ID not found.');
             return;
         }
 
         try {
             setSubmitting(true);
-            await timesheetApi.submit(timesheetId);
+            setActionError('');
+            const result = await timesheetApi.submit(timesheetId);
+            setActionMessage(result?.message || 'Timesheet submitted for approval.');
             await fetchTimesheet(timesheetId); // Refresh data
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to submit timesheet', error);
-            alert('Failed to submit timesheet. Please try again.');
+            setActionError(getApiErrorMessage(error, 'Failed to submit timesheet. Please try again.'));
         } finally {
             setSubmitting(false);
         }
@@ -168,17 +171,19 @@ export default function TimesheetDetailPage() {
 
         const timesheetId = timesheet._id || timesheet.id || id as string;
         if (!timesheetId) {
-            alert('Unable to recall: timesheet ID not found');
+            setActionError('Unable to recall: timesheet ID not found.');
             return;
         }
 
         try {
             setSubmitting(true);
-            await timesheetApi.recall(timesheetId);
+            setActionError('');
+            const result = await timesheetApi.recall(timesheetId);
+            setActionMessage(result?.message || 'Timesheet returned to draft.');
             await fetchTimesheet(timesheetId);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Recall failed', error);
-            alert('Failed to recall timesheet.');
+            setActionError(getApiErrorMessage(error, 'Failed to recall timesheet.'));
         } finally {
             setSubmitting(false);
         }
@@ -187,12 +192,13 @@ export default function TimesheetDetailPage() {
     const handleExportExcel = async () => {
         const timesheetId = timesheet?._id || timesheet?.id || id as string;
         if (!timesheetId) {
-            alert('Unable to export: timesheet ID not found');
+            setActionError('Unable to export: timesheet ID not found.');
             return;
         }
 
         try {
             setExporting(true);
+            setActionError('');
             const { blob, filename } = await timesheetApi.exportExcel(timesheetId);
             const fileUrl = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
@@ -202,9 +208,9 @@ export default function TimesheetDetailPage() {
             link.click();
             document.body.removeChild(link);
             window.URL.revokeObjectURL(fileUrl);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to export timesheet', error);
-            alert('Failed to export timesheet. Please try again.');
+            setActionError(getApiErrorMessage(error, 'Failed to export timesheet. Please try again.'));
         } finally {
             setExporting(false);
         }
@@ -239,7 +245,7 @@ export default function TimesheetDetailPage() {
             else await approvalsApi.requestRevision(timesheetId, reason);
             router.push('/approvals');
         } catch (error: any) {
-            setActionError(error?.response?.data?.error || 'The review decision could not be saved.');
+            setActionError(getApiErrorMessage(error, 'The review decision could not be saved.'));
             if (error?.response?.data?.approvalReadiness?.blockingExceptions) {
                 setAttendanceExceptions(error.response.data.approvalReadiness.blockingExceptions);
             }
@@ -264,7 +270,7 @@ export default function TimesheetDetailPage() {
             setDayActionReason('');
             await fetchTimesheet(timesheetId);
         } catch (error: any) {
-            setActionError(error?.response?.data?.error || 'The attendance issue could not be submitted.');
+            setActionError(getApiErrorMessage(error, 'The attendance issue could not be submitted.'));
         } finally {
             setSubmitting(false);
         }
@@ -295,7 +301,7 @@ export default function TimesheetDetailPage() {
             setActionMessage(`Your proposed times were sent to ${result.routing?.fallbackLabel || correctionReviewerLabel}.`);
             await fetchTimesheet(String(timesheet._id || id));
         } catch (error: any) {
-            setActionError(error?.response?.data?.error || 'The correction request could not be sent.');
+            setActionError(getApiErrorMessage(error, 'The correction request could not be sent.'));
         } finally {
             setSubmitting(false);
         }

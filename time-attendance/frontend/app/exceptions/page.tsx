@@ -16,6 +16,7 @@ import {
     X,
 } from 'lucide-react';
 import { exceptionsApi } from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError';
 import { useAuth } from '@/context/AuthContext';
 import CorrectionRequestDialog, { CorrectionRequestPayload } from '@/components/CorrectionRequestDialog';
 
@@ -141,7 +142,7 @@ export default function ExceptionsPage() {
     }, [end, start, targetUserId, timesheetId]);
 
     useEffect(() => {
-        void load().catch((requestError: any) => setError(requestError?.response?.data?.error || 'Exceptions could not be loaded.'));
+        void load().catch((requestError: any) => setError(getApiErrorMessage(requestError, 'Exceptions could not be loaded.')));
     }, [load]);
 
     const counts = useMemo(() => ({
@@ -196,7 +197,7 @@ export default function ExceptionsPage() {
             setMessage(`Correction request sent to ${result.routing?.fallbackLabel || reviewerLabel}.`);
             await load();
         } catch (requestError: any) {
-            setError(requestError?.response?.data?.error || 'The correction request could not be submitted.');
+            setError(getApiErrorMessage(requestError, 'The correction request could not be submitted.'));
         } finally {
             setSubmittingCorrection(false);
         }
@@ -214,7 +215,7 @@ export default function ExceptionsPage() {
             setReviewNote('');
             await load();
         } catch (requestError: any) {
-            setError(requestError?.response?.data?.error || 'The exception decision could not be saved.');
+            setError(getApiErrorMessage(requestError, 'The exception decision could not be saved.'));
         }
     };
 
@@ -228,7 +229,7 @@ export default function ExceptionsPage() {
             setReviewNote('');
             await load();
         } catch (requestError: any) {
-            setError(requestError?.response?.data?.error || 'The exception decision could not be saved.');
+            setError(getApiErrorMessage(requestError, 'The exception decision could not be saved.'));
         }
     };
 

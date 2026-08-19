@@ -7,6 +7,7 @@ import { AlertTriangle, CalendarDays, Check, CheckCircle2, ChevronRight, History
 import { approvalsApi } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
 import { cn, formatDuration } from '@/lib/utils';
+import { getApiErrorMessage } from '@/lib/apiError';
 
 const safeFormatDate = (dateValue: any, formatStr: string, fallback = '—'): string => {
     if (!dateValue) return fallback;
@@ -113,7 +114,7 @@ export default function ApprovalsPage() {
             setHistory(current => current.filter(row => row._id !== item._id));
         } catch (error: any) {
             console.error('Reopen failed', error);
-            alert(error.response?.data?.error || 'Failed to reopen timesheet.');
+            alert(getApiErrorMessage(error, 'Failed to reopen timesheet.'));
         } finally {
             setSubmitting(null);
         }
@@ -132,7 +133,7 @@ export default function ApprovalsPage() {
             setHistory(current => current.filter(row => row._id !== item._id));
         } catch (error: any) {
             console.error('Delete failed', error);
-            alert(error.response?.data?.error || 'Failed to delete timesheet.');
+            alert(getApiErrorMessage(error, 'Failed to delete timesheet.'));
         } finally {
             setSubmitting(null);
         }

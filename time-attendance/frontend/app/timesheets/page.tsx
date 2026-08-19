@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatDuration } from '@/lib/utils';
+import { getApiErrorMessage } from '@/lib/apiError';
 
 export default function TimesheetsPage() {
     const [timesheets, setTimesheets] = useState<any[]>([]);
@@ -64,9 +65,9 @@ export default function TimesheetsPage() {
             link.click();
             document.body.removeChild(link);
             window.URL.revokeObjectURL(fileUrl);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to export timesheet', error);
-            alert('Failed to export timesheet.');
+            alert(getApiErrorMessage(error, 'Failed to export timesheet.'));
         } finally {
             setExporting(false);
         }

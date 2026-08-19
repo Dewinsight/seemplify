@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Beaker, CheckCircle2, Copy, ExternalLink, FilePlus2, Loader2, Plus, Save, Scale, Send, X } from 'lucide-react';
 import { correctionRunsApi, rulePacksApi } from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError';
 
 const STARTING_RULES = {
     work: { standardHoursPerDay: 8, standardHoursPerWeek: 40, maximumHoursPerWeek: 48, workDays: [1, 2, 3, 4, 5], defaultStartTime: '09:00', defaultEndTime: '17:00' },
@@ -69,7 +70,7 @@ export default function RulePackStudioPage() {
                 setSelected(null);
             }
         } catch (error: any) {
-            setErrorMessage(error?.response?.data?.error || 'Rule packs could not be loaded.');
+            setErrorMessage(getApiErrorMessage(error, 'Rule packs could not be loaded.'));
         } finally {
             setLoading(false);
             setSeeding(false);
@@ -86,7 +87,7 @@ export default function RulePackStudioPage() {
             setMessage(result.inserted ? `${result.inserted} baseline templates added.` : 'All baseline templates are already present.');
             await load();
         } catch (error: any) {
-            setErrorMessage(error?.response?.data?.error || 'Baseline templates could not be added.');
+            setErrorMessage(getApiErrorMessage(error, 'Baseline templates could not be added.'));
         } finally {
             setSeeding(false);
         }
@@ -114,7 +115,7 @@ export default function RulePackStudioPage() {
             await load();
             await select(data.pack._id);
         } catch (error: any) {
-            setErrorMessage(error?.response?.data?.error || 'The custom rule pack could not be created.');
+            setErrorMessage(getApiErrorMessage(error, 'The custom rule pack could not be created.'));
         } finally {
             setCreating(false);
         }
@@ -122,8 +123,8 @@ export default function RulePackStudioPage() {
 
     const orgOwned = Boolean(selected?.scope?.organizationId);
     const clone = async () => { const data = await rulePacksApi.clone(selected._id, { name: `${selected.name} — organization copy` }); setMessage('Editable organization copy created.'); await load(); await select(data.pack._id); };
-    const save = async () => { try { const rules = JSON.parse(rulesText); const data = await rulePacksApi.update(selected._id, { name: selected.name, description: selected.description, effectiveFrom: selected.effectiveFrom, rules, sources: selected.sources, changeNotes: selected.changeNotes }); setSelected(data.pack); setValidation(data.validation); setMessage('Draft saved.'); await load(); } catch (error: any) { setErrorMessage(error?.response?.data?.error || error.message || 'Rules must be valid JSON.'); } };
-    const validate = async () => { try { const data = await rulePacksApi.validate(selected._id); setValidation(data); setSelected(data.pack); setMessage('Validation passed.'); await load(); } catch (error: any) { setValidation(error?.response?.data); setErrorMessage('Validation found issues that must be corrected.'); } };
+    const save = async () => { try { const rules = JSON.parse(rulesText); const data = await rulePacksApi.update(selected._id, { name: selected.name, description: selected.description, effectiveFrom: selected.effectiveFrom, rules, sources: selected.sources, changeNotes: selected.changeNotes }); setSelected(data.pack); setValidation(data.validation); setMessage('Draft saved.'); await load(); } catch (error: any) { setErrorMessage(getApiErrorMessage(error, 'Rules must be valid JSON.')); } };
+    const validate = async () => { try { const data = await rulePacksApi.validate(selected._id); setValidation(data); setSelected(data.pack); setMessage('Validation passed.'); await load(); } catch (error: any) { setValidation(error?.response?.data); setErrorMessage(getApiErrorMessage(error, 'Validation found issues that must be corrected.')); } };
     const publish = async () => { if (!window.confirm('Confirm jurisdictional review and publish this immutable version?')) return; const data = await rulePacksApi.publish(selected._id, { confirmReviewed: true, reviewedBy: 'Organization rule-pack reviewer' }); setSelected(data.pack); setMessage('Rule pack published and selected for new calculations. Approved history was not changed.'); await load(); };
     const simulate = async () => { const start = new Date(); start.setHours(0, 0, 0, 0); const end = new Date(start.getTime() + 6 * 86400000); const clockIn = new Date(start); clockIn.setHours(9); const clockOut = new Date(start); clockOut.setHours(18); const data = await rulePacksApi.simulate(selected._id, { startDate: start, endDate: end, timezone: 'UTC', entries: [{ entryType: 'clock_in', timestamp: clockIn }, { entryType: 'clock_out', timestamp: clockOut }] }); setSimulation(data); };
     const compare = async (id: string) => { setCompareId(id); if (!id) return setComparison(null); const data = await rulePacksApi.get(id); setComparison(data); };

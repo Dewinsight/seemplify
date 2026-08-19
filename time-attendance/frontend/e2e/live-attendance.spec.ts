@@ -111,7 +111,7 @@ test('persists a manager-entered punch through the Punch Log UI', async ({ page,
     expect(entries.some(entry => entry.isManualEntry && entry.note === 'Live browser verification entry.')).toBe(true);
 });
 
-test('protects an open timesheet from partial submission and submits a closed period safely', async ({ page, request, diagnostics: _diagnostics }, testInfo) => {
+test('submits a completed open timesheet without waiting for the period to end', async ({ page, request, diagnostics: _diagnostics }, testInfo) => {
     test.skip(!testInfo.project.name.startsWith('desktop'), 'Desktop live-flow coverage');
     const timesheets = await getTimesheets(request);
     const openTimesheet = timesheets.find(sheet => new Date(sheet.endDate) >= new Date());
@@ -159,14 +159,18 @@ test('protects an open timesheet from partial submission and submits a closed pe
     expect(draftDetails.dailyEntries.some((entry: any) => entry.clockInLocation?.address === 'Live draft location, London')).toBe(true);
     expect(draftDetails.dailyEntries.some((entry: any) => entry.clockOutLocation?.address === 'Live draft clock-out, London')).toBe(true);
 
-    const rejected = await request.post(`${API_ORIGIN}/api/timesheets/${openTimesheet._id}/submit`, {
+    const submittedOpen = await request.post(`${API_ORIGIN}/api/timesheets/${openTimesheet._id}/submit`, {
         headers: apiHeaders(),
         data: {},
     });
-    expect(rejected.status()).toBe(409);
-    expect((await rejected.json()).code).toBe('PERIOD_STILL_OPEN');
+    expect(submittedOpen.status()).toBe(200);
     const openAfterResponse = await request.get(`${API_ORIGIN}/api/timesheets/${openTimesheet._id}`, { headers: apiHeaders() });
-    expect((await openAfterResponse.json()).timesheet.status).toBe('draft');
+    expect((await openAfterResponse.json()).timesheet.status).toBe('submitted');
+    const recalledOpen = await request.post(`${API_ORIGIN}/api/timesheets/${openTimesheet._id}/recall`, {
+        headers: apiHeaders(),
+        data: {},
+    });
+    expect(recalledOpen.status()).toBe(200);
 
     await authenticate(page);
     await page.goto(`/timesheets/${openTimesheet._id}`);

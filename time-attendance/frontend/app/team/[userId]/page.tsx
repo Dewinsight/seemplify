@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { attendanceApi, timesheetApi } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
+import { getApiErrorMessage } from '@/lib/apiError';
 import {
     ArrowLeft,
     Calendar,
@@ -75,7 +76,7 @@ export default function MemberDetailPage() {
             setTimesheets(timesheetsRes.timesheets || timesheetsRes || []);
         } catch (err: any) {
             console.error('Failed to fetch member details', err);
-            setError(err.response?.data?.error || 'Failed to load member details');
+            setError(getApiErrorMessage(err, 'Failed to load member details'));
         } finally {
             setLoading(false);
         }

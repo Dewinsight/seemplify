@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, Clock, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import { clockApi } from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError';
 
 interface ManualEntryModalProps {
     isOpen: boolean;
@@ -59,7 +60,7 @@ export default function ManualEntryModal({ isOpen, onClose, onSuccess }: ManualE
             setTime(format(new Date(), 'HH:mm'));
             setNote('');
         } catch (err: any) {
-            setError(err.response?.data?.error || 'Failed to create manual entry');
+            setError(getApiErrorMessage(err, 'Failed to create manual entry'));
         } finally {
             setLoading(false);
         }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, ShieldCheck, UserCog } from 'lucide-react';
 import { attendanceAccessApi } from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError';
 
 type Role = {
     key: string;
@@ -33,6 +34,7 @@ export default function AttendanceRoleSettings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
+    const [errorMessage, setErrorMessage] = useState('');
     const assignableRoles = useMemo(() => roles.filter(role => !role.locked), [roles]);
 
     useEffect(() => {
@@ -61,6 +63,7 @@ export default function AttendanceRoleSettings() {
     const saveRoles = async () => {
         setSaving(true);
         setMessage('');
+        setErrorMessage('');
         try {
             const data = await attendanceAccessApi.updatePolicy(roles.map(role => ({ key: role.key, permissions: role.permissions })));
             setRoles(data.policy?.roles || roles);
@@ -76,12 +79,13 @@ export default function AttendanceRoleSettings() {
             : [...person.roleKeys, roleKey];
         setPeople(current => current.map(item => item.userId === person.userId ? { ...item, roleKeys } : item));
         setMessage('');
+        setErrorMessage('');
         try {
             await attendanceAccessApi.assignPerson(person.userId, roleKeys);
             setMessage(`${person.name || person.email || 'Employee'} access updated and audited.`);
         } catch (error) {
             setPeople(current => current.map(item => item.userId === person.userId ? person : item));
-            setMessage(error instanceof Error ? error.message : 'The role assignment could not be saved.');
+            setErrorMessage(getApiErrorMessage(error, 'The role assignment could not be saved.'));
         }
     };
 
@@ -96,6 +100,7 @@ export default function AttendanceRoleSettings() {
             <button type="button" onClick={saveRoles} disabled={saving} className="shrink-0 rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50 dark:bg-teal-600">{saving ? 'Saving…' : 'Save role rules'}</button>
         </div>
         {message && <p role="status" className="mt-4 rounded-md border border-emerald-600/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">{message}</p>}
+        {errorMessage && <p role="alert" className="mt-4 rounded-md border border-red-600/25 bg-red-500/10 px-3 py-2 text-sm text-red-800 dark:text-red-200">{errorMessage}</p>}
 
         <div className="mt-6 overflow-x-auto">
             <table className="w-full min-w-[760px] border-collapse text-left text-sm">

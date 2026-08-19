@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
+import { getApiErrorMessage } from '@/lib/apiError';
 import AttendanceRoleSettings from '@/components/AttendanceRoleSettings';
 
 export default function SettingsPage() {
@@ -120,7 +121,7 @@ export default function SettingsPage() {
             alert('Settings saved successfully');
         } catch (error) {
             console.error('Failed to save settings', error);
-            alert('Failed to save settings');
+            alert(getApiErrorMessage(error, 'Failed to save settings'));
         } finally {
             setSaving(false);
         }
@@ -212,7 +213,7 @@ export default function SettingsPage() {
             setNewLocation({ name: '', address: '', latitude: 0, longitude: 0, radius: 100 });
         } catch (error: any) {
             console.error('Failed to add location', error);
-            alert(error.response?.data?.error || 'Failed to add location');
+            alert(getApiErrorMessage(error, 'Failed to add location'));
         } finally {
             setSaving(false);
         }
@@ -227,7 +228,7 @@ export default function SettingsPage() {
             await fetchSettings();
         } catch (error: any) {
             console.error('Failed to delete location', error);
-            alert(error.response?.data?.error || 'Failed to delete location');
+            alert(getApiErrorMessage(error, 'Failed to delete location'));
         } finally {
             setSaving(false);
         }
@@ -244,7 +245,7 @@ export default function SettingsPage() {
             await fetchSettings();
         } catch (error: any) {
             console.error('Failed to toggle location', error);
-            alert(error.response?.data?.error || 'Failed to update location');
+            alert(getApiErrorMessage(error, 'Failed to update location'));
         } finally {
             setSaving(false);
         }

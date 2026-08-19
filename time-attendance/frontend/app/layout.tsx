@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import AppShell from '@/components/AppShell';
+import ApiErrorNotice from '@/components/ApiErrorNotice';
 import { themeInitScript } from '@/lib/theme-sync';
 
 export const metadata = {
@@ -19,6 +20,7 @@ export default function RootLayout({
             <body className="bg-background text-foreground font-sans antialiased">
                 <AuthProvider>
                     <AppShell>{children}</AppShell>
+                    <ApiErrorNotice />
                 </AuthProvider>
             </body>
         </html>

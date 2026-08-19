@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { redirectToLogin, isPublicRoute } from '@/services/authGuard';
 import { getApiUrl } from '@/lib/env';
+import { API_ERROR_EVENT, getApiErrorMessage, isApiErrorHandled } from '@/lib/apiError';
 
 // Use centralized environment detection to prevent localhost in production
 const API_URL = getApiUrl();
@@ -28,7 +29,15 @@ api.interceptors.request.use((config) => {
 // Handle response errors - auto redirect on 401/403
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
+    async (error) => {
+        if (typeof Blob !== 'undefined' && error.response?.data instanceof Blob) {
+            try {
+                const text = await error.response.data.text();
+                error.response.data = JSON.parse(text);
+            } catch {
+                // Keep the original blob when the provider did not return JSON.
+            }
+        }
         // Only handle auth errors if we're not already on a public route
         if (typeof window !== 'undefined') {
             const currentPath = window.location.pathname;
@@ -41,6 +50,13 @@ api.interceptors.response.use(
                     redirectToLogin();
                 }
             }
+
+            window.setTimeout(() => {
+                if (isApiErrorHandled(error)) return;
+                window.dispatchEvent(new CustomEvent(API_ERROR_EVENT, {
+                    detail: { message: getApiErrorMessage(error, 'The request could not be completed.', { markHandled: false }) },
+                }));
+            }, 0);
         }
         
         return Promise.reject(error);

@@ -303,7 +303,10 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'POST' && path === '/api/v1/rule-packs/rule-pack-1/simulate') return json(route, { result: { totals: { regularHours: 8, overtimeHours: 0, exceptionCount: 0 }, dailyEntries: [] } });
         if (method === 'POST' && path === '/api/v1/rule-packs/rule-pack-1/clone') return json(route, { pack: { ...rulePack, _id: 'rule-pack-org', name: 'Nigeria default — organization copy', status: 'draft', scope: { organizationId: 'org-1' } } });
 
-        if (method === 'GET' && path === '/api/reports/exceptions') return json(route, { summary: { totalExceptions: 0, affectedPeople: 0, affectedDays: 0 }, rows: [] });
+        if (method === 'GET' && path === '/api/reports/exceptions') return json(route, {
+            summary: { totalExceptions: 1, affectedPeople: 1, affectedDays: 1 },
+            rows: [{ userId: 'employee-2', date: '2026-08-18', userName: 'Jamie Lee', userEmail: 'jamie@example.com', teamName: 'Operations', workMinutes: 300, exceptions: [{ type: 'early_departure' }], sources: ['web'] }],
+        });
         if (method === 'GET' && path === '/api/reports/attendance') return json(route, { report: [{ userName: 'Alex Morgan', teamName: 'Operations', daysWorked: 5, avgStartTime: '09:00', avgEndTime: '17:00', totalHours: 37.5 }] });
         if (method === 'GET' && path === '/api/reports/overtime') return json(route, { report: [] });
         if (method === 'GET' && path === '/api/reports/lateness') return json(route, { report: [] });
@@ -515,6 +518,15 @@ test('covers manager approvals, team status, reports, rule packs and policy sett
         await page.goto(path);
         await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     }
+});
+
+test('switches between populated report payloads without rendering the previous response shape', async ({ page, mockState: _mockState }) => {
+    await authenticate(page);
+    await page.goto('/reports');
+
+    await expect(page.getByText('Jamie Lee')).toBeVisible();
+    await page.getByRole('button', { name: 'Attendance', exact: true }).click();
+    await expect(page.getByText('Alex Morgan')).toBeVisible();
 });
 
 test('separates employee and management workspaces and exposes seeded attendance roles', async ({ page, mockState }) => {

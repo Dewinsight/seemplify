@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { schedulingApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { getApiErrorMessage } from "@/lib/apiError";
 
 function localInput(date: Date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
@@ -116,8 +117,7 @@ export default function SchedulePage() {
       );
     } catch (error: any) {
       setRosterError(
-        error?.response?.data?.error ||
-          "The IDP roster could not be synchronized.",
+        getApiErrorMessage(error, "The IDP roster could not be synchronized."),
       );
     } finally {
       setRosterLoaded(true);
@@ -182,7 +182,7 @@ export default function SchedulePage() {
       await load();
     } catch (error: any) {
       setMessage(
-        error?.response?.data?.error || "The draft shift could not be created.",
+        getApiErrorMessage(error, "The draft shift could not be created."),
       );
     }
   };
