@@ -1,15 +1,15 @@
 const { Timesheet } = require('../models');
 
-const TERMINAL_ACTIONS = new Set(['clock_out', 'break_end']);
+const LIVE_ATTENDANCE_ACTIONS = new Set(['clock_in', 'clock_out', 'break_start', 'break_end']);
 const EDITABLE_ADJUSTMENT_STATUSES = ['draft', 'rejected', 'revision_requested', 'adjusted'];
 
 function getLockedPeriodDisposition(action, lockedTimesheet) {
     if (!lockedTimesheet) return { allowed: true, requiresAdjustment: false };
-    if (TERMINAL_ACTIONS.has(action)) {
+    if (LIVE_ATTENDANCE_ACTIONS.has(action)) {
         return {
             allowed: true,
             requiresAdjustment: true,
-            reason: `Active ${action === 'clock_out' ? 'attendance session' : 'break'} ended after timesheet version ${lockedTimesheet.version || 1} was protected`,
+            reason: `Live ${action.replace('_', ' ')} recorded after timesheet version ${lockedTimesheet.version || 1} was protected`,
         };
     }
     return { allowed: false, requiresAdjustment: false };

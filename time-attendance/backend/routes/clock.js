@@ -90,15 +90,6 @@ async function findLockedTimesheetAt(userId, organizationId, timestamp = new Dat
     }).sort({ version: -1, updatedAt: -1 });
 }
 
-function rejectLockedPeriod(res, timesheet) {
-    return res.status(409).json({
-        error: 'This attendance period is locked. Ask a manager to create a versioned adjustment.',
-        code: 'TIMESHEET_LOCKED',
-        timesheetId: timesheet._id,
-        status: timesheet.status,
-    });
-}
-
 function protectedPeriodMetadata(timesheet, reason) {
     if (!timesheet) return undefined;
     return {
@@ -232,7 +223,6 @@ router.post('/in', async (req, res) => {
 
         const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
         const lockDisposition = getLockedPeriodDisposition('clock_in', lockedTimesheet);
-        if (!lockDisposition.allowed) return rejectLockedPeriod(res, lockedTimesheet);
 
         const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
         if (policy.clockSettings?.requireNote && !String(note || '').trim()) {
@@ -303,24 +293,38 @@ router.post('/in', async (req, res) => {
             jobCode,
             activityCode,
             costCentreCode,
+            timesheetId: lockedTimesheet?._id,
+            protectedPeriodAdjustment: protectedPeriodMetadata(lockedTimesheet, lockDisposition.reason),
         });
 
         await entry.save();
         attendanceEvents.publish(userId, organizationId, { type: 'clock_in', entryId: entry._id, at: entry.timestamp });
 
-        // Update or create today's timesheet
-        const timesheet = await Timesheet.findOrCreateCurrentWeek(userId, organizationId, {
-            email: req.user.email,
-            name: req.user.name,
-            organizationName: req.organizationName,
-            teamId: userTeam?.id,
-            teamName: userTeam?.name,
+        const adjustment = await completeProtectedPeriodAdjustment({
+            entry,
+            timesheet: lockedTimesheet,
+            disposition: lockDisposition,
+            req,
+            action: 'clock_in',
         });
+
+        if (!lockedTimesheet) {
+            await Timesheet.findOrCreateCurrentWeek(userId, organizationId, {
+                email: req.user.email,
+                name: req.user.name,
+                organizationName: req.organizationName,
+                teamId: userTeam?.id,
+                teamName: userTeam?.name,
+            }, policy);
+        }
 
         res.json({
             success: true,
             entry,
-            message: 'Clocked in successfully',
+            adjustment,
+            message: adjustment
+                ? 'Clocked in successfully. A correction version was created without changing the protected timesheet.'
+                : 'Clocked in successfully',
             warnings: [...ruleResult.warnings, ...(locationCheck.warnings || [])],
         });
     } catch (error) {
@@ -456,7 +460,6 @@ router.post('/break/start', async (req, res) => {
 
         const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
         const lockDisposition = getLockedPeriodDisposition('break_start', lockedTimesheet);
-        if (!lockDisposition.allowed) return rejectLockedPeriod(res, lockedTimesheet);
 
         // Check if already on break
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
@@ -477,15 +480,28 @@ router.post('/break/start', async (req, res) => {
             timestamp: new Date(),
             source: req.user.authSurface === 'hub' ? 'hub' : 'web',
             note,
+            timesheetId: lockedTimesheet?._id,
+            protectedPeriodAdjustment: protectedPeriodMetadata(lockedTimesheet, lockDisposition.reason),
         });
 
         await entry.save();
         attendanceEvents.publish(userId, organizationId, { type: 'break_start', entryId: entry._id, at: entry.timestamp });
 
+        const adjustment = await completeProtectedPeriodAdjustment({
+            entry,
+            timesheet: lockedTimesheet,
+            disposition: lockDisposition,
+            req,
+            action: 'break_start',
+        });
+
         res.json({
             success: true,
             entry,
-            message: 'Break started',
+            adjustment,
+            message: adjustment
+                ? 'Break started. A correction version was created without changing the protected timesheet.'
+                : 'Break started',
         });
     } catch (error) {
         console.error('Start break error:', error);

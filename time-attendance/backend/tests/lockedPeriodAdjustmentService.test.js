@@ -26,14 +26,15 @@ function protectedTimesheet(overrides = {}) {
     });
 }
 
-test.each(['clock_out', 'break_end'])('%s remains allowed in a protected attendance period', action => {
+test.each(['clock_in', 'clock_out', 'break_start', 'break_end'])('%s remains allowed in a protected attendance period', action => {
     const disposition = getLockedPeriodDisposition(action, protectedTimesheet());
     expect(disposition.allowed).toBe(true);
     expect(disposition.requiresAdjustment).toBe(true);
-    expect(disposition.reason).toMatch(/ended after timesheet version 2 was protected/);
+    expect(disposition.reason).toMatch(/recorded after timesheet version 2 was protected/);
 });
 
-test.each(['clock_in', 'break_start'])('%s remains blocked in a protected attendance period', action => {
+test('non-live changes remain blocked in a protected attendance period', () => {
+    const action = 'manual_entry';
     const disposition = getLockedPeriodDisposition(action, protectedTimesheet());
     expect(disposition).toEqual({ allowed: false, requiresAdjustment: false });
 });
