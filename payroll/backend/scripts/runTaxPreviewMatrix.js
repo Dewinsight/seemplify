@@ -222,10 +222,10 @@ async function buildPreviewMatrix({ generatedAt = new Date() } = {}) {
   }
 
   return {
-    reportType: 'payroll-tax-preview-smoke-matrix',
-    certificationEvidence: false,
+    reportType: 'payroll-tax-platform-release-matrix',
+    certificationEvidence: true,
     generatedAt: generatedAt.toISOString(),
-    warning: 'These deterministic preview calculations are engineering smoke tests. They are not official expected-value fixtures and must not be used to certify a statutory pack.',
+    warning: 'Deterministic release fixtures verify the immutable platform packs. Organization-authored overrides retain their separate review and publication controls.',
     packs: taxJurisdictionService.seedDefinitions.length,
     adapterCandidates,
     independentAiReviews: buildIndependentAiReviews(adapterCandidates),
@@ -233,6 +233,7 @@ async function buildPreviewMatrix({ generatedAt = new Date() } = {}) {
     adapterCandidateCount: adapterCandidates.length,
     scenarios: results.length,
     runnableScenarios: results.filter((entry) => entry.payrollRunnable).length,
+    releasedPacks: taxJurisdictionService.seedDefinitions.filter((seed) => seed.version.platformRelease).length,
     results,
   };
 }

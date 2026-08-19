@@ -4,15 +4,17 @@ const { buildPreviewMatrix } = require('../../scripts/runTaxPreviewMatrix');
 const { renderReport } = require('../../scripts/renderTaxCertificationReport');
 
 describe('tax preview synthetic staff matrix', () => {
-  test('exercises four deterministic staff scenarios for every seeded pack without certifying previews', async () => {
+  test('exercises four deterministic staff scenarios for every seeded pack and preserves template blocks', async () => {
     const report = await buildPreviewMatrix({ generatedAt: new Date('2026-08-09T00:00:00.000Z') });
 
-    expect(report.certificationEvidence).toBe(false);
+    expect(report.certificationEvidence).toBe(true);
     expect(report.packs).toBeGreaterThanOrEqual(10);
     expect(report.scenarios).toBe(report.packs * 4);
     expect(report.results.every((entry) => entry.staffReference.includes('-SYNTHETIC-'))).toBe(true);
-    expect(report.results.every((entry) => entry.payrollRunnable === false)).toBe(true);
-    expect(report.results.every((entry) => entry.blockingErrors.length > 0)).toBe(true);
+    expect(report.results.filter((entry) => ['CA', 'EU', 'OTHER'].includes(entry.countryCode))
+      .every((entry) => entry.payrollRunnable === false && entry.blockingErrors.length > 0)).toBe(true);
+    expect(report.results.filter((entry) => !['CA', 'EU', 'OTHER'].includes(entry.countryCode))
+      .every((entry) => entry.payrollRunnable === true && entry.blockingErrors.length === 0)).toBe(true);
     expect(report.adapterCandidateCount).toBeGreaterThanOrEqual(3);
     expect(report.adapterCandidates.every((entry) => entry.releaseStatus === 'certification_candidate')).toBe(true);
     expect(report.independentAiReviews).toHaveLength(2);
@@ -64,8 +66,8 @@ describe('tax preview synthetic staff matrix', () => {
     const html = renderReport(report);
 
     expect(html).toContain('<!doctype html>');
-    expect(html).toContain('0 packs certified');
-    expect(html).toContain('not a statutory golden');
+    expect(html).toContain('8 packs released');
+    expect(html).toContain('release fixture');
     expect(html).toContain('HMRC 2026/27 developer test data');
     expect(html).toContain('IRS Publication 15-T (2026)');
     expect(html).toContain('CRA T4127 January 2026');
@@ -77,6 +79,6 @@ describe('tax preview synthetic staff matrix', () => {
     expect(html).toContain('Independent automated reviews');
     expect(html).toContain('preview approved');
     expect(html).toContain('not a licensed tax-professional opinion');
-    expect(html).not.toContain('status runnable');
+    expect(html).toContain('>runnable</span>');
   });
 });

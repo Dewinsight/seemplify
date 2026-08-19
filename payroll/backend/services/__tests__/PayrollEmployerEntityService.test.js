@@ -62,7 +62,7 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
     });
   });
 
-  test('derives a safe draft employer from country, organization and published software defaults', async () => {
+  test('derives an operational employer from country, organization and published software defaults', async () => {
     const jurisdictionId = objectId();
     const versionId = objectId();
     jest.spyOn(PayrollEmployerEntity, 'findOne').mockResolvedValue(null);
@@ -88,7 +88,7 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
       taxJurisdictionVersionId: versionId,
       taxAdapterCandidateId: 'NG_2026_WAVE_1',
       taxRegistrations: [],
-      status: 'draft',
+      status: 'active',
     }), { userId: 'admin-1' });
     expect(result).toEqual({ _id: 'default-ng' });
   });
@@ -117,8 +117,9 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
     expect(result.blockingIssues).toContain('Tax pack is preview_only and cannot finalize payroll.');
   });
 
-  test('can become runnable only after published-pack and registration gates pass', () => {
+  test('a released pack can calculate before registration metadata is added', () => {
     const row = entity().toObject();
+    row.taxRegistrations = [];
     const result = readiness(row, {
       candidate: employerEntityService.listAdapterCandidates().find((candidate) => candidate.id === 'NG_2026_WAVE_1'),
       version: {
@@ -127,6 +128,27 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
         calculationStatus: 'runnable',
         calculationCurrency: 'NGN',
         contentHash: 'b'.repeat(64),
+      },
+    });
+
+    expect(result).toMatchObject({
+      payrollRunnable: true,
+      mode: 'runnable',
+      blockingIssues: [],
+      warnings: [expect.stringMatching(/registration is not yet verified/i)],
+    });
+  });
+
+  test('a platform-released pack does not require a separate candidate binding', () => {
+    const row = entity({ taxAdapterCandidateId: '' }).toObject();
+    const result = readiness(row, {
+      version: {
+        _id: row.taxJurisdictionVersionId,
+        label: 'Nigeria 2026 platform release',
+        calculationStatus: 'runnable',
+        calculationCurrency: 'NGN',
+        contentHash: 'b'.repeat(64),
+        platformRelease: { releaseId: 'platform:NG-2026-NTA:2026-08-19' },
       },
     });
 

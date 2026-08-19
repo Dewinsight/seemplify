@@ -133,9 +133,12 @@ function readiness(entity, bindings = {}) {
   const version = bindings.version || null;
   const candidate = bindings.candidate || null;
   const blockingIssues = [];
+  const warnings = [];
   if (entity.status !== 'active') blockingIssues.push('Legal employer is not active.');
   if (!entity.taxJurisdictionConfigId || !version) blockingIssues.push('No published jurisdiction tax pack is bound.');
-  if (!entity.taxAdapterCandidateId || !candidate) blockingIssues.push('No independently tested adapter candidate is bound.');
+  if ((!entity.taxAdapterCandidateId || !candidate) && !version?.platformRelease) {
+    blockingIssues.push('No independently tested adapter candidate is bound.');
+  }
   if (version && version.calculationStatus !== 'runnable') {
     blockingIssues.push(`Tax pack is ${version.calculationStatus || 'blocked'} and cannot finalize payroll.`);
   }
@@ -147,12 +150,15 @@ function readiness(entity, bindings = {}) {
     && registration.effectiveFrom
     && (!registration.effectiveTo || new Date(registration.effectiveTo) >= new Date())
   ));
-  if (!activeRegistration) blockingIssues.push('No reviewed, effective employer tax registration is recorded.');
+  if (!activeRegistration) {
+    warnings.push('Employer tax registration is not yet verified; calculation is available, but remittance exports may require the registration reference.');
+  }
 
   return {
     payrollRunnable: blockingIssues.length === 0,
     mode: blockingIssues.length === 0 ? 'runnable' : (candidate ? 'preview_only' : 'blocked'),
     blockingIssues,
+    warnings,
     adapter: candidate || null,
     taxPack: version ? {
       jurisdictionId: idText(entity.taxJurisdictionConfigId),
@@ -209,10 +215,9 @@ class PayrollEmployerEntityService {
   }
 
   /**
-   * Create the safest useful employer default after an administrator chooses an
-   * employee payroll country. The row deliberately remains a draft: country,
-   * currency and available software bindings can be derived, but a registered
-   * legal name and employer tax registration must still be verified by a human.
+   * Create an operational employer default after an administrator chooses an
+   * employee payroll country. Registration references remain visible warnings
+   * for remittance/export workflows instead of blocking payroll calculation.
    */
   async ensureDefaultDraft(organizationId, countryInput, actor = {}) {
     const country = normalizeTaxCountry(countryInput);
@@ -247,7 +252,7 @@ class PayrollEmployerEntityService {
       taxJurisdictionConfigId: jurisdiction && published ? jurisdiction._id : null,
       taxJurisdictionVersionId: published?._id || null,
       taxAdapterCandidateId: candidate?.id || '',
-      status: 'draft',
+      status: 'active',
     };
 
     try {

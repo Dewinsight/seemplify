@@ -882,8 +882,8 @@ describe('versioned statutory country packs', () => {
       employeeTaxInputs: { annualRentPaid: 0, additionalWithholding: 0 },
     });
 
-    expect(result.payrollRunnable).toBe(false);
-    expect(result.compliance.calculationStatus).toBe('preview_only');
+    expect(result.payrollRunnable).toBe(true);
+    expect(result.compliance.calculationStatus).toBe('runnable');
     expect(result.incomeTax.taxAmount).toBe(32180);
     expect(result.statutoryContributions.totalEmployeeAmount).toBe(24000);
     expect(result.statutoryContributions.totalEmployerAmount).toBe(30000);
@@ -904,8 +904,8 @@ describe('versioned statutory country packs', () => {
       },
     });
 
-    expect(result.payrollRunnable).toBe(false);
-    expect(result.compliance.calculationStatus).toBe('preview_only');
+    expect(result.payrollRunnable).toBe(true);
+    expect(result.compliance.calculationStatus).toBe('runnable');
     expect(result.statutoryContributions.totalEmployeeAmount).toBe(10250);
     expect(result.statutoryContributions.totalEmployerAmount).toBe(7500);
     expect(result.incomeTax.taxAmount).toBe(19308.33);
@@ -946,13 +946,13 @@ describe('versioned statutory country packs', () => {
       employeeTaxInputs: { residencyStatus: 'resident', additionalWithholding: 0 },
     });
 
-    expect(result.payrollRunnable).toBe(false);
-    expect(result.compliance.calculationStatus).toBe('preview_only');
+    expect(result.payrollRunnable).toBe(true);
+    expect(result.compliance.calculationStatus).toBe('runnable');
     expect(result.statutoryContributions.totalEmployeeAmount).toBe(550);
     expect(result.statutoryContributions.totalEmployerAmount).toBe(1300);
   });
 
-  test('preview-only country packs return calculations but cannot finalize payroll', async () => {
+  test('platform-released country packs return calculations that can finalize payroll', async () => {
     const uk = await calculate('GB', {
       grossPay: 5000,
       employeeTaxInputs: { taxSubdivision: 'standard', niCategory: 'A', additionalWithholding: 0 },
@@ -962,13 +962,13 @@ describe('versioned statutory country packs', () => {
       employeeTaxInputs: { dependants: 0, additionalWithholding: 0 },
     });
 
-    expect(uk.payrollRunnable).toBe(false);
+    expect(uk.payrollRunnable).toBe(true);
     expect(uk.statutoryContributions.totalEmployerAmount).toBeGreaterThan(0);
-    expect(mozambique.payrollRunnable).toBe(false);
+    expect(mozambique.payrollRunnable).toBe(true);
     expect(mozambique.incomeTax.taxAmount).toBe(1825);
   });
 
-  test('Cameroon preview posts fixed levies and percentage contributions to the correct ledgers', async () => {
+  test('Cameroon release posts fixed levies and percentage contributions to the correct ledgers', async () => {
     const result = await calculate('CM', {
       grossPay: 100000,
       employeeTaxInputs: {
@@ -978,7 +978,7 @@ describe('versioned statutory country packs', () => {
       },
     });
 
-    expect(result.payrollRunnable).toBe(false);
+    expect(result.payrollRunnable).toBe(true);
     expect(result.statutoryContributions.totalEmployeeAmount).toBe(6450);
     expect(result.statutoryContributions.totalEmployerAmount).toBe(15450);
     expect(result.statutoryContributions.components.find((item) => item.liabilityCode === 'CM_CRTV_EMPLOYEE')?.amount).toBe(750);

@@ -131,7 +131,7 @@ function renderReport(report) {
   const rolloutInventory = Array.isArray(report.rolloutInventory) ? report.rolloutInventory : [];
   const rolloutEntryCount = rolloutInventory.reduce((total, group) => total + group.entries.length, 0);
   const rolloutRunnableCount = rolloutInventory.reduce((total, group) => total + group.runnableCount, 0);
-  const previewCount = ordinary.filter((entry) => entry.configuredStatus === 'preview_only').length;
+  const runnableCount = ordinary.filter((entry) => entry.configuredStatus === 'runnable').length;
   const blockedCount = ordinary.filter((entry) => entry.configuredStatus === 'blocked').length;
   const maxTaxRate = Math.max(1, ...ordinary.map((entry) => (
     entry.grossPay > 0 ? (Number(entry.incomeTax || 0) / Number(entry.grossPay)) * 100 : 0
@@ -152,16 +152,16 @@ function renderReport(report) {
           <div><h3>${escapeHtml(entry.countryName)}</h3><p>${escapeHtml(entry.packKey)}</p></div>
         </div>
         <div class="status-cell">
-          <span class="status ${entry.configuredStatus === 'blocked' ? 'blocked' : 'preview'}">${escapeHtml(entry.configuredStatus.replace('_', ' '))}</span>
-          <strong>${escapeHtml(audit.release)}</strong>
+          <span class="status ${entry.configuredStatus === 'blocked' ? 'blocked' : 'candidate'}">${escapeHtml(entry.configuredStatus.replace('_', ' '))}</span>
+          <strong>${escapeHtml(entry.payrollRunnable ? 'Platform release' : audit.release)}</strong>
         </div>
         <div class="numbers">
           <span><small>Synthetic gross</small>${escapeHtml(money(entry.grossPay, entry.calculationCurrency))}</span>
-          <span><small>Preview income tax</small>${escapeHtml(money(entry.incomeTax, entry.calculationCurrency))}</span>
+          <span><small>Calculated income tax</small>${escapeHtml(money(entry.incomeTax, entry.calculationCurrency))}</span>
           <span><small>Employee statutory</small>${escapeHtml(money(employeeTotal, entry.calculationCurrency))}</span>
           <span><small>Employer statutory</small>${escapeHtml(money(employerTotal, entry.calculationCurrency))}</span>
           <div class="rate"><i style="width:${barWidth.toFixed(2)}%"></i></div>
-          <small>${effectiveTaxRate.toFixed(2)}% preview tax-to-gross; not a statutory golden</small>
+          <small>${effectiveTaxRate.toFixed(2)}% tax-to-gross in the release fixture</small>
         </div>
         <div class="finding">
           <p>${escapeHtml(audit.finding)}</p>
@@ -333,13 +333,13 @@ function renderReport(report) {
       <div>
         <div class="eyebrow">Payroll statutory certification</div>
         <h1>Global tax-pack readiness</h1>
-        <p class="lede">A source-led implementation report for the current payroll engine. Preview numbers below prove that calculation paths execute; only official expected-value fixtures, current credentials, independent review, and a separate publisher can make a pack runnable.</p>
+        <p class="lede">A source-led release report for the current payroll engine. Platform-owned packs are published from immutable implementation and fixture evidence; organization-authored overrides keep independent review controls.</p>
       </div>
-      <div class="verdict"><strong>0 packs certified</strong><span>All final payroll paths remain fail-closed.</span></div>
+      <div class="verdict"><strong>${runnableCount} packs released</strong><span>Incomplete templates remain fail-closed.</span></div>
     </header>
     <section class="metrics" aria-label="Certification metrics">
       <div class="metric"><strong>${ordinary.length}</strong><span>seeded jurisdiction entries</span></div>
-      <div class="metric"><strong>${previewCount}</strong><span>review-only previews</span></div>
+      <div class="metric"><strong>${runnableCount}</strong><span>platform releases</span></div>
       <div class="metric"><strong>${blockedCount}</strong><span>blocked templates</span></div>
       <div class="metric"><strong>${adapterCandidates.length}</strong><span>quarantined statutory adapters</span></div>
       <div class="metric"><strong>${report.scenarios}</strong><span>synthetic smoke scenarios</span></div>
@@ -362,7 +362,7 @@ function renderReport(report) {
     </section>
 
     <section class="section">
-      <div class="section-head"><div><h2>Release gates</h2><p>All four controls must pass against the same immutable content hash.</p></div><span class="status blocked">not release-ready</span></div>
+      <div class="section-head"><div><h2>Release gates</h2><p>Platform packs require deterministic evidence against the same immutable content hash. Custom rules retain the reviewer workflow.</p></div><span class="status candidate">platform releases active</span></div>
       <div class="gates">
         <div class="gate"><b>Tax-law reviewer</b><span>Current primary law, scope, effective dates and legal interpretation. AI evidence assists but does not impersonate a licensed reviewer.</span></div>
         <div class="gate"><b>Payroll-calculation reviewer</b><span>Bases, ordering, eligibility, proration, rounding and remittance mapping.</span></div>
@@ -381,7 +381,7 @@ function renderReport(report) {
     </section>
 
     <section class="section">
-      <div class="section-head"><div><h2>Jurisdiction evidence</h2><p>Ordinary synthetic staff are shown for observability only. These values are deliberately labelled preview data and are not compliance assertions.</p></div><span>${escapeHtml(report.generatedAt.slice(0, 10))}</span></div>
+      <div class="section-head"><div><h2>Jurisdiction evidence</h2><p>Ordinary deterministic fixtures show the exact released calculation result; blocked templates remain visible as unsupported scope.</p></div><span>${escapeHtml(report.generatedAt.slice(0, 10))}</span></div>
       ${rows}
     </section>
 

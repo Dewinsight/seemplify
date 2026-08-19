@@ -131,6 +131,28 @@ const TaxAutomatedTechnicalReviewSchema = new Schema({
   completedAt: { type: Date, default: Date.now },
 }, { _id: true });
 
+const TaxPlatformReleaseSchema = new Schema({
+  releaseId: { type: String, required: true, trim: true },
+  channel: { type: String, enum: ['stable'], default: 'stable' },
+  releasedAt: { type: Date, required: true },
+  evidenceReference: { type: String, required: true, trim: true },
+  implementationDigestSha256: {
+    type: String,
+    required: true,
+    lowercase: true,
+    trim: true,
+    match: /^[a-f0-9]{64}$/,
+  },
+  fixtureDigestSha256: {
+    type: String,
+    required: true,
+    lowercase: true,
+    trim: true,
+    match: /^[a-f0-9]{64}$/,
+  },
+  fixtureSuite: { type: String, required: true, trim: true },
+}, { _id: false });
+
 const TaxReviewerAuthorizationSchema = new Schema({
   userId: { type: String, required: true, trim: true },
   name: { type: String, required: true, trim: true },
@@ -225,6 +247,7 @@ const TaxJurisdictionVersionSchema = new Schema({
     name: { type: String, default: '', trim: true },
   },
   legalOpenIssues: { type: [String], default: [] },
+  platformRelease: { type: TaxPlatformReleaseSchema, default: null },
   certificationReviews: { type: [TaxCertificationReviewSchema], default: [] },
   automatedTechnicalReviews: { type: [TaxAutomatedTechnicalReviewSchema], default: [] },
   fieldDefinitions: [TaxFieldDefinitionSchema],
@@ -389,6 +412,7 @@ TaxJurisdictionConfigSchema.methods.toSummary = function toSummary() {
       coverage: publishedVersion.coverage,
       calculationCurrency: publishedVersion.calculationCurrency,
       contentHash: publishedVersion.contentHash,
+      platformRelease: publishedVersion.platformRelease || null,
       sourceLinks: publishedVersion.sourceLinks || [],
       fieldDefinitions: publishedVersion.fieldDefinitions || [],
     } : null,

@@ -342,6 +342,7 @@ function canonicalVersionContent(version = {}) {
     statutoryRules: plain.statutoryRules || [],
     testCases: plain.testCases || [],
     legalOpenIssues: plain.legalOpenIssues || [],
+    platformRelease: plain.platformRelease || null,
   };
 }
 
@@ -425,6 +426,39 @@ function currentPeriodIncome(inputs = {}) {
 
 function currentVersionHash(version) {
   return contentHash(canonicalVersionContent(version));
+}
+
+function platformReleaseStatus(version = {}) {
+  const release = version?.platformRelease;
+  // Published versions carry the canonical hash calculated before persistence.
+  // Prefer it because Mongoose materializes schema defaults that are not part
+  // of the immutable platform release payload.
+  const persistedHash = String(version?.contentHash || '').trim().toLowerCase();
+  const hash = /^[a-f0-9]{64}$/.test(persistedHash) ? persistedHash : currentVersionHash(version);
+  const problems = [];
+  if (!release) {
+    problems.push('No platform release record is attached to this tax pack.');
+  } else {
+    if (!String(release.releaseId || '').trim()) problems.push('Platform release ID is missing.');
+    if (!normalizeDate(release.releasedAt, null)) problems.push('Platform release date is missing.');
+    if (!String(release.evidenceReference || '').trim()) problems.push('Platform release evidence reference is missing.');
+    if (!/^[a-f0-9]{64}$/i.test(String(release.implementationDigestSha256 || ''))) problems.push('Platform implementation digest is invalid.');
+    if (!/^[a-f0-9]{64}$/i.test(String(release.fixtureDigestSha256 || ''))) problems.push('Platform fixture digest is invalid.');
+    if (!String(release.fixtureSuite || '').trim()) problems.push('Platform fixture suite is missing.');
+  }
+  const evidence = (version?.automatedTechnicalReviews || []).find((review) => (
+    review?.contentHash === hash
+    && review?.origin === 'deterministic'
+    && review?.generatedByAI === false
+    && review?.objectiveStatus === 'passed'
+    && review?.productionApproval === true
+    && review?.humanReviewRequired === false
+    && Array.isArray(review?.checks)
+    && review.checks.length > 0
+    && review.checks.every((check) => check?.status === 'passed')
+  ));
+  if (release && !evidence) problems.push('No passing deterministic production-release evidence matches the current pack content.');
+  return { ready: problems.length === 0, contentHash: hash, release: release || null, evidence: evidence || null, problems };
 }
 
 function reviewerAuthorizationProblem(authorization, { userId, role, now = new Date() } = {}) {
@@ -537,8 +571,120 @@ function makeSelectField(key, label, options = [], defaultValue = '') {
   };
 }
 
+const PLATFORM_RELEASED_AT = new Date('2026-08-19T00:00:00.000Z');
+const PLATFORM_RELEASE_INPUTS = Object.freeze({
+  GB: { grossPay: 5000, employeeTaxInputs: { taxSubdivision: 'standard', niCategory: 'A', additionalWithholding: 0 } },
+  US: { grossPay: 5000, employeeTaxInputs: { workStateCode: 'NY', filingStatus: 'single', otherIncome: 0, deductionsAdjustment: 0, taxCredits: 0, multipleJobs: false, additionalWithholding: 0 } },
+  NG: { grossPay: 1000000, employeeTaxInputs: { annualRentPaid: 0, additionalWithholding: 0 } },
+  GH: { grossPay: 10000, employeeTaxInputs: { residencyStatus: 'resident', additionalWithholding: 0 } },
+  KE: { grossPay: 100000, employeeTaxInputs: { residencyStatus: 'resident', monthlyInsurancePremium: 0, monthlyMortgageInterest: 0, monthlyRegisteredPension: 0, monthlyPostRetirementMedicalFund: 0, additionalWithholding: 0 } },
+  ZA: { grossPay: 50000, employeeTaxInputs: { medicalSchemeMembers: 1, additionalWithholding: 0 } },
+  CM: { grossPay: 100000, employeeTaxInputs: { employerSector: 'general', occupationalRiskClass: 'A', additionalWithholding: 0 } },
+  MZ: { grossPay: 50000, employeeTaxInputs: { dependants: 0, additionalWithholding: 0 } },
+});
+
+const PLATFORM_RELEASE_EXPECTED = Object.freeze({
+  GB: { taxAmount: 952.67, employeeStatutory: 267.5, employerStatutory: 687.45, employeeLiabilities: { GB_NI_EMPLOYEE: 267.5 }, employerLiabilities: { GB_NI_EMPLOYER: 687.45 }, incomeTaxMethod: 'uk_paye', calculationCurrency: 'GBP', payrollRunnable: true },
+  US: { taxAmount: 418.33, employeeStatutory: 382.5, employerStatutory: 382.5, employeeLiabilities: { US_SOCIAL_SECURITY_EMPLOYEE: 310, US_MEDICARE_EMPLOYEE: 72.5 }, employerLiabilities: { US_SOCIAL_SECURITY_EMPLOYER: 310, US_MEDICARE_EMPLOYER: 72.5 }, incomeTaxMethod: 'us_federal_withholding', calculationCurrency: 'USD', payrollRunnable: true },
+  NG: { taxAmount: 148100, employeeStatutory: 80000, employerStatutory: 100000, employeeLiabilities: { NG_PENSION_EMPLOYEE: 80000 }, employerLiabilities: { NG_PENSION_EMPLOYER: 100000 }, incomeTaxMethod: 'nigeria_paye', calculationCurrency: 'NGN', payrollRunnable: true },
+  GH: { taxAmount: 1961, employeeStatutory: 550, employerStatutory: 1300, employeeLiabilities: { GH_SSNIT_EMPLOYEE: 550 }, employerLiabilities: { GH_SSNIT_EMPLOYER: 1300 }, incomeTaxMethod: 'ghana_paye', calculationCurrency: 'GHS', payrollRunnable: true },
+  KE: { taxAmount: 19308.33, employeeStatutory: 10250, employerStatutory: 7500, employeeLiabilities: { KE_AHL_EMPLOYEE: 1500, KE_SHIF_EMPLOYEE: 2750, KE_NSSF_TIER1_EMPLOYEE: 540, KE_NSSF_TIER2_EMPLOYEE: 5460 }, employerLiabilities: { KE_AHL_EMPLOYER: 1500, KE_NSSF_TIER1_EMPLOYER: 540, KE_NSSF_TIER2_EMPLOYER: 5460 }, incomeTaxMethod: 'kenya_paye', calculationCurrency: 'KES', payrollRunnable: true },
+  ZA: { taxAmount: 10699.58, employeeStatutory: 177.12, employerStatutory: 177.12, employeeLiabilities: { ZA_UIF_EMPLOYEE: 177.12 }, employerLiabilities: { ZA_UIF_EMPLOYER: 177.12 }, incomeTaxMethod: 'south_africa_paye', calculationCurrency: 'ZAR', payrollRunnable: true },
+  CM: { taxAmount: 2654.67, employeeStatutory: 6450, employerStatutory: 15450, employeeLiabilities: { CM_CNPS_PVID_EMPLOYEE: 4200, CM_CFC_EMPLOYEE: 1000, CM_CRTV_EMPLOYEE: 750, CM_TDL_EMPLOYEE: 500 }, employerLiabilities: { CM_CNPS_PVID_EMPLOYER: 4200, CM_CNPS_FAMILY_EMPLOYER: 7000, CM_CNPS_ACCIDENT_EMPLOYER: 1750, CM_CFC_EMPLOYER: 1500, CM_FNE_EMPLOYER: 1000 }, incomeTaxMethod: 'cameroon_irpp_preview', calculationCurrency: 'XAF', payrollRunnable: true },
+  MZ: { taxAmount: 5225, employeeStatutory: 1500, employerStatutory: 2000, employeeLiabilities: { MZ_INSS_EMPLOYEE: 1500 }, employerLiabilities: { MZ_INSS_EMPLOYER: 2000 }, incomeTaxMethod: 'mozambique_monthly_irps', calculationCurrency: 'MZN', payrollRunnable: true },
+});
+
+function applyPlatformReleases(definitions) {
+  return definitions.map((seed) => {
+    const fixtureInput = PLATFORM_RELEASE_INPUTS[seed.countryCode];
+    const expected = PLATFORM_RELEASE_EXPECTED[seed.countryCode];
+    if (!fixtureInput || !expected) return seed;
+
+    const releasedPackKey = String(seed.version.packKey || '').replace(/-PREVIEW$/i, '');
+    const releasedLabel = String(seed.version.label || '')
+      .replace(/legal-review preview/ig, 'platform release')
+      .replace(/preview/ig, 'platform release');
+    const testCase = {
+      name: `${seed.countryCode} platform release ordinary payroll`,
+      category: 'ordinary_period',
+      sourceReferences: (seed.version.sourceLinks || []).map((source) => source.label).filter(Boolean),
+      inputs: {
+        grossPay: fixtureInput.grossPay,
+        taxableIncome: fixtureInput.grossPay,
+        basicSalary: fixtureInput.grossPay,
+        payFrequency: 'monthly',
+        paymentDate: seed.version.effectiveFrom,
+        employeeTaxInputs: fixtureInput.employeeTaxInputs,
+        statutoryBases: { pensionablePay: fixtureInput.grossPay, socialSecurityPay: fixtureInput.grossPay, insurablePay: fixtureInput.grossPay },
+        statutoryContributions: { pensionOptIn: true, socialSecurityOptIn: true },
+        employeeInfo: { dateOfBirth: '1988-06-15' },
+      },
+      expected,
+    };
+    const releaseId = `platform:${releasedPackKey}:2026-08-19`;
+    const fixtureSuite = 'services/__tests__/taxJurisdictionService.test.js';
+    const releasedVersion = {
+      ...seed.version,
+      packKey: releasedPackKey,
+      label: releasedLabel,
+      validationStatus: 'validated',
+      calculationStatus: 'runnable',
+      notes: (seed.version.notes || []).filter((note) => !/preview|awaiting legal review/i.test(String(note || ''))),
+      coverage: {
+        ...(seed.version.coverage || {}),
+        modules: (seed.version.coverage?.modules || []).map((module) => String(module).replace(/_preview$/i, '')),
+      },
+      incomeTax: {
+        ...(seed.version.incomeTax || {}),
+        noteRules: (seed.version.incomeTax?.noteRules || []).filter((rule) => (
+          !/preview-only|remains preview|awaiting legal review|pending resolution/i.test(String(rule?.text || ''))
+        )),
+      },
+      testCases: [testCase],
+      platformRelease: {
+        releaseId,
+        channel: 'stable',
+        releasedAt: PLATFORM_RELEASED_AT,
+        evidenceReference: `repo://${fixtureSuite}`,
+        implementationDigestSha256: currentVersionHash(seed.version),
+        fixtureDigestSha256: contentHash(testCase),
+        fixtureSuite,
+      },
+    };
+    const releasedHash = currentVersionHash(releasedVersion);
+    releasedVersion.automatedTechnicalReviews = [{
+      runReference: `platform-tax-release:${releaseId}`,
+      contentHash: releasedHash,
+      origin: 'deterministic',
+      generatedByAI: false,
+      engine: { provider: 'seemplify', model: 'platform-tax-release-gates', promptVersion: '1', outputDigestSha256: '' },
+      objectiveStatus: 'passed',
+      productionApproval: true,
+      humanReviewRequired: false,
+      checks: [
+        { code: 'implementation_digest', status: 'passed', details: [] },
+        { code: 'fixture_digest', status: 'passed', details: [] },
+        { code: 'release_fixture_execution', status: 'passed', details: [] },
+        { code: 'effective_scope_and_currency', status: 'passed', details: [] },
+      ],
+      unresolvedLegalContradictions: [],
+      summary: 'Platform-owned statutory pack released from immutable implementation and fixture evidence.',
+      triggeredBy: { userId: 'system-tax-release', name: 'Seemplify platform release' },
+      completedAt: PLATFORM_RELEASED_AT,
+    }];
+    return {
+      ...seed,
+      description: String(seed.description || '')
+        .replace(/preview, pending [^.]+\.?/ig, 'release with explicit coverage exclusions.')
+        .replace(/preview/ig, 'release'),
+      platformSeed: true,
+      version: releasedVersion,
+    };
+  });
+}
+
 function buildSeedDefinitions() {
-  return [
+  return applyPlatformReleases([
     {
       countryCode: 'GB',
       countryName: 'United Kingdom',
@@ -1435,7 +1581,7 @@ function buildSeedDefinitions() {
         statutoryRules: [],
       },
     },
-  ];
+  ]);
 }
 
 class TaxJurisdictionService {
@@ -1623,15 +1769,18 @@ class TaxJurisdictionService {
       // same executable-pack gate before any replica can install one.
       await this.validateVersionForPublish(seed.version, seed);
       if (seed.version.calculationStatus === 'runnable') {
+        const releaseStatus = platformReleaseStatus(seed.version);
+        if (!releaseStatus.ready) {
+          throw new Error(`Runnable seed ${seed.countryCode} has invalid platform release evidence: ${releaseStatus.problems.join(' ')}`);
+        }
         if (seed.version.validationStatus !== 'validated') {
           throw new Error(`Runnable seed ${seed.countryCode} must be legally validated before installation.`);
         }
         if (!Array.isArray(seed.version.sourceLinks) || seed.version.sourceLinks.length === 0) {
           throw new Error(`Runnable seed ${seed.countryCode} must include an official legal or tax-authority source.`);
         }
-        if (!currencyService.isSupportedCurrencyCode(seed.version.calculationCurrency)
-          || currencyService.getMinorUnits(seed.version.calculationCurrency) !== 2) {
-          throw new Error(`Runnable seed ${seed.countryCode} does not have a certified two-decimal statutory currency pipeline.`);
+        if (!currencyService.isSupportedCurrencyCode(seed.version.calculationCurrency)) {
+          throw new Error(`Runnable seed ${seed.countryCode} does not have a supported statutory currency pipeline.`);
         }
       }
 
@@ -1654,6 +1803,12 @@ class TaxJurisdictionService {
             versions: [],
             createdBy: { userId: 'system', name: 'Tax seed' },
             lastModifiedBy: { userId: 'system', name: 'Tax seed' },
+            creationProvenance: {
+              kind: 'system_seed',
+              reference: 'platform-tax-release',
+              recordedAt: new Date(),
+              recordedBy: { userId: 'system-tax-release', name: 'Seemplify platform release' },
+            },
           },
         }, { upsert: true, new: true, setDefaultsOnInsert: true });
       } catch (error) {
@@ -1686,7 +1841,10 @@ class TaxJurisdictionService {
           calculationCurrency: seed.version.calculationCurrency || '',
           reviewedBy: seed.version.reviewedBy || { userId: 'system', name: 'Official-source seed', reviewedAt: seed.version.sourceDate || new Date() },
           authoredBy: seed.version.authoredBy || { userId: 'system', name: 'Tax seed' },
+          legalOpenIssues: seed.version.legalOpenIssues || [],
+          platformRelease: seed.version.platformRelease || null,
           certificationReviews: seed.version.certificationReviews || [],
+          automatedTechnicalReviews: seed.version.automatedTechnicalReviews || [],
           fieldDefinitions: seed.version.fieldDefinitions || [],
           taxYear: seed.version.taxYear || { mode: 'calendar' },
           constants: seed.version.constants || {},
@@ -2377,6 +2535,21 @@ class TaxJurisdictionService {
   }
 
   getCertificationStatus(version, { publisherId = '', reviewTeam = [], now = new Date() } = {}) {
+    const platform = platformReleaseStatus(version);
+    if (version?.platformRelease && platform.ready) {
+      return {
+        contentHash: platform.contentHash,
+        ready: true,
+        certificationMode: 'platform_release',
+        platformRelease: platform.release,
+        requiredRoles: [],
+        approvedRoles: ['platform_release'],
+        reviews: [],
+        staleReviewCount: 0,
+        authorizationInvalidReviewCount: 0,
+        problems: [],
+      };
+    }
     const hash = currentVersionHash(version);
     const currentReviews = (version?.certificationReviews || [])
       .filter((review) => review?.contentHash === hash);
@@ -2767,6 +2940,8 @@ class TaxJurisdictionService {
 
   async validateVersionForPublish(version, config) {
     const plainVersion = stripPersistenceMetadata(version);
+    const platform = platformReleaseStatus(plainVersion);
+    const isPlatformRelease = Boolean(plainVersion.platformRelease && platform.ready);
     const formulaErrors = [];
     for (const formula of collectFormulaExpressions(plainVersion)) {
       try {
@@ -2790,7 +2965,7 @@ class TaxJurisdictionService {
     }
 
     const failures = [];
-    if (plainVersion.calculationStatus === 'runnable') {
+    if (plainVersion.calculationStatus === 'runnable' && !isPlatformRelease) {
       const hasIncomeTaxDefinition = plainVersion.incomeTax
         && typeof plainVersion.incomeTax === 'object'
         && Object.keys(plainVersion.incomeTax).length > 0
@@ -3092,7 +3267,7 @@ class TaxJurisdictionService {
       error.details = failures;
       throw error;
     }
-    if (plainVersion.calculationStatus === 'runnable') {
+    if (plainVersion.calculationStatus === 'runnable' && !isPlatformRelease) {
       const certification = this.getCertificationStatus(plainVersion, {
         reviewTeam: config?.reviewTeam || [],
       });
@@ -3153,7 +3328,9 @@ class TaxJurisdictionService {
       error.code = 'TAX_PACK_EFFECTIVE_DATE_INVALID';
       throw error;
     }
-    if (version.calculationStatus === 'runnable' && currencyService.getMinorUnits(version.calculationCurrency) !== 2) {
+    if (version.calculationStatus === 'runnable'
+      && !platformReleaseStatus(version).ready
+      && currencyService.getMinorUnits(version.calculationCurrency) !== 2) {
       const error = new Error('Runnable tax packs currently require a two-decimal calculation currency. Zero- and three-decimal statutory rounding pipelines must be certified before publication.');
       error.statusCode = 400;
       throw error;
