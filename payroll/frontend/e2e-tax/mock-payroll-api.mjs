@@ -232,7 +232,7 @@ const profiles = {
       evidenceReference: 'SYN-NG-CONTRACT-001',
       effectiveFrom: '2026-01-01',
     },
-    payrollFlags: { includeInNextRun: true, holdPayment: false },
+    payrollFlags: { includeInNextRun: true, excludeFromNextRun: false, holdPayment: false },
     allowances: [],
     benefitItems: [],
     recurringDeductions: [],
@@ -266,7 +266,7 @@ const profiles = {
       evidenceReference: 'SYN-UK-CONTRACT-001',
       effectiveFrom: '2026-04-06',
     },
-    payrollFlags: { includeInNextRun: true, holdPayment: false },
+    payrollFlags: { includeInNextRun: true, excludeFromNextRun: false, holdPayment: false },
     allowances: [],
     benefitItems: [],
     recurringDeductions: [],
@@ -292,7 +292,7 @@ const profiles = {
     payFrequency: 'monthly',
     isActive: true,
     employerEntityId: 'entity-uk',
-    payrollFlags: { includeInNextRun: true, holdPayment: false },
+    payrollFlags: { includeInNextRun: true, excludeFromNextRun: false, holdPayment: false },
     allowances: [],
     benefitItems: [],
     recurringDeductions: [],
@@ -453,7 +453,7 @@ const server = http.createServer(async (request, response) => {
       currency: 'NGN',
       payFrequency: 'monthly',
       isActive: true,
-      payrollFlags: { includeInNextRun: false, requiresReview: true },
+      payrollFlags: { includeInNextRun: false, excludeFromNextRun: false, requiresReview: true },
       allowances: [],
       benefitItems: [],
       recurringDeductions: [],
@@ -474,7 +474,7 @@ const server = http.createServer(async (request, response) => {
   }
   if (profileMatch && request.method === 'PUT') {
     profiles[profileMatch[1]] = { ...(profiles[profileMatch[1]] || {}), ...body };
-    return json(response, 200, profiles[profileMatch[1]]);
+    return json(response, 200, { success: true, profile: profiles[profileMatch[1]] });
   }
   if (/^\/payroll\/profiles\/[^/]+\/tax-preview$/.test(path)) {
     return json(response, 200, {

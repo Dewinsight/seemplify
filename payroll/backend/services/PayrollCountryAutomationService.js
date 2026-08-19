@@ -8,6 +8,13 @@ const { normalizeTaxCountry } = require('./tax/TaxCurrencyCatalog');
 
 const AUTO_REVIEW_PREFIX = 'Automatic payroll setup: ';
 const MANUAL_REVIEW_MARKER = ' Manual review: ';
+const MANUAL_EXCLUSION_REASON = 'Excluded from payroll run by payroll admin.';
+const LEGACY_AUTOMATIC_EXCLUSION_REASONS = new Set([
+  'Automatically excluded from payroll until onboarding is completed.',
+  'Automatically excluded from payroll until a payroll profile is created.',
+  'Automatically excluded from payroll until payroll configuration is prepared.',
+  'Automatically excluded from payroll until payroll setup is completed.',
+]);
 
 const BANK_RULES = Object.freeze({
   US: Object.freeze({ accountLabel: 'Account number', accountPattern: /^\d{4,17}$/, localLabel: '9-digit ABA routing number', localKey: 'routingNumber', localPattern: /^\d{9}$/ }),
@@ -282,9 +289,16 @@ async function reconcileProfile(profile, organizationId, options = {}) {
 function applyReadiness(profile, result = {}) {
   const flags = { ...plain(profile.payrollFlags) };
   const existingReason = text(flags.reviewReason);
-  const manualReviewReason = existingReason.startsWith(AUTO_REVIEW_PREFIX)
+  const carriedReviewReason = existingReason.startsWith(AUTO_REVIEW_PREFIX)
     ? text(existingReason.split(MANUAL_REVIEW_MARKER)[1])
-    : existingReason;
+    : (LEGACY_AUTOMATIC_EXCLUSION_REASONS.has(existingReason) ? '' : existingReason);
+  const legacyManualExclusion = existingReason === MANUAL_EXCLUSION_REASON
+    || carriedReviewReason === MANUAL_EXCLUSION_REASON;
+  const manuallyExcluded = flags.excludeFromNextRun === true || legacyManualExclusion;
+  const manualReviewReason = carriedReviewReason === MANUAL_EXCLUSION_REASON
+    ? ''
+    : carriedReviewReason;
+  flags.excludeFromNextRun = manuallyExcluded;
   const blockers = [];
   if (!result.country) blockers.push('Select a supported payroll country.');
   if (!result.employer) blockers.push(result.employerAmbiguous
@@ -301,9 +315,10 @@ function applyReadiness(profile, result = {}) {
     flags.requiresReview = true;
     flags.reviewReason = `${AUTO_REVIEW_PREFIX}${blockers.join(' ')}`
       + (manualReviewReason ? `${MANUAL_REVIEW_MARKER}${manualReviewReason}` : '');
-  } else if (existingReason.startsWith(AUTO_REVIEW_PREFIX)) {
+  } else {
+    flags.includeInNextRun = !manuallyExcluded && !manualReviewReason;
     flags.requiresReview = !!manualReviewReason;
-    flags.reviewReason = manualReviewReason;
+    flags.reviewReason = manuallyExcluded ? MANUAL_EXCLUSION_REASON : manualReviewReason;
   }
   profile.payrollFlags = flags;
   return blockers;

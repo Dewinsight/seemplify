@@ -103,6 +103,41 @@ test('assigns employees to the correct legal employer and jurisdiction', async (
   });
 });
 
+test('persists next-run exclusion and re-includes a payroll-ready onboarded employee', async ({ page, request }) => {
+  await page.goto('/admin/employees');
+  await dismissPageGuide(page);
+
+  const card = employeeCard(page, 'Ada Nigeria (synthetic)');
+  const exclusion = card.getByRole('checkbox', { name: /Exclude from payroll run/i });
+  await expect(exclusion).not.toBeChecked();
+  await expect(card.getByText('This employee is included in the next payroll run.')).toBeVisible();
+
+  await exclusion.check();
+  await expect(exclusion).toBeChecked();
+  await expect.poll(async () => {
+    const logged = await requests(request);
+    return logged.filter((entry) => entry.method === 'PUT' && entry.path === '/payroll/profiles/user-ng').at(-1)?.body;
+  }).toMatchObject({
+    payrollFlags: {
+      includeInNextRun: false,
+      excludeFromNextRun: true,
+    },
+  });
+
+  await exclusion.uncheck();
+  await expect(exclusion).not.toBeChecked();
+  await expect(card.getByText('This employee is included in the next payroll run.')).toBeVisible();
+  await expect.poll(async () => {
+    const logged = await requests(request);
+    return logged.filter((entry) => entry.method === 'PUT' && entry.path === '/payroll/profiles/user-ng').at(-1)?.body;
+  }).toMatchObject({
+    payrollFlags: {
+      includeInNextRun: true,
+      excludeFromNextRun: false,
+    },
+  });
+});
+
 test('configures an existing IDP member manually without creating a second employee', async ({ page, request }) => {
   await page.goto('/admin/employees');
   await dismissPageGuide(page);

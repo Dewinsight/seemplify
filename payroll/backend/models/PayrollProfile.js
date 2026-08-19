@@ -428,6 +428,7 @@ const PayrollProfileSchema = new Schema({
   // ===== PAYROLL PROCESSING FLAGS =====
   payrollFlags: {
     includeInNextRun: { type: Boolean, default: true },
+    excludeFromNextRun: { type: Boolean, default: false },
     holdPayment: { type: Boolean, default: false },
     holdReason: String,
     requiresReview: { type: Boolean, default: false },
@@ -575,6 +576,7 @@ PayrollProfileSchema.methods.syncFromIdpUser = function (idpUser) {
 
 function buildDefaultPayrollFlags(basicSalary, existingFlags = {}) {
   const flags = {
+    excludeFromNextRun: false,
     ...(existingFlags || {}),
   };
 

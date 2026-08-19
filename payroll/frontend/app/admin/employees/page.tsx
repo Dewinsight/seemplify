@@ -72,6 +72,8 @@ const AUTO_EXCLUSION_REASONS = [
     'Automatically excluded from payroll until payroll configuration is prepared.',
     'Automatically excluded from payroll until payroll setup is completed.',
 ];
+const AUTOMATIC_PAYROLL_SETUP_PREFIX = 'Automatic payroll setup:';
+const MANUAL_PAYROLL_EXCLUSION_REASON = 'Excluded from payroll run by payroll admin.';
 
 function getIdpBaseUrl(): string {
     return resolveIdpUrl();
@@ -207,6 +209,27 @@ function getAutoExclusionReason(row: EmployeeRow): string {
 
 function isAutoExclusionReason(reason: string): boolean {
     return AUTO_EXCLUSION_REASONS.includes(String(reason || '').trim());
+}
+
+function isManuallyExcludedFromPayroll(row: EmployeeRow): boolean {
+    const flags = row.profile?.payrollFlags || {};
+    if (flags.excludeFromNextRun === true) return true;
+    return flags.excludeFromNextRun === undefined
+        && flags.includeInNextRun === false
+        && String(flags.reviewReason || '').trim() === MANUAL_PAYROLL_EXCLUSION_REASON;
+}
+
+function getAutomaticPayrollExclusionReason(row: EmployeeRow): string {
+    const flags = row.profile?.payrollFlags || {};
+    const reason = String(flags.reviewReason || '').trim();
+    if (flags.includeInNextRun === false
+        && !isManuallyExcludedFromPayroll(row)
+        && (flags.requiresReview === true
+            || isAutoExclusionReason(reason)
+            || reason.startsWith(AUTOMATIC_PAYROLL_SETUP_PREFIX))) {
+        return reason || 'Complete the required payroll setup before including this employee.';
+    }
+    return '';
 }
 
 export default function EmployeesPage() {
@@ -482,6 +505,7 @@ export default function EmployeesPage() {
                     payrollFlags: {
                         ...(currentRow.profile.payrollFlags || {}),
                         includeInNextRun: false,
+                        excludeFromNextRun: false,
                         requiresReview: true,
                         reviewReason: getAutoExclusionReason(currentRow),
                     }
@@ -496,6 +520,7 @@ export default function EmployeesPage() {
                         payrollFlags: {
                             ...(row.profile?.payrollFlags || {}),
                             includeInNextRun: false,
+                            excludeFromNextRun: false,
                             requiresReview: true,
                             reviewReason: getAutoExclusionReason(row),
                         }
@@ -535,6 +560,7 @@ export default function EmployeesPage() {
                     payrollFlags: {
                         ...(currentRow.profile.payrollFlags || {}),
                         includeInNextRun: true,
+                        excludeFromNextRun: false,
                         requiresReview: false,
                         reviewReason: '',
                     }
@@ -549,6 +575,7 @@ export default function EmployeesPage() {
                         payrollFlags: {
                             ...(row.profile?.payrollFlags || {}),
                             includeInNextRun: true,
+                            excludeFromNextRun: false,
                             requiresReview: false,
                             reviewReason: '',
                         }
@@ -568,8 +595,9 @@ export default function EmployeesPage() {
         const nextFlags = {
             ...(row.profile?.payrollFlags || {}),
             includeInNextRun: !excluded,
-            requiresReview: excluded,
-            reviewReason: excluded ? 'Excluded from payroll run by payroll admin.' : '',
+            excludeFromNextRun: excluded,
+            requiresReview: false,
+            reviewReason: excluded ? MANUAL_PAYROLL_EXCLUSION_REASON : '',
         };
 
         setExcludeBusyUserId(row.userId);
@@ -582,9 +610,19 @@ export default function EmployeesPage() {
         }));
 
         try {
-            await api.put(`/payroll/profiles/${row.userId}`, {
+            const response = await api.put(`/payroll/profiles/${row.userId}`, {
                 payrollFlags: nextFlags,
             });
+            const savedProfile = response.data?.profile || response.data;
+            if (savedProfile?.payrollFlags) {
+                updateEmployeeRow(row.userId, (currentRow) => ({
+                    ...currentRow,
+                    profile: {
+                        ...(currentRow.profile || {}),
+                        ...savedProfile,
+                    },
+                }));
+            }
         } catch (error: any) {
             updateEmployeeRow(row.userId, (currentRow) => ({
                 ...currentRow,
@@ -1122,8 +1160,10 @@ export default function EmployeesPage() {
                     const totalAllowances = Number(employee?.totalAllowances || 0);
                     const grossMonthlySalary = Number(employee?.grossMonthlySalary || (Number(employee?.basicSalary || 0) + totalAllowances));
                     const holdPayment = !!employee?.payrollFlags?.holdPayment;
-                    const forceExcluded = shouldForceExcludeFromPayroll(row);
-                    const excludedForRun = forceExcluded || employee?.payrollFlags?.includeInNextRun === false;
+                    const automaticExclusionReason = getAutomaticPayrollExclusionReason(row);
+                    const forceExcluded = shouldForceExcludeFromPayroll(row) || !!automaticExclusionReason;
+                    const manuallyExcluded = isManuallyExcludedFromPayroll(row);
+                    const excludedForRun = forceExcluded || manuallyExcluded;
                     const excludeToggleDisabled = !hasProfile || forceExcluded || excludeBusyUserId === row.userId || autoExcludingUsers.includes(row.userId);
 
                     return (
@@ -1252,10 +1292,10 @@ export default function EmployeesPage() {
                                             excludedForRun ? 'text-amber-200/80' : 'text-zinc-500'
                                         }`}>
                                             {forceExcluded
-                                                ? getAutoExclusionReason(row)
-                                                : (employee?.payrollFlags?.includeInNextRun === false
+                                                ? (automaticExclusionReason || getAutoExclusionReason(row))
+                                                : (manuallyExcluded
                                                     ? 'This employee is manually excluded from the next payroll run.'
-                                                    : 'This employee is currently included in the next payroll run.')}
+                                                    : 'This employee is included in the next payroll run.')}
                                         </span>
                                     </span>
                                 </label>

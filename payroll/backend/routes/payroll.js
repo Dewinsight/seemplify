@@ -434,9 +434,24 @@ function normalizeTaxValidationPayload(input = {}) {
 
 function normalizePayrollFlagsPayload(input, basicSalary, existingFlags = {}, workTerms = {}) {
   const merged = {
+    excludeFromNextRun: false,
     ...(existingFlags || {}),
     ...(input || {}),
   };
+  const manualExclusionReason = 'Excluded from payroll run by payroll admin.';
+  const inputHasManualPreference = !!input
+    && Object.prototype.hasOwnProperty.call(input, 'excludeFromNextRun');
+
+  if (inputHasManualPreference) {
+    merged.excludeFromNextRun = input.excludeFromNextRun === true;
+    merged.includeInNextRun = !merged.excludeFromNextRun;
+    merged.requiresReview = false;
+    merged.reviewReason = merged.excludeFromNextRun ? manualExclusionReason : '';
+  } else if (merged.excludeFromNextRun !== true
+    && String(merged.reviewReason || '').trim() === manualExclusionReason) {
+    // Backfill the explicit preference for profiles excluded by the legacy UI.
+    merged.excludeFromNextRun = true;
+  }
 
   if (!hasPayConfiguration({ basicSalary, workTerms })) {
     merged.includeInNextRun = false;
@@ -444,6 +459,10 @@ function normalizePayrollFlagsPayload(input, basicSalary, existingFlags = {}, wo
     if (!String(merged.reviewReason || '').trim()) {
       merged.reviewReason = 'Automatically excluded from payroll until payroll setup is completed.';
     }
+  } else if (merged.excludeFromNextRun) {
+    merged.includeInNextRun = false;
+    merged.requiresReview = false;
+    merged.reviewReason = manualExclusionReason;
   }
 
   return merged;

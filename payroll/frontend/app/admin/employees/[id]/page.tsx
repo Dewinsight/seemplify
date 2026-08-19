@@ -734,6 +734,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         benefitItems: [] as any[],
         payrollFlags: {
             includeInNextRun: true,
+            excludeFromNextRun: false,
             holdPayment: false,
             holdReason: ''
         },
@@ -911,6 +912,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     benefitItems: res.data.benefitItems || [],
                     payrollFlags: {
                         includeInNextRun: res.data.payrollFlags?.includeInNextRun !== false,
+                        excludeFromNextRun: res.data.payrollFlags?.excludeFromNextRun === true,
                         holdPayment: !!res.data.payrollFlags?.holdPayment,
                         holdReason: res.data.payrollFlags?.holdReason || ''
                     },
@@ -1663,7 +1665,8 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             ...formData,
                                             payrollFlags: {
                                                 ...formData.payrollFlags,
-                                                includeInNextRun: e.target.checked
+                                                includeInNextRun: e.target.checked,
+                                                excludeFromNextRun: !e.target.checked
                                             }
                                         })}
                                         className="rounded bg-zinc-900 border-zinc-700"

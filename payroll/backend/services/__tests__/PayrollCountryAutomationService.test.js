@@ -180,7 +180,12 @@ describe('Payroll country automation', () => {
       country: { countryCode: 'NG' }, employer: { _id: 'employer-ng' }, paymentReady: true,
       bankComplete: true, taxErrors: [], taxPackStatus: 'runnable',
     });
-    expect(automaticProfile.payrollFlags).toMatchObject({ requiresReview: false, reviewReason: '' });
+    expect(automaticProfile.payrollFlags).toMatchObject({
+      includeInNextRun: true,
+      excludeFromNextRun: false,
+      requiresReview: false,
+      reviewReason: '',
+    });
 
     const manualProfile = {
       currency: 'NGN',
@@ -191,5 +196,52 @@ describe('Payroll country automation', () => {
       bankComplete: true, taxErrors: [], taxPackStatus: 'runnable',
     });
     expect(manualProfile.payrollFlags).toMatchObject({ requiresReview: true, reviewReason: 'Confirm salary change.' });
+  });
+
+  test('keeps a deliberate next-run exclusion after automatic readiness blockers clear', () => {
+    const profile = {
+      currency: 'NGN',
+      payrollFlags: {
+        includeInNextRun: false,
+        excludeFromNextRun: true,
+        requiresReview: true,
+        reviewReason: 'Automatic payroll setup: Add the required local salary bank details.',
+      },
+    };
+
+    applyReadiness(profile, {
+      country: { countryCode: 'NG' }, employer: { _id: 'employer-ng' }, paymentReady: true,
+      bankComplete: true, taxErrors: [], taxPackStatus: 'runnable',
+    });
+
+    expect(profile.payrollFlags).toMatchObject({
+      includeInNextRun: false,
+      excludeFromNextRun: true,
+      requiresReview: false,
+      reviewReason: 'Excluded from payroll run by payroll admin.',
+    });
+  });
+
+  test('migrates a legacy manual exclusion carried inside an automatic review reason', () => {
+    const profile = {
+      currency: 'NGN',
+      payrollFlags: {
+        includeInNextRun: false,
+        requiresReview: true,
+        reviewReason: 'Automatic payroll setup: Add the required local salary bank details. Manual review: Excluded from payroll run by payroll admin.',
+      },
+    };
+
+    applyReadiness(profile, {
+      country: { countryCode: 'NG' }, employer: { _id: 'employer-ng' }, paymentReady: true,
+      bankComplete: true, taxErrors: [], taxPackStatus: 'runnable',
+    });
+
+    expect(profile.payrollFlags).toMatchObject({
+      includeInNextRun: false,
+      excludeFromNextRun: true,
+      requiresReview: false,
+      reviewReason: 'Excluded from payroll run by payroll admin.',
+    });
   });
 });
