@@ -198,6 +198,31 @@ describe('Payroll country automation', () => {
     expect(manualProfile.payrollFlags).toMatchObject({ requiresReview: true, reviewReason: 'Confirm salary change.' });
   });
 
+  test('includes a ready employee when the selected tax pack is preview only', () => {
+    const profile = {
+      currency: 'NGN',
+      payrollFlags: {
+        includeInNextRun: false,
+        excludeFromNextRun: false,
+        requiresReview: true,
+        reviewReason: 'Automatic payroll setup: The selected country tax pack is preview only.',
+      },
+    };
+
+    const blockers = applyReadiness(profile, {
+      country: { countryCode: 'NG' }, employer: { _id: 'employer-ng' }, paymentReady: true,
+      bankComplete: true, taxErrors: [], taxPackStatus: 'preview_only',
+    });
+
+    expect(blockers).toEqual([]);
+    expect(profile.payrollFlags).toMatchObject({
+      includeInNextRun: true,
+      excludeFromNextRun: false,
+      requiresReview: false,
+      reviewReason: '',
+    });
+  });
+
   test('keeps a deliberate next-run exclusion after automatic readiness blockers clear', () => {
     const profile = {
       currency: 'NGN',

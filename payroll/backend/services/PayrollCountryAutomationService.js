@@ -307,7 +307,9 @@ function applyReadiness(profile, result = {}) {
   if (result.paymentReady === false) blockers.push(`${profile.currency} payroll rounding is not yet certified.`);
   if (!result.bankComplete) blockers.push('Add the required local salary bank details.');
   if (result.taxErrors?.length) blockers.push('Complete the employee-specific tax fields required by the country pack.');
-  if (result.taxPackStatus && result.taxPackStatus !== 'runnable') {
+  // Tax-pack release status is enforced when a payroll run is finalized. A
+  // preview-only pack must not remove an otherwise ready employee from the run.
+  if (result.taxPackStatus && !['runnable', 'preview_only'].includes(result.taxPackStatus)) {
     blockers.push(`The selected country tax pack is ${result.taxPackStatus.replaceAll('_', ' ')}.`);
   }
   if (blockers.length) {

@@ -74,6 +74,7 @@ const AUTO_EXCLUSION_REASONS = [
 ];
 const AUTOMATIC_PAYROLL_SETUP_PREFIX = 'Automatic payroll setup:';
 const MANUAL_PAYROLL_EXCLUSION_REASON = 'Excluded from payroll run by payroll admin.';
+const PREVIEW_ONLY_PAYROLL_SETUP_REASON = 'Automatic payroll setup: The selected country tax pack is preview only.';
 
 function getIdpBaseUrl(): string {
     return resolveIdpUrl();
@@ -211,6 +212,10 @@ function isAutoExclusionReason(reason: string): boolean {
     return AUTO_EXCLUSION_REASONS.includes(String(reason || '').trim());
 }
 
+function isPreviewOnlyPayrollSetupReason(reason: string): boolean {
+    return String(reason || '').trim() === PREVIEW_ONLY_PAYROLL_SETUP_REASON;
+}
+
 function isManuallyExcludedFromPayroll(row: EmployeeRow): boolean {
     const flags = row.profile?.payrollFlags || {};
     if (flags.excludeFromNextRun === true) return true;
@@ -222,6 +227,7 @@ function isManuallyExcludedFromPayroll(row: EmployeeRow): boolean {
 function getAutomaticPayrollExclusionReason(row: EmployeeRow): string {
     const flags = row.profile?.payrollFlags || {};
     const reason = String(flags.reviewReason || '').trim();
+    if (isPreviewOnlyPayrollSetupReason(reason)) return '';
     if (flags.includeInNextRun === false
         && !isManuallyExcludedFromPayroll(row)
         && (flags.requiresReview === true
@@ -538,9 +544,11 @@ export default function EmployeesPage() {
         const candidates = employees.filter((row) => {
             if (!row.profile) return false;
             if (shouldForceExcludeFromPayroll(row)) return false;
+            if (isManuallyExcludedFromPayroll(row)) return false;
             if (row.profile?.payrollFlags?.includeInNextRun !== false) return false;
             if (row.profile?.payrollFlags?.requiresReview !== true) return false;
-            if (!isAutoExclusionReason(row.profile?.payrollFlags?.reviewReason || '')) return false;
+            const reviewReason = row.profile?.payrollFlags?.reviewReason || '';
+            if (!isAutoExclusionReason(reviewReason) && !isPreviewOnlyPayrollSetupReason(reviewReason)) return false;
             if (autoIncludingUsers.includes(row.userId)) return false;
             return true;
         });

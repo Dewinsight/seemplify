@@ -111,6 +111,17 @@ test('persists next-run exclusion and re-includes a payroll-ready onboarded empl
   const exclusion = card.getByRole('checkbox', { name: /Exclude from payroll run/i });
   await expect(exclusion).not.toBeChecked();
   await expect(card.getByText('This employee is included in the next payroll run.')).toBeVisible();
+  await expect.poll(async () => {
+    const logged = await requests(request);
+    return logged.filter((entry) => entry.method === 'PUT' && entry.path === '/payroll/profiles/user-ng').at(-1)?.body;
+  }).toMatchObject({
+    payrollFlags: {
+      includeInNextRun: true,
+      excludeFromNextRun: false,
+      requiresReview: false,
+      reviewReason: '',
+    },
+  });
 
   await exclusion.check();
   await expect(exclusion).toBeChecked();
