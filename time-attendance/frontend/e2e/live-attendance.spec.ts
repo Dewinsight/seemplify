@@ -394,6 +394,12 @@ test('runs reports, real Excel exports, rule simulation and policy persistence',
 
     await page.goto('/admin/rule-packs');
     await expect(page.getByRole('heading', { name: 'Rule Pack Studio' })).toBeVisible();
+    const rosterResponse = page.waitForResponse(response => response.url().includes('/api/v1/rule-packs/coverage?reconcile=true'));
+    await page.getByRole('button', { name: 'Assign employees' }).click();
+    expect((await rosterResponse).status()).toBe(200);
+    await expect(page.getByText('2 active employees synchronized from Seemplify Identity')).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Alex Live alex.live@example.test' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Jamie Live jamie.live@example.test' })).toBeVisible();
     await page.getByRole('button', { name: 'Run simulation' }).click();
     await expect(page.getByText('Regular: 0h')).toBeVisible();
 

@@ -897,6 +897,8 @@ test('assigns a structured rule pack to a specific employee without exposing JSO
 
     await page.getByRole('button', { name: 'Assign employees' }).click();
     await expect(page.getByRole('heading', { name: 'Employee rule assignments' })).toBeVisible();
+    expect(mockState.calls).toContain('GET /api/v1/rule-packs/coverage?reconcile=true');
+    await expect(page.getByText('1 active employee synchronized from Seemplify Identity')).toBeVisible();
     await expect(page.getByRole('cell', { name: 'Jamie Lee jamie@example.com' })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'NG (default)' })).toBeVisible();
     await page.getByLabel('Select Jamie Lee').check();

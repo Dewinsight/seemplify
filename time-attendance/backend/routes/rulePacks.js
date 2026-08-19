@@ -4,6 +4,7 @@ const { requireAuth, requireOrganization, requireHRAdmin } = require('../middlew
 const { AttendanceRulePack, AttendancePolicy, EmployeeRoster } = require('../models');
 const { assignmentSignature, resolveEffectiveRulePack, resolvePack, validateRulePack } = require('../services/rulePackService');
 const { seedDefaultRulePacks } = require('../services/rulePackSeedService');
+const { reconcileOrganization } = require('../services/rosterReconciliationService');
 const { calculatePeriod } = require('../services/timeCalculationService');
 
 router.use(requireAuth, requireOrganization, requireHRAdmin);
@@ -73,6 +74,19 @@ router.get('/assignment-options', async (req, res) => {
 
 router.get('/coverage', async (req, res) => {
     try {
+        let synchronization = null;
+        if (req.query.reconcile === 'true') {
+            try {
+                const result = await reconcileOrganization(req.organizationId);
+                synchronization = { ...result, reconciledAt: new Date() };
+            } catch (error) {
+                console.error('Rule-pack employee roster reconciliation failed:', error);
+                return res.status(502).json({
+                    error: 'The complete employee list could not be synchronized from Seemplify Identity. Please try again.',
+                    code: 'IDP_ROSTER_SYNC_FAILED',
+                });
+            }
+        }
         const policy = await AttendancePolicy.getOrCreateDefault(req.organizationId, req.organization?.name, req.user.id);
         const people = await EmployeeRoster.find({ organizationId: req.organizationId, status: 'active' })
             .select('userId name email teamIds teamAssignments jurisdiction rulePackAssignment')
@@ -99,7 +113,7 @@ router.get('/coverage', async (req, res) => {
                 effectiveRulePack: result.applied.at(-1) || null,
             };
         }));
-        return res.json({ coverage });
+        return res.json({ coverage, synchronization });
     } catch (error) {
         return res.status(500).json({ error: error.message || 'Failed to calculate rule-pack coverage' });
     }
