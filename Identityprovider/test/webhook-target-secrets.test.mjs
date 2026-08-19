@@ -18,6 +18,25 @@ test('production requires a distinct configured secret for each webhook target',
   )
 })
 
+test('Time and Attendance uses its dedicated production webhook secret', async () => {
+  const service = await import(`../src/services/webhookService.js?time-secret=${Date.now()}`)
+  const secret = 'time-target-secret-that-is-at-least-32-characters'
+
+  assert.equal(service.resolveWebhookSecretForTarget('timeAttendance', {
+    NODE_ENV: 'production',
+    IDP_WEBHOOK_SECRET_TIME_ATTENDANCE: secret
+  }), secret)
+})
+
+test('the route-facing webhook service exposes the durable authorization mutation', async () => {
+  const service = await import(`../src/services/webhookService.js?default-contract=${Date.now()}`)
+
+  assert.equal(
+    service.default.runAuthorizationMutationWithWebhook,
+    service.runAuthorizationMutationWithWebhook
+  )
+})
+
 test('readiness probe is signed by the running IdP for every target receiver', async () => {
   const keys = {
     NODE_ENV: 'production',

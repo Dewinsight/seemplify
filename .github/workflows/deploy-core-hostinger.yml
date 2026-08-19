@@ -47,6 +47,7 @@ jobs:
       - name: Verify identity, admin analytics, and organization switching
         run: |
           node --test \
+            production-wiring.test.mjs \
             test/auth-redirects.test.mjs \
             test/hub-pins.test.mjs \
             test/member-removal-webhook.test.mjs \
@@ -57,7 +58,8 @@ jobs:
             test/organization-transaction.test.mjs \
             test/internal-membership-service-auth.test.mjs \
             test/recruiter-admin-sso-secret.test.mjs \
-            test/shared-ai-admin-client.test.mjs
+            test/shared-ai-admin-client.test.mjs \
+            test/webhook-target-secrets.test.mjs
 
   recruiter-qa:
     name: Test Recruiter gateway

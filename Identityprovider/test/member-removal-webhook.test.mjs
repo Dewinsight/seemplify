@@ -62,6 +62,13 @@ test('member removal returns classified errors instead of masking infrastructure
   assert.doesNotMatch(removeMemberRoute, /res\.status\(400\)\.json\(\{ error: err\.message \}\)/)
 })
 
+test('the default webhook service used by member routes exposes the transaction helper', async () => {
+  const service = await import(`../src/services/webhookService.js?member-route-contract=${Date.now()}`)
+
+  assert.equal(typeof service.default.runAuthorizationMutationWithWebhook, 'function')
+  assert.equal(service.default.runAuthorizationMutationWithWebhook, service.runAuthorizationMutationWithWebhook)
+})
+
 test('every production Mongo client explicitly uses the transaction-capable replica set', () => {
   const composeFiles = [
     fs.readFileSync(new URL('../../deploy/hostinger/core-apps.compose.yml', import.meta.url), 'utf8'),

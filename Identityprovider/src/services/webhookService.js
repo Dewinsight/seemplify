@@ -35,7 +35,7 @@ const WEBHOOK_TARGET_SECRET_ENV = {
   leaveManagement: 'IDP_WEBHOOK_SECRET_LEAVE_MANAGEMENT',
   payroll: 'IDP_WEBHOOK_SECRET_PAYROLL',
   performance: 'IDP_WEBHOOK_SECRET_PERFORMANCE_MANAGEMENT',
-  timeAttendance: 'IDP_WEBHOOK_SECRET',
+  timeAttendance: 'IDP_WEBHOOK_SECRET_TIME_ATTENDANCE',
   recruiter: 'IDP_WEBHOOK_SECRET_RECRUITER',
   messaging: 'IDP_WEBHOOK_SECRET_MESSAGING',
   approver: 'IDP_WEBHOOK_SECRET_APPROVER',
@@ -582,6 +582,7 @@ export async function forceUserLogout(userId, reason = 'admin_action') {
 
 export default {
   sendWebhook,
+  runAuthorizationMutationWithWebhook,
   notifyTeamMemberAdded,
   notifyTeamMemberRemoved,
   notifyTeamRoleChanged,
