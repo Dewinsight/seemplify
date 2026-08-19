@@ -178,6 +178,9 @@ export function CandidateChatgptGate({
           This interview is conducted by AI running on <strong className="font-semibold text-slate-950">your
           own ChatGPT account</strong>, so your answers are processed on your plan rather than ours.
         </p>
+        <p className="mx-auto mt-2 max-w-[24rem] text-[13px] leading-5 text-slate-700">
+          A paid ChatGPT plan is required. ChatGPT Go is the lowest-cost option; Plus and Pro also work.
+        </p>
       </div>
 
       <div className="space-y-3 px-5 sm:px-7">
