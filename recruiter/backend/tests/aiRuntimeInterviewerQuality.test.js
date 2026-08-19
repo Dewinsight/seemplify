@@ -5,6 +5,7 @@ const {
   assessAcknowledgement,
   assessClarification,
   assessIntroduction,
+  assessSpeechRendition,
   repairInstruction
 } = require('../services/aiInterviewerResponseQuality');
 const aiInterviewerService = require('../services/aiInterviewerService');
@@ -48,6 +49,20 @@ test('live clarification quality rejects answer leakage and generic restatement'
     { question, candidateMessage: 'Can you rephrase that?' }
   );
   assert.equal(broadRephrase.passed, true);
+});
+
+test('speech rendition quality preserves an intelligent canonical question without adding another ask', () => {
+  assert.equal(assessSpeechRendition(
+    'A Kubernetes release doubles checkout latency. How would you diagnose the incident, decide whether to roll back, and validate recovery?',
+    question
+  ).passed, true);
+
+  const simplified = assessSpeechRendition(
+    'Tell me how you handle incidents, and what is your greatest strength?',
+    question
+  );
+  assert.equal(simplified.passed, false);
+  assert.ok(simplified.issues.some((issue) => /preserve the original question/i.test(issue)));
 });
 
 test('live clarification quality permits interview-process and memory questions', () => {

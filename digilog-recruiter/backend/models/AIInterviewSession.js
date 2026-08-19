@@ -11,6 +11,11 @@ const MessageSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  speechContent: {
+    type: String,
+    trim: true,
+    default: undefined
+  },
   questionIndex: {
     type: Number,
     default: null

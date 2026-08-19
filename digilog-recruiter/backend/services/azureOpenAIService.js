@@ -1257,9 +1257,6 @@ CRITICAL REQUIREMENTS:
 - Ensure cultural sensitivity and legal compliance
 - Avoid bias, leading questions, or discriminatory content
 - Focus on job-relevant competencies and skills
-- Write candidate-facing questions for natural spoken delivery: short sentences, clear breathing points, and one main ask
-- Put scenario context first, then end with a direct question; keep each sentence under about 28 words
-- Avoid headings, bullet-like lists, nested brackets, slashes, semicolons, and unexplained abbreviations in question text
 
 JSON STRUCTURE REQUIRED:
 Return a JSON object with a "questions" array containing question objects:

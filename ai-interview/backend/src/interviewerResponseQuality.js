@@ -53,6 +53,29 @@ function assessIntroduction(content, question) {
   return { passed: issues.length === 0, issues };
 }
 
+function assessSpeechRendition(content, question) {
+  const text = normalize(content);
+  const source = normalize(question);
+  const issues = [];
+  if (!text || text.length > Math.max(1200, source.length * 2)) {
+    issues.push('Keep the spoken rendition complete and close in length to the original question.');
+  }
+  const sourceTokens = tokens(source);
+  const requiredOverlap = Math.min(sourceTokens.size, Math.max(1, Math.ceil(sourceTokens.size * 0.65)));
+  if (requiredOverlap > 0 && overlapCount(text, source) < requiredOverlap) {
+    issues.push('Preserve the original question, its concrete terms, constraints, and assessment intent.');
+  }
+  if (source.includes('?') && !text.includes('?')) issues.push('Keep the original question explicit.');
+  const sourceQuestionMarks = (source.match(/\?/g) || []).length;
+  if ((text.match(/\?/g) || []).length > Math.max(1, sourceQuestionMarks)) {
+    issues.push('Do not add any new question or assessment prompt.');
+  }
+  if (/(expected answer|scoring criteria|rubric|ideal answer)/i.test(text)) {
+    issues.push('Do not reveal hidden scoring guidance.');
+  }
+  return { passed: issues.length === 0, issues };
+}
+
 function assessClarification(content, { question, candidateMessage }) {
   const text = normalize(content);
   const issues = [];
@@ -88,6 +111,7 @@ module.exports = {
   assessAcknowledgement,
   assessClarification,
   assessIntroduction,
+  assessSpeechRendition,
   isInterviewProcessRequest,
   repairInstruction
 };

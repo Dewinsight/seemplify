@@ -11,7 +11,7 @@ function getCandidateName(session) {
   return session?.candidateSnapshot?.firstName || session?.candidateSnapshot?.name || 'there';
 }
 
-function addMessage(session, role, content, questionIndex = null, messageType = 'system') {
+function addMessage(session, role, content, questionIndex = null, messageType = 'system', speechContent = undefined) {
   const message = {
     _id: `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`,
     role,
@@ -20,6 +20,8 @@ function addMessage(session, role, content, questionIndex = null, messageType = 
     messageType,
     createdAt: nowIso()
   };
+  const hiddenSpeechContent = String(speechContent || '').trim();
+  if (hiddenSpeechContent) message.speechContent = hiddenSpeechContent;
   if (message.content) session.messages.push(message);
   return message;
 }
@@ -28,7 +30,7 @@ async function introduceCurrentQuestion(interview, session) {
   const question = interview.questionSnapshots[session.currentQuestionIndex];
   if (!question) return;
   const questionNumber = session.currentQuestionIndex + 1;
-  const content = await aiInterviewerService.introduceQuestion({
+  const speechContent = await aiInterviewerService.prepareQuestionSpeech({
     interview,
     session,
     question,
@@ -37,9 +39,10 @@ async function introduceCurrentQuestion(interview, session) {
   addMessage(
     session,
     'ai',
-    content,
+    question.question,
     session.currentQuestionIndex,
-    'question'
+    'question',
+    speechContent
   );
 }
 

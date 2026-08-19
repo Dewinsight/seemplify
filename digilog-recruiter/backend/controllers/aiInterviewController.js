@@ -240,6 +240,21 @@ function isApprovedAssistantSpeech(session, content) {
   });
 }
 
+function toPublicMessage(message, interview) {
+  const questionIndex = message.questionIndex == null ? null : Number(message.questionIndex);
+  const canonicalQuestion = message.messageType === 'question' && questionIndex != null
+    ? interview?.questionSnapshots?.[questionIndex]?.question
+    : '';
+  return {
+    _id: message._id,
+    role: message.role,
+    content: canonicalQuestion || message.content,
+    questionIndex: message.questionIndex,
+    messageType: message.messageType,
+    createdAt: message.createdAt
+  };
+}
+
 function buildPublicState(session, interview) {
   const currentQuestion = interview.questionSnapshots[session.currentQuestionIndex];
   return {
@@ -252,7 +267,7 @@ function buildPublicState(session, interview) {
       completedAt: session.completedAt,
       questionDeadlineAt: session.questionDeadlineAt,
       totalDeadlineAt: session.totalDeadlineAt,
-      messages: session.messages || [],
+      messages: (session.messages || []).map((message) => toPublicMessage(message, interview)),
       answers: (session.answers || []).map((answer) => ({
         questionIndex: answer.questionIndex,
         status: answer.status,
@@ -426,7 +441,7 @@ async function advanceQuestion(session, interview, mode = 'answered') {
     messageType: 'transition'
   });
 
-  const intro = await aiInterviewerService.introduceQuestion({
+  const speechContent = await aiInterviewerService.prepareQuestionSpeech({
     interview,
     session,
     question: nextQuestion,
@@ -435,7 +450,8 @@ async function advanceQuestion(session, interview, mode = 'answered') {
 
   session.messages.push({
     role: 'ai',
-    content: intro,
+    content: nextQuestion.question,
+    speechContent,
     questionIndex: nextIndex,
     messageType: 'question'
   });
@@ -1130,7 +1146,7 @@ exports.startPublicInterview = async (req, res) => {
         messageType: 'greeting'
       });
 
-      const intro = await aiInterviewerService.introduceQuestion({
+      const speechContent = await aiInterviewerService.prepareQuestionSpeech({
         interview,
         session,
         question: firstQuestion,
@@ -1139,7 +1155,8 @@ exports.startPublicInterview = async (req, res) => {
 
       session.messages.push({
         role: 'ai',
-        content: intro,
+        content: firstQuestion.question,
+        speechContent,
         questionIndex: 0,
         messageType: 'question'
       });
@@ -1428,7 +1445,7 @@ exports.synthesizePublicSpeech = async (req, res) => {
       if (!message || message.role !== 'ai') {
         return res.status(404).json({ error: 'MESSAGE_NOT_FOUND', message: 'Interview message not found' });
       }
-      content = normalizeTranscriptText(message.content || '');
+      content = normalizeTranscriptText(message.speechContent || message.content || '');
       messageType = message.messageType || 'default';
     }
 

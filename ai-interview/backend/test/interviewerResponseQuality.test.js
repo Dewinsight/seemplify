@@ -4,7 +4,8 @@ const test = require('node:test');
 const {
   assessAcknowledgement,
   assessClarification,
-  assessIntroduction
+  assessIntroduction,
+  assessSpeechRendition
 } = require('../src/interviewerResponseQuality');
 const aiInterviewerService = require('../src/aiInterviewerService');
 
@@ -46,6 +47,14 @@ test('standalone harness accepts short questions and broad rephrasing requests',
       candidateMessage: 'Can you rephrase that?'
     }
   ).passed, true);
+});
+
+test('standalone speech rendition quality keeps the canonical assessment intact', () => {
+  assert.equal(assessSpeechRendition(
+    'A Kubernetes release doubles checkout latency. How would you diagnose the incident, decide whether to roll back, and validate recovery?',
+    question
+  ).passed, true);
+  assert.equal(assessSpeechRendition('How do you solve production problems?', question).passed, false);
 });
 
 test('standalone harness accepts interview-process and conversation-memory replies', () => {

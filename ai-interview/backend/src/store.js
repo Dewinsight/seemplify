@@ -475,11 +475,27 @@ function makePublicState(store, session, actionExtras = {}) {
   const currentQuestion = interview?.questionSnapshots?.[session.currentQuestionIndex];
   const speechConfigured = Boolean((process.env.AZURE_SPEECH_KEY || process.env.AZURE_VOICELIVE_API_KEY) && (process.env.AZURE_SPEECH_REGION || process.env.AZURE_LOCATION));
 
+  const publicMessages = (session.messages || []).map((message) => {
+    const questionIndex = message.questionIndex == null ? null : Number(message.questionIndex);
+    const canonicalQuestion = message.messageType === 'question' && questionIndex != null
+      ? interview?.questionSnapshots?.[questionIndex]?.question
+      : '';
+    return {
+      _id: message._id,
+      role: message.role,
+      content: canonicalQuestion || message.content,
+      questionIndex: message.questionIndex,
+      messageType: message.messageType,
+      createdAt: message.createdAt
+    };
+  });
+
   return {
     success: true,
     ...actionExtras,
     session: {
       ...session,
+      messages: publicMessages,
       aiInterview: interview?._id,
       candidate: session.candidateId
     },

@@ -377,8 +377,6 @@ You MUST return a JSON object with this EXACT structure:
 
 QUALITY STANDARDS:
 - Questions must be specific, actionable, and measurable
-- Write each candidate-facing question for speech: 1 to 3 short sentences, each under about 28 words, with context first and one clear final ask
-- Avoid headings, bullet-like lists, nested brackets, slashes, semicolons, and unexplained abbreviations in question text
 - Include clear evaluation criteria
 - Avoid bias and leading questions
 - Ensure legal compliance

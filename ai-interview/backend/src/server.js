@@ -1639,7 +1639,7 @@ app.post('/api/ai-interviews/public/:token/speech', asyncHandler(async (req, res
   if (!session) return sendError(res, 404, 'NOT_FOUND', 'Interview link not found');
   const interview = getInterview(store, session);
   const storedMessage = req.body?.messageId ? session.messages.find((item) => item._id === req.body.messageId) : null;
-  const message = storedMessage?.content || req.body?.text;
+  const message = storedMessage?.speechContent || storedMessage?.content || req.body?.text;
   const voice = interview?.voice || findAIInterviewVoiceOption();
   const result = await azureSpeechTtsService.synthesize(message, {
     voice: voice.voiceId || voice.id,
