@@ -78,6 +78,10 @@ const timesheet = {
             date: '2026-08-04T00:00:00.000Z', status: 'leave', totalHours: 0, breakDuration: 0,
             clockIn: null, clockOut: null, exceptions: [],
         },
+        {
+            date: '2026-08-05T00:00:00.000Z', status: 'present', totalHours: 8, breakDuration: 0,
+            clockIn: '2026-08-05T08:00:00.000Z', clockOut: '2026-08-05T16:00:00.000Z', exceptions: [],
+        },
     ],
     summary: { totalHours: 37.5, daysWorked: 5, daysOnLeave: 1, overtimeHours: 0 },
     approvalWorkflow: { currentLevel: 0, levels: [] },
@@ -382,15 +386,24 @@ test('clocks in from the dashboard and refreshes attendance state', async ({ pag
     await page.getByRole('button', { name: 'Clock In' }).click();
     await expect(page.getByRole('button', { name: 'Clock Out' })).toBeVisible();
     expect(mockState.calls).toContain('POST /api/clock/in');
-    expect(mockState.clockBodies[0].location).toBeNull();
+    expect(mockState.clockBodies[0].location).toMatchObject({ latitude: 51.5074, longitude: -0.1278 });
 });
 
-test('collects location for clocking only when geofencing is enabled', async ({ page, mockState }) => {
+test('continues collecting location when geofencing is enabled', async ({ page, mockState }) => {
     mockState.locationEnabled = true;
     await authenticate(page);
     await page.goto('/dashboard');
     await page.getByRole('button', { name: 'Clock In' }).click();
     await expect(page.getByRole('button', { name: 'Clock Out' })).toBeVisible();
+    expect(mockState.clockBodies[0].location).toMatchObject({ latitude: 51.5074, longitude: -0.1278 });
+});
+
+test('records a clock-out location when geofencing is disabled', async ({ page, mockState }) => {
+    mockState.clockedIn = true;
+    await authenticate(page);
+    await page.goto('/dashboard');
+    await page.getByRole('button', { name: 'Clock Out' }).click();
+    await expect(page.getByRole('button', { name: 'Clock In' })).toBeVisible();
     expect(mockState.clockBodies[0].location).toMatchObject({ latitude: 51.5074, longitude: -0.1278 });
 });
 
@@ -703,6 +716,7 @@ test('keeps timesheet detail and approval history compact in light mode', async 
     await expect(page.locator('.timesheet-day').first()).toContainText(/Out:\s*\d{2}:\d{2}/);
     await expect(page.getByText('London office, Westminster').first()).toBeVisible();
     await expect(page.getByRole('link', { name: 'View map' }).first()).toBeVisible();
+    await expect(page.getByText('Not recorded')).toHaveCount(2);
     const dayBackground = await page.locator('.timesheet-day').first().evaluate(element => getComputedStyle(element).backgroundColor);
     expect(dayBackground).not.toBe('rgb(228, 225, 218)');
 

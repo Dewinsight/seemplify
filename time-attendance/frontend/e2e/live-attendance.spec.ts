@@ -81,12 +81,17 @@ test('runs the complete clock, break and clock-out lifecycle against MongoDB', a
     const entriesResponse = await request.get(`${API_ORIGIN}/api/clock/entries`, { headers: apiHeaders() });
     expect(entriesResponse.ok(), await entriesResponse.text()).toBeTruthy();
     const entries = (await entriesResponse.json()).entries as any[];
-    const ownSequence = entries
+    const ownEntries = entries
         .filter(entry => entry.userId === 'employee-live-1')
-        .slice(0, 4)
+        .slice(0, 4);
+    const ownSequence = ownEntries
         .reverse()
         .map(entry => entry.entryType);
     expect(ownSequence).toEqual(['clock_in', 'break_start', 'break_end', 'clock_out']);
+    const recordedClockIn = ownEntries.find(entry => entry.entryType === 'clock_in');
+    const recordedClockOut = ownEntries.find(entry => entry.entryType === 'clock_out');
+    expect(recordedClockIn?.location).toMatchObject({ latitude: 51.5074, longitude: -0.1278 });
+    expect(recordedClockOut?.location).toMatchObject({ latitude: 51.5074, longitude: -0.1278 });
 });
 
 test('persists a manager-entered punch pair through the Punch Log UI', async ({ page, request, diagnostics: _diagnostics }, testInfo) => {

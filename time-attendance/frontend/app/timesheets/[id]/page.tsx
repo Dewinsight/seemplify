@@ -463,6 +463,8 @@ export default function TimesheetDetailPage() {
                                     const dateId = date.toISOString();
                                     const dayExceptions = attendanceExceptions.filter(item => safeFormatDate(item.occurrenceDate, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
                                     const openDayException = dayExceptions.find(item => item.status === 'open');
+                                    const hasClockInCoordinates = Number.isFinite(Number(entry.clockInLocation?.latitude)) && Number.isFinite(Number(entry.clockInLocation?.longitude));
+                                    const hasClockOutCoordinates = Number.isFinite(Number(entry.clockOutLocation?.latitude)) && Number.isFinite(Number(entry.clockOutLocation?.longitude));
 
                                     return (
                                         <div key={index} data-day-status={entry.status} className={cn('timesheet-day p-4 transition-colors', entry.status === 'leave' && 'bg-teal-500/[0.04]')}>
@@ -538,9 +540,9 @@ export default function TimesheetDetailPage() {
                                             </div>}
 
                                             {/* Location Display */}
-                                            {(entry.clockInLocation?.latitude || entry.clockOutLocation?.latitude) && (
+                                            {(entry.clockIn || entry.clockOut) && (
                                                 <div className="timesheet-location-grid mt-3 grid gap-4 border-t border-zinc-800 pt-3 pl-[3.25rem] sm:grid-cols-2">
-                                                    {entry.clockInLocation?.latitude && entry.clockInLocation?.longitude && (
+                                                    {hasClockInCoordinates && (
                                                         <div className="min-w-0">
                                                             <div className="flex items-center gap-2 text-xs mb-1.5">
                                                                 <MapPin className="h-3.5 w-3.5 shrink-0 text-teal-400" />
@@ -594,7 +596,16 @@ export default function TimesheetDetailPage() {
                                                             </div>
                                                         </div>
                                                     )}
-                                                    {entry.clockOutLocation?.latitude && entry.clockOutLocation?.longitude && (
+                                                    {entry.clockIn && !hasClockInCoordinates && (
+                                                        <div className="min-w-0 text-xs">
+                                                            <div className="flex items-center gap-2 text-zinc-400">
+                                                                <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                                                                <span className="font-medium">Clock in location</span>
+                                                            </div>
+                                                            <p className="mt-1 pl-5 text-zinc-500">Not recorded</p>
+                                                        </div>
+                                                    )}
+                                                    {hasClockOutCoordinates && (
                                                         <div className="min-w-0">
                                                             <div className="flex items-center gap-2 text-xs mb-1.5">
                                                                 <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
@@ -646,6 +657,15 @@ export default function TimesheetDetailPage() {
                                                                     </div>
                                                                 )}
                                                             </div>
+                                                        </div>
+                                                    )}
+                                                    {entry.clockOut && !hasClockOutCoordinates && (
+                                                        <div className="min-w-0 text-xs">
+                                                            <div className="flex items-center gap-2 text-zinc-400">
+                                                                <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                                                                <span className="font-medium">Clock out location</span>
+                                                            </div>
+                                                            <p className="mt-1 pl-5 text-zinc-500">Not recorded</p>
                                                         </div>
                                                     )}
                                                 </div>

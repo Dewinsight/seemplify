@@ -83,11 +83,13 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
             setLoading(true);
             setError(null);
             setMessage(label);
-            const shouldCollectLocation = Boolean(status.policy?.locationEnabled || status.policy?.locationRequired);
-            const location = shouldCollectLocation ? await getLocation() : null;
+            // Location recording is independent from geofence enforcement.
+            // A disabled geofence must not stop us from retaining the location
+            // snapshot that employees and reviewers expect on the timesheet.
+            const location = await getLocation();
             await action(location);
             await refreshStatus();
-            setMessage(success);
+            setMessage(location ? success : `${success} Location was not available.`);
             onStatusChange?.();
             setTimeout(() => setMessage(null), 2400);
             return true;
@@ -101,7 +103,6 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     };
 
     const noteRequired = Boolean(status.policy?.requireNote);
-    const locationEnabled = Boolean(status.policy?.locationEnabled || status.policy?.locationRequired);
     const clockIn = async () => {
         const note = clockInNote.trim();
         if (noteRequired && !note) {
@@ -111,13 +112,13 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         }
 
         const succeeded = await run(
-            locationEnabled ? 'Confirming your location…' : 'Clocking you in…',
+            'Recording your location…',
             (location) => clockApi.clockIn(note || undefined, location),
             'You are clocked in.',
         );
         if (succeeded) setClockInNote('');
     };
-    const clockOut = () => run(locationEnabled ? 'Confirming your location…' : 'Clocking you out…', (location) => clockApi.clockOut(undefined, location), 'You are clocked out.');
+    const clockOut = () => run('Recording your location…', (location) => clockApi.clockOut(undefined, location), 'You are clocked out.');
     const toggleBreak = async () => {
         try {
             setLoading(true);

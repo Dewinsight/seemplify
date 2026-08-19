@@ -20,7 +20,8 @@ export default defineConfig({
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',
-        permissions: [],
+        geolocation: { latitude: 51.5074, longitude: -0.1278 },
+        permissions: ['geolocation'],
     },
     projects: [
         {
