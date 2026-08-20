@@ -23,6 +23,7 @@ export default function DependentsPage() {
   const [dependents, setDependents] = useState<Dependent[]>([]);
   const [declaration, setDeclaration] = useState('pending');
   const [taxDependentCount, setTaxDependentCount] = useState(0);
+  const [legacyDeclaredCount, setLegacyDeclaredCount] = useState(0);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -34,6 +35,7 @@ export default function DependentsPage() {
     setDependents(data.dependents || []);
     setDeclaration(data.declaration?.status || 'pending');
     setTaxDependentCount(Number(data.taxDependentCount || 0));
+    setLegacyDeclaredCount(Number(data.legacyDeclaredCount || 0));
   };
   const load = useCallback(async () => applyResponse((await api.get('/payroll/dependents/me')).data), []);
   useEffect(() => {
@@ -93,7 +95,7 @@ export default function DependentsPage() {
           <div><h3 className="font-medium text-zinc-100">{dependent.name}</h3><p className="mt-1 text-sm capitalize text-zinc-400">{dependent.relationship.replace('_', ' ')} · Born {new Date(dependent.dateOfBirth).toLocaleDateString()}</p><div className="mt-2 flex flex-wrap gap-2">{dependent.taxDependent && <span className="border border-sky-800 px-2 py-0.5 text-xs text-sky-300">Tax dependent</span>}{dependent.benefitEligible && <span className="border border-emerald-800 px-2 py-0.5 text-xs text-emerald-300">Benefits eligible</span>}</div></div>
           <div className="flex gap-2"><button onClick={() => edit(dependent)} aria-label={`Edit ${dependent.name}`} className="rounded-md border border-zinc-700 p-2 text-zinc-300 hover:border-zinc-500"><Pencil className="h-4 w-4" /></button><button disabled={saving} onClick={() => remove(dependent)} aria-label={`Remove ${dependent.name}`} className="rounded-md border border-zinc-700 p-2 text-zinc-300 hover:border-red-700 hover:text-red-300"><Trash2 className="h-4 w-4" /></button></div>
         </article>)}
-      </div> : <div className="px-5 py-10 text-center"><Users className="mx-auto h-7 w-7 text-zinc-600" /><p className="mt-3 text-sm text-zinc-400">No dependents recorded.</p>{declaration === 'none' && <p className="mt-2 inline-flex items-center gap-1 text-xs text-emerald-400"><CheckCircle className="h-3.5 w-3.5" /> No-dependents declaration saved</p>}</div>}
+      </div> : <div className="px-5 py-10 text-center"><Users className="mx-auto h-7 w-7 text-zinc-600" /><p className="mt-3 text-sm text-zinc-400">No dependents recorded.</p>{legacyDeclaredCount > 0 && <p className="mx-auto mt-2 max-w-lg text-xs text-amber-300">A legacy declaration of {legacyDeclaredCount} dependent(s) was found. Add or refresh the detailed records before relying on them for Payroll.</p>}{declaration === 'none' && <p className="mt-2 inline-flex items-center gap-1 text-xs text-emerald-400"><CheckCircle className="h-3.5 w-3.5" /> No-dependents declaration saved</p>}</div>}
     </section>
 
     {!dependents.length && declaration !== 'none' && <section className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-900/50 p-5"><div><h2 className="font-medium text-white">No dependents?</h2><p className="mt-1 text-sm text-zinc-500">Confirm this so Payroll records the decision and uses a count of zero.</p></div><button disabled={saving} onClick={declareNone} className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:border-zinc-500">I have no dependents</button></section>}

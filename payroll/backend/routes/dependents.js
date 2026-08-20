@@ -1,5 +1,7 @@
 const express = require('express');
+const axios = require('axios');
 const PayrollProfile = require('../models/PayrollProfile');
+const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
 const { requireAuth } = require('../middleware/rbac');
 const { normalizeDependent, publicDependent, synchronizeDependentSummary } = require('../services/DependentService');
 
@@ -19,12 +21,39 @@ async function profileFor(req) {
   if (!profile) { const error = new Error('Your payroll profile has not been created yet.'); error.statusCode = 404; throw error; }
   return profile;
 }
+async function importLegacyDependents(req, profile) {
+  if (profile.dependents?.length || Number(profile.taxConfig?.dependents || 0) === 0) return false;
+  const token = String(req.session?.user?.accessToken || req.headers?.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return false;
+  const current = actor(req);
+  const baseUrl = getIdentityProviderIssuerUrl('http://localhost:4000').replace(/\/$/, '');
+  const url = `${baseUrl}/api/organizations/${encodeURIComponent(current.organizationId)}/members/${encodeURIComponent(current.userId)}/payroll-sync`;
+  const { data: member } = await axios.get(url, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+  const legacy = Array.isArray(member?.payrollSync?.dependents) ? member.payrollSync.dependents : [];
+  for (const item of legacy) {
+    try { profile.dependents.push({ ...normalizeDependent(item), addedAt: new Date(), updatedAt: new Date() }); } catch { /* Ignore incomplete legacy rows; the employee can add them cleanly. */ }
+  }
+  if (!profile.dependents.length) return false;
+  synchronizeDependentSummary(profile);
+  await profile.save();
+  return true;
+}
 function response(profile) {
-  return { dependents: (profile.dependents || []).map(publicDependent), declaration: profile.dependentsDeclaration || { status: 'pending' }, taxDependentCount: Number(profile.taxConfig?.dependents || 0) };
+  const dependents = (profile.dependents || []).map(publicDependent);
+  return {
+    dependents,
+    declaration: profile.dependentsDeclaration || { status: 'pending' },
+    taxDependentCount: dependents.filter((dependent) => dependent.taxDependent !== false).length,
+    legacyDeclaredCount: dependents.length ? 0 : Number(profile.taxConfig?.dependents || 0),
+  };
 }
 
 router.get('/me', requireAuth, async (req, res) => {
-  try { return res.json(response(await profileFor(req))); } catch (error) { return fail(res, error, 'Failed to load dependents'); }
+  try {
+    const profile = await profileFor(req);
+    try { await importLegacyDependents(req, profile); } catch (error) { console.warn('Legacy dependents migration deferred:', error?.response?.status || error.message); }
+    return res.json(response(profile));
+  } catch (error) { return fail(res, error, 'Failed to load dependents'); }
 });
 router.post('/', requireAuth, async (req, res) => {
   try {

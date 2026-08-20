@@ -1,6 +1,8 @@
 jest.mock('../../middleware/rbac', () => ({ requireAuth: (_req, _res, next) => next() }));
 jest.mock('../../models/PayrollProfile', () => ({ findOne: jest.fn() }));
+jest.mock('axios', () => ({ get: jest.fn() }));
 
+const axios = require('axios');
 const PayrollProfile = require('../../models/PayrollProfile');
 const router = require('../../routes/dependents');
 
@@ -44,5 +46,20 @@ describe('Payroll dependents routes', () => {
     expect(res.statusCode).toBe(200);
     expect(record.taxConfig.dependents).toBe(0);
     expect(record.dependentsDeclaration.status).toBe('none');
+  });
+
+  test('self-service load migrates legacy Identity details once', async () => {
+    const record = profile();
+    record.taxConfig.dependents = 1;
+    PayrollProfile.findOne.mockResolvedValue(record);
+    axios.get.mockResolvedValue({ data: { payrollSync: { dependents: [{ name: 'Jamie Stone', relationship: 'child', dateOfBirth: '2018-03-12', taxDependent: true }] } } });
+    const req = request();
+    req.session.user.accessToken = 'idp-token';
+    const res = response();
+    await handler('/me', 'get')(req, res);
+    expect(res.body.dependents).toHaveLength(1);
+    expect(res.body.taxDependentCount).toBe(1);
+    expect(res.body.legacyDeclaredCount).toBe(0);
+    expect(record.save).toHaveBeenCalled();
   });
 });
