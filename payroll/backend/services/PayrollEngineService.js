@@ -8,6 +8,7 @@ const LeaveIntegrationService = require('./LeaveIntegrationService');
 const currencyService = require('./CurrencyService');
 const employerEntityService = require('./PayrollEmployerEntityService');
 const payComponentTaxService = require('./PayComponentTaxService');
+const taxWithholdingTreatmentService = require('./TaxWithholdingTreatmentService');
 const organizationCurrencyService = require('./OrganizationCurrencyService');
 const { calculateContractBasePay } = require('./contractPayService');
 
@@ -1265,7 +1266,12 @@ class PayrollEngineService {
         throw error;
       }
 
-      const incomeTaxAmount = roundMoney(taxResult?.incomeTax?.taxAmount ?? 0);
+      const withholdingTreatment = taxWithholdingTreatmentService.applyTaxWithholdingTreatment(
+        taxResult,
+        profile.taxConfig || {},
+        taxPaymentDate
+      );
+      const incomeTaxAmount = roundMoney(withholdingTreatment.incomeTaxAmount);
       if (settings.calculateTax === false && incomeTaxAmount > 0) {
         const error = new Error('Income-tax withholding cannot be disabled while the selected statutory pack calculates a liability. Record an approved statutory exemption instead.');
         error.code = 'INCOME_TAX_PROCESSING_DISABLED';
@@ -1292,17 +1298,30 @@ class PayrollEngineService {
           jurisdictionVersionId: taxResult?.jurisdictionVersion?._id || null,
           taxYearLabel: taxResult?.incomeTax?.taxYearLabel || ytdContext.taxYear?.label || '',
           calculationMode: taxResult?.incomeTax?.calculationMode || '',
-          method: taxResult?.incomeTax?.method || '',
+          method: withholdingTreatment.employeeResponsible
+            ? 'employee_responsible'
+            : (taxResult?.incomeTax?.method || ''),
           annualizedIncome: roundMoney(taxResult?.incomeTax?.annualizedIncome ?? 0),
           annualizedTaxableIncome: roundMoney(taxResult?.incomeTax?.annualizedTaxableIncome ?? 0),
           taxableIncomeAfterReliefs: roundMoney(taxResult?.incomeTax?.taxableIncomeAfterReliefs ?? 0),
-          notes: Array.isArray(taxResult?.incomeTax?.notes) ? taxResult.incomeTax.notes : [],
+          notes: [
+            ...(Array.isArray(taxResult?.incomeTax?.notes) ? taxResult.incomeTax.notes : []),
+            ...(withholdingTreatment.employeeResponsible
+              ? ['No employee tax was withheld because this employee is responsible for their own tax.']
+              : []),
+          ],
           details: taxResult?.incomeTax?.details || undefined,
           calculationTrace: {
             validationErrors: Array.isArray(taxResult?.validationErrors) ? taxResult.validationErrors : [],
             employeeTaxInputs: taxResult?.employeeTaxInputs || {},
             statutoryPackHash: taxResult?.compliance?.contentHash || '',
             sourceLinks: taxResult?.compliance?.sourceLinks || [],
+            withholdingTreatment: {
+              mode: withholdingTreatment.mode,
+              reason: withholdingTreatment.reason,
+              suppressedIncomeTax: roundMoney(withholdingTreatment.suppressedIncomeTax),
+              suppressedEmployeeStatutoryAmount: roundMoney(withholdingTreatment.suppressedEmployeeStatutoryAmount),
+            },
           },
           calculationCurrency: taxResult?.calculationCurrency || payslipCurrency,
           payrollCurrency: payslipCurrency,
@@ -1312,7 +1331,7 @@ class PayrollEngineService {
         };
       }
 
-      const statutoryComponents = taxResult?.statutoryContributions?.components || [];
+      const statutoryComponents = withholdingTreatment.statutoryComponents;
       const hasStatutoryLiability = statutoryComponents.some((component) => Number(component?.amount || 0) > 0);
       if (settings.processStatutoryDeductions === false && hasStatutoryLiability) {
         const error = new Error('Statutory deductions and employer liabilities cannot be disabled while the selected pack calculates an amount. Record an approved statutory exemption instead.');

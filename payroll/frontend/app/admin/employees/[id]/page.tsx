@@ -110,6 +110,10 @@ function getDefaultSetupData() {
 function getDefaultTaxConfig() {
     return {
         taxId: '',
+        withholdingMode: 'payroll_withholding',
+        withholdingReason: '',
+        withholdingEffectiveFrom: '',
+        withholdingEffectiveTo: '',
         calculationMode: 'configured',
         jurisdictionConfigId: '',
         jurisdictionCode: 'OTHER',
@@ -514,6 +518,10 @@ function syncTaxConfigWithJurisdiction(rawTaxConfig: Record<string, any> = {}, j
     return {
         ...getDefaultTaxConfig(),
         ...unpinnedTaxConfig,
+        withholdingMode: rawTaxConfig?.withholdingMode === 'employee_responsible' ? 'employee_responsible' : 'payroll_withholding',
+        withholdingReason: rawTaxConfig?.withholdingReason || '',
+        withholdingEffectiveFrom: toDateInputValue(rawTaxConfig?.withholdingEffectiveFrom),
+        withholdingEffectiveTo: toDateInputValue(rawTaxConfig?.withholdingEffectiveTo),
         calculationMode: 'configured',
         jurisdictionConfigId: jurisdiction?._id ? String(jurisdiction._id) : String(rawTaxConfig?.jurisdictionConfigId || ''),
         jurisdictionCode: jurisdiction?.countryCode || normalizeJurisdictionCode(rawTaxConfig?.jurisdictionCode || 'OTHER') || 'OTHER',
@@ -2836,6 +2844,70 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Tax treatment</label>
+                                    <select
+                                        value={formData.taxConfig.withholdingMode}
+                                        onChange={(e) => {
+                                            const withholdingMode = e.target.value;
+                                            updateTaxConfig(withholdingMode === 'employee_responsible'
+                                                ? {
+                                                    withholdingMode,
+                                                    withholdingEffectiveFrom: formData.taxConfig.withholdingEffectiveFrom || new Date().toISOString().slice(0, 10),
+                                                }
+                                                : {
+                                                    withholdingMode,
+                                                    withholdingReason: '',
+                                                    withholdingEffectiveFrom: '',
+                                                    withholdingEffectiveTo: '',
+                                                });
+                                        }}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    >
+                                        <option value="payroll_withholding">Withhold tax through payroll</option>
+                                        <option value="employee_responsible">Employee handles their own tax</option>
+                                    </select>
+                                    <p className="text-xs text-zinc-500 mt-1.5">
+                                        Employee-responsible treatment pays without employee tax or statutory withholding. Employer liabilities still apply where required.
+                                    </p>
+                                </div>
+
+                                {formData.taxConfig.withholdingMode === 'employee_responsible' && (
+                                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 border border-amber-500/20 bg-amber-500/5 rounded-lg p-4">
+                                        <div className="md:col-span-2">
+                                            <label className="block text-sm font-medium text-zinc-300 mb-1.5">Reason</label>
+                                            <textarea
+                                                value={formData.taxConfig.withholdingReason}
+                                                onChange={(e) => updateTaxConfig({ withholdingReason: e.target.value })}
+                                                className="w-full min-h-20 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none resize-y"
+                                                placeholder="For example: Independent contractor responsible for personal tax filings"
+                                                maxLength={500}
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-300 mb-1.5">Effective from</label>
+                                            <input
+                                                type="date"
+                                                value={formData.taxConfig.withholdingEffectiveFrom}
+                                                onChange={(e) => updateTaxConfig({ withholdingEffectiveFrom: e.target.value })}
+                                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-300 mb-1.5">Effective to (optional)</label>
+                                            <input
+                                                type="date"
+                                                value={formData.taxConfig.withholdingEffectiveTo}
+                                                min={formData.taxConfig.withholdingEffectiveFrom || undefined}
+                                                onChange={(e) => updateTaxConfig({ withholdingEffectiveTo: e.target.value })}
+                                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div>
                                     <label className="block text-sm font-medium text-zinc-400 mb-1.5">Tax ID / SSN / TIN</label>
                                     <input
@@ -2905,7 +2977,9 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         </p>
                                     </div>
                                     <span className="rounded-full border border-zinc-700 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
-                                        {selectedJurisdictionVersion ? 'Configured Rule' : 'Needs Configuration'}
+                                        {formData.taxConfig.withholdingMode === 'employee_responsible'
+                                            ? 'Employee Responsible'
+                                            : (selectedJurisdictionVersion ? 'Configured Rule' : 'Needs Configuration')}
                                     </span>
                                 </div>
 

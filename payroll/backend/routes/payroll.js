@@ -23,6 +23,7 @@ const { createPayslipPdf } = require('../services/payslipPdfService');
 const { hasPayConfiguration } = require('../services/contractPayService');
 const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
 const peopleTransitionsClient = require('../services/peopleTransitionsClient');
+const taxWithholdingTreatmentService = require('../services/TaxWithholdingTreatmentService');
 const payrollEngineService = new PayrollEngineService();
 const PAY_FREQUENCIES = new Set(['monthly', 'semi-monthly', 'bi-weekly', 'weekly']);
 const ANALYTICS_PAYSLIP_STATUSES = ['draft', 'pending_approval', 'approved', 'exported', 'paid', 'revised'];
@@ -451,6 +452,10 @@ function normalizeTaxConfigPayload(input) {
       ? normalized.employeeTaxInputs
       : {},
     taxValidation: normalizeTaxValidationPayload(normalized.taxValidation),
+    withholdingMode: taxWithholdingTreatmentService.normalizeMode(input?.withholdingMode),
+    withholdingReason: String(input?.withholdingReason || '').trim(),
+    withholdingEffectiveFrom: input?.withholdingEffectiveFrom || null,
+    withholdingEffectiveTo: input?.withholdingEffectiveTo || null,
     flatTaxRate: Number(normalized.flatTaxRate || 0),
     manualTaxFreeAllowance: Number(normalized.manualTaxFreeAllowance || 0),
     socialSecurityRate: Number(normalized.socialSecurityRate || 0),
@@ -469,6 +474,38 @@ function normalizeTaxConfigPayload(input) {
       }))
       : [],
   };
+}
+
+function validateTaxWithholdingTreatment(taxConfig = {}) {
+  if (taxConfig.withholdingMode !== 'employee_responsible') return;
+  if (String(taxConfig.withholdingReason || '').trim().length < 5) {
+    const error = new Error('Enter a reason for assigning tax responsibility to the employee.');
+    error.statusCode = 400;
+    error.code = 'TAX_RESPONSIBILITY_REASON_REQUIRED';
+    throw error;
+  }
+  const effectiveFrom = new Date(taxConfig.withholdingEffectiveFrom || '');
+  if (Number.isNaN(effectiveFrom.getTime())) {
+    const error = new Error('An effective-from date is required when the employee handles their own tax.');
+    error.statusCode = 400;
+    error.code = 'TAX_RESPONSIBILITY_EFFECTIVE_DATE_REQUIRED';
+    throw error;
+  }
+  if (taxConfig.withholdingEffectiveTo) {
+    const effectiveTo = new Date(taxConfig.withholdingEffectiveTo);
+    if (Number.isNaN(effectiveTo.getTime()) || effectiveTo < effectiveFrom) {
+      const error = new Error('The tax responsibility end date must be on or after its start date.');
+      error.statusCode = 400;
+      error.code = 'TAX_RESPONSIBILITY_DATE_RANGE_INVALID';
+      throw error;
+    }
+  }
+}
+
+function comparableDate(value) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
 }
 
 function normalizeTaxValidationPayload(input = {}) {
@@ -1155,6 +1192,7 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
     const taxConfig = normalizeTaxConfigPayload(
       req.body?.taxConfig !== undefined ? req.body.taxConfig : (profile.taxConfig || {})
     ) || {};
+    validateTaxWithholdingTreatment(taxConfig);
     const statutoryContributions = {
       ...(profile.statutoryContributions || {}),
       ...(req.body?.statutoryContributions || {}),
@@ -1224,8 +1262,13 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
       },
     });
 
-    const statutoryDeductions = roundMoney(taxResult?.statutoryContributions?.totalAmount || 0);
-    const incomeTax = roundMoney(taxResult?.incomeTax?.taxAmount || 0);
+    const withholdingTreatment = taxWithholdingTreatmentService.applyTaxWithholdingTreatment(
+      taxResult,
+      taxConfig,
+      previewDate
+    );
+    const statutoryDeductions = roundMoney(withholdingTreatment.employeeStatutoryAmount);
+    const incomeTax = roundMoney(withholdingTreatment.incomeTaxAmount);
     const estimatedEmployeeDeductions = roundMoney(
       recurringPreTaxDeductions
       + employeePensionAmount
@@ -1239,6 +1282,11 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
       currency,
       payFrequency,
       calculationMode: taxConfig.calculationMode,
+      withholdingTreatment: {
+        mode: withholdingTreatment.mode,
+        employeeResponsible: withholdingTreatment.employeeResponsible,
+        reason: withholdingTreatment.reason,
+      },
       validationErrors: [...componentReviewErrors, ...(Array.isArray(taxResult?.validationErrors) ? taxResult.validationErrors : [])],
       blockingErrors: [...componentReviewErrors, ...(Array.isArray(taxResult?.blockingErrors) ? taxResult.blockingErrors : [])],
       payrollRunnable: componentReviewErrors.length === 0 && taxResult?.payrollRunnable !== false,
@@ -1273,14 +1321,31 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
         employerPercent: roundMoney(effectivePension.employerPercent),
         source: effectivePension.source,
       },
-      incomeTax: taxResult?.incomeTax || {},
-      statutoryContributions: taxResult?.statutoryContributions || { totalAmount: 0, reducesTaxableIncome: 0, components: [] },
+      incomeTax: {
+        ...(taxResult?.incomeTax || {}),
+        taxAmount: incomeTax,
+        method: withholdingTreatment.employeeResponsible
+          ? 'employee_responsible'
+          : taxResult?.incomeTax?.method,
+        notes: [
+          ...(Array.isArray(taxResult?.incomeTax?.notes) ? taxResult.incomeTax.notes : []),
+          ...(withholdingTreatment.employeeResponsible
+            ? ['No employee tax will be withheld because this employee is responsible for their own tax.']
+            : []),
+        ],
+      },
+      statutoryContributions: {
+        ...(taxResult?.statutoryContributions || {}),
+        totalAmount: statutoryDeductions,
+        components: withholdingTreatment.statutoryComponents,
+      },
     });
   } catch (err) {
     console.error('Tax Preview Error:', err);
-    res.status(500).json({
-      error: 'Failed to preview payroll tax',
+    res.status(err.statusCode || 500).json({
+      error: err.statusCode ? err.message : 'Failed to preview payroll tax',
       details: err.message,
+      code: err.code,
     });
   }
 });
@@ -1318,6 +1383,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       idpProfileSync
     } = req.body || {};
     const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
+    if (normalizedTaxConfig !== undefined) validateTaxWithholdingTreatment(normalizedTaxConfig);
     const normalizedBasicSalary = Math.max(0, toNumber(basicSalary, 0));
     let syncedMember = null;
 
@@ -1378,7 +1444,38 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (recurringDeductions !== undefined) profile.recurringDeductions = recurringDeductions;
     if (benefits !== undefined) profile.benefits = benefits;
     if (benefitItems !== undefined) profile.benefitItems = benefitItems;
-    if (normalizedTaxConfig !== undefined) profile.taxConfig = normalizedTaxConfig;
+    if (normalizedTaxConfig !== undefined) {
+      const currentTaxConfig = profile.taxConfig?.toObject?.() || profile.taxConfig || {};
+      const previousMode = taxWithholdingTreatmentService.normalizeMode(currentTaxConfig.withholdingMode);
+      const nextMode = normalizedTaxConfig.withholdingMode;
+      const taxTreatmentChanged = previousMode !== nextMode
+        || String(currentTaxConfig.withholdingReason || '') !== String(normalizedTaxConfig.withholdingReason || '')
+        || comparableDate(currentTaxConfig.withholdingEffectiveFrom) !== comparableDate(normalizedTaxConfig.withholdingEffectiveFrom)
+        || comparableDate(currentTaxConfig.withholdingEffectiveTo) !== comparableDate(normalizedTaxConfig.withholdingEffectiveTo);
+
+      if (taxTreatmentChanged) {
+        const reviewedAt = new Date();
+        normalizedTaxConfig.withholdingReviewedBy = adminId;
+        normalizedTaxConfig.withholdingReviewedByName = adminName || '';
+        normalizedTaxConfig.withholdingReviewedAt = reviewedAt;
+        profile.taxTreatmentHistory = profile.taxTreatmentHistory || [];
+        profile.taxTreatmentHistory.push({
+          previousMode,
+          newMode: nextMode,
+          reason: normalizedTaxConfig.withholdingReason,
+          effectiveFrom: normalizedTaxConfig.withholdingEffectiveFrom || null,
+          effectiveTo: normalizedTaxConfig.withholdingEffectiveTo || null,
+          changedBy: adminId,
+          changedByName: adminName || '',
+          changedAt: reviewedAt,
+        });
+      } else {
+        normalizedTaxConfig.withholdingReviewedBy = currentTaxConfig.withholdingReviewedBy || '';
+        normalizedTaxConfig.withholdingReviewedByName = currentTaxConfig.withholdingReviewedByName || '';
+        normalizedTaxConfig.withholdingReviewedAt = currentTaxConfig.withholdingReviewedAt || null;
+      }
+      profile.taxConfig = normalizedTaxConfig;
+    }
     if (statutoryContributions !== undefined) {
       profile.statutoryContributions = { ...(profile.statutoryContributions || {}), ...(statutoryContributions || {}) };
     }

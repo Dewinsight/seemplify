@@ -165,6 +165,17 @@ const DependentSchema = new Schema({
 // Tax configuration schema
 const TaxConfigSchema = new Schema({
   taxId: String,              // SSN, TIN, PAN, etc.
+  withholdingMode: {
+    type: String,
+    enum: ['payroll_withholding', 'employee_responsible'],
+    default: 'payroll_withholding'
+  },
+  withholdingReason: { type: String, trim: true, maxlength: 500, default: '' },
+  withholdingEffectiveFrom: { type: Date, default: null },
+  withholdingEffectiveTo: { type: Date, default: null },
+  withholdingReviewedBy: { type: String, trim: true, default: '' },
+  withholdingReviewedByName: { type: String, trim: true, default: '' },
+  withholdingReviewedAt: { type: Date, default: null },
   taxRegime: {
     type: String,
     enum: ['standard', 'simplified', 'exempt', 'custom'],
@@ -388,6 +399,16 @@ const PayrollProfileSchema = new Schema({
 
   // ===== TAX CONFIGURATION =====
   taxConfig: TaxConfigSchema,
+  taxTreatmentHistory: [{
+    previousMode: { type: String, enum: ['payroll_withholding', 'employee_responsible'] },
+    newMode: { type: String, enum: ['payroll_withholding', 'employee_responsible'], required: true },
+    reason: { type: String, trim: true, maxlength: 500, default: '' },
+    effectiveFrom: Date,
+    effectiveTo: Date,
+    changedBy: { type: String, trim: true, required: true },
+    changedByName: { type: String, trim: true, default: '' },
+    changedAt: { type: Date, default: Date.now },
+  }],
 
   // Payroll owns dependents because these records drive tax and benefit rules.
   dependents: [DependentSchema],
