@@ -215,6 +215,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { name: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
     { name: 'My Payslips', href: '/payslips', icon: FileText },
     { name: 'Banking', href: '/banking', icon: Landmark },
+    { name: 'Dependents', href: '/dependents', icon: Users },
     { name: 'My Requests', href: '/requests', icon: Clock },
   ];
 

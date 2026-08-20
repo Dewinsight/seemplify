@@ -137,6 +137,7 @@ app.use('/api/payroll', require('./routes/payrollCycles'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/compensation', require('./routes/compensation'));
 app.use('/api/payroll/banking', require('./routes/banking'));
+app.use('/api/payroll/dependents', require('./routes/dependents'));
 app.use('/api/payroll/reports', require('./routes/reports'));
 app.use('/api/payroll/salary-grades', require('./routes/salary-grades'));
 app.use('/api/payroll/currencies', require('./routes/currencies'));

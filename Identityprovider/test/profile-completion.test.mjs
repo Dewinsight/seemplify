@@ -52,18 +52,15 @@ test('IDP profile completion ignores legacy onboarding document assignments', ()
     ]
   })
 
-  assert.deepEqual(completion.steps.map(step => step.key), [
-    'personal',
-    'dependents'
-  ])
+  assert.deepEqual(completion.steps.map(step => step.key), ['personal'])
   assert.equal(completion.complete, true)
-  assert.equal(completion.totalSteps, 2)
+  assert.equal(completion.totalSteps, 1)
   assert.equal(completion.onboarding.isAssigned, false)
   assert.equal(completion.onboarding.requiresAction, false)
   assert.equal(completion.summary.onboarding, null)
 })
 
-test('an approved dependents count completes the dependents declaration', () => {
+test('legacy dependents remain available to payroll sync without blocking identity completion', () => {
   const account = structuredClone(completeAccount)
   account.profile.dependentsDeclaration = {
     status: 'provided',
@@ -75,5 +72,5 @@ test('an approved dependents count completes the dependents declaration', () => 
 
   assert.equal(completion.complete, true)
   assert.equal(completion.dependentsCount, 2)
-  assert.equal(completion.steps.find(step => step.key === 'dependents')?.complete, true)
+  assert.equal(completion.steps.some(step => step.key === 'dependents'), false)
 })

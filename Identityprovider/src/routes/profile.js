@@ -2,6 +2,7 @@ import express from 'express';
 import { Account } from '../models/Account.js';
 import CrossModuleApiService from '../../services/CrossModuleApiService.js';
 import { getProfileCompletionForAccount } from '../utils/profileCompletion.js';
+import { validatePersonalProfile } from '../utils/personalProfileValidation.js';
 
 const router = express.Router();
 
@@ -109,7 +110,14 @@ router.put('/api/profile', ensureAuthenticated, async (req, res) => {
 router.put('/api/profile/personal', ensureAuthenticated, async (req, res) => {
     try {
         const userId = req.session.accountId;
-        const { dateOfBirth, mailingAddress, phoneNumbers, emergencyContacts } = req.body;
+        const validation = validatePersonalProfile(req.body);
+        if (!validation.valid) {
+            return res.status(422).json({
+                error: 'Check the highlighted fields and try again.',
+                code: 'PERSONAL_PROFILE_VALIDATION_FAILED',
+                fieldErrors: validation.fieldErrors
+            });
+        }
 
         const account = await Account.findOne({ sub: userId });
         if (!account) {
@@ -117,14 +125,7 @@ router.put('/api/profile/personal', ensureAuthenticated, async (req, res) => {
         }
 
         account.profile = account.profile || {};
-        account.profile.personalInfo = account.profile.personalInfo || {};
-
-        if (dateOfBirth !== undefined) {
-            account.profile.personalInfo.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
-        }
-        if (mailingAddress) account.profile.personalInfo.mailingAddress = mailingAddress;
-        if (phoneNumbers) account.profile.personalInfo.phoneNumbers = phoneNumbers;
-        if (emergencyContacts) account.profile.personalInfo.emergencyContacts = emergencyContacts;
+        account.profile.personalInfo = validation.value;
 
         const completion = await updateCompletionTracking(req, account);
         account.markModified('profile');
@@ -134,7 +135,11 @@ router.put('/api/profile/personal', ensureAuthenticated, async (req, res) => {
             success: true,
             message: 'Personal information updated successfully',
             profileCompletion: completion,
-            nextStep: completion.nextIncompleteStep
+            nextStep: {
+                key: 'dependents',
+                label: 'Dependents',
+                route: `${(process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007').replace(/\/$/, '')}/dependents`
+            }
         });
     } catch (error) {
         console.error('Personal info update error:', error);
@@ -157,63 +162,13 @@ router.put('/api/profile/banking', ensureAuthenticated, (_req, res) => {
  * PUT /api/profile/dependents
  * Add a dependent
  */
-router.put('/api/profile/dependents', ensureAuthenticated, async (req, res) => {
-    try {
-        const userId = req.session.accountId;
-        const { dependent, hasDependents } = req.body;
-
-        const account = await Account.findOne({ sub: userId });
-        if (!account) {
-            return res.status(404).json({ error: 'Account not found' });
-        }
-
-        account.profile = account.profile || {};
-        account.profile.dependents = account.profile.dependents || [];
-        account.profile.dependentsDeclaration = account.profile.dependentsDeclaration || {};
-
-        if (hasDependents === false || hasDependents === 'false') {
-            account.profile.dependentsDeclaration = {
-                status: 'none',
-                confirmedAt: new Date(),
-                lastUpdated: new Date()
-            };
-            const completion = await updateCompletionTracking(req, account);
-            account.markModified('profile');
-            await account.save();
-
-            return res.json({
-                success: true,
-                message: 'Dependents marked as complete',
-                profileCompletion: completion,
-                nextStep: completion.nextIncompleteStep
-            });
-        }
-
-        if (!dependent || typeof dependent !== 'object') {
-            return res.status(400).json({ error: 'Dependent details are required' });
-        }
-
-        account.profile.dependents.push(dependent);
-        account.profile.dependentsDeclaration = {
-            status: 'provided',
-            confirmedAt: new Date(),
-            lastUpdated: new Date()
-        };
-
-        const completion = await updateCompletionTracking(req, account);
-        account.markModified('profile');
-        await account.save();
-
-        res.json({
-            success: true,
-            message: 'Dependent added successfully',
-            profileCompletion: completion,
-            nextStep: completion.nextIncompleteStep
-        });
-    } catch (error) {
-        console.error('Dependent add error:', error);
-        res.status(500).json({ error: 'Failed to add dependent' });
-    }
+router.put('/api/profile/dependents', ensureAuthenticated, (_req, res) => {
+    const payrollUrl = process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007';
+    res.status(410).json({
+        error: 'Dependents are managed in Payroll for benefits and tax processing.',
+        code: 'DEPENDENTS_MOVED_TO_PAYROLL',
+        location: `${payrollUrl.replace(/\/$/, '')}/dependents`
+    });
 });
 
 /**

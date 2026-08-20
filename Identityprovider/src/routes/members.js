@@ -464,6 +464,15 @@ router.put('/:orgId/members/:memberId/payroll-sync',
         })
       }
 
+      if (hasDependentsDeclaration) {
+        const payrollUrl = process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007'
+        return res.status(410).json({
+          error: 'Dependents are managed in Payroll for benefits and tax processing.',
+          code: 'DEPENDENTS_MOVED_TO_PAYROLL',
+          location: `${payrollUrl.replace(/\/$/, '')}/dependents`
+        })
+      }
+
       if (hasEmployeeId && await hasPendingInviteWithEmployeeId(req.params.orgId, body.employeeId)) {
         return res.status(400).json({ error: 'Employee ID is already pending on another invitation' })
       }
@@ -569,33 +578,6 @@ router.put('/:orgId/members/:memberId/payroll-sync',
           lastUpdated: new Date()
         }
         accountUpdateSet['profile.taxInfo'] = accountSnapshot.profile.taxInfo
-      }
-
-      if (hasDependentsDeclaration) {
-        const nextStatus = normalizeText(body.dependentsDeclaration.status).toLowerCase()
-        if (!['pending', 'none', 'provided'].includes(nextStatus)) {
-          return res.status(400).json({ error: 'Dependents declaration status must be pending, none or provided' })
-        }
-
-        const declaredCount = Math.max(0, Number(body.dependentsDeclaration.count || 0))
-        if (nextStatus === 'provided' && declaredCount === 0) {
-          return res.status(400).json({ error: 'Dependents count is required when dependents are provided' })
-        }
-        const dependentsDeclaration = ['none', 'provided'].includes(nextStatus)
-          ? {
-              status: nextStatus,
-              count: nextStatus === 'none' ? 0 : declaredCount,
-              confirmedAt: new Date(),
-              lastUpdated: new Date()
-            }
-          : {
-              status: 'pending',
-              count: 0,
-              confirmedAt: null,
-              lastUpdated: new Date()
-            }
-        accountSnapshot.profile.dependentsDeclaration = dependentsDeclaration
-        accountUpdateSet['profile.dependentsDeclaration'] = dependentsDeclaration
       }
 
       const completion = await updateCompletionTracking(accountSnapshot, req.params.orgId)

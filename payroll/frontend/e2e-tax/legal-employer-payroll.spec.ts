@@ -79,6 +79,45 @@ test('employee requests a bank account change in Payroll while the approved acco
   });
 });
 
+test('employee adds and removes a Payroll dependent with field-level validation', async ({ page }) => {
+  let dependents: any[] = [];
+  const payload = () => ({ dependents, declaration: { status: dependents.length ? 'provided' : 'pending' }, taxDependentCount: dependents.filter((item) => item.taxDependent).length });
+  await page.route('**/api/payroll/dependents/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload()) }));
+  await page.route('**/api/payroll/dependents', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const body = await route.request().postDataJSON();
+    if (!body.name || !body.relationship || !body.dateOfBirth) {
+      return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: 'Check the highlighted dependent fields and try again.', fieldErrors: { name: 'Enter the dependent’s full name.', relationship: 'Select a valid relationship.', dateOfBirth: 'Enter a valid date of birth.' } }) });
+    }
+    dependents = [{ _id: 'dependent-1', ...body, dateOfBirth: `${body.dateOfBirth}T00:00:00.000Z` }];
+    return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ ...payload(), message: 'Dependent saved and included in Payroll tax and benefits data.' }) });
+  });
+  await page.route('**/api/payroll/dependents/dependent-1', async (route) => {
+    if (route.request().method() !== 'DELETE') return route.continue();
+    dependents = [];
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...payload(), message: 'Dependent removed from Payroll.' }) });
+  });
+
+  await page.goto('/dependents');
+  await dismissPageGuide(page);
+  await expect(page.getByRole('heading', { name: 'Dependents', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add dependent' }).click();
+  await page.getByRole('button', { name: 'Save dependent' }).click();
+  await expect(page.getByText('Enter the dependent’s full name.')).toBeVisible();
+  await expect(page.getByText('Select a valid relationship.')).toBeVisible();
+  await page.getByLabel('Full name').fill('Jamie Stone');
+  await page.getByLabel('Relationship').selectOption('child');
+  await page.getByLabel('Date of birth').fill('2018-03-12');
+  await page.getByRole('button', { name: 'Save dependent' }).click();
+  await expect(page.getByText('Jamie Stone')).toBeVisible();
+  await expect(page.getByText('1 included in the current tax-dependent count')).toBeVisible();
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Remove Jamie Stone' }).click();
+  await expect(page.getByText('No dependents recorded.')).toBeVisible();
+  await expect(page.getByText('Dependent removed from Payroll.')).toBeVisible();
+});
+
 test('HR approves an employee bank account request from the Payroll review queue', async ({ page }) => {
   let reviewedAction = '';
   let pending = true;

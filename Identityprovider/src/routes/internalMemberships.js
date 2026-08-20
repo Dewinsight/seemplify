@@ -119,7 +119,6 @@ function applyPayrollSync(account, payrollSync = {}) {
   const emergency = personal.emergencyContact || {}
   const banking = payrollSync.banking || {}
   const accounts = Array.isArray(banking.accounts) ? banking.accounts : []
-  const declaration = payrollSync.dependentsDeclaration || {}
 
   account.profile = {
     ...profile,
@@ -150,13 +149,6 @@ function applyPayrollSync(account, payrollSync = {}) {
       accounts: accounts.length
         ? accounts.map(item => ({ ...item, updatedAt: new Date() }))
         : (profile.banking?.accounts || []),
-    },
-    dependentsDeclaration: {
-      ...(profile.dependentsDeclaration || {}),
-      status: ['none', 'provided'].includes(declaration.status) ? declaration.status : 'pending',
-      count: Math.max(0, Number(declaration.count || 0)),
-      confirmedAt: declaration.confirmedAt || new Date(),
-      lastUpdated: new Date(),
     },
   }
   account.markModified('profile')

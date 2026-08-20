@@ -4,12 +4,6 @@ const PROFILE_COMPLETION_STEPS = [
     label: 'Personal Info',
     route: '/profile/personal',
     description: 'Add your date of birth, address, phone number, and emergency contact.'
-  },
-  {
-    key: 'dependents',
-    label: 'Dependents',
-    route: '/profile/dependents',
-    description: 'Add your dependents or confirm that you do not have any to add.'
   }
 ]
 
@@ -110,8 +104,6 @@ export function getProfileCompletion(account = {}, options = {}) {
   const mailingAddress = getMailingAddress(profile)
   const phoneNumbers = getPhoneNumbers(profile)
   const primaryEmergencyContact = getPrimaryEmergencyContact(profile)
-  const validDependents = getValidDependents(profile)
-  const dependentsDeclaration = getDependentsDeclaration(profile)
   const reminder = profile?.completionReminders || {}
   const onboarding = EMPTY_ONBOARDING_COMPLETION
 
@@ -121,13 +113,8 @@ export function getProfileCompletion(account = {}, options = {}) {
     hasText(phoneNumbers?.mobile) &&
     primaryEmergencyContact
   )
-  const dependentsComplete = validDependents.length > 0
-    || dependentsDeclaration.status === 'none'
-    || (dependentsDeclaration.status === 'provided' && dependentsDeclaration.count > 0)
-
   const completionByKey = {
-    personal: personalComplete,
-    dependents: dependentsComplete
+    personal: personalComplete
   }
 
   const steps = PROFILE_COMPLETION_STEPS.map(step => ({
@@ -145,8 +132,8 @@ export function getProfileCompletion(account = {}, options = {}) {
     percent: Math.round((completedCount / steps.length) * 100),
     steps,
     nextIncompleteStep,
-    dependentsCount: validDependents.length || dependentsDeclaration.count,
-    hasDeclaredNoDependents: dependentsDeclaration.status === 'none',
+    dependentsCount: getValidDependents(profile).length || getDependentsDeclaration(profile).count,
+    hasDeclaredNoDependents: getDependentsDeclaration(profile).status === 'none',
     reminder: {
       lastSentAt: normalizeDate(reminder?.lastSentAt),
       sendCount: Number(reminder?.sendCount || 0),
@@ -233,6 +220,16 @@ export function buildPayrollProfileSyncData(account = {}) {
           email: primaryEmergencyContact.email || ''
         }
       : null,
+    dependents: validDependents.map(dependent => ({
+      name: dependent?.name || '',
+      relationship: dependent?.relationship || 'other',
+      dateOfBirth: normalizeDate(dependent?.dateOfBirth),
+      taxDependent: dependent?.taxDependent !== false,
+      benefitEligible: dependent?.benefitEligible !== false,
+      isBeneficiary: dependent?.isBeneficiary === true,
+      beneficiaryPercentage: Number(dependent?.beneficiaryPercentage || 0)
+    })),
+    dependentsDeclaration: getDependentsDeclaration(profile),
     dependentsCount: validDependents.length || getDependentsDeclaration(profile).count,
     profileCompletion: completion
   }

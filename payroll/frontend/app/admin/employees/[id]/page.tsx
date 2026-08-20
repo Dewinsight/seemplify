@@ -1067,7 +1067,6 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             const accountType = String(formData.bankAccount?.accountType || '').trim();
             const effectivePayrollAccountNumber = accountNumber || iban;
             const hasBankingDetails = hasAnyBankingValue(formData.bankAccount);
-            const canUpdateDependentsDeclaration = Number(profileCompletion?.dependentsCount || 0) === 0;
 
             let bankAccounts: any[] = [];
             if (!hasBankingDetails) {
@@ -1120,15 +1119,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 },
                 taxInfo: {
                     taxId: formData.taxConfig.taxId || ''
-                },
-                ...(canUpdateDependentsDeclaration ? {
-                    dependentsDeclaration: {
-                        status: Number(formData.taxConfig.dependents || 0) > 0
-                            ? 'provided'
-                            : setupData.dependentsDeclarationStatus,
-                        count: Number(formData.taxConfig.dependents || 0)
-                    }
-                } : {})
+                }
             } : undefined;
 
             await api.put(`/payroll/profiles/${params.id}`, {
@@ -1968,27 +1959,10 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </div>
                             </div>
 
-                            <div className="mt-4">
-                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Dependents Declaration</label>
-                                <select
-                                    value={setupData.dependentsDeclarationStatus}
-                                    onChange={(e) => setSetupData({
-                                        ...setupData,
-                                        dependentsDeclarationStatus: e.target.value
-                                    })}
-                                    disabled={Number(profileCompletion?.dependentsCount || 0) > 0}
-                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none disabled:opacity-60"
-                                >
-                                    <option value="pending">Still needs dependents confirmation</option>
-                                    <option value="none">No dependents to add</option>
-                                    {Number(profileCompletion?.dependentsCount || 0) > 0 && (
-                                        <option value="provided">Dependents already provided</option>
-                                    )}
-                                </select>
-                                <p className="mt-2 text-xs text-zinc-500">
-                                    {Number(profileCompletion?.dependentsCount || 0) > 0
-                                        ? `This employee already has ${profileCompletion?.dependentsCount} dependent(s) on record in IDP.`
-                                        : 'Use "No dependents to add" when HR has confirmed there is nothing else to collect.'}
+                            <div className="mt-4 border border-zinc-800 bg-zinc-900/40 p-4">
+                                <div className="text-sm font-medium text-zinc-300">Dependents are managed in Payroll</div>
+                                <p className="mt-1 text-xs text-zinc-500">
+                                    Employee dependent records now control benefits eligibility and the tax-dependent count. Identity no longer stores updates from this screen.
                                 </p>
                             </div>
                         </div>

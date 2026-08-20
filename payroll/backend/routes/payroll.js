@@ -349,8 +349,30 @@ function applyPayrollSyncFromMember(profile, member = {}, options = {}) {
   }
   profile.emergencyContact = buildEmergencyContactFromMember(member, profile.emergencyContact);
 
+  // Identity dependents are retained only as a one-time migration source.
+  // Payroll is authoritative once any local dependent or declaration exists.
+  const legacyDependents = Array.isArray(member?.payrollSync?.dependents) ? member.payrollSync.dependents : [];
+  const hasLocalDependentDecision = (Array.isArray(profile.dependents) && profile.dependents.length > 0)
+    || ['none', 'provided'].includes(String(profile?.dependentsDeclaration?.status || ''));
+  if (!hasLocalDependentDecision && legacyDependents.length > 0) {
+    profile.dependents = legacyDependents.map((dependent) => ({
+      name: dependent.name,
+      relationship: dependent.relationship || 'other',
+      dateOfBirth: dependent.dateOfBirth,
+      taxDependent: dependent.taxDependent !== false,
+      benefitEligible: dependent.benefitEligible !== false,
+      isBeneficiary: dependent.isBeneficiary === true,
+      beneficiaryPercentage: Number(dependent.beneficiaryPercentage || 0),
+    }));
+    profile.dependentsDeclaration = { status: 'provided', confirmedAt: new Date(), lastUpdated: new Date() };
+  } else if (!hasLocalDependentDecision && member?.payrollSync?.dependentsDeclaration?.status === 'none') {
+    profile.dependentsDeclaration = { status: 'none', confirmedAt: new Date(), lastUpdated: new Date() };
+  }
+
   const taxId = String(member?.payrollSync?.taxInfo?.taxId || '').trim();
-  const dependentsCount = Number(member?.payrollSync?.dependentsCount || 0);
+  const dependentsCount = Array.isArray(profile.dependents) && profile.dependents.length
+    ? profile.dependents.filter((dependent) => dependent.taxDependent !== false).length
+    : Number(member?.payrollSync?.dependentsCount || 0);
   if (taxId || (dependentsCount > 0 && Number(profile?.taxConfig?.dependents || 0) === 0)) {
     profile.taxConfig = {
       ...(profile.taxConfig || {}),
@@ -1453,6 +1475,7 @@ async function syncPayrollProfileFromIdp(req, res) {
       status: 'active',
       isActive: true,
     });
+    applyPayrollSyncFromMember(profile, member);
 
     const automationResult = await payrollCountryAutomationService.reconcileProfile(profile, organizationId, {
       countryHint: member?.payrollSync?.personalInfo?.mailingAddress?.country

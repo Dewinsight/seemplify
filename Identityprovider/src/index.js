@@ -10197,7 +10197,8 @@ function buildProfilePageViewModel(req, currentProfileSection) {
     currentProfileSection,
     activeProfileSection: currentProfileSection,
     profileCompletion: req.profileCompletion || getProfileCompletion(req.user),
-    profileCompletionEnforced: false
+    profileCompletionEnforced: false,
+    payrollUrl: (process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007').replace(/\/$/, '')
   }
 }
 
@@ -10232,7 +10233,8 @@ app.get('/profile/banking', getSessionUser, async (req, res) => {
 
 app.get('/profile/dependents', getSessionUser, async (req, res) => {
   try {
-    res.render('profile-dependents', buildProfilePageViewModel(req, 'dependents'))
+    const payrollUrl = process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007'
+    res.redirect(302, `${payrollUrl.replace(/\/$/, '')}/dependents`)
   } catch (error) {
     console.error('Error loading dependents page:', error)
     res.status(500).send('Error loading page')

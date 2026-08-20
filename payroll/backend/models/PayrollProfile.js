@@ -146,6 +146,22 @@ const EmergencyContactSchema = new Schema({
   email: String
 }, { _id: false });
 
+const DependentSchema = new Schema({
+  name: { type: String, required: true, trim: true, maxlength: 120 },
+  relationship: {
+    type: String,
+    enum: ['spouse', 'domestic_partner', 'child', 'parent', 'sibling', 'other'],
+    required: true,
+  },
+  dateOfBirth: { type: Date, required: true },
+  taxDependent: { type: Boolean, default: true },
+  benefitEligible: { type: Boolean, default: true },
+  isBeneficiary: { type: Boolean, default: false },
+  beneficiaryPercentage: { type: Number, min: 0, max: 100, default: 0 },
+  addedAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+}, { _id: true });
+
 // Tax configuration schema
 const TaxConfigSchema = new Schema({
   taxId: String,              // SSN, TIN, PAN, etc.
@@ -372,6 +388,14 @@ const PayrollProfileSchema = new Schema({
 
   // ===== TAX CONFIGURATION =====
   taxConfig: TaxConfigSchema,
+
+  // Payroll owns dependents because these records drive tax and benefit rules.
+  dependents: [DependentSchema],
+  dependentsDeclaration: {
+    status: { type: String, enum: ['pending', 'none', 'provided'], default: 'pending' },
+    confirmedAt: Date,
+    lastUpdated: Date,
+  },
 
   // ===== STATUTORY CONTRIBUTIONS =====
   statutoryContributions: {
