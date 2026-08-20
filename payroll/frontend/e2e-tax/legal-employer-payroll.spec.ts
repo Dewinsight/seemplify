@@ -491,50 +491,83 @@ test('captures off-system overtime with business context before payroll approval
   });
 });
 
-test('runs Nigeria and UK payroll separately and blocks preview finalization', async ({ page, request }, testInfo) => {
-  await page.goto('/admin/run');
-  await dismissPageGuide(page);
-  const employer = page.getByLabel('Employer for this run');
-  const currency = page.getByLabel('Statutory run currency');
-
-  await employer.selectOption('entity-ng');
-  await expect(currency).toHaveValue('NGN');
-  await expect(currency).toBeDisabled();
-  await expect(page.getByText('Preview-only calculation', { exact: true })).toBeVisible();
-
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: /^Calculate / }).click();
-  await expect(page).toHaveURL(/\/admin\/runs\/run-ng$/);
-  await dismissPageGuide(page);
-  await expect(page.getByLabel('Legal employer for this run')).toContainText('Seemplify Nigeria Limited (synthetic)');
-  await expect(page.getByLabel('Legal employer for this run')).toContainText('NG-LA');
-  await expect(page.getByLabel('Legal employer for this run')).toContainText('NGN');
-  await expect(page.getByText('This run was created against a preview-only tax pack and cannot be finalized.')).toBeVisible();
-
-  await page.goto('/admin/run');
-  await dismissPageGuide(page);
-  await employer.selectOption('entity-uk');
-  await expect(currency).toHaveValue('GBP');
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: /^Calculate / }).click();
-  await expect(page).toHaveURL(/\/admin\/runs\/run-uk$/);
-  await dismissPageGuide(page);
-  await expect(page.getByLabel('Legal employer for this run')).toContainText('Seemplify UK Subsidiary Limited (synthetic)');
-  await expect(page.getByLabel('Legal employer for this run')).toContainText('GB');
-  await expect(page.getByLabel('Legal employer for this run')).toContainText('GBP');
-  await expect(page.getByText('This run was created against a preview-only tax pack and cannot be finalized.')).toBeVisible();
-
-  const logged = await requests(request);
-  const posts = logged.filter((entry) => entry.method === 'POST' && entry.path === '/payroll/runs');
-  expect(posts.map((entry) => ({ entity: entry.body.employerEntityId, currency: entry.body.settings.reportingCurrency }))).toEqual([
-    { entity: 'entity-ng', currency: 'NGN' },
-    { entity: 'entity-uk', currency: 'GBP' },
-  ]);
-
-  await page.screenshot({
-    path: `reports/tax-uk-run-${testInfo.project.name}.png`,
-    fullPage: true,
+test('configures payroll approval policy and scoped accounting delivery contact', async ({ page }) => {
+  const policies: any[] = [];
+  const contacts: any[] = [];
+  await page.route('**/api/payroll/approval-policies', async route => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON(); policies.push({ _id: 'policy-e2e', active: true, ...body });
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(policies[0]) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(policies) });
   });
+  await page.route('**/api/payroll/accounting-contacts', async route => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON(); contacts.push({ _id: 'contact-e2e', active: true, ...body });
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(contacts[0]) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contacts) });
+  });
+  await page.route('**/api/payroll/employer-entities', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ entities: [{ _id: 'entity-ng', legalName: 'Nigeria Limited', jurisdictionCode: 'NG-LA' }] }) }));
+  await page.goto('/admin/settings/payroll-workflow');
+  await dismissPageGuide(page);
+  await page.getByPlaceholder('Policy name').fill('Two-level payroll approval');
+  await page.getByText('Approval levels').locator('select').selectOption('2');
+  await page.getByRole('button', { name: 'Add policy' }).click();
+  await expect(page.getByText('Two-level payroll approval · Default')).toBeVisible();
+  await page.getByPlaceholder('Contact name').fill('Nigeria accounting');
+  await page.getByPlaceholder('accounting@example.com').fill('accounts.ng@example.invalid');
+  await page.getByLabel('Accounting contact legal employer').selectOption('entity-ng');
+  await page.getByRole('button', { name: 'Add contact' }).click();
+  await expect(page.getByText('accounts.ng@example.invalid')).toBeVisible();
+  expect(policies[0]).toMatchObject({ approvalRequired: true, requireSeparationOfDuties: true, levels: [{ minimumApprovals: 1 }, { minimumApprovals: 1 }] });
+  expect(contacts[0]).toMatchObject({ employerEntityId: 'entity-ng', email: 'accounts.ng@example.invalid' });
+});
+
+test('preflights, calculates, submits, and releases a multi-entity payroll cycle', async ({ page }) => {
+  const employers = [
+    { _id: 'entity-ng', legalName: 'Seemplify Nigeria Limited (synthetic)', status: 'active', countryCode: 'NG', jurisdictionCode: 'NG-LA', defaultCurrency: 'NGN' },
+    { _id: 'entity-uk', legalName: 'Seemplify UK Subsidiary Limited (synthetic)', status: 'active', countryCode: 'GB', jurisdictionCode: 'GB', defaultCurrency: 'GBP' },
+  ].map(entity => ({ ...entity, payrollReadiness: { payrollRunnable: true, mode: 'runnable', blockingIssues: [], warnings: [], taxPack: { label: 'Released pack', calculationStatus: 'runnable' } } }));
+  let status = 'calculated';
+  let deliveries: any[] = [];
+  const cycle = () => ({
+    _id: 'cycle-e2e', cycleNumber: 'PC-2026-08-001', status, revision: 1, currentApprovalLevel: 0,
+    payPeriod: { month: 8, year: 2026, paymentDate: '2026-08-31T00:00:00.000Z' },
+    approvals: [], deliveries,
+    childRuns: employers.map((entity, index) => ({
+      employerEntityId: entity._id, legalName: entity.legalName, countryCode: entity.countryCode,
+      currency: entity.defaultCurrency, status: status === 'released' ? 'released' : status === 'pending_approval' ? 'submitted' : 'calculated',
+      payrollRunId: { _id: `cycle-run-${index}`, runNumber: `PR-2026-08-00${index + 1}`, status, summary: { processedCount: 1, currency: entity.defaultCurrency, totalGrossPayroll: index ? 5000 : 1000000, totalDeductions: index ? 900 : 150000, totalNetPayroll: index ? 4100 : 850000 } },
+    })),
+  });
+  await page.route('**/api/payroll/employer-entities', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ entities: employers }) }));
+  await page.route('**/api/payroll/cycles/preflight', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ready: true, entities: employers.map(entity => ({ employerEntityId: entity._id, legalName: entity.legalName, currency: entity.defaultCurrency, employeeCount: 1, ready: true, blockers: [], warnings: [] })) }) }));
+  await page.route('**/api/payroll/cycles', async route => {
+    if (route.request().method() === 'POST') return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: true, cycle: cycle() }) });
+    return route.continue();
+  });
+  await page.route('**/api/payroll/cycles/cycle-e2e', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(cycle()) }));
+  await page.route('**/api/payroll/cycles/cycle-e2e/submit', route => { status = 'pending_approval'; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, cycle: cycle() }) }); });
+  await page.route('**/api/payroll/cycles/cycle-e2e/approve-and-release', route => { status = 'released'; deliveries = [{ _id: 'delivery-1', recipientEmail: 'accounts@example.invalid', status: 'sent', attemptCount: 1, expiresAt: '2026-09-07T00:00:00.000Z' }]; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, cycle: cycle(), released: true }) }); });
+
+  await page.goto('/admin/run');
+  await dismissPageGuide(page);
+  await expect(page.getByRole('checkbox')).toHaveCount(2);
+  await expect(page.getByRole('checkbox').nth(0)).toBeChecked();
+  await expect(page.getByRole('checkbox').nth(1)).toBeChecked();
+  await page.getByRole('button', { name: 'Run preflight' }).click();
+  await expect(page.getByText('All selected employers are ready to calculate.')).toBeVisible();
+  await page.getByRole('button', { name: 'Create cycle (2)' }).click();
+  await expect(page).toHaveURL(/\/admin\/cycles\/cycle-e2e$/);
+  await dismissPageGuide(page);
+  await expect(page.getByText('Seemplify Nigeria Limited (synthetic)')).toBeVisible();
+  await expect(page.getByText('Seemplify UK Subsidiary Limited (synthetic)')).toBeVisible();
+  await page.getByRole('button', { name: 'Submit payroll' }).click();
+  await expect(page.getByRole('button', { name: 'Approve and release' })).toBeVisible();
+  await page.getByRole('button', { name: 'Approve and release' }).click();
+  await expect(page.getByText('accounts@example.invalid')).toBeVisible();
+  await expect(page.getByText('sent · 1 attempt')).toBeVisible();
 });
 
 test('reconciles a committed retraction when the POST response is ambiguous', async ({ page, request }) => {

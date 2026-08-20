@@ -1,406 +1,127 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
-import { ArrowLeft, Calendar, CheckCircle, ClipboardList, Loader2, Settings2 } from 'lucide-react';
 import { listPayrollEmployerEntities, PayrollEmployerEntity } from '@/lib/payrollEmployerEntities';
 
-const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-type VariablePayProfile = {
-  userId: string;
-  employeeInfo?: { name?: string; employmentType?: string };
-  currency?: string;
-  workTerms?: { payBasis?: 'hourly' | 'daily' | 'fixed_contract'; rate?: number; contractAmount?: number };
-  employerEntityId?: string;
-};
+const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+type PreflightEntity = { employerEntityId: string; legalName?: string; currency?: string; employeeCount?: number; ready: boolean; blockers: string[]; warnings: string[] };
+type Preflight = { ready: boolean; entities: PreflightEntity[] };
+type VariableProfile = { userId: string; employerEntityId?: string; employeeInfo?: { name?: string }; currency?: string; workTerms?: { payBasis?: 'hourly' | 'daily' | 'fixed_contract'; rate?: number; contractAmount?: number } };
+type WorkInput = { regularHours: number; daysWorked: number; notes: string };
 
 export default function AdminPayrollRunPage() {
   const router = useRouter();
-
   const today = useMemo(() => new Date(), []);
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
-  const [paymentDate, setPaymentDate] = useState(
-    new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0]
-  );
-
-  const [settings, setSettings] = useState({
-    includeAllowances: true,
-    includeBonuses: true,
-    includeCommissions: true,
-    includeOvertime: true,
-    processStatutoryDeductions: true,
-    calculateTax: true,
-    prorate: true,
-    reportingCurrency: '',
-  });
-  const [availableCurrencies, setAvailableCurrencies] = useState<Array<{ code: string; name: string }>>([]);
-  const [employerEntities, setEmployerEntities] = useState<PayrollEmployerEntity[]>([]);
-  const [employerEntityId, setEmployerEntityId] = useState('');
-  const [allVariablePayProfiles, setAllVariablePayProfiles] = useState<VariablePayProfile[]>([]);
-  const [variablePayProfiles, setVariablePayProfiles] = useState<VariablePayProfile[]>([]);
-  const [workInputs, setWorkInputs] = useState<Record<string, { regularHours: number; daysWorked: number; notes: string }>>({});
-
+  const [paymentDate, setPaymentDate] = useState(new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10));
+  const [entities, setEntities] = useState<PayrollEmployerEntity[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [reportingCurrency, setReportingCurrency] = useState('');
+  const [preflight, setPreflight] = useState<Preflight | null>(null);
+  const [variableProfiles, setVariableProfiles] = useState<VariableProfile[]>([]);
+  const [workInputs, setWorkInputs] = useState<Record<string, WorkInput>>({});
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isHRAdmin, setIsHRAdmin] = useState(false);
+  const [busy, setBusy] = useState<'preflight' | 'create' | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     handleAuthCallback();
-
-    if (!isAuthenticated()) {
-      router.push('/login');
-      return;
-    }
-
+    if (!isAuthenticated()) { router.push('/login'); return; }
     (async () => {
       try {
         const me = await authApi.getMe();
-        const currentOrgId = me.currentOrganizationId;
-        const currentOrg = me.user?.organizations?.find((o: any) => o.id === currentOrgId) || me.user?.organizations?.[0];
-        const hasAccess = currentOrg && ['owner', 'admin', 'hr_manager'].includes(currentOrg.role);
-        if (!hasAccess) {
-          alert('Access denied. Only HR administrators can run payroll.');
-          router.push('/dashboard');
-          return;
-        }
-        setIsHRAdmin(true);
-        try {
-          const entityRows = await listPayrollEmployerEntities();
-          setEmployerEntities(entityRows);
-          const firstEntity = entityRows.find((entity) => entity.status === 'active' && entity.payrollReadiness.payrollRunnable)
-            || entityRows.find((entity) => entity.status === 'active');
-          if (firstEntity) {
-            setEmployerEntityId(firstEntity._id);
-            setSettings((current) => ({ ...current, reportingCurrency: firstEntity.defaultCurrency }));
-          }
-        } catch (entityError) {
-          console.error('Failed to load legal employers:', entityError);
-        }
-        try {
-          const currenciesRes = await api.get('/currencies');
-          setAvailableCurrencies(Array.isArray(currenciesRes.data?.currencies) ? currenciesRes.data.currencies : []);
-        } catch (currencyError) {
-          console.error('Failed to load payroll currencies:', currencyError);
-        }
-        try {
-          const profilesRes = await api.get('/payroll/profiles', { params: { status: 'active', limit: 500 } });
-          const profiles = Array.isArray(profilesRes.data?.profiles) ? profilesRes.data.profiles : [];
-          setAllVariablePayProfiles(profiles.filter((profile: VariablePayProfile) => ['hourly', 'daily', 'fixed_contract'].includes(profile.workTerms?.payBasis || '')));
-        } catch (profileError) {
-          console.error('Failed to load contract work inputs:', profileError);
-        }
-      } catch (e) {
-        router.push('/login');
-      } finally {
-        setLoading(false);
-      }
+        const current = me.user?.organizations?.find((org: any) => org.id === me.currentOrganizationId) || me.user?.organizations?.[0];
+        if (!current || !['owner', 'admin', 'hr_manager'].includes(current.role)) throw new Error('HR administrator access is required.');
+        const rows = await listPayrollEmployerEntities();
+        setEntities(rows);
+        const runnable = rows.filter(entity => entity.status === 'active' && entity.payrollReadiness.payrollRunnable);
+        setSelected(runnable.map(entity => entity._id));
+        setReportingCurrency(runnable[0]?.defaultCurrency || 'USD');
+        const profileResponse = await api.get('/payroll/profiles', { params: { status: 'active', limit: 500 } });
+        const profiles = Array.isArray(profileResponse.data?.profiles) ? profileResponse.data.profiles : [];
+        setVariableProfiles(profiles.filter((profile: VariableProfile) => ['hourly', 'daily', 'fixed_contract'].includes(profile.workTerms?.payBasis || '')));
+      } catch (requestError: any) { setError(requestError?.message || 'Unable to load payroll setup.'); }
+      finally { setLoading(false); }
     })();
   }, [router]);
 
-  useEffect(() => {
-    setVariablePayProfiles(allVariablePayProfiles.filter((profile) => profile.employerEntityId === employerEntityId));
-  }, [allVariablePayProfiles, employerEntityId]);
+  useEffect(() => { setPreflight(null); }, [month, year, paymentDate, reportingCurrency, selected]);
 
-  const runLabel = `${monthNames[month - 1]} ${year}`;
-  const selectedEmployer = useMemo(
-    () => employerEntities.find((entity) => entity._id === employerEntityId),
-    [employerEntities, employerEntityId]
-  );
-
-  const handleRun = async () => {
-    setError(null);
-    if (!employerEntityId) {
-      setError('Create and select an active legal employer before calculating payroll.');
-      return;
-    }
-    const missingInput = variablePayProfiles.find(profile => {
-      const basis = profile.workTerms?.payBasis;
-      const input = workInputs[profile.userId];
-      return (basis === 'hourly' && !(input?.regularHours > 0)) || (basis === 'daily' && !(input?.daysWorked > 0));
-    });
-    if (missingInput) {
-      setError(`Enter ${missingInput.workTerms?.payBasis === 'hourly' ? 'regular hours' : 'days worked'} for ${missingInput.employeeInfo?.name || 'each variable-paid worker'} before calculating payroll.`);
-      return;
-    }
-    if (!confirm(`Calculate payroll for ${runLabel}?\n\nThis will generate draft payslips for review and approval.`)) {
-      return;
-    }
-
-    setProcessing(true);
+  const requestPreflight = async () => {
+    setBusy('preflight'); setError('');
     try {
-      const res = await api.post('/payroll/runs', {
-        employerEntityId,
-        month,
-        year,
-        paymentDate,
-        settings: {
-          ...settings,
-          reportingCurrency: settings.reportingCurrency || undefined,
-        },
-        workInputs: variablePayProfiles.map(profile => ({
-          userId: profile.userId,
-          employeeName: profile.employeeInfo?.name,
-          regularHours: workInputs[profile.userId]?.regularHours || 0,
-          daysWorked: workInputs[profile.userId]?.daysWorked || 0,
-          notes: workInputs[profile.userId]?.notes || '',
-        })),
-      });
-
-      const runId = res.data?.run?._id;
-      if (!runId) {
-        throw new Error('Payroll run created but response did not include run id.');
-      }
-
-      router.push(`/admin/runs/${runId}`);
-    } catch (err: any) {
-      setError(err?.response?.data?.error || err?.message || 'Failed to create payroll run');
-    } finally {
-      setProcessing(false);
-    }
+      const workInputsByEmployer = variableProfiles.filter(profile => profile.employerEntityId && selected.includes(profile.employerEntityId)).reduce<Record<string, Array<{ userId: string; regularHours: number; daysWorked: number }>>>((result, profile) => {
+        const employerId = profile.employerEntityId!;
+        if (!result[employerId]) result[employerId] = [];
+        result[employerId].push({ userId: profile.userId, regularHours: workInputs[profile.userId]?.regularHours || 0, daysWorked: workInputs[profile.userId]?.daysWorked || 0 });
+        return result;
+      }, {});
+      const response = await api.post('/payroll/cycles/preflight', { employerEntityIds: selected, month, year, paymentDate, reportingCurrency, workInputsByEmployer });
+      setPreflight(response.data);
+    } catch (requestError: any) { setError(requestError?.response?.data?.error || 'Preflight failed.'); }
+    finally { setBusy(null); }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-      </div>
-    );
-  }
+  const createCycle = async () => {
+    if (!preflight?.ready) return;
+    const selectedWorkers = variableProfiles.filter(profile => profile.employerEntityId && selected.includes(profile.employerEntityId));
+    const missing = selectedWorkers.find(profile => {
+      const input = workInputs[profile.userId];
+      return (profile.workTerms?.payBasis === 'hourly' && !(input?.regularHours > 0)) || (profile.workTerms?.payBasis === 'daily' && !(input?.daysWorked > 0));
+    });
+    if (missing) { setError(`Enter ${missing.workTerms?.payBasis === 'hourly' ? 'regular hours' : 'days worked'} for ${missing.employeeInfo?.name || 'each variable-paid worker'}.`); return; }
+    setBusy('create'); setError('');
+    try {
+      const idempotencyKey = `cycle:${year}:${month}:${paymentDate}:${[...selected].sort().join(',')}`;
+      const response = await api.post('/payroll/cycles', {
+        employerEntityIds: selected, month, year, paymentDate, reportingCurrency, idempotencyKey,
+        settings: { includeAllowances: true, includeBonuses: true, includeCommissions: true, includeOvertime: true, processStatutoryDeductions: true, calculateTax: true, prorate: true },
+        workInputsByEmployer: selectedWorkers.reduce<Record<string, Array<{ userId: string; employeeName?: string; regularHours: number; daysWorked: number; notes: string }>>>((result, profile) => {
+          const employerId = profile.employerEntityId!;
+          if (!result[employerId]) result[employerId] = [];
+          result[employerId].push({ userId: profile.userId, employeeName: profile.employeeInfo?.name, regularHours: workInputs[profile.userId]?.regularHours || 0, daysWorked: workInputs[profile.userId]?.daysWorked || 0, notes: workInputs[profile.userId]?.notes || '' });
+          return result;
+        }, {}),
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      router.push(`/admin/cycles/${response.data.cycle._id}`);
+    } catch (requestError: any) {
+      const details = requestError?.response?.data?.details;
+      setError(requestError?.response?.data?.error || 'Payroll cycle could not be created.');
+      if (details?.entities) setPreflight(details);
+    } finally { setBusy(null); }
+  };
 
-  if (!isHRAdmin) return null;
+  const toggle = (id: string) => setSelected(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+  const selectedWorkers = variableProfiles.filter(profile => profile.employerEntityId && selected.includes(profile.employerEntityId));
+  if (loading) return <main className="min-h-screen bg-zinc-950 grid place-items-center"><Loader2 className="h-7 w-7 animate-spin text-amber-400" /></main>;
 
-  return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-200 p-8 pb-20">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center text-sm text-zinc-400 hover:text-amber-400 mb-2 transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back to Dashboard
-            </Link>
-            <h1 className="text-3xl font-bold text-zinc-100">Run Payroll</h1>
-            <p className="text-zinc-500 mt-1">Calculate payroll and generate draft payslips for HR review</p>
-          </div>
-        </div>
+  return <main className="min-h-screen bg-zinc-950 px-6 py-8 text-zinc-200"><div className="mx-auto max-w-5xl">
+    <Link href="/admin/cycles" className="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-100"><ArrowLeft className="h-4 w-4" /> Payroll cycles</Link>
+    <h1 className="mt-3 text-2xl font-semibold text-zinc-100">Create payroll cycle</h1>
+    <p className="mt-1 text-sm text-zinc-500">Calculate one statutory run per selected legal employer, then review and release them together.</p><Link href="/admin/settings/payroll-workflow" className="mt-2 inline-block text-sm text-amber-400">Approval and accounting settings</Link>
+    {error && <div role="alert" className="mt-6 border border-red-500/30 bg-red-950/20 px-4 py-3 text-sm text-red-200">{error}</div>}
 
-        {error && (
-          <div className="mb-6 bg-red-500/10 border border-red-500/20 text-red-200 rounded-xl p-4">
-            {error}
-          </div>
-        )}
+    <section className="mt-6 border border-zinc-800 bg-zinc-900/50 p-5"><h2 className="font-medium text-zinc-100">Period</h2><div className="mt-4 grid gap-4 sm:grid-cols-4">
+      <label className="text-sm text-zinc-400">Month<select aria-label="Month" value={month} onChange={event => setMonth(Number(event.target.value))} className="mt-1 w-full border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-zinc-100">{months.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label>
+      <label className="text-sm text-zinc-400">Year<input aria-label="Year" type="number" value={year} min={2000} max={2200} onChange={event => setYear(Number(event.target.value))} className="mt-1 w-full border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-zinc-100" /></label>
+      <label className="text-sm text-zinc-400">Payment date<input aria-label="Payment date" type="date" value={paymentDate} onChange={event => setPaymentDate(event.target.value)} className="mt-1 w-full border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-zinc-100" /></label>
+      <label className="text-sm text-zinc-400">Reporting currency<input aria-label="Reporting currency" maxLength={3} value={reportingCurrency} onChange={event => setReportingCurrency(event.target.value.toUpperCase())} className="mt-1 w-full border border-zinc-700 bg-zinc-950 px-3 py-2.5 uppercase text-zinc-100" /></label>
+    </div></section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
-                <Calendar className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-zinc-100">Pay Period</h2>
-                <p className="text-sm text-zinc-500">Select the month/year to calculate</p>
-              </div>
-            </div>
+    <section className="mt-5 border border-zinc-800 bg-zinc-900/50"><div className="flex items-start justify-between gap-4 border-b border-zinc-800 px-5 py-4"><div><h2 className="font-medium text-zinc-100">Legal employers</h2><p className="mt-1 text-sm text-zinc-500">Each employer keeps its native currency and statutory tax pack.</p></div><Link href="/admin/settings/employer-entities" className="text-sm text-amber-400">Manage employers</Link></div>
+      <div className="divide-y divide-zinc-800">{entities.map(entity => { const runnable = entity.status === 'active' && entity.payrollReadiness.payrollRunnable; return <label key={entity._id} className="flex min-h-16 items-center gap-4 px-5 py-3"><input type="checkbox" checked={selected.includes(entity._id)} disabled={!runnable} onChange={() => toggle(entity._id)} /><span className="min-w-0 flex-1"><span className="block font-medium text-zinc-200">{entity.legalName}</span><span className="block text-xs text-zinc-500">{entity.jurisdictionCode} · {entity.defaultCurrency}</span></span><span className={runnable ? 'text-xs text-emerald-400' : 'text-xs text-amber-400'}>{runnable ? 'Payroll ready' : entity.payrollReadiness.mode.replaceAll('_', ' ')}</span></label>; })}{!entities.length && <p className="px-5 py-8 text-sm text-zinc-500">No legal employers are configured.</p>}</div>
+    </section>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Month</label>
-                <select
-                  value={month}
-                  onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                >
-                  {monthNames.map((m, i) => (
-                    <option key={m} value={i + 1}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Year</label>
-                <input
-                  type="number"
-                  min="2020"
-                  max="2035"
-                  value={year}
-                  onChange={(e) => setYear(parseInt(e.target.value, 10))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                />
-              </div>
-            </div>
+    {selectedWorkers.length > 0 && <section className="mt-5 overflow-hidden border border-zinc-800 bg-zinc-900/50"><div className="border-b border-zinc-800 px-5 py-4"><h2 className="font-medium text-zinc-100">Period work inputs</h2><p className="mt-1 text-sm text-zinc-500">Enter approved hours or days for variable-paid workers before calculation.</p></div><div className="overflow-x-auto"><table className="min-w-[720px] w-full text-sm"><thead className="text-left text-zinc-500"><tr><th className="px-5 py-3 font-medium">Worker</th><th className="px-4 py-3 font-medium">Basis</th><th className="px-4 py-3 font-medium">Units</th><th className="px-5 py-3 font-medium">Review note</th></tr></thead><tbody className="divide-y divide-zinc-800">{selectedWorkers.map(profile => { const input = workInputs[profile.userId] || { regularHours: 0, daysWorked: 0, notes: '' }; const basis = profile.workTerms?.payBasis; return <tr key={profile.userId}><td className="px-5 py-3 text-zinc-200">{profile.employeeInfo?.name || profile.userId}</td><td className="px-4 py-3 capitalize text-zinc-400">{basis?.replace('_', ' ')}</td><td className="px-4 py-3">{basis === 'fixed_contract' ? <span className="text-zinc-500">Automatic</span> : <input aria-label={`${profile.employeeInfo?.name || profile.userId} ${basis === 'hourly' ? 'regular hours' : 'days worked'}`} type="number" min="0" step={basis === 'hourly' ? '0.25' : '0.5'} value={(basis === 'hourly' ? input.regularHours : input.daysWorked) || ''} onChange={event => setWorkInputs(current => ({ ...current, [profile.userId]: { ...input, [basis === 'hourly' ? 'regularHours' : 'daysWorked']: Number(event.target.value) } }))} className="w-28 border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100" />}</td><td className="px-5 py-3"><input aria-label={`${profile.employeeInfo?.name || profile.userId} review note`} value={input.notes} onChange={event => setWorkInputs(current => ({ ...current, [profile.userId]: { ...input, notes: event.target.value } }))} className="w-full border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100" /></td></tr>; })}</tbody></table></div></section>}
 
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">Payment Date</label>
-              <input
-                type="date"
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-              />
-              <p className="text-xs text-zinc-500 mt-2">Used for reporting and export; no payout is executed.</p>
-            </div>
-
-            <div className="mt-4">
-              <label htmlFor="statutory-run-currency" className="block text-sm font-medium text-zinc-400 mb-1.5">Statutory run currency</label>
-              <select
-                id="statutory-run-currency"
-                value={settings.reportingCurrency}
-                onChange={(e) => setSettings(s => ({ ...s, reportingCurrency: e.target.value }))}
-                disabled={!!employerEntityId}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-              >
-                <option value="">Select a legal employer first</option>
-                {availableCurrencies.map((currency) => (
-                  <option key={currency.code} value={currency.code}>
-                    {currency.code} - {currency.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-zinc-500 mt-2">
-                This comes from the selected legal employer. Cross-currency consolidated reporting remains separate from statutory payroll.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400">
-                <Settings2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-zinc-100">Options</h2>
-                <p className="text-sm text-zinc-500">Control what to include in calculations</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {[
-                { key: 'includeAllowances', label: 'Include recurring allowances' },
-                { key: 'includeBonuses', label: 'Include approved bonuses/incentives' },
-                { key: 'includeCommissions', label: 'Include approved commissions' },
-                { key: 'includeOvertime', label: 'Include approved overtime requests' },
-                { key: 'processStatutoryDeductions', label: 'Apply statutory deductions (SS/pension)' },
-                { key: 'calculateTax', label: 'Calculate income tax' },
-                { key: 'prorate', label: 'Prorate for join/termination dates' },
-              ].map((opt) => (
-                <label
-                  key={opt.key}
-                  className="flex items-center justify-between bg-zinc-800/40 border border-zinc-700/50 rounded-lg px-3 py-2.5 cursor-pointer"
-                >
-                  <span className="text-sm text-zinc-300">{opt.label}</span>
-                  <input
-                    type="checkbox"
-                    checked={(settings as any)[opt.key]}
-                    onChange={(e) => setSettings(s => ({ ...s, [opt.key]: e.target.checked }))}
-                    className="rounded bg-zinc-900 border-zinc-700"
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {variablePayProfiles.length > 0 && (
-          <section className="mt-6 border border-zinc-800 bg-zinc-900/60 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-zinc-800 flex items-start gap-3">
-              <ClipboardList className="w-5 h-5 text-amber-400 mt-0.5" />
-              <div>
-                <h2 className="font-semibold text-zinc-100">Contract and variable-paid work</h2>
-                <p className="text-sm text-zinc-500 mt-0.5">Record approved units for this period. Fixed contracts are calculated from their saved contract terms.</p>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-zinc-900 text-zinc-500 text-left">
-                  <tr><th className="px-5 py-3 font-medium">Worker</th><th className="px-4 py-3 font-medium">Basis</th><th className="px-4 py-3 font-medium">Rate / amount</th><th className="px-4 py-3 font-medium">Period input</th><th className="px-4 py-3 font-medium">Note</th></tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800">
-                  {variablePayProfiles.map(profile => {
-                    const basis = profile.workTerms?.payBasis;
-                    const input = workInputs[profile.userId] || { regularHours: 0, daysWorked: 0, notes: '' };
-                    return <tr key={profile.userId}>
-                      <td className="px-5 py-3 text-zinc-200">{profile.employeeInfo?.name || 'Unnamed worker'}<div className="text-xs text-zinc-500">{profile.employeeInfo?.employmentType?.replace('_', ' ')}</div></td>
-                      <td className="px-4 py-3 text-zinc-400 capitalize">{basis?.replace('_', ' ')}</td>
-                      <td className="px-4 py-3 text-zinc-300">{profile.currency || 'USD'} {basis === 'fixed_contract' ? profile.workTerms?.contractAmount || 0 : profile.workTerms?.rate || 0}</td>
-                      <td className="px-4 py-3">
-                        {basis === 'fixed_contract' ? <span className="text-zinc-500">Automatic</span> : <input type="number" min="0" step={basis === 'hourly' ? '0.25' : '0.5'}
-                          aria-label={basis === 'hourly' ? 'Regular hours' : 'Days worked'}
-                          placeholder={basis === 'hourly' ? 'Hours' : 'Days'} value={basis === 'hourly' ? input.regularHours || '' : input.daysWorked || ''}
-                          onChange={(e) => setWorkInputs(current => ({ ...current, [profile.userId]: { ...input, [basis === 'hourly' ? 'regularHours' : 'daysWorked']: Number(e.target.value) } }))}
-                          className="w-28 bg-zinc-950 border border-zinc-700 rounded-md px-2.5 py-2 text-zinc-200 outline-none focus:border-amber-500" />}
-                      </td>
-                      <td className="px-4 py-3"><input type="text" placeholder="Optional approval note" value={input.notes}
-                        onChange={(e) => setWorkInputs(current => ({ ...current, [profile.userId]: { ...input, notes: e.target.value } }))}
-                        className="w-full min-w-48 bg-zinc-950 border border-zinc-700 rounded-md px-2.5 py-2 text-zinc-200 outline-none focus:border-amber-500" /></td>
-                    </tr>;
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        <section className="mb-6 border border-zinc-800 bg-zinc-900 p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-base font-semibold text-zinc-100">Legal employer</h2>
-              <p className="mt-1 text-sm text-zinc-500">Each payroll run is limited to one registered employer, jurisdiction and currency.</p>
-            </div>
-            <Link href="/admin/settings/employer-entities" className="inline-flex min-h-11 items-center rounded-lg border border-zinc-700 px-3 text-sm text-zinc-200 hover:border-amber-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">Manage legal employers</Link>
-          </div>
-          <label className="mt-4 block text-sm text-zinc-300">
-            Employer for this run
-            <select
-              value={employerEntityId}
-              onChange={(event) => {
-                const nextId = event.target.value;
-                const next = employerEntities.find((entity) => entity._id === nextId);
-                setEmployerEntityId(nextId);
-                if (next) setSettings((current) => ({ ...current, reportingCurrency: next.defaultCurrency }));
-              }}
-              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-zinc-200 focus:border-amber-500 focus:outline-none"
-            >
-              <option value="">{employerEntities.some((entity) => entity.status === 'active') ? 'Select a legal employer' : 'No active legal employer available'}</option>
-              {employerEntities.map((entity) => (
-                <option key={entity._id} value={entity._id} disabled={entity.status !== 'active'}>
-                  {entity.legalName} — {entity.jurisdictionCode} / {entity.defaultCurrency} — {entity.payrollReadiness.mode.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!employerEntities.some((entity) => entity.status === 'active') ? (
-            <div className="mt-3 border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
-              Payroll calculation is disabled until an employer setup has been legally verified and made active. Draft employers are shown above for context.
-            </div>
-          ) : null}
-          {selectedEmployer && !selectedEmployer.payrollReadiness.payrollRunnable ? (
-            <div className="mt-3 border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
-              <p className="font-medium">Preview-only calculation</p>
-              <ul className="mt-2 space-y-1 text-xs text-amber-100/80">
-                {selectedEmployer.payrollReadiness.blockingIssues.map((issue) => <li key={issue}>- {issue}</li>)}
-              </ul>
-            </div>
-          ) : null}
-        </section>
-
-        <div className="mt-6 flex items-center justify-end">
-          <button
-            onClick={handleRun}
-            disabled={processing || !employerEntityId}
-            title={!employerEntityId ? 'Complete and activate an employer setup first' : undefined}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold disabled:opacity-50"
-          >
-            {processing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
-            {processing ? 'Calculating...' : `Calculate ${runLabel}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    {preflight && <section aria-label="Preflight results" className="mt-5 border border-zinc-800 bg-zinc-900/50"><div className="border-b border-zinc-800 px-5 py-4"><h2 className="font-medium text-zinc-100">Preflight</h2><p className={preflight.ready ? 'mt-1 text-sm text-emerald-400' : 'mt-1 text-sm text-red-300'}>{preflight.ready ? 'All selected employers are ready to calculate.' : 'Resolve the blockers below before creating this cycle.'}</p></div>
+      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-zinc-500"><tr><th className="px-5 py-3 font-medium">Employer</th><th className="px-4 py-3 font-medium">Employees</th><th className="px-4 py-3 font-medium">Currency</th><th className="px-5 py-3 font-medium">Readiness</th></tr></thead><tbody className="divide-y divide-zinc-800">{preflight.entities.map(entity => <tr key={entity.employerEntityId}><td className="px-5 py-3 text-zinc-200">{entity.legalName || entity.employerEntityId}</td><td className="px-4 py-3 text-zinc-400">{entity.employeeCount ?? '—'}</td><td className="px-4 py-3 text-zinc-400">{entity.currency || '—'}</td><td className="px-5 py-3"><span className={entity.ready ? 'text-emerald-400' : 'text-red-300'}>{entity.ready ? 'Ready' : entity.blockers.join(' ')}</span>{entity.warnings.map(warning => <p key={warning} className="mt-1 text-xs text-amber-300">{warning}</p>)}</td></tr>)}</tbody></table></div>
+    </section>}
+    <div className="mt-6 flex justify-end gap-3"><button onClick={requestPreflight} disabled={busy !== null || selected.length === 0} className="min-h-11 border border-zinc-700 px-4 text-sm font-medium disabled:opacity-40">{busy === 'preflight' ? 'Checking…' : 'Run preflight'}</button><button onClick={createCycle} disabled={busy !== null || !preflight?.ready} className="min-h-11 bg-amber-500 px-4 text-sm font-semibold text-zinc-950 disabled:opacity-40">{busy === 'create' ? 'Calculating…' : `Create cycle (${selected.length})`}</button></div>
+  </div></main>;
 }

@@ -17,6 +17,8 @@ const employerEntityService = require('../services/PayrollEmployerEntityService'
 const payrollCountryAutomationService = require('../services/PayrollCountryAutomationService');
 const { queuePayrollReadyEvent } = require('../services/automationEventService');
 const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
+const { hash: hashPayrollTotals, runTotals: getPayrollRunTotals } = require('../services/PayrollCycleService');
+const payrollCycleService = require('../services/PayrollCycleService');
 const { createPayslipPdf } = require('../services/payslipPdfService');
 const { hasPayConfiguration } = require('../services/contractPayService');
 const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
@@ -1691,7 +1693,7 @@ router.get('/runs/:id', requireHRAdmin, async (req, res) => {
 router.post('/runs', requireHRAdmin, async (req, res) => {
   let createdRun = null;
   try {
-    const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
+    const { organizationId, userId: adminId, name: adminName, role } = getUserInfo(req);
     const { month, year, settings = {}, paymentDate, workInputs = [], employerEntityId } = req.body;
     const payFrequency = String(req.body?.payFrequency || settings.payFrequency || 'monthly').trim().toLowerCase();
 
@@ -1826,6 +1828,10 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
     // =====================================================
 
     const result = await payrollEngineService.calculateRun(run._id, organizationId);
+    const calculatedRun = await PayrollRun.findOne({ _id: run._id, organizationId });
+    calculatedRun.calculationTotalsHash = hashPayrollTotals(getPayrollRunTotals(calculatedRun));
+    await calculatedRun.save();
+    result.run = calculatedRun;
 
     // =====================================================
     // SEND EMAIL NOTIFICATIONS (async, don't block response)
@@ -1889,10 +1895,18 @@ router.post('/runs/:id/recalculate', requireHRAdmin, async (req, res) => {
     }
 
     run.status = 'calculating';
+    run.calculationRevision = Number(run.calculationRevision || 1) + 1;
+    run.submittedRevision = undefined;
+    run.submittedTotalsHash = undefined;
+    run.currentApprovalLevel = 0;
     run.addApproval('revised', adminId, adminName, role, req.body?.comments || 'Recalculated');
     await run.save();
 
     const result = await payrollEngineService.calculateRun(run._id, organizationId);
+    const calculatedRun = await PayrollRun.findOne({ _id: run._id, organizationId });
+    calculatedRun.calculationTotalsHash = hashPayrollTotals(getPayrollRunTotals(calculatedRun));
+    await calculatedRun.save();
+    result.run = calculatedRun;
 
     res.json({
       success: true,
@@ -1934,10 +1948,18 @@ router.put('/runs/:id/work-inputs', requireHRAdmin, async (req, res) => {
       enteredBy: adminId,
       enteredAt: new Date(),
     })).filter(input => input.userId);
+    run.calculationRevision = Number(run.calculationRevision || 1) + 1;
+    run.submittedRevision = undefined;
+    run.submittedTotalsHash = undefined;
+    run.currentApprovalLevel = 0;
     run.addApproval('revised', adminId, adminName, role, req.body?.comments || 'Period work records revised');
     await run.save();
 
     const result = await payrollEngineService.calculateRun(run._id, organizationId);
+    const calculatedRun = await PayrollRun.findOne({ _id: run._id, organizationId });
+    calculatedRun.calculationTotalsHash = hashPayrollTotals(getPayrollRunTotals(calculatedRun));
+    await calculatedRun.save();
+    result.run = calculatedRun;
     res.json({ success: true, ...result });
   } catch (err) {
     console.error('Update Work Inputs Error:', err);
@@ -1951,7 +1973,7 @@ router.put('/runs/:id/work-inputs', requireHRAdmin, async (req, res) => {
  */
 router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) => {
   try {
-    const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
+    const { organizationId, userId: adminId, name: adminName, role } = getUserInfo(req);
 
     const run = await PayrollRun.findOne({
       _id: req.params.id,
@@ -1974,8 +1996,14 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
 
     assertRunHasNoBlockingIssues(run);
 
-    run.addApproval('submitted', adminId, adminName, 'hr_admin', req.body.comments);
+    const approvalPolicy = await payrollCycleService.getPolicy(organizationId, null, { userId: adminId, name: adminName });
+
+    run.requiredApprovalLevels = Math.max(1, approvalPolicy.levels.length);
+    run.addApproval('submitted', adminId, adminName, role, req.body.comments);
     run.status = 'pending_approval';
+    run.calculationTotalsHash = run.calculationTotalsHash || hashPayrollTotals(getPayrollRunTotals(run));
+    run.submittedRevision = run.calculationRevision;
+    run.submittedTotalsHash = run.calculationTotalsHash;
     await run.save();
 
     // Update all payslips status
@@ -1986,6 +2014,14 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
 
     try { await queuePayrollReadyEvent(run, adminId); }
     catch (error) { console.error('Payroll submitted; Automation Hub outbox reconciliation will retry:', error.message); }
+
+    if (approvalPolicy.approvalRequired === false && approvalPolicy.automaticRelease !== false) {
+      run.status = 'approved';
+      await run.save();
+      await Payslip.updateMany({ payrollRunId: run._id }, { status: 'approved' });
+      const releasedRun = await finalizePayrollRun(run._id, organizationId, adminId, adminName, req.body.comments);
+      return res.json({ success: true, run: releasedRun, released: true });
+    }
 
     res.json({ success: true, run });
   } catch (err) {
@@ -2011,11 +2047,33 @@ router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Payroll run not found' });
     }
 
+    if (['exported', 'paid'].includes(run.status)) {
+      return res.json({ success: true, run, released: true, idempotent: true });
+    }
+    if (run.status === 'approved') {
+      const releasedRun = await finalizePayrollRun(run._id, organizationId, adminId, adminName, req.body.comments);
+      return res.json({ success: true, run: releasedRun, released: true, idempotent: true });
+    }
     if (run.status !== 'pending_approval') {
       return res.status(400).json({ error: `Cannot approve run with status: ${run.status}` });
     }
 
     assertRunHasNoBlockingIssues(run);
+
+    const approvalPolicy = await payrollCycleService.getPolicy(organizationId, null, { userId: adminId, name: adminName });
+    const submitted = [...(run.approvals || [])].reverse().find(entry => entry.action === 'submitted');
+    if (approvalPolicy.requireSeparationOfDuties && String(submitted?.actionBy || '') === String(adminId)) {
+      return res.status(403).json({ error: 'The submitter cannot approve this payroll run.', code: 'PAYROLL_SEPARATION_OF_DUTIES' });
+    }
+    const approvalLevel = approvalPolicy.levels[Math.min(run.currentApprovalLevel, approvalPolicy.levels.length - 1)];
+    if (approvalLevel?.roles?.length && !approvalLevel.roles.includes(role)) {
+      return res.status(403).json({ error: 'Your role cannot approve this payroll level.', code: 'PAYROLL_APPROVER_ROLE_REQUIRED' });
+    }
+
+    const currentTotalsHash = hashPayrollTotals(getPayrollRunTotals(run));
+    if (run.submittedRevision !== run.calculationRevision || run.submittedTotalsHash !== currentTotalsHash) {
+      return res.status(409).json({ error: 'This payroll changed after submission. Recalculate and submit the current revision.', code: 'PAYROLL_RUN_REVISION_CHANGED' });
+    }
 
     run.addApproval('approved', adminId, adminName, role, req.body.comments);
     await run.save();
@@ -2028,7 +2086,10 @@ router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
       );
     }
 
-    res.json({ success: true, run });
+    const releasedRun = run.status === 'approved'
+      ? await finalizePayrollRun(run._id, organizationId, adminId, adminName, req.body.comments)
+      : run;
+    res.json({ success: true, run: releasedRun, released: releasedRun.status === 'exported' });
   } catch (err) {
     console.error('Approve Run Error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to approve payroll run', code: err.code });

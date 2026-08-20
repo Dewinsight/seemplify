@@ -139,6 +139,7 @@ const PayrollRunSchema = new Schema({
   }, // e.g., "PR-2024-12-001"
   
   organizationId: { type: String, required: true, index: true },
+  cycleId: { type: Schema.Types.ObjectId, ref: 'PayrollCycle', default: null, index: true },
   employerEntityId: { type: Schema.Types.ObjectId, ref: 'PayrollEmployerEntity', default: null, index: true },
   employerEntitySnapshot: {
     code: String,
@@ -209,6 +210,10 @@ const PayrollRunSchema = new Schema({
   // Required approval levels (configurable per org)
   requiredApprovalLevels: { type: Number, default: 1 },
   currentApprovalLevel: { type: Number, default: 0 },
+  calculationRevision: { type: Number, min: 1, default: 1 },
+  calculationTotalsHash: String,
+  submittedRevision: Number,
+  submittedTotalsHash: String,
   
   // Dates
   calculatedAt: Date,

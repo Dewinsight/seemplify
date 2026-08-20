@@ -20,6 +20,7 @@ type Money = number;
 
 type PayrollRun = {
   _id: string;
+  cycleId?: string;
   runNumber: string;
   status: string;
   payPeriod: {
@@ -183,16 +184,15 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
     return list.filter(e => e?.status === 'error' || e?.status === 'skipped');
   }, [run]);
 
-  const canRecalculate = run?.status === 'calculated' || run?.status === 'pending_review';
-  const canSubmitForApproval = run?.status === 'calculated' || run?.status === 'pending_review';
-  const canApprove = run?.status === 'pending_approval';
-  const canFinalize = run?.status === 'approved' || run?.status === 'paid' || run?.status === 'exported';
+  const canRecalculate = !run?.cycleId && (run?.status === 'calculated' || run?.status === 'pending_review');
+  const canSubmitForApproval = !run?.cycleId && (run?.status === 'calculated' || run?.status === 'pending_review');
+  const canApprove = !run?.cycleId && run?.status === 'pending_approval';
   const canRetract = !!run
     && ['owner', 'admin'].includes(currentOrgRole)
     && run?.status !== 'cancelled'
     && run?.status !== 'calculating'
     && run?.status !== 'processing_payment';
-  const canExport = !!run && run.status !== 'cancelled';
+  const canExport = !!run && ['approved', 'exported', 'paid'].includes(run.status);
 
   const downloadRunExport = async () => {
     setBusy('export');
@@ -281,20 +281,6 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
       await refresh();
     } catch (err: any) {
       alert(err?.response?.data?.error || err?.message || 'Failed to approve run');
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const finalize = async () => {
-    if (!confirm('Finalize/export this run? This marks payslips as exported for accounting (no payout is executed).')) return;
-    setBusy('finalize');
-    try {
-      const comments = prompt('Comments (optional):') || '';
-      await api.post(`/payroll/runs/${runId}/finalize`, { comments });
-      await refresh();
-    } catch (err: any) {
-      alert(err?.response?.data?.error || err?.message || 'Failed to finalize run');
     } finally {
       setBusy(null);
     }
@@ -403,6 +389,7 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {run.cycleId && <Link href={`/admin/cycles/${run.cycleId}`} className="inline-flex items-center px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium">Open payroll cycle</Link>}
             <button
               onClick={refresh}
               disabled={busy !== null}
@@ -453,17 +440,6 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
               >
                 <CheckCircle className="w-4 h-4" />
                 Approve
-              </button>
-            )}
-
-            {canFinalize && (
-              <button
-                onClick={finalize}
-                disabled={busy !== null || run.status === 'exported'}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium disabled:opacity-50"
-              >
-                <CheckCircle className="w-4 h-4" />
-                {run.status === 'exported' ? 'Finalized' : 'Finalize'}
               </button>
             )}
 

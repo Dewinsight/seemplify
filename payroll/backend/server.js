@@ -10,6 +10,11 @@ require('dotenv').config();
 require('./models/PayrollProfile');
 require('./models/PayrollSequence');
 require('./models/PayrollRun');
+require('./models/PayrollCycle');
+require('./models/PayrollApprovalPolicy');
+require('./models/PayrollAccountingContact');
+require('./models/PayrollArtifact');
+require('./models/PayrollDelivery');
 require('./models/Payslip');
 require('./models/CompensationRequest');
 require('./models/SalaryGrade');
@@ -22,6 +27,11 @@ require('./models/PayrollEmployerEntity');
 require('./models/AutomationRequestNonce');
 require('./models/AutomationEventOutbox');
 const PayrollRun = require('./models/PayrollRun');
+const PayrollCycle = require('./models/PayrollCycle');
+const PayrollApprovalPolicy = require('./models/PayrollApprovalPolicy');
+const PayrollAccountingContact = require('./models/PayrollAccountingContact');
+const PayrollArtifact = require('./models/PayrollArtifact');
+const PayrollDelivery = require('./models/PayrollDelivery');
 const Payslip = require('./models/Payslip');
 const PayrollSequence = require('./models/PayrollSequence');
 const ExchangeRate = require('./models/ExchangeRate');
@@ -121,6 +131,7 @@ let startupError = null;
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/payroll/employer-entities', require('./routes/employer-entities'));
+app.use('/api/payroll', require('./routes/payrollCycles'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/compensation', require('./routes/compensation'));
 app.use('/api/payroll/reports', require('./routes/reports'));
@@ -151,6 +162,13 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 5006;
 
 async function migratePayrollIndexes() {
+  await Promise.all([
+    PayrollCycle.createIndexes(),
+    PayrollApprovalPolicy.createIndexes(),
+    PayrollAccountingContact.createIndexes(),
+    PayrollArtifact.createIndexes(),
+    PayrollDelivery.createIndexes(),
+  ]);
   const migrations = [
     { model: PayrollRun, legacy: 'runNumber_1', compound: { organizationId: 1, runNumber: 1 }, name: 'organizationId_1_runNumber_1' },
     { model: Payslip, legacy: 'payslipNumber_1', compound: { organizationId: 1, payslipNumber: 1 }, name: 'organizationId_1_payslipNumber_1' },
