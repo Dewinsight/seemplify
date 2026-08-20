@@ -65,6 +65,10 @@ function runTotals(run) {
   };
 }
 
+function isOrganizationAdministrator(actor = {}) {
+  return actor.role === 'owner' || actor.role === 'admin';
+}
+
 class PayrollCycleService {
   constructor(dependencies = {}) {
     this.PayrollCycle = dependencies.PayrollCycle || PayrollCycle;
@@ -402,10 +406,16 @@ class PayrollCycleService {
       throw cycleError('This cycle changed after submission. Recalculate and submit the current revision.', 409, 'PAYROLL_CYCLE_REVISION_CHANGED');
     }
     const approvalRequired = cycle.approvalPolicySnapshot.approvalRequired !== false;
-    if (!releaseRetry && approvalRequired && cycle.approvalPolicySnapshot.requireSeparationOfDuties && String(cycle.submittedBy) === String(actor.userId)) {
+    const organizationAdminOverride = isOrganizationAdministrator(actor);
+    if (!releaseRetry && approvalRequired && !organizationAdminOverride && cycle.approvalPolicySnapshot.requireSeparationOfDuties && String(cycle.submittedBy) === String(actor.userId)) {
       throw cycleError('The submitter cannot approve this payroll cycle.', 403, 'PAYROLL_SEPARATION_OF_DUTIES');
     }
-    if (!releaseRetry && approvalRequired) {
+    if (!releaseRetry && approvalRequired && organizationAdminOverride) {
+      const finalLevel = Math.max(cycle.approvalPolicySnapshot.levels.length, 1);
+      const alreadyApproved = cycle.approvals.some(entry => entry.action === 'approved' && entry.revision === cycle.revision && entry.actorId === actor.userId);
+      if (!alreadyApproved) cycle.approvals.push({ action: 'approved', actorId: actor.userId, actorName: actor.name, actorRole: actor.role, level: finalLevel, revision: cycle.revision, totalsHash: cycle.totalsHash, comments });
+      cycle.currentApprovalLevel = finalLevel;
+    } else if (!releaseRetry && approvalRequired) {
       const explicitlyAllowed = cycle.approvalPolicySnapshot.allowedApproverUserIds || [];
       if (explicitlyAllowed.length && !explicitlyAllowed.includes(actor.userId)) throw cycleError('You are not an assigned payroll approver.', 403, 'PAYROLL_APPROVER_USER_REQUIRED');
       const level = cycle.approvalPolicySnapshot.levels[cycle.currentApprovalLevel];

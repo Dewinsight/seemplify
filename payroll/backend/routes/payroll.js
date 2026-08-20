@@ -2256,11 +2256,12 @@ router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
 
     const approvalPolicy = await payrollCycleService.getPolicy(organizationId, null, { userId: adminId, name: adminName });
     const submitted = [...(run.approvals || [])].reverse().find(entry => entry.action === 'submitted');
-    if (approvalPolicy.requireSeparationOfDuties && String(submitted?.actionBy || '') === String(adminId)) {
+    const organizationAdminOverride = ORG_ADMIN_ONLY_ROLES.has(role);
+    if (!organizationAdminOverride && approvalPolicy.requireSeparationOfDuties && String(submitted?.actionBy || '') === String(adminId)) {
       return res.status(403).json({ error: 'The submitter cannot approve this payroll run.', code: 'PAYROLL_SEPARATION_OF_DUTIES' });
     }
     const approvalLevel = approvalPolicy.levels[Math.min(run.currentApprovalLevel, approvalPolicy.levels.length - 1)];
-    if (approvalLevel?.roles?.length && !approvalLevel.roles.includes(role)) {
+    if (!organizationAdminOverride && approvalLevel?.roles?.length && !approvalLevel.roles.includes(role)) {
       return res.status(403).json({ error: 'Your role cannot approve this payroll level.', code: 'PAYROLL_APPROVER_ROLE_REQUIRED' });
     }
 
@@ -2270,6 +2271,11 @@ router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
     }
 
     run.addApproval('approved', adminId, adminName, role, req.body.comments);
+    if (organizationAdminOverride && run.status !== 'approved') {
+      run.currentApprovalLevel = Math.max(run.currentApprovalLevel, run.requiredApprovalLevels || 1);
+      run.status = 'approved';
+      run.approvedAt = new Date();
+    }
     await run.save();
 
     // Update payslips status if run is fully approved

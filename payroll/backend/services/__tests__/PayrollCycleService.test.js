@@ -59,13 +59,47 @@ describe('PayrollCycleService controls', () => {
     });
   });
 
-  test('enforces separation of duties before recording approval', async () => {
+  test('enforces separation of duties for a non-admin submitter before recording approval', async () => {
     const runs = [run('run-ng')];
     const cycle = cycleFor(runs);
     const { service, finalization } = workflow(cycle, runs);
-    await expect(service.approveAndRelease('cycle-1', { organizationId: 'org-1', userId: 'submitter', role: 'admin' }, '', jest.fn()))
+    await expect(service.approveAndRelease('cycle-1', { organizationId: 'org-1', userId: 'submitter', role: 'hr_manager' }, '', jest.fn()))
       .rejects.toMatchObject({ code: 'PAYROLL_SEPARATION_OF_DUTIES', statusCode: 403 });
     expect(finalization.finalizeRun).not.toHaveBeenCalled();
+  });
+
+  test('allows the submitting organization admin to complete every approval level and release', async () => {
+    const runs = [run('run-ng')];
+    const cycle = cycleFor(runs, {
+      approvalPolicySnapshot: {
+        approvalRequired: true,
+        requireSeparationOfDuties: true,
+        allowedApproverUserIds: ['another-user'],
+        levels: [
+          { name: 'Payroll review', roles: ['hr_manager'], minimumApprovals: 2 },
+          { name: 'Finance review', roles: ['finance_admin'], minimumApprovals: 1 },
+        ],
+      },
+    });
+    const { service, finalization } = workflow(cycle, runs);
+
+    const result = await service.approveAndRelease(
+      'cycle-1',
+      { organizationId: 'org-1', userId: 'submitter', name: 'Organization admin', role: 'admin' },
+      'Approved by administrator',
+      jest.fn(),
+    );
+
+    expect(result.released).toBe(true);
+    expect(cycle.currentApprovalLevel).toBe(2);
+    expect(cycle.approvals).toContainEqual(expect.objectContaining({
+      action: 'approved',
+      actorId: 'submitter',
+      actorRole: 'admin',
+      level: 2,
+      comments: 'Approved by administrator',
+    }));
+    expect(finalization.finalizeRun).toHaveBeenCalledTimes(1);
   });
 
   test('final approval releases every native-currency child run', async () => {

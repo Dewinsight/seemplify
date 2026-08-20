@@ -71,11 +71,19 @@ router.get('/cycles', requireHRAdmin, async (req, res) => {
 
 router.get('/cycles/:id', requireHRAdmin, async (req, res) => {
   try {
-    const cycle = await cycleService.get(req.params.id, actor(req).organizationId);
+    const currentActor = actor(req);
+    const cycle = await cycleService.get(req.params.id, currentActor.organizationId);
     if (!cycle) return res.status(404).json({ error: 'Payroll cycle not found.' });
-    const deliveries = await PayrollDelivery.find({ organizationId: actor(req).organizationId, cycleId: req.params.id })
+    const deliveries = await PayrollDelivery.find({ organizationId: currentActor.organizationId, cycleId: req.params.id })
       .select('-tokenHash').sort({ createdAt: -1 }).lean();
-    res.json({ ...cycle, deliveries });
+    res.json({
+      ...cycle,
+      deliveries,
+      approvalCapabilities: {
+        canFullyApprove: ADMIN_ROLES.has(currentActor.role),
+        canOverrideSeparationOfDuties: ADMIN_ROLES.has(currentActor.role),
+      },
+    });
   } catch (error) { errorResponse(res, error); }
 });
 

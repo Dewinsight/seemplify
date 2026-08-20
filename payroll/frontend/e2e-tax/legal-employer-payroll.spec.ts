@@ -695,6 +695,7 @@ test('preflights, calculates, submits, and releases a multi-entity payroll cycle
   const cycle = () => ({
     _id: 'cycle-e2e', cycleNumber: 'PC-2026-08-001', status, revision: 1, currentApprovalLevel: 0,
     payPeriod: { month: 8, year: 2026, paymentDate: '2026-08-31T00:00:00.000Z' },
+    approvalCapabilities: { canFullyApprove: true, canOverrideSeparationOfDuties: true },
     approvals: [], deliveries,
     childRuns: employers.map((entity, index) => ({
       employerEntityId: entity._id, legalName: entity.legalName, countryCode: entity.countryCode,
@@ -724,6 +725,7 @@ test('preflights, calculates, submits, and releases a multi-entity payroll cycle
   await dismissPageGuide(page);
   await expect(page.getByText('Seemplify Nigeria Limited (synthetic)')).toBeVisible();
   await expect(page.getByText('Seemplify UK Subsidiary Limited (synthetic)')).toBeVisible();
+  await expect(page.getByText('As an organization administrator, you can submit and fully approve this cycle yourself.')).toBeVisible();
   await page.getByRole('button', { name: 'Submit payroll' }).click();
   await expect(page.getByRole('button', { name: 'Approve and release' })).toBeVisible();
   await page.getByRole('button', { name: 'Approve and release' }).click();
