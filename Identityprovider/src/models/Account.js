@@ -54,33 +54,7 @@ const AccountSchema = new mongoose.Schema({
         enum: ['single', 'married_jointly', 'married_separately', 'head_of_household', 'widow']
       },
       lastUpdated: Date
-    },
-    // Banking information for direct deposit
-    banking: {
-      accounts: [{
-        accountType: {
-          type: String,
-          enum: ['checking', 'savings']
-        },
-        bankName: String,
-        routingNumber: String, // Should be encrypted in production
-        accountNumber: String, // Should be encrypted in production  
-        percentage: { type: Number, default: 100, min: 0, max: 100 },
-        isActive: { type: Boolean, default: true }
-      }]
-    },
-    // Dependents and beneficiaries
-    dependents: [{
-      name: String,
-      relationship: {
-        type: String,
-        enum: ['spouse', 'child', 'parent', 'sibling', 'other']
-      },
-      dateOfBirth: Date,
-      ssn: String, // Should be encrypted in production
-      isBeneficiary: { type: Boolean, default: false },
-      beneficiaryPercentage: { type: Number, min: 0, max: 100 }
-    }]
+    }
   },
   // Password reset fields
   resetPasswordToken: { type: String },
@@ -406,69 +380,6 @@ const AccountSchema = new mongoose.Schema({
       additionalWithholding: { type: Number, default: 0 },
       multipleJobs: { type: Boolean, default: false },
       lastUpdated: Date
-    },
-
-    // International banking information
-    banking: {
-      // Primary country for banking (determines which fields are required)
-      country: {
-        type: String,
-        enum: ['USA', 'UK', 'EU', 'Nigeria', 'Ghana', 'Kenya', 'South Africa', 'Other'],
-        default: 'USA'
-      },
-
-      accounts: [{
-        // USA-specific fields
-        routingNumber: String,  // 9 digits for USA (ABA RTN)
-
-        // UK-specific fields
-        sortCode: String,  // 6 digits for UK (XX-XX-XX)
-
-        // EU-specific fields
-        iban: String,  // International Bank Account Number (up to 34 chars)
-        bicSwift: String,  // BIC/SWIFT code (8 or 11 chars)
-
-        // Nigeria-specific fields
-        bankCode: String,  // 3-digit bank code for Nigeria
-
-        // Common fields (all countries)
-        bankName: String,
-        accountNumber: String,  // Encrypted
-        accountType: {
-          type: String,
-          enum: ['checking', 'savings', 'current', 'salary'], // checking/savings = USA, current/salary = UK/Nigeria
-          default: 'checking'
-        },
-          accountHolderName: String,
-          percentage: { type: Number, default: 100 },  // For split deposits
-          isActive: { type: Boolean, default: true },
-          country: String,  // Store country per account
-          createdAt: { type: Date, default: Date.now },
-          updatedAt: Date
-        }]
-      },
-
-    // Dependents and beneficiaries
-    dependents: [{
-      name: String,
-      relationship: {
-        type: String,
-        enum: ['spouse', 'child', 'parent', 'sibling', 'other']
-      },
-      dateOfBirth: Date,
-      ssn: String,  // Encrypted - for tax purposes
-      isBeneficiary: { type: Boolean, default: false },
-      beneficiaryPercentage: { type: Number, default: 0 }
-    }],
-    dependentsDeclaration: {
-      status: {
-        type: String,
-        enum: ['pending', 'none', 'provided'],
-        default: 'pending'
-      },
-      confirmedAt: Date,
-      lastUpdated: Date,
-      count: { type: Number, default: 0, min: 0 }
     },
     completionReminders: {
       lastSentAt: Date,

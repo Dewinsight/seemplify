@@ -134,41 +134,12 @@ router.put('/api/profile/personal', ensureAuthenticated, async (req, res) => {
         res.json({
             success: true,
             message: 'Personal information updated successfully',
-            profileCompletion: completion,
-            nextStep: {
-                key: 'dependents',
-                label: 'Dependents',
-                route: `${(process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007').replace(/\/$/, '')}/dependents`
-            }
+            profileCompletion: completion
         });
     } catch (error) {
         console.error('Personal info update error:', error);
         res.status(500).json({ error: 'Failed to update personal information' });
     }
-});
-
-// Banking is owned by Payroll. Keep the legacy API explicit so old clients do
-// not silently write a second, conflicting salary account in Identity.
-router.put('/api/profile/banking', ensureAuthenticated, (_req, res) => {
-    const payrollUrl = process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007';
-    res.status(410).json({
-        error: 'Banking and direct deposit are managed in Payroll.',
-        code: 'BANKING_MOVED_TO_PAYROLL',
-        location: `${payrollUrl.replace(/\/$/, '')}/banking`
-    });
-});
-
-/**
- * PUT /api/profile/dependents
- * Add a dependent
- */
-router.put('/api/profile/dependents', ensureAuthenticated, (_req, res) => {
-    const payrollUrl = process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007';
-    res.status(410).json({
-        error: 'Dependents are managed in Payroll for benefits and tax processing.',
-        code: 'DEPENDENTS_MOVED_TO_PAYROLL',
-        location: `${payrollUrl.replace(/\/$/, '')}/dependents`
-    });
 });
 
 /**

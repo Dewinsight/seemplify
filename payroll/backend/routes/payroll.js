@@ -208,6 +208,44 @@ async function fetchIdpMemberPayrollSync(accessToken, organizationId, memberId) 
   return res.data;
 }
 
+async function attachPeopleTransitionPayrollSync(member, organizationId, memberId) {
+  const subjectId = String(member?.sub || member?.id || memberId || '').trim();
+  if (!subjectId) return member;
+  const transitionData = await peopleTransitionsClient.getTransitionSummaries({
+    idpOrganizationId: organizationId,
+    subjectIds: [subjectId],
+  });
+  const summary = (Array.isArray(transitionData?.summaries) ? transitionData.summaries : [])
+    .find((item) => String(item?.subjectId || '') === subjectId);
+  if (!summary?.payrollSync) return member;
+  const transitionPayrollSync = {
+    ...summary.payrollSync,
+    emergencyContact: summary.payrollSync.emergencyContact
+      || summary.payrollSync.personalInfo?.emergencyContact,
+    dependentsCount: Number(
+      summary.payrollSync.dependentsCount
+      || summary.payrollSync.dependentsDeclaration?.count
+      || 0
+    ),
+  };
+  return {
+    ...member,
+    payrollSync: {
+      ...(member?.payrollSync || {}),
+      ...transitionPayrollSync,
+      personalInfo: {
+        ...(member?.payrollSync?.personalInfo || {}),
+        ...(transitionPayrollSync.personalInfo || {}),
+      },
+      taxInfo: {
+        ...(member?.payrollSync?.taxInfo || {}),
+        ...(transitionPayrollSync.taxInfo || {}),
+      },
+    },
+    peopleTransition: summary,
+  };
+}
+
 async function fetchIdpOrgTeams(accessToken, organizationId) {
   const idpBaseUrl = getIdpBaseUrl();
   // The IDP teams router is mounted at /api/teams and retains its
@@ -340,17 +378,17 @@ function buildEmergencyContactFromMember(member = {}, existingEmergencyContact =
 
 function applyPayrollSyncFromMember(profile, member = {}, options = {}) {
   profile.employeeInfo = buildEmployeeSnapshotFromMember(member, profile.employeeInfo);
-  // Identity banking is retained only as a one-time migration source. Once a
-  // Payroll account exists, Payroll is authoritative and later IdP refreshes
-  // must never overwrite an admin update or an HR-approved employee request.
+  // An approved Recruiter onboarding snapshot is imported only while Payroll
+  // has no account. Later refreshes must never overwrite an admin update or an
+  // HR-approved employee request.
   if (options.importLegacyBanking !== false
     && (!Array.isArray(profile.bankAccounts) || profile.bankAccounts.length === 0)) {
     profile.bankAccounts = buildPayrollBankAccountsFromMember(member, []);
   }
   profile.emergencyContact = buildEmergencyContactFromMember(member, profile.emergencyContact);
 
-  // Identity dependents are retained only as a one-time migration source.
-  // Payroll is authoritative once any local dependent or declaration exists.
+  // Approved onboarding dependents are imported once. Payroll is authoritative
+  // as soon as any local dependent or declaration exists.
   const legacyDependents = Array.isArray(member?.payrollSync?.dependents) ? member.payrollSync.dependents : [];
   const hasLocalDependentDecision = (Array.isArray(profile.dependents) && profile.dependents.length > 0)
     || ['none', 'provided'].includes(String(profile?.dependentsDeclaration?.status || ''));
@@ -809,10 +847,29 @@ router.get('/idp/members', requireHRAdmin, async (req, res) => {
     res.json({
       ...data,
       organizationId: data?.organizationId || organizationId,
-      members: members.map((member) => ({
-        ...member,
-        peopleTransition: summaryBySubjectId.get(String(member?.id || member?.sub || '')) || null,
-      })),
+      members: members.map((member) => {
+        const peopleTransition = summaryBySubjectId.get(String(member?.id || member?.sub || '')) || null;
+        return {
+          ...member,
+          ...(peopleTransition?.payrollSync
+            ? {
+                payrollSync: {
+                  ...(member?.payrollSync || {}),
+                  ...peopleTransition.payrollSync,
+                  personalInfo: {
+                    ...(member?.payrollSync?.personalInfo || {}),
+                    ...(peopleTransition.payrollSync.personalInfo || {}),
+                  },
+                  taxInfo: {
+                    ...(member?.payrollSync?.taxInfo || {}),
+                    ...(peopleTransition.payrollSync.taxInfo || {}),
+                  },
+                },
+              }
+            : {}),
+          peopleTransition,
+        };
+      }),
       syncAvailable: true,
       transitionSyncAvailable,
       transitionSyncError,
@@ -1032,7 +1089,8 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
 
     if (accessToken) {
       try {
-        const member = await fetchIdpMemberPayrollSync(accessToken, organizationId, req.params.userId);
+        let member = await fetchIdpMemberPayrollSync(accessToken, organizationId, req.params.userId);
+        member = await attachPeopleTransitionPayrollSync(member, organizationId, req.params.userId);
         if (member) {
           idpSync = member;
           applyPayrollSyncFromMember(profile, member);
@@ -1420,7 +1478,8 @@ async function syncPayrollProfileFromIdp(req, res) {
       return res.status(400).json({ error: 'userId is required' });
     }
 
-    const member = await fetchIdpMemberPayrollSync(accessToken, organizationId, targetUserId);
+    let member = await fetchIdpMemberPayrollSync(accessToken, organizationId, targetUserId);
+    member = await attachPeopleTransitionPayrollSync(member, organizationId, targetUserId);
 
     if (!member) {
       return res.status(404).json({ error: 'Employee not found in IDP organization members' });

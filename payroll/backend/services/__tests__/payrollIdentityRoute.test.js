@@ -129,7 +129,7 @@ describe('payroll identity ownership routes', () => {
     expect(PayrollProfile.findOne).not.toHaveBeenCalled();
   });
 
-  test('initializes only a payroll overlay from the authoritative IDP member', async () => {
+  test('initializes payroll-owned onboarding data from Recruiter rather than IDP', async () => {
     axios.get.mockResolvedValueOnce({
       data: {
         id: 'member-record-id',
@@ -141,11 +141,28 @@ describe('payroll identity ownership routes', () => {
         departmentName: 'Operations',
         teamIds: ['team-ops'],
         teamNames: ['Operations'],
+        payrollSync: { personalInfo: { mailingAddress: { country: 'Nigeria' } } },
+      },
+    });
+    peopleTransitionsClient.getTransitionSummaries.mockResolvedValueOnce({
+      summaries: [{
+        subjectId: 'verified-idp-sub',
         payrollSync: {
           taxInfo: { taxId: 'TAX-0042' },
-          dependentsCount: 2,
+          banking: {
+            country: 'Nigeria',
+            accounts: [{
+              country: 'Nigeria',
+              bankName: 'Example Bank',
+              accountHolderName: 'Verified IDP Worker',
+              accountNumber: '0123456789',
+              bankCode: '999',
+              isPrimary: true,
+            }],
+          },
+          dependentsDeclaration: { status: 'provided', count: 2 },
         },
-      },
+      }],
     });
     PayrollProfile.findOne.mockResolvedValueOnce(null);
 
@@ -176,6 +193,10 @@ describe('payroll identity ownership routes', () => {
           taxId: 'TAX-0042',
           dependents: 2,
         },
+        bankAccounts: [expect.objectContaining({
+          bankName: 'Example Bank',
+          accountNumber: '0123456789',
+        })],
       },
     });
     expect(payload.profile.employeeInfo.name).not.toBe('Forged Browser Name');

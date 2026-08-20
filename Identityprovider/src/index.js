@@ -10197,8 +10197,7 @@ function buildProfilePageViewModel(req, currentProfileSection) {
     currentProfileSection,
     activeProfileSection: currentProfileSection,
     profileCompletion: req.profileCompletion || getProfileCompletion(req.user),
-    profileCompletionEnforced: false,
-    payrollUrl: (process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007').replace(/\/$/, '')
+    profileCompletionEnforced: false
   }
 }
 
@@ -10217,26 +10216,6 @@ app.get('/profile/tax', getSessionUser, async (req, res) => {
     res.redirect('/profile/personal')
   } catch (error) {
     console.error('Error loading tax page:', error)
-    res.status(500).send('Error loading page')
-  }
-})
-
-app.get('/profile/banking', getSessionUser, async (req, res) => {
-  try {
-    const payrollUrl = process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007'
-    res.redirect(302, `${payrollUrl.replace(/\/$/, '')}/banking`)
-  } catch (error) {
-    console.error('Error loading banking page:', error)
-    res.status(500).send('Error loading page')
-  }
-})
-
-app.get('/profile/dependents', getSessionUser, async (req, res) => {
-  try {
-    const payrollUrl = process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007'
-    res.redirect(302, `${payrollUrl.replace(/\/$/, '')}/dependents`)
-  } catch (error) {
-    console.error('Error loading dependents page:', error)
     res.status(500).send('Error loading page')
   }
 })

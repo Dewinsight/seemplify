@@ -55,6 +55,17 @@ function transitionSubject(transition) {
   };
 }
 
+function buildIdentityProfileSync(payrollSync = {}) {
+  return {
+    source: payrollSync.source,
+    approvedAt: payrollSync.approvedAt,
+    submissionId: payrollSync.submissionId,
+    name: payrollSync.name,
+    personalInfo: payrollSync.personalInfo,
+    taxInfo: payrollSync.taxInfo,
+  };
+}
+
 async function performIdentityAction({ transition, organization, action, actorId, emergency = false, reason }) {
   if (!organization?.idpOrganizationId) throw new Error('Recruiter organization is not linked to an IDP organization');
   const subject = transitionSubject(transition);
@@ -65,6 +76,10 @@ async function performIdentityAction({ transition, organization, action, actorId
   const payrollSync = action === 'provision'
     ? await buildApprovedPayrollSync(transition)
     : undefined;
+  if (payrollSync) {
+    transition.payrollSnapshot = payrollSync;
+    transition.markModified('payrollSnapshot');
+  }
   const body = {
     schemaVersion: '1.0',
     eventId: idempotencyKey,
@@ -86,7 +101,7 @@ async function performIdentityAction({ transition, organization, action, actorId
     reason,
     transitionId: transition._id.toString(),
     requestedBy: actorId?.toString?.() || actorId,
-    payrollSync,
+    payrollSync: payrollSync ? buildIdentityProfileSync(payrollSync) : undefined,
   };
 
   transition.identityAction = {
@@ -117,4 +132,4 @@ async function performIdentityAction({ transition, organization, action, actorId
   }
 }
 
-module.exports = { callIdp, performIdentityAction, transitionSubject };
+module.exports = { buildIdentityProfileSync, callIdp, performIdentityAction, transitionSubject };

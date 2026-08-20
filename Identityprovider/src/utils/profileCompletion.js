@@ -53,41 +53,6 @@ function getEmergencyContacts(profile = {}) {
     : []
 }
 
-function getValidDependents(profile = {}) {
-  return (Array.isArray(profile?.dependents) ? profile.dependents : []).filter(dependent => {
-    return hasText(dependent?.name) && hasText(dependent?.relationship)
-  })
-}
-
-function getDependentsDeclaration(profile = {}) {
-  const status = String(profile?.dependentsDeclaration?.status || '').trim().toLowerCase()
-  if (status === 'none' || status === 'provided') {
-    return {
-      status,
-      count: Math.max(0, Number(profile?.dependentsDeclaration?.count || 0)),
-      confirmedAt: normalizeDate(profile?.dependentsDeclaration?.confirmedAt),
-      lastUpdated: normalizeDate(profile?.dependentsDeclaration?.lastUpdated)
-    }
-  }
-
-  return {
-    status: 'pending',
-    count: 0,
-    confirmedAt: null,
-    lastUpdated: null
-  }
-}
-
-function getActiveBankAccounts(profile = {}) {
-  const banking = profile?.banking || {}
-  const accounts = Array.isArray(banking.accounts) ? banking.accounts : []
-
-  return accounts.filter(account => {
-    if (!account || account.isActive === false) return false
-    return hasText(account.bankName) || hasText(account.accountNumber) || hasText(account.iban)
-  })
-}
-
 function getPrimaryEmergencyContact(profile = {}) {
   const contacts = getEmergencyContacts(profile).filter(contact => hasText(contact?.name) && hasText(contact?.phone))
   if (contacts.length === 0) return null
@@ -132,8 +97,6 @@ export function getProfileCompletion(account = {}, options = {}) {
     percent: Math.round((completedCount / steps.length) * 100),
     steps,
     nextIncompleteStep,
-    dependentsCount: getValidDependents(profile).length || getDependentsDeclaration(profile).count,
-    hasDeclaredNoDependents: getDependentsDeclaration(profile).status === 'none',
     reminder: {
       lastSentAt: normalizeDate(reminder?.lastSentAt),
       sendCount: Number(reminder?.sendCount || 0),
@@ -164,7 +127,6 @@ export function getProfileCompletionStep(stepKey) {
 export function buildPayrollProfileSyncData(account = {}) {
   const profile = getProfile(account)
   const personalInfo = getPersonalInfo(profile)
-  const validDependents = getValidDependents(profile)
   const completion = getProfileCompletion(account)
   const primaryEmergencyContact = getPrimaryEmergencyContact(profile)
 
@@ -195,23 +157,6 @@ export function buildPayrollProfileSyncData(account = {}) {
         isPrimary: contact?.isPrimary === true
       }))
     },
-    banking: {
-      country: profile?.banking?.country || '',
-      accounts: getActiveBankAccounts(profile).map(accountItem => ({
-        country: accountItem?.country || profile?.banking?.country || '',
-        bankName: accountItem?.bankName || '',
-        accountNumber: accountItem?.accountNumber || '',
-        routingNumber: accountItem?.routingNumber || '',
-        sortCode: accountItem?.sortCode || '',
-        iban: accountItem?.iban || '',
-        bicSwift: accountItem?.bicSwift || '',
-        bankCode: accountItem?.bankCode || '',
-        accountType: accountItem?.accountType || '',
-        accountHolderName: accountItem?.accountHolderName || '',
-        percentage: Number(accountItem?.percentage || 100),
-        isPrimary: accountItem?.isPrimary !== false
-      }))
-    },
     emergencyContact: primaryEmergencyContact
       ? {
           name: primaryEmergencyContact.name || '',
@@ -220,17 +165,6 @@ export function buildPayrollProfileSyncData(account = {}) {
           email: primaryEmergencyContact.email || ''
         }
       : null,
-    dependents: validDependents.map(dependent => ({
-      name: dependent?.name || '',
-      relationship: dependent?.relationship || 'other',
-      dateOfBirth: normalizeDate(dependent?.dateOfBirth),
-      taxDependent: dependent?.taxDependent !== false,
-      benefitEligible: dependent?.benefitEligible !== false,
-      isBeneficiary: dependent?.isBeneficiary === true,
-      beneficiaryPercentage: Number(dependent?.beneficiaryPercentage || 0)
-    })),
-    dependentsDeclaration: getDependentsDeclaration(profile),
-    dependentsCount: validDependents.length || getDependentsDeclaration(profile).count,
     profileCompletion: completion
   }
 }

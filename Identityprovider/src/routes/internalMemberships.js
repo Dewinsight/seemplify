@@ -117,8 +117,6 @@ function applyPayrollSync(account, payrollSync = {}) {
   const profile = account.profile?.toObject?.() || account.profile || {}
   const personal = payrollSync.personalInfo || {}
   const emergency = personal.emergencyContact || {}
-  const banking = payrollSync.banking || {}
-  const accounts = Array.isArray(banking.accounts) ? banking.accounts : []
 
   account.profile = {
     ...profile,
@@ -142,13 +140,6 @@ function applyPayrollSync(account, payrollSync = {}) {
       ...(profile.taxInfo || {}),
       ...(payrollSync.taxInfo || {}),
       lastUpdated: new Date(),
-    },
-    banking: {
-      ...(profile.banking || {}),
-      country: cleanText(banking.country) || profile.banking?.country || 'Other',
-      accounts: accounts.length
-        ? accounts.map(item => ({ ...item, updatedAt: new Date() }))
-        : (profile.banking?.accounts || []),
     },
   }
   account.markModified('profile')

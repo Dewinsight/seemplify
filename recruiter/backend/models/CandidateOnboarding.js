@@ -161,7 +161,10 @@ const CandidateOnboardingSchema = new mongoose.Schema({
     sourceChecksum: String,
     migratedAt: Date,
     reconciliationStatus: { type: String, enum: ['pending', 'verified', 'mismatch', 'not_required'], default: 'not_required' }
-  }
+  },
+  // Payroll-only onboarding data is retained by People Transitions and is
+  // exposed solely to Payroll over the signed internal service contract.
+  payrollSnapshot: { type: mongoose.Schema.Types.Mixed, select: false }
 }, { timestamps: true });
 
 CandidateOnboardingSchema.index({ organization: 1, candidate: 1, createdAt: -1 });

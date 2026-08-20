@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { getProfileCompletion } from '../src/utils/profileCompletion.js'
+import { buildPayrollProfileSyncData, getProfileCompletion } from '../src/utils/profileCompletion.js'
 
 const completeAccount = {
   profile: {
@@ -60,7 +60,7 @@ test('IDP profile completion ignores legacy onboarding document assignments', ()
   assert.equal(completion.summary.onboarding, null)
 })
 
-test('legacy dependents remain available to payroll sync without blocking identity completion', () => {
+test('legacy payroll-owned fields are absent from Identity completion and sync contracts', () => {
   const account = structuredClone(completeAccount)
   account.profile.dependentsDeclaration = {
     status: 'provided',
@@ -69,8 +69,12 @@ test('legacy dependents remain available to payroll sync without blocking identi
   }
 
   const completion = getProfileCompletion(account)
+  const payrollSync = buildPayrollProfileSyncData(account)
 
   assert.equal(completion.complete, true)
-  assert.equal(completion.dependentsCount, 2)
   assert.equal(completion.steps.some(step => step.key === 'dependents'), false)
+  assert.equal(Object.hasOwn(completion, 'dependentsCount'), false)
+  assert.equal(Object.hasOwn(payrollSync, 'dependents'), false)
+  assert.equal(Object.hasOwn(payrollSync, 'dependentsDeclaration'), false)
+  assert.equal(Object.hasOwn(payrollSync, 'banking'), false)
 })

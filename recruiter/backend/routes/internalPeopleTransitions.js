@@ -118,6 +118,7 @@ function transitionAdminDeepLink(transitionId) {
 }
 
 router.post('/summary', async (req, res) => {
+  const includePayrollData = String(req.get('x-service-id') || '').toLowerCase() === 'payroll';
   const idpOrganizationId = String(req.body.idpOrganizationId || '');
   const subjectIds = [...new Set((Array.isArray(req.body.subjectIds) ? req.body.subjectIds : [req.body.subjectId]).filter(Boolean).map(String))].slice(0, 500);
   if (!idpOrganizationId || !subjectIds.length) return res.status(400).json({ error: 'idpOrganizationId and at least one subjectId are required' });
@@ -129,7 +130,7 @@ router.post('/summary', async (req, res) => {
       { 'subject.idpAccountId': { $in: subjectIds } },
       { 'identityAction.idpAccountId': { $in: subjectIds } },
     ],
-  }).sort({ createdAt: -1 }).lean();
+  }).select(includePayrollData ? '+payrollSnapshot' : '-payrollSnapshot').sort({ createdAt: -1 }).lean();
   const transitionIds = transitions.map(item => item._id);
   const workflowItems = await OnboardingWorkflowItem.find({ onboarding: { $in: transitionIds } }).select('onboarding type title status dueAt required').lean();
   const byTransition = new Map();
@@ -146,6 +147,9 @@ router.post('/summary', async (req, res) => {
     const items = active.flatMap(item => byTransition.get(String(item._id)) || []);
     const pendingItems = items.filter(item => !['completed', 'skipped'].includes(item.status));
     const latest = records[0];
+    const latestPayrollRecord = includePayrollData
+      ? records.find(item => item?.payrollSnapshot)
+      : null;
     return {
       subjectId,
       status: latest?.status || 'not_started',
@@ -159,6 +163,9 @@ router.post('/summary', async (req, res) => {
       deepLink: latest
         ? `${frontend}/people-transitions/${latest._id}`
         : `${frontend}/people-transitions/tasks?subjectId=${encodeURIComponent(subjectId)}`,
+      ...(latestPayrollRecord?.payrollSnapshot
+        ? { payrollSync: latestPayrollRecord.payrollSnapshot }
+        : {}),
       transitions: records.slice(0, 20).map(item => ({ id: item._id, title: item.title, processType: item.processType, status: item.status, dueAt: item.dueAt, progress: item.progress })),
     };
   });
