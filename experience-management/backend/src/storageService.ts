@@ -42,7 +42,7 @@ export async function storeBuffer(buffer: Buffer, input: { fileName: string; mim
       size: buffer.length
     };
   }
-  const policy = await resolveStoragePlatformConfiguration();
+  const policy = await resolveStoragePlatformConfiguration(true);
   if (!policy) throw new Error('Managed file storage is unavailable.');
   if (policy.defaultProvider === 'azure-blob') {
     const configuration = policy.providers.azureBlob;

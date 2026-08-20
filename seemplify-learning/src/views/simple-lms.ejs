@@ -2337,7 +2337,7 @@
       const renderMediaPreviewMarkup = (lesson) => {
         const descriptor = getMediaPreviewDescriptor(lesson)
         if (descriptor.kind === 'none') {
-          return '<p class="builder-preview-note">Upload a Cloudinary video or audio file to preview the lesson player output.</p>'
+          return '<p class="builder-preview-note">Upload a video or audio file to preview the lesson player output.</p>'
         }
         if (descriptor.kind === 'embed' && descriptor.embedUrl) {
           return `<iframe src="${escapeHtml(descriptor.embedUrl)}" allowfullscreen loading="lazy"></iframe><p class="builder-preview-note">${escapeHtml(descriptor.sourceLabel)} embed preview</p>`
@@ -2369,7 +2369,9 @@
         const renderLessonMediaSummaryMarkup = (lesson) => {
           const parts = []
           if (lesson?.media?.url) {
-            parts.push(`<span class="builder-media-pill">${escapeHtml(lesson.media.sourceLabel || 'Cloudinary')}</span>`)
+            const storageLabel = lesson.media.sourceLabel
+              || (lesson.media.provider === 'azure-blob' ? 'Azure Blob Storage' : (lesson.media.provider === 'cloudinary' ? 'Cloudinary' : 'Managed storage'))
+            parts.push(`<span class="builder-media-pill">${escapeHtml(storageLabel)}</span>`)
             parts.push(`<span class="builder-media-pill">${escapeHtml((lesson.media.resourceType || 'video').toUpperCase())}</span>`)
             if (Number.isFinite(Number(lesson.media.durationSeconds)) && Number(lesson.media.durationSeconds) > 0) {
               parts.push(`<span class="builder-media-pill">${Math.max(1, Math.ceil(Number(lesson.media.durationSeconds) / 60))} min</span>`)
@@ -2416,7 +2418,7 @@
                           <button type="button" class="btn btn-secondary btn-sm" data-action="remove-media" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" ${lesson.media?.url ? '' : 'disabled'}>Clear Media</button>
                         </div>
                       </div>
-                      <p class="builder-legacy-note">New lessons use Cloudinary uploads so playback, duration detection, and auto-progression stay consistent.</p>
+                      <p class="builder-legacy-note">New lessons use the configured managed storage provider so playback, duration detection, and auto-progression stay consistent.</p>
                       <div class="builder-preview">${renderMediaPreviewMarkup(lesson)}</div>
                     </section>
                     <div><label>Lesson Description</label><textarea class="input" rows="2" data-kind="lesson" data-field="description" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" placeholder="Lesson description">${escapeHtml(lesson.description)}</textarea></div>

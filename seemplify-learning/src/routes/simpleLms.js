@@ -20,7 +20,7 @@ import { RoleApprovalRequest } from '../models/RoleApprovalRequest.js'
 import { AuditLog } from '../models/AuditLog.js'
 import { AdminInvite } from '../models/AdminInvite.js'
 import { logAuditEvent } from '../utils/auditLog.js'
-import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
+import { uploadBufferToCloudinary } from '../services/cloudinaryService.js'
 import { emailService } from '../services/emailService.js'
 import { queueEnrollmentSync } from '../services/performanceLearningSyncService.js'
 import {
@@ -3155,8 +3155,13 @@ const resolveLessonMedia = (rawLessonMedia) => {
     const mediaUrl = String(rawLessonMedia.url || '').trim()
     if (mediaUrl) {
       const mediaType = normalizeLessonMediaResourceType(rawLessonMedia.resourceType, 'video')
+      const mediaProvider = String(rawLessonMedia.provider || '').trim().toLowerCase()
       const sourceLabel = String(rawLessonMedia.sourceLabel || '').trim()
-        || (mediaType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+        || (mediaProvider === 'azure-blob'
+          ? (mediaType === 'audio' ? 'Azure Audio' : 'Azure Video')
+          : (mediaProvider === 'cloudinary'
+            ? (mediaType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+            : (mediaType === 'audio' ? 'Managed Audio' : 'Managed Video')))
       return {
         kind: mediaType === 'audio' ? 'audio' : 'video',
         rawUrl: mediaUrl,
@@ -12756,10 +12761,6 @@ apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
       return res.status(400).json({ error: 'No banner file uploaded.' })
     }
 
-    if (!isCloudinaryConfigured()) {
-      return res.status(500).json({ error: 'Cloudinary is not configured for banner uploads.' })
-    }
-
     const uploadResult = await uploadBufferToCloudinary({
       buffer: req.file.buffer,
       filename: `${Date.now()}-${slugifyValue(req.file.originalname || 'banner', 'banner')}`,
@@ -12794,10 +12795,6 @@ apiRouter.post('/upload/lesson-media', lessonMediaUpload.single('media'), async 
       return res.status(400).json({ error: 'No lesson media file uploaded.' })
     }
 
-    if (!isCloudinaryConfigured()) {
-      return res.status(500).json({ error: 'Cloudinary is not configured for lesson uploads.' })
-    }
-
     const mimeType = String(req.file.mimetype || '').trim().toLowerCase()
     const normalizedResourceType = mimeType.startsWith('audio/')
       ? 'audio'
@@ -12828,7 +12825,9 @@ apiRouter.post('/upload/lesson-media', lessonMediaUpload.single('media'), async 
       durationSeconds,
       sourceLabel: uploadResult.storageProvider === 'azure-blob'
         ? (normalizedResourceType === 'audio' ? 'Azure Audio' : 'Azure Video')
-        : (normalizedResourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+        : (uploadResult.storageProvider === 'cloudinary'
+          ? (normalizedResourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+          : (normalizedResourceType === 'audio' ? 'Managed Audio' : 'Managed Video'))
     }
 
     return res.json({

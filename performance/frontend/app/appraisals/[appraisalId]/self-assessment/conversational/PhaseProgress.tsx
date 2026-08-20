@@ -7,8 +7,9 @@ import {
 import { alpha, useTheme } from '@mui/material/styles';
 import {
   Flag, Star, TrendingUp, EmojiObjects, Assignment,
-  CheckCircle, RadioButtonUnchecked, PlayCircle, Description
+  CheckCircle, RadioButtonUnchecked, PlayCircle, Description, QuestionAnswer
 } from '@mui/icons-material';
+import type { CycleQuestionProgress } from './CycleQuestionFlow';
 
 interface OKRSummary {
   id: string;
@@ -38,6 +39,7 @@ interface PhaseProgressProps {
   okrs: OKRSummary[];
   extractedData: ExtractedData;
   currentOkrIndex: number;
+  cycleQuestionProgress?: CycleQuestionProgress | null;
   onPhaseClick?: (phaseId: string) => void;
 }
 
@@ -47,6 +49,7 @@ const PHASES = [
   { id: 'challenges', label: 'Challenges', icon: <Assignment /> },
   { id: 'learnings', label: 'Learnings', icon: <EmojiObjects /> },
   { id: 'future_goals', label: 'Future Goals', icon: <Star /> },
+  { id: 'cycle_questions', label: 'Cycle Questions', icon: <QuestionAnswer /> },
   { id: 'report_generation', label: 'Report Generation', icon: <Description /> },
   { id: 'completed', label: 'Complete', icon: <CheckCircle /> }
 ];
@@ -158,11 +161,21 @@ export default function PhaseProgress({
   okrs,
   extractedData,
   currentOkrIndex,
+  cycleQuestionProgress,
   onOkrSelect,
   onPhaseClick
 }: PhaseProgressProps & { onOkrSelect?: (index: number) => void }) {
   const theme = useTheme();
+  const phases = cycleQuestionProgress?.total
+    ? PHASES.filter((phase) => (
+      phase.id === 'cycle_questions'
+      || phase.id === 'report_generation'
+      || phase.id === 'completed'
+      || (phase.id === 'okr_reflection' && okrs.length > 0)
+    ))
+    : PHASES.filter((phase) => phase.id !== 'cycle_questions');
   const getStepStatus = (phaseId: string) => {
+    if (phaseId === 'cycle_questions' && cycleQuestionProgress?.complete) return 'completed';
     if (completedPhases.includes(phaseId)) return 'completed';
     if (currentPhase === phaseId) return 'active';
     return 'pending';
@@ -176,8 +189,8 @@ export default function PhaseProgress({
   };
 
   const handlePhaseClick = (phaseId: string) => {
-    const currentIndex = PHASES.findIndex(p => p.id === currentPhase);
-    const targetIndex = PHASES.findIndex(p => p.id === phaseId);
+    const currentIndex = phases.findIndex(p => p.id === currentPhase);
+    const targetIndex = phases.findIndex(p => p.id === phaseId);
 
     // Only allow advancing forward or clicking current/completed phases
     if (targetIndex > currentIndex && !completedPhases.includes(phaseId)) {
@@ -215,7 +228,7 @@ export default function PhaseProgress({
           }
         }}
       >
-        {PHASES.map((phase) => {
+        {phases.map((phase) => {
           const status = getStepStatus(phase.id);
           const isClickable = status !== 'pending' || onPhaseClick;
 
@@ -238,7 +251,14 @@ export default function PhaseProgress({
                   my: 0.2
                 }}
               >
-                {phase.label}
+                <Box>
+                  <Typography component="span" variant="body2">{phase.label}</Typography>
+                  {phase.id === 'cycle_questions' && cycleQuestionProgress && (
+                    <Typography component="span" variant="caption" color="text.secondary" display="block">
+                      {cycleQuestionProgress.answered + cycleQuestionProgress.skipped} of {cycleQuestionProgress.total} completed
+                    </Typography>
+                  )}
+                </Box>
               </StepLabel>
             </Step>
           );

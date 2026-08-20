@@ -25,6 +25,22 @@ const checkGrantStatus = async (req, res) => {
 };
 
 /**
+ * Get live calendar-provider capacity for the authenticated scheduling flow.
+ */
+const getGrantUsage = async (req, res) => {
+  try {
+    const usage = await grantManagementService.getSystemGrantUsageStats();
+    res.json({ success: true, usage });
+  } catch (error) {
+    console.error('Error getting calendar grant usage:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get calendar grant usage'
+    });
+  }
+};
+
+/**
  * Verify the current user's grant with the OAuth provider
  */
 const verifyGrant = async (req, res) => {
@@ -401,6 +417,7 @@ const getGrantHistory = async (req, res) => {
 
 module.exports = {
   checkGrantStatus,
+  getGrantUsage,
   verifyGrant,
   generateReauthUrl,
   handleReauthCallback,

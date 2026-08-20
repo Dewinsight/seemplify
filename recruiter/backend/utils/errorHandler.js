@@ -128,6 +128,17 @@ const handleInterviewError = (error, context = '') => {
       timestamp: new Date().toISOString()
     };
   }
+
+  // Preserve structured operational errors raised by internal services.
+  if (error.code && Number.isInteger(error.statusCode)) {
+    return {
+      statusCode: error.statusCode,
+      error: error.code,
+      message: error.message,
+      context: context,
+      timestamp: new Date().toISOString()
+    };
+  }
   
   // Handle other general errors
   return {
@@ -142,4 +153,4 @@ const handleInterviewError = (error, context = '') => {
 module.exports = { 
   handleNylasError, 
   handleInterviewError 
-}; 
+};

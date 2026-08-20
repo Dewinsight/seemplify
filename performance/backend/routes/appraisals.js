@@ -42,6 +42,17 @@ const {
   validateDesign,
   templateSnapshot
 } = require('../services/appraisalCycleDesignService');
+const {
+  getCustomQuestionMap,
+  validateCycleResponseValue,
+  hasCustomResponseValue,
+  upsertCustomResponse,
+  respondentResponses,
+  missingRequiredCustomResponses,
+  getCycleQuestionState,
+  persistCycleQuestionProgress,
+  responseKey
+} = require('../services/appraisalCustomResponseService');
 
 function getRequesterIdentity(req) {
   const userIds = Array.from(
@@ -798,77 +809,6 @@ function validateCycleConfiguration(input = {}) {
 
 function getCycleDesign(cycle) {
   return normalizeDesign(cycle?.workflowDefinition || cloneBuiltInTemplate().design);
-}
-
-function getCustomQuestionMap(appraisal, respondentRole) {
-  const configuredDesign = appraisal?.cycleConfigurationSnapshot?.workflowDefinition || appraisal?.cycleId?.workflowDefinition;
-  const design = configuredDesign
-    ? normalizeDesign(configuredDesign)
-    : { version: 1, scoring: { goalsWeight: 40, competenciesWeight: 60 }, stages: {}, sections: [] };
-  const sections = design.sections.filter((section) => (
-    !['goals', 'competencies'].includes(section.type) &&
-    (section.respondent === respondentRole || section.respondent === 'both')
-  ));
-  const questionMap = new Map();
-  for (const section of sections) {
-    for (const item of section.questions) {
-      questionMap.set(`${section.id}:${item.id}`, { section, question: item });
-    }
-  }
-  return { design, sections, questionMap };
-}
-
-function sanitizeCustomResponseValue(value, question) {
-  switch (question.responseType) {
-    case 'rating': {
-      const numeric = Number(value);
-      if (!Number.isFinite(numeric)) return null;
-      return Math.min(question.ratingMax, Math.max(question.ratingMin, numeric));
-    }
-    case 'number': {
-      const numeric = Number(value);
-      return Number.isFinite(numeric) ? numeric : null;
-    }
-    case 'boolean':
-      return value === true || value === 'true';
-    case 'single_select':
-      return question.options.includes(String(value)) ? String(value) : null;
-    case 'multi_select':
-      return Array.isArray(value)
-        ? value.map(String).filter((item) => question.options.includes(item)).slice(0, question.options.length)
-        : [];
-    case 'short_text':
-      return String(value || '').trim().slice(0, 500);
-    default:
-      return String(value || '').trim().slice(0, 10000);
-  }
-}
-
-function hasCustomResponseValue(value) {
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === 'boolean' || typeof value === 'number') return true;
-  return String(value || '').trim().length > 0;
-}
-
-function missingRequiredCustomResponses(appraisal, respondentRole) {
-  const { sections, questionMap } = getCustomQuestionMap(appraisal, respondentRole);
-  const responses = new Map(
-    (appraisal.customResponses || [])
-      .filter((item) => item.respondentRole === respondentRole)
-      .map((item) => [`${item.sectionId}:${item.questionId}`, item.value])
-  );
-  const missing = [];
-  for (const [key, definition] of questionMap.entries()) {
-    if (definition.section.required && definition.question.required && !hasCustomResponseValue(responses.get(key))) {
-      missing.push(definition.question.prompt);
-    }
-  }
-  for (const section of sections) {
-    if (section.required && section.evidenceRequired && (!appraisal.documents || appraisal.documents.length === 0)) {
-      missing.push(`${section.title}: attach supporting evidence`);
-    }
-  }
-  return missing;
 }
 
 function phaseHasOpened(cycle, phaseName) {
@@ -2842,6 +2782,9 @@ router.put('/:appraisalId/custom-responses', requireAuth, async (req, res) => {
     if (respondentRole === 'employee' && !isSelfAssessmentEditable(appraisal)) {
       return res.status(409).json({ success: false, error: 'Employee assessment responses are locked' });
     }
+    if (respondentRole === 'employee' && !phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
+      return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
+    }
     if (respondentRole === 'manager' && !MANAGER_REVIEW_EDITABLE_STATUSES.includes(appraisal.status)) {
       return res.status(409).json({ success: false, error: 'Manager assessment responses are locked' });
     }
@@ -2850,38 +2793,63 @@ router.put('/:appraisalId/custom-responses', requireAuth, async (req, res) => {
     const incoming = Array.isArray(req.body?.responses) ? req.body.responses : [];
     const actorId = req.session?.user?.id || req.session?.user?.sub;
     const now = new Date();
-    const preserved = (appraisal.customResponses || [])
-      .filter((item) => item.respondentRole !== respondentRole)
-      .map((item) => toPlainObject(item));
-    const existing = new Map(
-      (appraisal.customResponses || [])
-        .filter((item) => item.respondentRole === respondentRole)
-        .map((item) => [`${item.sectionId}:${item.questionId}`, toPlainObject(item)])
-    );
-    const accepted = [];
+    const prepared = [];
     for (const item of incoming) {
-      const key = `${String(item?.sectionId || '')}:${String(item?.questionId || '')}`;
+      const key = responseKey(item?.sectionId, item?.questionId);
       const definition = questionMap.get(key);
       if (!definition) continue;
-      const value = sanitizeCustomResponseValue(item.value, definition.question);
-      const prior = existing.get(key) || {};
-      accepted.push({
-        ...prior,
+
+      // The manual form sends every configured row during autosave. Missing or
+      // omitted draft rows are no-ops. An explicitly supplied blank means the
+      // user cleared a hydrated answer, so remove that canonical response after
+      // the complete batch validates. Neither case may manufacture false/zero.
+      if (!hasCustomResponseValue(item?.value)) {
+        if (Object.prototype.hasOwnProperty.call(item || {}, 'value')) {
+          prepared.push({ operation: 'remove', definition });
+        }
+        continue;
+      }
+
+      const validation = validateCycleResponseValue(item.value, definition.question);
+      if (!validation.valid) {
+        return res.status(422).json({
+          success: false,
+          code: 'CYCLE_RESPONSE_INVALID',
+          error: validation.error,
+          question: {
+            sectionId: definition.section.id,
+            questionId: definition.question.id
+          }
+        });
+      }
+      prepared.push({ operation: 'upsert', item, definition, validation });
+    }
+
+    // Apply only after the complete batch validates so a later invalid row
+    // cannot leave earlier responses partially updated.
+    for (const operation of prepared) {
+      const { item, definition, validation } = operation;
+      if (operation.operation === 'remove') {
+        const key = responseKey(definition.section.id, definition.question.id);
+        appraisal.customResponses = (appraisal.customResponses || []).filter((response) => (
+          response.respondentRole !== respondentRole
+          || responseKey(response.sectionId, response.questionId) !== key
+        ));
+        continue;
+      }
+      upsertCustomResponse(appraisal, {
         sectionId: definition.section.id,
-        questionId: definition.question.id,
+        questionId: definition.question.id
+      }, {
         respondentRole,
         respondentId: String(actorId || ''),
-        value,
-        evidence: Array.isArray(item.evidence) ? item.evidence.slice(0, 20) : (prior.evidence || []),
-        score: ['rating', 'number'].includes(definition.question.responseType) && Number.isFinite(Number(value))
-          ? Number(value)
-          : undefined,
-        lastSavedAt: now,
-        submittedAt: req.body?.submit ? now : prior.submittedAt
+        value: validation.value,
+        evidence: item.evidence,
+        score: validation.score,
+        submittedAt: req.body?.submit ? now : undefined,
+        now
       });
-      existing.delete(key);
     }
-    appraisal.customResponses = [...preserved, ...accepted, ...Array.from(existing.values())];
 
     if (req.body?.submit) {
       const missing = missingRequiredCustomResponses(appraisal, respondentRole);
@@ -2892,6 +2860,10 @@ router.put('/:appraisalId/custom-responses', requireAuth, async (req, res) => {
           missingQuestions: missing
         });
       }
+      appraisal.customResponses = (appraisal.customResponses || []).map((item) => {
+        const plain = toPlainObject(item);
+        return plain.respondentRole === respondentRole ? { ...plain, submittedAt: now } : plain;
+      });
       appraisal.addAuditLog('custom_assessment_responses_submitted', req.session.user, {
         respondentRole,
         responseCount: appraisal.customResponses.filter((item) => item.respondentRole === respondentRole).length
@@ -4501,6 +4473,112 @@ function conversationActorId(req) {
   return String(req.session?.user?.sub || req.session?.user?.id || '').trim();
 }
 
+function formatCycleQuestionPrompt(question) {
+  if (!question) return '';
+  const lines = [];
+  if (question.sectionTitle) lines.push(question.sectionTitle);
+  lines.push(question.prompt);
+  if (question.helpText) lines.push(question.helpText);
+  if (question.responseType === 'rating') {
+    lines.push(`Choose a rating from ${question.ratingMin} to ${question.ratingMax}.`);
+  } else if (question.responseType === 'boolean') {
+    lines.push('Choose yes or no.');
+  } else if (['single_select', 'multi_select'].includes(question.responseType) && question.options.length > 0) {
+    lines.push(`Options: ${question.options.join(', ')}`);
+  }
+  if (!question.required) lines.push('This question is optional, so you may skip it.');
+  return lines.filter(Boolean).join('\n');
+}
+
+function cycleQuestionResponseData(appraisal) {
+  const state = getCycleQuestionState(appraisal);
+  const persisted = appraisal?.conversationAssessment?.cycleQuestionProgress || {};
+  return {
+    cycleQuestions: state.questions,
+    activeCycleQuestion: state.activeQuestion,
+    cycleQuestionProgress: {
+      ...state.progress,
+      startedAt: persisted.startedAt || state.progress.startedAt || null,
+      completedAt: persisted.completedAt || state.progress.completedAt || null
+    },
+    cycleResponses: state.responses
+  };
+}
+
+function displayCycleResponseValue(value) {
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return String(value ?? '').trim();
+}
+
+function sameCycleResponseValue(left, right) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return JSON.stringify(Array.isArray(left) ? left : [left]) === JSON.stringify(Array.isArray(right) ? right : [right]);
+  }
+  return left === right;
+}
+
+function reconcileConfiguredCycleConversation(appraisal) {
+  ensureConversationAssessmentState(appraisal);
+  const beforePhase = appraisal.conversationAssessment.currentPhase;
+  const beforeProgress = JSON.stringify(toPlainObject(
+    appraisal.conversationAssessment.cycleQuestionProgress
+  ));
+  const beforeMessageCount = (appraisal.chatThread || []).length;
+  let state = getCycleQuestionState(appraisal);
+  if (state.questions.length === 0) {
+    return { state, changed: false };
+  }
+
+  const legacyGenericPhases = new Set([
+    'achievements', 'challenges', 'learnings', 'future_goals', 'competencies'
+  ]);
+  const currentPhase = appraisal.conversationAssessment.currentPhase;
+  if (
+    !state.progress.completed
+    && (legacyGenericPhases.has(currentPhase) || currentPhase === 'report_generation')
+  ) {
+    appraisal.conversationAssessment.currentPhase = 'cycle_questions';
+  } else if (
+    state.progress.completed
+    && (legacyGenericPhases.has(currentPhase) || currentPhase === 'cycle_questions')
+  ) {
+    appraisal.conversationAssessment.currentPhase = 'report_generation';
+  }
+
+  persistCycleQuestionProgress(appraisal, state);
+  state = getCycleQuestionState(appraisal);
+  if (appraisal.conversationAssessment.currentPhase === 'cycle_questions' && state.activeQuestion) {
+    const activeKey = state.activeQuestion.key;
+    const promptAlreadyExists = (appraisal.chatThread || []).some((item) => (
+      item?.sender?.role === 'ai'
+      && item?.phase === 'cycle_questions'
+      && responseKey(item?.questionRef?.sectionId, item?.questionRef?.questionId) === activeKey
+    ));
+    if (!promptAlreadyExists) {
+      appraisal.chatThread.push({
+        sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+        message: formatCycleQuestionPrompt(state.activeQuestion),
+        messageType: 'phase_transition',
+        phase: 'cycle_questions',
+        questionRef: {
+          sectionId: state.activeQuestion.sectionId,
+          questionId: state.activeQuestion.questionId
+        },
+        aiContext: { isAiGenerated: false },
+        createdAt: new Date()
+      });
+    }
+  }
+
+  const changed = beforePhase !== appraisal.conversationAssessment.currentPhase
+    || beforeProgress !== JSON.stringify(toPlainObject(
+      appraisal.conversationAssessment.cycleQuestionProgress
+    ))
+    || beforeMessageCount !== (appraisal.chatThread || []).length;
+  return { state, changed };
+}
+
 function sendConversationRuntimeError(res, error, fallbackMessage) {
   const code = String(error?.code || '');
   const isRuntimeError = code.startsWith('CHATGPT_') || code.startsWith('AI_');
@@ -4570,6 +4648,10 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
       });
     }
 
+    if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
+      return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
+    }
+
     if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
       return res.status(400).json({
         success: false,
@@ -4594,6 +4676,8 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
     );
 
     if (existingConversation) {
+      reconcileConfiguredCycleConversation(appraisal);
+      await appraisal.save();
       const okrSummary = okrs.map((okr, index) => ({
         id: okr._id,
         title: okr.title || okr.objectives?.[0]?.title || `OKR ${index + 1}`,
@@ -4607,7 +4691,8 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
           greeting: null,
           okrSummary,
           conversationState: appraisal.conversationAssessment,
-          chatThread: appraisal.chatThread.slice(-20)
+          chatThread: appraisal.chatThread.slice(-20),
+          ...cycleQuestionResponseData(appraisal)
         }
       });
     }
@@ -4640,20 +4725,39 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
       totalTokensUsed: result.tokensUsed || 0,
       messageCount: 1
     };
+    let cycleState = getCycleQuestionState(appraisal);
+    persistCycleQuestionProgress(appraisal, cycleState);
+    if (result.phase === 'cycle_questions' && cycleState.progress.completed) {
+      appraisal.conversationAssessment.currentPhase = 'report_generation';
+    }
+    cycleState = getCycleQuestionState(appraisal);
+    const activeCycleQuestion = appraisal.conversationAssessment.currentPhase === 'cycle_questions'
+      ? cycleState.activeQuestion
+      : null;
+    const initialGreeting = activeCycleQuestion
+      ? `${result.greeting}\n\n${formatCycleQuestionPrompt(activeCycleQuestion)}`
+      : result.greeting;
 
     // Add initial AI message to chat thread
-    appraisal.chatThread.push({
+    const initialMessage = {
       sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
-      message: result.greeting,
+      message: initialGreeting,
       messageType: 'prompt',
-      phase: result.phase,
+      phase: appraisal.conversationAssessment.currentPhase,
       aiContext: {
         isAiGenerated: true,
         modelUsed: result.model || 'seemplify-ai-gateway',
         tokensUsed: result.tokensUsed
       },
       createdAt: new Date()
-    });
+    };
+    if (activeCycleQuestion) {
+      initialMessage.questionRef = {
+        sectionId: activeCycleQuestion.sectionId,
+        questionId: activeCycleQuestion.questionId
+      };
+    }
+    appraisal.chatThread.push(initialMessage);
 
     // Update status
     if (appraisal.status === 'self_assessment_pending') {
@@ -4666,12 +4770,13 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
     res.json({
       success: true,
       data: {
-        greeting: result.greeting,
+        greeting: initialGreeting,
         okrSummary: result.okrSummary,
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread.slice(-20), // Last 20 messages
         fallback: false,
-        aiAvailable: true
+        aiAvailable: true,
+        ...cycleQuestionResponseData(appraisal)
       }
     });
   } catch (error) {
@@ -4706,6 +4811,10 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       });
     }
 
+    if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
+      return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
+    }
+
     if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
       return res.status(400).json({
         success: false,
@@ -4722,7 +4831,225 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       return res.status(400).json({ success: false, error: 'Conversation has not been started yet' });
     }
 
-    const { message } = req.body;
+    const reconciliation = reconcileConfiguredCycleConversation(appraisal);
+    if (reconciliation.changed) await appraisal.save();
+
+    const currentPhase = appraisal.conversationAssessment?.currentPhase || 'okr_reflection';
+    const { message, cycleResponse } = req.body || {};
+
+    // A client may retry the final configured answer after the server has
+    // already advanced to report generation. Treat an identical retry as a
+    // success, but never let this endpoint edit a completed earlier answer.
+    if (currentPhase !== 'cycle_questions' && cycleResponse && typeof cycleResponse === 'object') {
+      const replayState = getCycleQuestionState(appraisal);
+      const replayKey = responseKey(cycleResponse.sectionId, cycleResponse.questionId);
+      const replayQuestion = replayState.questions.find((item) => item.key === replayKey);
+      if (!replayQuestion) {
+        return res.status(422).json({
+          success: false,
+          code: 'CYCLE_QUESTION_UNKNOWN',
+          error: 'That question is not part of this appraisal’s frozen employee questionnaire.',
+          data: cycleQuestionResponseData(appraisal)
+        });
+      }
+      const priorResponse = replayState.responses.find((item) => responseKey(item.sectionId, item.questionId) === replayKey);
+      const repeatedSkip = cycleResponse.skip === true && replayState.progress.skippedKeys.includes(replayKey);
+      let repeatedValue = false;
+      if (priorResponse && cycleResponse.skip !== true) {
+        const replayValidation = validateCycleResponseValue(cycleResponse.value, replayQuestion);
+        repeatedValue = replayValidation.valid && sameCycleResponseValue(priorResponse.value, replayValidation.value);
+      }
+      if (repeatedSkip || repeatedValue) {
+        return res.json({
+          success: true,
+          data: {
+            idempotent: true,
+            response: null,
+            currentPhase,
+            conversationState: appraisal.conversationAssessment,
+            chatThread: appraisal.chatThread.slice(-20),
+            ...cycleQuestionResponseData(appraisal)
+          }
+        });
+      }
+      return res.status(409).json({
+        success: false,
+        code: 'CYCLE_QUESTION_STALE',
+        error: 'The conversation has moved past that question. Use the review form to edit a saved response.',
+        data: cycleQuestionResponseData(appraisal)
+      });
+    }
+
+    if (currentPhase === 'cycle_questions') {
+      let cycleState = getCycleQuestionState(appraisal);
+      persistCycleQuestionProgress(appraisal, cycleState);
+      if (cycleState.questions.length === 0 || cycleState.progress.completed) {
+        appraisal.conversationAssessment.currentPhase = 'report_generation';
+        appraisal.conversationAssessment.lastActivityAt = new Date();
+        await appraisal.save();
+        return res.status(409).json({
+          success: false,
+          code: 'CYCLE_QUESTIONS_COMPLETE',
+          error: 'The configured cycle questions are already complete. Generate the report next.',
+          data: {
+            currentPhase: 'report_generation',
+            conversationState: appraisal.conversationAssessment,
+            ...cycleQuestionResponseData(appraisal)
+          }
+        });
+      }
+
+      if (!cycleResponse || typeof cycleResponse !== 'object') {
+        return res.status(400).json({
+          success: false,
+          code: 'CYCLE_RESPONSE_REQUIRED',
+          error: 'Answer or explicitly skip the current cycle question.',
+          data: cycleQuestionResponseData(appraisal)
+        });
+      }
+
+      const requestedKey = responseKey(cycleResponse.sectionId, cycleResponse.questionId);
+      const requestedQuestion = cycleState.questions.find((item) => item.key === requestedKey);
+      if (!requestedQuestion) {
+        return res.status(422).json({
+          success: false,
+          code: 'CYCLE_QUESTION_UNKNOWN',
+          error: 'That question is not part of this appraisal’s frozen employee questionnaire.',
+          data: cycleQuestionResponseData(appraisal)
+        });
+      }
+
+      const activeQuestion = cycleState.activeQuestion;
+      if (requestedKey !== activeQuestion.key) {
+        const priorResponse = cycleState.responses.find((item) => responseKey(item.sectionId, item.questionId) === requestedKey);
+        const repeatedSkip = cycleResponse.skip === true && cycleState.progress.skippedKeys.includes(requestedKey);
+        let repeatedValue = false;
+        if (priorResponse && cycleResponse.skip !== true) {
+          const repeatedValidation = validateCycleResponseValue(cycleResponse.value, requestedQuestion);
+          repeatedValue = repeatedValidation.valid && sameCycleResponseValue(priorResponse.value, repeatedValidation.value);
+        }
+        if (repeatedSkip || repeatedValue) {
+          return res.json({
+            success: true,
+            data: {
+              idempotent: true,
+              response: null,
+              currentPhase: appraisal.conversationAssessment.currentPhase,
+              conversationState: appraisal.conversationAssessment,
+              chatThread: appraisal.chatThread.slice(-20),
+              ...cycleQuestionResponseData(appraisal)
+            }
+          });
+        }
+        return res.status(409).json({
+          success: false,
+          code: 'CYCLE_QUESTION_STALE',
+          error: 'The conversation has moved to a different question. Review the current question and try again.',
+          data: cycleQuestionResponseData(appraisal)
+        });
+      }
+
+      const skip = cycleResponse.skip === true;
+      if (skip && activeQuestion.required) {
+        return res.status(422).json({
+          success: false,
+          code: 'CYCLE_QUESTION_REQUIRED',
+          error: 'This question is required and cannot be skipped.',
+          data: cycleQuestionResponseData(appraisal)
+        });
+      }
+      const validation = skip
+        ? { valid: true, value: undefined, score: undefined }
+        : validateCycleResponseValue(cycleResponse.value, activeQuestion);
+      if (!validation.valid) {
+        return res.status(422).json({
+          success: false,
+          code: 'CYCLE_RESPONSE_INVALID',
+          error: validation.error,
+          data: cycleQuestionResponseData(appraisal)
+        });
+      }
+
+      const acknowledgement = await withAIRequestContext(
+        { runtimePreference: 'chatgpt', actorId: chatGpt.actorId },
+        () => appraisalAIService.acknowledgeCycleQuestionResponse(
+          appraisal,
+          activeQuestion,
+          validation.value,
+          { requireChatGpt: true, skipped: skip }
+        )
+      );
+
+      const now = new Date();
+      let savedCustomResponse = null;
+      if (skip) {
+        const progress = appraisal.conversationAssessment.cycleQuestionProgress || {};
+        progress.skippedKeys = [...new Set([...(progress.skippedKeys || []), activeQuestion.key])];
+        appraisal.conversationAssessment.cycleQuestionProgress = progress;
+      } else {
+        savedCustomResponse = upsertCustomResponse(appraisal, activeQuestion, {
+          respondentRole: 'employee',
+          respondentId: userId,
+          value: validation.value,
+          score: validation.score,
+          now
+        });
+      }
+
+      appraisal.chatThread.push({
+        sender: { userId, name: userName, role: 'employee' },
+        message: skip ? 'Skipped optional question.' : displayCycleResponseValue(validation.value),
+        messageType: 'text',
+        phase: 'cycle_questions',
+        questionRef: { sectionId: activeQuestion.sectionId, questionId: activeQuestion.questionId },
+        createdAt: now
+      });
+
+      cycleState = getCycleQuestionState(appraisal);
+      persistCycleQuestionProgress(appraisal, cycleState, { now });
+      const nextPhase = cycleState.progress.completed ? 'report_generation' : 'cycle_questions';
+      const nextPrompt = cycleState.activeQuestion ? formatCycleQuestionPrompt(cycleState.activeQuestion) : '';
+      const aiResponse = nextPrompt
+        ? `${acknowledgement}\n\n${nextPrompt}`
+        : `${acknowledgement}\n\nAll configured cycle questions are complete. Your self-assessment report is ready to generate.`;
+      const aiMessage = {
+        sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+        message: aiResponse,
+        messageType: cycleState.progress.completed ? 'phase_transition' : 'prompt',
+        phase: nextPhase,
+        aiContext: { isAiGenerated: true },
+        createdAt: now
+      };
+      if (cycleState.activeQuestion) {
+        aiMessage.questionRef = {
+          sectionId: cycleState.activeQuestion.sectionId,
+          questionId: cycleState.activeQuestion.questionId
+        };
+      }
+      appraisal.chatThread.push(aiMessage);
+      appraisal.conversationAssessment.currentPhase = nextPhase;
+      appraisal.conversationAssessment.lastActivityAt = now;
+      appraisal.conversationAssessment.messageCount = (appraisal.conversationAssessment.messageCount || 0) + 2;
+      if (cycleState.progress.completed && !appraisal.conversationAssessment.completedPhases.includes('cycle_questions')) {
+        appraisal.conversationAssessment.completedPhases.push('cycle_questions');
+      }
+      await appraisal.save();
+
+      return res.json({
+        success: true,
+        data: {
+          response: aiResponse,
+          currentPhase: nextPhase,
+          savedCustomResponse,
+          conversationState: appraisal.conversationAssessment,
+          chatThread: appraisal.chatThread.slice(-20),
+          fallback: false,
+          aiAvailable: true,
+          ...cycleQuestionResponseData(appraisal)
+        }
+      });
+    }
+
     if (!message || !message.trim()) {
       return res.status(400).json({ success: false, error: 'Message is required' });
     }
@@ -4733,8 +5060,6 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       ownerId: appraisal.employee.userId,
       status: { $in: ['active', 'closed'] }
     });
-
-    const currentPhase = appraisal.conversationAssessment?.currentPhase || 'okr_reflection';
 
     // Add user message to chat thread
     appraisal.chatThread.push({
@@ -4756,6 +5081,16 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
         { requireChatGpt: true }
       )
     );
+
+    let nextCycleState = getCycleQuestionState(appraisal);
+    if (result.currentPhase === 'cycle_questions') {
+      persistCycleQuestionProgress(appraisal, nextCycleState);
+      if (nextCycleState.progress.completed) {
+        result.currentPhase = 'report_generation';
+      } else {
+        result.response = `${result.response}\n\n${formatCycleQuestionPrompt(nextCycleState.activeQuestion)}`;
+      }
+    }
 
     // Add AI response to chat thread
     const aiMessage = {
@@ -4781,6 +5116,12 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
     // Only add structuredData if extractedData is valid and meaningful
     if (normalizedExtractedData) {
       aiMessage.structuredData = normalizedExtractedData;
+    }
+    if (result.currentPhase === 'cycle_questions' && nextCycleState.activeQuestion) {
+      aiMessage.questionRef = {
+        sectionId: nextCycleState.activeQuestion.sectionId,
+        questionId: nextCycleState.activeQuestion.questionId
+      };
     }
 
     appraisal.chatThread.push(aiMessage);
@@ -4847,7 +5188,8 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread.slice(-20),
         fallback: false,
-        aiAvailable: true
+        aiAvailable: true,
+        ...cycleQuestionResponseData(appraisal)
       }
     });
   } catch (error) {
@@ -4891,6 +5233,11 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
         success: false,
         error: `Self-assessment is not editable in '${appraisal.status}' status`
       });
+    }
+
+    if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
+      removeRejectedUpload(req.file);
+      return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
     }
 
     if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
@@ -5063,7 +5410,7 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
  */
 router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) => {
   try {
-    const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId));
+    const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId)).populate(tenantCyclePopulate(req));
     if (!appraisal) {
       return res.status(404).json({ success: false, error: 'Appraisal not found' });
     }
@@ -5081,6 +5428,10 @@ router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) 
       });
     }
 
+    if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
+      return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
+    }
+
     const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
     if (!aiAssistEnabled) {
       return res.status(400).json({
@@ -5094,13 +5445,38 @@ router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) 
     ensureConversationAssessmentState(appraisal);
 
     const { targetPhase } = req.body;
-    const phases = ['initialized', 'okr_reflection', 'achievements', 'challenges', 'learnings', 'future_goals', 'competencies', 'report_generation', 'review', 'completed'];
+    const phases = ['initialized', 'okr_reflection', 'cycle_questions', 'achievements', 'challenges', 'learnings', 'future_goals', 'competencies', 'report_generation', 'review', 'completed'];
 
     if (!targetPhase || !phases.includes(targetPhase)) {
       return res.status(400).json({ success: false, error: 'Invalid target phase' });
     }
 
     const currentPhase = appraisal.conversationAssessment?.currentPhase || 'initialized';
+    const cycleState = getCycleQuestionState(appraisal);
+    if (cycleState.questions.length > 0) {
+      if (!cycleState.progress.completed && currentPhase !== 'cycle_questions' && targetPhase !== 'cycle_questions') {
+        return res.status(409).json({
+          success: false,
+          code: 'CYCLE_QUESTIONS_INCOMPLETE',
+          error: 'Continue to the configured cycle questions before advancing to report generation.',
+          data: cycleQuestionResponseData(appraisal)
+        });
+      }
+      if (currentPhase === 'cycle_questions' && !cycleState.progress.completed) {
+        return res.status(409).json({
+          success: false,
+          code: 'CYCLE_QUESTIONS_INCOMPLETE',
+          error: 'Answer or explicitly skip each configured cycle question before advancing.',
+          data: cycleQuestionResponseData(appraisal)
+        });
+      }
+      if (['achievements', 'challenges', 'learnings', 'future_goals', 'competencies'].includes(targetPhase)) {
+        return res.status(400).json({
+          success: false,
+          error: 'This appraisal uses its configured cycle questions instead of the generic reflection phases.'
+        });
+      }
+    }
     const currentIndex = phases.indexOf(currentPhase);
     const targetIndex = phases.indexOf(targetPhase);
 
@@ -5123,18 +5499,27 @@ router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) 
       learnings: "What new skills or knowledge did you develop during this period?",
       future_goals: "Let's set some goals for the next period. What do you want to achieve?",
       competencies: "Let's assess your competencies. How would you rate yourself on the key skills for your role?",
+      cycle_questions: formatCycleQuestionPrompt(cycleState.activeQuestion),
       report_generation: "I have enough information to generate your self-assessment report. Let me compile everything we discussed."
     };
 
     if (phaseMessages[targetPhase]) {
-      appraisal.chatThread.push({
+      const phaseTransitionMessage = {
         sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
         message: phaseMessages[targetPhase],
         messageType: 'phase_transition',
         phase: targetPhase,
         aiContext: { isAiGenerated: true },
         createdAt: new Date()
-      });
+      };
+      if (targetPhase === 'cycle_questions' && cycleState.activeQuestion) {
+        phaseTransitionMessage.questionRef = {
+          sectionId: cycleState.activeQuestion.sectionId,
+          questionId: cycleState.activeQuestion.questionId
+        };
+        persistCycleQuestionProgress(appraisal, cycleState);
+      }
+      appraisal.chatThread.push(phaseTransitionMessage);
     }
 
     await appraisal.save();
@@ -5144,7 +5529,8 @@ router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) 
       data: {
         currentPhase: targetPhase,
         conversationState: appraisal.conversationAssessment,
-        chatThread: appraisal.chatThread.slice(-20)
+        chatThread: appraisal.chatThread.slice(-20),
+        ...cycleQuestionResponseData(appraisal)
       }
     });
   } catch (error) {
@@ -5175,6 +5561,16 @@ router.get('/:appraisalId/conversation/context', requireAuth, async (req, res) =
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
+    if (
+      isEmployee
+      && isSelfAssessmentEditable(appraisal)
+      && appraisal.conversationAssessment?.startedAt
+      && (appraisal.chatThread || []).length > 0
+    ) {
+      const reconciliation = reconcileConfiguredCycleConversation(appraisal);
+      if (reconciliation.changed) await appraisal.save();
+    }
+
     // Get OKRs
     const okrs = await OKR.find({
       organizationId: appraisal.organizationId,
@@ -5192,7 +5588,8 @@ router.get('/:appraisalId/conversation/context', requireAuth, async (req, res) =
         documents: appraisal.documents,
         selfAssessment: appraisal.selfAssessment,
         employee: appraisal.employee,
-        cycle: appraisal.cycleId
+        cycle: appraisal.cycleId,
+        ...cycleQuestionResponseData(appraisal)
       }
     });
   } catch (error) {
@@ -5228,6 +5625,10 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       });
     }
 
+    if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
+      return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
+    }
+
     if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
       return res.status(400).json({
         success: false,
@@ -5243,6 +5644,17 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
     if (!appraisal.conversationAssessment?.startedAt || (appraisal.chatThread || []).length === 0) {
       return res.status(400).json({ success: false, error: 'Conversation has not been started yet' });
     }
+
+    const cycleState = getCycleQuestionState(appraisal);
+    if (cycleState.questions.length > 0 && !cycleState.progress.completed) {
+      return res.status(409).json({
+        success: false,
+        code: 'CYCLE_QUESTIONS_INCOMPLETE',
+        error: 'Complete or explicitly skip every configured cycle question before generating the report.',
+        data: cycleQuestionResponseData(appraisal)
+      });
+    }
+    persistCycleQuestionProgress(appraisal, cycleState);
 
     // Get OKRs
     const okrs = await OKR.find({
@@ -5302,7 +5714,8 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
         report,
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread.slice(-5),
-        aiAvailable: true
+        aiAvailable: true,
+        ...cycleQuestionResponseData(appraisal)
       }
     });
   } catch (error) {
@@ -5335,6 +5748,10 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       });
     }
 
+    if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
+      return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
+    }
+
     ensureConversationAssessmentState(appraisal);
     const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
 
@@ -5349,6 +5766,15 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
 
     const normalizedSummary = normalizeSelfAssessmentSummary(finalReport.overallSummary || {});
     const missingSummarySections = getMissingSelfAssessmentSections(normalizedSummary);
+    const cycleState = getCycleQuestionState(appraisal);
+    if (cycleState.questions.length > 0 && !cycleState.progress.completed) {
+      return res.status(409).json({
+        success: false,
+        code: 'CYCLE_QUESTIONS_INCOMPLETE',
+        error: 'Complete or explicitly skip every configured cycle question before submitting.',
+        data: cycleQuestionResponseData(appraisal)
+      });
+    }
     const missingCustomResponses = missingRequiredCustomResponses(appraisal, 'employee');
     if (missingCustomResponses.length > 0) {
       return res.status(400).json({
@@ -5416,6 +5842,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       ? frozenOkrAssessment
       : (Array.isArray(finalReport.okrAssessment) ? finalReport.okrAssessment : appraisal.selfAssessment?.okrAssessment || []);
 
+    const submittedAt = new Date();
     const nextSelfAssessment = {
       overallSummary: normalizedSummary,
       competencyRatings: appraisal.selfAssessment?.competencyRatings || [],
@@ -5425,8 +5852,8 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
         ...normalizedAiRatingSuggestion,
         generatedAt: new Date()
       } : null,
-      submittedAt: new Date(),
-      lastSavedAt: new Date()
+      submittedAt,
+      lastSavedAt: submittedAt
     };
 
     const existingAiInsights = appraisal.selfAssessment?.aiInsights;
@@ -5439,6 +5866,13 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     }
 
     appraisal.selfAssessment = nextSelfAssessment;
+    if (cycleState.questions.length > 0) {
+      appraisal.customResponses = (appraisal.customResponses || []).map((item) => {
+        const plain = toPlainObject(item);
+        return plain.respondentRole === 'employee' ? { ...plain, submittedAt } : plain;
+      });
+      persistCycleQuestionProgress(appraisal, getCycleQuestionState(appraisal), { now: submittedAt });
+    }
 
     // Generate AI insights only when AI assistance is enabled for this cycle.
     if (aiAssistEnabled) {
@@ -5496,6 +5930,13 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       mode: 'conversation',
       submissionWarnings: missingSummarySections
     });
+    if (cycleState.questions.length > 0) {
+      appraisal.addAuditLog('custom_assessment_responses_submitted', auditActor, {
+        respondentRole: 'employee',
+        responseCount: respondentResponses(appraisal, 'employee').length,
+        skippedQuestionCount: cycleState.progress.skipped
+      });
+    }
     await appraisal.save();
     await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId, appraisal.organizationId);
 

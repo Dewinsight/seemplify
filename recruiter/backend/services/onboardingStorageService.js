@@ -22,7 +22,7 @@ async function uploadBuffer(buffer, {
   }
 
   const result = await createStorageService({
-    configurationResolver: () => resolveStoragePlatformConfiguration({ solution: 'people-transitions' })
+    configurationResolver: ({ force = false } = {}) => resolveStoragePlatformConfiguration({ solution: 'people-transitions', force })
   }).uploadBuffer(buffer, {
     mimeType,
     fileName,

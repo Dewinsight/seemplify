@@ -601,7 +601,8 @@ export interface CVIngestionJob {
   artifacts?: {
     received?: { available?: boolean; at?: string | null };
     durableFile?: { available?: boolean; storedAt?: string | null };
-    cloudinaryFile?: { available?: boolean; storedAt?: string | null };
+    cloudinaryFile?: { available?: boolean; storedAt?: string | null; provider?: string | null };
+    managedFile?: { available?: boolean; storedAt?: string | null; provider?: string | null };
     extractedText?: { available?: boolean; length?: number; extractedAt?: string | null };
     analysis?: { available?: boolean; completedAt?: string | null };
     profile?: { available?: boolean; committedAt?: string | null };

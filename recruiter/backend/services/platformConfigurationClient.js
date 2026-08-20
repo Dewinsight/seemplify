@@ -115,15 +115,10 @@ async function resolveStoragePlatformConfiguration({ environment = process.env, 
     storageCache.set(normalizedSolution, { value: configuration, expiresAt: now + 5 * 60_000 });
     return configuration;
   } catch (error) {
-    const cloudinary = environmentCloudinary(environment);
-    const fallback = cloudinary ? {
-      configured: true,
-      solution: normalizedSolution,
-      defaultProvider: 'cloudinary',
-      providers: { cloudinary: { configured: true, ...cloudinary }, azureBlob: { configured: false } }
-    } : null;
-    storageCache.set(normalizedSolution, { value: fallback, expiresAt: now + 30_000 });
-    return fallback;
+    // Storage writes must not silently fall back to Cloudinary. Doing so can
+    // violate the provider selected centrally while Identity is unavailable.
+    storageCache.set(normalizedSolution, { value: null, expiresAt: now + 30_000 });
+    return null;
   }
 }
 

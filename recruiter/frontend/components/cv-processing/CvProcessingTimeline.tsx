@@ -19,9 +19,15 @@ export function CvProcessingTimeline({ job, dark = false }: { job: CVIngestionJo
   })[0]
   const timeline = buildCvStageTimeline(row)
   const artifacts = job.artifacts
+  const managedFile = artifacts?.managedFile || artifacts?.cloudinaryFile
+  const managedStorageLabel = managedFile?.provider === "azure-blob"
+    ? "Azure Blob Storage"
+    : managedFile?.provider === "cloudinary"
+      ? "Cloudinary"
+      : "Managed storage"
   const artifactRows = [
     ["Durable file", artifacts?.durableFile?.available, artifacts?.durableFile?.storedAt],
-    ["Cloudinary", artifacts?.cloudinaryFile?.available, artifacts?.cloudinaryFile?.storedAt],
+    [managedStorageLabel, managedFile?.available, managedFile?.storedAt],
     ["Extracted text", artifacts?.extractedText?.available, artifacts?.extractedText?.extractedAt],
     ["AI result", artifacts?.analysis?.available, artifacts?.analysis?.completedAt],
     ["Candidate profile", artifacts?.profile?.available, artifacts?.profile?.committedAt],

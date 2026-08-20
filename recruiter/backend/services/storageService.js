@@ -40,7 +40,7 @@ function createStorageService({
   return {
     async uploadBuffer(buffer, { fileName = 'file', mimeType = 'application/octet-stream', folder = 'recruiter', resourceType = 'auto', storageKey: requestedStorageKey, cloudinaryOptions = {} } = {}) {
       if (!Buffer.isBuffer(buffer) || !buffer.length) throw new Error('A non-empty file buffer is required.');
-      const policy = await configurationResolver();
+      const policy = await configurationResolver({ force: true });
       if (!policy?.configured) throw new Error('File storage has not been configured by an administrator.');
       if (policy.defaultProvider === 'azure-blob') {
         const configuration = policy.providers?.azureBlob;

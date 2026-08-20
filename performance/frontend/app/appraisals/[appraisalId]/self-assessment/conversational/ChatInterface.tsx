@@ -7,6 +7,12 @@ import {
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { Send, AttachFile, SmartToy, Person, Description } from '@mui/icons-material';
+import {
+  CycleQuestionCard,
+  type CycleQuestionDefinition,
+  type CycleQuestionProgress,
+  type CycleQuestionValue,
+} from './CycleQuestionFlow';
 
 interface Message {
   messageId?: string;
@@ -21,7 +27,7 @@ interface Message {
   linkedDocumentId?: string;
   structuredData?: {
     type: string;
-    data: any;
+    data: unknown;
   };
   aiContext?: {
     isAiGenerated: boolean;
@@ -38,6 +44,12 @@ interface ChatInterfaceProps {
   onAdvancePhase?: () => void;
   isLoading: boolean;
   currentPhase: string;
+  cycleQuestionProgress?: CycleQuestionProgress | null;
+  onSubmitCycleResponse?: (
+    question: CycleQuestionDefinition,
+    value: CycleQuestionValue,
+    skip?: boolean
+  ) => Promise<void>;
   disabled?: boolean;
   canAdvancePhase?: boolean;
 }
@@ -260,6 +272,8 @@ export default function ChatInterface({
   onAdvancePhase,
   isLoading,
   currentPhase,
+  cycleQuestionProgress,
+  onSubmitCycleResponse,
   disabled = false,
   canAdvancePhase = false
 }: ChatInterfaceProps) {
@@ -361,7 +375,23 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </Box>
 
-      {/* Input Area */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        accept=".pdf,.doc,.docx,.txt,.pptx"
+        style={{ display: 'none' }}
+      />
+
+      {cycleQuestionProgress?.currentQuestion && onSubmitCycleResponse ? (
+        <CycleQuestionCard
+          key={cycleQuestionProgress.currentQuestion.key}
+          progress={cycleQuestionProgress}
+          busy={isLoading || isSending || disabled}
+          onSubmit={onSubmitCycleResponse}
+          onUploadEvidence={() => fileInputRef.current?.click()}
+        />
+      ) : (
       <Paper
         elevation={3}
         sx={{
@@ -411,14 +441,6 @@ export default function ChatInterface({
               />
             ))}
           </Stack>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            accept=".pdf,.doc,.docx,.txt,.pptx"
-            style={{ display: 'none' }}
-          />
 
           <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1 }}>
             <Tooltip title="Attach document (PDF, DOC, DOCX, TXT, PPTX)">
@@ -498,6 +520,7 @@ export default function ChatInterface({
           </Box>
         </Box>
       </Paper>
+      )}
     </Box>
   );
 }

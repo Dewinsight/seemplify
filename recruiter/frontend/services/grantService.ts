@@ -25,6 +25,16 @@ export interface GrantHistory {
   lastRevocation?: string;
 }
 
+export interface GrantUsage {
+  currentCount: number;
+  maxAllowed: number;
+  availableSlots: number;
+  utilizationPercentage: number;
+  atLimit: boolean;
+  configured: boolean;
+  accountCount: number;
+}
+
 class GrantService {
   private baseUrl = `/api/grant`;
 
@@ -47,6 +57,17 @@ class GrantService {
       console.error('Error getting grant status:', error);
       throw error;
     }
+  }
+
+  async getGrantUsage(): Promise<GrantUsage> {
+    const response = await apiRequest(`${this.baseUrl}/usage`, { method: 'GET' });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get calendar capacity');
+    }
+
+    return data.usage;
   }
 
   /**

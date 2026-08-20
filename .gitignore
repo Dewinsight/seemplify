@@ -80,3 +80,6 @@ lms/docker/lms-prod-dump.sql
 
 # CV Files
 cv/
+
+# Operational credential archives belong in the sibling access workspace.
+access.rar

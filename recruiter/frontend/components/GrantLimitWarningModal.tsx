@@ -14,11 +14,9 @@ import { Badge } from '@/components/ui/badge';
 import { 
   AlertTriangle, 
   Calendar, 
-  Clock, 
-  RefreshCw,
-  Users
+  RefreshCw
 } from 'lucide-react';
-import { apiRequest } from '@/services/apiConfig';
+import { grantService } from '@/services/grantService';
 
 interface GrantUsageStats {
   currentCount: number;
@@ -26,13 +24,6 @@ interface GrantUsageStats {
   availableSlots: number;
   utilizationPercentage: number;
   atLimit: boolean;
-  oldestGrant?: {
-    userName: string;
-    email: string;
-    ageInDays: number;
-    connectedAt: string;
-    provider: string;
-  };
 }
 
 interface GrantLimitWarningModalProps {
@@ -62,11 +53,7 @@ export default function GrantLimitWarningModal({
   const fetchGrantUsage = async () => {
     try {
       setLoading(true);
-      const response = await apiRequest('GET', '/api/admin/grants/usage');
-      
-      if (response.success) {
-        setStats(response.usage);
-      }
+      setStats(await grantService.getGrantUsage());
     } catch (error) {
       console.error('Error fetching grant usage:', error);
     } finally {
@@ -78,16 +65,6 @@ export default function GrantLimitWarningModal({
     setContinuing(true);
     await onContinue();
     setContinuing(false);
-  };
-
-  const getProviderBadge = (provider: string) => {
-    const colors: Record<string, string> = {
-      google: 'bg-blue-500',
-      outlook: 'bg-indigo-500',
-      microsoft: 'bg-indigo-500',
-      yahoo: 'bg-purple-500'
-    };
-    return colors[provider?.toLowerCase()] || 'bg-gray-500';
   };
 
   return (
@@ -154,36 +131,10 @@ export default function GrantLimitWarningModal({
                 </ul>
               </div>
 
-              {/* Oldest Grant Info */}
-              {stats.oldestGrant && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    Oldest Connection (Will be removed)
-                  </h4>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">{stats.oldestGrant.userName}</p>
-                      <p className="text-sm text-gray-600">{stats.oldestGrant.email}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge className={`${getProviderBadge(stats.oldestGrant.provider)} text-white text-xs`}>
-                          {stats.oldestGrant.provider}
-                        </Badge>
-                        <span className="text-xs text-gray-500">
-                          Connected {stats.oldestGrant.ageInDays} days ago
-                        </span>
-                      </div>
-                    </div>
-                    <Users className="w-8 h-8 text-gray-400" />
-                  </div>
-                </div>
-              )}
-
               {/* Note */}
               <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
                 <strong>Note:</strong> This is an automatic process to ensure smooth calendar connections. 
-                The system always maintains the 5 most recently connected calendars.
+                The system retains the most recently used connections within the configured capacity of {stats.maxAllowed}.
               </div>
             </>
           ) : (

@@ -56,6 +56,7 @@ test('current analyzing stage stays active while proved prior stages are done an
     state: 'processing',
     stage: 'analyzing',
     progress: 60,
+    storageProvider: 'azure-blob',
     canRetry: false,
     detailIsExact: true,
     receivedAt: '2026-08-09T10:00:00.000Z',
@@ -72,7 +73,7 @@ test('current analyzing stage stays active while proved prior stages are done an
   assert.deepEqual(timeline.map(({ label, state }) => [label, state]), [
     ['Received', 'done'],
     ['Secure storage', 'done'],
-    ['Cloudinary', 'done'],
+    ['Azure Blob Storage', 'done'],
     ['Text extraction', 'done'],
     ['AI analysis', 'active'],
     ['Profile creation', 'pending'],

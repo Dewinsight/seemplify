@@ -8,8 +8,17 @@ import api from '@/lib/api';
 import ChatInterface from './ChatInterface';
 import PhaseProgress from './PhaseProgress';
 import ReportPreview from './ReportPreview';
+import {
+  CycleResponsesReview,
+  formatCycleQuestionValue,
+  normalizeCycleQuestionProgress,
+  type CycleQuestionDefinition,
+  type CycleQuestionProgress,
+  type CycleQuestionValue,
+} from './CycleQuestionFlow';
 
 interface Message {
+  _id?: string;
   messageId?: string;
   sender: {
     userId: string;
@@ -22,7 +31,7 @@ interface Message {
   linkedDocumentId?: string;
   structuredData?: {
     type: string;
-    data: any;
+    data: unknown;
   };
   aiContext?: {
     isAiGenerated: boolean;
@@ -36,7 +45,10 @@ interface OKRSummary {
   id: string;
   title: string;
   progress: number;
-  objectives?: any[];
+  objectives?: Array<{
+    title: string;
+    keyResults?: Array<{ title: string; target: number; current: number; progress: number }>;
+  }>;
 }
 
 interface ConversationState {
@@ -45,10 +57,10 @@ interface ConversationState {
   currentOkrIndex: number;
   completedPhases: string[];
   extractedData: {
-    achievements: any[];
-    challenges: any[];
-    skills: any[];
-    goals: any[];
+    achievements: Array<{ text: string; confidence?: number }>;
+    challenges: Array<{ text: string }>;
+    skills: Array<{ skill: string }>;
+    goals: Array<{ goal: string }>;
   };
   startedAt?: string;
   lastActivityAt?: string;
@@ -63,7 +75,12 @@ interface ReportData {
     improvements: string;
     goals: string;
   };
-  okrAssessment?: any[];
+  okrAssessment?: Array<{
+    okrId: string;
+    okrTitle: string;
+    completionPercentage: number | null;
+    selfComments: string;
+  }>;
   // AI suggestion (not the employee's final self-rating)
   suggestedOverallRating: number | null;
   ratingJustification: string;
@@ -105,11 +122,58 @@ const CHATGPT_GATE_CODES = new Set([
   'CHATGPT_UNAVAILABLE',
 ]);
 
+interface ApiRequestError {
+  response?: {
+    status?: number;
+    data?: {
+      code?: string;
+      error?: string;
+      data?: Record<string, unknown>;
+    };
+  };
+  message?: string;
+}
+
+function asApiRequestError(reason: unknown) {
+  return reason as ApiRequestError;
+}
+
 function chatGptGateFailure(reason: unknown) {
-  const error = reason as { response?: { data?: { code?: string; error?: string } }; message?: string };
+  const error = asApiRequestError(reason);
   const code = error.response?.data?.code || '';
   if (!CHATGPT_GATE_CODES.has(code)) return null;
   return error.response?.data?.error || error.message || 'ChatGPT is required to continue this conversation.';
+}
+
+function messageIdentity(message: Message) {
+  const persistedId = message.messageId || message._id;
+  if (persistedId) return `id:${persistedId}`;
+  const createdAt = message.createdAt instanceof Date ? message.createdAt.toISOString() : String(message.createdAt || '');
+  return [
+    message.sender?.userId,
+    message.sender?.role,
+    message.messageType,
+    message.phase || '',
+    createdAt,
+    message.message,
+  ].join('|');
+}
+
+function mergeCanonicalChatThread(current: Message[], canonical: Message[]) {
+  if (canonical.length === 0) return current;
+  const merged = [...current];
+  const positions = new Map(merged.map((message, index) => [messageIdentity(message), index]));
+  canonical.forEach((message) => {
+    const identity = messageIdentity(message);
+    const existingIndex = positions.get(identity);
+    if (existingIndex === undefined) {
+      positions.set(identity, merged.length);
+      merged.push(message);
+    } else {
+      merged[existingIndex] = message;
+    }
+  });
+  return merged;
 }
 
 export default function ConversationalAssessment({ appraisalId, onComplete, onChatGptUnavailable }: ConversationalAssessmentProps) {
@@ -127,13 +191,20 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
   const [requireSelfRating, setRequireSelfRating] = useState(true);
   const [allowReviewConversation, setAllowReviewConversation] = useState(false);
   const [reviewAutoGenerateAttempted, setReviewAutoGenerateAttempted] = useState(false);
+  const [cycleQuestionProgress, setCycleQuestionProgress] = useState<CycleQuestionProgress | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
   const findLatestReportInThread = useCallback((thread: Message[] = []) => {
     const reportMessage = [...thread]
       .reverse()
       .find((m) => m.structuredData?.type === 'report' && m.structuredData?.data);
-    return reportMessage?.structuredData?.data || null;
+    return (reportMessage?.structuredData?.data as ReportData | undefined) || null;
+  }, []);
+
+  const applyCycleQuestionProgress = useCallback((data: unknown) => {
+    const next = normalizeCycleQuestionProgress(data);
+    if (next) setCycleQuestionProgress(next);
+    return next;
   }, []);
 
   // Load existing conversation or initialize
@@ -146,12 +217,18 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
       const response = await api.get(`/appraisals/${appraisalId}/conversation/context`);
       const data = response.data.data;
       setRequireSelfRating(data?.cycle?.settings?.allowSelfRating !== false);
+      applyCycleQuestionProgress(data);
 
       if (data.conversationState && data.chatThread && data.chatThread.length > 0) {
         // Resume existing conversation
         setConversationState(data.conversationState);
         setMessages(data.chatThread);
-        setOkrSummary(data.okrs?.map((okr: any) => ({
+        setOkrSummary(data.okrs?.map((okr: {
+          _id: string;
+          title?: string;
+          progress?: number;
+          objectives?: OKRSummary['objectives'];
+        }) => ({
           id: okr._id,
           title: okr.title || okr.objectives?.[0]?.title || 'Untitled OKR',
           progress: okr.progress || 0,
@@ -167,13 +244,13 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Load conversation error:', err);
       // Not an error - conversation hasn't started yet
     } finally {
       setIsLoading(false);
     }
-  }, [appraisalId, findLatestReportInThread]);
+  }, [appraisalId, applyCycleQuestionProgress, findLatestReportInThread]);
 
   useEffect(() => {
     loadConversation();
@@ -196,15 +273,16 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
       setConversationState(data.conversationState);
       setMessages(data.chatThread || []);
       setOkrSummary(data.okrSummary || []);
+      applyCycleQuestionProgress(data);
       setSnackbar({ open: true, message: 'Conversation started!', severity: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Start conversation error:', err);
       const gateMessage = chatGptGateFailure(err);
       if (gateMessage) {
         onChatGptUnavailable?.(gateMessage);
         return;
       }
-      setError(err.response?.data?.error || 'Failed to start conversation');
+      setError(asApiRequestError(err).response?.data?.error || 'Failed to start conversation');
       setSnackbar({ open: true, message: 'Failed to start conversation', severity: 'error' });
     } finally {
       setIsProcessing(false);
@@ -212,8 +290,12 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
   };
 
   // Send a message
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (
+    message: string,
+    cycleResponse?: { sectionId: string; questionId: string; value?: CycleQuestionValue; skip?: boolean }
+  ) => {
     setIsProcessing(true);
+    setError(null);
     const isReviewPhase = conversationState?.currentPhase === 'review' || conversationState?.currentPhase === 'report_generation';
 
     // If user continues chatting in review mode, invalidate any existing draft until report is regenerated.
@@ -234,7 +316,10 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      const response = await api.post(`/appraisals/${appraisalId}/conversation/message`, { message });
+      const response = await api.post(`/appraisals/${appraisalId}/conversation/message`, {
+        message,
+        ...(cycleResponse ? { cycleResponse } : {})
+      });
       const data = response.data.data;
 
       if (data.fallback === true || data.aiAvailable === false) {
@@ -246,12 +331,13 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
       // Update with AI response
       setMessages(data.chatThread || []);
       setConversationState(data.conversationState);
+      applyCycleQuestionProgress(data);
 
       // Check if we should transition to report generation
       if (data.currentPhase === 'report_generation') {
         await generateReport();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Send message error:', err);
       const gateMessage = chatGptGateFailure(err);
       if (gateMessage) {
@@ -259,12 +345,50 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
         setMessages(prev => prev.slice(0, -1));
         return;
       }
-      setError(err.response?.data?.error || 'Failed to send message');
-      // Remove optimistic message on error
-      setMessages(prev => prev.slice(0, -1));
+      const requestError = asApiRequestError(err);
+      const status = Number(requestError.response?.status || 0);
+      const authoritative = requestError.response?.data?.data;
+      const canRecoverFromAuthoritativeState = (status === 409 || status === 422)
+        && authoritative
+        && typeof authoritative === 'object';
+      if (canRecoverFromAuthoritativeState) {
+        applyCycleQuestionProgress(authoritative);
+        const authoritativeState = authoritative.conversationState;
+        const authoritativePhase = authoritative.currentPhase;
+        if (authoritativeState && typeof authoritativeState === 'object') {
+          setConversationState(authoritativeState as ConversationState);
+        } else if (typeof authoritativePhase === 'string') {
+          setConversationState((previous) => previous
+            ? { ...previous, currentPhase: authoritativePhase }
+            : previous);
+        }
+        setMessages((previous) => {
+          const withoutOptimisticMessage = previous.slice(0, -1);
+          return Array.isArray(authoritative.chatThread)
+            ? mergeCanonicalChatThread(withoutOptimisticMessage, authoritative.chatThread)
+            : withoutOptimisticMessage;
+        });
+      } else {
+        // Remove the optimistic message while retaining the active question for retry.
+        setMessages(prev => prev.slice(0, -1));
+      }
+      setError(requestError.response?.data?.error || 'Failed to send message');
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleSubmitCycleResponse = async (
+    question: CycleQuestionDefinition,
+    value: CycleQuestionValue,
+    skip = false
+  ) => {
+    const message = skip ? `Skipped: ${question.prompt}` : formatCycleQuestionValue(value);
+    await handleSendMessage(message, {
+      sectionId: question.sectionId,
+      questionId: question.questionId,
+      ...(skip ? { skip: true } : { value })
+    });
   };
 
   // Upload a document
@@ -283,14 +407,14 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
 
       setMessages(data.chatThread || []);
       setSnackbar({ open: true, message: `Document "${file.name}" uploaded and analyzed`, severity: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload error:', err);
       const gateMessage = chatGptGateFailure(err);
       if (gateMessage) {
         onChatGptUnavailable?.(gateMessage);
         return;
       }
-      setError(err.response?.data?.error || 'Failed to upload document');
+      setError(asApiRequestError(err).response?.data?.error || 'Failed to upload document');
       setSnackbar({ open: true, message: 'Failed to upload document', severity: 'error' });
     } finally {
       setIsProcessing(false);
@@ -313,22 +437,51 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
 
       setReport(data.report);
       setConversationState(data.conversationState);
-      setMessages(prev => [...prev, ...data.chatThread.slice(-2)]);
+      applyCycleQuestionProgress(data);
+      setMessages((previous) => mergeCanonicalChatThread(
+        previous,
+        Array.isArray(data.chatThread) ? data.chatThread : []
+      ));
       setShowReport(true);
       setReviewAutoGenerateAttempted(true);
       setAllowReviewConversation(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Generate report error:', err);
       const gateMessage = chatGptGateFailure(err);
       if (gateMessage) {
         onChatGptUnavailable?.(gateMessage);
         return;
       }
-      setError(err.response?.data?.error || 'Failed to generate report');
+      setError(asApiRequestError(err).response?.data?.error || 'Failed to generate report');
     } finally {
       setIsRegenerating(false);
     }
-  }, [appraisalId, isRegenerating, onChatGptUnavailable]);
+  }, [appraisalId, applyCycleQuestionProgress, isRegenerating, onChatGptUnavailable]);
+
+  const handleEditCycleResponse = async (question: CycleQuestionDefinition, value: CycleQuestionValue) => {
+    setIsRegenerating(true);
+    try {
+      await api.put(`/appraisals/${appraisalId}/custom-responses`, {
+        respondentRole: 'employee',
+        submit: false,
+        responses: [{ sectionId: question.sectionId, questionId: question.questionId, value }]
+      });
+      const contextResponse = await api.get(`/appraisals/${appraisalId}/conversation/context`);
+      applyCycleQuestionProgress(contextResponse.data.data);
+      setSnackbar({ open: true, message: 'Cycle response updated. Refreshing your report…', severity: 'success' });
+    } catch (err: unknown) {
+      const requestError = asApiRequestError(err);
+      const message = requestError.response?.data?.error || 'The cycle response could not be updated.';
+      setError(message);
+      setSnackbar({ open: true, message, severity: 'error' });
+      setIsRegenerating(false);
+      return false;
+    }
+
+    setIsRegenerating(false);
+    await generateReport();
+    return true;
+  };
 
   const openReportPreview = useCallback(async () => {
     if (report) {
@@ -346,7 +499,10 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
     const newReport = { ...report };
 
     if (fields.length === 2 && fields[0] === 'overallSummary') {
-      (newReport.overallSummary as any)[fields[1]] = value;
+      const summaryField = fields[1] as keyof ReportData['overallSummary'];
+      if (summaryField in newReport.overallSummary) {
+        newReport.overallSummary = { ...newReport.overallSummary, [summaryField]: value };
+      }
     } else if (field === 'overallSelfRating') {
       const normalized = value?.trim();
       if (!normalized) {
@@ -371,9 +527,9 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
       setSnackbar({ open: true, message: 'Self-assessment submitted successfully!', severity: 'success' });
       setConversationState(prev => prev ? { ...prev, currentPhase: 'completed' } : null);
       onComplete?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Submit report error:', err);
-      const errorMessage = err.response?.data?.error || 'Failed to submit report';
+      const errorMessage = asApiRequestError(err).response?.data?.error || 'Failed to submit report';
       setError(errorMessage);
       setSnackbar({ open: true, message: errorMessage, severity: 'error' });
     } finally {
@@ -476,6 +632,13 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
         >
           Back to Conversation
         </Button>
+        {cycleQuestionProgress && cycleQuestionProgress.total > 0 && (
+          <CycleResponsesReview
+            progress={cycleQuestionProgress}
+            busy={isSubmitting || isRegenerating}
+            onSave={handleEditCycleResponse}
+          />
+        )}
         <ReportPreview
           report={report}
           onEdit={handleEditReport}
@@ -563,6 +726,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
           okrs={okrSummary}
           extractedData={conversationState?.extractedData || { achievements: [], challenges: [], skills: [], goals: [] }}
           currentOkrIndex={conversationState?.currentOkrIndex || 0}
+          cycleQuestionProgress={cycleQuestionProgress}
           onOkrSelect={handleOkrSelect}
         />
 
@@ -610,6 +774,8 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
           onUploadFile={handleUploadFile}
           isLoading={isProcessing}
           currentPhase={conversationState?.currentPhase || 'okr_reflection'}
+          cycleQuestionProgress={cycleQuestionProgress}
+          onSubmitCycleResponse={handleSubmitCycleResponse}
           disabled={
             conversationState?.currentPhase === 'completed'
             || (

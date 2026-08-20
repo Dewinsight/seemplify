@@ -1069,10 +1069,6 @@ router.post('/organizations/:orgId/onboarding/documents',
       return res.status(400).json({ error: 'Only PDF documents are allowed for e-signing' })
     }
 
-    if (!isCloudinaryConfigured()) {
-      return res.status(500).json({ error: 'Cloudinary is not configured' })
-    }
-
     try {
       const uploadResult = await uploadBufferToCloudinary({
         buffer: req.file.buffer,
@@ -1590,10 +1586,6 @@ router.post('/onboarding/:assignmentId/items/:itemId/upload',
 
       if (!req.file) {
         return res.status(400).json({ error: 'File is required' })
-      }
-
-      if (!isCloudinaryConfigured()) {
-        return res.status(500).json({ error: 'Cloudinary is not configured' })
       }
 
       const uploadResult = await uploadBufferToCloudinary({

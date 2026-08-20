@@ -2,7 +2,7 @@ import express from 'express'
 import mongoose from 'mongoose'
 import multer from 'multer'
 import { requireAdminAuth, auditLog, adminRateLimit } from '../middleware/adminAuth.js'
-import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
+import { uploadBufferToCloudinary } from '../services/cloudinaryService.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { slugifyValue } from '../utils/simpleLms.js'
 
@@ -250,10 +250,6 @@ router.post('/upload/banner', upload.single('banner'), auditLog('admin_simple_lm
     if (!req.file.mimetype.startsWith('image/')) {
       return res.status(400).json({ error: 'Only image files are allowed.' })
     }
-    if (!isCloudinaryConfigured()) {
-      return res.status(500).json({ error: 'Cloudinary is not configured.' })
-    }
-
     const uploadResult = await uploadBufferToCloudinary({
       buffer: req.file.buffer,
       filename: req.file.originalname,

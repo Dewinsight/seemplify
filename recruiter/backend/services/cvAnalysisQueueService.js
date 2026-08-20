@@ -4795,7 +4795,7 @@ async function processJob(bullJob, workerToken) {
       try {
         if (!processingJob.cloudinary?.publicId) {
           await updateProcessingStage(processingJob, bullJob, 'uploading', 20);
-          const storagePolicy = await storageConfigurationResolver();
+          const storagePolicy = await storageConfigurationResolver({ force: true });
           if (!storagePolicy?.configured) throw new Error('Managed CV storage is unavailable');
           const uploadIntent = deterministicCloudinaryUploadIntent(
             processingJob,
@@ -4832,7 +4832,7 @@ async function processJob(bullJob, workerToken) {
           const cloudinaryMetadata = {
             resumeUrl: upload.resumeUrl,
             publicId: upload.publicId,
-            storageProvider: upload.storageProvider || 'cloudinary',
+            storageProvider: upload.storageProvider || uploadIntent.storageProvider,
             storageKey: upload.storageKey || upload.publicId,
             storageContainer: upload.storageContainer || null,
             assetId: upload.uploadResult?.asset_id,
@@ -7389,7 +7389,13 @@ function artifactSummary(job = {}) {
     },
     cloudinaryFile: {
       available: Boolean(job.cloudinary?.publicId && job.cloudinary?.cleanupState !== 'deleted'),
-      storedAt: job.artifacts?.cloudinaryStoredAt || null
+      storedAt: job.artifacts?.cloudinaryStoredAt || null,
+      provider: job.cloudinary?.storageProvider || job.cloudinaryUploadIntent?.storageProvider || null
+    },
+    managedFile: {
+      available: Boolean(job.cloudinary?.publicId && job.cloudinary?.cleanupState !== 'deleted'),
+      storedAt: job.artifacts?.cloudinaryStoredAt || null,
+      provider: job.cloudinary?.storageProvider || job.cloudinaryUploadIntent?.storageProvider || null
     },
     extractedText: {
       available: textLength > 0,

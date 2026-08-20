@@ -51,7 +51,8 @@ type RichUploadJob = {
   artifacts?: {
     received?: { at?: string | null };
     durableFile?: { storedAt?: string | null };
-    cloudinaryFile?: { storedAt?: string | null };
+    cloudinaryFile?: { storedAt?: string | null; provider?: string | null };
+    managedFile?: { storedAt?: string | null; provider?: string | null };
     extractedText?: { extractedAt?: string | null };
     analysis?: { completedAt?: string | null };
     profile?: { committedAt?: string | null };
@@ -87,6 +88,7 @@ export type UploadFileRow = {
   receivedAt?: string | null;
   storedAt?: string | null;
   cloudStoredAt?: string | null;
+  storageProvider?: string | null;
   textExtractedAt?: string | null;
   analysisCompletedAt?: string | null;
   profileCommittedAt?: string | null;
@@ -109,7 +111,7 @@ export type CvStageTimelineItem = {
 const CV_STAGE_DEFINITIONS = [
   { label: "Received", history: ["received", "ingesting"], current: ["received", "ingesting"] },
   { label: "Secure storage", history: [] as string[], current: [] as string[], artifact: "storedAt" as const },
-  { label: "Cloudinary", history: ["uploading", "stored"], current: ["uploading"], artifact: "cloudStoredAt" as const },
+  { label: "Managed storage", history: ["uploading", "stored"], current: ["uploading"], artifact: "cloudStoredAt" as const },
   { label: "Text extraction", history: ["extracting"], current: ["extracting"], artifact: "textExtractedAt" as const },
   { label: "AI analysis", history: ["analyzing"], current: ["analyzing"], artifact: "analysisCompletedAt" as const },
   { label: "Profile creation", history: ["profile_creation", "finalizing"], current: ["profile_creation", "finalizing"], artifact: "profileCommittedAt" as const },
@@ -148,7 +150,13 @@ export function buildCvStageTimeline(row: UploadFileRow): CvStageTimelineItem[] 
     else if (index === 6 && row.state === "completed") state = "done";
     else if (!row.detailIsExact) state = "unknown";
     return {
-      label: definition.label,
+      label: index === 2
+        ? row.storageProvider === "azure-blob"
+          ? "Azure Blob Storage"
+          : row.storageProvider === "cloudinary"
+            ? "Cloudinary"
+            : definition.label
+        : definition.label,
       state,
       at: artifactAt || entry?.at || (matchesFailure ? row.errorAt : null),
     };
@@ -317,7 +325,8 @@ export function reconcileUploadFiles(
         stageStartedAt: job.stageStartedAt || null,
         receivedAt: job.artifacts?.received?.at || job.file?.receivedAt || null,
         storedAt: job.artifacts?.durableFile?.storedAt || job.file?.storedAt || null,
-        cloudStoredAt: job.artifacts?.cloudinaryFile?.storedAt || job.file?.cloudStoredAt || null,
+        cloudStoredAt: job.artifacts?.managedFile?.storedAt || job.artifacts?.cloudinaryFile?.storedAt || job.file?.cloudStoredAt || null,
+        storageProvider: job.artifacts?.managedFile?.provider || job.artifacts?.cloudinaryFile?.provider || null,
         textExtractedAt: job.artifacts?.extractedText?.extractedAt || null,
         analysisCompletedAt: job.artifacts?.analysis?.completedAt || null,
         profileCommittedAt: job.artifacts?.profile?.committedAt || null,

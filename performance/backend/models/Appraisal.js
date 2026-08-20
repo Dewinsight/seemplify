@@ -168,6 +168,7 @@ const appraisalSchema = new mongoose.Schema({
         'learnings',
         'future_goals',
         'competencies',
+        'cycle_questions',
         'report_generation',
         'review',
         'completed'
@@ -176,6 +177,13 @@ const appraisalSchema = new mongoose.Schema({
     },
     currentOkrIndex: { type: Number, default: 0 },
     completedPhases: [String],
+    cycleQuestionProgress: {
+      currentIndex: { type: Number, default: 0 },
+      completedKeys: [String],
+      skippedKeys: [String],
+      startedAt: Date,
+      completedAt: Date
+    },
 
     // Extracted data from conversation
     extractedData: {
@@ -435,6 +443,10 @@ const appraisalSchema = new mongoose.Schema({
     },
     // Conversation tracking fields
     phase: String, // Which phase this message belongs to
+    questionRef: {
+      sectionId: String,
+      questionId: String
+    },
     linkedOkrId: { type: mongoose.Schema.Types.ObjectId, ref: 'OKR' }, // If discussing specific OKR
     linkedDocumentId: { type: mongoose.Schema.Types.ObjectId, ref: 'AppraisalDocument' }, // If referencing uploaded document
     structuredData: {

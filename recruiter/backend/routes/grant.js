@@ -21,6 +21,13 @@ router.use(authMiddleware);
 router.get('/status', grantController.checkGrantStatus);
 
 /**
+ * @route GET /api/grant/usage
+ * @desc Get live system calendar capacity without exposing other users
+ * @access Private
+ */
+router.get('/usage', grantController.getGrantUsage);
+
+/**
  * @route POST /api/grant/verify
  * @desc Verify current user's grant with OAuth provider
  * @access Private
@@ -64,4 +71,4 @@ router.post('/admin/verify-all', grantController.verifyAllGrants);
  */
 router.post('/admin/force-refresh/:userId', grantController.forceGrantRefresh);
 
-module.exports = router; 
+module.exports = router;

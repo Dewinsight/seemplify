@@ -68,3 +68,16 @@ test('Learning accepts CLOUDINARY_URL as an offline compatibility fallback', asy
   }
   assert.equal(await hydrateCloudinaryConfiguration({ environment, quiet: true }), true)
 })
+
+test('Learning storage policy fails closed instead of silently selecting Cloudinary', async (t) => {
+  const originalFetch = global.fetch
+  t.after(() => { global.fetch = originalFetch; clearStoragePlatformConfigurationCache() })
+  clearStoragePlatformConfigurationCache()
+  global.fetch = async () => { throw new Error('offline') }
+  const configuration = await resolveStoragePlatformConfiguration({ force: true, environment: {
+    NODE_ENV: 'test',
+    CLOUDINARY_URL: 'cloudinary://fallback-key:fallback-secret@fallback-cloud',
+    IDP_PLATFORM_INTEGRATION_HMAC_SECRET: 'test-only-platform-service-secret-material-123456'
+  } })
+  assert.equal(configuration, null)
+})

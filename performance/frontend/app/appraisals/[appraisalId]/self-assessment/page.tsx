@@ -306,13 +306,6 @@ export default function SelfAssessmentPage() {
         </Alert>
       )}
 
-      <CustomAssessmentSections
-        ref={customSectionsRef}
-        appraisal={appraisal}
-        respondentRole="employee"
-        onSaveError={(message) => setSnackbar({ open: true, message, severity: 'error' })}
-      />
-
       {aiAssistEnabled ? (
         <Fade in>
           <Box>
@@ -330,6 +323,13 @@ export default function SelfAssessmentPage() {
       ) : (
         <Fade in>
           <Box>
+            <CustomAssessmentSections
+              ref={customSectionsRef}
+              appraisal={appraisal}
+              respondentRole="employee"
+              onSaveError={(message) => setSnackbar({ open: true, message, severity: 'error' })}
+            />
+
             <Alert severity="info" sx={{ mb: 3 }}>
               AI assistance is disabled for this appraisal cycle. Use this manual form to complete and submit your self-assessment.
             </Alert>

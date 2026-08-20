@@ -8,7 +8,8 @@ const safe = (value, fallback = 'file') => String(value || fallback).replace(/[^
 function createStorageService({ configurationResolver = resolveStoragePlatformConfiguration } = {}) {
     return {
         async uploadBuffer(buffer, { fileName, mimeType, folder = 'approver' } = {}) {
-            const policy = await configurationResolver();
+            const policy = await configurationResolver({ force: true });
+            if (!policy?.configured) throw new Error('Managed file storage is unavailable.');
             if (policy.defaultProvider === 'azure-blob') {
                 const configuration = policy.providers.azureBlob;
                 const credential = new StorageSharedKeyCredential(configuration.accountName, configuration.accountKey);

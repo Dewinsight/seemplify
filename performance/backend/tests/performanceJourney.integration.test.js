@@ -785,6 +785,36 @@ test('appraisal document, chat, assessment, and finalization paths reject a rela
     .expect(404);
 
   await request(app)
+    .post(`/api/appraisals/${foreignAppraisal._id}/conversation/start`)
+    .set('x-test-actor', 'employee')
+    .set('x-test-organization', ORG_A)
+    .send({})
+    .expect(404);
+  await request(app)
+    .post(`/api/appraisals/${foreignAppraisal._id}/conversation/message`)
+    .set('x-test-actor', 'employee')
+    .set('x-test-organization', ORG_A)
+    .send({ message: 'Cross-tenant message' })
+    .expect(404);
+  await request(app)
+    .get(`/api/appraisals/${foreignAppraisal._id}/conversation/context`)
+    .set('x-test-actor', 'employee')
+    .set('x-test-organization', ORG_A)
+    .expect(404);
+  await request(app)
+    .post(`/api/appraisals/${foreignAppraisal._id}/conversation/generate-report`)
+    .set('x-test-actor', 'employee')
+    .set('x-test-organization', ORG_A)
+    .send({})
+    .expect(404);
+  await request(app)
+    .post(`/api/appraisals/${foreignAppraisal._id}/conversation/finalize-report`)
+    .set('x-test-actor', 'employee')
+    .set('x-test-organization', ORG_A)
+    .send({ report: {} })
+    .expect(404);
+
+  await request(app)
     .post(`/api/appraisals/${foreignAppraisal._id}/self-assessment`)
     .set('x-test-actor', 'employee')
     .set('x-test-organization', ORG_A)
@@ -911,6 +941,566 @@ test('conversational appraisal cannot start without a routable ChatGPT account',
   } finally {
     chatGptAccountService.readAccount = originalReadAccount;
   }
+});
+
+test('self-assessment conversation and cycle responses remain closed before the configured phase opens', async () => {
+  const now = new Date();
+  const design = {
+    version: 1,
+    scoring: { goalsWeight: 100, competenciesWeight: 0 },
+    stages: { selfAssessment: { enabled: true }, managerReview: { enabled: true }, finalReview: { enabled: true } },
+    sections: [{
+      id: 'future_question', title: 'Future question', type: 'custom', respondent: 'employee', required: true,
+      scored: false, weight: 0, questions: [{ id: 'answer', prompt: 'Answer after opening.', responseType: 'long_text', required: true }]
+    }]
+  };
+  const cycle = await AppraisalCycle.create({
+    organizationId: ORG_A,
+    name: 'Future self-assessment phase',
+    periodStart: new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)),
+    periodEnd: now,
+    status: 'active',
+    phases: {
+      selfAssessment: {
+        startDate: new Date(now.getTime() + (24 * 60 * 60 * 1000)),
+        endDate: new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000))
+      }
+    },
+    settings: { enableAiAssist: true },
+    workflowDefinition: design
+  });
+  const appraisal = await Appraisal.create({
+    organizationId: ORG_A,
+    cycleId: cycle._id,
+    cycleConfigurationSnapshot: { version: 1, workflowDefinition: design, capturedAt: now },
+    employee: { userId: EMPLOYEE, name: 'Employee One', email: 'employee@example.com' },
+    manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+    status: 'self_assessment_pending'
+  });
+
+  await request(app)
+    .post(`/api/appraisals/${appraisal._id}/conversation/start`)
+    .set('x-test-actor', 'employee')
+    .send({})
+    .expect(409);
+  await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'employee')
+    .send({
+      respondentRole: 'employee',
+      responses: [{ sectionId: 'future_question', questionId: 'answer', value: 'Too early' }]
+    })
+    .expect(409);
+  const unchanged = await Appraisal.findById(appraisal._id).lean();
+  expect(unchanged.chatThread || []).toHaveLength(0);
+  expect(unchanged.customResponses || []).toHaveLength(0);
+});
+
+test('guided chat asks frozen cycle questions, validates typed answers, resumes idempotently, and submits canonical responses', async () => {
+  const now = new Date();
+  const frozenDesign = {
+    version: 1,
+    scoring: { goalsWeight: 40, competenciesWeight: 60 },
+    stages: {
+      goalSetting: { enabled: true }, selfAssessment: { enabled: true }, managerReview: { enabled: true },
+      discussion: { enabled: false }, calibration: { enabled: false }, finalReview: { enabled: true }, acknowledgement: { enabled: true }
+    },
+    sections: [
+      {
+        id: 'employee_reflection', title: 'Configured reflection', description: 'Questions frozen at launch.', type: 'custom',
+        respondent: 'employee', required: true, scored: false, weight: 0, evidenceRequired: false,
+        questions: [
+          { id: 'impact', prompt: 'Describe the outcome created by your work.', responseType: 'long_text', required: true },
+          { id: 'impact_rating', prompt: 'Rate the strength of that outcome.', responseType: 'rating', required: true, ratingMin: 1, ratingMax: 5 },
+          { id: 'applied_learning', prompt: 'Did you apply new learning?', responseType: 'boolean', required: true },
+          { id: 'optional_themes', prompt: 'Choose any optional themes.', responseType: 'multi_select', required: false, options: ['Delivery', 'Leadership'] }
+        ]
+      },
+      {
+        id: 'manager_only', title: 'Manager only', type: 'custom', respondent: 'manager', required: true, scored: false, weight: 0,
+        questions: [{ id: 'manager_note', prompt: 'Manager confidential prompt', responseType: 'long_text', required: true }]
+      }
+    ]
+  };
+  const cycle = await AppraisalCycle.create({
+    organizationId: ORG_A,
+    name: 'Frozen conversational review',
+    periodStart: new Date(now.getTime() - (60 * 24 * 60 * 60 * 1000)),
+    periodEnd: new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000)),
+    status: 'active',
+    currentPhase: 'selfAssessment',
+    phases: {
+      selfAssessment: {
+        startDate: new Date(now.getTime() - (24 * 60 * 60 * 1000)),
+        endDate: new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000)),
+        isActive: true
+      },
+      managerReview: {
+        startDate: new Date(now.getTime() + (8 * 24 * 60 * 60 * 1000)),
+        endDate: new Date(now.getTime() + (14 * 24 * 60 * 60 * 1000))
+      },
+      finalReview: {
+        startDate: new Date(now.getTime() + (15 * 24 * 60 * 60 * 1000)),
+        endDate: new Date(now.getTime() + (21 * 24 * 60 * 60 * 1000))
+      }
+    },
+    settings: { enableAiAssist: true, allowSelfRating: true, requireOkrAlignment: false },
+    workflowDefinition: frozenDesign
+  });
+  const appraisal = await Appraisal.create({
+    organizationId: ORG_A,
+    cycleId: cycle._id,
+    cycleConfigurationSnapshot: {
+      version: 1,
+      cycleId: String(cycle._id),
+      cycleName: cycle.name,
+      workflowDefinition: frozenDesign,
+      settings: cycle.settings,
+      capturedAt: now
+    },
+    employee: { userId: EMPLOYEE, name: 'Employee One', email: 'employee@example.com' },
+    manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+    status: 'self_assessment_pending'
+  });
+
+  cycle.workflowDefinition.sections[0].questions[0].prompt = 'Changed live-cycle prompt that must not appear';
+  cycle.markModified('workflowDefinition');
+  await cycle.save();
+
+  const originalReadAccount = chatGptAccountService.readAccount;
+  const originalStart = appraisalAIService.startSelfAssessmentConversation;
+  const originalAcknowledge = appraisalAIService.acknowledgeCycleQuestionResponse;
+  const originalAnalyze = appraisalAIService.analyzeSelfAssessment;
+  chatGptAccountService.readAccount = async () => ({ isRoutable: () => true });
+  appraisalAIService.startSelfAssessmentConversation = async () => ({
+    greeting: 'Welcome to your configured review.',
+    okrSummary: [],
+    phase: 'cycle_questions',
+    currentOkrIndex: 0,
+    tokensUsed: 5
+  });
+  appraisalAIService.acknowledgeCycleQuestionResponse = async (currentAppraisal, question) => `Recorded ${question.questionId}.`;
+  appraisalAIService.analyzeSelfAssessment = async () => ({
+    strengths: ['Evidence-backed reflection'],
+    developmentAreas: [], suggestions: [], sentiment: 'positive'
+  });
+
+  try {
+    const resumeAppraisal = await Appraisal.create({
+      organizationId: ORG_A,
+      cycleId: cycle._id,
+      cycleConfigurationSnapshot: {
+        version: 1, cycleId: String(cycle._id), cycleName: cycle.name,
+        workflowDefinition: frozenDesign, settings: cycle.settings, capturedAt: now
+      },
+      employee: { userId: EMPLOYEE, name: 'Employee One', email: 'employee@example.com' },
+      manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+      status: 'self_assessment_pending',
+      customResponses: [{
+        sectionId: 'employee_reflection', questionId: 'impact', respondentRole: 'employee',
+        respondentId: EMPLOYEE, value: 'A response saved in the manual form.', lastSavedAt: now
+      }]
+    });
+    const resumed = await request(app)
+      .post(`/api/appraisals/${resumeAppraisal._id}/conversation/start`)
+      .set('x-test-actor', 'employee')
+      .send({})
+      .expect(200);
+    expect(resumed.body.data.cycleQuestionProgress.answered).toBe(1);
+    expect(resumed.body.data.activeCycleQuestion.questionId).toBe('impact_rating');
+    expect(resumed.body.data.cycleResponses[0].value).toBe('A response saved in the manual form.');
+
+    const started = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/start`)
+      .set('x-test-actor', 'employee')
+      .send({})
+      .expect(200);
+    expect(started.body.data.currentPhase).toBeUndefined();
+    expect(started.body.data.conversationState.currentPhase).toBe('cycle_questions');
+    expect(started.body.data.cycleQuestions.map((item) => item.questionId)).toEqual([
+      'impact', 'impact_rating', 'applied_learning', 'optional_themes'
+    ]);
+    expect(started.body.data.activeCycleQuestion).toMatchObject({
+      sectionId: 'employee_reflection',
+      questionId: 'impact',
+      prompt: 'Describe the outcome created by your work.',
+      responseType: 'long_text'
+    });
+    expect(started.body.data.greeting).toContain('Describe the outcome created by your work.');
+    expect(started.body.data.greeting).not.toContain('Changed live-cycle prompt');
+
+    await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({
+        message: 'I delivered a measurable customer workflow.',
+        cycleResponse: {
+          sectionId: 'employee_reflection', questionId: 'impact',
+          value: 'I delivered a measurable customer workflow.'
+        }
+      })
+      .expect(200);
+
+    const reportBlocked = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/generate-report`)
+      .set('x-test-actor', 'employee')
+      .send({})
+      .expect(409);
+    expect(reportBlocked.body.code).toBe('CYCLE_QUESTIONS_INCOMPLETE');
+
+    const retry = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ cycleResponse: { sectionId: 'employee_reflection', questionId: 'impact', value: 'I delivered a measurable customer workflow.' } })
+      .expect(200);
+    expect(retry.body.data.idempotent).toBe(true);
+
+    const stale = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ cycleResponse: { sectionId: 'employee_reflection', questionId: 'impact', value: 'A different overwrite' } })
+      .expect(409);
+    expect(stale.body.code).toBe('CYCLE_QUESTION_STALE');
+
+    const fabricated = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ cycleResponse: { sectionId: 'employee_reflection', questionId: 'not_frozen', value: 'Injected answer' } })
+      .expect(422);
+    expect(fabricated.body.code).toBe('CYCLE_QUESTION_UNKNOWN');
+
+    const invalidRating = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ cycleResponse: { sectionId: 'employee_reflection', questionId: 'impact_rating', value: 9 } })
+      .expect(422);
+    expect(invalidRating.body.code).toBe('CYCLE_RESPONSE_INVALID');
+
+    await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ cycleResponse: { sectionId: 'employee_reflection', questionId: 'impact_rating', value: 4 } })
+      .expect(200);
+    await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ cycleResponse: { sectionId: 'employee_reflection', questionId: 'applied_learning', value: false } })
+      .expect(200);
+    const completed = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ cycleResponse: { sectionId: 'employee_reflection', questionId: 'optional_themes', skip: true } })
+      .expect(200);
+    expect(completed.body.data.currentPhase).toBe('report_generation');
+    expect(completed.body.data.cycleQuestionProgress).toMatchObject({ total: 4, answered: 3, skipped: 1, completed: true });
+    expect(completed.body.data.cycleResponses).toHaveLength(3);
+
+    const finalRetry = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ cycleResponse: { sectionId: 'employee_reflection', questionId: 'optional_themes', skip: true } })
+      .expect(200);
+    expect(finalRetry.body.data.idempotent).toBe(true);
+    expect(finalRetry.body.data.currentPhase).toBe('report_generation');
+
+    const context = await request(app)
+      .get(`/api/appraisals/${appraisal._id}/conversation/context`)
+      .set('x-test-actor', 'employee')
+      .expect(200);
+    expect(context.body.data.activeCycleQuestion).toBeNull();
+    expect(context.body.data.cycleResponses).toEqual(expect.arrayContaining([
+      expect.objectContaining({ questionId: 'impact_rating', value: 4 }),
+      expect.objectContaining({ questionId: 'applied_learning', value: false })
+    ]));
+
+    await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/finalize-report`)
+      .set('x-test-actor', 'employee')
+      .send({
+        report: {
+          overallSummary: {
+            achievements: 'Delivered a measurable customer workflow with clear adoption gains.',
+            challenges: 'Managed a difficult dependency and resolved it with the platform team.',
+            learnings: 'Applied structured discovery practices to improve the launch decision.',
+            improvements: 'Will involve stakeholders earlier in the next delivery cycle.',
+            goals: 'Ship the next workflow with a measurable adoption target.'
+          },
+          overallSelfRating: 4,
+          okrAssessment: []
+        }
+      })
+      .expect(200);
+
+    const persisted = await Appraisal.findById(appraisal._id).lean();
+    expect(persisted.status).toBe('manager_review_pending');
+    expect(persisted.customResponses).toHaveLength(3);
+    expect(persisted.customResponses.every((item) => Boolean(item.submittedAt))).toBe(true);
+    expect(persisted.auditLog.map((item) => item.action)).toEqual(expect.arrayContaining([
+      'self_assessment_submitted', 'custom_assessment_responses_submitted'
+    ]));
+  } finally {
+    chatGptAccountService.readAccount = originalReadAccount;
+    appraisalAIService.startSelfAssessmentConversation = originalStart;
+    appraisalAIService.acknowledgeCycleQuestionResponse = originalAcknowledge;
+    appraisalAIService.analyzeSelfAssessment = originalAnalyze;
+  }
+});
+
+test('context and message reconcile legacy generic conversations into the frozen question queue exactly once', async () => {
+  const now = new Date();
+  const frozenDesign = {
+    version: 1,
+    scoring: { goalsWeight: 40, competenciesWeight: 60 },
+    stages: { selfAssessment: { enabled: true }, managerReview: { enabled: true } },
+    sections: [{
+      id: 'frozen_reflection', title: 'Frozen reflection', type: 'custom', respondent: 'employee',
+      required: true, scored: false, weight: 0, evidenceRequired: false,
+      questions: [
+        { id: 'first', prompt: 'What was your first outcome?', responseType: 'long_text', required: true },
+        { id: 'second', prompt: 'What did you learn next?', responseType: 'long_text', required: true }
+      ]
+    }]
+  };
+  const cycle = await AppraisalCycle.create({
+    organizationId: ORG_A,
+    name: 'Legacy conversation reconciliation',
+    periodStart: new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)),
+    periodEnd: new Date(now.getTime() - (24 * 60 * 60 * 1000)),
+    status: 'active',
+    currentPhase: 'selfAssessment',
+    phases: {
+      selfAssessment: {
+        startDate: new Date(now.getTime() - (24 * 60 * 60 * 1000)),
+        endDate: new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000)),
+        isActive: true
+      }
+    },
+    settings: { enableAiAssist: true, requireOkrAlignment: false },
+    workflowDefinition: frozenDesign
+  });
+  const appraisal = await Appraisal.create({
+    organizationId: ORG_A,
+    cycleId: cycle._id,
+    cycleConfigurationSnapshot: {
+      version: 1, cycleId: String(cycle._id), cycleName: cycle.name,
+      workflowDefinition: frozenDesign, settings: cycle.settings, capturedAt: now
+    },
+    employee: { userId: EMPLOYEE, name: 'Employee One', email: 'employee@example.com' },
+    manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+    status: 'self_assessment_in_progress',
+    customResponses: [{
+      sectionId: 'frozen_reflection', questionId: 'first', respondentRole: 'employee',
+      respondentId: EMPLOYEE, value: 'The first answer was already saved.', lastSavedAt: now
+    }],
+    conversationAssessment: {
+      mode: 'conversation', currentPhase: 'achievements', startedAt: now, lastActivityAt: now,
+      completedPhases: ['okr_reflection'],
+      extractedData: { achievements: [], challenges: [], skills: [], goals: [] }
+    },
+    chatThread: [{
+      sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+      message: 'Tell me about another generic achievement.',
+      messageType: 'prompt', phase: 'achievements', createdAt: now
+    }]
+  });
+
+  const firstContext = await request(app)
+    .get(`/api/appraisals/${appraisal._id}/conversation/context`)
+    .set('x-test-actor', 'employee')
+    .expect(200);
+  expect(firstContext.body.data.conversationState.currentPhase).toBe('cycle_questions');
+  expect(firstContext.body.data.activeCycleQuestion.questionId).toBe('second');
+  expect(firstContext.body.data.chatThread.filter((item) => item.questionRef?.questionId === 'second')).toHaveLength(1);
+
+  const repeatedContext = await request(app)
+    .get(`/api/appraisals/${appraisal._id}/conversation/context`)
+    .set('x-test-actor', 'employee')
+    .expect(200);
+  expect(repeatedContext.body.data.chatThread.filter((item) => item.questionRef?.questionId === 'second')).toHaveLength(1);
+
+  await Appraisal.updateOne(
+    { _id: appraisal._id },
+    { $set: { 'conversationAssessment.currentPhase': 'challenges' } }
+  );
+  const originalReadAccount = chatGptAccountService.readAccount;
+  chatGptAccountService.readAccount = async () => ({ isRoutable: () => true });
+  try {
+    const blockedGenericContinuation = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/message`)
+      .set('x-test-actor', 'employee')
+      .send({ message: 'Continue the old generic flow.' })
+      .expect(400);
+    expect(blockedGenericContinuation.body.code).toBe('CYCLE_RESPONSE_REQUIRED');
+  } finally {
+    chatGptAccountService.readAccount = originalReadAccount;
+  }
+
+  let persisted = await Appraisal.findById(appraisal._id).lean();
+  expect(persisted.conversationAssessment.currentPhase).toBe('cycle_questions');
+  expect(persisted.chatThread.filter((item) => item.questionRef?.questionId === 'second')).toHaveLength(1);
+
+  const completedAppraisal = await Appraisal.findById(appraisal._id);
+  completedAppraisal.customResponses.push({
+    sectionId: 'frozen_reflection', questionId: 'second', respondentRole: 'employee',
+    respondentId: EMPLOYEE, value: 'The second answer is complete.', lastSavedAt: now
+  });
+  completedAppraisal.conversationAssessment.currentPhase = 'learnings';
+  await completedAppraisal.save();
+
+  const completedContext = await request(app)
+    .get(`/api/appraisals/${appraisal._id}/conversation/context`)
+    .set('x-test-actor', 'employee')
+    .expect(200);
+  expect(completedContext.body.data.conversationState.currentPhase).toBe('report_generation');
+  expect(completedContext.body.data.activeCycleQuestion).toBeNull();
+  expect(completedContext.body.data.cycleQuestionProgress.completed).toBe(true);
+});
+
+test('direct cycle-response edits reject invalid typed batches without mutation and preserve false and zero', async () => {
+  const now = new Date();
+  const frozenDesign = {
+    version: 1,
+    scoring: { goalsWeight: 40, competenciesWeight: 60 },
+    stages: { selfAssessment: { enabled: true }, managerReview: { enabled: true } },
+    sections: [{
+      id: 'typed_review', title: 'Typed review', type: 'custom', respondent: 'employee',
+      required: true, scored: false, weight: 0, evidenceRequired: false,
+      questions: [
+        { id: 'confirmed', prompt: 'Was the outcome confirmed?', responseType: 'boolean', required: true },
+        { id: 'count', prompt: 'How many outcomes?', responseType: 'number', required: true },
+        { id: 'rating', prompt: 'Rate the result.', responseType: 'rating', required: false, ratingMin: 1, ratingMax: 5 },
+        { id: 'context', prompt: 'Optional context.', responseType: 'long_text', required: false },
+        { id: 'themes', prompt: 'Optional themes.', responseType: 'multi_select', required: false, options: ['Delivery', 'Quality'] }
+      ]
+    }]
+  };
+  const cycle = await AppraisalCycle.create({
+    organizationId: ORG_A,
+    name: 'Strict direct response edits',
+    periodStart: new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)),
+    periodEnd: new Date(now.getTime() - (24 * 60 * 60 * 1000)),
+    status: 'active', currentPhase: 'selfAssessment',
+    phases: {
+      selfAssessment: {
+        startDate: new Date(now.getTime() - (24 * 60 * 60 * 1000)),
+        endDate: new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000)),
+        isActive: true
+      }
+    },
+    workflowDefinition: frozenDesign
+  });
+  const appraisal = await Appraisal.create({
+    organizationId: ORG_A,
+    cycleId: cycle._id,
+    cycleConfigurationSnapshot: {
+      version: 1, cycleId: String(cycle._id), cycleName: cycle.name,
+      workflowDefinition: frozenDesign, capturedAt: now
+    },
+    employee: { userId: EMPLOYEE, name: 'Employee One', email: 'employee@example.com' },
+    manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+    status: 'self_assessment_in_progress',
+    customResponses: [{
+      sectionId: 'typed_review', questionId: 'confirmed', respondentRole: 'employee',
+      respondentId: EMPLOYEE, value: true, lastSavedAt: now
+    }]
+  });
+
+  const invalidBoolean = await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'employee')
+    .send({
+      respondentRole: 'employee', submit: false,
+      responses: [
+        { sectionId: 'typed_review', questionId: 'count', value: 0 },
+        { sectionId: 'typed_review', questionId: 'confirmed', value: 'not-a-boolean' }
+      ]
+    })
+    .expect(422);
+  expect(invalidBoolean.body.code).toBe('CYCLE_RESPONSE_INVALID');
+  expect(invalidBoolean.body.question).toEqual({ sectionId: 'typed_review', questionId: 'confirmed' });
+
+  let persisted = await Appraisal.findById(appraisal._id).lean();
+  expect(persisted.customResponses).toHaveLength(1);
+  expect(persisted.customResponses[0]).toMatchObject({ questionId: 'confirmed', value: true });
+
+  const invalidRating = await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'employee')
+    .send({
+      respondentRole: 'employee', submit: false,
+      responses: [{ sectionId: 'typed_review', questionId: 'rating', value: 9 }]
+    })
+    .expect(422);
+  expect(invalidRating.body.code).toBe('CYCLE_RESPONSE_INVALID');
+  persisted = await Appraisal.findById(appraisal._id).lean();
+  expect(persisted.customResponses).toHaveLength(1);
+
+  await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'employee')
+    .send({
+      respondentRole: 'employee', submit: false,
+      responses: [
+        { sectionId: 'typed_review', questionId: 'confirmed', value: false },
+        { sectionId: 'typed_review', questionId: 'count', value: 0 },
+        { sectionId: 'typed_review', questionId: 'rating', value: null },
+        { sectionId: 'typed_review', questionId: 'context', value: '   ' },
+        { sectionId: 'typed_review', questionId: 'themes', value: [] },
+        { sectionId: 'typed_review', questionId: 'rating' }
+      ]
+    })
+    .expect(200);
+
+  persisted = await Appraisal.findById(appraisal._id).lean();
+  expect(persisted.customResponses).toHaveLength(2);
+  expect(persisted.customResponses).toEqual(expect.arrayContaining([
+    expect.objectContaining({ questionId: 'confirmed', value: false }),
+    expect.objectContaining({ questionId: 'count', value: 0, score: 0 })
+  ]));
+  expect(persisted.customResponses.some((item) => ['rating', 'context', 'themes'].includes(item.questionId))).toBe(false);
+
+  await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'employee')
+    .send({
+      respondentRole: 'employee', submit: false,
+      responses: [{ sectionId: 'typed_review', questionId: 'context', value: 'A saved manual response.' }]
+    })
+    .expect(200);
+  persisted = await Appraisal.findById(appraisal._id).lean();
+  expect(persisted.customResponses).toEqual(expect.arrayContaining([
+    expect.objectContaining({ questionId: 'context', value: 'A saved manual response.' })
+  ]));
+
+  await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'employee')
+    .send({
+      respondentRole: 'employee', submit: false,
+      responses: [
+        { sectionId: 'typed_review', questionId: 'context', value: '   ' },
+        { sectionId: 'typed_review', questionId: 'themes', value: [] },
+        { sectionId: 'typed_review', questionId: 'rating' }
+      ]
+    })
+    .expect(200);
+  persisted = await Appraisal.findById(appraisal._id).lean();
+  expect(persisted.customResponses).toHaveLength(2);
+  expect(persisted.customResponses.some((item) => ['rating', 'context', 'themes'].includes(item.questionId))).toBe(false);
+
+  const requiredClear = await request(app)
+    .put(`/api/appraisals/${appraisal._id}/custom-responses`)
+    .set('x-test-actor', 'employee')
+    .send({
+      respondentRole: 'employee', submit: true,
+      responses: [{ sectionId: 'typed_review', questionId: 'count', value: '' }]
+    })
+    .expect(400);
+  expect(requiredClear.body.error).toMatch(/how many outcomes/i);
+  persisted = await Appraisal.findById(appraisal._id).lean();
+  expect(persisted.customResponses).toEqual(expect.arrayContaining([
+    expect.objectContaining({ questionId: 'count', value: 0 })
+  ]));
 });
 
 test('retired appraisal goal-setting backdoors authenticate and return 410 without mutation', async () => {

@@ -4,12 +4,16 @@ const { createStorageService, inferProvider } = require('../services/storageServ
 
 test('Azure uploads return immutable provider coordinates and delete through the captured provider', async () => {
   const calls = [];
+  let uploadResolutionOptions;
   const service = createStorageService({
-    configurationResolver: async () => ({
+    configurationResolver: async (options) => {
+      uploadResolutionOptions = options;
+      return ({
       configured: true, defaultProvider: 'azure-blob',
       providers: { azureBlob: { configured: true, accountName: 'account', accountKey: 'test-key',
         containerName: 'files', endpoint: 'https://account.blob.core.windows.net' } }
-    }),
+      });
+    },
     azureClientFactory: (_configuration, container, key) => ({
       async uploadData(buffer, options) { calls.push(['upload', container, key, buffer.length, options.blobHTTPHeaders.blobContentType]); },
       async generateSasUrl() { return `https://account.blob.core.windows.net/${container}/${key}?sig=test`; },
@@ -23,6 +27,7 @@ test('Azure uploads return immutable provider coordinates and delete through the
   assert.equal(stored.storageContainer, 'files');
   assert.match(stored.storageKey, /^recruiter\/cv\//u);
   assert.equal(inferProvider(stored), 'azure-blob');
+  assert.deepEqual(uploadResolutionOptions, { force: true });
   assert.equal(await service.remove(stored), true);
   assert.deepEqual(calls.map((call) => call[0]), ['upload', 'delete']);
 });

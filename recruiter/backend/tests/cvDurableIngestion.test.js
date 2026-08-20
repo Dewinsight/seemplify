@@ -119,7 +119,12 @@ test.beforeEach(async () => {
   durableCvFileStore._resetDependenciesForTests();
   cvQueue._resetDependenciesForTests();
   cvQueue._setDependenciesForTests({
-    enqueueJob: async () => ({ id: 'queued-for-test' })
+    enqueueJob: async () => ({ id: 'queued-for-test' }),
+    storageConfigurationResolver: async () => ({
+      configured: true,
+      defaultProvider: 'cloudinary',
+      providers: { cloudinary: { configured: true } }
+    })
   });
   await Promise.all([
     Candidate.deleteMany({}),

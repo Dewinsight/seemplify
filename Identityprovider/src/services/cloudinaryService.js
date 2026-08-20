@@ -209,8 +209,11 @@ export const uploadBufferToCloudinary = async ({
   folder,
   resourceType = 'auto'
 }) => {
-  const policy = await getStorageRuntimeConfiguration('identity-provider').catch(() => null)
-  if (policy?.configured && policy.defaultProvider === 'azure-blob') {
+  const policy = await getStorageRuntimeConfiguration('identity-provider')
+  if (!policy?.configured || !['cloudinary', 'azure-blob'].includes(policy.defaultProvider)) {
+    throw new Error('Managed file storage is unavailable')
+  }
+  if (policy.defaultProvider === 'azure-blob') {
     const configuration = policy.providers.azureBlob
     const credential = new StorageSharedKeyCredential(configuration.accountName, configuration.accountKey)
     const service = new BlobServiceClient(configuration.endpoint, credential)
@@ -234,11 +237,17 @@ export const uploadBufferToCloudinary = async ({
       storageContainer: configuration.containerName
     }
   }
-  if (!ensureCloudinaryConfigured()) {
+  const cloudinaryConfiguration = policy.providers?.cloudinary
+  if (!cloudinaryConfiguration?.configured) {
     throw new Error('Cloudinary configuration missing')
   }
+  cloudinary.config({
+    cloud_name: cloudinaryConfiguration.cloudName,
+    api_key: cloudinaryConfiguration.apiKey,
+    api_secret: cloudinaryConfiguration.apiSecret
+  })
 
-  return new Promise((resolve, reject) => {
+  const uploaded = await new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder,
@@ -255,6 +264,11 @@ export const uploadBufferToCloudinary = async ({
 
     uploadStream.end(buffer)
   })
+  return {
+    ...uploaded,
+    storageProvider: 'cloudinary',
+    storageKey: uploaded.public_id
+  }
 }
 
 export const deleteFromCloudinary = async ({ publicId, storageKey, storageProvider, provider, storageContainer, resourceType = 'raw' }) => {
@@ -282,7 +296,3 @@ export const deleteFromCloudinary = async ({ publicId, storageKey, storageProvid
 }
 
 export default cloudinary
-
-if (!isCloudinaryConfigured()) {
-  console.warn('Cloudinary is not fully configured. Uploads will fail until env vars are set.')
-}

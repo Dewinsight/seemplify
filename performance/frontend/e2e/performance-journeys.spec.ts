@@ -60,6 +60,24 @@ interface MockApiState {
   notificationPreferenceBodies: Array<Record<string, unknown>>;
   aiRuntimePreferenceBodies: Array<Record<string, unknown>>;
   conversationContextCalls: number;
+  conversationMessageBodies: Array<Record<string, unknown>>;
+  conversationMessageFailures: Array<{
+    status: number;
+    code: string;
+    error: string;
+    advanceCurrent?: { value?: unknown; skip?: boolean };
+  }>;
+  conversationFinalizeBodies: Array<Record<string, unknown>>;
+  conversationReportGenerations: number;
+  conversationFixture?: {
+    started: boolean;
+    currentPhase: string;
+    currentIndex: number;
+    skippedKeys: string[];
+    questions: Array<Record<string, unknown>>;
+    responses: Array<Record<string, unknown>>;
+    chatThread: Array<Record<string, unknown>>;
+  };
   readNotificationIds: string[];
   chatGptAccount: {
     status: 'disconnected' | 'pending' | 'connected';
@@ -251,6 +269,10 @@ function createState(): MockApiState {
     notificationPreferenceBodies: [],
     aiRuntimePreferenceBodies: [],
     conversationContextCalls: 0,
+    conversationMessageBodies: [],
+    conversationMessageFailures: [],
+    conversationFinalizeBodies: [],
+    conversationReportGenerations: 0,
     readNotificationIds: [],
     chatGptAccount: {
       status: 'disconnected',
@@ -320,6 +342,31 @@ async function openDesktopNavigationGroup(page: Page, group: 'Team' | 'Administr
   const menu = page.getByRole('menu', { name: `${group} navigation` });
   await expect(menu).toBeVisible();
   return menu;
+}
+
+function mockCycleConversationData(fixture: NonNullable<MockApiState['conversationFixture']>) {
+  const completedKeys = new Set([
+    ...fixture.responses.map((response) => `${response.sectionId}:${response.questionId}`),
+    ...fixture.skippedKeys,
+  ]);
+  const activeCycleQuestion = fixture.questions.find((question) => !completedKeys.has(String(question.key))) || null;
+  const answered = fixture.responses.length;
+  const skipped = fixture.skippedKeys.length;
+  const completed = answered + skipped >= fixture.questions.length;
+  return {
+    cycleQuestions: fixture.questions,
+    activeCycleQuestion,
+    cycleQuestionProgress: {
+      currentIndex: completed ? fixture.questions.length : fixture.questions.indexOf(activeCycleQuestion as Record<string, unknown>),
+      total: fixture.questions.length,
+      answered,
+      skipped,
+      completed,
+      completedKeys: [...completedKeys],
+      skippedKeys: fixture.skippedKeys,
+    },
+    cycleResponses: fixture.responses,
+  };
 }
 
 async function installMockApi(page: Page, state: MockApiState) {
@@ -659,6 +706,16 @@ async function installMockApi(page: Page, state: MockApiState) {
     if (method === 'PUT' && /^\/appraisals\/[^/]+\/custom-responses$/.test(path)) {
       const body = await jsonBody(request);
       state.customResponseBodies.push(body);
+      if (state.conversationFixture && Array.isArray(body.responses)) {
+        (body.responses as Array<Record<string, unknown>>).forEach((incoming) => {
+          const existingIndex = state.conversationFixture!.responses.findIndex((response) => (
+            response.sectionId === incoming.sectionId && response.questionId === incoming.questionId
+          ));
+          const next = { ...incoming, respondentRole: 'employee', lastSavedAt: new Date().toISOString() };
+          if (existingIndex >= 0) state.conversationFixture!.responses[existingIndex] = next;
+          else state.conversationFixture!.responses.push(next);
+        });
+      }
       return fulfill({ success: true, data: { customResponses: body.responses } });
     }
     if (method === 'POST' && /^\/appraisals\/[^/]+\/manager-review\/start$/.test(path)) {
@@ -719,8 +776,199 @@ async function installMockApi(page: Page, state: MockApiState) {
         },
       });
     }
+    if (method === 'POST' && /^\/appraisals\/[^/]+\/conversation\/start$/.test(path) && state.conversationFixture) {
+      const fixture = state.conversationFixture;
+      fixture.started = true;
+      fixture.currentPhase = 'cycle_questions';
+      const data = mockCycleConversationData(fixture);
+      const active = data.activeCycleQuestion;
+      fixture.chatThread = [{
+        messageId: 'message-start',
+        sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+        message: active ? `Let’s begin with ${active.sectionTitle}.\n\n${active.prompt}` : 'Your cycle questions are complete.',
+        messageType: 'prompt',
+        phase: fixture.currentPhase,
+        createdAt: new Date().toISOString(),
+      }];
+      return fulfill({
+        success: true,
+        data: {
+          greeting: fixture.chatThread[0].message,
+          okrSummary: [],
+          conversationState: {
+            mode: 'conversation', currentPhase: fixture.currentPhase, currentOkrIndex: 0,
+            completedPhases: [], extractedData: { achievements: [], challenges: [], skills: [], goals: [] }, messageCount: 1,
+          },
+          chatThread: fixture.chatThread,
+          ...mockCycleConversationData(fixture),
+        },
+      });
+    }
+    if (method === 'POST' && /^\/appraisals\/[^/]+\/conversation\/message$/.test(path) && state.conversationFixture) {
+      const fixture = state.conversationFixture;
+      const body = await jsonBody(request);
+      state.conversationMessageBodies.push(body);
+      const before = mockCycleConversationData(fixture);
+      const response = body.cycleResponse as Record<string, unknown>;
+      const active = before.activeCycleQuestion;
+      expect(response.sectionId).toBe(active?.sectionId);
+      expect(response.questionId).toBe(active?.questionId);
+      const queuedFailure = state.conversationMessageFailures.shift();
+      if (queuedFailure) {
+        if (queuedFailure.advanceCurrent) {
+          if (queuedFailure.advanceCurrent.skip === true) {
+            fixture.skippedKeys.push(String(active?.key));
+          } else {
+            fixture.responses.push({
+              sectionId: active?.sectionId,
+              questionId: active?.questionId,
+              respondentRole: 'employee',
+              value: queuedFailure.advanceCurrent.value,
+              lastSavedAt: new Date().toISOString(),
+            });
+          }
+          const authoritative = mockCycleConversationData(fixture);
+          fixture.currentIndex = authoritative.cycleQuestionProgress.currentIndex;
+          fixture.currentPhase = authoritative.cycleQuestionProgress.completed ? 'report_generation' : 'cycle_questions';
+          fixture.chatThread.push(
+            {
+              messageId: `message-stale-user-${state.conversationMessageBodies.length}`,
+              sender: { userId: 'user-1', name: 'Alex Morgan', role: 'employee' },
+              message: String(queuedFailure.advanceCurrent.value ?? 'Skipped optional question.'),
+              messageType: 'text', phase: 'cycle_questions', createdAt: new Date().toISOString(),
+            },
+            {
+              messageId: `message-stale-ai-${state.conversationMessageBodies.length}`,
+              sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+              message: authoritative.activeCycleQuestion
+                ? `Saved in another session.\n\n${authoritative.activeCycleQuestion.prompt}`
+                : 'All configured cycle questions are complete.',
+              messageType: 'prompt', phase: fixture.currentPhase, createdAt: new Date().toISOString(),
+            },
+          );
+          return fulfill({
+            success: false,
+            code: queuedFailure.code,
+            error: queuedFailure.error,
+            data: {
+              currentPhase: fixture.currentPhase,
+              conversationState: {
+                mode: 'conversation', currentPhase: fixture.currentPhase, currentOkrIndex: 0,
+                completedPhases: authoritative.cycleQuestionProgress.completed ? ['cycle_questions'] : [],
+                extractedData: { achievements: [], challenges: [], skills: [], goals: [] }, messageCount: fixture.chatThread.length,
+              },
+              chatThread: fixture.chatThread,
+              ...authoritative,
+            },
+          }, queuedFailure.status);
+        }
+        return fulfill({ success: false, code: queuedFailure.code, error: queuedFailure.error }, queuedFailure.status);
+      }
+      if (response.skip === true) {
+        fixture.skippedKeys.push(String(active?.key));
+      } else {
+        fixture.responses.push({
+          sectionId: response.sectionId,
+          questionId: response.questionId,
+          respondentRole: 'employee',
+          value: response.value,
+          lastSavedAt: new Date().toISOString(),
+        });
+      }
+      const after = mockCycleConversationData(fixture);
+      fixture.currentIndex = after.cycleQuestionProgress.currentIndex;
+      fixture.currentPhase = after.cycleQuestionProgress.completed ? 'report_generation' : 'cycle_questions';
+      fixture.chatThread.push(
+        {
+          messageId: `message-user-${state.conversationMessageBodies.length}`,
+          sender: { userId: 'user-1', name: 'Alex Morgan', role: 'employee' },
+          message: response.skip === true ? 'Skipped optional question.' : String(response.value),
+          messageType: 'text', phase: 'cycle_questions', createdAt: new Date().toISOString(),
+        },
+        {
+          messageId: `message-ai-${state.conversationMessageBodies.length}`,
+          sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+          message: after.activeCycleQuestion ? `Saved.\n\n${after.activeCycleQuestion.prompt}` : 'All configured cycle questions are complete.',
+          messageType: 'prompt', phase: fixture.currentPhase, createdAt: new Date().toISOString(),
+        },
+      );
+      return fulfill({
+        success: true,
+        data: {
+          currentPhase: fixture.currentPhase,
+          conversationState: {
+            mode: 'conversation', currentPhase: fixture.currentPhase, currentOkrIndex: 0,
+            completedPhases: after.cycleQuestionProgress.completed ? ['cycle_questions'] : [],
+            extractedData: { achievements: [], challenges: [], skills: [], goals: [] }, messageCount: fixture.chatThread.length,
+          },
+          chatThread: fixture.chatThread,
+          fallback: false,
+          aiAvailable: true,
+          ...after,
+        },
+      });
+    }
+    if (method === 'POST' && /^\/appraisals\/[^/]+\/conversation\/generate-report$/.test(path) && state.conversationFixture) {
+      state.conversationReportGenerations += 1;
+      state.conversationFixture.currentPhase = 'review';
+      const report = {
+        overallSummary: {
+          achievements: 'Improved the customer launch decision with structured discovery.',
+          challenges: 'Balanced a tight delivery window with customer evidence.',
+          learnings: 'Applied discovery interviewing in delivery planning.',
+          improvements: 'Delegate research synthesis earlier.',
+          goals: 'Scale the discovery playbook next quarter.',
+        },
+        okrAssessment: [],
+        suggestedOverallRating: 4,
+        ratingJustification: 'Grounded in the employee’s supplied evidence.',
+        aiInsights: { strengths: ['Customer focus'], developmentAreas: ['Delegation'], suggestions: [], sentiment: 'positive' },
+      };
+      const reportMessage = {
+        messageId: `message-report-${state.conversationReportGenerations}`,
+        sender: { userId: 'ai', name: 'AI Assistant', role: 'ai' },
+        message: 'Your report is ready to review.',
+        messageType: 'report_draft', phase: 'review', structuredData: { type: 'report', data: report }, createdAt: new Date().toISOString(),
+      };
+      state.conversationFixture.chatThread.push(reportMessage);
+      return fulfill({
+        success: true,
+        data: {
+          report,
+          conversationState: {
+            mode: 'conversation', currentPhase: 'review', currentOkrIndex: 0, completedPhases: ['cycle_questions', 'report_generation'],
+            extractedData: { achievements: [], challenges: [], skills: [], goals: [] }, messageCount: state.conversationFixture.chatThread.length,
+          },
+          chatThread: state.conversationFixture.chatThread.slice(-5),
+          aiAvailable: true,
+          ...mockCycleConversationData(state.conversationFixture),
+        },
+      });
+    }
+    if (method === 'POST' && /^\/appraisals\/[^/]+\/conversation\/finalize-report$/.test(path)) {
+      const body = await jsonBody(request);
+      state.conversationFinalizeBodies.push(body);
+      return fulfill({ success: true, data: { status: 'manager_review_pending' } });
+    }
     if (method === 'GET' && /^\/appraisals\/[^/]+\/conversation\/context$/.test(path)) {
       state.conversationContextCalls += 1;
+      if (state.conversationFixture) {
+        const fixture = state.conversationFixture;
+        return fulfill({
+          success: true,
+          data: {
+            cycle: { settings: { allowSelfRating: true } },
+            conversationState: fixture.started ? {
+              mode: 'conversation', currentPhase: fixture.currentPhase, currentOkrIndex: 0,
+              completedPhases: fixture.currentPhase === 'review' ? ['cycle_questions', 'report_generation'] : [],
+              extractedData: { achievements: [], challenges: [], skills: [], goals: [] }, messageCount: fixture.chatThread.length,
+            } : null,
+            chatThread: fixture.chatThread,
+            okrs: [],
+            ...mockCycleConversationData(fixture),
+          },
+        });
+      }
       return fulfill({
         success: true,
         data: {
@@ -1162,13 +1410,17 @@ test('keeps analytics and the cycle builder usable on a narrow mobile viewport',
   await page.screenshot({ path: testInfo.outputPath('cycle-builder-mobile.png'), fullPage: true });
 });
 
-test('renders frozen cycle questions in the employee appraisal and autosaves the response', async ({ page }) => {
+test('renders frozen cycle questions in the manual employee appraisal and autosaves the response', async ({ page }) => {
   const state = createState();
   state.chatGptAccount = {
     status: 'connected', connectedEmail: 'alex@example.com', planType: 'plus', connectedAt: '2026-08-11T00:00:00.000Z',
     lastVerifiedAt: '2026-08-11T00:00:00.000Z', dataSharingAcknowledgedAt: '2026-08-11T00:00:00.000Z', routable: true, lastError: null,
   };
   Object.assign(state.appraisals[0], {
+    cycleId: {
+      ...(state.appraisals[0].cycleId as Record<string, unknown>),
+      settings: { enableAiAssist: false, allowSelfRating: true },
+    },
     customResponses: [],
     cycleConfigurationSnapshot: {
       workflowDefinition: {
@@ -1580,4 +1832,251 @@ test('opens conversational self-assessment only for a routable ChatGPT account',
   await expect(page.getByRole('heading', { name: 'Start Your Self-Assessment' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Begin Conversation' })).toBeVisible();
   expect(state.conversationContextCalls).toBeGreaterThanOrEqual(1);
+});
+
+test('completes frozen cycle questions inside guided self-assessment, reviews exact answers, and submits on mobile', async ({ page }) => {
+  const state = createState();
+  state.chatGptAccount = {
+    status: 'connected',
+    connectedEmail: 'alex@example.com',
+    planType: 'Plus',
+    connectedAt: new Date().toISOString(),
+    lastVerifiedAt: new Date().toISOString(),
+    dataSharingAcknowledgedAt: new Date().toISOString(),
+    routable: true,
+    lastError: null,
+  };
+  (state.appraisals[0].cycleId as Record<string, unknown>).settings = {
+    enableAiAssist: true,
+    allowSelfRating: true,
+  };
+  state.appraisals[0].customResponses = [];
+  state.appraisals[0].cycleConfigurationSnapshot = {
+    workflowDefinition: {
+      version: 1,
+      scoring: { goalsWeight: 40, competenciesWeight: 60 },
+      stages: { selfAssessment: { enabled: true }, managerReview: { enabled: true }, finalReview: { enabled: true } },
+      sections: [
+        {
+          id: 'impact', title: 'Impact evidence', description: 'Capture the outcomes from this review period.',
+          type: 'evidence', respondent: 'employee', required: true, scored: false, weight: 0, evidenceRequired: true,
+          questions: [
+            {
+              id: 'outcome', prompt: 'What outcome changed because of your work?',
+              helpText: 'Use a specific result and who benefited.', responseType: 'long_text', required: true,
+              options: [], ratingMin: 1, ratingMax: 5,
+            },
+            {
+              id: 'context', prompt: 'Is there any extra context?', helpText: '', responseType: 'short_text', required: false,
+              options: [], ratingMin: 1, ratingMax: 5,
+            },
+          ],
+        },
+        {
+          id: 'metrics', title: 'Measured delivery', description: '', type: 'evidence', respondent: 'employee',
+          required: true, scored: false, weight: 0, evidenceRequired: false,
+          questions: [
+            {
+              id: 'interviews', prompt: 'How many customer interviews did you complete?', helpText: '',
+              responseType: 'number', required: true, options: [], ratingMin: 1, ratingMax: 5,
+            },
+            {
+              id: 'impact_rating', prompt: 'How would you rate the impact?', helpText: '', responseType: 'rating',
+              required: true, options: [], ratingMin: 1, ratingMax: 5,
+            },
+          ],
+        },
+        {
+          id: 'adoption', title: 'Adoption', description: '', type: 'evidence', respondent: 'employee',
+          required: true, scored: false, weight: 0, evidenceRequired: false,
+          questions: [{
+            id: 'adopted', prompt: 'Was the change adopted?', helpText: '', responseType: 'boolean', required: true,
+            options: [], ratingMin: 1, ratingMax: 5,
+          }],
+        },
+        {
+          id: 'growth', title: 'Growth planning', description: '', type: 'learning', respondent: 'employee',
+          required: true, scored: false, weight: 0, evidenceRequired: false,
+          questions: [
+            {
+              id: 'cadence', prompt: 'Which review cadence helped most?', helpText: '', responseType: 'single_select',
+              required: true, options: ['Monthly', 'Quarterly'], ratingMin: 1, ratingMax: 5,
+            },
+            {
+              id: 'support', prompt: 'Which development support would help next?', helpText: '', responseType: 'multi_select',
+              required: true, options: ['Mentoring', 'Stretch project', 'Peer shadowing'], ratingMin: 1, ratingMax: 5,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  state.conversationFixture = {
+    started: false,
+    currentPhase: 'cycle_questions',
+    currentIndex: 0,
+    skippedKeys: [],
+    responses: [],
+    chatThread: [],
+    questions: [
+      {
+        key: 'impact:outcome', sectionId: 'impact', sectionTitle: 'Impact evidence',
+        sectionDescription: 'Capture the outcomes from this review period.', sectionType: 'evidence',
+        questionId: 'outcome', prompt: 'What outcome changed because of your work?',
+        helpText: 'Use a specific result and who benefited.', responseType: 'long_text', required: true,
+        options: [], ratingMin: 1, ratingMax: 5, evidenceRequired: true,
+      },
+      {
+        key: 'impact:context', sectionId: 'impact', sectionTitle: 'Impact evidence',
+        sectionDescription: 'Capture the outcomes from this review period.', sectionType: 'evidence',
+        questionId: 'context', prompt: 'Is there any extra context?', helpText: '', responseType: 'short_text',
+        required: false, options: [], ratingMin: 1, ratingMax: 5, evidenceRequired: false,
+      },
+      {
+        key: 'metrics:interviews', sectionId: 'metrics', sectionTitle: 'Measured delivery',
+        sectionDescription: '', sectionType: 'evidence', questionId: 'interviews',
+        prompt: 'How many customer interviews did you complete?', helpText: '', responseType: 'number',
+        required: true, options: [], ratingMin: 1, ratingMax: 5, evidenceRequired: false,
+      },
+      {
+        key: 'metrics:impact_rating', sectionId: 'metrics', sectionTitle: 'Measured delivery',
+        sectionDescription: '', sectionType: 'rating', questionId: 'impact_rating',
+        prompt: 'How would you rate the impact?', helpText: '', responseType: 'rating',
+        required: true, options: [], ratingMin: 1, ratingMax: 5, evidenceRequired: false,
+      },
+      {
+        key: 'adoption:adopted', sectionId: 'adoption', sectionTitle: 'Adoption',
+        sectionDescription: '', sectionType: 'evidence', questionId: 'adopted',
+        prompt: 'Was the change adopted?', helpText: '', responseType: 'boolean',
+        required: true, options: [], ratingMin: 1, ratingMax: 5, evidenceRequired: false,
+      },
+      {
+        key: 'growth:cadence', sectionId: 'growth', sectionTitle: 'Growth planning',
+        sectionDescription: '', sectionType: 'learning', questionId: 'cadence',
+        prompt: 'Which review cadence helped most?', helpText: '', responseType: 'single_select',
+        required: true, options: ['Monthly', 'Quarterly'], ratingMin: 1, ratingMax: 5, evidenceRequired: false,
+      },
+      {
+        key: 'growth:support', sectionId: 'growth', sectionTitle: 'Growth planning',
+        sectionDescription: '', sectionType: 'learning', questionId: 'support',
+        prompt: 'Which development support would help next?', helpText: '', responseType: 'multi_select',
+        required: true, options: ['Mentoring', 'Stretch project', 'Peer shadowing'], ratingMin: 1, ratingMax: 5, evidenceRequired: false,
+      },
+    ],
+  };
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMockApi(page, state);
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/self-assessment');
+
+  await expect(page.getByRole('heading', { name: 'Cycle-specific questions' })).toHaveCount(0);
+  await expect(page.getByPlaceholder('Enter your response')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Begin Conversation' }).click();
+
+  await expect(page.getByText('Cycle Questions', { exact: true })).toBeVisible();
+  await expect(page.getByText('Key Achievements', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Challenges', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Learnings', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Future Goals', { exact: true })).toHaveCount(0);
+
+  const card = page.getByTestId('cycle-question-card');
+  await expect(card).toContainText('Question 1 of 7');
+  await expect(card.getByRole('button', { name: 'Attach evidence' })).toBeVisible();
+  await card.getByRole('textbox', { name: 'What outcome changed because of your work?' })
+    .fill('Customer evidence changed the launch decision and avoided a rework cycle.');
+  await card.getByRole('button', { name: 'Save and continue' }).click();
+
+  await page.reload();
+  await expect(card).toContainText('Is there any extra context?');
+  await expect(page.getByText('1 of 7 completed', { exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Skip' })).toBeVisible();
+  state.conversationMessageFailures.push({
+    status: 503,
+    code: 'TEMPORARY_OVERLOAD',
+    error: 'The assistant is temporarily busy. Try this question again.',
+  });
+  await card.getByRole('button', { name: 'Skip' }).click();
+  await expect(page.getByText('The assistant is temporarily busy. Try this question again.')).toBeVisible();
+  await expect(card).toContainText('Is there any extra context?');
+  await expect(page.getByText('1 of 7 completed', { exact: true })).toBeVisible();
+  await card.getByRole('button', { name: 'Skip' }).click();
+
+  await expect(card).toContainText('How many customer interviews did you complete?');
+  await expect(page.getByText('The assistant is temporarily busy. Try this question again.')).toHaveCount(0);
+  await card.getByRole('spinbutton', { name: 'How many customer interviews did you complete?' }).fill('18');
+  await card.getByRole('button', { name: 'Save and continue' }).click();
+
+  await expect(card).toContainText('How would you rate the impact?');
+  state.conversationMessageFailures.push({
+    status: 409,
+    code: 'CYCLE_QUESTION_STALE',
+    error: 'This answer was saved in another session. The latest question is now shown.',
+    advanceCurrent: { value: 3 },
+  });
+  await card.getByRole('radio', { name: '4 / 5' }).check();
+  await card.getByRole('button', { name: 'Save and continue' }).click();
+
+  await expect(card).toContainText('Was the change adopted?');
+  await expect(page.getByText('This answer was saved in another session. The latest question is now shown.')).toBeVisible();
+  await card.getByRole('radio', { name: 'Yes' }).check();
+  await card.getByRole('button', { name: 'Save and continue' }).click();
+
+  await expect(card).toContainText('Which review cadence helped most?');
+  await card.getByRole('radio', { name: 'Quarterly' }).check();
+  await card.getByRole('button', { name: 'Save and continue' }).click();
+
+  await expect(card).toContainText('Which development support would help next?');
+  await card.getByRole('checkbox', { name: 'Mentoring' }).check();
+  await card.getByRole('checkbox', { name: 'Stretch project' }).check();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await card.getByRole('button', { name: 'Save and continue' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Cycle-specific responses' })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('Customer evidence changed the launch decision and avoided a rework cycle.')).toBeVisible();
+  await expect(page.getByText('Skipped', { exact: true })).toBeVisible();
+  await expect(page.getByText('18', { exact: true })).toBeVisible();
+  await expect(page.getByText('3', { exact: true })).toBeVisible();
+  await expect(page.getByText('Yes', { exact: true })).toBeVisible();
+  await expect(page.getByText('Quarterly', { exact: true })).toBeVisible();
+  await expect(page.getByText('Mentoring, Stretch project', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cycle-specific questions' })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  expect(state.conversationMessageBodies.map((body) => body.cycleResponse)).toEqual([
+    { sectionId: 'impact', questionId: 'outcome', value: 'Customer evidence changed the launch decision and avoided a rework cycle.' },
+    { sectionId: 'impact', questionId: 'context', skip: true },
+    { sectionId: 'impact', questionId: 'context', skip: true },
+    { sectionId: 'metrics', questionId: 'interviews', value: 18 },
+    { sectionId: 'metrics', questionId: 'impact_rating', value: 4 },
+    { sectionId: 'adoption', questionId: 'adopted', value: true },
+    { sectionId: 'growth', questionId: 'cadence', value: 'Quarterly' },
+    { sectionId: 'growth', questionId: 'support', value: ['Mentoring', 'Stretch project'] },
+  ]);
+
+  await page.getByRole('button', { name: 'Back to Conversation' }).click();
+  await expect(page.getByText('All configured cycle questions are complete.', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Your report is ready to review.', { exact: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'View Report' }).click();
+
+  await page.getByRole('button', { name: 'Edit answer' }).first().click();
+  const reviewInput = page.getByRole('textbox', { name: 'What outcome changed because of your work?' });
+  await reviewInput.fill('Customer evidence changed the launch decision and avoided two rework cycles.');
+  await page.getByRole('button', { name: 'Save change' }).click();
+  await expect.poll(() => state.customResponseBodies.length).toBe(1);
+  expect(state.customResponseBodies[0]).toEqual({
+    respondentRole: 'employee',
+    submit: false,
+    responses: [{
+      sectionId: 'impact',
+      questionId: 'outcome',
+      value: 'Customer evidence changed the launch decision and avoided two rework cycles.',
+    }],
+  });
+  await expect(page.getByText('Customer evidence changed the launch decision and avoided two rework cycles.')).toBeVisible();
+
+  await page.locator('label').filter({ hasText: '4 Stars' }).first().click({ force: true });
+  await page.getByRole('button', { name: 'Submit Self-Assessment' }).click();
+  await expect.poll(() => state.conversationFinalizeBodies.length).toBe(1);
+  await expect(page).toHaveURL(/\/appraisals\?submitted=self&appraisalId=/);
+  expect(state.conversationReportGenerations).toBeGreaterThanOrEqual(1);
 });

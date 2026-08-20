@@ -2079,8 +2079,9 @@
         if (!url && !publicId) return null
         const resourceTypeValue = String(input.resourceType || 'video').trim().toLowerCase()
         const resourceType = ['audio', 'video', 'raw', 'link'].includes(resourceTypeValue) ? resourceTypeValue : 'video'
+        const providerValue = String(input.provider || '').trim().toLowerCase()
         return {
-          provider: String(input.provider || '').trim().toLowerCase() === 'external' ? 'external' : 'cloudinary',
+          provider: ['external', 'azure-blob'].includes(providerValue) ? providerValue : 'cloudinary',
           url,
           publicId,
           resourceType,
@@ -2249,12 +2250,14 @@
         ).trim()
         if (!value) return { kind: 'none', embedUrl: '', directUrl: '', sourceLabel: '' }
 
-        if (media?.provider === 'cloudinary') {
+        if (media?.provider === 'cloudinary' || media?.provider === 'azure-blob') {
           return {
             kind: media.resourceType === 'audio' ? 'audio' : 'video',
             embedUrl: '',
             directUrl: value,
-            sourceLabel: media.sourceLabel || (media.resourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+            sourceLabel: media.sourceLabel || (media.provider === 'azure-blob'
+              ? (media.resourceType === 'audio' ? 'Azure Audio' : 'Azure Video')
+              : (media.resourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video'))
           }
         }
 
@@ -2294,7 +2297,7 @@
       const renderMediaPreviewMarkup = (lesson, { allowLegacyExternalMedia = false } = {}) => {
         const descriptor = getMediaPreviewDescriptor(lesson)
         if (descriptor.kind === 'none') {
-          return `<p class="builder-preview-note">${allowLegacyExternalMedia ? 'Upload a Cloudinary video or audio file, or keep the existing legacy link for this lesson.' : 'Upload a Cloudinary video or audio file to preview the lesson output.'}</p>`
+          return `<p class="builder-preview-note">${allowLegacyExternalMedia ? 'Upload a video or audio file, or keep the existing legacy link for this lesson.' : 'Upload a video or audio file to preview the lesson output.'}</p>`
         }
         if (descriptor.kind === 'embed' && descriptor.embedUrl) return `<iframe src="${escapeHtml(descriptor.embedUrl)}" allowfullscreen loading="lazy"></iframe><p class="builder-preview-note">${escapeHtml(descriptor.sourceLabel)} embed preview</p>`
         if (descriptor.kind === 'video' && descriptor.directUrl) return `<video controls preload="metadata" src="${escapeHtml(descriptor.directUrl)}"></video><p class="builder-preview-note">Direct video preview</p>`
@@ -2336,7 +2339,9 @@
         const renderLessonMediaSummaryMarkup = (lesson) => {
           const parts = []
           if (lesson?.media?.url) {
-            parts.push(`<span class="builder-media-pill">${escapeHtml(lesson.media.sourceLabel || 'Cloudinary')}</span>`)
+            const storageLabel = lesson.media.sourceLabel
+              || (lesson.media.provider === 'azure-blob' ? 'Azure Blob Storage' : (lesson.media.provider === 'cloudinary' ? 'Cloudinary' : 'Managed storage'))
+            parts.push(`<span class="builder-media-pill">${escapeHtml(storageLabel)}</span>`)
             parts.push(`<span class="builder-media-pill">${escapeHtml((lesson.media.resourceType || 'video').toUpperCase())}</span>`)
             if (Number.isFinite(Number(lesson.media.durationSeconds)) && Number(lesson.media.durationSeconds) > 0) {
               parts.push(`<span class="builder-media-pill">${Math.max(1, Math.ceil(Number(lesson.media.durationSeconds) / 60))} min</span>`)
@@ -2386,8 +2391,8 @@
                         </div>
                       </div>
                       ${allowLegacyExternalMedia && lesson.legacyVideoUrl
-                        ? `<label>Legacy Media URL<input class="input" data-kind="lesson" data-field="legacyVideoUrl" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.legacyVideoUrl)}" placeholder="https://youtube.com/..."></label><p class="builder-legacy-note">Legacy lessons can keep external links. New lessons should use Cloudinary uploads.</p>`
-                        : '<p class="builder-legacy-note">Use Cloudinary uploads for lesson playback, duration detection, and auto-progression.</p>'}
+                        ? `<label>Legacy Media URL<input class="input" data-kind="lesson" data-field="legacyVideoUrl" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.legacyVideoUrl)}" placeholder="https://youtube.com/..."></label><p class="builder-legacy-note">Legacy lessons can keep external links. New lessons use the configured managed storage provider.</p>`
+                        : '<p class="builder-legacy-note">Use managed storage uploads for lesson playback, duration detection, and auto-progression.</p>'}
                       <div class="builder-preview">${renderMediaPreviewMarkup(lesson, { allowLegacyExternalMedia })}</div>
                     </section>
                     <label>Lesson Description<textarea class="input" rows="2" data-kind="lesson" data-field="description" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">${escapeHtml(lesson.description)}</textarea></label>

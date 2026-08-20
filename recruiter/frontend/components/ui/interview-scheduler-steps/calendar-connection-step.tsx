@@ -184,19 +184,11 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
     // NEW: Check grant limit before connecting (unless switching accounts)
     if (!forceAccountSelection) {
       try {
-        const response = await fetch('/api/admin/grants/usage', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.usage.atLimit) {
-            // Show warning modal instead of connecting directly
-            setShowGrantLimitWarning(true);
-            return;
-          }
+        const usage = await grantService.getGrantUsage();
+        if (usage.atLimit) {
+          // Show warning modal instead of connecting directly
+          setShowGrantLimitWarning(true);
+          return;
         }
       } catch (error) {
         console.log('Could not check grant usage, proceeding with connection');

@@ -9,7 +9,8 @@ const inferProvider = (snapshot = {}) => snapshot.storageProvider === 'azure-blo
 function createStorageService({ configurationResolver = resolveStoragePlatformConfiguration } = {}) {
   return {
     async uploadBuffer(buffer, { fileName, mimeType, folder = 'performance' } = {}) {
-      const policy = await configurationResolver();
+      const policy = await configurationResolver({ force: true });
+      if (!policy?.configured) throw new Error('Managed file storage is unavailable.');
       if (policy.defaultProvider === 'azure-blob') {
         const configuration = policy.providers.azureBlob;
         const credential = new StorageSharedKeyCredential(configuration.accountName, configuration.accountKey);

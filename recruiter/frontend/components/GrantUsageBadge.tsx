@@ -39,11 +39,9 @@ export default function GrantUsageBadge({
 
   const fetchGrantUsage = async () => {
     try {
-      const response = await apiRequest('GET', '/api/admin/grants/usage');
-      
-      if (response.success) {
-        setStats(response.usage);
-      }
+      const response = await apiRequest('/api/grant/usage', { method: 'GET' });
+      const data = await response.json();
+      if (response.ok && data.success) setStats(data.usage);
     } catch (error) {
       console.error('Error fetching grant usage:', error);
     } finally {
@@ -113,11 +111,9 @@ export function useGrantUsage() {
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const response = await apiRequest('GET', '/api/admin/grants/usage');
-      
-      if (response.success) {
-        setStats(response.usage);
-      }
+      const response = await apiRequest('/api/grant/usage', { method: 'GET' });
+      const data = await response.json();
+      if (response.ok && data.success) setStats(data.usage);
     } catch (error) {
       console.error('Error fetching grant usage:', error);
     } finally {

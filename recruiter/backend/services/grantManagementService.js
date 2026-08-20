@@ -319,6 +319,36 @@ class GrantManagementService {
         };
       }
 
+      // findAvailableAccount() also returns null when the provider pool is not
+      // configured. Distinguish that operational state from a genuinely full
+      // pool before attempting to rotate an existing grant.
+      const activeAccounts = await NylasAccount.find({
+        active: true,
+        verified: true
+      }).select('name maxGrants');
+      const totalCapacity = activeAccounts.reduce(
+        (sum, account) => sum + Math.max(0, Number(account.maxGrants) || 0),
+        0
+      );
+
+      if (activeAccounts.length === 0) {
+        const configurationError = new Error(
+          'Calendar connections are temporarily unavailable because no active, verified calendar provider account is configured.'
+        );
+        configurationError.code = 'NO_NYLAS_ACCOUNT';
+        configurationError.statusCode = 503;
+        throw configurationError;
+      }
+
+      if (totalCapacity === 0) {
+        const capacityError = new Error(
+          'Calendar connections are temporarily unavailable because calendar provider capacity is not configured.'
+        );
+        capacityError.code = 'NO_CALENDAR_CAPACITY';
+        capacityError.statusCode = 503;
+        throw capacityError;
+      }
+
       // STEP 2: All accounts full - rotate out least recently used grant
       const systemCapacity = await multiNylasService.getSystemCapacity();
       console.log('All Nylas accounts are at capacity. Running LRU rotation...');
@@ -327,8 +357,13 @@ class GrantManagementService {
       const rotationCandidate = await this.findOldestGrantAcrossAllAccounts();
       
       if (!rotationCandidate) {
-        console.error('No grants found to remove despite system being at capacity.');
-        throw new Error('Grant count inconsistency detected. Please contact support.');
+        console.error(`Calendar pool reports ${totalCapacity} slots across ${activeAccounts.length} active account(s), but no active grant is eligible for rotation.`);
+        const consistencyError = new Error(
+          'Calendar capacity could not be reconciled with active connections. Please contact support.'
+        );
+        consistencyError.code = 'GRANT_COUNT_OUT_OF_SYNC';
+        consistencyError.statusCode = 409;
+        throw consistencyError;
       }
 
       const connectedAtText = rotationCandidate.connectedAt
@@ -387,6 +422,44 @@ class GrantManagementService {
       console.error('Error ensuring grant slot available:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get live system-wide capacity using the same rules as account allocation.
+   * This is safe for authenticated users and intentionally omits other users'
+   * grant details because the Nylas pool spans organizations.
+   */
+  async getSystemGrantUsageStats() {
+    const accounts = await NylasAccount.find({
+      active: true,
+      verified: true
+    }).select('_id maxGrants');
+
+    const usage = await Promise.all(accounts.map(async (account) => {
+      const currentCount = await User.countDocuments({
+        nylasAccountId: account._id,
+        calendarConnected: true,
+        nylasGrantId: { $exists: true, $ne: null }
+      });
+      const maxAllowed = Math.max(0, Number(account.maxGrants) || 0);
+      return { currentCount, maxAllowed };
+    }));
+
+    const currentCount = usage.reduce((sum, account) => sum + account.currentCount, 0);
+    const maxAllowed = usage.reduce((sum, account) => sum + account.maxAllowed, 0);
+    const availableSlots = Math.max(0, maxAllowed - currentCount);
+
+    return {
+      currentCount,
+      maxAllowed,
+      availableSlots,
+      utilizationPercentage: maxAllowed > 0
+        ? Math.round((currentCount / maxAllowed) * 100)
+        : 0,
+      atLimit: accounts.length > 0 && maxAllowed > 0 && availableSlots === 0,
+      configured: accounts.length > 0 && maxAllowed > 0,
+      accountCount: accounts.length
+    };
   }
 
   /**

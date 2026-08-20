@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
   buildAzureBlobAdminCredentialReveal,
   buildCloudinaryAdminCredentialReveal,
@@ -16,6 +19,8 @@ import {
 } from '../src/services/mediaPlatformConfigurationService.js'
 
 const environment = { NODE_ENV: 'test', IDP_PLATFORM_CREDENTIAL_ENCRYPTION_KEY: 'test-only-platform-encryption-key-material-123456' }
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const source = (relativePath) => readFileSync(resolve(repositoryRoot, relativePath), 'utf8')
 
 test('media configurations are encrypted with integration-specific authenticated data', () => {
   const configuration = { cloudName: 'workspace', apiKey: 'key', apiSecret: 'secret' }
@@ -100,6 +105,26 @@ test('storage solution access keeps People Transitions separate but bound to the
   assert.equal(canServiceAccessStorageSolution('recruiter', 'recruiter'), true)
   assert.equal(canServiceAccessStorageSolution('workspace', 'people-transitions'), false)
   assert.equal(canServiceAccessStorageSolution('identity-provider', 'people-transitions'), false)
+})
+
+test('every in-repository managed storage consumer resolves current policy before writes', () => {
+  assert.match(source('recruiter/backend/services/storageService.js'), /configurationResolver\(\{ force: true \}\)/u)
+  assert.match(source('recruiter/backend/services/onboardingStorageService.js'), /solution: 'people-transitions', force/u)
+  assert.match(source('seemplify-learning/src/services/cloudinaryService.js'), /resolveStoragePlatformConfiguration\(\{ force: true \}\)/u)
+  assert.match(source('performance/backend/services/storageService.js'), /configurationResolver\(\{ force: true \}\)/u)
+  assert.match(source('approver/backend/services/storageService.js'), /configurationResolver\(\{ force: true \}\)/u)
+  assert.match(source('experience-management/backend/src/storageService.ts'), /resolveStoragePlatformConfiguration\(true\)/u)
+  assert.match(source('Identityprovider/src/services/cloudinaryService.js'), /getStorageRuntimeConfiguration\('identity-provider'\)/u)
+})
+
+test('Identity uploads use managed policy without Cloudinary-only route gates', () => {
+  const storageService = source('Identityprovider/src/services/cloudinaryService.js')
+  assert.doesNotMatch(storageService, /getStorageRuntimeConfiguration\('identity-provider'\)\.catch/u)
+  assert.match(storageService, /!policy\?\.configured/u)
+  assert.match(storageService, /storageProvider: 'cloudinary'/u)
+  assert.doesNotMatch(source('Identityprovider/src/routes/simpleLms.js'), /isCloudinaryConfigured/u)
+  assert.doesNotMatch(source('Identityprovider/src/routes/adminSimpleLms.js'), /isCloudinaryConfigured/u)
+  assert.equal([...source('Identityprovider/src/routes/onboarding.js').matchAll(/isCloudinaryConfigured\(\)/gu)].length, 1)
 })
 
 test('Azure Blob account key is available only through the explicit admin reveal projection', () => {

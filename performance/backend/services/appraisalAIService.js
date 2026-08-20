@@ -1,11 +1,16 @@
 const aiGatewayService = require('./aiGatewayService');
 const { PerformanceAIRuntimeError } = require('./aiGatewayService');
 const { AI_ACTIVITIES } = require('../config/aiActivityCatalog');
+const {
+  getConversationQuestionQueue,
+  getCycleQuestionEvidence
+} = require('./appraisalCustomResponseService');
 
 // Conversation phases in order
 const CONVERSATION_PHASES = [
   'initialized',
   'okr_reflection',
+  'cycle_questions',
   'achievements',
   'challenges',
   'learnings',
@@ -612,6 +617,7 @@ Suggest SMART goals that are:
   async startSelfAssessmentConversation(appraisal, okrs, employee, options = {}) {
     await this.initialize();
     const requireChatGpt = options.requireChatGpt === true;
+    const configuredQuestions = getConversationQuestionQueue(appraisal, 'employee');
 
     const okrSummary = okrs.map(okr => {
       const avgProgress = okr.objectives?.reduce((sum, obj) => {
@@ -647,7 +653,7 @@ Suggest SMART goals that are:
           'CHATGPT_UNAVAILABLE'
         );
       }
-      return this.getFallbackConversationStart(employee, okrSummary);
+      return this.getFallbackConversationStart(employee, okrSummary, configuredQuestions.length);
     }
 
     const prompt = `You are starting a conversational self-assessment session with an employee.
@@ -667,7 +673,9 @@ Generate a warm, professional greeting that:
 1. Addresses them by name
 2. Explains this will be a conversational self-assessment
 3. Briefly summarizes their OKRs and overall progress
-4. Asks them which OKR they'd like to start with (they can reply with the OKR number or title). If they have no OKRs, ask them to list their top 2-3 priorities for the period.
+4. Asks them which OKR they'd like to start with (they can reply with the OKR number or title). If they have no OKRs and configured review questions are available, only explain that you will begin the configured questions next; do not invent or paraphrase a question. If neither exists, ask them to list their top 2-3 priorities for the period.
+
+Configured employee review questions available: ${configuredQuestions.length}
 
 Keep the tone friendly but professional. Be encouraging about their progress.
 Format your response as natural conversation text (not JSON).`;
@@ -695,7 +703,7 @@ Format your response as natural conversation text (not JSON).`;
       return {
         greeting,
         okrSummary,
-        phase: 'okr_reflection',
+        phase: okrSummary.length > 0 ? 'okr_reflection' : (configuredQuestions.length > 0 ? 'cycle_questions' : 'okr_reflection'),
         currentOkrIndex: 0,
         tokensUsed,
         success: true
@@ -723,6 +731,7 @@ Format your response as natural conversation text (not JSON).`;
     const currentPhase = convState.currentPhase || 'okr_reflection';
     let currentOkrIndex = convState.currentOkrIndex || 0;
     const extractedData = convState.extractedData || {};
+    const configuredQuestions = getConversationQuestionQueue(appraisal, 'employee');
 
     // If the employee replies with a bare OKR number ("2"), treat it as selecting that OKR.
     if (currentPhase === 'okr_reflection' && okrs?.length) {
@@ -766,6 +775,10 @@ Format your response as natural conversation text (not JSON).`;
       return `${idx + 1}. ${title} (${okr.progress || 0}% complete)`;
     }).join('\n');
 
+    const configuredProgression = configuredQuestions.length > 0
+      ? '- okr_reflection: focus on ONE OKR at a time. After the last OKR, move to "cycle_questions". The server will ask the exact frozen questions; never invent or paraphrase them.\n- cycle_questions: controlled by the server. Do not select or rewrite a configured question.\n- after configured questions, move to "report_generation".'
+      : '- okr_reflection: focus on ONE OKR at a time. If they choose a different OKR, set "selectedOkrIndex". When done with this OKR, set "shouldAdvanceOkr": true. After the last OKR, move to "achievements".\n- achievements: collect 2-5 key achievements (not necessarily tied to OKRs). Then move to "challenges".\n- challenges: collect 1-3 challenges and how they addressed them. Then move to "learnings".\n- learnings: collect 1-3 learnings/skills gained. Then move to "future_goals".\n- future_goals: collect 2-3 goals for next period. Then move to "report_generation".';
+
     const systemPrompt = `You are guiding ${appraisal.employee?.name || 'the employee'} through their performance self-assessment.
 
 Current Phase: ${currentPhase}
@@ -786,11 +799,7 @@ Guidelines:
 - If they mention quantifiable results, acknowledge those specifically
 
 Phase progression (drive this naturally without asking them to click anything):
-- okr_reflection: focus on ONE OKR at a time. If they choose a different OKR, set "selectedOkrIndex". When done with this OKR, set "shouldAdvanceOkr": true. After the last OKR, move to "achievements".
-- achievements: collect 2-5 key achievements (not necessarily tied to OKRs). Then move to "challenges".
-- challenges: collect 1-3 challenges and how they addressed them. Then move to "learnings".
-- learnings: collect 1-3 learnings/skills gained. Then move to "future_goals".
-- future_goals: collect 2-3 goals for next period. Then move to "report_generation".
+${configuredProgression}
 
 After processing their message, you should:
 1. Respond naturally to what they said
@@ -808,7 +817,7 @@ Respond to them and continue the conversation. If appropriate, extract any struc
      "type": "achievement|challenge|learning|goal|skill|null",
      "data": { "text": "...", "context": "..." } // or null if nothing to extract
    },
-  "suggestedNextPhase": "${currentPhase}" or a next phase from: initialized|okr_reflection|achievements|challenges|learnings|future_goals|competencies|report_generation|review|completed,
+   "suggestedNextPhase": "${currentPhase}" or a next phase from: initialized|okr_reflection|cycle_questions|achievements|challenges|learnings|future_goals|competencies|report_generation|review|completed,
   "selectedOkrNumber": null, // 1-based OKR number if the employee selected an OKR to discuss (e.g., they replied with an OKR number or title)
   "shouldAdvanceOkr": false, // true if done with current OKR and should move to next
   "confidence": 0.0-1.0
@@ -867,6 +876,16 @@ Respond to them and continue the conversation. If appropriate, extract any struc
         nextPhase = 'report_generation';
       }
 
+      // A configured appraisal uses its frozen question queue instead of the
+      // generic achievement/learning sequence. The route owns the exact prompt.
+      if (
+        configuredQuestions.length > 0
+        && currentPhase === 'okr_reflection'
+        && nextPhase !== 'okr_reflection'
+      ) {
+        nextPhase = 'cycle_questions';
+      }
+
       const normalizedResponse = this.normalizeText(parsed.response).toLowerCase();
       const indicatesReportGeneration = /generate(?:\\s+your|\\s+the)?\\s+(?:self-assessment|review)?\\s*report|report\\s+is\\s+ready|compile\\s+.*report/.test(normalizedResponse);
       if (
@@ -889,6 +908,50 @@ Respond to them and continue the conversation. If appropriate, extract any struc
       console.error('Conversation continue error:', error);
       this.rethrowAccountPolicyError(error);
       throw this.asInvalidAIResponse(error, 'The self-assessment response was invalid.');
+    }
+  }
+
+  async acknowledgeCycleQuestionResponse(appraisal, question, value, options = {}) {
+    await this.initialize();
+    const requireChatGpt = options.requireChatGpt === true;
+    const skipped = options.skipped === true;
+    if (!this.client) {
+      if (requireChatGpt) {
+        throw new PerformanceAIRuntimeError(
+          'ChatGPT is required to continue this self-assessment conversation.',
+          'CHATGPT_UNAVAILABLE'
+        );
+      }
+      return skipped ? 'Understood. We can skip that optional question.' : 'Thank you. Your response has been saved.';
+    }
+
+    const answer = skipped
+      ? '[The employee explicitly skipped this optional question]'
+      : this.truncateText(typeof value === 'string' ? value : JSON.stringify(value), 1600);
+    const prompt = `Acknowledge one employee response in a guided self-assessment.
+
+Frozen question: ${question.prompt}
+Employee response: ${answer}
+
+Reply with one brief, professional sentence. Do not ask another question, choose the next topic, assess performance, or paraphrase the configured question. The server controls the next exact prompt.`;
+    try {
+      const response = await this.client.chat.completions.create({
+        activity: AI_ACTIVITIES.SELF_ASSESSMENT_CHAT,
+        model: this.deploymentName,
+        messages: [
+          { role: 'system', content: 'You are a supportive HR assistant. Acknowledge the response briefly without judging the employee.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 100,
+        ...(requireChatGpt ? { runtimePreference: 'chatgpt' } : {})
+      });
+      const acknowledgement = this.normalizeText(response.choices[0]?.message?.content);
+      this.requireAIResponse(acknowledgement, 'The cycle-question acknowledgement was empty.');
+      return acknowledgement;
+    } catch (error) {
+      this.rethrowAccountPolicyError(error);
+      throw this.asInvalidAIResponse(error, 'The cycle-question acknowledgement was invalid.');
     }
   }
 
@@ -987,6 +1050,8 @@ Keep it to 2-3 sentences.`;
     const convState = appraisal.conversationAssessment || {};
     const extractedData = convState.extractedData || {};
     const chatThread = appraisal.chatThread || [];
+    const configuredQuestionCount = getConversationQuestionQueue(appraisal, 'employee').length;
+    const cycleQuestionEvidence = getCycleQuestionEvidence(appraisal, 'employee');
 
     // OKR performance summary
     const okrPerformance = okrs.map(okr => ({
@@ -1007,11 +1072,17 @@ Keep it to 2-3 sentences.`;
     }));
 
     // Filter out low-signal extracted snippets (e.g., "no", "n/a")
-    const sanitizedExtractedData = this.sanitizeExtractedData(extractedData);
+    const configuredExtractedData = this.mapCycleQuestionEvidence(cycleQuestionEvidence);
+    const sanitizedExtractedData = this.sanitizeExtractedData({
+      achievements: [...(extractedData.achievements || []), ...configuredExtractedData.achievements],
+      challenges: [...(extractedData.challenges || []), ...configuredExtractedData.challenges],
+      skills: [...(extractedData.skills || []), ...configuredExtractedData.skills],
+      goals: [...(extractedData.goals || []), ...configuredExtractedData.goals]
+    });
     const groundedExtractedData = this.buildGroundedExtractedData(chatThread, sanitizedExtractedData);
 
     // Ground the report body in employee conversation evidence to avoid generic/demo-like output.
-    const baseReport = this.getFallbackReport(groundedExtractedData, okrPerformance);
+    const baseReport = this.getFallbackReport(groundedExtractedData, okrPerformance, cycleQuestionEvidence);
     const draftSelfAssessment = {
       overallSummary: baseReport.overallSummary,
       okrAssessment: baseReport.okrAssessment,
@@ -1020,7 +1091,11 @@ Keep it to 2-3 sentences.`;
     };
 
     const conversationSignal = this.collectConversationSignal(chatThread, groundedExtractedData);
-    const missingInfo = this.getMissingSelfAssessmentInfo(conversationSignal);
+    // The frozen cycle design is authoritative. A completed configured queue
+    // may intentionally omit one of the legacy generic categories.
+    const missingInfo = configuredQuestionCount > 0
+      ? []
+      : this.getMissingSelfAssessmentInfo(conversationSignal);
     const hasEnoughSignal = missingInfo.length === 0;
 
     // Prevent "demo-ish" hallucinated reports when there's too little signal.
@@ -1868,20 +1943,44 @@ Provide a recommendation in JSON format:
       learnings: `Discussing skills developed and lessons learned.`,
       future_goals: `Discussing goals for the next period. Already captured: ${extractedData.goals?.length || 0} goals.`,
       competencies: `Discussing competency self-assessment.`,
+      cycle_questions: `Answering the frozen cycle-specific assessment questions.`,
       report_generation: `Ready to generate the self-assessment report.`
     };
     return contexts[phase] || '';
   }
 
-  getFallbackConversationStart(employee, okrSummary) {
+  mapCycleQuestionEvidence(evidence = []) {
+    const mapped = { achievements: [], challenges: [], skills: [], goals: [] };
+    for (const item of evidence) {
+      const value = Array.isArray(item.value) ? item.value.join(', ') : String(item.value ?? '').trim();
+      if (!value) continue;
+      const prompt = this.normalizeText(item.prompt).toLowerCase();
+      if (item.sectionType === 'achievements') {
+        if (/challenge|obstacle|blocker|difficult|slowed|respond/.test(prompt)) {
+          mapped.challenges.push({ text: value, resolution: value, learnings: '' });
+        } else {
+          mapped.achievements.push({ text: value, extractedFrom: 'cycle_question' });
+        }
+      } else if (item.sectionType === 'learning') {
+        mapped.skills.push({ skill: value, evidence: item.prompt });
+      } else if (item.sectionType === 'development') {
+        mapped.goals.push({ goal: value, measurable: false, timeframe: '' });
+      }
+    }
+    return mapped;
+  }
+
+  getFallbackConversationStart(employee, okrSummary, configuredQuestionCount = 0) {
     const okrList = okrSummary.map((okr, i) => `${i + 1}. ${okr.title} (${okr.progress}% complete)`).join('\n');
 
     return {
       greeting: okrSummary.length > 0
         ? `Hi ${employee.name}! Welcome to your self-assessment conversation.\n\nI see you have ${okrSummary.length} OKR(s) for this period:\n${okrList}\n\nWhich OKR would you like to start with? Reply with the OKR number (e.g., "1") or paste the title.`
-        : `Hi ${employee.name}! Welcome to your self-assessment conversation.\n\nI couldn't find any OKRs for this period. To get started, what were your top 2-3 priorities, and what progress did you make on them?`,
+        : configuredQuestionCount > 0
+          ? `Hi ${employee.name}! Welcome to your self-assessment conversation. We'll work through the questions configured for this review.`
+          : `Hi ${employee.name}! Welcome to your self-assessment conversation.\n\nI couldn't find any OKRs for this period. To get started, what were your top 2-3 priorities, and what progress did you make on them?`,
       okrSummary,
-      phase: 'okr_reflection',
+      phase: okrSummary.length > 0 ? 'okr_reflection' : (configuredQuestionCount > 0 ? 'cycle_questions' : 'okr_reflection'),
       currentOkrIndex: 0,
       tokensUsed: 0,
       success: true,
@@ -1962,7 +2061,7 @@ Provide a recommendation in JSON format:
     };
   }
 
-  getFallbackReport(extractedData, okrPerformance) {
+  getFallbackReport(extractedData, okrPerformance, cycleQuestionEvidence = []) {
     const heuristic = this.estimateSelfSuggestedRating(okrPerformance, extractedData);
     const achievementItems = (extractedData.achievements || [])
       .map(a => this.truncateText(a?.text, 280))
@@ -2021,6 +2120,14 @@ Provide a recommendation in JSON format:
         suggestions: ['AI analysis was not available. Please review and complete manually.'],
         sentiment: 'neutral'
       },
+      cycleQuestionResponses: cycleQuestionEvidence.map((item) => ({
+        sectionId: item.sectionId,
+        sectionTitle: item.sectionTitle,
+        questionId: item.questionId,
+        prompt: item.prompt,
+        responseType: item.responseType,
+        value: item.value
+      })),
       success: true,
       fallback: true
     };

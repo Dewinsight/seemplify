@@ -77,7 +77,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
         {
           maxRetries: 3,
           delay: 1000,
-          operation: 'Cloudinary upload'
+          operation: 'Managed storage upload'
         }
       );
     };
@@ -99,7 +99,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
     ]);
 
     console.log("✅ Both services completed with retry support!");
-    console.log('📊 Cloudinary result:', {
+    console.log('📊 Managed storage result:', {
       success: cloudinaryResult.success,
       resumeUrl: cloudinaryResult.resumeUrl,
       publicId: cloudinaryResult.publicId

@@ -95,13 +95,10 @@ export async function resolveStoragePlatformConfiguration({ environment = proces
     storageCache = { value: configuration, expiresAt: now + 5 * 60_000 }
     return configuration
   } catch (error) {
-    const cloudinary = environmentCloudinary(environment)
-    const fallback = cloudinary ? {
-      configured: true, solution: SERVICE, defaultProvider: 'cloudinary',
-      providers: { cloudinary: { configured: true, ...cloudinary }, azureBlob: { configured: false } }
-    } : null
-    storageCache = { value: fallback, expiresAt: now + 30_000 }
-    return fallback
+    // Provider-neutral writes fail closed when the central policy cannot be
+    // read. Falling back to Cloudinary could violate an Azure default.
+    storageCache = { value: null, expiresAt: now + 30_000 }
+    return null
   }
 }
 

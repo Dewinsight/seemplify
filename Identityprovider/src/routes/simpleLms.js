@@ -7,7 +7,7 @@ import { Organization } from '../models/Organization.js'
 import { Team } from '../models/Team.js'
 import { Notification } from '../models/Notification.js'
 import { emailService } from '../services/emailService.js'
-import { uploadBufferToCloudinary, isCloudinaryConfigured } from '../services/cloudinaryService.js'
+import { uploadBufferToCloudinary } from '../services/cloudinaryService.js'
 import { subscriptionService } from '../services/subscriptionService.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
@@ -985,10 +985,6 @@ apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
     if (!req.file.mimetype.startsWith('image/')) {
       return res.status(400).json({ error: 'Only image files are allowed.' })
     }
-    if (!isCloudinaryConfigured()) {
-      return res.status(500).json({ error: 'Cloudinary is not configured.' })
-    }
-
     const uploadResult = await uploadBufferToCloudinary({
       buffer: req.file.buffer,
       filename: req.file.originalname,
