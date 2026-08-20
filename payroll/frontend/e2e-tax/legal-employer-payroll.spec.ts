@@ -150,6 +150,36 @@ test('HR approves an employee bank account request from the Payroll review queue
   expect(reviewedAction).toBe('approve');
 });
 
+test('dashboard calls out pending bank account changes and links to the review queue', async ({ page }) => {
+  await page.route('**/api/payroll/banking/requests*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ requests: [{ _id: 'bank-request-1' }, { _id: 'bank-request-2' }] }),
+    });
+  });
+
+  await page.goto('/dashboard');
+  await dismissPageGuide(page);
+
+  const notice = page.getByRole('alert').filter({ hasText: 'Bank account changes need review' });
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText('2 employee requests are waiting for HR approval');
+  await notice.getByRole('link', { name: 'Review bank changes' }).click();
+  await expect(page).toHaveURL(/\/admin\/banking-approvals$/);
+  await expect(page.getByRole('heading', { name: 'Bank account changes' })).toBeVisible();
+});
+
+test('dashboard does not show a bank-change alert when the approval queue is empty', async ({ page }) => {
+  await page.route('**/api/payroll/banking/requests*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ requests: [] }) });
+  });
+
+  await page.goto('/dashboard');
+  await dismissPageGuide(page);
+  await expect(page.getByText('Bank account changes need review')).toHaveCount(0);
+});
+
 test('leaves Payroll through local logout before returning to the App Hub', async ({ page, request }) => {
   let hubReached = false;
   await page.route('http://localhost:4000/**', async (route) => {

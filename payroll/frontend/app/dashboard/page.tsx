@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   AlertCircle, ArrowRight, Calculator, Calendar, ClipboardCheck, FileText,
-  History, LayoutGrid, TrendingUp, Users
+  History, Landmark, LayoutGrid, TrendingUp, Users
 } from 'lucide-react';
 import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
 import { formatPayrollMoney } from '@/lib/payrollMoney';
@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [currentOrg, setCurrentOrg] = useState<any>(null);
   const [dashboardStats, setDashboardStats] = useState<any>(null);
   const [adminOverview, setAdminOverview] = useState<any>(null);
+  const [pendingBankChanges, setPendingBankChanges] = useState(0);
 
   useEffect(() => {
     handleAuthCallback();
@@ -39,6 +40,12 @@ export default function Dashboard() {
         try { setDashboardStats((await api.get('/payroll/dashboard-stats')).data); } catch (error) { console.log('Could not fetch dashboard stats:', error); }
         if (org && ['owner', 'admin', 'hr_manager'].includes(org.role)) {
           try { setAdminOverview((await api.get('/payroll/admin/overview')).data); } catch (error) { console.log('Could not fetch admin overview:', error); }
+          try {
+            const bankingResponse = await api.get('/payroll/banking/requests', { params: { status: 'pending' } });
+            setPendingBankChanges(Array.isArray(bankingResponse.data?.requests) ? bankingResponse.data.requests.length : 0);
+          } catch (error) {
+            console.log('Could not fetch pending bank account changes:', error);
+          }
         }
       } catch (error: any) {
         console.error('Failed to fetch user:', error);
@@ -106,6 +113,25 @@ export default function Dashboard() {
 
       {isAdminWorkspace ? (
         <>
+          {pendingBankChanges > 0 && (
+            <section className="suite-section" aria-label="Bank account changes requiring approval">
+              <div className="suite-notice" role="alert" style={{ borderColor: 'var(--suite-warning)' }}>
+                <div className="flex items-start gap-3">
+                  <Landmark className="mt-0.5 h-5 w-5 shrink-0" style={{ color: 'var(--suite-warning)' }} />
+                  <div>
+                    <p className="text-sm font-semibold">Bank account changes need review</p>
+                    <p className="mt-1 text-sm" style={{ color: 'var(--suite-muted)' }}>
+                      {pendingBankChanges} employee {pendingBankChanges === 1 ? 'request is' : 'requests are'} waiting for HR approval. Existing salary accounts remain active until a request is approved.
+                    </p>
+                  </div>
+                </div>
+                <Link href="/admin/banking-approvals" className="suite-button shrink-0">
+                  Review bank changes <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </section>
+          )}
+
           <section className="suite-section">
             <div className="suite-metrics">
               <div className="suite-metric"><p className="suite-label">Active employees</p><p className="suite-metric-value">{adminOverview?.activeEmployees || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Synced from IDP</p></div>
