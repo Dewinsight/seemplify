@@ -370,6 +370,7 @@ router.get('/oidc/callback', authLimiter, asyncHandler(async (req, res) => {
 // Logout
 router.post('/logout', asyncHandler(async (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store');
     // Clear session
     req.session.destroy((err) => {
       if (err) {

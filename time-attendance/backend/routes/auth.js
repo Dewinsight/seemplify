@@ -255,6 +255,7 @@ router.get('/me', async (req, res) => {
 
 // Logout
 router.post('/logout', (req, res) => {
+    res.set('Cache-Control', 'no-store');
     if (req.session) {
         req.session.destroy((err) => {
             if (err) {

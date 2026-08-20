@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { exitLeaveToHub } from '@/lib/productExit';
 
 type NavItem = {
   name: string;
@@ -34,6 +35,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
 
   // Administration follows the active organization, not a role the user may
   // hold in a different tenant.
@@ -193,9 +195,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           Request Leave
                         </Link>
                         <a
-                          href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                          href={hubUrl}
                           className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                          onClick={() => setUserDropdownOpen(false)}
+                          onClick={(event) => { event.preventDefault(); setUserDropdownOpen(false); void exitLeaveToHub(hubUrl); }}
                         >
                           <LayoutGrid className="h-4 w-4" />
                           Back to App Hub

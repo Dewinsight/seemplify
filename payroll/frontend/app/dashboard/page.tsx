@@ -10,6 +10,8 @@ import {
 import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
 import { formatPayrollMoney } from '@/lib/payrollMoney';
 import { usePayrollViewMode } from '@/context/PayrollViewModeContext';
+import { exitPayrollToHub } from '@/lib/productExit';
+import { resolveIdpUrl } from '@/lib/runtimeConfig';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -93,7 +95,7 @@ export default function Dashboard() {
               <div className="suite-context-mark">{String(currentOrg?.name || 'PY').slice(0, 2).toUpperCase()}</div>
               <div className="min-w-0"><p className="suite-label">Payroll workspace</p><p className="truncate text-base font-semibold">{currentOrg?.name || 'Your organization'}</p></div>
             </div>
-            <a href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'} className="suite-button-secondary"><LayoutGrid className="h-4 w-4" /> App Hub</a>
+            <a href={resolveIdpUrl()} onClick={(event) => { event.preventDefault(); void exitPayrollToHub(resolveIdpUrl()); }} className="suite-button-secondary"><LayoutGrid className="h-4 w-4" /> App Hub</a>
           </div>
           <div className="mt-4 flex items-center justify-between border-t pt-3" style={{ borderColor: 'var(--suite-line)' }}>
             <div><p className="suite-label">Viewing</p><p className="text-sm font-semibold">{isAdminWorkspace ? 'Admin payroll' : 'My payroll'}</p></div>

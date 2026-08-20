@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { useUserContext, useCurrentTeam } from '@/lib/hooks';
 import { authApi } from '@/lib/api';
+import { exitPerformanceToHub } from '@/lib/productExit';
 import PageGuide from './PageGuide';
 import ThemePreferenceMenu from './ThemePreferenceMenu';
 import { ActionCentreBell } from './ActionCentre';
@@ -234,6 +235,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { mode } = useThemeMode();
   const isDarkMode = mode === 'dark';
   const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+  const handleHubExit = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    void exitPerformanceToHub(hubUrl);
+  };
   const showNoOrganizations = !authLoading && !!authUser && orgs.length === 0;
 
   if (showNoOrganizations) {
@@ -278,6 +283,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </p>
             <a
               href={hubUrl}
+              onClick={handleHubExit}
               className="mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 via-cyan-500 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition-all hover:shadow-teal-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
             >
               <LayoutGrid className="h-4 w-4" />
@@ -746,11 +752,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         )}
                         <a
                           href={hubUrl}
+                          onClick={(event) => { setUserDropdownOpen(false); handleHubExit(event); }}
                           className={cn(
                             "w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-2",
                             isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
                           )}
-                          onClick={() => setUserDropdownOpen(false)}
                         >
                           <LayoutGrid className="h-4 w-4" />
                           Back to App Hub

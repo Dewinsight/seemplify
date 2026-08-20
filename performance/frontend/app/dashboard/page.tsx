@@ -11,6 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import { useCurrentTeam, useDashboardData, useUserContext } from '@/lib/hooks';
 import api, { authApi } from '@/lib/api';
+import { exitPerformanceToHub } from '@/lib/productExit';
 
 interface ManagerPortalNotification {
   appraisalId: string;
@@ -252,7 +253,7 @@ export default function DashboardPage() {
               <div className="suite-context-mark">{organizationName.slice(0, 2).toUpperCase()}</div>
               <div className="min-w-0"><p className="suite-label">Performance workspace</p><p className="truncate text-base font-semibold">{organizationName}</p></div>
             </div>
-            <a href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'} className="suite-button-secondary"><LayoutGrid className="h-4 w-4" /> App Hub</a>
+            <a href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'} onClick={(event) => { event.preventDefault(); void exitPerformanceToHub(process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'); }} className="suite-button-secondary"><LayoutGrid className="h-4 w-4" /> App Hub</a>
           </div>
           <div className="mt-4 flex items-end justify-between gap-4 border-t pt-3" style={{ borderColor: 'var(--suite-line)' }}>
             <div>

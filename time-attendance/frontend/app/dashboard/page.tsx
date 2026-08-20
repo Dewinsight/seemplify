@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { AlertCircle, ArrowRight, Calendar, CheckCircle2, Clock, LayoutGrid, Users } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getIdpUrl } from '@/lib/env';
+import { exitAttendanceToHub } from '@/lib/productExit';
 import { approvalsApi, attendanceApi, exceptionsApi } from '@/lib/api';
 import ClockWidget from '@/components/ClockWidget';
 
@@ -103,7 +104,7 @@ export default function Dashboard() {
                                 <p className="truncate text-base font-semibold">{currentStatusLabel}</p>
                             </div>
                         </div>
-                        <a href={getIdpUrl()} className="suite-button-secondary">
+                        <a href={getIdpUrl()} onClick={(event) => { event.preventDefault(); void exitAttendanceToHub(getIdpUrl()); }} className="suite-button-secondary">
                             <LayoutGrid className="h-4 w-4" /> App Hub
                         </a>
                     </div>

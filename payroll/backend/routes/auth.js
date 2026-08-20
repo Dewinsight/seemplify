@@ -351,6 +351,7 @@ router.get('/session', (req, res) => {
 // Logout
 router.post('/logout', (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store');
     req.session.destroy((err) => {
       if (err) {
         console.error('Session destroy error:', err);

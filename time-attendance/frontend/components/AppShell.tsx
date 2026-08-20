@@ -27,6 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import ThemePreferenceMenu from '@/components/ThemePreferenceMenu';
 import PresenceReporter from '@/components/PresenceReporter';
+import { exitAttendanceToHub } from '@/lib/productExit';
 
 interface NavItem {
     name: string;
@@ -53,6 +54,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [orgMenuOpen, setOrgMenuOpen] = useState(false);
     const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+    const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com';
 
     useEffect(() => {
         setMobileOpen(false);
@@ -328,8 +330,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                         </div>
                                         <div className="p-1">
                                             <a
-                                                href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'}
-                                                onClick={() => setUserMenuOpen(false)}
+                                                href={hubUrl}
+                                                onClick={(event) => { event.preventDefault(); setUserMenuOpen(false); void exitAttendanceToHub(hubUrl); }}
                                                 role="menuitem"
                                                 className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-white"
                                             >
@@ -437,7 +439,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                     <div className="truncate text-xs text-zinc-500">{user?.email}</div>
                                 </div>
                                 <a
-                                    href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'}
+                                    href={hubUrl}
+                                    onClick={(event) => { event.preventDefault(); void exitAttendanceToHub(hubUrl); }}
                                     className="flex h-9 shrink-0 items-center gap-2 rounded-lg border border-zinc-800 px-3 text-sm text-zinc-300 hover:bg-zinc-900 hover:text-white"
                                 >
                                     <LayoutGrid className="h-4 w-4" />

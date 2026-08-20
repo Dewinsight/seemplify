@@ -33,6 +33,20 @@ test.beforeEach(async ({ page, request }) => {
   await signIn(page);
 });
 
+test('leaves Payroll through local logout before returning to the App Hub', async ({ page, request }) => {
+  let hubReached = false;
+  await page.route('http://localhost:4000/**', async (route) => {
+    hubReached = true;
+    await route.fulfill({ status: 200, contentType: 'text/html', body: '<title>App Hub</title><main>App Hub</main>' });
+  });
+  await page.goto('/dashboard');
+  await dismissPageGuide(page);
+  await page.getByRole('link', { name: 'App Hub', exact: true }).click();
+  await expect.poll(() => hubReached).toBe(true);
+  const logged = await requests(request);
+  expect(logged.some((entry) => entry.method === 'POST' && entry.path === '/auth/logout')).toBe(true);
+});
+
 test('configures every supported tax rule shape without raw JSON', async ({ page, request }) => {
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));

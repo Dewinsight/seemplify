@@ -369,6 +369,24 @@ router.post('/refresh-token', async (req, res) => {
   }
 });
 
+// Revoke only the current Recruiter product session. The central IdP session
+// remains active so returning through the App Hub can establish a fresh one.
+router.post('/logout', async (req, res) => {
+  const authorization = String(req.headers.authorization || '');
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (token) {
+    try {
+      const { decoded } = await sessionService.validateAccessToken(token);
+      if (decoded?.jti) await sessionService.revokeSessionById(decoded.jti, 'product_exit_to_hub');
+    } catch (error) {
+      // Logout is idempotent: an expired, missing, or already-revoked session
+      // is already in the requested state.
+    }
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true });
+});
+
 // @route   POST /api/auth/resend-otp
 // @desc    Resend OTP for login
 // @access  Public

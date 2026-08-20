@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
 import { getAvailableThemeOptions } from "@/utils/themeConfig";
+import { exitRecruiterToHub } from "@/utils/productExit";
 import { useUser } from "@/context/UserContext";
 import { useOrganization } from "@/context/OrganizationContext";
 import {
@@ -407,7 +408,7 @@ const TopNavbar = () => {
                 </>
               )}
               <DropdownMenuItem asChild>
-                <a href={process.env.NEXT_PUBLIC_IDP_URL || "https://auth.seemplifyai.com"}>
+                <a href={process.env.NEXT_PUBLIC_IDP_URL || "https://auth.seemplifyai.com"} onClick={(event) => { event.preventDefault(); void exitRecruiterToHub(process.env.NEXT_PUBLIC_IDP_URL || "https://auth.seemplifyai.com"); }}>
                   <LayoutGrid className="mr-2 h-4 w-4" />
                   <span>Back to App Hub</span>
                 </a>

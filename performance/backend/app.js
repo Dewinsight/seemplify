@@ -714,6 +714,7 @@ app.post('/api/auth/switch-organization', requireAuth, async (req, res) => {
 
 // Logout - clear all session data and cookies
 app.post('/api/auth/logout', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   // Clear session
   req.session.destroy((err) => {
     if (err) {

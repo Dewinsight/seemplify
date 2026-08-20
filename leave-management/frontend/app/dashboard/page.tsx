@@ -11,6 +11,7 @@ import LeaveRequestCard from '@/components/LeaveRequestCard';
 import { leaveBalancesApi, leaveRequestsApi } from '@/lib/api';
 import { LeaveBalance, LeaveEntitlementAdjustment, LeaveRequest } from '@/types';
 import { formatDate, getEntitlementAdjustmentLabel } from '@/lib/utils';
+import { exitLeaveToHub } from '@/lib/productExit';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -69,7 +70,7 @@ export default function DashboardPage() {
       <Layout>
         <div className="suite-notice">
           <p className="text-sm" style={{ color: 'var(--suite-danger)' }}>{error}</p>
-          {isOrgError && <a href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'} className="suite-button"><LayoutGrid className="h-4 w-4" /> Go to App Hub</a>}
+          {isOrgError && <a href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'} onClick={(event) => { event.preventDefault(); void exitLeaveToHub(process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'); }} className="suite-button"><LayoutGrid className="h-4 w-4" /> Go to App Hub</a>}
         </div>
       </Layout>
     );
@@ -101,7 +102,7 @@ export default function DashboardPage() {
                 <div className="suite-context-mark">{organizationName.slice(0, 2).toUpperCase()}</div>
                 <div className="min-w-0"><p className="suite-label">Working in</p><p className="truncate text-base font-semibold">{organizationName}</p></div>
               </div>
-              <a href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'} className="suite-button-secondary"><LayoutGrid className="h-4 w-4" /> App Hub</a>
+              <a href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'} onClick={(event) => { event.preventDefault(); void exitLeaveToHub(process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'); }} className="suite-button-secondary"><LayoutGrid className="h-4 w-4" /> App Hub</a>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-4 border-t pt-3" style={{ borderColor: 'var(--suite-line)' }}>
               <div><p className="suite-label">Available</p><p className="text-sm font-semibold">{summary?.totalAvailable || 0} days</p></div>

@@ -7,6 +7,7 @@ import Script from 'next/script';
 import { useUserContext, useOrganizations } from '@/lib/hooks';
 import { authApi, handleAuthCallback } from '@/lib/api';
 import { resolveIdpUrl } from '@/lib/runtimeConfig';
+import { exitPayrollToHub } from '@/lib/productExit';
 import { PayrollViewModeProvider, PayrollViewMode } from '@/context/PayrollViewModeContext';
 import PageGuide from '@/components/PageGuide';
 import ThemePreferenceMenu from '@/components/ThemePreferenceMenu';
@@ -159,6 +160,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const isLoginPage = pathname === '/login';
   const hubUrl = resolveIdpUrl();
+  const handleHubExit = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    void exitPayrollToHub(hubUrl);
+  };
   const hasOrganizations = Array.isArray(organizations) && organizations.length > 0;
   const showNoOrganizations = !contextLoading && !orgsLoading && user && !hasOrganizations;
 
@@ -192,6 +197,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </p>
               <a
                 href={hubUrl}
+                onClick={handleHubExit}
                 className="mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition-all hover:shadow-amber-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
               >
                 <LayoutGrid className="h-4 w-4" />
@@ -486,10 +492,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               )}
                             </div>
                             <div className="py-2">
-                              <a
+                            <a
                                 href={hubUrl}
+                                onClick={(event) => { setUserMenuOpen(false); handleHubExit(event); }}
                                 className="payroll-popover-item px-4 py-2"
-                                onClick={() => setUserMenuOpen(false)}
                               >
                                 <LayoutGrid className="h-4 w-4" />
                                 Back to App Hub
