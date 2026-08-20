@@ -17,6 +17,7 @@ require('./models/PayrollArtifact');
 require('./models/PayrollDelivery');
 require('./models/Payslip');
 require('./models/CompensationRequest');
+require('./models/BankAccountChangeRequest');
 require('./models/SalaryGrade');
 require('./models/ExchangeRate');
 require('./models/CurrencySyncSettings');
@@ -32,6 +33,7 @@ const PayrollApprovalPolicy = require('./models/PayrollApprovalPolicy');
 const PayrollAccountingContact = require('./models/PayrollAccountingContact');
 const PayrollArtifact = require('./models/PayrollArtifact');
 const PayrollDelivery = require('./models/PayrollDelivery');
+const BankAccountChangeRequest = require('./models/BankAccountChangeRequest');
 const Payslip = require('./models/Payslip');
 const PayrollSequence = require('./models/PayrollSequence');
 const ExchangeRate = require('./models/ExchangeRate');
@@ -134,6 +136,7 @@ app.use('/api/payroll/employer-entities', require('./routes/employer-entities'))
 app.use('/api/payroll', require('./routes/payrollCycles'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/compensation', require('./routes/compensation'));
+app.use('/api/payroll/banking', require('./routes/banking'));
 app.use('/api/payroll/reports', require('./routes/reports'));
 app.use('/api/payroll/salary-grades', require('./routes/salary-grades'));
 app.use('/api/payroll/currencies', require('./routes/currencies'));
@@ -168,6 +171,7 @@ async function migratePayrollIndexes() {
     PayrollAccountingContact.createIndexes(),
     PayrollArtifact.createIndexes(),
     PayrollDelivery.createIndexes(),
+    BankAccountChangeRequest.createIndexes(),
   ]);
   const migrations = [
     { model: PayrollRun, legacy: 'runNumber_1', compound: { organizationId: 1, runNumber: 1 }, name: 'organizationId_1_runNumber_1' },

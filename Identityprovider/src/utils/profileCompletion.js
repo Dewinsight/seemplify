@@ -6,12 +6,6 @@ const PROFILE_COMPLETION_STEPS = [
     description: 'Add your date of birth, address, phone number, and emergency contact.'
   },
   {
-    key: 'banking',
-    label: 'Banking',
-    route: '/profile/banking',
-    description: 'Add the payment account payroll should use for you.'
-  },
-  {
     key: 'dependents',
     label: 'Dependents',
     route: '/profile/dependents',
@@ -100,12 +94,6 @@ function getActiveBankAccounts(profile = {}) {
   })
 }
 
-function getPrimaryBankAccount(profile = {}) {
-  const accounts = getActiveBankAccounts(profile)
-  if (accounts.length === 0) return null
-  return accounts.find(account => account?.isPrimary !== false) || accounts[0]
-}
-
 function getPrimaryEmergencyContact(profile = {}) {
   const contacts = getEmergencyContacts(profile).filter(contact => hasText(contact?.name) && hasText(contact?.phone))
   if (contacts.length === 0) return null
@@ -116,35 +104,12 @@ function isCompleteAddress(address = {}) {
   return hasText(address?.street) && hasText(address?.city) && hasText(address?.country)
 }
 
-function hasRequiredBankFields(account = {}, fallbackCountry = '') {
-  const country = String(account?.country || fallbackCountry || 'Other').trim()
-  const hasBankName = hasText(account?.bankName)
-  const hasAccountNumber = hasText(account?.accountNumber)
-
-  if (!hasBankName) return false
-
-  switch (country) {
-    case 'USA':
-      return hasAccountNumber && hasText(account?.routingNumber)
-    case 'UK':
-      return hasAccountNumber && hasText(account?.sortCode)
-    case 'EU':
-      return hasText(account?.iban) && hasText(account?.bicSwift)
-    case 'Nigeria':
-      return hasAccountNumber && hasText(account?.bankCode)
-    default:
-      return hasAccountNumber || hasText(account?.iban)
-  }
-}
-
 export function getProfileCompletion(account = {}, options = {}) {
   const profile = getProfile(account)
   const personalInfo = getPersonalInfo(profile)
   const mailingAddress = getMailingAddress(profile)
   const phoneNumbers = getPhoneNumbers(profile)
   const primaryEmergencyContact = getPrimaryEmergencyContact(profile)
-  const activeBankAccounts = getActiveBankAccounts(profile)
-  const primaryBankAccount = getPrimaryBankAccount(profile)
   const validDependents = getValidDependents(profile)
   const dependentsDeclaration = getDependentsDeclaration(profile)
   const reminder = profile?.completionReminders || {}
@@ -156,14 +121,12 @@ export function getProfileCompletion(account = {}, options = {}) {
     hasText(phoneNumbers?.mobile) &&
     primaryEmergencyContact
   )
-  const bankingComplete = activeBankAccounts.some(account => hasRequiredBankFields(account, profile?.banking?.country))
   const dependentsComplete = validDependents.length > 0
     || dependentsDeclaration.status === 'none'
     || (dependentsDeclaration.status === 'provided' && dependentsDeclaration.count > 0)
 
   const completionByKey = {
     personal: personalComplete,
-    banking: bankingComplete,
     dependents: dependentsComplete
   }
 
@@ -198,16 +161,6 @@ export function getProfileCompletion(account = {}, options = {}) {
     },
     summary: {
       primaryEmergencyContact,
-      primaryBankAccount: primaryBankAccount
-        ? {
-            bankName: primaryBankAccount.bankName || '',
-            country: primaryBankAccount.country || profile?.banking?.country || '',
-            accountType: primaryBankAccount.accountType || '',
-            maskedAccountNumber: hasText(primaryBankAccount.accountNumber)
-              ? `****${String(primaryBankAccount.accountNumber).slice(-4)}`
-              : ''
-          }
-        : null,
       onboarding: null
     }
   }

@@ -5,10 +5,6 @@ import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { Team } from '../models/Team.js'
 import { getOrganizationManagedHubApps } from '../config/hubApps.js'
 import {
-  getPayrollBankAccountTypes,
-  normalizePayrollBankCountry
-} from '../config/payrollBankJurisdictions.js'
-import {
   APP_ACCESS_MODE_SELECTED,
   buildValidAppIdSet,
   normalizeAppAccess
@@ -100,10 +96,6 @@ function normalizeText(value = '') {
   return String(value || '').trim()
 }
 
-function normalizeDigits(value = '') {
-  return normalizeText(value).replace(/\D+/g, '')
-}
-
 function normalizeDateValue(value) {
   if (value === undefined) return undefined
   if (value === null || value === '') return null
@@ -147,50 +139,6 @@ function emergencyContactHasValues(input = {}) {
     input.phone,
     input.email
   ].some(hasText)
-}
-
-function bankingAccountHasValues(input = {}) {
-  return [
-    input.bankName,
-    input.accountHolderName,
-    input.accountNumber,
-    input.routingNumber,
-    input.sortCode,
-    input.iban,
-    input.bicSwift,
-    input.bankCode
-  ].some(hasText)
-}
-
-function normalizeBankingAccount(country = '', input = {}, fallback = {}) {
-  const resolvedCountry = normalizePayrollBankCountry(input.country ?? country ?? fallback.country ?? 'Other') || 'Other'
-  const normalizedPercentage = Number.parseInt(input.percentage ?? fallback.percentage ?? 100, 10)
-  const availableAccountTypes = getPayrollBankAccountTypes(resolvedCountry)
-  const requestedAccountType = normalizeText(input.accountType ?? fallback.accountType).toLowerCase()
-  const accountType = availableAccountTypes.some((item) => item.value === requestedAccountType)
-    ? requestedAccountType
-    : (availableAccountTypes[0]?.value || 'current')
-  const accountNumber = resolvedCountry === 'Nigeria'
-    ? normalizeDigits(input.accountNumber ?? fallback.accountNumber)
-    : normalizeText(input.accountNumber ?? fallback.accountNumber)
-  const bankCode = resolvedCountry === 'Nigeria'
-    ? normalizeDigits(input.bankCode ?? fallback.bankCode)
-    : normalizeText(input.bankCode ?? fallback.bankCode)
-
-  return {
-    country: resolvedCountry,
-    bankName: normalizeText(input.bankName ?? fallback.bankName),
-    accountHolderName: normalizeText(input.accountHolderName ?? fallback.accountHolderName),
-    accountNumber,
-    routingNumber: normalizeDigits(input.routingNumber ?? fallback.routingNumber),
-    sortCode: normalizeText(input.sortCode ?? fallback.sortCode),
-    iban: normalizeText(input.iban ?? fallback.iban),
-    bicSwift: normalizeText(input.bicSwift ?? fallback.bicSwift),
-    bankCode,
-    accountType,
-    percentage: Number.isFinite(normalizedPercentage) ? normalizedPercentage : 100,
-    isActive: input.isActive !== false
-  }
 }
 
 function cloneDocument(value = {}) {
@@ -507,6 +455,15 @@ router.put('/:orgId/members/:memberId/payroll-sync',
       const hasBanking = body.banking && typeof body.banking === 'object'
       const hasDependentsDeclaration = body.dependentsDeclaration && typeof body.dependentsDeclaration === 'object'
 
+      if (hasBanking) {
+        const payrollUrl = process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007'
+        return res.status(410).json({
+          error: 'Banking and direct deposit are managed in Payroll.',
+          code: 'BANKING_MOVED_TO_PAYROLL',
+          location: `${payrollUrl.replace(/\/$/, '')}/banking`
+        })
+      }
+
       if (hasEmployeeId && await hasPendingInviteWithEmployeeId(req.params.orgId, body.employeeId)) {
         return res.status(400).json({ error: 'Employee ID is already pending on another invitation' })
       }
@@ -612,32 +569,6 @@ router.put('/:orgId/members/:memberId/payroll-sync',
           lastUpdated: new Date()
         }
         accountUpdateSet['profile.taxInfo'] = accountSnapshot.profile.taxInfo
-      }
-
-      if (hasBanking) {
-        const banking = body.banking || {}
-        const currentBanking = accountSnapshot.profile.banking || {}
-        const currentAccount = Array.isArray(currentBanking.accounts) ? currentBanking.accounts[0] || {} : {}
-        const rawIncomingAccount = banking.account || {}
-        const clearBankingAccount = Object.prototype.hasOwnProperty.call(banking, 'account')
-          && !bankingAccountHasValues(rawIncomingAccount)
-        const normalizedAccount = clearBankingAccount
-          ? normalizeBankingAccount(banking.country, rawIncomingAccount, {})
-          : normalizeBankingAccount(banking.country, rawIncomingAccount, currentAccount)
-
-        const normalizedBanking = {
-          ...(currentBanking || {}),
-          country: normalizeText(banking.country ?? currentBanking.country ?? normalizedAccount.country) || normalizedAccount.country,
-          accounts: !clearBankingAccount && bankingAccountHasValues(normalizedAccount)
-            ? [{
-                ...normalizedAccount,
-                createdAt: currentAccount?.createdAt || new Date()
-              }]
-            : []
-        }
-        accountSnapshot.profile.banking = normalizedBanking
-        accountUpdateSet['profile.banking.country'] = normalizedBanking.country
-        accountUpdateSet['profile.banking.accounts'] = normalizedBanking.accounts
       }
 
       if (hasDependentsDeclaration) {

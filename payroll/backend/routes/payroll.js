@@ -338,9 +338,15 @@ function buildEmergencyContactFromMember(member = {}, existingEmergencyContact =
   };
 }
 
-function applyPayrollSyncFromMember(profile, member = {}) {
+function applyPayrollSyncFromMember(profile, member = {}, options = {}) {
   profile.employeeInfo = buildEmployeeSnapshotFromMember(member, profile.employeeInfo);
-  profile.bankAccounts = buildPayrollBankAccountsFromMember(member, profile.bankAccounts);
+  // Identity banking is retained only as a one-time migration source. Once a
+  // Payroll account exists, Payroll is authoritative and later IdP refreshes
+  // must never overwrite an admin update or an HR-approved employee request.
+  if (options.importLegacyBanking !== false
+    && (!Array.isArray(profile.bankAccounts) || profile.bankAccounts.length === 0)) {
+    profile.bankAccounts = buildPayrollBankAccountsFromMember(member, []);
+  }
   profile.emergencyContact = buildEmergencyContactFromMember(member, profile.emergencyContact);
 
   const taxId = String(member?.payrollSync?.taxInfo?.taxId || '').trim();
@@ -1296,7 +1302,16 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (statutoryContributions !== undefined) {
       profile.statutoryContributions = { ...(profile.statutoryContributions || {}), ...(statutoryContributions || {}) };
     }
-    if (bankAccounts !== undefined) profile.bankAccounts = bankAccounts;
+    if (bankAccounts !== undefined) {
+      // Direct edits on this HR-only endpoint are authoritative Payroll
+      // updates. Mark them verified so they stay in sync with employee
+      // requests that become active only after HR approval.
+      profile.bankAccounts = (Array.isArray(bankAccounts) ? bankAccounts : []).map((account) => ({
+        ...account,
+        isVerified: true,
+        verifiedAt: new Date(),
+      }));
+    }
     if (status !== undefined) profile.status = status;
     if (isActive !== undefined) profile.isActive = !!isActive;
     if (terminationDate !== undefined) profile.terminationDate = terminationDate ? new Date(terminationDate) : null;
@@ -1308,7 +1323,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       profile.taxAssignment = { ...(profile.taxAssignment?.toObject?.() || profile.taxAssignment || {}), ...(taxAssignment || {}) };
     }
     if (syncedMember) {
-      applyPayrollSyncFromMember(profile, syncedMember);
+      applyPayrollSyncFromMember(profile, syncedMember, { importLegacyBanking: bankAccounts === undefined });
     }
     profile.payrollFlags = normalizePayrollFlagsPayload(payrollFlags, profile.basicSalary, profile.payrollFlags, profile.workTerms);
 

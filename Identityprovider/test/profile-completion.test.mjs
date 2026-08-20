@@ -54,11 +54,10 @@ test('IDP profile completion ignores legacy onboarding document assignments', ()
 
   assert.deepEqual(completion.steps.map(step => step.key), [
     'personal',
-    'banking',
     'dependents'
   ])
   assert.equal(completion.complete, true)
-  assert.equal(completion.totalSteps, 3)
+  assert.equal(completion.totalSteps, 2)
   assert.equal(completion.onboarding.isAssigned, false)
   assert.equal(completion.onboarding.requiresAction, false)
   assert.equal(completion.summary.onboarding, null)

@@ -30,6 +30,7 @@ import {
   CheckCircle,
   Check,
   Wallet,
+  Landmark,
   History,
   Coins,
   ChevronRight,
@@ -213,6 +214,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const personalNavItems: NavItem[] = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
     { name: 'My Payslips', href: '/payslips', icon: FileText },
+    { name: 'Banking', href: '/banking', icon: Landmark },
     { name: 'My Requests', href: '/requests', icon: Clock },
   ];
 
@@ -224,6 +226,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { name: 'Run Payroll', href: '/admin/run', icon: Calculator },
         { name: 'Payroll History', href: '/admin/runs', icon: History },
         { name: 'Approvals', href: '/admin/approvals', icon: CheckCircle },
+        { name: 'Bank changes', href: '/admin/banking-approvals', icon: Landmark },
       ],
     },
     {

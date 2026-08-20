@@ -1121,22 +1121,6 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 taxInfo: {
                     taxId: formData.taxConfig.taxId || ''
                 },
-                banking: {
-                    country: bankCountry,
-                    account: hasBankingDetails ? {
-                        bankName,
-                        accountHolderName: accountHolderName || setupData.name || profile?.employeeInfo?.name || '',
-                        accountNumber,
-                        routingNumber,
-                        sortCode,
-                        iban,
-                        bicSwift,
-                        bankCode,
-                        accountType,
-                        percentage: 100,
-                        isActive: true
-                    } : {}
-                },
                 ...(canUpdateDependentsDeclaration ? {
                     dependentsDeclaration: {
                         status: Number(formData.taxConfig.dependents || 0) > 0

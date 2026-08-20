@@ -33,6 +33,84 @@ test.beforeEach(async ({ page, request }) => {
   await signIn(page);
 });
 
+test('employee requests a bank account change in Payroll while the approved account remains active', async ({ page }) => {
+  let proposedAccount: any = null;
+  let hasPendingRequest = false;
+  await page.route('**/api/payroll/banking/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        account: {
+          country: 'United Kingdom', countryCode: 'GB', accountName: 'Ava Stone',
+          accountNumber: '12345678', bankName: 'Existing Bank', accountType: 'current', isVerified: true,
+        },
+        payrollCountryCode: 'NG',
+        pendingRequest: hasPendingRequest ? {
+          _id: 'bank-request-1', status: 'pending', createdAt: '2026-08-20T10:00:00.000Z',
+          proposedAccountSummary: { bankName: 'Access Bank', countryCode: 'NG', accountLast4: '7890' },
+        } : null,
+        history: [],
+      }),
+    });
+  });
+  await page.route('**/api/payroll/banking/requests', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    proposedAccount = (await route.request().postDataJSON()).account;
+    hasPendingRequest = true;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ request: { _id: 'bank-request-1' } }) });
+  });
+
+  await page.goto('/banking');
+  await dismissPageGuide(page);
+  await expect(page.getByRole('heading', { name: 'Banking and direct deposit' })).toBeVisible();
+  await expect(page.getByText('Existing Bank')).toBeVisible();
+  await page.getByRole('button', { name: 'Request account change' }).click();
+  await page.getByLabel('Country').selectOption('Nigeria');
+  await page.getByLabel('Account holder name').fill('Ava Stone');
+  await page.getByLabel('Bank').selectOption('044');
+  await page.getByLabel('Account Number').fill('1234567890');
+  await page.getByRole('button', { name: 'Send for HR approval' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Change awaiting HR approval' })).toBeVisible();
+  await expect(page.getByText(/current salary account remains active/i)).toBeVisible();
+  expect(proposedAccount).toMatchObject({
+    country: 'Nigeria', bankName: 'Access Bank', branchCode: '044', accountNumber: '1234567890',
+  });
+});
+
+test('HR approves an employee bank account request from the Payroll review queue', async ({ page }) => {
+  let reviewedAction = '';
+  let pending = true;
+  await page.route('**/api/payroll/banking/requests?status=pending', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ requests: pending ? [{
+        _id: 'bank-request-1', userName: 'Ava Stone', status: 'pending', reason: 'New salary account',
+        createdAt: '2026-08-20T10:00:00.000Z',
+        previousAccountSummary: { bankName: 'Existing Bank', countryCode: 'GB', accountLast4: '5678' },
+        proposedAccountSummary: { bankName: 'Access Bank', countryCode: 'NG', accountLast4: '7890' },
+        proposedAccount: { bankName: 'Access Bank', countryCode: 'NG', accountName: 'Ava Stone', branchCode: '044', accountType: 'current' },
+      }] : [] }),
+    });
+  });
+  await page.route('**/api/payroll/banking/requests/bank-request-1/action', async (route) => {
+    reviewedAction = (await route.request().postDataJSON()).action;
+    pending = false;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ request: { _id: 'bank-request-1', status: 'approved' } }) });
+  });
+
+  await page.goto('/admin/banking-approvals');
+  await dismissPageGuide(page);
+  await expect(page.getByRole('heading', { name: 'Bank account changes' })).toBeVisible();
+  await expect(page.getByText('Ava Stone', { exact: true })).toBeVisible();
+  await expect(page.getByText('Access Bank', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Approve' }).click();
+  await expect(page.getByText('No pending bank account requests.')).toBeVisible();
+  expect(reviewedAction).toBe('approve');
+});
+
 test('leaves Payroll through local logout before returning to the App Hub', async ({ page, request }) => {
   let hubReached = false;
   await page.route('http://localhost:4000/**', async (route) => {
