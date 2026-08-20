@@ -12,6 +12,7 @@ const payComponentTaxService = require('../services/PayComponentTaxService');
 const payrollReportingService = require('../services/PayrollReportingService');
 const payrollFinalizationService = require('../services/PayrollFinalizationService');
 const payrollRetractionService = require('../services/PayrollRetractionService');
+const payrollAnalyticsService = require('../services/PayrollAnalyticsService');
 const employerEntityService = require('../services/PayrollEmployerEntityService');
 const payrollCountryAutomationService = require('../services/PayrollCountryAutomationService');
 const { queuePayrollReadyEvent } = require('../services/automationEventService');
@@ -22,6 +23,7 @@ const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
 const peopleTransitionsClient = require('../services/peopleTransitionsClient');
 const payrollEngineService = new PayrollEngineService();
 const PAY_FREQUENCIES = new Set(['monthly', 'semi-monthly', 'bi-weekly', 'weekly']);
+const ANALYTICS_PAYSLIP_STATUSES = ['draft', 'pending_approval', 'approved', 'exported', 'paid', 'revised'];
 
 function reportingMetadata(reporting) {
   return {
@@ -2321,18 +2323,18 @@ router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
       Payslip.find({
         organizationId,
         'payPeriod.year': currentYear,
-        status: { $in: ['approved', 'exported', 'paid'] }
+        status: { $in: ANALYTICS_PAYSLIP_STATUSES }
       }),
       Payslip.find({
         organizationId,
         'payPeriod.year': previousYear,
-        status: { $in: ['approved', 'exported', 'paid'] }
+        status: { $in: ANALYTICS_PAYSLIP_STATUSES }
       }),
       PayrollProfile.find({ organizationId }),
       PayrollRun.find({
         organizationId,
         'payPeriod.year': currentYear,
-        status: { $in: ['calculated', 'approved', 'exported', 'paid'] }
+        status: { $in: ['calculated', 'pending_review', 'pending_approval', 'approved', 'exported', 'paid'] }
       }).sort({ 'payPeriod.month': 1 })
     ]);
 
@@ -2376,35 +2378,61 @@ router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
     }
 
     // Department breakdown
-    const deptMap = new Map();
+    const activeProfiles = allProfiles.filter(payrollAnalyticsService.isCurrentWorkforceProfile);
+    const currentDepartmentByUser = payrollAnalyticsService.currentDepartmentByUser(allProfiles);
+    const departmentRoster = payrollAnalyticsService.buildDepartmentRoster(allProfiles);
+    const deptMap = new Map(
+      Array.from(departmentRoster.entries()).map(([department, roster]) => [department, {
+        rows: [],
+        currentHeadcount: roster.userIds.size,
+        activeHeadcount: roster.active,
+        onNoticeHeadcount: roster.onNotice,
+        onLeaveHeadcount: roster.onLeave,
+      }])
+    );
     currentReporting.rows.forEach((row) => {
-      const department = row.payslip?.employeeSnapshot?.department || 'Unassigned';
-      const rows = deptMap.get(department) || [];
-      rows.push(row);
-      deptMap.set(department, rows);
+      const userId = String(row.payslip?.userId || '');
+      const department = currentDepartmentByUser.get(userId)
+        || payrollAnalyticsService.normalizeDepartment(row.payslip?.employeeSnapshot?.department);
+      const bucket = deptMap.get(department) || {
+        rows: [], currentHeadcount: 0, activeHeadcount: 0, onNoticeHeadcount: 0, onLeaveHeadcount: 0,
+      };
+      bucket.rows.push(row);
+      deptMap.set(department, bucket);
     });
 
-    const departmentBreakdown = Array.from(deptMap.entries()).map(([department, rows]) => {
-      const departmentReporting = aggregatePreparedSubset(currentReporting, rows);
+    const departmentBreakdown = Array.from(deptMap.entries()).map(([department, bucket]) => {
+      const departmentReporting = aggregatePreparedSubset(currentReporting, bucket.rows);
       return {
         department,
         totalGross: departmentReporting.totals.grossPay,
         totalNet: departmentReporting.totals.netPay,
         totalEmployerContributions: departmentReporting.totals.totalEmployerContributions,
         totalEmployerCost: departmentReporting.totals.totalEmployerCost,
-        employeeCount: departmentReporting.employeeCount,
-        avgSalary: departmentReporting.totals.grossPay === null || departmentReporting.employeeCount === 0
+        employeeCount: bucket.currentHeadcount,
+        currentHeadcount: bucket.currentHeadcount,
+        activeHeadcount: bucket.activeHeadcount,
+        onNoticeHeadcount: bucket.onNoticeHeadcount,
+        onLeaveHeadcount: bucket.onLeaveHeadcount,
+        payrollEmployeeCount: departmentReporting.employeeCount,
+        payslipCount: departmentReporting.payslipCount,
+        avgPayPerPayslip: departmentReporting.totals.grossPay === null || departmentReporting.payslipCount === 0
           ? null
           : roundReportingAmount(
-            departmentReporting.totals.grossPay / departmentReporting.employeeCount / 12,
+            departmentReporting.totals.grossPay / departmentReporting.payslipCount,
+            currentReporting.reportingMinorUnits
+          ),
+        avgSalary: departmentReporting.totals.grossPay === null || departmentReporting.payslipCount === 0
+          ? null
+          : roundReportingAmount(
+            departmentReporting.totals.grossPay / departmentReporting.payslipCount,
             currentReporting.reportingMinorUnits
           ),
         ...reportingMetadata(departmentReporting),
       };
-    }).sort((a, b) => (b.totalGross ?? -Infinity) - (a.totalGross ?? -Infinity));
+    }).sort((a, b) => b.currentHeadcount - a.currentHeadcount || (b.totalGross ?? -Infinity) - (a.totalGross ?? -Infinity));
 
     // Salary distribution
-    const activeProfiles = allProfiles.filter(p => p.isActive);
     const salaryRanges = [
       { min: 0, max: 30000, label: `0-30K ${currentReporting.reportingCurrency}` },
       { min: 30000, max: 50000, label: `30K-50K ${currentReporting.reportingCurrency}` },
@@ -2440,9 +2468,9 @@ router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
 
     // Top earners (anonymized)
     const topEarnersByDept = {};
-    deptMap.forEach((departmentRows, department) => {
+    deptMap.forEach((bucket, department) => {
       const userRows = new Map();
-      departmentRows.forEach((row) => {
+      bucket.rows.forEach((row) => {
         const userId = String(row.payslip?.userId || '');
         const rows = userRows.get(userId) || [];
         rows.push(row);
@@ -2461,7 +2489,8 @@ router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
       total: currentYearRuns.length,
       paid: currentYearRuns.filter(r => r.status === 'paid').length,
       approved: currentYearRuns.filter(r => r.status === 'approved').length,
-      pending: currentYearRuns.filter(r => r.status === 'pending_approval').length
+      calculated: currentYearRuns.filter(r => r.status === 'calculated').length,
+      pending: currentYearRuns.filter(r => ['pending_review', 'pending_approval'].includes(r.status)).length
     };
 
     const deductionBreakdown = payrollReportingService
@@ -2483,13 +2512,15 @@ router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
         currentReporting.reportingMinorUnits
       );
 
-    const avgMonthlyPayroll = currentYearGross === null || currentYearRuns.length === 0
-      ? (currentYearRuns.length === 0 ? 0 : null)
+    const payrollMonths = new Set(currentReporting.rows.map((row) => row.payslip?.payPeriod?.month).filter(Boolean));
+    const avgMonthlyPayroll = currentYearGross === null || payrollMonths.size === 0
+      ? (payrollMonths.size === 0 ? 0 : null)
       : roundReportingAmount(
-        currentYearGross / currentYearRuns.length,
+        currentYearGross / payrollMonths.size,
         currentReporting.reportingMinorUnits
       );
 
+    res.set('Cache-Control', 'no-store');
     res.json({
       year: currentYear,
       ...reportingMetadata(currentReporting),
@@ -2537,56 +2568,8 @@ router.get('/analytics/headcount', requireHRAdmin, async (req, res) => {
 
     const profiles = await PayrollProfile.find({ organizationId });
 
-    // Status breakdown
-    const statusBreakdown = {
-      active: profiles.filter(p => p.status === 'active').length,
-      on_notice: profiles.filter(p => p.status === 'on_notice').length,
-      on_leave: profiles.filter(p => p.status === 'on_leave').length,
-      terminated: profiles.filter(p => p.status === 'terminated').length,
-      suspended: profiles.filter(p => p.status === 'suspended').length
-    };
-
-    // Employment type breakdown
-    const employmentTypes = {
-      full_time: profiles.filter(p => p.employeeInfo?.employmentType === 'full_time').length,
-      part_time: profiles.filter(p => p.employeeInfo?.employmentType === 'part_time').length,
-      contract: profiles.filter(p => p.employeeInfo?.employmentType === 'contract').length,
-      intern: profiles.filter(p => p.employeeInfo?.employmentType === 'intern').length
-    };
-
-    // Department headcount
-    const departmentHeadcount = {};
-    profiles.forEach(p => {
-      const dept = p.employeeInfo?.department || 'Unassigned';
-      departmentHeadcount[dept] = (departmentHeadcount[dept] || 0) + 1;
-    });
-
-    // Tenure distribution
-    const today = new Date();
-    const tenureRanges = {
-      'Less than 1 year': 0,
-      '1-2 years': 0,
-      '2-5 years': 0,
-      '5+ years': 0
-    };
-
-    profiles.forEach(p => {
-      if (p.employeeInfo?.dateOfJoining) {
-        const years = (today - new Date(p.employeeInfo.dateOfJoining)) / (365.25 * 24 * 60 * 60 * 1000);
-        if (years < 1) tenureRanges['Less than 1 year']++;
-        else if (years < 2) tenureRanges['1-2 years']++;
-        else if (years < 5) tenureRanges['2-5 years']++;
-        else tenureRanges['5+ years']++;
-      }
-    });
-
-    res.json({
-      total: profiles.length,
-      statusBreakdown,
-      employmentTypes,
-      departmentHeadcount,
-      tenureDistribution: Object.entries(tenureRanges).map(([label, count]) => ({ label, count }))
-    });
+    res.set('Cache-Control', 'no-store');
+    res.json(payrollAnalyticsService.buildHeadcountAnalytics(profiles));
   } catch (err) {
     console.error('Headcount Analytics Error:', err);
     res.status(500).json({ error: 'Failed to fetch headcount analytics' });
