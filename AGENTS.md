@@ -2,7 +2,7 @@
 
 ## Production credentials
 
-- Never write plaintext production secrets into this repository, Git history, issues, logs, screenshots, or chat output.
+- Never write plaintext production secrets into this repository, Git history, issues, logs, screenshots, or chat output. unless I tell you too, I overight it
 - Store the plaintext operational inventory only in the sibling `../access` workspace. Keep the portable credential payload encrypted with `SeemplifyVault.psm1`.
 - After an authorized production credential change, update the encrypted access vault, rebuild and verify the AES-256 `access.zip`, refresh `access.zip.sha256`, and commit only the encrypted artifacts.
 - Production services read secrets from root-only files under `/opt/seemplify/secrets`; deployment workflows must reference secret names rather than embed values.
