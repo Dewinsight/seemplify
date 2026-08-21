@@ -61,6 +61,15 @@ services:
   weaviate:
     image: cr.weaviate.io/semitechnologies/weaviate:1.38.3
     restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-weaviate.rule=Host(`weaviate.179-198-192-126.sslip.io`)
+      - traefik.http.routers.seemplify-weaviate.entrypoints=websecure
+      - traefik.http.routers.seemplify-weaviate.tls=true
+      - traefik.http.routers.seemplify-weaviate.tls.certresolver=letsencrypt
+      - traefik.http.routers.seemplify-weaviate.service=seemplify-weaviate
+      - traefik.http.services.seemplify-weaviate.loadbalancer.server.port=8080
     environment:
       QUERY_DEFAULTS_LIMIT: "25"
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
