@@ -155,7 +155,7 @@ behaviour, factory/readiness/call failure isolation, instance changes, and
 flush/destroy cleanup.
 
 See the repository-wide
-[support matrix](https://github.com/michaelegbo/seemplify/blob/main/experience-management/packages/SDK-SUPPORT.md)
-and [release/deprecation process](https://github.com/michaelegbo/seemplify/blob/main/experience-management/packages/SDK-RELEASE.md).
+[support matrix](https://github.com/Dewinsight/seemplify/blob/main/experience-management/packages/SDK-SUPPORT.md)
+and [release/deprecation process](https://github.com/Dewinsight/seemplify/blob/main/experience-management/packages/SDK-RELEASE.md).
 The declared React peer range is not a public compatibility promise until every
 listed version has a green automated matrix.

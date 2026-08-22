@@ -64,7 +64,7 @@ first authorised publish run.
        and no longer requires the disabled suffix
      - `npm run qualify:sdk`
      - `npm run preflight:sdk:publish`
-     - `gh api repos/michaelegbo/seemplify/environments/npm-production`
+     - `gh api repos/Dewinsight/seemplify/environments/npm-production`
 4. Commit the publish-preflight support files together with the scripts and
    docs that reference them.
    - Evidence:

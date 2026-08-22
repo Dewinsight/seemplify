@@ -207,8 +207,8 @@ flush work, duplicate handling, partial results, retry/backoff/jitter,
 transport isolation, and the no-persistence boundary.
 
 See the repository-wide
-[support matrix](https://github.com/michaelegbo/seemplify/blob/main/experience-management/packages/SDK-SUPPORT.md)
-and [release/deprecation process](https://github.com/michaelegbo/seemplify/blob/main/experience-management/packages/SDK-RELEASE.md).
+[support matrix](https://github.com/Dewinsight/seemplify/blob/main/experience-management/packages/SDK-SUPPORT.md)
+and [release/deprecation process](https://github.com/Dewinsight/seemplify/blob/main/experience-management/packages/SDK-RELEASE.md).
 The repository CI defines Node 20 and 22 SDK jobs, but only a successful remote
 run is evidence for both matrix entries. CommonJS, durable ingestion and the
 broader production release gates remain incomplete.

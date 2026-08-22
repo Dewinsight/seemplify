@@ -185,7 +185,7 @@ Centralized authentication and single sign-on (SSO) service.
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/michaelegbo/seemplify.git
+git clone https://github.com/Dewinsight/seemplify.git
 cd seemplify
 ```
 
@@ -670,8 +670,8 @@ A dedicated team building comprehensive HR management solutions.
 
 For issues, questions, or contributions:
 
-- **Issues**: [GitHub Issues](https://github.com/michaelegbo/seemplify/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/michaelegbo/seemplify/discussions)
+- **Issues**: [GitHub Issues](https://github.com/Dewinsight/seemplify/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Dewinsight/seemplify/discussions)
 
 ## 🗺️ Roadmap
 

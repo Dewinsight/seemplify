@@ -107,7 +107,7 @@ if (!ghAuth.ok) {
   notes.push('GitHub CLI authentication is available');
 }
 
-const npmEnvironment = run('gh', ['api', `repos/michaelegbo/seemplify/environments/${policy.release.environment}`]);
+const npmEnvironment = run('gh', ['api', `repos/Dewinsight/seemplify/environments/${policy.release.environment}`]);
 if (!npmEnvironment.ok) {
   repoBlockers.push(`GitHub environment ${policy.release.environment} is not readable via gh api: ${formatOutcome(npmEnvironment)}`);
 } else {

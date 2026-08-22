@@ -42,8 +42,8 @@ function Invoke-DeploymentWorkflow {
 
 Invoke-Gh auth status | Out-Null
 
-$seemplifyRepository = 'michaelegbo/seemplify'
-$workspaceRepository = 'michaelegbo/experienments2'
+$seemplifyRepository = 'Dewinsight/seemplify'
+$workspaceRepository = 'Dewinsight/experienments2'
 $seemplifyWorkflows = @(
     'provision-experience-knowledge-hostinger.yml',
     'deploy-core-hostinger.yml',

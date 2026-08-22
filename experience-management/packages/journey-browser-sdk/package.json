@@ -9,12 +9,12 @@
                },
     "repository":  {
                        "type":  "git",
-                       "url":  "git+https://github.com/michaelegbo/seemplify.git",
+                       "url":  "git+https://github.com/Dewinsight/seemplify.git",
                        "directory":  "experience-management/packages/journey-browser-sdk"
                    },
-    "homepage":  "https://github.com/michaelegbo/seemplify/tree/main/experience-management/packages/journey-browser-sdk",
+    "homepage":  "https://github.com/Dewinsight/seemplify/tree/main/experience-management/packages/journey-browser-sdk",
     "bugs":  {
-                 "url":  "https://github.com/michaelegbo/seemplify/issues"
+                 "url":  "https://github.com/Dewinsight/seemplify/issues"
              },
     "keywords":  [
                      "analytics",

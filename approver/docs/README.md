@@ -56,7 +56,7 @@ Approver is a multi-tenant initiative and project approval system that helps org
 1. **For Local Development:**
    ```bash
    # Clone the repository
-   git clone https://github.com/michaelegbo/seemplify.git
+   git clone https://github.com/Dewinsight/seemplify.git
    
    # Navigate to approver directory
    cd approver

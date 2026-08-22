@@ -160,7 +160,7 @@ privacy-minimised context, invalid configuration, and endpoint failure
 isolation.
 
 Repository-wide compatibility and release policy is recorded in the
-[support matrix](https://github.com/michaelegbo/seemplify/blob/main/experience-management/packages/SDK-SUPPORT.md)
-and [release/deprecation process](https://github.com/michaelegbo/seemplify/blob/main/experience-management/packages/SDK-RELEASE.md).
+[support matrix](https://github.com/Dewinsight/seemplify/blob/main/experience-management/packages/SDK-SUPPORT.md)
+and [release/deprecation process](https://github.com/Dewinsight/seemplify/blob/main/experience-management/packages/SDK-RELEASE.md).
 Those documents explicitly record the remaining CJS, browser-matrix, durable
 ingestion, legal and publication gates.
