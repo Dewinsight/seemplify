@@ -50,7 +50,7 @@ $seemplifyWorkflows = @(
     'deploy-experience-hostinger.yml',
     'deploy-approver-hostinger.yml',
     'deploy-chatgpt-gateway-hostinger.yml',
-    'deploy-automation-hostinger.yml',
+    'deploy-connectors-hostinger.yml',
     'deploy-mail-service.yml',
     'deploy-coturn-hostinger.yml'
 )
