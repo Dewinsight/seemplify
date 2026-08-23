@@ -34,10 +34,35 @@ async function readDns(resolver, settings) {
     try { const values = await fn(name); records.push({ type, name, role, configured: values.length > 0, values }); }
     catch (error) { records.push({ type, name, role, configured: false, values: [], error: error.code || error.message }); }
   };
+  const readCloudflareIngress = async () => {
+    const name = 'mail-control.seemplifyai.com';
+    try {
+      const values = await resolver.resolveCname(name);
+      if (values.length) return { type: 'CNAME', name, role: 'Cloudflare API ingress', configured: true, values };
+    } catch (error) {
+      if (!['ENODATA', 'ENOTFOUND'].includes(error.code)) {
+        return { type: 'DNS', name, role: 'Cloudflare API ingress', configured: false, values: [], error: error.code || error.message };
+      }
+    }
+
+    // A proxied Cloudflare hostname intentionally hides its origin CNAME and
+    // answers with edge A/AAAA records. Treating that as "missing" made a
+    // healthy production route look broken after the Hostinger cutover.
+    const addressLookups = await Promise.allSettled([
+      typeof resolver.resolve4 === 'function' ? resolver.resolve4(name) : Promise.resolve([]),
+      typeof resolver.resolve6 === 'function' ? resolver.resolve6(name) : Promise.resolve([]),
+    ]);
+    const values = addressLookups.flatMap((result) => result.status === 'fulfilled' ? result.value : []);
+    return {
+      type: 'A / AAAA', name, role: 'Cloudflare-proxied API ingress', configured: values.length > 0, values,
+      error: values.length ? null : 'ENODATA',
+    };
+  };
+  const ingress = readCloudflareIngress().then((record) => records.push(record));
   await Promise.all([
     query('TXT', settings.domain, 'SPF and domain policy', (name) => resolver.resolveTxt(name).then((rows) => rows.map((row) => row.join('')))),
     query('TXT', `_dmarc.${settings.domain}`, 'DMARC policy', (name) => resolver.resolveTxt(name).then((rows) => rows.map((row) => row.join('')))),
-    query('CNAME', 'mail-control.seemplifyai.com', 'Cloudflare API ingress', (name) => resolver.resolveCname(name)),
+    ingress,
   ]);
   return records;
 }
@@ -71,11 +96,23 @@ async function readMailApi(fetchImpl, { baseUrl, credential }) {
         fetchJson(fetchImpl, baseUrl, credential, '/v1/suppressions?limit=100'),
       ]);
     }
+    const protectedResponses = [status, metrics, events, suppressions];
+    const telemetryAvailable = Boolean(credential) && protectedResponses.every((response) => response.ok);
+    const rejected = protectedResponses.find((response) => response.status === 401 || response.status === 403);
+    const telemetry = telemetryAvailable
+      ? { available: true, state: 'ready', detail: 'Authenticated live telemetry from Hostinger.' }
+      : !credential
+        ? { available: false, state: 'credential-missing', detail: 'The Hostinger monitoring credential is not configured on this PC.' }
+        : rejected
+          ? { available: false, state: 'credential-rejected', status: rejected.status, detail: 'The Hostinger API is online, but it rejected the Control Center monitoring credential.' }
+          : { available: false, state: 'request-failed', detail: 'The Hostinger API is online, but one or more telemetry requests failed.' };
     return {
       available: true, detail: ready.ok ? 'Mail API is live and ready.' : `Mail API is live; readiness returned ${ready.status}.`,
       release: live.body.release || status.body?.release || null, ready: ready.ok, blocked: ready.body?.blocked || [],
-      sendEnabled: status.body?.sendEnabled === true, status: status.body || {}, metrics: metrics.body || {},
-      events: events.body?.events || [], suppressions: suppressions.body || {},
+      telemetry,
+      sendEnabled: telemetryAvailable ? status.body?.sendEnabled === true : null,
+      status: status.ok ? (status.body || {}) : {}, metrics: metrics.ok ? (metrics.body || {}) : {},
+      events: events.ok ? (events.body?.events || []) : [], suppressions: suppressions.ok ? (suppressions.body || {}) : {},
     };
   } catch (error) { return { available: false, detail: `Mail API unavailable: ${error.message}`, release: null, ready: false }; }
 }
@@ -105,6 +142,52 @@ function readRelay({ relayMode, host, port, upstreamHost, upstreamPort, username
 }
 
 function buildStatus({ domain, bounceDomain, mailHostname, docker, dns, ptr, relay, mailApi, postalQueue, cloudflare, hostingMode = 'local', dokployComposeUrl = '' }) {
+  if (hostingMode === 'dokploy') {
+    const telemetryAvailable = mailApi.telemetry?.available === true;
+    const remoteGates = Array.isArray(mailApi.status?.gates)
+      ? mailApi.status.gates.map((gate) => ({
+          id: gate.id,
+          label: gate.label || gate.id.replaceAll('-', ' '),
+          state: gate.state || 'external',
+          detail: gate.detail || '',
+        }))
+      : [];
+    const components = [
+      { id: 'mail-api-readiness', label: 'Production Mail API', ...state(mailApi.available && mailApi.ready, mailApi.detail, mailApi.detail) },
+      { id: 'cloudflare-tunnel', label: 'Public Cloudflare ingress', state: cloudflare.available ? 'ready' : 'blocked', detail: cloudflare.detail },
+      ...remoteGates,
+    ];
+    const blocked = components.filter((item) => item.state === 'blocked').length;
+    const external = components.filter((item) => item.state === 'external').length;
+    const ready = components.filter((item) => item.state === 'ready').length;
+    const rates = telemetryAvailable ? (mailApi.metrics?.rates || mailApi.status?.rates || null) : null;
+    const counters = telemetryAvailable ? (mailApi.metrics?.counters || mailApi.status?.counters || {}) : null;
+    const suppressionPayload = mailApi.suppressions || {};
+    const events = mailApi.events || [];
+    const byKeyId = {};
+    for (const event of events) if (event.keyId) { const record = byKeyId[event.keyId] ||= { accepted:0,suppressed:0,rejected:0,total:0,lastUsedAt:null }; if (event.type in record) record[event.type]++; record.total++; record.lastUsedAt = event.at || record.lastUsedAt; }
+    const queue = {
+      available: false,
+      state: 'managed',
+      reason: 'hostinger-managed',
+      detail: 'Postal queues messages in its Hostinger MariaDB. Queue depth is managed remotely and is not exposed by the public Mail API.',
+      queues: [],
+    };
+    return {
+      checkedAt: new Date().toISOString(), mode: 'Hosted on Dokploy', domain, bounceDomain,
+      mailHostname, deliveryMode: 'relay', sendEnabled: mailApi.sendEnabled,
+      warning: !telemetryAvailable ? mailApi.telemetry?.detail || '' : blocked ? `${blocked} production check(s) need attention.` : '',
+      readiness: { ready, total: components.length, state: blocked ? 'blocked' : 'ready' },
+      containers: [], components, dns, ptr, relay, mailApi, cloudflare, queue,
+      rates, counters, suppressions: telemetryAvailable ? (suppressionPayload.summary || mailApi.status?.suppressions || { total: 0, byReason: {} }) : null,
+      suppressionList: suppressionPayload.suppressions || [], events,
+      keyUsage: { windowSize: events.length, byKeyId, submissions: null, unattributed: { total: events.filter((event) => !event.keyId).length, byType: {} } },
+      gates: components, gateSummary: { ready, total: components.length, blocked, external },
+      hostingMode: 'dokploy',
+      operations: { owner: 'Dokploy health checks and restart policies', dokployComposeUrl },
+      actions: [],
+    };
+  }
   const expected = ['mariadb','postal-web','postal-smtp','postfix-relay','postal-worker','mail-api'];
   const components = expected.map((service) => {
     const container = docker.containers.find((item) => item.service === service);
@@ -112,34 +195,53 @@ function buildStatus({ domain, bounceDomain, mailHostname, docker, dns, ptr, rel
     return { id: service, label: service.replaceAll('-',' '), ...state(healthy, container ? `${container.name} is running${/healthy/i.test(container.status) ? ' and healthy' : ''}.` : 'Container is missing.', container ? `${container.name}: ${container.status}` : 'Container is missing.') };
   });
   components.push({ id: 'mail-api-readiness', label: 'Mail API readiness', ...state(mailApi.available && mailApi.ready, mailApi.detail, mailApi.detail) });
-  components.push({ id: 'database', label: 'MariaDB queue check', ...state(postalQueue.available, postalQueue.detail, postalQueue.detail) });
+  components.push(postalQueue.state === 'managed'
+    ? { id: 'database', label: 'Postal queue ownership', state: 'external', detail: postalQueue.detail }
+    : { id: 'database', label: 'MariaDB queue check', ...state(postalQueue.available, postalQueue.detail, postalQueue.detail) });
   components.push({ id: 'cloudflare-tunnel', label: 'Public Cloudflare ingress', state: cloudflare.available ? 'ready' : 'blocked', detail: cloudflare.detail });
   const gates = components.map((item) => ({ ...item }));
   const ready = gates.filter((item) => item.state === 'ready').length;
   const blocked = gates.filter((item) => item.state === 'blocked').length;
-  const rates = mailApi.metrics?.rates || mailApi.status?.rates || null;
-  const counters = mailApi.metrics?.counters || mailApi.status?.counters || {};
+  const telemetryAvailable = mailApi.telemetry?.available === true;
+  const rates = telemetryAvailable ? (mailApi.metrics?.rates || mailApi.status?.rates || null) : null;
+  const counters = telemetryAvailable ? (mailApi.metrics?.counters || mailApi.status?.counters || {}) : null;
   const suppressionPayload = mailApi.suppressions || {};
   const events = mailApi.events || [];
   const byKeyId = {};
   for (const event of events) if (event.keyId) { const record = byKeyId[event.keyId] ||= { accepted:0,suppressed:0,rejected:0,total:0,lastUsedAt:null }; if (event.type in record) record[event.type]++; record.total++; record.lastUsedAt = event.at || record.lastUsedAt; }
   return {
     checkedAt: new Date().toISOString(), mode: hostingMode === 'dokploy' ? 'Hosted on Dokploy' : 'Local rollback stack (migration in progress)', domain, bounceDomain,
-    mailHostname, deliveryMode: 'relay', sendEnabled: mailApi.sendEnabled === true,
-    warning: blocked ? `${blocked} local check(s) need attention. Production traffic remains on the current Cloudflare endpoint until cutover.` : '',
+    mailHostname, deliveryMode: 'relay', sendEnabled: mailApi.sendEnabled,
+    warning: !telemetryAvailable
+      ? mailApi.telemetry?.detail || ''
+      : blocked
+        ? `${blocked} ${hostingMode === 'dokploy' ? 'production' : 'local'} check(s) need attention.`
+        : '',
     readiness: { ready, total: gates.length, state: blocked ? 'blocked' : 'ready' },
     containers: docker.containers, components, dns, ptr, relay, mailApi, cloudflare, queue: postalQueue,
-    rates, counters, suppressions: suppressionPayload.summary || mailApi.status?.suppressions || { total: 0, byReason: {} },
+    rates, counters, suppressions: telemetryAvailable ? (suppressionPayload.summary || mailApi.status?.suppressions || { total: 0, byReason: {} }) : null,
     suppressionList: suppressionPayload.suppressions || [], events,
     keyUsage: { windowSize: events.length, byKeyId, submissions: null, unattributed: { total: events.filter((event) => !event.keyId).length, byType: {} } },
-    gates, gateSummary: { ready, total: gates.length, blocked, external: 0 },
+    gates, gateSummary: { ready, total: gates.length, blocked, external: gates.filter((item) => item.state === 'external').length },
     hostingMode,
     operations: { owner: hostingMode === 'dokploy' ? 'Dokploy health checks and restart policies' : 'Local Docker rollback stack', dokployComposeUrl },
     actions: hostingMode === 'dokploy' ? [] : Object.entries(ACTIONS).map(([id, action]) => ({ id, label: action.label, detail: action.detail, confirm: Boolean(action.confirm), destructive: Boolean(action.destructive) })),
   };
 }
 
-function buildPlan(domain) {
+function buildPlan(domain, { hostingMode = 'local' } = {}) {
+  if (hostingMode === 'dokploy') {
+    return { domain, mode: 'Production hosted on Hostinger/Dokploy', phases: [
+      { title: 'Production hosting', detail: 'Mail API, Postal, MariaDB, Postfix and Cloudflare ingress run on the Hostinger Dokploy host.', state: 'complete' },
+      { title: 'Public monitoring', detail: 'Control Center reads health, readiness, analytics, events and suppressions from the public production API.', state: 'complete' },
+      { title: 'Recovery ownership', detail: 'Dokploy restart policies and health checks own service recovery; local lifecycle controls are disabled.', state: 'complete' },
+    ], api: [
+      { method: 'POST', path: '/v1/messages', purpose: 'Submit a transactional message' },
+      { method: 'GET', path: '/v1/status', purpose: 'Status, counters and delivery rates' },
+      { method: 'GET', path: '/v1/events', purpose: 'Recent privacy-safe delivery events' },
+      { method: 'GET', path: '/v1/suppressions', purpose: 'Suppression inventory' },
+    ] };
+  }
   return { domain, mode: 'Zero-downtime migration to Dokploy', phases: [
     { title: 'Local service protected', detail: 'The existing local stack stays live and is the rollback source.', state: 'complete' },
     { title: 'Dokploy staging', detail: 'Restore isolated state with sending and production ingress disabled.', state: 'building' },
