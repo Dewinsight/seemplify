@@ -96,7 +96,7 @@ jobs:
         run: |
           tar -czf experience-release.tgz \
             experience-management Identityprovider recruiter/backend ai-interview marketing-site \
-            tools/local-knowledge tools/local-llm/service-auth.cjs \
+            tools/local-knowledge \
             deploy/hostinger/core-apps.compose.yml \
             deploy/hostinger/extended-apps.compose.yml \
             deploy/hostinger/generate-idp-clients.sh \

@@ -7,7 +7,6 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 COPY local-knowledge/*.cjs ./
-COPY local-llm/service-auth.cjs /local-llm/service-auth.cjs
 
 RUN mkdir -p /runtime /data /app/runtime/knowledge \
   && chown -R node:node /runtime /data /app/runtime
