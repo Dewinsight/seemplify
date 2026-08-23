@@ -18,6 +18,8 @@
     "test:browser-notifications": "node --test test/browser-notification-relay.test.mjs",
     "test:browser-notification-client": "node test/browser-notification-client.playwright.mjs",
     "test:surface-retirement": "node --test test/legacy-ui-redirects.test.mjs",
+    "test:workspace-call-admin": "node --test test/workspace-call-admin.test.mjs",
+    "test:workspace-call-admin-ui": "node test/workspace-call-admin-ui.playwright.mjs",
     "seed-admin": "node src/seeds/seedAdminSimple.js",
     "seed-plans": "node src/seeds/seedPlans.js"
   },

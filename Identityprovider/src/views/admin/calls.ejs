@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Calls - <%= brand.name %> IDP</title>
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+    .admin-content{min-width:0;width:100%}.calls-table-wrap{max-width:100%}
+    .calls-intro{color:var(--muted);font-size:14px;line-height:1.55;margin:-10px 0 22px;max-width:780px}.calls-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:24px}.calls-metric{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:16px}.calls-metric-label{color:var(--muted);font-size:12px;margin-bottom:7px}.calls-metric-value{color:var(--text);font-size:25px;font-weight:700;font-variant-numeric:tabular-nums}.calls-metric-meta{color:var(--muted);font-size:12px;margin-top:5px}.calls-resource-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.calls-resource{border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--panel-strong)}.calls-resource-head{display:flex;justify-content:space-between;gap:12px;color:var(--text);font-size:13px;font-weight:650}.calls-track{height:6px;border-radius:999px;background:var(--border);overflow:hidden;margin:10px 0 7px}.calls-track>span{display:block;height:100%;background:var(--primary);border-radius:inherit}.calls-resource-meta,.calls-secondary{display:block;color:var(--muted);font-size:12px;margin-top:4px}.calls-table-wrap{overflow-x:auto}.calls-live{display:inline-flex;align-items:center;gap:7px}.calls-live:before{content:'';width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.12)}.calls-participants{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;max-width:420px}.calls-person{color:var(--muted);font-size:11px;border:1px solid var(--border);border-radius:999px;padding:2px 7px}.calls-empty{text-align:center;padding:44px 20px;color:var(--muted)}.calls-empty strong{display:block;color:var(--text);margin-bottom:6px}.calls-danger{color:#dc2626;border-color:rgba(220,38,38,.35)}.calls-header-meta{color:var(--muted);font-size:12px;margin-top:4px}@media(max-width:1000px){.calls-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.calls-resource-grid{grid-template-columns:1fr}}@media(max-width:640px){.calls-summary{grid-template-columns:1fr 1fr}.admin-header{align-items:flex-start}.admin-header-actions{width:100%;flex-wrap:wrap}.admin-header-actions .btn{flex:1}.calls-table-wrap table{min-width:760px}}
+  </style>
+  <link rel="stylesheet" href="/css/admin.css?v=4">
+  <script src="/js/theme.js?v=3"></script>
+</head>
+<body>
+  <% const totals=dashboard?.totals||{}; const resources=dashboard?.resources||{}; const host=resources.host||{}; const mediaWorkers=resources.mediaWorkers||{}; const graph=resources.mediaGraph||{}; const number=v=>Number(v||0).toLocaleString('en-GB'); const bytes=v=>{const n=Number(v||0);if(n>=1073741824)return(n/1073741824).toFixed(1)+' GB';if(n>=1048576)return(n/1048576).toFixed(1)+' MB';return number(n)+' B'};const pct=v=>Math.max(0,Math.min(100,Number(v||0))); %>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'calls' }) %>
+    <main class="admin-content">
+      <div class="admin-header">
+        <div><h1>Live Calls</h1><div class="calls-header-meta">Updated <%= dashboard?.generatedAt ? new Date(dashboard.generatedAt).toLocaleString('en-GB') : '—' %> · refreshes every 15 seconds</div></div>
+        <div class="admin-header-actions"><a href="/admin/calls" class="btn btn-secondary">Refresh now</a><% if(admin?.isSuperAdmin&&Number(totals.activeCalls||0)>0){%><form method="post" action="/admin/calls/end-all" onsubmit="return confirm('End all active calls and disconnect every participant?')"><button class="btn btn-secondary calls-danger" type="submit">End all calls</button></form><%}%></div>
+      </div>
+      <p class="calls-intro">Monitor current Workspace calls and the media resources supporting them. CPU and memory percentages describe the Workspace host; worker utilization shows how many SFU workers currently own active rooms.</p>
+      <% if(notice){%><div class="alert <%= noticeType==='error'?'alert-danger':'alert-success' %>"><span><%= notice %></span></div><%}%><% if(callsError){%><div class="alert alert-danger"><span><%= callsError %> Refresh to try again.</span></div><%}%>
+      <div class="calls-summary">
+        <div class="calls-metric"><div class="calls-metric-label">Active calls</div><div class="calls-metric-value"><%= number(totals.activeCalls) %></div><div class="calls-metric-meta">Rooms with connected participants</div></div>
+        <div class="calls-metric"><div class="calls-metric-label">Participants</div><div class="calls-metric-value"><%= number(totals.participants) %></div><div class="calls-metric-meta"><%= number(totals.guestParticipants) %> joining as guests</div></div>
+        <div class="calls-metric"><div class="calls-metric-label">Media workers in use</div><div class="calls-metric-value"><%= number(mediaWorkers.busy) %>/<%= number(mediaWorkers.total) %></div><div class="calls-metric-meta"><%= pct(mediaWorkers.utilizationPercent).toFixed(1) %>% allocated</div></div>
+        <div class="calls-metric"><div class="calls-metric-label">Active media tracks</div><div class="calls-metric-value"><%= number(graph.producers) %></div><div class="calls-metric-meta"><%= number(graph.consumers) %> downstream subscriptions</div></div>
+      </div>
+      <div class="admin-card"><div class="admin-card-header"><div><div class="admin-card-title">Host and media capacity</div><div class="admin-card-subtitle">Live system measurements, not estimated participant limits</div></div></div><div class="calls-resource-grid">
+        <div class="calls-resource"><div class="calls-resource-head"><span>CPU load</span><span><%= pct(host.cpuLoadPercent).toFixed(1) %>%</span></div><div class="calls-track"><span style="width:<%= pct(host.cpuLoadPercent) %>%"></span></div><div class="calls-resource-meta"><%= Number(host.loadAverage1m||0).toFixed(2) %> one-minute load across <%= number(host.cpuCores) %> cores</div></div>
+        <div class="calls-resource"><div class="calls-resource-head"><span>Host memory</span><span><%= pct(host.memoryUsedPercent).toFixed(1) %>%</span></div><div class="calls-track"><span style="width:<%= pct(host.memoryUsedPercent) %>%"></span></div><div class="calls-resource-meta"><%= bytes(host.usedMemoryBytes) %> of <%= bytes(host.totalMemoryBytes) %> used · process <%= bytes(host.processRssBytes) %></div></div>
+        <div class="calls-resource"><div class="calls-resource-head"><span>SFU workers</span><span><%= pct(mediaWorkers.utilizationPercent).toFixed(1) %>%</span></div><div class="calls-track"><span style="width:<%= pct(mediaWorkers.utilizationPercent) %>%"></span></div><div class="calls-resource-meta"><%= number(mediaWorkers.busy) %> of <%= number(mediaWorkers.total) %> workers own <%= number(graph.rooms) %> active rooms</div></div>
+      </div></div>
+      <div class="admin-card"><div class="admin-card-header"><div><div class="admin-card-title">Calls in progress</div><div class="admin-card-subtitle">Ending a call disconnects everyone but keeps reusable channel rooms available for a future session.</div></div></div>
+        <% if((dashboard?.calls||[]).length){%><div class="calls-table-wrap"><table class="admin-table"><thead><tr><th>Call</th><th>Organisation</th><th>Participants</th><th>Media</th><th>Started</th><th></th></tr></thead><tbody><% for(const call of dashboard.calls){%><tr>
+          <td><strong class="calls-live"><%= call.title %></strong><span class="calls-secondary"><%= call.kind %> · <%= call.access %><%= call.allowGuests?' · guest link enabled':'' %></span></td><td><%= call.organizationName %></td><td><strong><%= number(call.participantCount) %></strong><div class="calls-participants"><% for(const participant of(call.participants||[]).slice(0,5)){%><span class="calls-person"><%= participant.displayName %><%= participant.participantType==='guest'?' · guest':'' %></span><%}%><% if((call.participants||[]).length>5){%><span class="calls-person">+<%= call.participants.length-5 %> more</span><%}%></div></td><td><%= call.mode==='mediasoup'?'SFU':'Direct' %></td><td><%= call.startedAt?new Date(call.startedAt).toLocaleString('en-GB'):'—' %></td><td><% if(admin?.isSuperAdmin){%><form method="post" action="/admin/calls/<%= call.id %>/end" onsubmit="return confirm('End this call for all participants?')"><button type="submit" class="btn btn-secondary calls-danger">End call</button></form><%}%></td>
+        </tr><%}%></tbody></table></div><%}else{%><div class="calls-empty"><strong>No calls are active</strong>Workspace calls with connected participants will appear here automatically.</div><%}%>
+      </div>
+    </main>
+  </div>
+  <script>setTimeout(function(){if(!document.hidden)window.location.reload()},15000)</script>
+</body>
+</html>

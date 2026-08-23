@@ -40,6 +40,11 @@ import {
   removeMembersFromOrganization
 } from '../services/adminOrganizationManagementService.js'
 import { invalidateClaimsCache } from '../index.js'
+import {
+  endAllWorkspaceCalls,
+  endWorkspaceCall,
+  getWorkspaceCallDashboard
+} from '../services/workspaceCallAdminService.js'
 
 const router = express.Router()
 const SIMPLE_LMS_EXTERNAL_BASE_URL = String(
@@ -220,6 +225,46 @@ router.get('/', async (req, res) => {
       title: 'Error',
       message: 'Failed to load admin dashboard'
     })
+  }
+})
+
+router.get('/calls', async (req, res) => {
+  let dashboard = { generatedAt: null, totals: {}, resources: {}, calls: [] }
+  let callsError = ''
+  try { dashboard = await getWorkspaceCallDashboard() }
+  catch (error) {
+    console.error('Error loading Workspace call administration:', error)
+    callsError = error.message || 'Live call data could not be loaded.'
+  }
+  return res.render('admin/calls', {
+    dashboard,
+    callsError,
+    notice: String(req.query.notice || ''),
+    noticeType: String(req.query.noticeType || 'success'),
+    user: req.user
+  })
+})
+
+router.post('/calls/end-all', requireSuperAdmin, auditLog('end_all_workspace_calls'), async (_req, res) => {
+  try {
+    const result = await endAllWorkspaceCalls()
+    const notice = `${result.endedCalls || 0} calls ended; `
+      + `${result.disconnectedParticipants || 0} participants disconnected.`
+    return res.redirect(`/admin/calls?notice=${encodeURIComponent(notice)}`)
+  } catch (error) {
+    const notice = encodeURIComponent(error.message || 'Calls could not be ended.')
+    return res.redirect(`/admin/calls?noticeType=error&notice=${notice}`)
+  }
+})
+
+router.post('/calls/:callId/end', requireSuperAdmin, auditLog('end_workspace_call'), async (req, res) => {
+  try {
+    const result = await endWorkspaceCall(req.params.callId)
+    const notice = encodeURIComponent(`Call ended; ${result.participantCount || 0} participants disconnected.`)
+    return res.redirect(`/admin/calls?notice=${notice}`)
+  } catch (error) {
+    const notice = encodeURIComponent(error.message || 'The call could not be ended.')
+    return res.redirect(`/admin/calls?noticeType=error&notice=${notice}`)
   }
 })
 
