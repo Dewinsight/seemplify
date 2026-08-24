@@ -178,7 +178,6 @@ jobs:
           install -d -o root -g root -m 0700 "$knowledge_secret_dir"
           install -o root -g root -m 0640 "/tmp/azure-openai-embedding-$RELEASE_SHA" \
             "$knowledge_secret_dir/azure-openai-embedding"
-          rm -f "/tmp/azure-openai-embedding-$RELEASE_SHA"
           for name in knowledge-runtime-hmac docling-api; do
             target="$knowledge_secret_dir/$name"
             if [[ ! -s "$target" ]]; then
@@ -261,5 +260,6 @@ jobs:
             [[ "$revision" == "$RELEASE_SHA" ]]
           done
           /usr/local/sbin/seemplify-smoke
+          rm -f "/tmp/azure-openai-embedding-$RELEASE_SHA"
           rm -f "$archive"
           REMOTE

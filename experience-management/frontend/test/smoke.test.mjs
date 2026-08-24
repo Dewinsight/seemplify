@@ -342,6 +342,16 @@ test('refuses an incompatible rollback after a PostgreSQL runtime upgrade starts
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });
+test('deploys the current PostgreSQL runtime and preserves retry inputs until smoke passes', () => {
+  const repository = path.resolve(source, '..', '..', '..');
+  const compose = fs.readFileSync(path.join(repository, 'deploy', 'hostinger', 'extended-apps.compose.yml'), 'utf8');
+  const workflow = fs.readFileSync(path.join(repository, '.github', 'workflows', 'deploy-experience-hostinger.yml'), 'utf8');
+  assert.match(compose, /POSTGRES_RUNTIME_SCHEMA_VERSION: "34"/);
+  const installCredential = workflow.indexOf('install -o root -g root -m 0640 "/tmp/azure-openai-embedding-$RELEASE_SHA"');
+  const smoke = workflow.indexOf('/usr/local/sbin/seemplify-smoke', installCredential);
+  const removeCredential = workflow.indexOf('rm -f "/tmp/azure-openai-embedding-$RELEASE_SHA"', installCredential);
+  assert.ok(installCredential >= 0 && smoke > installCredential && removeCredential > smoke);
+});
 test('grants PostgreSQL runtime privileges from the exact active release', () => {
   const manage = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'manage.ps1'), 'utf8');
   assert.match(manage, /function Grant-PostgresRuntimePrivileges\(\[string\]\$ProjectDir\)/);
