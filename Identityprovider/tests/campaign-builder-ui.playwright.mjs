@@ -52,31 +52,31 @@ html = html
 html = html.replace('<head>', '<head><base href="https://auth.seemplifyai.com/">')
 html = html.replace('</head>', `<style>${await readFile(adminCssPath, 'utf8')}</style></head>`)
 
-const imageFixtures = new Map([
-  ['https://auth.seemplifyai.com/images/seemplifylogo.png', path.join(identityRoot, 'src', 'public', 'images', 'seemplifylogo.png')],
-  ['https://auth.seemplifyai.com/images/campaigns/seemplify-platform-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'seemplify-platform-gloss.jpg')],
-  ['https://auth.seemplifyai.com/images/campaigns/payroll-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'payroll-gloss.jpg')],
-  ['https://auth.seemplifyai.com/images/campaigns/people-journey-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'people-journey-gloss.jpg')],
-  ['https://seemplifyai.com/images/product-showcases/recruiter.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'recruiter.png')],
-  ['https://seemplifyai.com/images/product-showcases/leave-management.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'leave-management.png')],
-  ['https://seemplifyai.com/images/product-showcases/time-attendance.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'time-attendance.png')],
-  ['https://seemplifyai.com/images/product-showcases/learning.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'learning.png')],
-  ['https://seemplifyai.com/images/product-showcases/experience-management.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'experience-management.png')]
-])
+function localImagePath(url) {
+  const authPrefix = 'https://auth.seemplifyai.com/images/'
+  const marketingPrefix = 'https://seemplifyai.com/images/'
+  if (url.startsWith(authPrefix)) {
+    return path.join(identityRoot, 'src', 'public', 'images', ...url.slice(authPrefix.length).split('/'))
+  }
+  if (url.startsWith(marketingPrefix)) {
+    return path.join(repositoryRoot, 'marketing-site', 'public', 'images', ...url.slice(marketingPrefix.length).split('/'))
+  }
+  return ''
+}
 
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1536, height: 1024 }, deviceScaleFactor: 1 })
 const pageErrors = []
 page.on('pageerror', (error) => pageErrors.push(error.message))
 await page.route('https://**/*', async (route) => {
-  const fixturePath = imageFixtures.get(route.request().url())
+  const fixturePath = localImagePath(route.request().url())
   if (!fixturePath) {
     await route.abort()
     return
   }
   await route.fulfill({
     body: await readFile(fixturePath),
-    contentType: fixturePath.endsWith('.jpg') ? 'image/jpeg' : 'image/png'
+    contentType: fixturePath.endsWith('.png') ? 'image/png' : fixturePath.endsWith('.webp') ? 'image/webp' : 'image/jpeg'
   })
 })
 
@@ -162,8 +162,9 @@ try {
   assert.match(await page.locator('#sequenceStepSummary').textContent(), /2 messages/)
 
   await page.locator('#designSequenceStepBtn').click()
+  const imageBlocksBeforeAdd = await page.locator('#visualPreview [data-type="image"]').count()
   await page.locator('[data-add-block="image"]').click()
-  assert.equal(await page.locator('#visualPreview [data-type="image"]').count(), 1)
+  assert.equal(await page.locator('#visualPreview [data-type="image"]').count(), imageBlocksBeforeAdd + 1)
   await page.locator('#mobilePreviewBtn').click()
   assert.equal(await page.locator('#campaignPreviewCanvas').evaluate((element) => element.classList.contains('is-mobile')), true)
 

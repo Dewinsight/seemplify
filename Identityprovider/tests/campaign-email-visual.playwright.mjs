@@ -13,29 +13,39 @@ const identityRoot = path.resolve(testDirectory, '..')
 const repositoryRoot = path.resolve(identityRoot, '..')
 const screenshotDirectory = process.env.CAMPAIGN_EMAIL_QA_DIR || testDirectory
 
-const imageRoutes = new Map([
-  ['https://auth.seemplifyai.com/images/seemplifylogo.png', path.join(identityRoot, 'src', 'public', 'images', 'seemplifylogo.png')],
-  ['https://auth.seemplifyai.com/images/campaigns/seemplify-platform-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'seemplify-platform-gloss.jpg')],
-  ['https://auth.seemplifyai.com/images/campaigns/payroll-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'payroll-gloss.jpg')],
-  ['https://auth.seemplifyai.com/images/campaigns/people-journey-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'people-journey-gloss.jpg')],
-  ['https://seemplifyai.com/images/product-showcases/payroll.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'payroll.png')]
-])
+function localImagePath(url) {
+  const authPrefix = 'https://auth.seemplifyai.com/images/'
+  const marketingPrefix = 'https://seemplifyai.com/images/'
+  if (url.startsWith(authPrefix)) {
+    return path.join(identityRoot, 'src', 'public', 'images', ...url.slice(authPrefix.length).split('/'))
+  }
+  if (url.startsWith(marketingPrefix)) {
+    return path.join(repositoryRoot, 'marketing-site', 'public', 'images', ...url.slice(marketingPrefix.length).split('/'))
+  }
+  return ''
+}
+
+function imageContentType(localPath) {
+  if (localPath.endsWith('.png')) return 'image/png'
+  if (localPath.endsWith('.webp')) return 'image/webp'
+  return 'image/jpeg'
+}
 
 const browser = await chromium.launch({ headless: true })
 try {
-  for (const slug of ['welcome-to-seemplify', 'product-payroll']) {
+  for (const slug of ['welcome-to-seemplify', 'product-recruiter', 'product-payroll', 'product-leave-management', 'product-learning', 'product-automations', 'product-experience-management', 'product-approver']) {
     const template = getSystemCampaignTemplate(slug)
     assert.ok(template, `Missing ${slug}`)
     const page = await browser.newPage({ viewport: { width: 820, height: 1000 }, deviceScaleFactor: 1 })
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.route('https://**/*', async (route) => {
-      const localPath = imageRoutes.get(route.request().url())
+      const localPath = localImagePath(route.request().url())
       if (!localPath) return route.abort()
       const body = await readFile(localPath)
       await route.fulfill({
         status: 200,
-        contentType: localPath.endsWith('.png') ? 'image/png' : 'image/jpeg',
+        contentType: imageContentType(localPath),
         body
       })
     })

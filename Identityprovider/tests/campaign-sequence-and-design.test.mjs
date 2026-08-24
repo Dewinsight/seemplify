@@ -55,8 +55,8 @@ test('recipient sequence exits fail closed for complaints and respect configured
 test('the system library covers the platform and every template has visual, trial, and compliance content', () => {
   const templates = getSystemCampaignTemplates()
   const slugs = new Set(templates.map((template) => template.slug))
-  assert.ok(templates.length >= 15)
-  for (const expected of ['welcome-to-seemplify', 'product-payroll', 'product-recruiter', 'product-time-attendance', 'product-automations', 'product-workspace']) {
+  assert.ok(templates.length >= 17)
+  for (const expected of ['welcome-to-seemplify', 'product-core-hr', 'product-payroll', 'product-recruiter', 'product-leave-management', 'product-time-attendance', 'product-performance', 'product-learning', 'product-automations', 'product-workspace', 'product-experience-management', 'product-approver', 'product-ai-knowledge', 'product-community']) {
     assert.equal(slugs.has(expected), true, `missing ${expected}`)
   }
 
@@ -65,11 +65,20 @@ test('the system library covers the platform and every template has visual, tria
     assert.equal(template.design?.theme?.background, '#0f0e13')
     assert.match(template.subject, /\{\{ contact\.FIRSTNAME \}\}/)
     assert.ok(String(template.previewText || '').length > 20)
-    assert.ok(Array.isArray(template.design?.blocks) && template.design.blocks.length >= 5)
+    assert.ok(Array.isArray(template.design?.blocks) && template.design.blocks.length >= 6)
     assert.ok(template.design.blocks.some((block) => block.type === 'hero' && /^https:\/\//.test(block.imageUrl || '')))
+    assert.ok(template.design.blocks.some((block) => block.type === 'image' && /^https:\/\//.test(block.imageUrl || '')))
+    template.design.blocks
+      .filter((block) => block.type === 'hero' || block.type === 'image')
+      .forEach((block) => assert.ok(String(block.imageAlt || '').length >= 30, `${template.slug} has weak image alt text`))
     assert.ok(template.design.blocks.some((block) => block.type === 'cta' && /seven-day|7-day/i.test(`${block.title} ${block.body} ${block.ctaLabel}`)))
     assert.ok(template.design.blocks.some((block) => block.type === 'footer' && /unsubscribe/i.test(block.body || '')))
   })
+
+  const productTemplates = templates.filter((template) => template.slug.startsWith('product-'))
+  const productHeroUrls = productTemplates.map((template) => template.design.blocks.find((block) => block.type === 'hero')?.imageUrl)
+  assert.equal(new Set(productHeroUrls).size, productTemplates.length, 'each product should have distinctive hero art')
+  assert.ok(productHeroUrls.filter((url) => /-v2\.jpg$/.test(url || '')).length >= 11)
 })
 
 test('visual campaigns render responsive email tables, generated imagery, preheader, and accessible motion', () => {
