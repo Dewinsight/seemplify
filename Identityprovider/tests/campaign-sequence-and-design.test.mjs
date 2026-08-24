@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import XLSX from 'xlsx'
 
+import { importAudienceFromUpload, previewAudienceUpload } from '../src/services/campaignAudienceService.js'
 import {
   conditionMatchesEngagement,
   getCampaignSequenceSteps,
@@ -14,6 +16,76 @@ import {
 } from '../src/services/campaignRenderer.js'
 import { getSystemCampaignTemplates } from '../src/services/campaignTemplateLibrary.js'
 import { summarizeSequenceBatches } from '../src/services/campaignAnalyticsService.js'
+
+test('CSV audience uploads detect mappings and exclude invalid or duplicate recipients', () => {
+  const csvText = [
+    'Work Email,First Name,Company Name,Role',
+    'ada@example.test,Ada,"Analytical Engine, Ltd",Owner',
+    'grace@example.test,Grace,Compiler Works,Engineer',
+    'not-an-email,Broken,Invalid Corp,Unknown',
+    'ADA@example.test,Duplicate,Analytical Engine,Owner'
+  ].join('\r\n')
+
+  const preview = previewAudienceUpload({
+    csvText,
+    sourceFileName: 'payroll-contacts.csv'
+  })
+  assert.equal(preview.sourceType, 'csv')
+  assert.equal(preview.totalRows, 4)
+  assert.deepEqual(preview.columnMap, {
+    email: 'Work Email',
+    firstName: 'First Name',
+    role: 'Role',
+    companyName: 'Company Name'
+  })
+
+  const imported = importAudienceFromUpload({
+    csvText,
+    sourceFileName: 'payroll-contacts.csv',
+    audienceName: 'Payroll contacts'
+  })
+  assert.deepEqual(imported.errors, [])
+  assert.equal(imported.summary.totalRows, 4)
+  assert.equal(imported.summary.validRecipients, 2)
+  assert.equal(imported.summary.invalidRecipients, 1)
+  assert.equal(imported.summary.duplicateRecipients, 1)
+  assert.equal(imported.contacts[0].companyName, 'Analytical Engine, Ltd')
+})
+
+test('Excel audience uploads expose sheets and import the selected worksheet', () => {
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['This workbook contains campaign contacts.']
+  ]), 'Read me')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['Email', 'First Name', 'Department', 'Location'],
+    ['lin@example.test', 'Lin', 'People', 'London'],
+    ['margaret@example.test', 'Margaret', 'Payroll', 'Manchester']
+  ]), 'Contacts')
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+
+  const preview = previewAudienceUpload({
+    buffer,
+    sourceFileName: 'customer-contacts.xlsx',
+    sheetName: 'Contacts'
+  })
+  assert.equal(preview.sourceType, 'excel')
+  assert.deepEqual(preview.sheetNames, ['Read me', 'Contacts'])
+  assert.equal(preview.selectedSheetName, 'Contacts')
+  assert.equal(preview.totalRows, 2)
+  assert.equal(preview.columnMap.email, 'Email')
+
+  const imported = importAudienceFromUpload({
+    buffer,
+    sourceFileName: 'customer-contacts.xlsx',
+    sheetName: 'Contacts',
+    audienceName: 'Customer contacts'
+  })
+  assert.deepEqual(imported.errors, [])
+  assert.equal(imported.summary.validRecipients, 2)
+  assert.equal(imported.contacts[1].department, 'Payroll')
+  assert.equal(imported.contacts[1].location, 'Manchester')
+})
 
 test('sequence delays and engagement branches are deterministic', () => {
   assert.equal(sequenceDelayMilliseconds({ value: 15, unit: 'minutes' }), 900_000)

@@ -118,11 +118,20 @@
   }
   const workspaceMode = String(boot.workspaceMode || '').trim().toLowerCase()
 
+  const audienceWorkspaceMount = document.getElementById('audienceWorkspaceMount')
+  if (audienceWorkspaceMount) {
+    document.querySelectorAll('[data-audience-workspace-card]').forEach((card) => {
+      audienceWorkspaceMount.appendChild(card)
+    })
+  }
+
   const els = {
     campaignId: document.getElementById('campaignId'),
     campaignForm: document.getElementById('campaignForm'),
     campaignName: document.getElementById('campaignName'),
     campaignAudience: document.getElementById('campaignAudience'),
+    audienceWorkspaceSelect: document.getElementById('audienceWorkspaceSelect'),
+    audienceWorkspaceStatus: document.getElementById('audienceWorkspaceStatus'),
     senderName: document.getElementById('senderName'),
     senderEmail: document.getElementById('senderEmail'),
     campaignSubject: document.getElementById('campaignSubject'),
@@ -943,11 +952,33 @@
   }
 
   function renderAudienceOptions() {
-    if (!els.campaignAudience) return
     const blankOption = state.audiences.length === 0
       ? '<option value="">No audiences uploaded yet</option>'
       : '<option value="">— select an audience —</option>'
-    els.campaignAudience.innerHTML = blankOption + state.audiences.map((audience) => `<option value="${escapeHtml(audience._id)}">${escapeHtml(audience.name)} (${Number(audience.contactCount || audience.contacts?.length || 0)})</option>`).join('')
+    const options = blankOption + state.audiences.map((audience) => `<option value="${escapeHtml(audience._id)}">${escapeHtml(audience.name)} (${Number(audience.contactCount || audience.contacts?.length || 0)})</option>`).join('')
+    const selectedAudienceId = String(state.draft?.audience || '')
+    ;[els.campaignAudience, els.audienceWorkspaceSelect].filter(Boolean).forEach((select) => {
+      select.innerHTML = options
+      select.value = selectedAudienceId
+    })
+  }
+
+  function selectCampaignAudience(audienceId, announce = false) {
+    if (!state.draft) return
+    state.draft.audience = String(audienceId || '')
+    ;[els.campaignAudience, els.audienceWorkspaceSelect].filter(Boolean).forEach((select) => {
+      select.value = state.draft.audience
+    })
+    renderAudienceList()
+    renderSelectedCampaignSummary()
+    renderReviewPanel()
+    if (announce && els.audienceWorkspaceStatus) {
+      const audience = state.audiences.find((item) => String(item._id) === state.draft.audience)
+      els.audienceWorkspaceStatus.textContent = audience
+        ? `${audience.name} is attached to this campaign.`
+        : 'No audience is attached to this campaign.'
+      els.audienceWorkspaceStatus.classList.toggle('success', Boolean(audience))
+    }
   }
 
   function renderTemplateOptions() {
@@ -962,6 +993,7 @@
     renderTemplateOptions()
     if (draft.audience) {
       els.campaignAudience.value = String(draft.audience)
+      if (els.audienceWorkspaceSelect) els.audienceWorkspaceSelect.value = String(draft.audience)
     }
     els.senderName.value = draft.sender?.name || ''
     els.senderEmail.value = draft.sender?.email || ''
@@ -1447,9 +1479,7 @@
 
     await refreshAudiences()
     if (result.audience && state.draft) {
-      state.draft.audience = result.audience._id
-      renderForm()
-      renderSelectedCampaignSummary()
+      selectCampaignAudience(result.audience._id, true)
     }
     resetAudiencePreviewState(true)
     setAudienceStatus(result.message || 'Audience imported.', 'success')
@@ -1851,11 +1881,7 @@
     if (!response.ok) throw new Error(payload.error || 'Failed to create customer audience.')
     await refreshAudiences()
     if (payload.audience && state.draft) {
-      state.draft.audience = payload.audience._id
-      renderForm()
-      renderAudienceList()
-      renderSelectedCampaignSummary()
-      renderReviewPanel()
+      selectCampaignAudience(payload.audience._id, true)
     }
     state.selectedCustomerIds.clear()
     renderCustomerContacts()
@@ -2366,20 +2392,25 @@
     })
   }
 
+  if (els.campaignAudience) {
+    els.campaignAudience.addEventListener('change', function () {
+      selectCampaignAudience(els.campaignAudience.value)
+    })
+  }
+
+  if (els.audienceWorkspaceSelect) {
+    els.audienceWorkspaceSelect.addEventListener('change', function () {
+      selectCampaignAudience(els.audienceWorkspaceSelect.value, true)
+    })
+  }
+
   if (els.audienceList) {
     els.audienceList.addEventListener('click', function (event) {
       const button = event.target.closest('[data-attach-audience]')
       if (!button) return
       const audienceId = button.getAttribute('data-attach-audience')
       if (!state.draft) return
-      state.draft.audience = audienceId
-      if (els.campaignAudience) {
-        renderAudienceOptions()
-        els.campaignAudience.value = audienceId
-      }
-      renderAudienceList()
-      renderSelectedCampaignSummary()
-      renderReviewPanel()
+      selectCampaignAudience(audienceId, true)
     })
   }
 

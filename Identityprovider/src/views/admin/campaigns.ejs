@@ -156,6 +156,27 @@
     .campaign-customer-copy span { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .campaign-customer-meta { color:var(--muted); font-size:11px; text-align:right; }
     .campaign-preview-image { display:block; width:100%; height:auto; border-radius:10px; background:#efece6; }
+    .campaign-audience-workspace { display:grid; gap:14px; }
+    .campaign-audience-picker { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:12px; align-items:end; padding:16px; border:1px solid var(--border); border-radius:10px; background:var(--panel-strong); }
+    .campaign-audience-picker-copy { display:grid; gap:5px; }
+    .campaign-audience-picker-copy strong { color:var(--text); font-size:14px; }
+    .campaign-audience-picker-copy span { color:var(--muted); font-size:12px; line-height:1.55; }
+    .campaign-audience-picker-control { width:min(100%, 460px); }
+    .campaign-audience-picker-control .admin-form-select { width:100%; }
+    .campaign-audience-workspace-mount { display:grid; gap:14px; }
+    .campaign-audience-workspace-mount > .admin-card { padding:18px; border-radius:10px; background:var(--panel); }
+    .campaign-file-drop { display:grid; gap:8px; padding:18px; border:1px dashed rgba(129,140,248,.45); border-radius:10px; background:rgba(99,102,241,.06); cursor:pointer; }
+    .campaign-file-drop:hover, .campaign-file-drop:focus-within { border-color:rgba(129,140,248,.8); background:rgba(99,102,241,.09); }
+    .campaign-file-drop strong { color:var(--text); font-size:14px; }
+    .campaign-file-drop span { color:var(--muted); font-size:12px; line-height:1.55; }
+    .campaign-file-drop .admin-form-input { background:var(--panel); cursor:pointer; }
+    .campaign-audience-studio-header { order:0; }
+    .campaign-audience-hint { order:1; }
+    .campaign-import-heading { order:2; }
+    .campaign-upload-form { order:3; }
+    .campaign-audience-status { order:4; }
+    .campaign-mapping-panel { order:5; }
+    .campaign-customer-builder { order:6; margin-top:4px; }
 
     /* Campaign workbench follows the live Seemplify marketing system: flat dark
        chrome, compact controls, crisp borders, and gloss reserved for artwork. */
@@ -247,6 +268,8 @@
       .campaign-review-grid {
         grid-template-columns:1fr;
       }
+      .campaign-audience-picker { grid-template-columns:1fr; align-items:stretch; }
+      .campaign-audience-picker-control { width:100%; }
       .campaign-stop-grid { grid-template-columns:1fr; }
 
       .campaign-list-metrics {
@@ -562,23 +585,23 @@
           <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
             <div class="admin-card-header">
               <div>
-                <div class="admin-card-title">Audience Workflow</div>
-                <div class="admin-card-subtitle">Use the audience tools in the right rail to import the file, map the fields, and attach the correct audience.</div>
+                <div class="admin-card-title">Choose campaign recipients</div>
+                <div class="admin-card-subtitle">Use a saved audience, select current customers, or import a CSV or Excel workbook. The audience you choose is attached to this campaign immediately.</div>
               </div>
             </div>
-            <div class="campaign-side-guide">
-              <div class="campaign-side-guide-item">
-                <strong>Upload</strong>
-                <span>Choose the CSV or Excel file, then extract the headers so the mapper can inspect the sheet correctly.</span>
+            <div class="campaign-audience-workspace">
+              <div class="campaign-audience-picker">
+                <div class="campaign-audience-picker-copy">
+                  <strong>Use an existing audience</strong>
+                  <span>Selecting an audience here updates the campaign draft and the review checklist.</span>
+                </div>
+                <div class="campaign-audience-picker-control">
+                  <label class="admin-form-label" for="audienceWorkspaceSelect">Saved audiences</label>
+                  <select id="audienceWorkspaceSelect" class="admin-form-select"></select>
+                  <div id="audienceWorkspaceStatus" class="campaign-audience-status" aria-live="polite"></div>
+                </div>
               </div>
-              <div class="campaign-side-guide-item">
-                <strong>Map</strong>
-                <span>Match the imported columns to the campaign fields and confirm the merge tags shown for each one.</span>
-              </div>
-              <div class="campaign-side-guide-item">
-                <strong>Import</strong>
-                <span>Import the cleaned audience, then confirm the selected audience back in the setup summary before launch.</span>
-              </div>
+              <div id="audienceWorkspaceMount" class="campaign-audience-workspace-mount"></div>
             </div>
           </div>
 
@@ -619,8 +642,8 @@
             <div id="selectedCampaignSummary" class="campaign-selected-card"></div>
           </div>
 
-          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
-            <div class="admin-card-header">
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience" data-audience-workspace-card>
+            <div class="admin-card-header campaign-audience-studio-header">
               <div>
                 <div class="admin-card-title">Audience Studio</div>
                 <div class="admin-card-subtitle">Import and map audience files without leaving the editor.</div>
@@ -646,7 +669,7 @@
                 </li>
               </ul>
             </div>
-            <div class="campaign-sequence-editor" style="margin-bottom:16px;">
+            <div class="campaign-sequence-editor campaign-customer-builder">
               <div>
                 <div class="admin-card-title" style="font-size:15px;">Existing Customers</div>
                 <div class="admin-card-subtitle">Build a reusable audience from Identity accounts and organization membership. Global suppressions are removed automatically.</div>
@@ -685,11 +708,15 @@
               <button id="createCustomerAudienceBtn" class="btn btn-primary" type="button">Create and attach audience</button>
               <div id="customerAudienceStatus" class="campaign-audience-status"></div>
             </div>
-            <div class="admin-card-subtitle" style="margin:0 0 10px;">Or import a new audience</div>
+            <div class="admin-card-subtitle campaign-import-heading" style="margin:0 0 10px;">Import a CSV or Excel audience</div>
             <form id="audienceUploadForm" class="campaign-upload-form">
               <input id="audienceName" class="admin-form-input" type="text" placeholder="Audience name">
               <input id="audienceDescription" class="admin-form-input" type="text" placeholder="Audience description (optional)">
-              <input id="audienceFile" class="admin-form-input" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              <label class="campaign-file-drop" for="audienceFile">
+                <strong>Choose a CSV or Excel file</strong>
+                <span>Up to 5 MB. After choosing a file, extract its fields to review the sheet, map Email and personalization columns, and preview sample rows before import.</span>
+                <input id="audienceFile" class="admin-form-input" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              </label>
               <div id="audienceSheetGroup" class="admin-form-group" style="display:none; margin:0;">
                 <label class="admin-form-label">Workbook sheet</label>
                 <select id="audienceSheetSelect" class="admin-form-select"></select>
@@ -738,7 +765,7 @@
             </div>
           </div>
 
-          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience" data-audience-workspace-card>
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Audience Library</div>

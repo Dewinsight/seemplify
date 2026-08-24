@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
 import ejs from 'ejs'
 
+import { CAMPAIGN_AUDIENCE_FIELDS } from '../src/services/campaignAudienceService.js'
 import { getSystemCampaignTemplates } from '../src/services/campaignTemplateLibrary.js'
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -15,6 +16,7 @@ const viewPath = path.join(identityRoot, 'src', 'views', 'admin', 'campaigns.ejs
 const consoleScriptPath = path.join(identityRoot, 'src', 'public', 'js', 'admin-campaign-console.js')
 const adminCssPath = path.join(identityRoot, 'src', 'public', 'css', 'admin.css')
 const screenshotPath = process.env.CAMPAIGN_BUILDER_QA_SCREENSHOT || path.join(testDirectory, 'campaign-builder-qa.png')
+const audienceScreenshotPath = process.env.CAMPAIGN_AUDIENCE_QA_SCREENSHOT || ''
 
 const templates = getSystemCampaignTemplates().map((template, index) => ({
   ...template,
@@ -36,7 +38,7 @@ let html = await ejs.renderFile(viewPath, {
   audiences: [{ _id: 'audience-1', name: 'Existing audience', contactCount: 12 }],
   templates,
   senderHealth: [{ email: 'campaigns@seemplifyai.com', readinessBand: 'green', readinessReasons: ['Ready'] }],
-  audienceFields: [],
+  audienceFields: CAMPAIGN_AUDIENCE_FIELDS,
   selectedCampaign: null,
   workspaceMode: 'create',
   brand: { navLogoHtml: '<strong>seemplify.</strong>' },
@@ -82,13 +84,26 @@ await page.route('https://**/*', async (route) => {
 
 try {
   await page.setContent(html, { waitUntil: 'domcontentloaded' })
-  await page.evaluate(() => {
+  await page.evaluate(({ audienceFields }) => {
+    const existingAudience = {
+      _id: 'audience-1',
+      name: 'Existing audience',
+      contactCount: 12,
+      sourceType: 'csv'
+    }
     const customerAudience = {
       _id: 'audience-customers',
       name: 'Current customers',
       contactCount: 2,
       sourceType: 'customers'
     }
+    const importedAudience = {
+      _id: 'audience-imported',
+      name: 'Payroll contacts',
+      contactCount: 2,
+      sourceType: 'csv'
+    }
+    const audiences = [existingAudience]
     window.fetch = async (input, init = {}) => {
       const url = String(input)
       const method = String(init.method || 'GET').toUpperCase()
@@ -136,14 +151,38 @@ try {
         ] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       }
       if (url.includes('/campaign-audiences/from-customers') && method === 'POST') {
+        if (!audiences.some((audience) => audience._id === customerAudience._id)) audiences.push(customerAudience)
         return new Response(JSON.stringify({ message: 'Customer audience created.', audience: customerAudience }), { status: 201, headers: { 'Content-Type': 'application/json' } })
       }
+      if (url.includes('/campaign-audiences/preview') && method === 'POST') {
+        return new Response(JSON.stringify({
+          fields: audienceFields,
+          preview: {
+            sourceType: 'csv',
+            sourceFileName: 'payroll-contacts.csv',
+            sheetNames: [],
+            selectedSheetName: '',
+            headers: ['Email', 'First Name', 'Company'],
+            sampleRows: [
+              ['ada@example.test', 'Ada', 'Analytical Engine'],
+              ['grace@example.test', 'Grace', 'Compiler Works']
+            ],
+            totalRows: 2,
+            columnMap: { email: 'Email', firstName: 'First Name', companyName: 'Company' },
+            errors: []
+          }
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      if (url.includes('/campaign-audiences/import') && method === 'POST') {
+        if (!audiences.some((audience) => audience._id === importedAudience._id)) audiences.push(importedAudience)
+        return new Response(JSON.stringify({ message: 'Audience imported successfully.', audience: importedAudience }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+      }
       if (url.endsWith('/api/admin/campaign-audiences')) {
-        return new Response(JSON.stringify({ audiences: [customerAudience] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ audiences }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       }
       return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
-  })
+  }, { audienceFields: CAMPAIGN_AUDIENCE_FIELDS })
   await page.addScriptTag({ path: consoleScriptPath })
 
   assert.equal(await page.locator('[data-workspace-step-target]').count(), 5)
@@ -176,6 +215,20 @@ try {
   assert.match(await page.locator('#htmlEditor').inputValue(), /Edited directly in the live preview/)
 
   await page.locator('[data-workspace-step-target="audience"]').click()
+  await page.setViewportSize({ width: 1180, height: 900 })
+  await page.locator('#audienceWorkspaceSelect').waitFor({ state: 'visible' })
+  assert.equal(await page.locator('#audienceWorkspaceMount #audienceUploadForm').count(), 1)
+  assert.equal(await page.locator('#audienceWorkspaceMount #customerContactList').count(), 1)
+  assert.equal(await page.locator('#audienceWorkspaceMount #audienceList').count(), 1)
+  assert.equal(await page.locator('#audienceFile').isVisible(), true)
+  const audienceFileBox = await page.locator('#audienceFile').boundingBox()
+  const nextStepBox = await page.locator('#campaignStepNextBtn').boundingBox()
+  assert.ok(audienceFileBox && nextStepBox && audienceFileBox.y < nextStepBox.y, 'file upload should appear inside the Audience step before its Next button')
+  await page.setViewportSize({ width: 1536, height: 1024 })
+  await page.locator('#audienceWorkspaceSelect').selectOption('audience-1')
+  assert.equal(await page.locator('#campaignAudience').inputValue(), 'audience-1')
+  assert.match(await page.locator('#audienceWorkspaceStatus').textContent(), /attached to this campaign/i)
+
   await page.locator('.campaign-customer-row').first().waitFor({ state: 'visible' })
   assert.equal(await page.locator('.campaign-customer-row').count(), 2)
   await page.locator('#selectVisibleCustomersBtn').click()
@@ -185,6 +238,26 @@ try {
   await page.locator('#createCustomerAudienceBtn').click()
   await page.locator('#customerAudienceStatus.success').waitFor({ state: 'visible' })
   assert.equal(await page.locator('#campaignAudience').inputValue(), 'audience-customers')
+  assert.equal(await page.locator('#audienceWorkspaceSelect').inputValue(), 'audience-customers')
+
+  await page.locator('#audienceFile').setInputFiles({
+    name: 'payroll-contacts.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('Email,First Name,Company\nada@example.test,Ada,Analytical Engine\ngrace@example.test,Grace,Compiler Works\n')
+  })
+  assert.equal(await page.locator('#audienceName').inputValue(), 'payroll-contacts')
+  await page.locator('#audiencePreviewBtn').click()
+  await page.locator('#audienceMappingPanel').waitFor({ state: 'visible' })
+  assert.equal(await page.locator('[data-audience-map="email"]').inputValue(), 'Email')
+  assert.match(await page.locator('#audiencePreviewMeta').textContent(), /2/)
+  await page.locator('#audienceConsentConfirmed').check()
+  assert.equal(await page.locator('#audienceImportBtn').isEnabled(), true)
+  await page.locator('#audienceImportBtn').click()
+  await page.waitForFunction(() => document.querySelector('#campaignAudience')?.value === 'audience-imported')
+  await page.locator('#audienceImportStatus.success').waitFor({ state: 'visible' })
+  assert.equal(await page.locator('#campaignAudience').inputValue(), 'audience-imported')
+  assert.equal(await page.locator('#audienceWorkspaceSelect').inputValue(), 'audience-imported')
+  if (audienceScreenshotPath) await page.screenshot({ path: audienceScreenshotPath, fullPage: true })
 
   page.on('dialog', (dialog) => dialog.dismiss())
   await page.locator('#campaignName').evaluate((element) => {
@@ -200,7 +273,7 @@ try {
   const savedPayload = await page.evaluate(() => window.__savedCampaignPayload)
   assert.equal(savedPayload.sequence.enabled, true)
   assert.equal(savedPayload.sequence.steps[1].content.htmlContent.includes('Edited directly in the live preview'), true)
-  assert.equal(savedPayload.audienceId, 'audience-customers')
+  assert.equal(savedPayload.audienceId, 'audience-imported')
 
   await page.locator('[data-workspace-step-target="content"]').click()
   await page.locator('#visualModeBtn').click()
