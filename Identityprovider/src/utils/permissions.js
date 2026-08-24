@@ -269,11 +269,33 @@ export async function buildOrganizationClaims(account) {
       .lean()
     : []
 
-  const accessPolicy = await getOrCreateGlobalAccessPolicy()
-
   const organizationDocById = new Map(
     organizationDocs.map((orgDoc) => [orgDoc._id.toString(), orgDoc])
   )
+
+  const canonicalMemberByOrganizationId = new Map()
+  for (const org of activeOrgs) {
+    const orgId = org.organization?._id?.toString() || org.organization?.toString()
+    const fullOrgDoc = organizationDocById.get(orgId)
+    const memberEntry = Array.isArray(fullOrgDoc?.members)
+      ? fullOrgDoc.members.find((member) =>
+        member?.status === 'active' &&
+        member.account?.toString() === account._id.toString()
+      )
+      : null
+    if (memberEntry) canonicalMemberByOrganizationId.set(orgId, memberEntry)
+  }
+
+  // A stale Account membership must fail closed without consulting any other
+  // authorization store. Besides avoiding an unnecessary database request,
+  // this ensures removal from the canonical Organization is sufficient to
+  // prevent OIDC claims from being minted during partial outages.
+  if (canonicalMemberByOrganizationId.size === 0) {
+    console.log(`⏱️ [PERF] buildOrganizationClaims: no canonical memberships (${Date.now() - startTime}ms)`)
+    return []
+  }
+
+  const accessPolicy = await getOrCreateGlobalAccessPolicy()
 
   // Build claims in PARALLEL for all organizations
   const claimsPromises = activeOrgs.map(async (org) => {
@@ -288,12 +310,7 @@ export async function buildOrganizationClaims(account) {
     if (!fullOrgDoc) return null
     const departments = Array.isArray(fullOrgDoc.departments) ? fullOrgDoc.departments : []
     const branches = Array.isArray(fullOrgDoc.branches) ? fullOrgDoc.branches : []
-    const memberEntry = Array.isArray(fullOrgDoc.members)
-      ? fullOrgDoc.members.find((member) =>
-        member?.status === 'active' &&
-        member.account?.toString() === account._id.toString()
-      )
-      : null
+    const memberEntry = canonicalMemberByOrganizationId.get(orgId) || null
     const memberDepartmentIds = Array.from(new Set(
       (account.teams || [])
         .filter((teamMembership) =>

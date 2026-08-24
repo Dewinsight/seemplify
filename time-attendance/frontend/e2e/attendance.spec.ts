@@ -577,7 +577,7 @@ test('switches between populated report payloads without rendering the previous 
     await expect(page.getByText('Alex Morgan')).toBeVisible();
 });
 
-test('separates employee and management workspaces and exposes seeded attendance roles', async ({ page, mockState }) => {
+test('separates employee and management workspaces and delegates attendance roles to the IdP', async ({ page, mockState: _mockState }) => {
     await authenticate(page);
     await page.goto('/dashboard');
 
@@ -593,13 +593,9 @@ test('separates employee and management workspaces and exposes seeded attendance
 
     await page.goto('/admin/settings');
     await expect(page.getByRole('heading', { name: 'Attendance roles and permissions' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: /Line Manager/ })).toBeVisible();
-    await page.getByPlaceholder('Search organization employees').fill('Jamie');
-    await expect(page.getByText('Jamie Lee')).toBeVisible();
-    const lineManagerAssignment = page.getByRole('checkbox', { name: 'Line Manager', exact: true });
-    await lineManagerAssignment.click();
-    await expect(lineManagerAssignment).toBeChecked();
-    expect(mockState.calls).toContain('PUT /api/admin/access-policy/people/employee-2');
+    await expect(page.getByText(/central Identity Provider owns attendance roles, member assignments, direct exceptions, and the audit history/i)).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: 'Line Manager', exact: true })).toHaveCount(0);
+    await expect(page.getByPlaceholder('Search organization employees')).toHaveCount(0);
 });
 
 test('defaults to one line-manager approval and makes multiple stages optional', async ({ page, mockState }) => {
