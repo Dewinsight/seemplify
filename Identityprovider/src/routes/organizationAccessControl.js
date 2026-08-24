@@ -94,9 +94,15 @@ organizationAccessControlViews.get('/:orgId/access-control',
   }
 )
 
-organizationAccessControlApi.use(requireAuth)
-organizationAccessControlApi.use(requireSameOriginMutation)
-organizationAccessControlApi.use(rateLimit({ keyPrefix: 'organization-access-control', maxRequests: 160, windowMs: 15 * 60 * 1000 }))
+// Scope the router-wide controls to this feature's path. This router is mounted
+// at /api/organizations alongside other organization routers, so unscoped
+// middleware would authenticate (and reject) unrelated routes before their own
+// Bearer-token middleware gets a chance to run.
+organizationAccessControlApi.use('/:orgId/access-control',
+  requireAuth,
+  requireSameOriginMutation,
+  rateLimit({ keyPrefix: 'organization-access-control', maxRequests: 160, windowMs: 15 * 60 * 1000 })
+)
 
 organizationAccessControlApi.get('/:orgId/access-control', loadOrganization, requireAccessView, async (req, res) => {
   try {

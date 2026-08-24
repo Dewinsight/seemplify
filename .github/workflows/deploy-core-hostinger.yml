@@ -58,6 +58,7 @@ jobs:
             test/organization-transaction.test.mjs \
             test/internal-membership-service-auth.test.mjs \
             test/recruiter-admin-sso-secret.test.mjs \
+            src/__tests__/organization-access-control-routing.test.mjs \
             src/__tests__/subscription-extension-reactivation.test.mjs \
             src/__tests__/subscription-required-recovery.test.mjs \
             test/shared-ai-admin-client.test.mjs \

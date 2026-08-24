@@ -5,7 +5,26 @@
  * Used to check if an organization has access to Leave Management
  */
 
-const IDP_URL = process.env.IDP_URL || process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER || 'http://localhost:4000'
+const normalizeBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '')
+
+// Keep browser-facing redirects on the public issuer while server-to-server
+// verification uses the private service address when one is configured. This
+// avoids an unnecessary public network hop without leaking internal addresses
+// into browser redirects.
+const IDP_PUBLIC_URL = normalizeBaseUrl(
+  process.env.IDP_PUBLIC_URL ||
+  process.env.IDP_ISSUER_URL ||
+  process.env.OIDC_ISSUER ||
+  process.env.IDP_URL ||
+  'http://localhost:4000'
+)
+const IDP_API_URL = normalizeBaseUrl(
+  process.env.IDP_INTERNAL_API_URL ||
+  process.env.IDP_URL ||
+  IDP_PUBLIC_URL
+)
+// Backwards-compatible export for callers that use this as a browser URL.
+const IDP_URL = IDP_PUBLIC_URL
 const FEATURE_KEY = 'leaveManagement'
 
 /**
@@ -23,11 +42,12 @@ async function verifySubscriptionAccess(orgId, accessToken, featureKey = FEATURE
 
   try {
     const response = await fetch(
-      `${IDP_URL}/api/organizations/${orgId}/subscription/verify`,
+      `${IDP_API_URL}/api/organizations/${orgId}/subscription/verify`,
       {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
         }
       }
     )
@@ -46,7 +66,7 @@ async function verifySubscriptionAccess(orgId, accessToken, featureKey = FEATURE
       return {
         allowed: false,
         reason: 'no_subscription',
-        subscribeUrl: `${IDP_URL}/plans`
+        subscribeUrl: `${IDP_PUBLIC_URL}/plans`
       }
     }
 
@@ -57,7 +77,7 @@ async function verifySubscriptionAccess(orgId, accessToken, featureKey = FEATURE
         allowed: false,
         reason: 'subscription_inactive',
         status: data.status,
-        subscribeUrl: `${IDP_URL}/subscription`
+        subscribeUrl: `${IDP_PUBLIC_URL}/subscription`
       }
     }
 
@@ -69,7 +89,7 @@ async function verifySubscriptionAccess(orgId, accessToken, featureKey = FEATURE
         reason: 'feature_not_included',
         feature: featureKey,
         planName: data.planName,
-        subscribeUrl: `${IDP_URL}/plans`
+        subscribeUrl: `${IDP_PUBLIC_URL}/plans`
       }
     }
 
@@ -112,7 +132,7 @@ function getSubscriptionRequiredUrl(appName, orgId, reason) {
     org: orgId || '',
     reason: reason || 'no_subscription'
   })
-  return `${IDP_URL}/subscription-required?${params.toString()}`
+  return `${IDP_PUBLIC_URL}/subscription-required?${params.toString()}`
 }
 
 /**
@@ -120,7 +140,7 @@ function getSubscriptionRequiredUrl(appName, orgId, reason) {
  * @returns {string}
  */
 function getPlansUrl() {
-  return `${IDP_URL}/plans`
+  return `${IDP_PUBLIC_URL}/plans`
 }
 
 /**
@@ -128,7 +148,7 @@ function getPlansUrl() {
  * @returns {string}
  */
 function getSubscriptionUrl() {
-  return `${IDP_URL}/subscription`
+  return `${IDP_PUBLIC_URL}/subscription`
 }
 
 module.exports = {
@@ -137,5 +157,7 @@ module.exports = {
   getPlansUrl,
   getSubscriptionUrl,
   FEATURE_KEY,
-  IDP_URL
+  IDP_URL,
+  IDP_PUBLIC_URL,
+  IDP_API_URL
 }
