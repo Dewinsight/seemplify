@@ -4,6 +4,7 @@ import Campaign from '../models/Campaign.js'
 import CampaignBatch from '../models/CampaignBatch.js'
 import CampaignEvent from '../models/CampaignEvent.js'
 import CampaignRecipient from '../models/CampaignRecipient.js'
+import CampaignSuppression from '../models/CampaignSuppression.js'
 import MarketingVisit from '../models/MarketingVisit.js'
 import { buildAttributionTouch, resolveRequestAttribution } from '../services/campaignAttributionService.js'
 
@@ -257,6 +258,32 @@ router.post('/brevo/webhooks/marketing', async (req, res) => {
         linkUrl: rawEvent?.link || '',
         reason: rawEvent?.description || rawEvent?.reason || ''
       })
+
+      const suppressionReason = eventType === 'unsubscribed'
+        ? 'unsubscribed'
+        : eventType === 'spam'
+          ? 'complained'
+          : eventType === 'hardBounce'
+            ? 'hard_bounce'
+            : ''
+
+      if (suppressionReason) {
+        await CampaignSuppression.findOneAndUpdate({ normalizedEmail: email }, {
+          $set: {
+            email,
+            normalizedEmail: email,
+            reason: suppressionReason,
+            source: 'brevo_webhook',
+            campaign: campaign._id,
+            recipient: recipient._id,
+            suppressedAt: eventTime,
+            details: {
+              childCampaignId,
+              reason: rawEvent?.description || rawEvent?.reason || ''
+            }
+          }
+        }, { upsert: true, new: true })
+      }
     }
 
     return res.json({ success: true })

@@ -80,6 +80,17 @@ const campaignRecipientSchema = new Schema({
   bouncedAt: Date,
   unsubscribedAt: Date,
   complainedAt: Date,
+  sequence: {
+    lastSentStepIndex: { type: Number, default: -1 },
+    lastSentStepId: { type: Schema.Types.ObjectId, default: null },
+    lastSentAt: Date,
+    completedAt: Date,
+    exitReason: {
+      type: String,
+      enum: ['completed', 'converted', 'unsubscribed', 'complained', 'bounced', 'condition_not_met', 'cancelled'],
+      default: undefined
+    }
+  },
   conversion: {
     type: {
       type: String,

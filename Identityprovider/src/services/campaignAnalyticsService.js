@@ -28,11 +28,40 @@ function buildStatusTimeline(recipient, events) {
   ].filter(Boolean).sort((left, right) => new Date(left.at) - new Date(right.at))
 }
 
+export function summarizeSequenceBatches(batches = []) {
+  const stepSummaryMap = new Map()
+  batches.forEach((batch) => {
+    const stepIndex = Number(batch.stepIndex || 0)
+    const current = stepSummaryMap.get(stepIndex) || {
+      stepIndex,
+      stepName: batch.stepName || `Message ${stepIndex + 1}`,
+      batches: 0,
+      recipients: 0,
+      sent: 0,
+      opened: 0,
+      clicked: 0,
+      delivered: 0,
+      failed: 0,
+      pending: 0
+    }
+    current.batches += 1
+    current.recipients += Number(batch.recipientCount || 0)
+    current.sent += Number(batch.metrics?.sent || 0)
+    current.opened += Number(batch.metrics?.opened || 0) + Number(batch.metrics?.proxyOpens || 0)
+    current.clicked += Number(batch.metrics?.clicked || 0)
+    current.delivered += Number(batch.metrics?.delivered || 0)
+    if (batch.status === 'failed') current.failed += 1
+    if (batch.status === 'pending' || batch.status === 'processing') current.pending += 1
+    stepSummaryMap.set(stepIndex, current)
+  })
+  return Array.from(stepSummaryMap.values()).sort((left, right) => left.stepIndex - right.stepIndex)
+}
+
 export async function getCampaignConsoleSummary(limit = 20) {
   const campaigns = await Campaign.find()
     .sort({ updatedAt: -1 })
     .limit(limit)
-    .select('name slug description status sender audience audienceSnapshot pacing metrics launchedAt completedAt createdAt updatedAt')
+    .select('name slug description status sender audience audienceSnapshot pacing metrics sequence.enabled sequence.steps.name sequence.steps.position sequence.steps.delay launchedAt completedAt createdAt updatedAt')
     .populate('audience', 'name')
     .lean()
 
@@ -89,6 +118,7 @@ export async function getCampaignAnalytics(campaignId) {
   return {
     campaign,
     batches,
+    stepSummaries: summarizeSequenceBatches(batches),
     topLinks: topEvents.map((event) => ({
       url: event._id,
       uniqueClicks: event.uniqueClicks,

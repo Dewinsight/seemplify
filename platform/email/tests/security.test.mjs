@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { authenticate, parseApiKeys, sha256Hex } from '../api/src/security.mjs';
 import { loadConfig } from '../api/src/config.mjs';
-import { validateMessage } from '../api/src/messages.mjs';
+import { validateMessage, toPostalPayload } from '../api/src/messages.mjs';
+import { renderBrandedTransactionalHtml } from '../api/src/brand-template.mjs';
 import { validIdempotencyKey } from '../api/src/app.mjs';
 
 test('valid bearer authenticates and invalid/revoked bearers do not', () => {
@@ -65,4 +66,39 @@ test('message validation accepts approved domains and rejects unapproved domains
     subject: 'Blocked sender',
     text: 'Hello',
   }, options), (error) => error.status === 403 && error.code === 'from_domain_not_allowed');
+});
+
+test('transactional HTML receives the shared Seemplify frame once', () => {
+  const rendered = renderBrandedTransactionalHtml({
+    html: '<html><body><h2>Password reset</h2><p>Use the secure link below.</p></body></html>',
+    subject: 'Reset your password',
+    fromName: 'Seemplify Identity',
+    tag: 'password-reset',
+  });
+  assert.match(rendered, /data-seemplify-email-shell="transactional"/);
+  assert.match(rendered, /Seemplify Identity/);
+  assert.match(rendered, /Password reset/);
+  assert.doesNotMatch(rendered, /<body[^>]*>[\s\S]*<body/i);
+
+  const preserved = renderBrandedTransactionalHtml({
+    html: '<div data-seemplify-preserve-style="true">Complete design</div>',
+    subject: 'Preserved',
+  });
+  assert.doesNotMatch(preserved, /data-seemplify-email-shell="transactional"/);
+});
+
+test('Postal payload applies branded HTML without changing plain text', () => {
+  const message = validateMessage({
+    from: 'no-reply@seemplifyai.com',
+    fromName: 'Seemplify Payroll',
+    to: 'person@example.com',
+    subject: 'Payslip ready',
+    text: 'Your payslip is ready.',
+    html: '<h2>Your payslip is ready</h2>',
+    tag: 'payroll',
+  }, { sendingDomains: ['seemplifyai.com'], maxRecipients: 50 });
+  const payload = toPostalPayload(message, { recipients: message.allRecipients });
+  assert.equal(payload.plain_body, 'Your payslip is ready.');
+  assert.match(payload.html_body, /data-seemplify-email-shell="transactional"/);
+  assert.match(payload.html_body, /Seemplify Payroll/);
 });

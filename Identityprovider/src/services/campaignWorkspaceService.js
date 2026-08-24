@@ -8,6 +8,7 @@ export const CAMPAIGN_AUDIENCE_SUMMARY_PIPELINE = [
       sourceType: 1,
       sourceFileName: 1,
       columnMap: 1,
+      consent: 1,
       importSummary: 1,
       createdAt: 1,
       updatedAt: 1,

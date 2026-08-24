@@ -21,6 +21,12 @@
     .campaign-timeline { display:grid; gap:10px; }
     .campaign-timeline-item { border-left:2px solid rgba(99,102,241,.35); padding-left:12px; }
     .campaign-recipient-preview { border:1px solid var(--border); border-radius:16px; padding:16px; background:var(--panel-strong); max-height:380px; overflow:auto; }
+    .campaign-sequence-performance { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+    .campaign-sequence-step { border:1px solid var(--border); border-radius:10px; padding:16px; background:var(--panel-strong); display:grid; gap:12px; }
+    .campaign-sequence-metrics { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+    .campaign-sequence-metric { border-top:1px solid var(--border); padding-top:8px; }
+    .campaign-sequence-metric strong { display:block; color:var(--text); font-size:18px; }
+    .campaign-sequence-metric span { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
     @media (max-width: 1180px) { .campaign-detail-grid { grid-template-columns:1fr; } .campaign-detail-sticky { position:static; } }
     @media (max-width: 1040px) { .campaign-detail-summary { grid-template-columns:repeat(3, minmax(0, 1fr)); } }
     @media (max-width: 820px) { .campaign-detail-summary { grid-template-columns:1fr 1fr; } }
@@ -54,6 +60,34 @@
           <div class="admin-card">
             <div class="admin-card-header">
               <div>
+                <div class="admin-card-title">Sequence Performance</div>
+                <div class="admin-card-subtitle">Delivery and engagement for each message in the journey.</div>
+              </div>
+            </div>
+            <div class="campaign-sequence-performance">
+              <% if (!analytics.stepSummaries || analytics.stepSummaries.length === 0) { %>
+                <div class="campaign-empty-state">Sequence performance appears after batches are created.</div>
+              <% } %>
+              <% (analytics.stepSummaries || []).forEach((step) => { %>
+                <div class="campaign-sequence-step">
+                  <div>
+                    <div class="admin-stat-label">Message <%= step.stepIndex + 1 %></div>
+                    <div style="margin-top:5px; color:var(--text); font-weight:700;"><%= step.stepName %></div>
+                    <div class="admin-card-subtitle"><%= step.batches %> batch<%= step.batches === 1 ? '' : 'es' %> · <%= step.pending %> pending · <%= step.failed %> failed</div>
+                  </div>
+                  <div class="campaign-sequence-metrics">
+                    <div class="campaign-sequence-metric"><strong><%= step.sent %></strong><span>Sent</span></div>
+                    <div class="campaign-sequence-metric"><strong><%= step.opened %></strong><span>Opened</span></div>
+                    <div class="campaign-sequence-metric"><strong><%= step.clicked %></strong><span>Clicked</span></div>
+                  </div>
+                </div>
+              <% }) %>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div>
                 <div class="admin-card-title">Batches</div>
                 <div class="admin-card-subtitle">Every launched campaign is paced into smaller Brevo child campaigns.</div>
               </div>
@@ -63,6 +97,7 @@
                 <thead>
                   <tr>
                     <th>Batch</th>
+                    <th>Message</th>
                     <th>Status</th>
                     <th>Recipients</th>
                     <th>Scheduled</th>
@@ -73,6 +108,7 @@
                   <% analytics.batches.forEach((batch) => { %>
                     <tr>
                       <td>#<%= batch.sequence %></td>
+                      <td><%= batch.stepName || `Message ${Number(batch.stepIndex || 0) + 1}` %></td>
                       <td><%= batch.status %></td>
                       <td><%= batch.recipientCount %></td>
                       <td><%= batch.scheduledAt ? new Date(batch.scheduledAt).toLocaleString() : 'N/A' %></td>

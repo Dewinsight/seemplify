@@ -16,7 +16,7 @@ const campaignTemplateSchema = new Schema({
   },
   category: {
     type: String,
-    enum: ['product_launch', 'nurture', 'demo_webinar', 'newsletter_update', 'custom'],
+    enum: ['product_launch', 'product_marketing', 'nurture', 'demo_webinar', 'newsletter_update', 'custom'],
     default: 'custom'
   },
   description: {
@@ -49,6 +49,10 @@ const campaignTemplateSchema = new Schema({
     default: ''
   },
   previewText: {
+    type: String,
+    default: ''
+  },
+  subject: {
     type: String,
     default: ''
   },

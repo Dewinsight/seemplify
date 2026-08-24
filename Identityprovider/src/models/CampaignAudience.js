@@ -63,8 +63,21 @@ const campaignAudienceSchema = new Schema({
   },
   sourceType: {
     type: String,
-    enum: ['csv', 'excel', 'manual', 'saved'],
+    enum: ['csv', 'excel', 'manual', 'saved', 'customers'],
     default: 'csv'
+  },
+  consent: {
+    basis: {
+      type: String,
+      enum: ['explicit_opt_in', 'customer_relationship', 'legitimate_interest', 'not_recorded'],
+      default: 'not_recorded'
+    },
+    confirmedAt: Date,
+    confirmedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'AiinAccount'
+    },
+    note: { type: String, trim: true, maxLength: 500 }
   },
   sourceFileName: {
     type: String,

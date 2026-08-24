@@ -4,6 +4,7 @@ import CampaignBatch from '../models/CampaignBatch.js'
 import CampaignRecipient from '../models/CampaignRecipient.js'
 import CampaignTemplate from '../models/CampaignTemplate.js'
 import CampaignEvent from '../models/CampaignEvent.js'
+import CampaignSuppression from '../models/CampaignSuppression.js'
 import { getSystemCampaignTemplates } from './campaignTemplateLibrary.js'
 import { compileCampaignTemplateContent } from './campaignRenderer.js'
 import { brevoMarketingService } from './brevoMarketingService.js'
@@ -28,6 +29,58 @@ function splitIntoChunks(items = [], size = 1) {
     chunks.push(items.slice(index, index + size))
   }
   return chunks
+}
+
+export function sequenceDelayMilliseconds(delay = {}) {
+  const value = Math.max(0, Number(delay?.value || 0))
+  const unit = String(delay?.unit || 'days').trim().toLowerCase()
+  if (unit === 'minutes') return value * 60 * 1000
+  if (unit === 'hours') return value * 60 * 60 * 1000
+  return value * 24 * 60 * 60 * 1000
+}
+
+export function getCampaignSequenceSteps(campaign = {}) {
+  const rawSteps = campaign?.sequence?.enabled && Array.isArray(campaign?.sequence?.steps)
+    ? campaign.sequence.steps
+    : []
+
+  if (rawSteps.length === 0) {
+    return [{
+      _id: null,
+      name: 'Message 1',
+      position: 0,
+      delay: { value: 0, unit: 'minutes' },
+      condition: 'all',
+      content: campaign?.content || {}
+    }]
+  }
+
+  return [...rawSteps]
+    .sort((left, right) => Number(left?.position || 0) - Number(right?.position || 0))
+    .map((step, index) => ({
+      ...step,
+      name: String(step?.name || `Message ${index + 1}`).trim(),
+      position: index,
+      delay: index === 0 ? { value: 0, unit: 'minutes' } : (step?.delay || { value: 1, unit: 'days' }),
+      condition: step?.condition || 'all',
+      content: step?.content || campaign?.content || {}
+    }))
+}
+
+export function recipientHasSequenceExit(recipient = {}, sequence = {}) {
+  if (sequence.stopOnConversion !== false && (recipient?.status === 'converted' || recipient?.conversion?.convertedAt)) return 'converted'
+  if (recipient?.status === 'unsubscribed') return 'unsubscribed'
+  if (recipient?.status === 'complained') return 'complained'
+  if (recipient?.status === 'bounced') return 'bounced'
+  return ''
+}
+
+export function conditionMatchesEngagement(condition = 'all', engagement = {}) {
+  if (condition === 'opened_previous') return engagement.opened === true
+  if (condition === 'not_opened_previous') return engagement.opened !== true
+  if (condition === 'clicked_previous') return engagement.clicked === true
+  if (condition === 'not_clicked_previous') return engagement.clicked !== true
+  return true
 }
 
 function stripClosing(text = '') {
@@ -262,9 +315,16 @@ export async function createCampaignRecipients(campaignId) {
     throw new Error('Campaign audience not found.')
   }
 
-  const contacts = Array.isArray(audience.contacts) ? audience.contacts.filter((contact) => contact.status === 'active') : []
+  const activeContacts = Array.isArray(audience.contacts) ? audience.contacts.filter((contact) => contact.status === 'active') : []
+  const suppressedRows = activeContacts.length > 0
+    ? await CampaignSuppression.find({
+      normalizedEmail: { $in: activeContacts.map((contact) => contact.normalizedEmail) }
+    }).select('normalizedEmail').lean()
+    : []
+  const suppressedEmails = new Set(suppressedRows.map((row) => row.normalizedEmail))
+  const contacts = activeContacts.filter((contact) => !suppressedEmails.has(contact.normalizedEmail))
   if (contacts.length === 0) {
-    throw new Error('Audience does not contain any active contacts.')
+    throw new Error('Audience does not contain any active, non-suppressed contacts.')
   }
 
   const recipientDocs = contacts.map((contact) => ({
@@ -296,7 +356,7 @@ export async function createCampaignRecipients(campaignId) {
     name: audience.name,
     totalRecipients: recipientDocs.length,
     validRecipients: recipientDocs.length,
-    excludedRecipients: Math.max((audience.importSummary?.validRecipients || recipientDocs.length) - recipientDocs.length, 0)
+    excludedRecipients: Math.max((audience.importSummary?.validRecipients || activeContacts.length) - recipientDocs.length, 0)
   }
   campaign.metrics.queued = recipientDocs.length
   campaign.pacing.batchCount = 0
@@ -325,18 +385,36 @@ export async function createCampaignBatches(campaignId) {
   const intervalMinutes = Math.max(1, Number(campaign?.pacing?.intervalMinutes || 30))
   const startAt = campaign?.pacing?.startAt ? new Date(campaign.pacing.startAt) : new Date()
   const chunks = splitIntoChunks(recipients, batchSize)
+  const steps = getCampaignSequenceSteps(campaign.toObject())
+  const batchDocs = []
+  let sequence = 0
+  let previousStepLastAt = startAt
 
-  const batchDocs = chunks.map((chunk, index) => ({
-    campaign: campaign._id,
-    sequence: index + 1,
-    status: 'pending',
-    scheduledAt: new Date(startAt.getTime() + (index * intervalMinutes * 60 * 1000)),
-    recipientIds: chunk.map((recipient) => recipient._id),
-    recipientCount: chunk.length
-  }))
+  steps.forEach((step, stepIndex) => {
+    const stepStartAt = stepIndex === 0
+      ? startAt
+      : new Date(previousStepLastAt.getTime() + sequenceDelayMilliseconds(step.delay))
+
+    chunks.forEach((chunk, chunkIndex) => {
+      sequence += 1
+      batchDocs.push({
+        campaign: campaign._id,
+        sequence,
+        stepId: step._id || null,
+        stepIndex,
+        stepName: step.name || `Message ${stepIndex + 1}`,
+        status: 'pending',
+        scheduledAt: new Date(stepStartAt.getTime() + (chunkIndex * intervalMinutes * 60 * 1000)),
+        recipientIds: chunk.map((recipient) => recipient._id),
+        recipientCount: chunk.length
+      })
+    })
+
+    previousStepLastAt = new Date(stepStartAt.getTime() + (Math.max(chunks.length - 1, 0) * intervalMinutes * 60 * 1000))
+  })
 
   const batches = await CampaignBatch.insertMany(batchDocs, { ordered: true })
-  await Promise.all(batches.map((batch) => CampaignRecipient.updateMany(
+  await Promise.all(batches.filter((batch) => Number(batch.stepIndex || 0) === 0).map((batch) => CampaignRecipient.updateMany(
     { _id: { $in: batch.recipientIds } },
     { $set: { batch: batch._id } }
   )))
@@ -355,6 +433,35 @@ export async function launchCampaign(campaignId, {
   const campaign = await Campaign.findById(campaignId)
   if (!campaign) {
     throw new Error('Campaign not found.')
+  }
+  if (!['draft', 'ready', 'scheduled'].includes(campaign.status)) {
+    throw new Error(`Campaign cannot be launched from ${campaign.status} status.`)
+  }
+  if (!campaign.audience) {
+    throw new Error('Attach an audience before launching this campaign.')
+  }
+  const sequenceSteps = getCampaignSequenceSteps(campaign.toObject())
+  const invalidMessage = sequenceSteps.find((step) => {
+    const content = step?.content || {}
+    const hasSubject = Boolean(String(content.subject || '').trim())
+    const hasBody = content.designMode === 'html'
+      ? Boolean(String(content.htmlContent || '').trim())
+      : (Array.isArray(content.design?.blocks) && content.design.blocks.length > 0)
+    const complianceSource = content.designMode === 'html'
+      ? String(content.htmlContent || '')
+      : JSON.stringify(content.design || {})
+    return !hasSubject || !hasBody || !/\{\{\s*unsubscribe\s*\}\}/i.test(complianceSource)
+  })
+  if (invalidMessage) {
+    throw new Error(`${invalidMessage.name || 'A sequence message'} needs a subject, message content, and an unsubscribe footer before launch.`)
+  }
+
+  const audienceConsent = await CampaignAudience.findById(campaign.audience).select('consent').lean()
+  if (!audienceConsent) {
+    throw new Error('Campaign audience not found.')
+  }
+  if (!audienceConsent?.consent?.confirmedAt || audienceConsent?.consent?.basis === 'not_recorded') {
+    throw new Error('Confirm and document the audience contact basis before launching this campaign.')
   }
 
   const senderReadiness = await computeSenderReadiness(campaign?.sender?.email || '')
@@ -424,14 +531,30 @@ export async function resumeCampaign(campaignId, adminId = null) {
     throw new Error('Campaign not found.')
   }
 
+  const resumedAt = new Date()
+  const pauseDuration = campaign.pausedAt
+    ? Math.max(0, resumedAt.getTime() - new Date(campaign.pausedAt).getTime())
+    : 0
   campaign.status = 'running'
+  campaign.pausedAt = null
   campaign.updatedBy = adminId || campaign.updatedBy
   await campaign.save()
 
-  await CampaignBatch.updateMany(
-    { campaign: campaign._id, status: 'paused' },
-    { $set: { status: 'pending' } }
-  )
+  const pausedBatches = await CampaignBatch.find({ campaign: campaign._id, status: 'paused' })
+  await Promise.all(pausedBatches.map((batch) => {
+    batch.status = 'pending'
+    if (pauseDuration > 0 && batch.scheduledAt) {
+      batch.scheduledAt = new Date(new Date(batch.scheduledAt).getTime() + pauseDuration)
+    }
+    return batch.save()
+  }))
+
+  campaign.pacing.nextBatchAt = await CampaignBatch.findOne({ campaign: campaign._id, status: 'pending' })
+    .sort({ scheduledAt: 1 })
+    .select('scheduledAt')
+    .lean()
+    .then((batch) => batch?.scheduledAt || null)
+  await campaign.save()
 
   return campaign
 }
@@ -450,6 +573,11 @@ export async function cancelCampaign(campaignId, adminId = null) {
   await CampaignBatch.updateMany(
     { campaign: campaign._id, status: { $in: ['pending', 'paused'] } },
     { $set: { status: 'cancelled' } }
+  )
+
+  await CampaignRecipient.updateMany(
+    { campaign: campaign._id, 'sequence.exitReason': { $exists: false } },
+    { $set: { 'sequence.exitReason': 'cancelled', 'sequence.completedAt': new Date() } }
   )
 
   return campaign
@@ -513,16 +641,97 @@ export async function processCampaignBatch(batchId) {
     throw new Error('Parent campaign not found.')
   }
 
-  const recipients = await CampaignRecipient.find({ _id: { $in: batch.recipientIds } })
-  if (recipients.length === 0) {
+  const allRecipients = await CampaignRecipient.find({ _id: { $in: batch.recipientIds } })
+  if (allRecipients.length === 0) {
     throw new Error('Batch does not contain any recipients.')
+  }
+
+  const sequenceSteps = getCampaignSequenceSteps(campaign.toObject())
+  const step = sequenceSteps[Number(batch.stepIndex || 0)] || sequenceSteps[0]
+  const exited = new Map()
+  let recipients = allRecipients.filter((recipient) => {
+    const reason = recipientHasSequenceExit(recipient, campaign.sequence || {})
+    if (reason) exited.set(recipient._id.toString(), reason)
+    return !reason
+  })
+
+  if (exited.size > 0) {
+    await Promise.all(Array.from(exited.entries()).map(([recipientId, reason]) => CampaignRecipient.updateOne(
+      { _id: recipientId },
+      { $set: { 'sequence.exitReason': reason, 'sequence.completedAt': new Date() } }
+    )))
+  }
+
+  if (Number(batch.stepIndex || 0) > 0 && step.condition !== 'all' && recipients.length > 0) {
+    const priorBatches = await CampaignBatch.find({
+      campaign: campaign._id,
+      stepIndex: Number(batch.stepIndex || 0) - 1,
+      recipientIds: { $in: recipients.map((recipient) => recipient._id) }
+    }).select('_id').lean()
+    const engagementRows = priorBatches.length > 0
+      ? await CampaignEvent.aggregate([
+        {
+          $match: {
+            batch: { $in: priorBatches.map((priorBatch) => priorBatch._id) },
+            recipient: { $in: recipients.map((recipient) => recipient._id) },
+            eventType: { $in: ['opened', 'proxy_open', 'click'] }
+          }
+        },
+        {
+          $group: {
+            _id: '$recipient',
+            eventTypes: { $addToSet: '$eventType' }
+          }
+        }
+      ])
+      : []
+    const engagement = new Map(engagementRows.map((row) => [row._id.toString(), {
+      opened: row.eventTypes.includes('opened') || row.eventTypes.includes('proxy_open'),
+      clicked: row.eventTypes.includes('click')
+    }]))
+    recipients = recipients.filter((recipient) => conditionMatchesEngagement(
+      step.condition,
+      engagement.get(recipient._id.toString()) || {}
+    ))
+  }
+
+  if (recipients.length === 0) {
+    const finishedAt = new Date()
+    batch.status = 'skipped'
+    batch.finishedAt = finishedAt
+    batch.error = {
+      code: 'no_eligible_recipients',
+      message: 'No recipients remained after suppression, exit, and sequence-condition checks.',
+      details: {},
+      lastFailedAt: null
+    }
+    await batch.save()
+    campaign.pacing.nextBatchAt = await CampaignBatch.findOne({ campaign: campaign._id, status: 'pending' })
+      .sort({ scheduledAt: 1 })
+      .select('scheduledAt')
+      .lean()
+      .then((nextBatch) => nextBatch?.scheduledAt || null)
+    const activeBatchCount = await CampaignBatch.countDocuments({
+      campaign: campaign._id,
+      status: { $in: ['pending', 'processing'] }
+    })
+    if (activeBatchCount === 0) {
+      campaign.completedAt = finishedAt
+      campaign.status = 'completed'
+      await CampaignRecipient.updateMany(
+        { campaign: campaign._id, 'sequence.exitReason': { $exists: false } },
+        { $set: { 'sequence.exitReason': 'completed', 'sequence.completedAt': finishedAt } }
+      )
+    }
+    await campaign.save()
+    return { batchId: batch._id, childCampaignId: null, recipientCount: 0, skipped: true }
   }
 
   await brevoMarketingService.ensureAttributes(getRequiredBrevoAttributes())
   const folder = await brevoMarketingService.ensureFolder(DEFAULT_FOLDER_NAME)
   const list = await brevoMarketingService.ensureList({
     folderId: folder.id,
-    name: `${campaign.name} / Batch ${batch.sequence}`
+    name: `${campaign.name} / ${step.name} / Batch ${batch.sequence}`
   })
 
   await brevoMarketingService.upsertContacts({
@@ -533,16 +742,20 @@ export async function processCampaignBatch(batchId) {
     }))
   })
 
-  const templateContent = compileCampaignTemplateContent(campaign)
+  const campaignForStep = {
+    ...campaign.toObject(),
+    content: step.content || campaign.content
+  }
+  const templateContent = compileCampaignTemplateContent(campaignForStep)
   const created = await brevoMarketingService.createEmailCampaign({
-    name: `${campaign.name} / Batch ${batch.sequence}`,
+    name: `${campaign.name} / ${step.name} / Batch ${batch.sequence}`,
     subject: templateContent.subject,
     previewText: templateContent.previewText,
     sender: {
       name: campaign?.sender?.name || 'Seemplify',
       email: campaign?.sender?.email || ''
     },
-    replyTo: campaign?.content?.replyTo || undefined,
+    replyTo: campaignForStep?.content?.replyTo || undefined,
     htmlContent: templateContent.html,
     textContent: templateContent.text,
     recipients: {
@@ -576,6 +789,9 @@ export async function processCampaignBatch(batchId) {
       $set: {
         status: 'sent',
         sentAt,
+        'sequence.lastSentStepIndex': Number(batch.stepIndex || 0),
+        'sequence.lastSentStepId': step._id || null,
+        'sequence.lastSentAt': sentAt,
         'brevo.childCampaignId': childCampaignId,
         'brevo.listId': list.id
       }
@@ -589,9 +805,17 @@ export async function processCampaignBatch(batchId) {
     campaign: campaign._id,
     status: 'pending'
   }).sort({ scheduledAt: 1 }).select('scheduledAt').lean().then((nextBatch) => nextBatch?.scheduledAt || null)
-  if (!campaign.pacing.nextBatchAt) {
+  const activeBatchCount = await CampaignBatch.countDocuments({
+    campaign: campaign._id,
+    status: { $in: ['pending', 'processing'] }
+  })
+  if (activeBatchCount === 0) {
     campaign.completedAt = sentAt
     campaign.status = 'completed'
+    await CampaignRecipient.updateMany(
+      { campaign: campaign._id, 'sequence.exitReason': { $exists: false } },
+      { $set: { 'sequence.exitReason': 'completed', 'sequence.completedAt': sentAt } }
+    )
   }
   await campaign.save()
 

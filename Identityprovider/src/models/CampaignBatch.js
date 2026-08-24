@@ -14,9 +14,23 @@ const campaignBatchSchema = new Schema({
     type: Number,
     required: true
   },
+  stepId: {
+    type: Schema.Types.ObjectId,
+    default: null
+  },
+  stepIndex: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  stepName: {
+    type: String,
+    trim: true,
+    default: 'Message 1'
+  },
   status: {
     type: String,
-    enum: ['pending', 'processing', 'sent', 'completed', 'failed', 'paused', 'cancelled'],
+    enum: ['pending', 'processing', 'sent', 'completed', 'skipped', 'failed', 'paused', 'cancelled'],
     default: 'pending'
   },
   scheduledAt: Date,
@@ -66,6 +80,7 @@ const campaignBatchSchema = new Schema({
 })
 
 campaignBatchSchema.index({ campaign: 1, sequence: 1 }, { unique: true })
+campaignBatchSchema.index({ campaign: 1, stepIndex: 1, sequence: 1 })
 campaignBatchSchema.index({ status: 1, scheduledAt: 1 })
 
 const CampaignBatch = mongoose.models.AiinCampaignBatch || mongoose.model('AiinCampaignBatch', campaignBatchSchema)

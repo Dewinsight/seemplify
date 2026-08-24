@@ -1,5 +1,17 @@
 import { createCampaignAttributionToken, isSeemplifyOwnedUrl, withCampaignTrackingParams } from './campaignAttributionService.js'
 
+const DEFAULT_THEME = Object.freeze({
+  background: '#f1efe9',
+  surface: '#fffdfa',
+  surfaceSoft: '#f5f2ec',
+  accent: '#7047eb',
+  accentSecondary: '#a98eff',
+  heading: '#191816',
+  text: '#4e4943',
+  muted: '#716b63',
+  footer: '#17151b'
+})
+
 function escapeHtml(value = '') {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -14,14 +26,35 @@ function stripHtml(value = '') {
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function safeColor(value, fallback) {
+  const candidate = String(value || '').trim()
+  return /^(#[0-9a-f]{3,8}|rgba?\([0-9.,\s%]+\)|[a-z]{3,20})$/i.test(candidate) ? candidate : fallback
+}
+
+function safeImageUrl(value = '') {
+  const candidate = String(value || '').trim()
+  return /^https:\/\/[a-z0-9.-]+(?:\/[^\s"'<>]*)?$/i.test(candidate) ? candidate : ''
+}
+
+function safeLinkUrl(value = '') {
+  const candidate = String(value || '').trim()
+  return /^(https:\/\/|mailto:)[^\s"'<>]+$/i.test(candidate) ? candidate : ''
 }
 
 export function sanitizeHtml(rawHtml = '') {
   let html = String(rawHtml || '')
   html = html.replace(/<script[\s\S]*?<\/script>/gi, '')
   html = html.replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+  html = html.replace(/<object[\s\S]*?<\/object>/gi, '')
+  html = html.replace(/<embed[^>]*>/gi, '')
   html = html.replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, '')
   html = html.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
   html = html.replace(/javascript:/gi, '')
@@ -32,16 +65,18 @@ export function normalizeDesign(input = {}) {
   const theme = input?.theme || {}
   const blocks = Array.isArray(input?.blocks) ? input.blocks : []
   return {
-    version: Number(input?.version || 1),
+    version: Number(input?.version || 2),
+    motion: input?.motion === 'none' ? 'none' : 'subtle',
     theme: {
-      background: theme.background || '#f6f0ff',
-      surface: theme.surface || '#ffffff',
-      accent: theme.accent || '#6d28d9',
-      accentSecondary: theme.accentSecondary || '#a855f7',
-      heading: theme.heading || '#1f1637',
-      text: theme.text || '#3f3656',
-      muted: theme.muted || '#6d6485',
-      footer: theme.footer || '#221934'
+      background: safeColor(theme.background, DEFAULT_THEME.background),
+      surface: safeColor(theme.surface, DEFAULT_THEME.surface),
+      surfaceSoft: safeColor(theme.surfaceSoft, DEFAULT_THEME.surfaceSoft),
+      accent: safeColor(theme.accent, DEFAULT_THEME.accent),
+      accentSecondary: safeColor(theme.accentSecondary, DEFAULT_THEME.accentSecondary),
+      heading: safeColor(theme.heading, DEFAULT_THEME.heading),
+      text: safeColor(theme.text, DEFAULT_THEME.text),
+      muted: safeColor(theme.muted, DEFAULT_THEME.muted),
+      footer: safeColor(theme.footer, DEFAULT_THEME.footer)
     },
     blocks
   }
@@ -82,25 +117,42 @@ export function personalizeText(template = '', { recipient = {}, campaign = {}, 
 
   return String(template || '').replace(/\{\{\s*(contact|campaign)\.([A-Z0-9_]+)\s*\}\}/g, (_, scope, key) => {
     if (scope === 'contact') {
-      if (recipientAttributes[key] !== undefined && recipientAttributes[key] !== '') {
-        return String(recipientAttributes[key] ?? '')
-      }
+      if (recipientAttributes[key] !== undefined && recipientAttributes[key] !== '') return String(recipientAttributes[key] ?? '')
       return preserveUnknown ? `{{ contact.${key} }}` : ''
     }
-    if (campaignAttributes[key] !== undefined && campaignAttributes[key] !== '') {
-      return String(campaignAttributes[key] ?? '')
-    }
+    if (campaignAttributes[key] !== undefined && campaignAttributes[key] !== '') return String(campaignAttributes[key] ?? '')
     return preserveUnknown ? `{{ campaign.${key} }}` : ''
   })
 }
 
 function renderButton({ label, url, variant = 'primary', theme, context }) {
   const finalLabel = escapeHtml(personalizeText(label, context))
-  const finalUrl = escapeHtml(personalizeText(url, context))
-  const styles = variant === 'secondary'
-    ? `display:inline-block;padding:12px 20px;border-radius:999px;border:1px solid ${theme.accent};color:${theme.accent};text-decoration:none;font-weight:600;margin-right:10px;`
-    : `display:inline-block;padding:12px 20px;border-radius:999px;background:linear-gradient(135deg, ${theme.accent}, ${theme.accentSecondary});color:#ffffff;text-decoration:none;font-weight:700;margin-right:10px;`
-  return `<a href="${finalUrl}" style="${styles}">${finalLabel}</a>`
+  const finalUrl = escapeHtml(safeLinkUrl(personalizeText(url, context)))
+  if (!finalLabel || !finalUrl) return ''
+  const background = variant === 'secondary' ? theme.surface : theme.accent
+  const color = variant === 'secondary' ? theme.accent : '#ffffff'
+  const border = variant === 'secondary' ? `1px solid ${theme.accent}` : `1px solid ${theme.accent}`
+  return `
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="display:inline-table;margin:0 10px 10px 0;vertical-align:top;">
+      <tr>
+        <td bgcolor="${background}" style="border:${border};border-radius:8px;text-align:center;">
+          <a href="${finalUrl}" style="display:inline-block;padding:13px 20px;color:${color};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;line-height:18px;text-decoration:none;">${finalLabel}</a>
+        </td>
+      </tr>
+    </table>
+  `
+}
+
+function renderHeading(title, theme, level = 2) {
+  if (!title) return ''
+  const fontSize = level === 1 ? '36px' : '24px'
+  const lineHeight = level === 1 ? '42px' : '31px'
+  return `<h${level} style="margin:0 0 12px;color:${theme.heading};font-family:Arial,Helvetica,sans-serif;font-size:${fontSize};font-weight:700;letter-spacing:-0.02em;line-height:${lineHeight};">${title}</h${level}>`
+}
+
+function renderBody(body, theme, extra = '') {
+  if (!body) return ''
+  return `<div style="margin:0;color:${theme.text};font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;${extra}">${body}</div>`
 }
 
 function renderBlock(block = {}, theme, context) {
@@ -109,33 +161,71 @@ function renderBlock(block = {}, theme, context) {
 
   if (block.type === 'hero') {
     const eyebrow = escapeHtml(personalizeText(block.eyebrow || '', context))
-    const button = block.ctaLabel && block.ctaUrl
+    const imageUrl = safeImageUrl(personalizeText(block.imageUrl || '', context))
+    const imageAlt = escapeHtml(personalizeText(block.imageAlt || 'Seemplify', context))
+    const primary = block.ctaLabel && block.ctaUrl
       ? renderButton({ label: block.ctaLabel, url: block.ctaUrl, variant: 'primary', theme, context })
       : ''
     const secondary = block.secondaryLabel && block.secondaryUrl
       ? renderButton({ label: block.secondaryLabel, url: block.secondaryUrl, variant: 'secondary', theme, context })
       : ''
     return `
-      <section style="padding:32px;border-radius:28px;background:linear-gradient(160deg, ${theme.accent} 0%, ${theme.footer} 100%);color:#ffffff;">
-        ${eyebrow ? `<div style="font-size:12px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.7);">${eyebrow}</div>` : ''}
-        ${title ? `<h1 style="margin:14px 0 14px;font-size:34px;line-height:1.08;font-weight:700;">${title}</h1>` : ''}
-        ${body ? `<p style="margin:0 0 22px;font-size:16px;line-height:1.7;color:rgba(255,255,255,0.82);">${body}</p>` : ''}
-        ${button || secondary ? `<div>${button}${secondary}</div>` : ''}
-      </section>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;border-spacing:0;background:${theme.footer};border-radius:12px;overflow:hidden;">
+        ${imageUrl ? `<tr><td style="padding:0;"><img src="${imageUrl}" width="640" alt="${imageAlt}" style="display:block;width:100%;max-width:640px;height:auto;border:0;" /></td></tr>` : ''}
+        <tr>
+          <td class="seemplify-sheen" style="padding:36px 38px;background:${theme.footer};">
+            ${eyebrow ? `<div style="margin:0 0 12px;color:${theme.accentSecondary};font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.12em;line-height:18px;text-transform:uppercase;">${eyebrow}</div>` : ''}
+            ${title ? `<h1 style="margin:0 0 14px;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.025em;line-height:42px;">${title}</h1>` : ''}
+            ${body ? `<div style="margin:0 0 22px;color:#d8d3df;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;">${body}</div>` : ''}
+            ${primary || secondary ? `<div style="font-size:0;">${primary}${secondary}</div>` : ''}
+          </td>
+        </tr>
+      </table>
+    `
+  }
+
+  if (block.type === 'image') {
+    const imageUrl = safeImageUrl(personalizeText(block.imageUrl || '', context))
+    if (!imageUrl) return ''
+    const imageAlt = escapeHtml(personalizeText(block.imageAlt || '', context))
+    const caption = escapeHtml(personalizeText(block.caption || '', context))
+    return `
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr><td><img src="${imageUrl}" width="640" alt="${imageAlt}" style="display:block;width:100%;max-width:640px;height:auto;border:0;border-radius:10px;" /></td></tr>
+        ${caption ? `<tr><td style="padding:10px 4px 0;color:${theme.muted};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;">${caption}</td></tr>` : ''}
+      </table>
     `
   }
 
   if (block.type === 'features') {
     const items = Array.isArray(block.items) ? block.items : []
+    const rows = items.map((item) => {
+      const itemText = sanitizeHtml(personalizeText(item, context))
+      return `
+        <tr>
+          <td width="28" valign="top" style="padding:4px 0 12px;">
+            <div style="width:20px;height:20px;border-radius:6px;background:${theme.surfaceSoft};color:${theme.accent};font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:20px;text-align:center;">✓</div>
+          </td>
+          <td valign="top" style="padding:2px 0 12px;color:${theme.text};font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:24px;">${itemText}</td>
+        </tr>
+      `
+    }).join('')
     return `
-      <section style="padding:26px 28px;border-radius:24px;background:${theme.surface};border:1px solid rgba(31,22,55,0.08);">
-        ${title ? `<h2 style="margin:0 0 10px;font-size:24px;color:${theme.heading};">${title}</h2>` : ''}
-        ${body ? `<p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:${theme.text};">${body}</p>` : ''}
-        ${items.length > 0 ? `<ul style="padding:0;margin:0;list-style:none;">${items.map((item) => {
-            const itemText = sanitizeHtml(personalizeText(item, context))
-            return `<li style="display:flex;gap:12px;margin:0 0 12px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:rgba(20,184,166,0.14);color:${theme.accentSecondary};font-size:14px;font-weight:700;">✓</span><span style="color:${theme.text};line-height:1.6;">${itemText}</span></li>`
-          }).join('')}</ul>` : ''}
-      </section>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${theme.surface};border:1px solid #e1ddd5;border-radius:10px;">
+        <tr><td style="padding:30px 32px;">${renderHeading(title, theme)}${renderBody(body, theme, 'margin-bottom:18px;')}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${rows}</table></td></tr>
+      </table>
+    `
+  }
+
+  if (block.type === 'quote') {
+    const attribution = escapeHtml(personalizeText(block.attribution || '', context))
+    return `
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${theme.footer};border-radius:10px;">
+        <tr><td style="padding:30px 32px;border-left:4px solid ${theme.accentSecondary};">
+          <div style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:21px;font-weight:600;line-height:31px;">“${body}”</div>
+          ${attribution ? `<div style="margin-top:14px;color:#bdb6c8;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;">${attribution}</div>` : ''}
+        </td></tr>
+      </table>
     `
   }
 
@@ -144,73 +234,97 @@ function renderBlock(block = {}, theme, context) {
       ? renderButton({ label: block.ctaLabel, url: block.ctaUrl, variant: 'primary', theme, context })
       : ''
     return `
-      <section style="padding:28px;border-radius:24px;background:rgba(109,40,217,0.06);border:1px solid rgba(109,40,217,0.14);text-align:left;">
-        ${title ? `<h2 style="margin:0 0 10px;font-size:24px;color:${theme.heading};">${title}</h2>` : ''}
-        ${body ? `<p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:${theme.text};">${body}</p>` : ''}
-        ${button}
-      </section>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${theme.surfaceSoft};border:1px solid #ddd7eb;border-radius:10px;">
+        <tr><td style="padding:30px 32px;">${renderHeading(title, theme)}${renderBody(body, theme, 'margin-bottom:20px;')}${button}</td></tr>
+      </table>
     `
   }
 
   if (block.type === 'footer') {
-    return `<footer style="padding-top:10px;font-size:12px;line-height:1.8;color:${theme.muted};">${body}</footer>`
+    return `<div style="padding:6px 10px 0;color:${theme.muted};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;text-align:center;">${body}</div>`
   }
 
   if (block.type === 'divider') {
-    return `<div style="height:1px;background:rgba(31,22,55,0.08);"></div>`
+    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td style="border-top:1px solid #ddd8cf;font-size:1px;line-height:1px;">&nbsp;</td></tr></table>`
+  }
+
+  if (block.type === 'spacer') {
+    const height = Math.min(Math.max(Number(block.height || 24), 8), 80)
+    return `<div style="height:${height}px;font-size:1px;line-height:${height}px;">&nbsp;</div>`
   }
 
   return `
-    <section style="padding:24px 28px;border-radius:24px;background:${theme.surface};border:1px solid rgba(31,22,55,0.08);">
-      ${title ? `<h2 style="margin:0 0 10px;font-size:24px;color:${theme.heading};">${title}</h2>` : ''}
-      ${body ? `<p style="margin:0;font-size:15px;line-height:1.7;color:${theme.text};">${body}</p>` : ''}
-    </section>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${theme.surface};border:1px solid #e1ddd5;border-radius:10px;">
+      <tr><td style="padding:28px 32px;">${renderHeading(title, theme)}${renderBody(body, theme)}</td></tr>
+    </table>
   `
 }
 
 export function renderVisualEmail(designInput = {}, context = {}) {
   const design = normalizeDesign(designInput)
-  const sections = design.blocks.map((block) => renderBlock(block, design.theme, context)).join('<div style="height:18px;"></div>')
-  return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      </head>
-      <body style="margin:0;padding:0;background:${design.theme.background};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-        <div style="max-width:680px;margin:0 auto;padding:28px 18px 48px;">
-          <div style="padding:16px 8px 18px;text-align:center;color:${design.theme.heading};font-weight:700;font-size:26px;">
-            Seemplify
-          </div>
-          <div style="display:grid;gap:18px;">
-            ${sections}
-          </div>
-        </div>
-      </body>
-    </html>
-  `
+  const rows = design.blocks.map((block) => {
+    const rendered = renderBlock(block, design.theme, context)
+    return rendered ? `<tr><td style="padding:0 0 18px;">${rendered}</td></tr>` : ''
+  }).join('')
+  const previewText = escapeHtml(personalizeText(context?.campaign?.content?.previewText || '', context))
+  const motionStyle = design.motion === 'subtle'
+    ? `@media screen and (prefers-reduced-motion: no-preference) { .seemplify-sheen { background-image: linear-gradient(110deg, ${design.theme.footer} 0%, ${design.theme.footer} 38%, #2f2840 50%, ${design.theme.footer} 62%, ${design.theme.footer} 100%) !important; background-size: 240% 100% !important; animation: seem-shine 8s ease-in-out infinite !important; } } @keyframes seem-shine { 0%, 68%, 100% { background-position: 100% 0; } 82% { background-position: 0 0; } }`
+    : ''
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="x-apple-disable-message-reformatting">
+    <title>${escapeHtml(context?.campaign?.content?.subject || 'Seemplify')}</title>
+    <style>
+      body, table, td, a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+      table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+      img { -ms-interpolation-mode:bicubic; }
+      ${motionStyle}
+      @media screen and (max-width:680px) {
+        .seemplify-shell { width:100% !important; }
+        .seemplify-pad { padding-left:18px !important; padding-right:18px !important; }
+        h1 { font-size:30px !important; line-height:36px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:${design.theme.background};">
+    ${previewText ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${previewText}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>` : ''}
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${design.theme.background}" style="background:${design.theme.background};">
+      <tr>
+        <td align="center" class="seemplify-pad" style="padding:26px 18px 44px;">
+          <table role="presentation" width="640" class="seemplify-shell" cellspacing="0" cellpadding="0" border="0" style="width:640px;max-width:640px;">
+            <tr>
+              <td align="left" style="padding:0 4px 18px;">
+                <img src="https://auth.seemplifyai.com/images/seemplifylogo.png" width="142" alt="Seemplify" style="display:block;width:142px;max-width:142px;height:auto;border:0;" />
+              </td>
+            </tr>
+            ${rows}
+            <tr>
+              <td style="padding:10px 8px 0;color:${design.theme.muted};font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:18px;text-align:center;">
+                Seemplify · Run simple, run smart
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
 }
 
 export function renderTextEmail({ design, htmlContent, textContent }, context = {}) {
-  if (textContent) {
-    return personalizeText(textContent, context)
-  }
-
-  if (htmlContent) {
-    return stripHtml(personalizeText(htmlContent, context))
-  }
-
+  if (textContent) return personalizeText(textContent, context)
+  if (htmlContent) return stripHtml(personalizeText(htmlContent, context))
   return stripHtml(renderVisualEmail(design, context))
 }
 
 function buildTrackedUrl(url, { campaign, recipient }) {
   const personalizedUrl = personalizeText(url, { campaign, recipient })
   if (!personalizedUrl) return personalizedUrl
-
-  if (!isSeemplifyOwnedUrl(personalizedUrl) && !campaign?.tracking?.allowExternalLinkDecoration) {
-    return personalizedUrl
-  }
+  if (!isSeemplifyOwnedUrl(personalizedUrl) && !campaign?.tracking?.allowExternalLinkDecoration) return personalizedUrl
 
   return createCampaignAttributionToken({
     campaignId: campaign?._id?.toString?.(),
@@ -230,13 +344,7 @@ async function instrumentEmailLinks(html = '', { campaign, recipient }) {
   const hrefRegex = /href=(['"])(.*?)\1/gi
   const replacements = []
   let match
-
-  while ((match = hrefRegex.exec(html)) !== null) {
-    replacements.push({
-      original: match[0],
-      url: match[2]
-    })
-  }
+  while ((match = hrefRegex.exec(html)) !== null) replacements.push({ original: match[0], url: match[2] })
 
   let result = html
   for (const replacement of replacements) {
@@ -244,7 +352,6 @@ async function instrumentEmailLinks(html = '', { campaign, recipient }) {
     if (!nextUrl || nextUrl === replacement.url) continue
     result = result.replace(replacement.original, `href="${nextUrl}"`)
   }
-
   return result
 }
 
@@ -253,27 +360,16 @@ export async function compileCampaignContent({ campaign, recipient }) {
   const designMode = campaign?.content?.designMode || 'visual'
   const subject = personalizeText(campaign?.content?.subject || '', context)
   const previewText = personalizeText(campaign?.content?.previewText || '', context)
-
-  let html = ''
-  if (designMode === 'html') {
-    html = personalizeText(sanitizeHtml(campaign?.content?.htmlContent || ''), context)
-  } else {
-    html = renderVisualEmail(campaign?.content?.design || {}, context)
-  }
-
+  let html = designMode === 'html'
+    ? personalizeText(sanitizeHtml(campaign?.content?.htmlContent || ''), context)
+    : renderVisualEmail(campaign?.content?.design || {}, context)
   html = await instrumentEmailLinks(html, { campaign, recipient })
   const text = renderTextEmail({
     design: campaign?.content?.design,
     htmlContent: html,
     textContent: campaign?.content?.textContent
   }, context)
-
-  return {
-    subject,
-    previewText,
-    html,
-    text
-  }
+  return { subject, previewText, html, text }
 }
 
 export function compileCampaignTemplateContent(campaign) {
@@ -281,14 +377,9 @@ export function compileCampaignTemplateContent(campaign) {
   const designMode = campaign?.content?.designMode || 'visual'
   const subject = personalizeText(campaign?.content?.subject || '', context)
   const previewText = personalizeText(campaign?.content?.previewText || '', context)
-
-  let html = ''
-  if (designMode === 'html') {
-    html = personalizeText(sanitizeHtml(campaign?.content?.htmlContent || ''), context)
-  } else {
-    html = renderVisualEmail(campaign?.content?.design || {}, context)
-  }
-
+  const html = designMode === 'html'
+    ? personalizeText(sanitizeHtml(campaign?.content?.htmlContent || ''), context)
+    : renderVisualEmail(campaign?.content?.design || {}, context)
   return {
     subject,
     previewText,

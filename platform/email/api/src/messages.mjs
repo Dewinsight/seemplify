@@ -1,5 +1,6 @@
 import { HttpError } from './http.mjs';
 import { normalizeAddress, addressDomain } from './security.mjs';
+import { renderBrandedTransactionalHtml } from './brand-template.mjs';
 
 /**
  * Message validation for the send proxy.
@@ -181,7 +182,12 @@ export function toPostalPayload(message, { recipients }) {
   };
   if (message.replyTo) payload.reply_to = message.replyTo;
   if (message.text) payload.plain_body = message.text;
-  if (message.html) payload.html_body = message.html;
+  if (message.html) payload.html_body = renderBrandedTransactionalHtml({
+    html: message.html,
+    subject: message.subject,
+    fromName: message.fromName,
+    tag: message.tag,
+  });
   if (message.tag) payload.tag = message.tag;
   if (Object.keys(message.headers).length) payload.headers = message.headers;
   if (message.attachments.length) payload.attachments = message.attachments;

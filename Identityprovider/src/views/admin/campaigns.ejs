@@ -10,11 +10,11 @@
     .campaign-workspace-grid { display:grid; grid-template-columns:minmax(0, 1.48fr) minmax(320px, .82fr); gap:20px; align-items:start; }
     .campaign-shell { display:grid; gap:18px; }
     .campaign-sticky { position:sticky; top:20px; display:grid; gap:18px; }
-    .campaign-stepper { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; margin:0 0 20px; }
-    .campaign-step-tab { display:flex; align-items:flex-start; gap:12px; width:100%; border:1px solid var(--border); border-radius:18px; padding:14px 16px; background:var(--panel); color:var(--text); cursor:pointer; text-align:left; transition:border-color .18s ease, transform .18s ease, background .18s ease; }
-    .campaign-step-tab:hover { border-color:rgba(99, 102, 241, 0.28); transform:translateY(-1px); }
+    .campaign-stepper { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:10px; margin:0 0 20px; }
+    .campaign-step-tab { display:flex; align-items:flex-start; gap:10px; width:100%; border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--panel); color:var(--text); cursor:pointer; text-align:left; transition:border-color .18s ease, background .18s ease; }
+    .campaign-step-tab:hover { border-color:rgba(99, 102, 241, 0.28); }
     .campaign-step-tab.is-active { border-color:rgba(99, 102, 241, 0.32); background:rgba(99, 102, 241, 0.08); }
-    .campaign-step-index { width:30px; height:30px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:var(--panel-strong); color:#a5b4fc; font-size:12px; font-weight:800; flex:none; }
+    .campaign-step-index { width:28px; height:28px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; background:var(--panel-strong); color:#a5b4fc; font-size:12px; font-weight:800; flex:none; }
     .campaign-step-tab.is-active .campaign-step-index { background:rgba(99, 102, 241, 0.18); color:#c7d2fe; }
     .campaign-step-copy { display:grid; gap:4px; min-width:0; }
     .campaign-step-label { color:var(--text); font-size:13px; font-weight:700; }
@@ -26,23 +26,26 @@
     .campaign-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
     .campaign-form-grid--triple { grid-template-columns:repeat(3, minmax(0, 1fr)); }
     .campaign-toolbar { display:flex; flex-wrap:wrap; gap:10px; }
-    .campaign-mode-toggle { display:inline-flex; padding:4px; gap:4px; border-radius:999px; border:1px solid var(--border); background:var(--panel-strong); }
-    .campaign-mode-toggle button { border:none; background:transparent; color:var(--muted); padding:8px 14px; border-radius:999px; cursor:pointer; font-weight:600; }
+    .campaign-mode-toggle { display:inline-flex; padding:3px; gap:3px; border-radius:9px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-mode-toggle button { border:none; background:transparent; color:var(--muted); padding:8px 12px; border-radius:7px; cursor:pointer; font-weight:600; }
     .campaign-mode-toggle button.active { background:rgba(99, 102, 241, 0.12); color:#818cf8; }
     .campaign-builder-grid { display:grid; grid-template-columns:280px minmax(0, 1fr); gap:18px; align-items:start; }
     .campaign-palette { display:grid; gap:12px; }
     .campaign-palette-list { display:grid; gap:8px; }
-    .campaign-palette-item { display:flex; justify-content:space-between; align-items:center; gap:12px; border:1px solid var(--border); border-radius:14px; padding:12px 14px; background:var(--panel-strong); }
-    .campaign-preview-shell { position:relative; min-height:640px; padding:18px; border-radius:22px; border:1px solid var(--border); background:var(--panel-strong); }
-    .campaign-preview-canvas { width:100%; max-width:720px; margin:0 auto; background:var(--panel-solid); border:1px solid var(--border); border-radius:28px; padding:22px; box-shadow:0 16px 40px rgba(15,23,42,.12); }
+    .campaign-palette-item { display:flex; justify-content:space-between; align-items:center; gap:12px; border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--panel-strong); }
+    .campaign-preview-shell { position:relative; min-height:640px; padding:18px; border-radius:12px; border:1px solid var(--border); background:var(--panel-strong); overflow:auto; }
+    .campaign-preview-canvas { width:100%; max-width:720px; margin:0 auto; background:var(--panel-solid); border:1px solid var(--border); border-radius:12px; padding:22px; box-shadow:0 12px 32px rgba(15,23,42,.1); transition:max-width .18s ease; }
+    .campaign-preview-canvas.is-mobile { max-width:390px; }
     .campaign-preview-stack { display:grid; gap:14px; }
-    .campaign-block { position:relative; border-radius:26px; border:1px solid rgba(31,22,55,.08); background:#ffffff; overflow:hidden; }
+    .campaign-block { position:relative; border-radius:12px; border:1px solid transparent; background:#ffffff; }
+    .campaign-block:hover, .campaign-block:focus-within { border-color:rgba(112,71,235,.34); }
     .campaign-block.is-dragging { opacity:.45; }
-    .campaign-block-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid rgba(31,22,55,.08); background:rgba(246,240,255,.85); }
+    .campaign-block-toolbar { position:absolute; z-index:4; top:8px; right:8px; display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 6px 5px 10px; border:1px solid rgba(31,22,55,.12); border-radius:8px; background:rgba(255,253,250,.96); box-shadow:0 8px 20px rgba(31,22,55,.12); opacity:0; pointer-events:none; transition:opacity .15s ease; }
+    .campaign-block:hover .campaign-block-toolbar, .campaign-block:focus-within .campaign-block-toolbar { opacity:1; pointer-events:auto; }
     .campaign-block-toolbar strong { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#6d6485; }
     .campaign-block-actions { display:flex; gap:8px; }
-    .campaign-block-actions button { border:none; background:rgba(15,23,42,.06); color:#221934; border-radius:999px; width:30px; height:30px; cursor:pointer; }
-    .campaign-block-body { padding:22px; display:grid; gap:14px; color:#221934; }
+    .campaign-block-actions button { border:none; background:rgba(15,23,42,.06); color:#221934; border-radius:7px; width:30px; height:30px; cursor:pointer; }
+    .campaign-block-body { padding:22px; display:grid; gap:14px; color:#221934; border-radius:11px; overflow:hidden; }
     .campaign-block-body[data-type="hero"] { background:linear-gradient(160deg, #6d28d9 0%, #221934 100%); color:#ffffff; }
     .campaign-block-body[data-type="cta"] { background:rgba(109,40,217,.06); }
     .campaign-preview-eyebrow { font-size:12px; letter-spacing:.24em; text-transform:uppercase; color:inherit; opacity:.72; }
@@ -55,12 +58,12 @@
     .campaign-preview-item-badge { width:26px; height:26px; border-radius:999px; background:rgba(20,184,166,.12); color:#14b8a6; display:flex; align-items:center; justify-content:center; font-weight:700; }
     .campaign-preview-item button { border:none; background:transparent; color:#ef4444; cursor:pointer; }
     .campaign-preview-buttons { display:flex; flex-wrap:wrap; gap:10px; }
-    .campaign-preview-button { display:inline-flex; align-items:center; gap:8px; padding:12px 18px; border-radius:999px; border:1px solid rgba(255,255,255,.3); text-decoration:none; font-weight:700; }
+    .campaign-preview-button { display:inline-flex; align-items:center; gap:8px; padding:12px 18px; border-radius:8px; border:1px solid rgba(255,255,255,.3); text-decoration:none; font-weight:700; }
     .campaign-preview-button.primary { background:linear-gradient(135deg, #14b8a6, #6d28d9); color:#ffffff; border:none; }
     .campaign-preview-button.secondary { background:transparent; color:inherit; }
     .campaign-preview-button input { border:none; background:transparent; color:inherit; width:100%; min-width:140px; outline:none; }
     .campaign-preview-button .campaign-mini-input { max-width:150px; }
-    .campaign-mini-input { width:100%; border:1px solid rgba(31,22,55,.12); border-radius:999px; padding:8px 12px; background:rgba(255,255,255,.82); color:#221934; }
+    .campaign-mini-input { width:100%; border:1px solid rgba(31,22,55,.12); border-radius:8px; padding:8px 12px; background:rgba(255,255,255,.9); color:#221934; }
     .campaign-mini-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
     .campaign-html-grid { display:grid; grid-template-columns:minmax(0, .95fr) minmax(0, 1fr); gap:18px; }
     .campaign-html-editor { min-height:560px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; resize:vertical; }
@@ -131,9 +134,31 @@
     .campaign-link-popover.show { display:grid; }
     .campaign-link-popover-actions { display:flex; justify-content:flex-end; gap:8px; }
     .campaign-empty-state { border:1px dashed var(--border); border-radius:18px; padding:18px; color:var(--muted); text-align:center; }
+    .campaign-sequence-shell { display:grid; grid-template-columns:minmax(300px, .72fr) minmax(0, 1.28fr); gap:18px; align-items:start; }
+    .campaign-sequence-list { display:grid; gap:8px; }
+    .campaign-sequence-card { display:grid; grid-template-columns:34px minmax(0, 1fr) auto; gap:10px; align-items:center; width:100%; border:1px solid var(--border); border-radius:10px; padding:12px; background:var(--panel-strong); color:var(--text); text-align:left; cursor:pointer; }
+    .campaign-sequence-card.is-active { border-color:rgba(99,102,241,.45); background:rgba(99,102,241,.08); }
+    .campaign-sequence-number { width:32px; height:32px; border-radius:8px; display:grid; place-items:center; background:var(--panel); color:#a5b4fc; font-weight:800; font-size:12px; }
+    .campaign-sequence-copy { min-width:0; display:grid; gap:3px; }
+    .campaign-sequence-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .campaign-sequence-copy span { color:var(--muted); font-size:12px; line-height:1.4; }
+    .campaign-sequence-remove { border:0; border-radius:7px; background:rgba(239,68,68,.1); color:#f87171; width:30px; height:30px; cursor:pointer; }
+    .campaign-sequence-editor { border:1px solid var(--border); border-radius:12px; padding:18px; background:var(--panel-strong); display:grid; gap:16px; }
+    .campaign-sequence-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .campaign-stop-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; }
+    .campaign-stop-option { display:flex; align-items:flex-start; gap:9px; padding:12px; border:1px solid var(--border); border-radius:9px; background:var(--panel); color:var(--muted); font-size:12px; line-height:1.5; }
+    .campaign-stop-option input { margin-top:2px; }
+    .campaign-customer-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+    .campaign-customer-list { display:grid; gap:8px; max-height:330px; overflow:auto; margin:12px 0; }
+    .campaign-customer-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--panel-strong); }
+    .campaign-customer-copy { min-width:0; display:grid; gap:2px; }
+    .campaign-customer-copy strong { color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .campaign-customer-copy span { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .campaign-customer-meta { color:var(--muted); font-size:11px; text-align:right; }
+    .campaign-preview-image { display:block; width:100%; height:auto; border-radius:10px; background:#efece6; }
 
     @media (max-width: 1280px) {
-      .campaign-workspace-grid, .campaign-builder-grid, .campaign-html-grid, .campaign-stepper, .campaign-review-grid { grid-template-columns:1fr; }
+      .campaign-workspace-grid, .campaign-builder-grid, .campaign-html-grid, .campaign-stepper, .campaign-review-grid, .campaign-sequence-shell { grid-template-columns:1fr; }
       .campaign-sticky { position:static; }
     }
 
@@ -147,6 +172,7 @@
       .campaign-review-grid {
         grid-template-columns:1fr;
       }
+      .campaign-stop-grid { grid-template-columns:1fr; }
 
       .campaign-list-metrics {
         grid-template-columns:repeat(2, minmax(0, 1fr));
@@ -194,22 +220,29 @@
             <span class="campaign-step-help">Campaign basics, sender details, pacing, tracking, and template choice.</span>
           </span>
         </button>
-        <button class="campaign-step-tab" type="button" data-workspace-step-target="content">
+        <button class="campaign-step-tab" type="button" data-workspace-step-target="sequence">
           <span class="campaign-step-index">2</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Sequence</span>
+            <span class="campaign-step-help">Add timed follow-ups and engagement conditions.</span>
+          </span>
+        </button>
+        <button class="campaign-step-tab" type="button" data-workspace-step-target="content">
+          <span class="campaign-step-index">3</span>
           <span class="campaign-step-copy">
             <span class="campaign-step-label">Content</span>
             <span class="campaign-step-help">Build the message visually or switch to HTML when you need direct markup control.</span>
           </span>
         </button>
         <button class="campaign-step-tab" type="button" data-workspace-step-target="audience">
-          <span class="campaign-step-index">3</span>
+          <span class="campaign-step-index">4</span>
           <span class="campaign-step-copy">
             <span class="campaign-step-label">Audience</span>
             <span class="campaign-step-help">Upload contacts, map CSV or Excel fields, and attach the right audience.</span>
           </span>
         </button>
         <button class="campaign-step-tab" type="button" data-workspace-step-target="review">
-          <span class="campaign-step-index">4</span>
+          <span class="campaign-step-index">5</span>
           <span class="campaign-step-copy">
             <span class="campaign-step-label">Review & Send</span>
             <span class="campaign-step-help">Run the checklist, send a test, and launch only when the setup is complete.</span>
@@ -303,15 +336,83 @@
             </form>
           </div>
 
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="sequence">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Sequence Builder</div>
+                <div class="admin-card-subtitle">Send one message or build a timed journey. Follow-ups can depend on opens or clicks from the previous message.</div>
+              </div>
+              <button id="addSequenceStepBtn" class="btn btn-primary" type="button">Add follow-up</button>
+            </div>
+            <div class="campaign-sequence-shell">
+              <div>
+                <div id="sequenceStepList" class="campaign-sequence-list"></div>
+                <div class="campaign-empty-state" style="margin-top:12px; text-align:left;">
+                  Select a message to edit it. The Content step always opens the selected message.
+                </div>
+              </div>
+              <div id="sequenceStepEditor" class="campaign-sequence-editor">
+                <div class="campaign-form-grid">
+                  <div class="admin-form-group" style="margin:0;">
+                    <label class="admin-form-label" for="sequenceStepName">Message name</label>
+                    <input id="sequenceStepName" class="admin-form-input" type="text" placeholder="Follow-up: payroll proof">
+                  </div>
+                  <div class="admin-form-group" style="margin:0;">
+                    <label class="admin-form-label" for="sequenceStepCondition">Send condition</label>
+                    <select id="sequenceStepCondition" class="admin-form-select">
+                      <option value="all">Send to everyone still active</option>
+                      <option value="opened_previous">Opened previous message</option>
+                      <option value="not_opened_previous">Did not open previous message</option>
+                      <option value="clicked_previous">Clicked previous message</option>
+                      <option value="not_clicked_previous">Did not click previous message</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="campaign-form-grid">
+                  <div class="admin-form-group" style="margin:0;">
+                    <label class="admin-form-label" for="sequenceDelayValue">Wait after previous message</label>
+                    <input id="sequenceDelayValue" class="admin-form-input" type="number" min="0" max="365" value="2">
+                  </div>
+                  <div class="admin-form-group" style="margin:0;">
+                    <label class="admin-form-label" for="sequenceDelayUnit">Delay unit</label>
+                    <select id="sequenceDelayUnit" class="admin-form-select">
+                      <option value="minutes">Minutes</option>
+                      <option value="hours">Hours</option>
+                      <option value="days">Days</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <div class="admin-form-label" style="margin-bottom:8px;">Automatic exits</div>
+                  <div class="campaign-stop-grid">
+                    <label class="campaign-stop-option"><input id="sequenceStopOnConversion" type="checkbox" checked><span><strong style="color:var(--text);">Conversion</strong><br>Stop after attributed signup or conversion.</span></label>
+                    <label class="campaign-stop-option"><input id="sequenceStopOnUnsubscribe" type="checkbox" checked><span><strong style="color:var(--text);">Unsubscribe</strong><br>Never send the next message after opt-out.</span></label>
+                    <label class="campaign-stop-option"><input id="sequenceStopOnBounce" type="checkbox" checked><span><strong style="color:var(--text);">Bounce</strong><br>Stop future delivery after a bounce.</span></label>
+                  </div>
+                </div>
+                <div class="campaign-sequence-controls">
+                  <button id="designSequenceStepBtn" class="btn btn-primary" type="button">Design this message</button>
+                  <span id="sequenceStepSummary" class="admin-card-subtitle"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="admin-card campaign-step-panel" data-workspace-step-panel="content">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Email Builder</div>
                 <div class="admin-card-subtitle">Build the message in a focused editor. Switch to raw HTML when needed.</div>
               </div>
-              <div class="campaign-mode-toggle">
-                <button id="visualModeBtn" type="button" class="active">Visual</button>
-                <button id="htmlModeBtn" type="button">HTML</button>
+              <div class="campaign-toolbar">
+                <div class="campaign-mode-toggle" aria-label="Preview size">
+                  <button id="desktopPreviewBtn" type="button" class="active">Desktop</button>
+                  <button id="mobilePreviewBtn" type="button">Mobile</button>
+                </div>
+                <div class="campaign-mode-toggle">
+                  <button id="visualModeBtn" type="button" class="active">Visual</button>
+                  <button id="htmlModeBtn" type="button">HTML</button>
+                </div>
               </div>
             </div>
 
@@ -322,15 +423,18 @@
                   <div class="campaign-palette-item"><div><strong>Text</strong><div class="admin-card-subtitle">Free-form narrative block</div></div><button data-add-block="text" class="btn btn-secondary btn-sm" type="button">Add</button></div>
                   <div class="campaign-palette-item"><div><strong>Features</strong><div class="admin-card-subtitle">Structured benefits list</div></div><button data-add-block="features" class="btn btn-secondary btn-sm" type="button">Add</button></div>
                   <div class="campaign-palette-item"><div><strong>CTA</strong><div class="admin-card-subtitle">Standalone call-to-action panel</div></div><button data-add-block="cta" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                  <div class="campaign-palette-item"><div><strong>Image</strong><div class="admin-card-subtitle">Product art or screenshot with caption</div></div><button data-add-block="image" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                  <div class="campaign-palette-item"><div><strong>Quote</strong><div class="admin-card-subtitle">Customer proof or leadership statement</div></div><button data-add-block="quote" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                  <div class="campaign-palette-item"><div><strong>Spacer</strong><div class="admin-card-subtitle">Controlled vertical breathing room</div></div><button data-add-block="spacer" class="btn btn-secondary btn-sm" type="button">Add</button></div>
                   <div class="campaign-palette-item"><div><strong>Divider</strong><div class="admin-card-subtitle">Visual spacing break</div></div><button data-add-block="divider" class="btn btn-secondary btn-sm" type="button">Add</button></div>
                   <div class="campaign-palette-item"><div><strong>Footer</strong><div class="admin-card-subtitle">Compliance footer and unsubscribe note</div></div><button data-add-block="footer" class="btn btn-secondary btn-sm" type="button">Add</button></div>
                 </div>
                 <div class="campaign-empty-state">
-                  Drag blocks to reorder them. Text blocks are editable directly inside the preview.
+                  Edit text directly on the email. Drag any section to reposition it; the email-safe code updates automatically.
                 </div>
               </aside>
               <div class="campaign-preview-shell">
-                <div class="campaign-preview-canvas">
+                <div id="campaignPreviewCanvas" class="campaign-preview-canvas">
                   <div id="visualPreview" class="campaign-preview-stack"></div>
                 </div>
               </div>
@@ -441,6 +545,46 @@
                 </li>
               </ul>
             </div>
+            <div class="campaign-sequence-editor" style="margin-bottom:16px;">
+              <div>
+                <div class="admin-card-title" style="font-size:15px;">Existing Customers</div>
+                <div class="admin-card-subtitle">Build a reusable audience from Identity accounts and organization membership. Global suppressions are removed automatically.</div>
+              </div>
+              <div class="campaign-customer-toolbar">
+                <input id="customerSearchInput" class="admin-form-input" type="search" placeholder="Search name, email, or organization">
+                <button id="customerSearchBtn" class="btn btn-secondary" type="button">Search</button>
+              </div>
+              <div class="campaign-upload-actions">
+                <button id="selectVisibleCustomersBtn" class="btn btn-secondary btn-sm" type="button">Select visible</button>
+                <button id="clearCustomersBtn" class="btn btn-secondary btn-sm" type="button">Clear</button>
+                <span id="customerSelectionCount" class="admin-card-subtitle" style="align-self:center;">0 selected</span>
+              </div>
+              <div id="customerContactList" class="campaign-customer-list">
+                <div class="campaign-empty-state">Search to load existing customers.</div>
+              </div>
+              <div class="campaign-form-grid">
+                <div class="admin-form-group" style="margin:0;">
+                  <label class="admin-form-label" for="customerAudienceName">Audience name</label>
+                  <input id="customerAudienceName" class="admin-form-input" type="text" placeholder="Active Seemplify customers">
+                </div>
+                <div class="admin-form-group" style="margin:0;">
+                  <label class="admin-form-label" for="customerConsentBasis">Contact basis</label>
+                  <select id="customerConsentBasis" class="admin-form-select">
+                    <option value="customer_relationship">Existing customer relationship</option>
+                    <option value="explicit_opt_in">Explicit marketing consent</option>
+                    <option value="legitimate_interest">Documented legitimate interest</option>
+                  </select>
+                </div>
+              </div>
+              <label class="admin-form-checkbox">
+                <input id="customerConsentConfirmed" type="checkbox">
+                <span>I confirm this audience may receive this campaign and the selected contact basis is documented.</span>
+              </label>
+              <textarea id="customerConsentNote" class="admin-form-textarea" rows="2" placeholder="Optional compliance note"></textarea>
+              <button id="createCustomerAudienceBtn" class="btn btn-primary" type="button">Create and attach audience</button>
+              <div id="customerAudienceStatus" class="campaign-audience-status"></div>
+            </div>
+            <div class="admin-card-subtitle" style="margin:0 0 10px;">Or import a new audience</div>
             <form id="audienceUploadForm" class="campaign-upload-form">
               <input id="audienceName" class="admin-form-input" type="text" placeholder="Audience name">
               <input id="audienceDescription" class="admin-form-input" type="text" placeholder="Audience description (optional)">
@@ -449,6 +593,24 @@
                 <label class="admin-form-label">Workbook sheet</label>
                 <select id="audienceSheetSelect" class="admin-form-select"></select>
               </div>
+              <div class="campaign-form-grid">
+                <div class="admin-form-group" style="margin:0;">
+                  <label class="admin-form-label" for="audienceConsentBasis">Contact basis</label>
+                  <select id="audienceConsentBasis" class="admin-form-select">
+                    <option value="explicit_opt_in">Explicit marketing consent</option>
+                    <option value="customer_relationship">Existing customer relationship</option>
+                    <option value="legitimate_interest">Documented legitimate interest</option>
+                  </select>
+                </div>
+                <div class="admin-form-group" style="margin:0;">
+                  <label class="admin-form-label" for="audienceConsentNote">Compliance note</label>
+                  <input id="audienceConsentNote" class="admin-form-input" type="text" maxlength="500" placeholder="Where or when consent was recorded">
+                </div>
+              </div>
+              <label class="admin-form-checkbox">
+                <input id="audienceConsentConfirmed" type="checkbox">
+                <span>I confirm these contacts may receive this campaign.</span>
+              </label>
               <div class="campaign-upload-actions">
                 <button id="audiencePreviewBtn" class="btn btn-secondary" type="submit">Extract Fields</button>
                 <button id="audienceImportBtn" class="btn btn-primary" type="button" disabled>Import Audience</button>
@@ -518,15 +680,19 @@
                 <span>Choose the template, define the sender, and lock down the pacing and tracking basics.</span>
               </div>
               <div class="campaign-side-guide-item">
-                <strong>2. Content</strong>
+                <strong>2. Sequence</strong>
+                <span>Build timed follow-ups, choose engagement conditions, and define automatic exit rules.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>3. Content</strong>
                 <span>Build the email visually or switch to HTML for direct control over the markup and preview.</span>
               </div>
               <div class="campaign-side-guide-item">
-                <strong>3. Audience</strong>
-                <span>Upload the file, map the fields, verify the merge tags, and import the audience cleanly.</span>
+                <strong>4. Audience</strong>
+                <span>Select existing customers or upload a file, map the fields, and confirm the sending basis.</span>
               </div>
               <div class="campaign-side-guide-item">
-                <strong>4. Review & Send</strong>
+                <strong>5. Review & Send</strong>
                 <span>Run the checklist, send a test, and launch only when the sender, content, and audience are all ready.</span>
               </div>
             </div>

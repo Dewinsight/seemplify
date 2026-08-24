@@ -5,6 +5,9 @@ import CampaignAudience from '../models/CampaignAudience.js'
 import CampaignTemplate from '../models/CampaignTemplate.js'
 import CampaignBatch from '../models/CampaignBatch.js'
 import CampaignRecipient from '../models/CampaignRecipient.js'
+import CampaignSuppression from '../models/CampaignSuppression.js'
+import { Account } from '../models/Account.js'
+import { Organization } from '../models/Organization.js'
 import { requireAdminAuth, adminRateLimit } from '../middleware/adminAuth.js'
 import {
   CAMPAIGN_AUDIENCE_FIELDS,
@@ -22,7 +25,8 @@ import {
   launchCampaign,
   pauseCampaign,
   resumeCampaign,
-  cancelCampaign
+  cancelCampaign,
+  getCampaignSequenceSteps
 } from '../services/campaignOperationsService.js'
 import { brevoMarketingService } from '../services/brevoMarketingService.js'
 import { compileCampaignTemplateContent } from '../services/campaignRenderer.js'
@@ -75,6 +79,138 @@ function normalizeEmailList(value) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+}
+
+const CUSTOMER_AUDIENCE_ROLES = new Set(['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'])
+const CONSENT_BASES = new Set(['explicit_opt_in', 'customer_relationship', 'legitimate_interest'])
+
+function splitPersonName(value = '') {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' ')
+  }
+}
+
+async function loadCustomerContacts({ accountIds = [], search = '', roles = ['owner', 'admin'], limit = 100 } = {}) {
+  const normalizedRoles = roles.filter((role) => CUSTOMER_AUDIENCE_ROLES.has(role))
+  const query = {
+    email: { $exists: true, $ne: '' },
+    organizations: {
+      $elemMatch: {
+        isActive: true,
+        ...(normalizedRoles.length > 0 ? { role: { $in: normalizedRoles } } : {})
+      }
+    }
+  }
+
+  if (accountIds.length > 0) query._id = { $in: accountIds }
+  if (search) {
+    const safeSearch = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const matchingOrganizations = await Organization.find({ name: { $regex: safeSearch, $options: 'i' } })
+      .select('_id')
+      .limit(500)
+      .lean()
+    const matchingOrganizationIds = matchingOrganizations.map((organization) => organization._id)
+    query.$or = [
+      { email: { $regex: safeSearch, $options: 'i' } },
+      { 'profile.name': { $regex: safeSearch, $options: 'i' } },
+      ...(matchingOrganizationIds.length > 0
+        ? [{ organizations: { $elemMatch: { organization: { $in: matchingOrganizationIds }, isActive: true } } }]
+        : [])
+    ]
+  }
+
+  const accounts = await Account.find(query)
+    .select('email profile.name organizations')
+    .sort({ email: 1 })
+    .limit(Math.min(Math.max(Number(limit || 100), 1), 500))
+    .lean()
+
+  const organizationIds = Array.from(new Set(accounts.flatMap((account) => (
+    (account.organizations || [])
+      .filter((membership) => membership.isActive && (normalizedRoles.length === 0 || normalizedRoles.includes(membership.role)))
+      .map((membership) => membership.organization?.toString())
+      .filter(Boolean)
+  ))))
+  const organizations = await Organization.find({ _id: { $in: organizationIds } })
+    .select('name subscriptionStatus currentPlan')
+    .populate('currentPlan', 'name slug')
+    .lean()
+  const organizationMap = new Map(organizations.map((organization) => [organization._id.toString(), organization]))
+
+  return accounts.map((account) => {
+    const membership = (account.organizations || []).find((candidate) => (
+      candidate.isActive &&
+      (normalizedRoles.length === 0 || normalizedRoles.includes(candidate.role)) &&
+      organizationMap.has(candidate.organization?.toString())
+    ))
+    const organization = membership ? organizationMap.get(membership.organization.toString()) : null
+    const name = splitPersonName(account?.profile?.name || '')
+    return {
+      accountId: account._id,
+      email: String(account.email || '').trim().toLowerCase(),
+      firstName: name.firstName,
+      lastName: name.lastName,
+      role: membership?.role || '',
+      companyName: organization?.name || '',
+      organizationId: organization?._id || null,
+      subscriptionStatus: organization?.subscriptionStatus || 'none',
+      planName: organization?.currentPlan?.name || ''
+    }
+  }).filter((contact) => isValidEmail(contact.email))
+}
+
+function normalizeSequencePayload(rawSequence, primaryContent, existingSequence = {}) {
+  const parsed = parseMaybeJson(rawSequence, rawSequence || existingSequence || {}) || {}
+  const rawSteps = Array.isArray(parsed.steps) ? parsed.steps.slice(0, 12) : []
+  const steps = rawSteps.map((step, index) => {
+    const sourceContent = step?.content && typeof step.content === 'object' ? step.content : {}
+    const fallbackContent = index === 0 ? primaryContent : {}
+    const designMode = String(sourceContent.designMode || fallbackContent.designMode || 'visual') === 'html' ? 'html' : 'visual'
+    return {
+      ...(step?._id ? { _id: step._id } : {}),
+      name: String(step?.name || `Message ${index + 1}`).trim().slice(0, 120),
+      position: index,
+      delay: index === 0
+        ? { value: 0, unit: 'minutes' }
+        : {
+          value: Math.max(0, Number(step?.delay?.value || 0)),
+          unit: ['minutes', 'hours', 'days'].includes(step?.delay?.unit) ? step.delay.unit : 'days'
+        },
+      condition: ['all', 'not_opened_previous', 'opened_previous', 'not_clicked_previous', 'clicked_previous'].includes(step?.condition)
+        ? step.condition
+        : 'all',
+      content: {
+        subject: String(sourceContent.subject || fallbackContent.subject || '').trim(),
+        previewText: String(sourceContent.previewText || fallbackContent.previewText || '').trim(),
+        replyTo: String(sourceContent.replyTo || fallbackContent.replyTo || '').trim().toLowerCase(),
+        designMode,
+        design: parseMaybeJson(sourceContent.design, sourceContent.design || fallbackContent.design || {}),
+        htmlContent: String(sourceContent.htmlContent || fallbackContent.htmlContent || ''),
+        textContent: String(sourceContent.textContent || fallbackContent.textContent || ''),
+        template: sourceContent.template || fallbackContent.template || {}
+      }
+    }
+  })
+
+  if (steps.length === 0) {
+    steps.push({
+      name: 'Message 1',
+      position: 0,
+      delay: { value: 0, unit: 'minutes' },
+      condition: 'all',
+      content: primaryContent
+    })
+  }
+
+  return {
+    enabled: parsed.enabled === true || parsed.enabled === 'true' || steps.length > 1,
+    stopOnConversion: parsed.stopOnConversion !== false && parsed.stopOnConversion !== 'false',
+    stopOnUnsubscribe: true,
+    stopOnBounce: true,
+    steps
+  }
 }
 
 async function validateCampaignTestSend(campaign, rawEmails) {
@@ -163,6 +299,24 @@ async function buildCampaignDocument(payload, user, existingCampaign = null) {
     readinessReasons: ['Sender email is required.']
   }
 
+  const primaryContent = {
+    subject: String(payload.subject || existingCampaign?.content?.subject || '').trim(),
+    previewText: String(payload.previewText || existingCampaign?.content?.previewText || '').trim(),
+    replyTo: String(payload.replyTo || existingCampaign?.content?.replyTo || '').trim().toLowerCase(),
+    designMode,
+    design: parseMaybeJson(payload.design, payload.design || template?.design || existingCampaign?.content?.design || {}),
+    htmlContent: String(payload.htmlContent || template?.htmlContent || existingCampaign?.content?.htmlContent || ''),
+    textContent: String(payload.textContent || template?.textContent || existingCampaign?.content?.textContent || ''),
+    template: template
+      ? {
+        templateId: template._id,
+        name: template.name,
+        slug: template.slug,
+        category: template.category
+      }
+      : existingCampaign?.content?.template || {}
+  }
+  const sequence = normalizeSequencePayload(payload.sequence, primaryContent, existingCampaign?.sequence || {})
   const nextDocument = {
     name,
     slug,
@@ -178,23 +332,8 @@ async function buildCampaignDocument(payload, user, existingCampaign = null) {
       readinessReasons: senderReadiness.readinessReasons
     },
     audience: payload.audienceId || existingCampaign?.audience || null,
-    content: {
-      subject: String(payload.subject || existingCampaign?.content?.subject || '').trim(),
-      previewText: String(payload.previewText || existingCampaign?.content?.previewText || '').trim(),
-      replyTo: String(payload.replyTo || existingCampaign?.content?.replyTo || '').trim().toLowerCase(),
-      designMode,
-      design: parseMaybeJson(payload.design, payload.design || template?.design || existingCampaign?.content?.design || {}),
-      htmlContent: String(payload.htmlContent || template?.htmlContent || existingCampaign?.content?.htmlContent || ''),
-      textContent: String(payload.textContent || template?.textContent || existingCampaign?.content?.textContent || ''),
-      template: template
-        ? {
-          templateId: template._id,
-          name: template.name,
-          slug: template.slug,
-          category: template.category
-        }
-        : existingCampaign?.content?.template || {}
-    },
+    content: sequence.steps[0]?.content || primaryContent,
+    sequence,
     pacing: {
       batchSize: Math.max(1, Number(payload.batchSize || existingCampaign?.pacing?.batchSize || Number(process.env.CAMPAIGN_DEFAULT_BATCH_SIZE || 200))),
       intervalMinutes: Math.max(1, Number(payload.intervalMinutes || existingCampaign?.pacing?.intervalMinutes || Number(process.env.CAMPAIGN_DEFAULT_BATCH_INTERVAL_MINUTES || 30))),
@@ -247,6 +386,98 @@ router.get('/campaign-audiences', async (req, res) => {
   }
 })
 
+router.get('/campaign-customers', async (req, res) => {
+  try {
+    const roles = String(req.query.roles || 'owner,admin')
+      .split(',')
+      .map((role) => role.trim().toLowerCase())
+      .filter(Boolean)
+    const contacts = await loadCustomerContacts({
+      search: String(req.query.search || '').trim(),
+      roles,
+      limit: Number(req.query.limit || 100)
+    })
+    res.json({ contacts })
+  } catch (error) {
+    console.error('List campaign customers error:', error)
+    res.status(500).json({ error: 'Failed to load customer contacts.' })
+  }
+})
+
+router.post('/campaign-audiences/from-customers', async (req, res) => {
+  try {
+    const accountIds = Array.from(new Set((Array.isArray(req.body.accountIds) ? req.body.accountIds : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)))
+    const consentBasis = String(req.body.consentBasis || '').trim()
+    const consentConfirmed = req.body.consentConfirmed === true || req.body.consentConfirmed === 'true'
+    if (accountIds.length === 0) return res.status(400).json({ error: 'Select at least one customer contact.' })
+    if (accountIds.length > 500) return res.status(400).json({ error: 'Create customer audiences in groups of 500 or fewer.' })
+    if (!consentConfirmed || !CONSENT_BASES.has(consentBasis)) {
+      return res.status(400).json({ error: 'Confirm the audience consent basis before creating the audience.' })
+    }
+
+    const contacts = await loadCustomerContacts({
+      accountIds,
+      roles: [],
+      limit: 500
+    })
+    if (contacts.length === 0) return res.status(400).json({ error: 'No eligible customer contacts were found.' })
+
+    const suppressed = await CampaignSuppression.find({
+      normalizedEmail: { $in: contacts.map((contact) => contact.email) }
+    }).select('normalizedEmail').lean()
+    const suppressedEmails = new Set(suppressed.map((row) => row.normalizedEmail))
+    const audienceName = String(req.body.name || `Customers ${new Date().toISOString().slice(0, 10)}`).trim()
+    const slug = await ensureUniqueSlug(CampaignAudience, slugifyValue(audienceName, 'customer-audience'))
+    const audienceContacts = contacts.map((contact, index) => ({
+      email: contact.email,
+      normalizedEmail: contact.email,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      role: contact.role,
+      companyName: contact.companyName,
+      status: suppressedEmails.has(contact.email) ? 'suppressed' : 'active',
+      metadata: {
+        source: 'idp_customer',
+        accountId: contact.accountId,
+        organizationId: contact.organizationId,
+        subscriptionStatus: contact.subscriptionStatus,
+        planName: contact.planName
+      },
+      sourceRowNumber: index + 1
+    }))
+    const activeCount = audienceContacts.filter((contact) => contact.status === 'active').length
+    const audience = await CampaignAudience.create({
+      name: audienceName,
+      slug,
+      description: String(req.body.description || 'Selected from existing Seemplify customers.').trim(),
+      sourceType: 'customers',
+      consent: {
+        basis: consentBasis,
+        confirmedAt: new Date(),
+        confirmedBy: req.user._id,
+        note: String(req.body.consentNote || '').trim()
+      },
+      importSummary: {
+        totalRows: audienceContacts.length,
+        validRecipients: activeCount,
+        invalidRecipients: 0,
+        duplicateRecipients: 0,
+        skippedRecipients: audienceContacts.length - activeCount,
+        lastImportedAt: new Date()
+      },
+      contacts: audienceContacts,
+      createdBy: req.user._id,
+      updatedBy: req.user._id
+    })
+    res.status(201).json({ message: 'Customer audience created.', audience })
+  } catch (error) {
+    console.error('Create customer audience error:', error)
+    res.status(400).json({ error: error.message || 'Failed to create customer audience.' })
+  }
+})
+
 router.post('/campaign-audiences/preview', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -281,6 +512,11 @@ router.post('/campaign-audiences/import', upload.single('file'), async (req, res
     if (!req.file && !req.body.csvText) {
       return res.status(400).json({ error: 'Choose a CSV or Excel file first.' })
     }
+    const consentBasis = String(req.body.consentBasis || '').trim()
+    const consentConfirmed = req.body.consentConfirmed === true || req.body.consentConfirmed === 'true'
+    if (!consentConfirmed || !CONSENT_BASES.has(consentBasis)) {
+      return res.status(400).json({ error: 'Confirm the audience consent basis before importing contacts.' })
+    }
 
     const audienceName = String(req.body.name || req.file?.originalname || 'Uploaded Audience').trim()
     const imported = importAudienceFromUpload({
@@ -306,6 +542,12 @@ router.post('/campaign-audiences/import', upload.single('file'), async (req, res
       description: String(req.body.description || '').trim(),
       sourceType: imported.sourceType,
       sourceFileName: imported.sourceFileName,
+      consent: {
+        basis: consentBasis,
+        confirmedAt: new Date(),
+        confirmedBy: req.user._id,
+        note: String(req.body.consentNote || '').trim()
+      },
       columnMap: imported.columnMap,
       importSummary: imported.summary,
       contacts: imported.contacts,
@@ -398,7 +640,14 @@ router.post('/campaigns/:campaignId/test-send', async (req, res) => {
       return res.status(404).json({ error: 'Campaign not found.' })
     }
 
-    const validation = await validateCampaignTestSend(campaign, req.body.emails || campaign.testSendEmails || [])
+    const requestedStep = String(req.body.stepId || '').trim()
+    const steps = getCampaignSequenceSteps(campaign.toObject())
+    const step = steps.find((candidate) => String(candidate._id || candidate.position) === requestedStep) || steps[0]
+    const testCampaign = {
+      ...campaign.toObject(),
+      content: step?.content || campaign.content
+    }
+    const validation = await validateCampaignTestSend(testCampaign, req.body.emails || campaign.testSendEmails || [])
     if (validation.errors.length > 0) {
       return res.status(400).json({
         error: validation.errors[0],
@@ -410,7 +659,7 @@ router.post('/campaigns/:campaignId/test-send', async (req, res) => {
     const folder = await brevoMarketingService.ensureFolder('Seemplify Campaign Tests')
     const list = await brevoMarketingService.ensureList({
       folderId: folder.id,
-      name: `${campaign.name} / Test`
+      name: `${campaign.name} / ${step?.name || 'Message 1'} / Test`
     })
 
     await brevoMarketingService.upsertContacts({
@@ -430,14 +679,14 @@ router.post('/campaigns/:campaignId/test-send', async (req, res) => {
     })
 
     const created = await brevoMarketingService.createEmailCampaign({
-      name: `[Test] ${campaign.name}`,
+      name: `[Test] ${campaign.name} / ${step?.name || 'Message 1'}`,
       subject: validation.compiled.subject,
       previewText: validation.compiled.previewText,
       sender: {
-        name: campaign?.sender?.name || 'Seemplify',
-        email: campaign?.sender?.email || ''
+        name: testCampaign?.sender?.name || 'Seemplify',
+        email: testCampaign?.sender?.email || ''
       },
-      replyTo: campaign?.content?.replyTo || undefined,
+      replyTo: testCampaign?.content?.replyTo || undefined,
       htmlContent: validation.compiled.html,
       textContent: validation.compiled.text,
       recipients: {

@@ -6,6 +6,69 @@ import {
 
 const { Schema } = mongoose
 
+const campaignContentSchema = new Schema({
+  subject: { type: String, default: '' },
+  previewText: { type: String, default: '' },
+  replyTo: { type: String, trim: true, lowercase: true },
+  designMode: {
+    type: String,
+    enum: ['visual', 'html'],
+    default: 'visual'
+  },
+  design: {
+    type: Schema.Types.Mixed,
+    default: {}
+  },
+  htmlContent: {
+    type: String,
+    default: ''
+  },
+  textContent: {
+    type: String,
+    default: ''
+  },
+  template: {
+    templateId: {
+      type: Schema.Types.ObjectId,
+      ref: 'AiinCampaignTemplate'
+    },
+    name: String,
+    slug: String,
+    category: String
+  }
+}, { _id: false })
+
+const sequenceStepSchema = new Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+    default: 'Message'
+  },
+  position: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  delay: {
+    value: { type: Number, min: 0, default: 0 },
+    unit: {
+      type: String,
+      enum: ['minutes', 'hours', 'days'],
+      default: 'days'
+    }
+  },
+  condition: {
+    type: String,
+    enum: ['all', 'not_opened_previous', 'opened_previous', 'not_clicked_previous', 'clicked_previous'],
+    default: 'all'
+  },
+  content: {
+    type: campaignContentSchema,
+    default: () => ({})
+  }
+}, { timestamps: true })
+
 const campaignSchema = new Schema({
   name: {
     type: String,
@@ -43,34 +106,17 @@ const campaignSchema = new Schema({
     excludedRecipients: { type: Number, default: 0 }
   },
   content: {
-    subject: { type: String, default: '' },
-    previewText: { type: String, default: '' },
-    replyTo: { type: String, trim: true, lowercase: true },
-    designMode: {
-      type: String,
-      enum: ['visual', 'html'],
-      default: 'visual'
-    },
-    design: {
-      type: Schema.Types.Mixed,
-      default: {}
-    },
-    htmlContent: {
-      type: String,
-      default: ''
-    },
-    textContent: {
-      type: String,
-      default: ''
-    },
-    template: {
-      templateId: {
-        type: Schema.Types.ObjectId,
-        ref: 'AiinCampaignTemplate'
-      },
-      name: String,
-      slug: String,
-      category: String
+    type: campaignContentSchema,
+    default: () => ({})
+  },
+  sequence: {
+    enabled: { type: Boolean, default: false },
+    stopOnConversion: { type: Boolean, default: true },
+    stopOnUnsubscribe: { type: Boolean, default: true },
+    stopOnBounce: { type: Boolean, default: true },
+    steps: {
+      type: [sequenceStepSchema],
+      default: []
     }
   },
   pacing: {

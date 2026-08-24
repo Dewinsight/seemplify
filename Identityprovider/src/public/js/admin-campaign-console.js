@@ -88,6 +88,7 @@
   ]
   const CAMPAIGN_WORKSPACE_STEPS = [
     { key: 'setup', label: 'Setup' },
+    { key: 'sequence', label: 'Sequence' },
     { key: 'content', label: 'Content' },
     { key: 'audience', label: 'Audience' },
     { key: 'review', label: 'Review & Send' }
@@ -108,6 +109,9 @@
     campaignSearch: '',
     campaignStatusFilter: 'all',
     audiencePreview: null,
+    customerContacts: [],
+    selectedCustomerIds: new Set(),
+    activeSequenceStepIndex: 0,
     activeStep: 'setup'
   }
   const workspaceMode = String(boot.workspaceMode || '').trim().toLowerCase()
@@ -130,11 +134,26 @@
     campaignTemplate: document.getElementById('campaignTemplate'),
     campaignTestEmails: document.getElementById('campaignTestEmails'),
     allowExternalDecoration: document.getElementById('allowExternalDecoration'),
+    sequenceStepList: document.getElementById('sequenceStepList'),
+    sequenceStepEditor: document.getElementById('sequenceStepEditor'),
+    sequenceStepName: document.getElementById('sequenceStepName'),
+    sequenceStepCondition: document.getElementById('sequenceStepCondition'),
+    sequenceDelayValue: document.getElementById('sequenceDelayValue'),
+    sequenceDelayUnit: document.getElementById('sequenceDelayUnit'),
+    sequenceStopOnConversion: document.getElementById('sequenceStopOnConversion'),
+    sequenceStopOnUnsubscribe: document.getElementById('sequenceStopOnUnsubscribe'),
+    sequenceStopOnBounce: document.getElementById('sequenceStopOnBounce'),
+    sequenceStepSummary: document.getElementById('sequenceStepSummary'),
+    addSequenceStepBtn: document.getElementById('addSequenceStepBtn'),
+    designSequenceStepBtn: document.getElementById('designSequenceStepBtn'),
     visualModeBtn: document.getElementById('visualModeBtn'),
     htmlModeBtn: document.getElementById('htmlModeBtn'),
     visualBuilder: document.getElementById('visualBuilder'),
     htmlBuilder: document.getElementById('htmlBuilder'),
     visualPreview: document.getElementById('visualPreview'),
+    campaignPreviewCanvas: document.getElementById('campaignPreviewCanvas'),
+    desktopPreviewBtn: document.getElementById('desktopPreviewBtn'),
+    mobilePreviewBtn: document.getElementById('mobilePreviewBtn'),
     htmlEditor: document.getElementById('htmlEditor'),
     htmlPreview: document.getElementById('htmlPreview'),
     campaignList: document.getElementById('campaignList'),
@@ -151,6 +170,9 @@
     audienceFile: document.getElementById('audienceFile'),
     audienceSheetGroup: document.getElementById('audienceSheetGroup'),
     audienceSheetSelect: document.getElementById('audienceSheetSelect'),
+    audienceConsentBasis: document.getElementById('audienceConsentBasis'),
+    audienceConsentConfirmed: document.getElementById('audienceConsentConfirmed'),
+    audienceConsentNote: document.getElementById('audienceConsentNote'),
     audiencePreviewBtn: document.getElementById('audiencePreviewBtn'),
     audienceImportBtn: document.getElementById('audienceImportBtn'),
     audienceResetBtn: document.getElementById('audienceResetBtn'),
@@ -160,6 +182,18 @@
     audiencePreviewMeta: document.getElementById('audiencePreviewMeta'),
     audiencePreviewTable: document.getElementById('audiencePreviewTable'),
     audienceDerivedVariables: document.getElementById('audienceDerivedVariables'),
+    customerSearchInput: document.getElementById('customerSearchInput'),
+    customerSearchBtn: document.getElementById('customerSearchBtn'),
+    selectVisibleCustomersBtn: document.getElementById('selectVisibleCustomersBtn'),
+    clearCustomersBtn: document.getElementById('clearCustomersBtn'),
+    customerSelectionCount: document.getElementById('customerSelectionCount'),
+    customerContactList: document.getElementById('customerContactList'),
+    customerAudienceName: document.getElementById('customerAudienceName'),
+    customerConsentBasis: document.getElementById('customerConsentBasis'),
+    customerConsentConfirmed: document.getElementById('customerConsentConfirmed'),
+    customerConsentNote: document.getElementById('customerConsentNote'),
+    createCustomerAudienceBtn: document.getElementById('createCustomerAudienceBtn'),
+    customerAudienceStatus: document.getElementById('customerAudienceStatus'),
     campaignReviewChecklist: document.getElementById('campaignReviewChecklist'),
     campaignReviewHighlights: document.getElementById('campaignReviewHighlights'),
     newCampaignBtn: document.getElementById('newCampaignBtn'),
@@ -213,6 +247,8 @@
         eyebrow: 'Seemplify',
         title: 'One operating system for HR execution.',
         body: 'Run recruiting, onboarding, approvals, payroll, and performance from one structured workflow layer.',
+        imageUrl: 'https://auth.seemplifyai.com/images/campaigns/seemplify-platform-gloss.jpg',
+        imageAlt: 'Connected Seemplify people operations platform',
         ctaLabel: 'Start free trial',
         ctaUrl: 'https://auth.seemplifyai.com/signup',
         secondaryLabel: 'Book a demo',
@@ -259,6 +295,8 @@
         eyebrow: 'Seemplify',
         title: 'Add your headline',
         body: 'Write the opening pitch here.',
+        imageUrl: 'https://auth.seemplifyai.com/images/campaigns/seemplify-platform-gloss.jpg',
+        imageAlt: 'Seemplify product visual',
         ctaLabel: 'Start free trial',
         ctaUrl: 'https://auth.seemplifyai.com/signup',
         secondaryLabel: 'Book a demo',
@@ -284,6 +322,33 @@
         body: 'Tell the reader what to do next.',
         ctaLabel: 'Start free trial',
         ctaUrl: 'https://auth.seemplifyai.com/signup'
+      }
+    }
+
+    if (type === 'image') {
+      return {
+        id: uid('image'),
+        type,
+        imageUrl: 'https://auth.seemplifyai.com/images/campaigns/seemplify-platform-gloss.jpg',
+        imageAlt: 'Seemplify product visual',
+        caption: 'A connected operating system for the full people journey.'
+      }
+    }
+
+    if (type === 'quote') {
+      return {
+        id: uid('quote'),
+        type,
+        body: 'Seemplify gives every team one clear path from hiring through payroll and performance.',
+        attribution: 'People operations leader'
+      }
+    }
+
+    if (type === 'spacer') {
+      return {
+        id: uid('spacer'),
+        type,
+        height: 32
       }
     }
 
@@ -331,6 +396,54 @@
       htmlContent: String(templateContent.htmlContent || template?.htmlContent || ''),
       textContent: String(templateContent.textContent || template?.textContent || '')
     }
+  }
+
+  function normalizeCampaignContent(content) {
+    const source = content && typeof content === 'object' ? content : {}
+    const normalized = normalizeTemplateContent({ content: source })
+    normalized.template = source.template && typeof source.template === 'object'
+      ? clone(source.template)
+      : {}
+    return normalized
+  }
+
+  function normalizeDraftSequence(draft) {
+    const nextDraft = draft && typeof draft === 'object' ? draft : {}
+    const rawSequence = nextDraft.sequence && typeof nextDraft.sequence === 'object' ? nextDraft.sequence : {}
+    const rawSteps = Array.isArray(rawSequence.steps) && rawSequence.steps.length > 0
+      ? rawSequence.steps
+      : [{ name: 'Message 1', position: 0, delay: { value: 0, unit: 'minutes' }, condition: 'all', content: nextDraft.content }]
+    const allowedConditions = new Set(['all', 'opened_previous', 'not_opened_previous', 'clicked_previous', 'not_clicked_previous'])
+    const allowedUnits = new Set(['minutes', 'hours', 'days'])
+
+    const steps = rawSteps
+      .slice(0, 12)
+      .map((step, index) => ({
+        ...step,
+        name: String(step?.name || `Message ${index + 1}`).trim(),
+        position: index,
+        delay: {
+          value: index === 0 ? 0 : Math.max(0, Number(step?.delay?.value || 0)),
+          unit: allowedUnits.has(step?.delay?.unit) ? step.delay.unit : (index === 0 ? 'minutes' : 'days')
+        },
+        condition: index === 0 || !allowedConditions.has(step?.condition) ? 'all' : step.condition,
+        content: normalizeCampaignContent(step?.content || (index === 0 ? nextDraft.content : {}))
+      }))
+
+    nextDraft.sequence = {
+      enabled: steps.length > 1 || Boolean(rawSequence.enabled),
+      stopOnConversion: rawSequence.stopOnConversion !== false,
+      stopOnUnsubscribe: true,
+      stopOnBounce: true,
+      steps
+    }
+    state.activeSequenceStepIndex = Math.min(Math.max(state.activeSequenceStepIndex || 0, 0), steps.length - 1)
+    nextDraft.content = steps[state.activeSequenceStepIndex].content
+    return nextDraft
+  }
+
+  function getActiveSequenceStep() {
+    return state.draft?.sequence?.steps?.[state.activeSequenceStepIndex] || null
   }
 
   function createDraftFromTemplate(template) {
@@ -400,9 +513,11 @@
     els.htmlModeBtn.classList.toggle('active', !isVisual)
   }
 
-  function setDraft(nextDraft) {
-    state.draft = nextDraft
+  function setDraft(nextDraft, options = {}) {
+    state.activeSequenceStepIndex = Number.isInteger(options.activeSequenceStepIndex) ? options.activeSequenceStepIndex : 0
+    state.draft = normalizeDraftSequence(nextDraft)
     renderForm()
+    renderSequenceBuilder()
     renderAudienceList()
     renderVisualPreview()
     renderHtmlEditor()
@@ -410,6 +525,147 @@
     renderSelectedCampaignSummary()
     renderReviewPanel()
     syncModeUi(getDraftMode(nextDraft))
+  }
+
+  function applyTemplateToActiveStep(template) {
+    if (!template || !state.draft) return
+    if (state.mode === 'visual') syncVisualStateFromDom()
+    else state.draft.content.htmlContent = els.htmlEditor.value
+    const content = normalizeTemplateContent(template)
+    content.template = {
+      templateId: template._id,
+      name: template.name,
+      slug: template.slug,
+      category: template.category
+    }
+    const step = getActiveSequenceStep()
+    if (step) step.content = content
+    state.draft.content = content
+    renderForm()
+    renderVisualPreview()
+    renderHtmlEditor()
+    syncModeUi(getDraftMode(state.draft))
+    renderSequenceBuilder()
+    renderReviewPanel()
+  }
+
+  function formatSequenceDelay(step, index) {
+    if (index === 0) return 'Sends when the campaign starts'
+    const value = Math.max(0, Number(step?.delay?.value || 0))
+    const unit = String(step?.delay?.unit || 'days')
+    const conditionLabels = {
+      all: 'everyone active',
+      opened_previous: 'opened previous',
+      not_opened_previous: 'did not open previous',
+      clicked_previous: 'clicked previous',
+      not_clicked_previous: 'did not click previous'
+    }
+    return `Wait ${value} ${unit} · ${conditionLabels[step?.condition] || conditionLabels.all}`
+  }
+
+  function syncSequenceControls() {
+    const step = getActiveSequenceStep()
+    if (!step) return
+    step.name = String(els.sequenceStepName?.value || step.name || '').trim() || `Message ${state.activeSequenceStepIndex + 1}`
+    step.condition = state.activeSequenceStepIndex === 0 ? 'all' : String(els.sequenceStepCondition?.value || 'all')
+    step.delay = {
+      value: state.activeSequenceStepIndex === 0 ? 0 : Math.max(0, Number(els.sequenceDelayValue?.value || 0)),
+      unit: state.activeSequenceStepIndex === 0 ? 'minutes' : String(els.sequenceDelayUnit?.value || 'days')
+    }
+    state.draft.sequence.stopOnConversion = Boolean(els.sequenceStopOnConversion?.checked)
+    state.draft.sequence.stopOnUnsubscribe = true
+    state.draft.sequence.stopOnBounce = true
+    state.draft.sequence.enabled = state.draft.sequence.steps.length > 1
+  }
+
+  function syncActiveMessageBeforeSwitch() {
+    if (!state.draft?.content) return
+    if (state.mode === 'visual') {
+      syncVisualStateFromDom()
+    } else if (els.htmlEditor) {
+      state.draft.content.htmlContent = els.htmlEditor.value
+    }
+    syncDraftFromForm()
+    syncSequenceControls()
+    const activeStep = getActiveSequenceStep()
+    if (activeStep) activeStep.content = state.draft.content
+  }
+
+  function setActiveSequenceStep(index, options = {}) {
+    const steps = state.draft?.sequence?.steps || []
+    if (steps.length === 0) return
+    const nextIndex = Math.min(Math.max(Number(index || 0), 0), steps.length - 1)
+    if (nextIndex !== state.activeSequenceStepIndex && options.sync !== false) {
+      syncActiveMessageBeforeSwitch()
+    }
+    state.activeSequenceStepIndex = nextIndex
+    state.draft.content = steps[nextIndex].content
+    renderForm()
+    renderSequenceBuilder()
+    renderVisualPreview()
+    renderHtmlEditor()
+    syncModeUi(getDraftMode(state.draft))
+    renderReviewPanel()
+  }
+
+  function renderSequenceBuilder() {
+    if (!els.sequenceStepList || !state.draft?.sequence) return
+    const steps = state.draft.sequence.steps || []
+    els.sequenceStepList.innerHTML = steps.map((step, index) => `
+      <div class="campaign-sequence-card ${index === state.activeSequenceStepIndex ? 'is-active' : ''}" data-select-sequence-step="${index}" role="button" tabindex="0">
+        <span class="campaign-sequence-number">${index + 1}</span>
+        <span class="campaign-sequence-copy">
+          <strong>${escapeHtml(step.name || `Message ${index + 1}`)}</strong>
+          <span>${escapeHtml(formatSequenceDelay(step, index))}</span>
+        </span>
+        ${steps.length > 1 ? `<button class="campaign-sequence-remove" type="button" data-remove-sequence-step="${index}" aria-label="Remove message">×</button>` : '<span></span>'}
+      </div>
+    `).join('')
+
+    const active = getActiveSequenceStep()
+    if (!active) return
+    els.sequenceStepName.value = active.name || `Message ${state.activeSequenceStepIndex + 1}`
+    els.sequenceStepCondition.value = active.condition || 'all'
+    els.sequenceDelayValue.value = Number(active.delay?.value || 0)
+    els.sequenceDelayUnit.value = active.delay?.unit || (state.activeSequenceStepIndex === 0 ? 'minutes' : 'days')
+    const isFirst = state.activeSequenceStepIndex === 0
+    els.sequenceStepCondition.disabled = isFirst
+    els.sequenceDelayValue.disabled = isFirst
+    els.sequenceDelayUnit.disabled = isFirst
+    els.sequenceStopOnConversion.checked = state.draft.sequence.stopOnConversion !== false
+    els.sequenceStopOnUnsubscribe.checked = true
+    els.sequenceStopOnBounce.checked = true
+    els.sequenceStopOnUnsubscribe.disabled = true
+    els.sequenceStopOnBounce.disabled = true
+    els.sequenceStepSummary.textContent = `${steps.length} message${steps.length === 1 ? '' : 's'} · editing ${state.activeSequenceStepIndex + 1} of ${steps.length}`
+  }
+
+  function addSequenceStep() {
+    syncActiveMessageBeforeSwitch()
+    const steps = state.draft.sequence.steps
+    if (steps.length >= 12) throw new Error('A sequence can contain up to 12 messages.')
+    const content = clone(state.draft.content)
+    content.subject = `A quick follow-up: ${String(content.subject || 'Seemplify').replace(/^A quick follow-up:\s*/i, '')}`
+    content.previewText = 'A useful next step from Seemplify.'
+    steps.push({
+      name: `Follow-up ${steps.length}`,
+      position: steps.length,
+      delay: { value: 2, unit: 'days' },
+      condition: 'all',
+      content
+    })
+    state.draft.sequence.enabled = true
+    setActiveSequenceStep(steps.length - 1, { sync: false })
+  }
+
+  function removeSequenceStep(index) {
+    const steps = state.draft?.sequence?.steps || []
+    if (steps.length <= 1) return
+    syncActiveMessageBeforeSwitch()
+    steps.splice(index, 1)
+    steps.forEach((step, stepIndex) => { step.position = stepIndex })
+    state.draft.sequence.enabled = steps.length > 1
+    setActiveSequenceStep(Math.min(state.activeSequenceStepIndex, steps.length - 1), { sync: false })
   }
 
   function renderStats() {
@@ -542,12 +798,21 @@
 
     const audience = state.audiences.find((entry) => String(entry._id) === String(state.draft.audience || ''))
     const templateName = state.draft?.content?.template?.name || 'Custom content'
-    const hasHtmlContent = Boolean(String(state.draft?.content?.htmlContent || '').trim())
-    const hasVisualBlocks = Array.isArray(state.draft?.content?.design?.blocks) && state.draft.content.design.blocks.length > 0
-    const hasContent = hasHtmlContent || hasVisualBlocks
+    const sequenceSteps = state.draft?.sequence?.steps || []
+    const hasContent = sequenceSteps.length > 0 && sequenceSteps.every((step) => (
+      Boolean(String(step?.content?.htmlContent || '').trim()) ||
+      (Array.isArray(step?.content?.design?.blocks) && step.content.design.blocks.length > 0)
+    ))
+    const hasComplianceFooter = sequenceSteps.length > 0 && sequenceSteps.every((step) => {
+      const source = step?.content?.designMode === 'html'
+        ? String(step?.content?.htmlContent || '')
+        : JSON.stringify(step?.content?.design || {})
+      return /\{\{\s*unsubscribe\s*\}\}/i.test(source)
+    })
     const hasSender = isValidEmail(state.draft?.sender?.email || '')
     const hasAudience = Boolean(state.draft?.audience)
-    const hasSubject = Boolean(String(state.draft?.content?.subject || '').trim())
+    const hasAudienceConsent = Boolean(audience?.consent?.confirmedAt) && audience?.consent?.basis !== 'not_recorded'
+    const hasSubject = sequenceSteps.length > 0 && sequenceSteps.every((step) => Boolean(String(step?.content?.subject || '').trim()))
     const hasTests = Array.isArray(state.draft?.testSendEmails) && state.draft.testSendEmails.length > 0
 
     const checks = [
@@ -564,12 +829,27 @@
       {
         title: 'Message content',
         ok: hasContent,
-        help: 'Add visual blocks or HTML content so the campaign has something to send.'
+        help: 'Every sequence message needs visual blocks or HTML content.'
+      },
+      {
+        title: 'Sequence exits',
+        ok: Boolean(state.draft?.sequence?.stopOnUnsubscribe) && Boolean(state.draft?.sequence?.stopOnBounce),
+        help: 'Unsubscribe and bounce exits should remain enabled for safe follow-up delivery.'
+      },
+      {
+        title: 'Compliance footer',
+        ok: hasComplianceFooter,
+        help: 'Every message needs the unsubscribe merge tag before it can launch.'
       },
       {
         title: 'Audience attached',
         ok: hasAudience,
         help: 'Select an audience or import one in the Audience step before launch.'
+      },
+      {
+        title: 'Contact basis documented',
+        ok: hasAudience && hasAudienceConsent,
+        help: 'Every imported or customer audience needs a confirmed contact basis before launch.'
       },
       {
         title: 'Test recipients',
@@ -604,6 +884,10 @@
       <div class="campaign-review-meta-item">
         <strong>Editor Mode</strong>
         <span>${escapeHtml(getDraftMode(state.draft) === 'html' ? 'HTML' : 'Visual')}</span>
+      </div>
+      <div class="campaign-review-meta-item">
+        <strong>Sequence</strong>
+        <span>${sequenceSteps.length} message${sequenceSteps.length === 1 ? '' : 's'}${sequenceSteps.length > 1 ? ' with timed follow-ups' : ''}</span>
       </div>
       <div class="campaign-review-meta-item">
         <strong>Preview Text</strong>
@@ -644,6 +928,10 @@
       const nextLabel = isLastStep ? 'Stay on Review' : `Next: ${CAMPAIGN_WORKSPACE_STEPS[nextIndex + 1].label}`
       els.campaignStepNextBtn.textContent = nextLabel
       els.campaignStepNextBtn.disabled = isLastStep
+    }
+
+    if (stepKey === 'audience' && state.customerContacts.length === 0) {
+      refreshCustomerContacts().catch((error) => setCustomerAudienceStatus(error.message || 'Failed to load customer contacts.', 'error'))
     }
   }
 
@@ -717,6 +1005,7 @@
           </div>
           <div class="campaign-list-meta">
             <span class="admin-card-subtitle">Sender: ${escapeHtml(campaign?.sender?.email || 'Not set')} <span class="campaign-pill ${escapeHtml(readiness)}" style="margin-left:8px;">${escapeHtml(readiness)}</span></span>
+            <span class="admin-card-subtitle">Sequence: ${Number(campaign?.sequence?.steps?.length || 1)} message${Number(campaign?.sequence?.steps?.length || 1) === 1 ? '' : 's'}</span>
             <span class="admin-card-subtitle">Pacing: ${Number(campaign?.pacing?.batchSize || 0)} every ${Number(campaign?.pacing?.intervalMinutes || 0)} min</span>
             <span class="admin-card-subtitle">Updated: ${escapeHtml(formatDateTime(campaign.updatedAt))}</span>
           </div>
@@ -1085,12 +1374,18 @@
     if (!columnMap.email) {
       throw new Error('Map the Email field before importing the audience.')
     }
+    if (!els.audienceConsentConfirmed?.checked) {
+      throw new Error('Confirm the contact basis before importing this audience.')
+    }
 
     const data = new FormData()
     data.append('file', file)
     data.append('name', els.audienceName.value.trim() || getAudienceFileBaseName(file.name))
     data.append('description', els.audienceDescription.value.trim())
     data.append('columnMap', JSON.stringify(columnMap))
+    data.append('consentBasis', els.audienceConsentBasis.value)
+    data.append('consentConfirmed', 'true')
+    data.append('consentNote', String(els.audienceConsentNote?.value || '').trim())
     if (state.audiencePreview.selectedSheetName) {
       data.append('sheetName', state.audiencePreview.selectedSheetName)
     }
@@ -1143,6 +1438,7 @@
         <div class="campaign-block" draggable="true" data-block-id="${escapeHtml(block.id)}">
           ${commonToolbar}
           <div class="campaign-block-body" data-type="hero">
+            ${block.imageUrl ? `<img class="campaign-preview-image" src="${escapeHtml(block.imageUrl)}" alt="${escapeHtml(block.imageAlt || '')}">` : ''}
             <div class="campaign-preview-eyebrow campaign-preview-editable" contenteditable="true" data-field="eyebrow">${block.eyebrow || ''}</div>
             <div class="campaign-preview-title campaign-preview-editable" contenteditable="true" data-field="title">${escapeHtml(block.title || '')}</div>
             <div class="campaign-preview-subtitle campaign-preview-editable" contenteditable="true" data-field="body">${block.body || ''}</div>
@@ -1157,6 +1453,10 @@
                 <input class="campaign-mini-input" data-input-field="secondaryLabel" value="${escapeHtml(block.secondaryLabel || '')}">
               </a>
               <input class="campaign-mini-input" data-input-field="secondaryUrl" value="${escapeHtml(block.secondaryUrl || '')}">
+            </div>
+            <div class="campaign-mini-grid">
+              <input class="campaign-mini-input" data-input-field="imageUrl" value="${escapeHtml(block.imageUrl || '')}" placeholder="Hero image URL">
+              <input class="campaign-mini-input" data-input-field="imageAlt" value="${escapeHtml(block.imageAlt || '')}" placeholder="Image description">
             </div>
           </div>
         </div>
@@ -1202,6 +1502,46 @@
       `
     }
 
+    if (block.type === 'image') {
+      return `
+        <div class="campaign-block" draggable="true" data-block-id="${escapeHtml(block.id)}">
+          ${commonToolbar}
+          <div class="campaign-block-body" data-type="image">
+            ${block.imageUrl ? `<img class="campaign-preview-image" src="${escapeHtml(block.imageUrl)}" alt="${escapeHtml(block.imageAlt || '')}">` : '<div class="campaign-empty-state">Add an image URL below.</div>'}
+            <div class="campaign-preview-subtitle campaign-preview-editable" contenteditable="true" data-field="caption">${block.caption || ''}</div>
+            <div class="campaign-mini-grid">
+              <input class="campaign-mini-input" data-input-field="imageUrl" value="${escapeHtml(block.imageUrl || '')}" placeholder="Image URL">
+              <input class="campaign-mini-input" data-input-field="imageAlt" value="${escapeHtml(block.imageAlt || '')}" placeholder="Image description">
+            </div>
+          </div>
+        </div>
+      `
+    }
+
+    if (block.type === 'quote') {
+      return `
+        <div class="campaign-block" draggable="true" data-block-id="${escapeHtml(block.id)}">
+          ${commonToolbar}
+          <div class="campaign-block-body" data-type="quote" style="border-left:4px solid #7047eb;">
+            <div class="campaign-preview-title campaign-preview-editable" contenteditable="true" data-field="body">${block.body || ''}</div>
+            <div class="campaign-preview-subtitle campaign-preview-editable" contenteditable="true" data-field="attribution">${block.attribution || ''}</div>
+          </div>
+        </div>
+      `
+    }
+
+    if (block.type === 'spacer') {
+      return `
+        <div class="campaign-block" draggable="true" data-block-id="${escapeHtml(block.id)}">
+          ${commonToolbar}
+          <div class="campaign-block-body" data-type="spacer">
+            <label class="admin-form-label">Spacer height</label>
+            <input class="campaign-mini-input" type="number" min="8" max="160" data-input-field="height" value="${Number(block.height || 32)}">
+          </div>
+        </div>
+      `
+    }
+
     if (block.type === 'footer') {
       return `
         <div class="campaign-block" draggable="true" data-block-id="${escapeHtml(block.id)}">
@@ -1236,47 +1576,61 @@
     const blocks = Array.isArray(state.draft.content?.design?.blocks) ? state.draft.content.design.blocks : []
     const sections = blocks.map((block) => {
       if (block.type === 'divider') {
-        return '<div style="height:1px;background:rgba(31,22,55,.12);"></div>'
+        return '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td style="height:1px;background:#ded9e8;font-size:0;line-height:0;">&nbsp;</td></tr></table>'
+      }
+      if (block.type === 'spacer') {
+        const height = Math.min(Math.max(Number(block.height || 32), 8), 160)
+        return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td height="${height}" style="height:${height}px;font-size:0;line-height:0;">&nbsp;</td></tr></table>`
       }
       if (block.type === 'hero') {
         return `
-          <section style="padding:32px;border-radius:28px;background:linear-gradient(160deg,#6d28d9 0%, #221934 100%);color:#ffffff;">
-            <div style="font-size:12px;letter-spacing:0.24em;text-transform:uppercase;opacity:.72;">${block.eyebrow || ''}</div>
-            <h1 style="margin:14px 0;font-size:34px;line-height:1.08;">${block.title || ''}</h1>
-            <div style="font-size:15px;line-height:1.7;">${block.body || ''}</div>
-          </section>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#291b4d;border-radius:12px;overflow:hidden;color:#ffffff;">
+            ${block.imageUrl ? `<tr><td><img src="${escapeHtml(block.imageUrl)}" alt="${escapeHtml(block.imageAlt || '')}" width="680" style="display:block;width:100%;max-width:680px;height:auto;border:0;"></td></tr>` : ''}
+            <tr><td style="padding:32px;">
+              <div style="font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#d9cff8;">${block.eyebrow || ''}</div>
+              <h1 style="margin:14px 0;font-size:34px;line-height:1.08;color:#ffffff;">${block.title || ''}</h1>
+              <div style="font-size:15px;line-height:1.7;color:#f5f1ff;">${block.body || ''}</div>
+              ${block.ctaLabel ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px;"><tr><td style="border-radius:8px;background:#8f6cf4;"><a href="${escapeHtml(block.ctaUrl || '#')}" style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-weight:700;">${block.ctaLabel}</a></td></tr></table>` : ''}
+            </td></tr>
+          </table>
         `
       }
       if (block.type === 'features') {
         return `
-          <section style="padding:24px;border-radius:24px;background:#ffffff;border:1px solid rgba(31,22,55,.08);">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border:1px solid #e8e3ee;border-radius:12px;"><tr><td style="padding:26px;">
             <h2 style="margin:0 0 10px;font-size:24px;color:#221934;">${block.title || ''}</h2>
-            <div style="font-size:15px;line-height:1.7;color:#3f3656;margin-bottom:12px;">${block.body || ''}</div>
-            <ul style="padding-left:18px;margin:0;color:#3f3656;line-height:1.7;">${(block.items || []).map((item) => `<li>${item}</li>`).join('')}</ul>
-          </section>
+            <div style="font-size:15px;line-height:1.7;color:#514866;margin-bottom:12px;">${block.body || ''}</div>
+            ${(block.items || []).map((item) => `<div style="padding:8px 0;color:#3f3656;line-height:1.6;"><span style="color:#7047eb;font-weight:700;">✓</span>&nbsp;&nbsp;${item}</div>`).join('')}
+          </td></tr></table>
         `
       }
       if (block.type === 'cta') {
         return `
-          <section style="padding:24px;border-radius:24px;background:rgba(109,40,217,.06);border:1px solid rgba(109,40,217,.14);">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f3efff;border:1px solid #ded3fb;border-radius:12px;"><tr><td style="padding:26px;">
             <h2 style="margin:0 0 10px;font-size:24px;color:#221934;">${block.title || ''}</h2>
             <div style="font-size:15px;line-height:1.7;color:#3f3656;margin-bottom:14px;">${block.body || ''}</div>
-            <a href="${block.ctaUrl || '#'}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:linear-gradient(135deg,#14b8a6,#6d28d9);color:#fff;text-decoration:none;font-weight:700;">${block.ctaLabel || ''}</a>
-          </section>
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td style="border-radius:8px;background:#7047eb;"><a href="${escapeHtml(block.ctaUrl || '#')}" style="display:inline-block;padding:12px 18px;color:#fff;text-decoration:none;font-weight:700;">${block.ctaLabel || ''}</a></td></tr></table>
+          </td></tr></table>
         `
+      }
+      if (block.type === 'image') {
+        return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td>${block.imageUrl ? `<img src="${escapeHtml(block.imageUrl)}" alt="${escapeHtml(block.imageAlt || '')}" width="680" style="display:block;width:100%;max-width:680px;height:auto;border:0;border-radius:12px;">` : ''}${block.caption ? `<div style="padding:10px 4px 0;font-size:12px;line-height:1.6;color:#766c86;">${block.caption}</div>` : ''}</td></tr></table>`
+      }
+      if (block.type === 'quote') {
+        return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border-left:4px solid #7047eb;"><tr><td style="padding:24px 26px;"><div style="font-size:21px;line-height:1.5;color:#221934;">“${block.body || ''}”</div><div style="margin-top:10px;font-size:13px;color:#766c86;">${block.attribution || ''}</div></td></tr></table>`
       }
       if (block.type === 'footer') {
         return `<footer style="font-size:12px;line-height:1.8;color:#6d6485;">${block.body || ''}</footer>`
       }
       return `
-        <section style="padding:24px;border-radius:24px;background:#ffffff;border:1px solid rgba(31,22,55,.08);">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border:1px solid #e8e3ee;border-radius:12px;"><tr><td style="padding:26px;">
           <h2 style="margin:0 0 10px;font-size:24px;color:#221934;">${block.title || ''}</h2>
           <div style="font-size:15px;line-height:1.7;color:#3f3656;">${block.body || ''}</div>
-        </section>
+        </td></tr></table>
       `
-    }).join('<div style="height:16px;"></div>')
+    }).join('<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td height="16" style="height:16px;font-size:0;line-height:0;">&nbsp;</td></tr></table>')
 
-    return `<!DOCTYPE html><html><body style="margin:0;padding:28px;background:#f6f0ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><div style="max-width:680px;margin:0 auto;display:grid;gap:16px;">${sections}</div></body></html>`
+    return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(state.draft.content.subject || 'Seemplify')}</title></head><body style="margin:0;padding:0;background:#f1efe9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;"><div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(state.draft.content.previewText || '')}</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f1efe9;"><tr><td align="center" style="padding:28px 12px;"><table role="presentation" width="680" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:680px;"><tr><td style="padding:12px 4px 20px;color:#221934;font-size:22px;font-weight:800;">seemplify<span style="color:#7047eb;">.</span></td></tr><tr><td>${sections}</td></tr></table></td></tr></table></body></html>`
   }
 
   function renderHtmlEditor() {
@@ -1326,6 +1680,8 @@
         category: template.category
       }
       : {}
+    const activeStep = getActiveSequenceStep()
+    if (activeStep) activeStep.content = state.draft.content
   }
 
   function getBlockById(blockId) {
@@ -1375,6 +1731,91 @@
     renderAudienceList()
     renderSelectedCampaignSummary()
     renderStats()
+  }
+
+  function setCustomerAudienceStatus(message, tone) {
+    if (!els.customerAudienceStatus) return
+    els.customerAudienceStatus.textContent = message || ''
+    els.customerAudienceStatus.classList.toggle('success', tone === 'success')
+    els.customerAudienceStatus.classList.toggle('error', tone === 'error')
+  }
+
+  function updateCustomerSelectionCount() {
+    if (els.customerSelectionCount) {
+      const count = state.selectedCustomerIds.size
+      els.customerSelectionCount.textContent = `${count} selected`
+    }
+  }
+
+  function renderCustomerContacts() {
+    if (!els.customerContactList) return
+    if (state.customerContacts.length === 0) {
+      els.customerContactList.innerHTML = '<div class="campaign-empty-state">No eligible customer contacts matched this search.</div>'
+      updateCustomerSelectionCount()
+      return
+    }
+    els.customerContactList.innerHTML = state.customerContacts.map((contact) => {
+      const accountId = String(contact.accountId || '')
+      const checked = state.selectedCustomerIds.has(accountId)
+      const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ') || contact.email
+      const meta = [contact.role, contact.planName || contact.subscriptionStatus].filter(Boolean).join(' · ')
+      return `
+        <label class="campaign-customer-row">
+          <input type="checkbox" data-customer-id="${escapeHtml(accountId)}" ${checked ? 'checked' : ''}>
+          <span class="campaign-customer-copy">
+            <strong>${escapeHtml(name)}</strong>
+            <span>${escapeHtml(contact.email)}${contact.companyName ? ` · ${escapeHtml(contact.companyName)}` : ''}</span>
+          </span>
+          <span class="campaign-customer-meta">${escapeHtml(meta)}</span>
+        </label>
+      `
+    }).join('')
+    updateCustomerSelectionCount()
+  }
+
+  async function refreshCustomerContacts() {
+    const search = String(els.customerSearchInput?.value || '').trim()
+    setCustomerAudienceStatus('Loading customer contacts…')
+    const roles = 'owner,admin,hr_manager,recruiter,interviewer,staff'
+    const response = await fetch(`/api/admin/campaign-customers?limit=200&roles=${encodeURIComponent(roles)}&search=${encodeURIComponent(search)}`)
+    const payload = await response.json()
+    if (!response.ok) throw new Error(payload.error || 'Failed to load customer contacts.')
+    state.customerContacts = Array.isArray(payload.contacts) ? payload.contacts : []
+    renderCustomerContacts()
+    setCustomerAudienceStatus(`${state.customerContacts.length} eligible contact${state.customerContacts.length === 1 ? '' : 's'} loaded. Suppressed recipients will be excluded when the audience is created.`, 'success')
+  }
+
+  async function createCustomerAudience() {
+    const accountIds = Array.from(state.selectedCustomerIds)
+    const name = String(els.customerAudienceName?.value || '').trim()
+    if (!name) throw new Error('Give the customer audience a name.')
+    if (accountIds.length === 0) throw new Error('Select at least one customer contact.')
+    if (!els.customerConsentConfirmed?.checked) throw new Error('Confirm the contact basis before creating this audience.')
+    setCustomerAudienceStatus('Creating customer audience…')
+    const response = await fetch('/api/admin/campaign-audiences/from-customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        accountIds,
+        consentBasis: els.customerConsentBasis.value,
+        consentConfirmed: true,
+        consentNote: String(els.customerConsentNote?.value || '').trim()
+      })
+    })
+    const payload = await response.json()
+    if (!response.ok) throw new Error(payload.error || 'Failed to create customer audience.')
+    await refreshAudiences()
+    if (payload.audience && state.draft) {
+      state.draft.audience = payload.audience._id
+      renderForm()
+      renderAudienceList()
+      renderSelectedCampaignSummary()
+      renderReviewPanel()
+    }
+    state.selectedCustomerIds.clear()
+    renderCustomerContacts()
+    setCustomerAudienceStatus(payload.message || 'Customer audience created and attached.', 'success')
   }
 
   async function refreshSenderHealth() {
@@ -1464,13 +1905,15 @@
     hideLinkPopover()
   }
 
-  async function saveDraft() {
+  async function saveDraft(options = {}) {
+    const activeSequenceStepIndex = state.activeSequenceStepIndex
     if (state.mode === 'visual') {
       syncVisualStateFromDom()
     } else {
       state.draft.content.htmlContent = els.htmlEditor.value
     }
     syncDraftFromForm()
+    syncSequenceControls()
 
     const payload = {
       name: state.draft.name,
@@ -1491,7 +1934,8 @@
       utmMedium: state.draft.tracking.utmMedium,
       utmCampaign: state.draft.tracking.utmCampaign,
       allowExternalLinkDecoration: state.draft.tracking.allowExternalLinkDecoration,
-      testSendEmails: state.draft.testSendEmails
+      testSendEmails: state.draft.testSendEmails,
+      sequence: state.draft.sequence
     }
 
     const isUpdate = Boolean(state.selectedCampaignId)
@@ -1505,14 +1949,14 @@
 
     state.selectedCampaignId = result.campaign._id
     await Promise.all([refreshCampaigns(), refreshSenderHealth()])
-    setDraft(result.campaign)
-    alert(result.message || 'Campaign saved.')
+    setDraft(result.campaign, { activeSequenceStepIndex })
+    if (!options.silent) alert(result.message || 'Campaign saved.')
     return result.campaign
   }
 
-  async function ensureSavedCampaign() {
-    if (!state.selectedCampaignId) {
-      return saveDraft()
+  async function ensureSavedCampaign(options = {}) {
+    if (!state.selectedCampaignId || options.force) {
+      return saveDraft({ silent: options.silent !== false })
     }
     return state.draft
   }
@@ -1548,7 +1992,7 @@
   }
 
   async function handleLifecycle(action, extraPayload) {
-    await ensureSavedCampaign()
+    await ensureSavedCampaign({ force: action === 'launch', silent: true })
     const response = await fetch(`/api/admin/campaigns/${encodeURIComponent(state.selectedCampaignId)}/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1601,6 +2045,67 @@
     })
   }
 
+  if (els.sequenceStepList) {
+    els.sequenceStepList.addEventListener('click', function (event) {
+      const removeButton = event.target.closest('[data-remove-sequence-step]')
+      if (removeButton) {
+        event.stopPropagation()
+        removeSequenceStep(Number(removeButton.getAttribute('data-remove-sequence-step')))
+        return
+      }
+      const card = event.target.closest('[data-select-sequence-step]')
+      if (card) setActiveSequenceStep(Number(card.getAttribute('data-select-sequence-step')))
+    })
+    els.sequenceStepList.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      const card = event.target.closest('[data-select-sequence-step]')
+      if (!card) return
+      event.preventDefault()
+      setActiveSequenceStep(Number(card.getAttribute('data-select-sequence-step')))
+    })
+  }
+
+  if (els.addSequenceStepBtn) {
+    els.addSequenceStepBtn.addEventListener('click', function () {
+      try { addSequenceStep() } catch (error) { alert(error.message || 'Failed to add sequence message.') }
+    })
+  }
+
+  if (els.designSequenceStepBtn) {
+    els.designSequenceStepBtn.addEventListener('click', function () {
+      syncSequenceControls()
+      renderSequenceBuilder()
+      setActiveWorkspaceStep('content')
+    })
+  }
+
+  ;[els.sequenceStepCondition, els.sequenceDelayValue, els.sequenceDelayUnit, els.sequenceStopOnConversion, els.sequenceStopOnUnsubscribe, els.sequenceStopOnBounce]
+    .filter(Boolean)
+    .forEach((control) => control.addEventListener('change', function () {
+      syncSequenceControls()
+      renderSequenceBuilder()
+      renderReviewPanel()
+    }))
+
+  if (els.sequenceStepName) {
+    els.sequenceStepName.addEventListener('input', function () {
+      syncSequenceControls()
+      const label = els.sequenceStepList.querySelector(`[data-select-sequence-step="${state.activeSequenceStepIndex}"] strong`)
+      if (label) label.textContent = getActiveSequenceStep()?.name || `Message ${state.activeSequenceStepIndex + 1}`
+    })
+    els.sequenceStepName.addEventListener('blur', renderSequenceBuilder)
+  }
+
+  function setPreviewViewport(viewport) {
+    const mobile = viewport === 'mobile'
+    els.campaignPreviewCanvas?.classList.toggle('is-mobile', mobile)
+    els.desktopPreviewBtn?.classList.toggle('active', !mobile)
+    els.mobilePreviewBtn?.classList.toggle('active', mobile)
+  }
+
+  if (els.desktopPreviewBtn) els.desktopPreviewBtn.addEventListener('click', () => setPreviewViewport('desktop'))
+  if (els.mobilePreviewBtn) els.mobilePreviewBtn.addEventListener('click', () => setPreviewViewport('mobile'))
+
   if (els.campaignForm) {
     const handleCampaignFormChange = function () {
       if (!state.draft) return
@@ -1638,7 +2143,7 @@
 
   if (els.launchCampaignBtn) {
     els.launchCampaignBtn.addEventListener('click', function () {
-      handleLifecycle('launch', { overrideSenderQuality: true }).catch((error) => alert(error.message || 'Failed to launch campaign.'))
+      handleLifecycle('launch').catch((error) => alert(error.message || 'Failed to launch campaign.'))
     })
   }
 
@@ -1665,12 +2170,13 @@
     els.sendTestBtn.addEventListener('click', async function () {
       try {
         validateTestSendState()
-        await ensureSavedCampaign()
+        await ensureSavedCampaign({ force: true, silent: true })
         const emails = els.campaignTestEmails.value.trim()
+        const activeStep = getActiveSequenceStep()
         const response = await fetch(`/api/admin/campaigns/${encodeURIComponent(state.selectedCampaignId)}/test-send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ emails })
+          body: JSON.stringify({ emails, stepId: activeStep?._id || '' })
         })
         const result = await response.json()
         if (!response.ok) {
@@ -1703,6 +2209,52 @@
   if (els.audienceResetBtn) {
     els.audienceResetBtn.addEventListener('click', function () {
       resetAudiencePreviewState(true)
+    })
+  }
+
+  if (els.customerSearchBtn) {
+    els.customerSearchBtn.addEventListener('click', function () {
+      refreshCustomerContacts().catch((error) => setCustomerAudienceStatus(error.message || 'Failed to load customer contacts.', 'error'))
+    })
+  }
+
+  if (els.customerSearchInput) {
+    els.customerSearchInput.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return
+      event.preventDefault()
+      refreshCustomerContacts().catch((error) => setCustomerAudienceStatus(error.message || 'Failed to load customer contacts.', 'error'))
+    })
+  }
+
+  if (els.customerContactList) {
+    els.customerContactList.addEventListener('change', function (event) {
+      const checkbox = event.target.closest('[data-customer-id]')
+      if (!checkbox) return
+      const accountId = checkbox.getAttribute('data-customer-id')
+      if (checkbox.checked) state.selectedCustomerIds.add(accountId)
+      else state.selectedCustomerIds.delete(accountId)
+      updateCustomerSelectionCount()
+    })
+  }
+
+  if (els.selectVisibleCustomersBtn) {
+    els.selectVisibleCustomersBtn.addEventListener('click', function () {
+      state.customerContacts.forEach((contact) => state.selectedCustomerIds.add(String(contact.accountId || '')))
+      state.selectedCustomerIds.delete('')
+      renderCustomerContacts()
+    })
+  }
+
+  if (els.clearCustomersBtn) {
+    els.clearCustomersBtn.addEventListener('click', function () {
+      state.selectedCustomerIds.clear()
+      renderCustomerContacts()
+    })
+  }
+
+  if (els.createCustomerAudienceBtn) {
+    els.createCustomerAudienceBtn.addEventListener('click', function () {
+      createCustomerAudience().catch((error) => setCustomerAudienceStatus(error.message || 'Failed to create customer audience.', 'error'))
     })
   }
 
@@ -1752,14 +2304,7 @@
     els.campaignTemplate.addEventListener('change', function () {
       const template = getSelectedTemplate()
       if (!template) return
-      const nextDraft = createDraftFromTemplate(template)
-      nextDraft.name = state.draft.name || ''
-      nextDraft.audience = state.draft.audience || ''
-      nextDraft.sender = clone(state.draft.sender || nextDraft.sender)
-      nextDraft.tracking = clone(state.draft.tracking || nextDraft.tracking)
-      nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
-      setDraft(nextDraft)
-      setActiveWorkspaceStep('setup')
+      applyTemplateToActiveStep(template)
     })
   }
 
@@ -1794,14 +2339,8 @@
       if (!button) return
       const template = state.templates.find((item) => String(item._id) === String(button.getAttribute('data-apply-template')))
       if (!template) return
-      const nextDraft = createDraftFromTemplate(template)
-      nextDraft.name = state.draft.name || ''
-      nextDraft.audience = state.draft.audience || ''
-      nextDraft.sender = clone(state.draft.sender || nextDraft.sender)
-      nextDraft.tracking = clone(state.draft.tracking || nextDraft.tracking)
-      nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
-      setDraft(nextDraft)
-      setActiveWorkspaceStep('setup')
+      applyTemplateToActiveStep(template)
+      setActiveWorkspaceStep('content')
     })
   }
 
@@ -1834,7 +2373,9 @@
     if (!blockEl || !event.target.hasAttribute('data-input-field')) return
     const block = getBlockById(blockEl.getAttribute('data-block-id'))
     if (!block) return
-    block[event.target.getAttribute('data-input-field')] = event.target.value
+    const field = event.target.getAttribute('data-input-field')
+    block[field] = field === 'height' ? Number(event.target.value || 32) : event.target.value
+    if (field === 'imageUrl' || field === 'imageAlt') renderVisualPreview()
   })
 
   els.visualPreview.addEventListener('click', function (event) {
