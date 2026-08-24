@@ -52,7 +52,7 @@ jobs:
         working-directory: Identityprovider
         run: |
           npm ci --ignore-scripts
-          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs test/nylas-platform-configuration.test.mjs test/media-platform-configuration.test.mjs test/recruiter-admin-sso-secret.test.mjs
+          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs test/nylas-platform-configuration.test.mjs test/media-platform-configuration.test.mjs test/recruiter-admin-sso-secret.test.mjs src/__tests__/subscription-extension-reactivation.test.mjs src/__tests__/subscription-required-recovery.test.mjs
       - name: Test shared gateway authentication
         working-directory: recruiter/backend
         run: node --test tests/internalServiceAuth.test.js

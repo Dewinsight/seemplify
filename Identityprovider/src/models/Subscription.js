@@ -278,12 +278,36 @@ SubscriptionSchema.methods.canAddMembers = async function(currentMemberCount) {
   return currentMemberCount < limits.maxMembers
 }
 
-// Method: Extend subscription
+// Method: Extend subscription. An expired subscription is a renewal: give the
+// organization the full extension from today and restore active access.
 SubscriptionSchema.methods.extend = function(days) {
-  this.endDate = new Date(this.endDate.getTime() + days * 24 * 60 * 60 * 1000)
-  if (this.gracePeriodEnd) {
-    this.gracePeriodEnd = new Date(this.endDate.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const extensionDays = Number(days)
+  if (!Number.isInteger(extensionDays) || extensionDays < 1) {
+    throw new Error('Extension days must be a positive whole number')
   }
+  if (this.status === 'cancelled') {
+    throw new Error('Cancelled subscriptions cannot be extended')
+  }
+
+  const now = new Date()
+  const currentEndDate = this.endDate instanceof Date ? this.endDate : new Date(this.endDate)
+  const baseDate = Number.isFinite(currentEndDate.getTime()) && currentEndDate > now
+    ? currentEndDate
+    : now
+
+  this.endDate = new Date(baseDate.getTime() + extensionDays * 24 * 60 * 60 * 1000)
+  this.gracePeriodEnd = new Date(this.endDate.getTime() + 7 * 24 * 60 * 60 * 1000)
+  this.lastRenewalDate = now
+  this.accessRemovalEmailSent = false
+  this.renewalReminderSent = false
+  this.renewalReminder7DaysSent = false
+  this.renewalReminder3DaysSent = false
+  this.renewalReminder1DaySent = false
+
+  if (this.status === 'expired' || this.status === 'pending_renewal') {
+    this.status = 'active'
+  }
+
   return this.save()
 }
 

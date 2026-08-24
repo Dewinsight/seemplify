@@ -84,7 +84,9 @@
                   <td>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                       <button onclick="openCustomizationModal('<%= sub._id %>')" class="btn btn-sm btn-secondary">Customize</button>
-                      <button onclick="extendSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary">Extend</button>
+                      <% if (sub.status !== 'cancelled') { %>
+                        <button onclick="extendSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary">Extend</button>
+                      <% } %>
                       <% if (sub.status === 'active') { %>
                         <button onclick="suspendSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary" style="color: #f59e0b;">Suspend</button>
                       <% } else if (sub.status === 'suspended') { %>

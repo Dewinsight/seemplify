@@ -255,6 +255,12 @@ router.post('/:subscriptionId/extend', auditLog('extend_subscription'), async (r
     if (error.message === 'Subscription not found') {
       return res.status(404).json({ error: 'Subscription not found' })
     }
+    if (
+      error.message === 'Cancelled subscriptions cannot be extended' ||
+      error.message === 'Extension days must be a positive whole number'
+    ) {
+      return res.status(400).json({ error: error.message })
+    }
     res.status(500).json({ error: 'Failed to extend subscription' })
   }
 })

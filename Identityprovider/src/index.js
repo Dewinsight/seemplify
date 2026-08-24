@@ -3781,6 +3781,7 @@ async function logAppLaunchActivity({ req, account = null, app = null, appId = n
 
 // Public Plans Page - View available subscription plans
 app.get('/plans', async (req, res) => {
+  res.set('Cache-Control', 'private, no-store')
   try {
     const sessionAccount = await getSessionFromCookies(req)
     const plans = await subscriptionService.getPublicPlans()
@@ -3819,6 +3820,7 @@ app.get('/plans', async (req, res) => {
 
 // Subscription Required Page - Redirect destination when app denies access due to subscription
 app.get('/subscription-required', async (req, res) => {
+  res.set('Cache-Control', 'private, no-store')
   try {
     const sessionAccount = await getSessionFromCookies(req)
     const { app: appName, org: orgId, reason } = req.query
@@ -3845,6 +3847,8 @@ app.get('/subscription-required', async (req, res) => {
 
     let organization = null
     let subscription = null
+    let canRetryAccess = false
+    let retryLaunchUrl = null
     let plans = []
 
     // Get plans for the user to see upgrade options
@@ -3857,6 +3861,21 @@ app.get('/subscription-required', async (req, res) => {
 
         if (organization) {
           subscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+
+          const launchApp = getAppById(appName)
+          const featureKey = getPlanFeatureKeyForApp(appName)
+          if (
+            launchApp?.isActive &&
+            subscription?.status === 'active' &&
+            subscription.endDate &&
+            new Date(subscription.endDate).getTime() >= Date.now()
+          ) {
+            const features = await subscription.getEffectiveFeatures()
+            canRetryAccess = !featureKey || features[featureKey] === true
+            if (canRetryAccess) {
+              retryLaunchUrl = `/launch/${encodeURIComponent(launchApp.appId)}`
+            }
+          }
         }
       } catch (e) {
         console.error('Error fetching org for subscription-required:', e.message)
@@ -3869,6 +3888,8 @@ app.get('/subscription-required', async (req, res) => {
       appKey: appName,
       organization,
       subscription,
+      canRetryAccess,
+      retryLaunchUrl,
       reason,
       reasonMessage: reasonMessages[reason] || reasonMessages['no_subscription'],
       plans,
@@ -3885,6 +3906,7 @@ app.get('/subscription-required', async (req, res) => {
 
 // Subscription Status Page - View current subscription and requests
 app.get('/subscription', async (req, res) => {
+  res.set('Cache-Control', 'private, no-store')
   try {
     const sessionAccount = await getSessionFromCookies(req)
 
@@ -4564,6 +4586,7 @@ app.get('/simple-lms', async (req, res) => {
 // Hub App Launch - Creates SSO token and redirects to app's auth endpoint
 // Supports both OIDC and SAML based on app.authType
 app.get('/launch/:appId', async (req, res) => {
+  res.set('Cache-Control', 'private, no-store')
   const launchStartTime = Date.now()
   let account = null
   let app = null

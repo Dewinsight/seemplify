@@ -362,6 +362,7 @@ router.get('/:orgId/subscription/can-add-members',
 router.get('/:orgId/subscription/verify',
   requireAuthOrAPIToken,
   async (req, res) => {
+    res.set('Cache-Control', 'private, no-store')
     try {
       const orgId = req.params.orgId
 
@@ -379,12 +380,9 @@ router.get('/:orgId/subscription/verify',
         return res.status(403).json({ error: 'Not a member of this organization' })
       }
 
-      // Get subscription and details in parallel
-      const [subscription, features, limits] = await Promise.all([
-        subscriptionService.getSubscriptionForOrg(orgId),
-        subscriptionService.getEffectiveFeatures(orgId),
-        subscriptionService.getEffectiveLimits(orgId)
-      ])
+      // Load the subscription first so legacy future-dated/expired records are
+      // reconciled before features and limits are evaluated.
+      const subscription = await subscriptionService.getSubscriptionForOrg(orgId)
 
       if (!subscription) {
         return res.json({
@@ -412,6 +410,11 @@ router.get('/:orgId/subscription/verify',
           canAccessApps: []
         })
       }
+
+      const [features, limits] = await Promise.all([
+        subscriptionService.getEffectiveFeatures(orgId),
+        subscriptionService.getEffectiveLimits(orgId)
+      ])
 
       // Determine which apps the org can access
       const appKeys = ['recruiter', 'leaveManagement', 'payrollManagement', 'performanceManagement', 'timeAttendance', 'outlineDocs', 'aiChat', 'lms']

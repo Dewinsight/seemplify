@@ -398,7 +398,29 @@ class SubscriptionService {
    * Get subscription for organization
    */
   async getSubscriptionForOrg(organizationId) {
-    return Subscription.findActiveForOrg(organizationId)
+    const subscription = await Subscription.findActiveForOrg(organizationId)
+
+    // Repair records created by the former extension behaviour, which moved an
+    // expired subscription's end date into the future without reactivating it.
+    // This makes the fix effective for already-renewed organizations as soon as
+    // their subscription is read, without granting access to cancelled or
+    // suspended subscriptions.
+    if (
+      subscription?.status === 'expired' &&
+      subscription.endDate &&
+      new Date(subscription.endDate).getTime() >= Date.now()
+    ) {
+      subscription.status = 'active'
+      subscription.accessRemovalEmailSent = false
+      await subscription.save()
+
+      const organization = await Organization.findById(organizationId)
+      if (organization) {
+        await organization.updateSubscriptionCache(subscription)
+      }
+    }
+
+    return subscription
   }
 
   /**
@@ -708,7 +730,7 @@ class SubscriptionService {
    * Check if organization can access an app
    */
   async canAccessApp(organizationId, appKey) {
-    const subscription = await Subscription.findActiveForOrg(organizationId)
+    const subscription = await this.getSubscriptionForOrg(organizationId)
     if (!hasActiveSubscriptionAccess(subscription)) return false
 
     return subscription.canAccessApp(appKey)
@@ -718,7 +740,7 @@ class SubscriptionService {
    * Check if organization can add more members
    */
   async canAddMembers(organizationId, currentMemberCount) {
-    const subscription = await Subscription.findActiveForOrg(organizationId)
+    const subscription = await this.getSubscriptionForOrg(organizationId)
     if (!hasActiveSubscriptionAccess(subscription)) return false
 
     return subscription.canAddMembers(currentMemberCount)
@@ -728,7 +750,7 @@ class SubscriptionService {
    * Get organization's effective features
    */
   async getEffectiveFeatures(organizationId) {
-    const subscription = await Subscription.findActiveForOrg(organizationId)
+    const subscription = await this.getSubscriptionForOrg(organizationId)
     if (!hasActiveSubscriptionAccess(subscription)) {
       return cloneEmptyEffectiveFeatures()
     }
@@ -740,7 +762,7 @@ class SubscriptionService {
    * Get organization's effective limits
    */
   async getEffectiveLimits(organizationId) {
-    const subscription = await Subscription.findActiveForOrg(organizationId)
+    const subscription = await this.getSubscriptionForOrg(organizationId)
     if (!hasActiveSubscriptionAccess(subscription)) {
       return cloneEmptyEffectiveLimits()
     }
