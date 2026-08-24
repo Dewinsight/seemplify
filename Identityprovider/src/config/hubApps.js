@@ -204,21 +204,6 @@ const developmentApps = [
     badge: 'Beta',
     isBeta: true
   },
-  {
-    appId: 'automation-hub',
-    name: 'Automations',
-    description: 'Build governed workflows across Seemplify and connected external tools',
-    icon: 'bolt',
-    color: '#545c47',
-    url: process.env.AUTOMATION_HUB_URL || 'http://localhost:5421',
-    apiUrl: process.env.AUTOMATION_HUB_API_URL || 'http://localhost:5420',
-    oidcStartPath: '/auth/login',
-    clientId: 'automation-hub',
-    isActive: true,
-    isPublic: true,
-    category: 'productivity',
-    order: 8.2
-  },
    {
     appId: 'approver',
     name: 'Approver',
@@ -415,21 +400,6 @@ const productionApps = [
     badge: 'Beta',
     isBeta: true
   },
-  {
-    appId: 'automation-hub',
-    name: 'Automations',
-    description: 'Build governed workflows across Seemplify and connected external tools',
-    icon: 'bolt',
-    color: '#545c47',
-    url: productionSafeUrl(process.env.AUTOMATION_HUB_URL, 'https://automations.seemplifyai.com'),
-    apiUrl: productionSafeUrl(process.env.AUTOMATION_HUB_API_URL, 'https://automations.seemplifyai.com'),
-    oidcStartPath: '/auth/login',
-    clientId: 'automation-hub',
-    isActive: hasConfiguredUrl(process.env.AUTOMATION_HUB_URL),
-    isPublic: true,
-    category: 'productivity',
-    order: 8.2
-  },
    {
     appId: 'approver',
     name: 'Approver',
@@ -528,8 +498,8 @@ export function getOidcLaunchApiUrl(app, fallbackApiUrl) {
 
 /**
  * Resolve the public OIDC entrypoint exposed by a hub application.
- * Most products retain the legacy API route; Automation Hub serves auth
- * directly from the same public origin.
+ * Products may override the default API route when their public OIDC
+ * entrypoint differs.
  */
 export function getOidcLaunchPath(app) {
   const configuredPath = String(app?.oidcStartPath || '').trim()

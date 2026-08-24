@@ -39,7 +39,6 @@ docker run --rm \
   -e OIDC_COMMUNITY_SECRET \
   -e OIDC_APPROVER_SECRET \
   -e OIDC_EXPERIENCE_SECRET \
-  -e OIDC_AUTOMATION_SECRET \
   -e OUTPUT_NAME="$output_name" \
   -v "$source_clients:/input/clients.json:ro" \
   -v "$output_dir:/output" \
@@ -58,8 +57,7 @@ docker run --rm \
       messaging: process.env.OIDC_MESSAGING_SECRET,
       community: process.env.OIDC_COMMUNITY_SECRET,
       approver: process.env.OIDC_APPROVER_SECRET,
-      "experience-management": process.env.OIDC_EXPERIENCE_SECRET,
-      "automation-hub": process.env.OIDC_AUTOMATION_SECRET
+      "experience-management": process.env.OIDC_EXPERIENCE_SECRET
     });
     fs.writeFileSync(`/output/${process.env.OUTPUT_NAME}`, `${JSON.stringify(source, null, 2)}\n`, { mode: 0o600 });
   '

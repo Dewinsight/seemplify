@@ -12,13 +12,13 @@ function safeEqual(left, right) {
 }
 
 export function resolveAutomationHubSecret() {
-  const secretFile = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || process.env.AUTOMATION_HUB_HMAC_SECRET_FILE || '').trim()
+  const secretFile = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || '').trim()
   if (secretFile) {
     const value = readFileSync(secretFile, 'utf8').trim()
     if (value.length < 24) throw new Error('WORKSPACE_AUTOMATION_HMAC_SECRET_FILE is too short.')
     return value
   }
-  const value = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || process.env.AUTOMATION_HUB_HMAC_SECRET || '').trim()
+  const value = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || '').trim()
   if (process.env.NODE_ENV === 'production' || value) {
     if (value.length < 24) throw new Error('WORKSPACE_AUTOMATION_HMAC_SECRET must contain at least 24 characters.')
     return value

@@ -3,21 +3,17 @@ const fs = require('fs');
 const AutomationEventOutbox = require('../models/AutomationEventOutbox');
 
 function workspaceUrl() {
-    return String(process.env.WORKSPACE_AUTOMATION_API_URL || process.env.AUTOMATION_HUB_API_URL || '')
+    return String(process.env.WORKSPACE_AUTOMATION_API_URL || '')
         .replace(/\/$/, '');
 }
 
 function signingSecret() {
     const file = String(
-        process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE
-        || process.env.AUTOMATION_HUB_HMAC_SECRET_FILE
-        || '',
+        process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || '',
     ).trim();
     if (file) return fs.readFileSync(file, 'utf8').trim();
     return String(
-        process.env.WORKSPACE_AUTOMATION_HMAC_SECRET
-        || process.env.AUTOMATION_HUB_HMAC_SECRET
-        || '',
+        process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || '',
     ).trim();
 }
 

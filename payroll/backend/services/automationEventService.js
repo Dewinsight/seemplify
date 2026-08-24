@@ -4,11 +4,11 @@ const AutomationEventOutbox = require('../models/AutomationEventOutbox');
 const PayrollRun = require('../models/PayrollRun');
 const { revision, totalsHash } = require('./payrollAutomationContract');
 
-function hubUrl() { return String(process.env.WORKSPACE_AUTOMATION_API_URL || process.env.AUTOMATION_HUB_API_URL || '').replace(/\/$/, ''); }
+function hubUrl() { return String(process.env.WORKSPACE_AUTOMATION_API_URL || '').replace(/\/$/, ''); }
 function signingSecret() {
-  const file = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || process.env.AUTOMATION_HUB_HMAC_SECRET_FILE || '').trim();
+  const file = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || '').trim();
   if (file) return fs.readFileSync(file, 'utf8').trim();
-  return String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || process.env.AUTOMATION_HUB_HMAC_SECRET || '').trim();
+  return String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || '').trim();
 }
 
 async function queuePayrollReadyEvent(run, actorId) {

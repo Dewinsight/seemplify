@@ -3,10 +3,10 @@ const fs = require('fs');
 const AutomationEventOutbox = require('../models/AutomationEventOutbox');
 const LeaveRequest = require('../models/LeaveRequest');
 
-function hubUrl() { return String(process.env.WORKSPACE_AUTOMATION_API_URL || process.env.AUTOMATION_HUB_API_URL || '').replace(/\/$/, ''); }
+function hubUrl() { return String(process.env.WORKSPACE_AUTOMATION_API_URL || '').replace(/\/$/, ''); }
 function signingSecret() {
-  const file = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || process.env.AUTOMATION_HUB_HMAC_SECRET_FILE || '').trim();
-  return file ? fs.readFileSync(file, 'utf8').trim() : String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || process.env.AUTOMATION_HUB_HMAC_SECRET || '').trim();
+  const file = String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET_FILE || '').trim();
+  return file ? fs.readFileSync(file, 'utf8').trim() : String(process.env.WORKSPACE_AUTOMATION_HMAC_SECRET || '').trim();
 }
 
 function requestRevision(request) { return String(request.__v ?? 0); }
