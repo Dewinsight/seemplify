@@ -70,6 +70,7 @@ import {
   memberCanAccessApp,
   normalizeAppAccess
 } from './utils/appAccess.js'
+import { externalProductAccessDecision } from './utils/externalProductAccess.js'
 import {
   EXTERNAL_HUB_PINNED_APP_IDS,
   buildKnownHubPinAppIdSet,
@@ -1051,12 +1052,23 @@ const config = {
       .lean()
     console.log(`⏱️ [PERF] findAccount query: ${Date.now() - findAccountStart}ms`)
     if (!acc) return undefined
+    const claims = await getCachedClaims(acc)
+    const externalProductAccess = externalProductAccessDecision({
+      clientId: ctx.oidc?.client?.clientId,
+      claims
+    })
+    if (!externalProductAccess.allowed) {
+      console.warn('OIDC product access denied:', {
+        accountId: acc.sub,
+        clientId: ctx.oidc?.client?.clientId,
+        appId: externalProductAccess.appId,
+        code: externalProductAccess.code
+      })
+      return undefined
+    }
     return {
       accountId: acc.sub,
-      claims: async () => {
-        // Use cached claims for performance
-        return getCachedClaims(acc)
-      }
+      claims: async () => claims
     }
   }
 }
