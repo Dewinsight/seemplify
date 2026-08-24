@@ -231,7 +231,11 @@ const UserSchema = new mongoose.Schema({
     isActive: {
       type: Boolean,
       default: true
-    }
+    },
+    idpPermissions: { type: [String], default: undefined },
+    idpPermissionScopes: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    idpAccessRoleKeys: { type: [String], default: undefined },
+    idpAuthorizationRevision: { type: Number, default: null }
   }],
   currentOrganization: {
     type: mongoose.Schema.Types.ObjectId,
@@ -389,7 +393,14 @@ UserSchema.methods.getOrganizationRole = function(organizationId) {
 };
 
 UserSchema.methods.hasOrganizationPermission = function(organizationId, permission) {
-  const role = this.getOrganizationRole(organizationId);
+  const normalizeOrgId = (value) => (value && value._id ? value._id : value)?.toString?.();
+  const membership = this.organizationMemberships.find(
+    m => normalizeOrgId(m.organization) === organizationId.toString() && m.isActive
+  );
+  if (Array.isArray(membership?.idpPermissions)) {
+    return membership.idpPermissions.includes(permission);
+  }
+  const role = membership?.role;
   if (!role) return false;
   
   const permissions = {

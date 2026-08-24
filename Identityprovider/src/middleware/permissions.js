@@ -3,6 +3,10 @@ import { Team } from '../models/Team.js'
 import { Account } from '../models/Account.js'
 import { MongoAdapter } from '../adapter/mongoAdapter.js'
 import { hasLineManagerRole } from '../utils/teamManager.js'
+import {
+  authorizationHasPermission,
+  resolveOrganizationAuthorization
+} from '../services/accessControlService.js'
 
 /**
  * Fallback: resolve account from hub session cookie (_session)
@@ -85,6 +89,11 @@ export const requireOrganizationMember = async (req, res, next) => {
 
     req.organization = organization
     req.memberRole = member.role
+    req.organizationAuthorization = await resolveOrganizationAuthorization({
+      account: req.user,
+      organization,
+      member
+    })
 
     next()
   } catch (error) {
@@ -97,23 +106,27 @@ export const requireOrganizationMember = async (req, res, next) => {
  * Middleware to require organization admin role (admin or owner)
  * Must be used after requireOrganizationMember
  */
-export const requireOrganizationAdmin = (req, res, next) => {
-  if (!['owner', 'admin'].includes(req.memberRole)) {
-    return res.status(403).json({ error: 'Admin or owner role required' })
+export const requestHasIdentityPermission = (req, permission) =>
+  authorizationHasPermission(req.organizationAuthorization, 'identity', permission)
+
+export const requireIdentityPermission = (permission) => (req, res, next) => {
+  if (!requestHasIdentityPermission(req, permission)) {
+    return res.status(403).json({
+      error: `Organization permission required: ${permission}`,
+      code: 'ORGANIZATION_PERMISSION_REQUIRED',
+      requiredPermission: permission
+    })
   }
-  next()
+  return next()
 }
+
+export const requireOrganizationAdmin = requireIdentityPermission('organization.manage')
 
 /**
  * Middleware to require organization owner role
  * Must be used after requireOrganizationMember
  */
-export const requireOrganizationOwner = (req, res, next) => {
-  if (req.memberRole !== 'owner') {
-    return res.status(403).json({ error: 'Owner role required' })
-  }
-  next()
-}
+export const requireOrganizationOwner = requireIdentityPermission('owner.transfer')
 
 /**
  * Middleware to require specific permission
@@ -121,7 +134,7 @@ export const requireOrganizationOwner = (req, res, next) => {
  */
 export const requirePermission = (permission) => {
   return (req, res, next) => {
-    if (!req.organization.hasPermission(req.user._id, permission)) {
+    if (!requestHasIdentityPermission(req, permission)) {
       return res.status(403).json({ error: `Permission required: ${permission}` })
     }
     next()
@@ -263,7 +276,11 @@ export const requireTeamAdminOrManager = async (req, res, next) => {
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
     )
 
-    const isOrgAdmin = orgMember && ['owner', 'admin'].includes(orgMember.role)
+    const authorization = orgMember
+      ? await resolveOrganizationAuthorization({ account: req.user, organization, member: orgMember })
+      : null
+    const canManageAllTeams = authorizationHasPermission(authorization, 'identity', 'teams.manage')
+    const canManageAssignedTeams = authorizationHasPermission(authorization, 'identity', 'teams.manage.assigned')
     const isDepartmentHead = organization.isDepartmentHead(req.user._id, team.department)
 
     const teamMember = team.members.find(
@@ -272,7 +289,10 @@ export const requireTeamAdminOrManager = async (req, res, next) => {
 
     const isTeamManager = teamMember && hasLineManagerRole(team, req.user._id)
 
-    if (!isOrgAdmin && !isDepartmentHead && !isTeamManager) {
+    const isOrgAdmin = Boolean(canManageAllTeams)
+    const canManageThisTeam = canManageAssignedTeams && (isDepartmentHead || isTeamManager)
+
+    if (!isOrgAdmin && !canManageThisTeam) {
       return res.status(403).json({
         error: 'Organization admin, department head, or line manager role required'
       })

@@ -9,7 +9,8 @@ import { sendEmailVerificationEmail, sendExistingAccountSignupNotice, sendPasswo
 import { EsignError, getRecipientAccountInvitation } from './esign.js';
 import {
   ensureDefaultSpaceForUser, listPendingSpaceInvitationsForAccount, pendingSpaceInvitationForSignup,
-  renamePersonalSpaceForUser, spaceSession, syncIdpOrganizationsForUser, type IdpOrganizationClaim
+  idpPermissionsForSpaceUser, renamePersonalSpaceForUser, spaceSession, syncIdpOrganizationsForUser,
+  type IdpOrganizationClaim
 } from './spaces.js';
 import { ensureConfiguredRootPlatformRole } from './platformSchema.js';
 import {
@@ -174,6 +175,9 @@ function sessionPayload(user: SessionUser) {
   const adminPermissions = isRootPlatformAdmin(user.id)
     ? platformPermissionCatalog.map((permission) => permission.id)
     : controlPlanePermissionsForUser(user.id);
+  const productPermissions = spaces.activeSpace
+    ? idpPermissionsForSpaceUser(spaces.activeSpace.id, user.id)
+    : null;
   return {
     authenticated: true,
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -188,6 +192,7 @@ function sessionPayload(user: SessionUser) {
       adminRoles,
       adminPermissions
     },
+    productPermissions: productPermissions === null ? null : [...productPermissions],
     ...spaces,
     subscription: effectiveSubscription ? {
       planCode: effectiveSubscription.plan.code,
@@ -270,6 +275,18 @@ type IdpClaims = {
   currentOrganization?: unknown;
 };
 
+function experiencePermissions(value: Record<string, unknown>) {
+  const authorization = value.authorization && typeof value.authorization === 'object' && !Array.isArray(value.authorization)
+    ? value.authorization as Record<string, unknown> : null;
+  const permissionsByApp = authorization?.permissionsByApp && typeof authorization.permissionsByApp === 'object'
+    ? authorization.permissionsByApp as Record<string, unknown>
+    : (value.appPermissions && typeof value.appPermissions === 'object'
+      ? value.appPermissions as Record<string, unknown> : null);
+  if (!permissionsByApp || !Object.prototype.hasOwnProperty.call(permissionsByApp, 'experience-management')) return null;
+  const permissions = permissionsByApp['experience-management'];
+  return Array.isArray(permissions) ? permissions.map(String) : [];
+}
+
 function normalizedIdpIdentity(claims: IdpClaims) {
   const subject = String(claims.sub || '').trim();
   const email = normalizeEmail(claims.email);
@@ -319,7 +336,15 @@ function experienceOrganizationClaims(claims: IdpClaims) {
     const selected = String(access?.mode || '').toLowerCase() === 'selected';
     const appIds = Array.isArray(access?.appIds) ? access.appIds.map(String) : [];
     if (!id || !name || (selected && !appIds.includes('experience-management'))) return [];
-    return [{ id, name, role: String(value.role || 'member') }];
+    const authorization = value.authorization && typeof value.authorization === 'object' && !Array.isArray(value.authorization)
+      ? value.authorization as Record<string, unknown> : null;
+    return [{
+      id,
+      name,
+      role: String(value.role || 'member'),
+      permissions: experiencePermissions(value),
+      authorizationRevision: Number(authorization?.organizationRevision || 0) || null
+    }];
   });
 }
 
@@ -1212,6 +1237,7 @@ export function session(request: Request, response: Response) {
     onboardingRequired: false,
     profile: null,
     permissions: { platformAdmin: false, rootPlatformAdmin: false, platformRoles: [] },
+    productPermissions: null,
     spaces: [],
     activeSpace: null,
     subscription: null,

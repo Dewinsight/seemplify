@@ -1,6 +1,6 @@
 import express from 'express'
 import multer from 'multer'
-import { requireAuth, requireOrganizationMember } from '../middleware/permissions.js'
+import { requireAuth, requireOrganizationMember, requestHasIdentityPermission } from '../middleware/permissions.js'
 import { Organization } from '../models/Organization.js'
 import { Account } from '../models/Account.js'
 import { OnboardingTemplate } from '../models/OnboardingTemplate.js'
@@ -19,7 +19,6 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 }
 })
 
-const ONBOARDING_MANAGER_ROLES = ['owner', 'admin', 'hr_manager']
 const WORKFLOW_TYPES = ['onboarding', 'agreement', 'policy', 'general']
 const WORKFLOW_LABELS = {
   onboarding: 'Onboarding',
@@ -161,7 +160,7 @@ const fetchOnboardingPdfBuffer = async ({
   throw lastError || new Error('Failed to fetch onboarding PDF source')
 }
 
-const canManageOnboarding = (role) => ONBOARDING_MANAGER_ROLES.includes(role)
+const canManageOnboarding = (req) => requestHasIdentityPermission(req, 'onboarding.manage')
 
 const normalizeWorkflowType = (value, options = {}) => {
   const allowAll = options.allowAll === true
@@ -903,7 +902,7 @@ const cleanupRemovedAssignmentAssets = async ({
 // Admin: Templates
 // =========================
 router.get('/organizations/:orgId/onboarding/templates', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -934,7 +933,7 @@ router.get('/organizations/:orgId/onboarding/templates', requireAuth, requireOrg
 })
 
 router.post('/organizations/:orgId/onboarding/templates', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -977,7 +976,7 @@ router.post('/organizations/:orgId/onboarding/templates', requireAuth, requireOr
 })
 
 router.patch('/organizations/:orgId/onboarding/templates/:templateId', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -1028,7 +1027,7 @@ router.patch('/organizations/:orgId/onboarding/templates/:templateId', requireAu
 })
 
 router.delete('/organizations/:orgId/onboarding/templates/:templateId', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -1057,7 +1056,7 @@ router.post('/organizations/:orgId/onboarding/documents',
   requireOrganizationMember,
   upload.single('file'),
   async (req, res) => {
-    if (!canManageOnboarding(req.memberRole)) {
+    if (!canManageOnboarding(req)) {
       return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
     }
 
@@ -1096,7 +1095,7 @@ router.post('/organizations/:orgId/onboarding/documents',
 )
 
 router.post('/organizations/:orgId/onboarding/documents/delete', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -1123,7 +1122,7 @@ router.post('/organizations/:orgId/onboarding/documents/delete', requireAuth, re
 // Admin: Assign onboarding
 // =========================
 router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -1219,7 +1218,7 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
 })
 
 router.patch('/organizations/:orgId/onboarding/assignments/:assignmentId', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -1308,7 +1307,7 @@ router.patch('/organizations/:orgId/onboarding/assignments/:assignmentId', requi
 })
 
 router.post('/organizations/:orgId/onboarding/members/:memberId/reminder', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -1372,7 +1371,7 @@ router.post('/organizations/:orgId/onboarding/members/:memberId/reminder', requi
 })
 
 router.patch('/organizations/:orgId/onboarding/members/:memberId/status', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -1419,7 +1418,7 @@ router.patch('/organizations/:orgId/onboarding/members/:memberId/status', requir
 })
 
 router.get('/organizations/:orgId/onboarding/assignments', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 
@@ -1452,7 +1451,7 @@ router.get('/organizations/:orgId/onboarding/assignments', requireAuth, requireO
 })
 
 router.patch('/organizations/:orgId/onboarding/assignments/:assignmentId/cancel', requireAuth, requireOrganizationMember, async (req, res) => {
-  if (!canManageOnboarding(req.memberRole)) {
+  if (!canManageOnboarding(req)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
   }
 

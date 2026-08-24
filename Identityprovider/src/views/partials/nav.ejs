@@ -18,6 +18,14 @@
   const navCurrentOrganizationRoleLabel = navCurrentOrganizationRole
     ? String(navCurrentOrganizationRole).replace(/(^|[-_\s])\w/g, (character) => character.toUpperCase()).replace(/[-_]/g, ' ')
     : 'Member';
+  const navHasIdentityPermissionMatrix = typeof identityPermissions !== 'undefined' && Array.isArray(identityPermissions);
+  const navIdentityPermissions = new Set(navHasIdentityPermissionMatrix ? identityPermissions : []);
+  const navCanViewMembers = navHasIdentityPermissionMatrix
+    ? navIdentityPermissions.has('members.view')
+    : true;
+  const navCanManageInvitations = navHasIdentityPermissionMatrix
+    ? (navIdentityPermissions.has('members.invite') || navIdentityPermissions.has('invitations.manage'))
+    : ['owner', 'admin', 'hr_manager'].includes(navCurrentOrganizationRole);
   const navUserContext = navCurrentOrganization
     ? `${navCurrentOrganizationRoleLabel} · ${navCurrentOrganization.name || 'Workspace'}`
     : user.email;
@@ -328,13 +336,11 @@
       </div>
     </div>
     <div class="mobile-drawer-account">
-      <% if (navCurrentOrganization && navCurrentOrganizationId) { %>
+      <% if (navCurrentOrganization && navCurrentOrganizationId && navCanViewMembers) { %>
         <a href="/organizations/<%= navCurrentOrganizationId %>/members?view=members" class="top-nav-link">Members</a>
         <a href="/organizations/<%= navCurrentOrganizationId %>/members?view=structure" class="top-nav-link">Teams &amp; departments</a>
-        <% if (['owner', 'admin'].includes(navCurrentOrganizationRole)) { %>
-          <a href="/organizations/<%= navCurrentOrganizationId %>/invitations" class="top-nav-link">Invitations</a>
-        <% } %>
       <% } %>
+      <% if (navCurrentOrganization && navCurrentOrganizationId && navCanManageInvitations) { %><a href="/organizations/<%= navCurrentOrganizationId %>/invitations" class="top-nav-link">Invitations</a><% } %>
       <a href="/notifications" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'notifications' ? ' active' : '' %>">Notifications</a>
       <a href="/profile" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
       <a href="/invitations/pending" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">My invitations</a>
@@ -442,15 +448,13 @@
             </div>
           </div>
         <% } %>
-        <% if (navCurrentOrganizationId) { %>
+        <% if (navCurrentOrganizationId && navCanViewMembers) { %>
           <div class="user-menu-section">
             <a href="/organizations/<%= navCurrentOrganizationId %>/members?view=members" class="user-menu-link">Members</a>
             <a href="/organizations/<%= navCurrentOrganizationId %>/members?view=structure" class="user-menu-link">Teams &amp; departments</a>
-            <% if (['owner', 'admin'].includes(navCurrentOrganizationRole)) { %>
-              <a href="/organizations/<%= navCurrentOrganizationId %>/invitations" class="user-menu-link">Invitations</a>
-            <% } %>
           </div>
         <% } %>
+        <% if (navCurrentOrganizationId && navCanManageInvitations) { %><div class="user-menu-section"><a href="/organizations/<%= navCurrentOrganizationId %>/invitations" class="user-menu-link">Invitations</a></div><% } %>
         <div class="user-menu-section">
           <a href="/organizations" class="user-menu-link">Manage organizations</a>
           <% if (navOrganizations.length > 1) { %>

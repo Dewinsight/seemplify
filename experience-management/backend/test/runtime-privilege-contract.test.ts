@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 /**
- * STATIC registration test for runtimes 27-31.
+ * STATIC registration test for table-creating runtimes 27-31 and 34.
  *
  * SCOPE WARNING — READ BEFORE TRUSTING A GREEN RUN. Every assertion below reads
  * source TEXT. This file does NOT create a database, does NOT apply a migration
@@ -46,7 +46,8 @@ const RUNTIMES = [
   { version: 28, file: '0028_journey_collaboration.sql' },
   { version: 29, file: '0029_journey_hierarchy_blueprints.sql' },
   { version: 30, file: '0030_journey_stage_reprojection.sql' },
-  { version: 31, file: '0031_journey_identity_profiles.sql' }
+  { version: 31, file: '0031_journey_identity_profiles.sql' },
+  { version: 34, file: '0034_idp_space_authorizations.sql' }
 ] as const;
 
 /** Only top-of-line CREATE TABLE is a declaration; the same text inside a comment is prose. */
@@ -147,6 +148,14 @@ test('runtime-33 replaces fresh and cutover provider checks before seeding Azure
   assert.ok(source.indexOf('DROP CONSTRAINT %I') < source.indexOf("'azure-text-embedding-3-large-v1','azure-openai'"));
 });
 
+test('runtime-34 persists the authoritative IdP permission matrix by space membership', () => {
+  const source = fs.readFileSync(path.join(migrationRoot, '0034_idp_space_authorizations.sql'), 'utf8');
+  assert.match(source, /CREATE TABLE IF NOT EXISTS idp_space_authorizations/u);
+  assert.match(source, /PRIMARY KEY\(space_id,user_id\)/u);
+  assert.match(source, /REFERENCES space_memberships\(space_id,user_id\) ON DELETE CASCADE/u);
+  assert.match(source, /authorization_revision INTEGER/u);
+});
+
 test('production provisions only the Experience shared-AI credential for knowledge graph extraction', () => {
   const workflow = fs.readFileSync(
     path.resolve(backendRoot, '..', '..', '.github', 'workflows', 'deploy-experience-hostinger.yml'), 'utf8');
@@ -162,16 +171,15 @@ test('the runtime contracts stay pinned to the shipped compatibility window', ()
     fs.readFileSync(path.join(migrationRoot, 'runtime-compatibility.json'), 'utf8')) as {
       minimumRuntimeSchemaVersion: number; maximumRuntimeSchemaVersion: number;
     };
-  // Runtime 33 extends knowledge embedding metadata on existing tables and creates no new
-  // tables, while runtime 31 is the latest table-creating migration.
-  assert.equal(compatibility.maximumRuntimeSchemaVersion, 33);
-  assert.equal(compatibility.minimumRuntimeSchemaVersion, 33);
-  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 33/u);
+  // Runtime 34 persists the IdP permission matrix beside each mirrored space membership.
+  assert.equal(compatibility.maximumRuntimeSchemaVersion, 34);
+  assert.equal(compatibility.minimumRuntimeSchemaVersion, 34);
+  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 34/u);
   const beyondWindow = fs.readdirSync(migrationRoot)
     .map((name) => /^(\d{4})_.*\.sql$/u.exec(name))
     .filter((match): match is RegExpExecArray => match !== null)
-    .filter((match) => Number(match[1]!) > 33)
+    .filter((match) => Number(match[1]!) > 34)
     .map((match) => match[0]);
   assert.deepEqual(beyondWindow, [],
-    'a migration past runtime-33 must be registered before it can ship');
+    'a migration past runtime-34 must be registered before it can ship');
 });

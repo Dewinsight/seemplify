@@ -99,6 +99,10 @@ import { samlIdPService as samlService } from './services/samlService.js'
 import { subscriptionService } from './services/subscriptionService.js'
 import cloudinary, { isCloudinaryConfigured } from './services/cloudinaryService.js'
 import { hydrateMediaConfigurationEnvironment, seedMediaConfigurationFromEnvironment } from './services/mediaPlatformConfigurationService.js'
+import {
+  authorizationHasPermission,
+  resolveOrganizationAuthorization
+} from './services/accessControlService.js'
 import { claimsCacheEnabled } from './utils/claimsCachePolicy.js'
 import { createWebhookReadinessVerifier } from './middleware/webhookReadinessAuth.js'
 import { createAutomationRequestVerifier } from './middleware/automationRequestAuth.js'
@@ -132,7 +136,7 @@ async function getCachedClaims(acc) {
   const startTime = Date.now()
   const cacheEnabled = claimsCacheEnabled()
   const currentOrgId = acc.currentOrganization?._id?.toString() || acc.currentOrganization?.toString() || 'none'
-  const cacheKey = `claims:${acc.sub}:${acc.updatedAt?.getTime() || 0}:${currentOrgId}`
+  const cacheKey = `claims:${acc.sub}:${acc.updatedAt?.getTime() || 0}:${acc.authorizationRevision || 0}:${currentOrgId}`
   const cached = cacheEnabled ? claimsCache.get(cacheKey) : null
 
   if (cached && (Date.now() - cached.timestamp) < CLAIMS_CACHE_TTL) {
@@ -168,7 +172,11 @@ async function getCachedClaims(acc) {
       branchCode: currentOrganizationClaim.branchCode || null,
       designation: currentOrganizationClaim.designation || null,
       employeeId: currentOrganizationClaim.employeeId || null,
-      appAccess: currentOrganizationClaim.appAccess
+      appAccess: currentOrganizationClaim.appAccess,
+      permissions: currentOrganizationClaim.permissions || [],
+      appPermissions: currentOrganizationClaim.appPermissions || {},
+      authorization: currentOrganizationClaim.authorization || null,
+      departmentHeadPermissions: currentOrganizationClaim.departmentHeadPermissions || []
     }
     : (acc.currentOrganization
       ? {
@@ -187,6 +195,12 @@ async function getCachedClaims(acc) {
     organizations: organizationClaims,
     current_organization: currentOrganization,
     currentOrganization: currentOrganization,
+    // Current-organization aliases make integration straightforward for
+    // products that cannot consume nested organization arrays. The nested
+    // organization claim remains the canonical multi-organization form.
+    authorization: currentOrganizationClaim?.authorization || null,
+    roles: currentOrganizationClaim?.authorization?.roleKeys || [],
+    product_permissions: currentOrganizationClaim?.authorization?.permissionsByApp || {},
     // Subscription claims (for current organization)
     subscription: subscriptionClaims,
     // Team claims (with hierarchy)
@@ -200,7 +214,14 @@ async function getCachedClaims(acc) {
         organization_id: t.organizationId,
         direct_reports: t.directReports,
         permissions: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves']
-      }))
+      })),
+    // System administration is separate from organization authorization.
+    platform_roles: acc.isSuperAdmin
+      ? ['idp_super_admin']
+      : (acc.isSystemAdmin ? ['idp_system_admin'] : []),
+    platform_permissions: acc.isSuperAdmin
+      ? ['*']
+      : (acc.isSystemAdmin ? ['access_policy.read', 'organizations.support', 'users.support'] : [])
   }
 
   // Cache the claims
@@ -523,6 +544,14 @@ import publicMarketingRoutesRouter from './routes/publicMarketingRoutes.js'
 import publicRoutesRouter from './routes/publicRoutes.js'
 import organizationSubscriptionRouter from './routes/organizationSubscription.js'
 import adminUsersRouter from './routes/adminUsers.js'
+import {
+  adminAccessControlApi,
+  adminAccessControlViews
+} from './routes/adminAccessControl.js'
+import {
+  organizationAccessControlApi,
+  organizationAccessControlViews
+} from './routes/organizationAccessControl.js'
 import profileRouter from './routes/profile.js'
 import internalMembershipsRouter from './routes/internalMemberships.js'
 import platformIntegrationsRouter from './routes/platformIntegrations.js'
@@ -991,7 +1020,11 @@ const config = {
 
       // Grant all requested scopes
       grant.addOIDCScope('openid email profile offline_access');
-      grant.addOIDCClaims(['email', 'email_verified', 'name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization', 'currentOrganization']);
+      grant.addOIDCClaims([
+        'email', 'email_verified', 'name', 'preferred_username', 'organizations', 'teams',
+        'team_permissions', 'current_organization', 'currentOrganization', 'authorization',
+        'roles', 'product_permissions', 'platform_roles', 'platform_permissions'
+      ]);
 
       await grant.save();
       return grant;
@@ -1003,7 +1036,11 @@ const config = {
   claims: {
     openid: ['sub'],
     email: ['email', 'email_verified'],
-    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization', 'currentOrganization']
+    profile: [
+      'name', 'preferred_username', 'organizations', 'teams', 'team_permissions',
+      'current_organization', 'currentOrganization', 'authorization', 'roles',
+      'product_permissions', 'platform_roles', 'platform_permissions'
+    ]
   },
   findAccount: async (ctx, id) => {
     const findAccountStart = Date.now()
@@ -5856,7 +5893,6 @@ const updateOnboardingAssignmentStatus = (assignment) => {
   }
 }
 
-const ONBOARDING_MANAGER_ROLES = ['owner', 'admin', 'hr_manager']
 const WORKFLOW_TYPES = ['onboarding', 'agreement', 'policy', 'general']
 const WORKFLOW_LABELS = {
   onboarding: 'Onboarding',
@@ -5996,9 +6032,13 @@ const loadOnboardingAdminContext = async (req, organizationId, options = {}) => 
     m => (m.account?._id || m.account).toString() === req.user._id.toString() && m.status === 'active'
   )
 
-  if (!member || !ONBOARDING_MANAGER_ROLES.includes(member.role)) {
-    throw new Error('Admin, owner, or HR manager role required')
+  if (!member) {
+    throw new Error('Active organization membership required')
   }
+  const organizationAuthorization = await resolveOrganizationAuthorization({ account: req.user, organization, member })
+  const canReadOnboarding = authorizationHasPermission(organizationAuthorization, 'identity', 'onboarding.read') ||
+    authorizationHasPermission(organizationAuthorization, 'identity', 'onboarding.manage')
+  if (!canReadOnboarding) throw new Error('Permission to view onboarding workflows is required')
 
   const templateQuery = { organization: organizationId }
   const assignmentQuery = { organization: organizationId }
@@ -6122,6 +6162,8 @@ const loadOnboardingAdminContext = async (req, organizationId, options = {}) => 
     workflowLabels: WORKFLOW_LABELS,
     workflowTypes: WORKFLOW_TYPES,
     workflowTypeFilter,
+    canManageOnboarding: authorizationHasPermission(organizationAuthorization, 'identity', 'onboarding.manage'),
+    identityPermissions: organizationAuthorization.permissionsByApp?.identity || [],
     yourRole: member.role
   }
 }
@@ -6165,6 +6207,8 @@ app.use('/api/admin/plans', adminPlansRouter)
 app.use('/api/admin/subscription-requests', adminSubscriptionRequestsRouter)
 app.use('/api/admin/subscriptions', adminSubscriptionsRouter)
 app.use('/api/admin/users', adminUsersRouter)
+app.use('/api/admin/access-control', adminAccessControlApi)
+app.use('/api/organizations', organizationAccessControlApi)
 app.use('/api/plans', publicPlansRouter)
 app.use('/api/organizations', organizationSubscriptionRouter)
 app.use('/api/public', publicMarketingRoutesRouter)
@@ -6243,7 +6287,9 @@ app.get('/admin/logout', (req, res, next) => {
 
 // Admin Panel View Routes
 app.use('/admin/campaigns', adminCampaignViewsRouter)
+app.use('/admin/access-control', adminAccessControlViews)
 app.use('/admin', adminViewsRouter)
+app.use('/organizations', organizationAccessControlViews)
 
 // SAML 2.0 Identity Provider Routes
 app.use('/saml', samlRoutes)
@@ -6689,6 +6735,17 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       return res.redirect('/organizations?error=Not a member of this organization')
     }
 
+    const organizationAuthorization = await resolveOrganizationAuthorization({
+      account: req.user,
+      organization,
+      member
+    })
+    const hasIdentityPermission = (permission) =>
+      authorizationHasPermission(organizationAuthorization, 'identity', permission)
+    if (!hasIdentityPermission('members.view')) {
+      return res.redirect('/organizations?error=Permission to view organization members is required')
+    }
+
     const assignments = await OnboardingAssignment.find({ organization: req.params.orgId })
       .select('member status updatedAt')
       .sort({ updatedAt: -1 })
@@ -6816,9 +6873,20 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         isHeadOffice: !!branch.isHeadOffice,
         memberCount: organization.members.filter((entry) => entry.status === 'active' && entry.branch?.toString() === branch._id.toString()).length
       })),
-      canManageMemberRoles: ['owner', 'admin'].includes(member.role),
-      canManageMemberMetadata: ['owner', 'admin', 'hr_manager'].includes(member.role),
-      canManageTeams: ['owner', 'admin'].includes(member.role) || organization.isDepartmentHead(req.user._id),
+      canViewMembers: true,
+      canManageMemberRoles: hasIdentityPermission('roles.assign'),
+      canManageMemberMetadata: hasIdentityPermission('members.manage'),
+      canRemoveMembers: hasIdentityPermission('members.remove'),
+      canManageAppAccess: hasIdentityPermission('apps.assign'),
+      canManageDepartments: hasIdentityPermission('departments.manage'),
+      canManageTeams: hasIdentityPermission('teams.manage'),
+      canManageLocations: hasIdentityPermission('locations.manage'),
+      canInviteMembers: hasIdentityPermission('members.invite'),
+      canManageInvitations: hasIdentityPermission('invitations.manage'),
+      canViewAccessControl: hasIdentityPermission('access.read') || hasIdentityPermission('access.manage'),
+      canSendNotifications: hasIdentityPermission('notifications.send'),
+      canTransferOwnership: hasIdentityPermission('owner.transfer'),
+      identityPermissions: organizationAuthorization.permissionsByApp?.identity || [],
       yourRole: member.role,
       ownerCount: organization.getOwnerCount(),
       activeView: ['members', 'branches'].includes(req.query.view) ? req.query.view : 'structure',
@@ -6848,8 +6916,21 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
     )
 
-    if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
-      return res.redirect('/organizations?error=Admin, owner, or HR manager role required')
+    if (!member) {
+      return res.redirect('/organizations?error=Not a member of this organization')
+    }
+
+    const organizationAuthorization = await resolveOrganizationAuthorization({
+      account: req.user,
+      organization,
+      member
+    })
+    const hasIdentityPermission = (permission) =>
+      authorizationHasPermission(organizationAuthorization, 'identity', permission)
+    const canInviteMembers = hasIdentityPermission('members.invite')
+    const canManageInvitations = hasIdentityPermission('invitations.manage')
+    if (!canInviteMembers && !canManageInvitations) {
+      return res.redirect('/organizations?error=Permission to manage invitations is required')
     }
 
     const invitations = await OrganizationInvite.find({
@@ -6885,6 +6966,14 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
         name: team.name,
         departmentId: team.department?.toString() || ''
       })),
+      canInviteMembers,
+      canManageInvitations,
+      canAssignRoles: hasIdentityPermission('roles.assign'),
+      canAssignApps: hasIdentityPermission('apps.assign'),
+      canManageDepartments: hasIdentityPermission('departments.manage'),
+      canViewMembers: hasIdentityPermission('members.view'),
+      canViewAccessControl: hasIdentityPermission('access.read') || hasIdentityPermission('access.manage'),
+      identityPermissions: organizationAuthorization.permissionsByApp?.identity || [],
       yourRole: member.role,
       user: req.user,
       error: req.query.error,
@@ -6933,8 +7022,13 @@ app.get('/organizations/:orgId/onboarding/assignments/:assignmentId', getSession
       m => (m.account?._id || m.account).toString() === req.user._id.toString() && m.status === 'active'
     )
 
-    if (!member || !ONBOARDING_MANAGER_ROLES.includes(member.role)) {
-      return res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Admin or HR role required`)
+    if (!member) {
+      return res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Active organization membership required`)
+    }
+    const organizationAuthorization = await resolveOrganizationAuthorization({ account: req.user, organization, member })
+    if (!authorizationHasPermission(organizationAuthorization, 'identity', 'onboarding.read') &&
+        !authorizationHasPermission(organizationAuthorization, 'identity', 'onboarding.manage')) {
+      return res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Permission to view onboarding workflows is required`)
     }
 
     const assignment = await OnboardingAssignment.findOne({
@@ -6955,6 +7049,7 @@ app.get('/organizations/:orgId/onboarding/assignments/:assignmentId', getSession
     res.render('onboarding-assignment', {
       organization,
       assignment,
+      identityPermissions: organizationAuthorization.permissionsByApp?.identity || [],
       yourRole: member.role,
       activePage: 'organizations',
       user: req.user,
@@ -6985,6 +7080,17 @@ app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) 
       return res.redirect('/organizations?error=Not a member of this organization')
     }
 
+    const organizationAuthorization = await resolveOrganizationAuthorization({
+      account: req.user,
+      organization,
+      member
+    })
+    const canReadNotifications = authorizationHasPermission(organizationAuthorization, 'identity', 'notifications.read')
+    const canSendNotifications = authorizationHasPermission(organizationAuthorization, 'identity', 'notifications.send')
+    if (!canReadNotifications && !canSendNotifications) {
+      return res.redirect('/organizations?error=Permission to access organization notifications is required')
+    }
+
     // Get teams for the dropdown
     const teams = await Team.find({ organization: req.params.orgId })
       .select('name members')
@@ -7010,14 +7116,18 @@ app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) 
     const limit = 10
     const skip = (page - 1) * limit
 
+    const notificationHistoryFilter = {
+      organization: req.params.orgId,
+      ...(canReadNotifications ? {} : { sentBy: req.user._id })
+    }
     const [notifications, totalNotifications] = await Promise.all([
-      Notification.find({ organization: req.params.orgId })
+      Notification.find(notificationHistoryFilter)
         .populate('sentBy', 'email profile.name')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .select('-recipients -htmlContent -textContent'),
-      Notification.countDocuments({ organization: req.params.orgId })
+      Notification.countDocuments(notificationHistoryFilter)
     ])
 
     res.render('notifications', {
@@ -7031,6 +7141,9 @@ app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) 
         total: totalNotifications,
         pages: Math.ceil(totalNotifications / limit)
       },
+      canReadNotifications,
+      canSendNotifications,
+      identityPermissions: organizationAuthorization.permissionsByApp?.identity || [],
       yourRole: member.role,
       user: req.user,
       error: req.query.error,
@@ -7548,14 +7661,19 @@ const resolveOnboardingDocumentAccess = async (assignmentId, itemId, userId) => 
   }
 
   const organizationId = assignment.organization?._id || assignment.organization
-  const organization = await Organization.findById(organizationId).select('members')
+  const organization = await Organization.findById(organizationId).select('members departments accessControl')
+  const account = await Account.findById(userId).select('teams')
   const userIdStr = userId.toString()
 
   const member = organization?.members?.find(
     m => m.account.toString() === userIdStr && m.status === 'active'
   )
 
-  const isManager = !!(member && ONBOARDING_MANAGER_ROLES.includes(member.role))
+  const authorization = member && account
+    ? await resolveOrganizationAuthorization({ account, organization, member })
+    : null
+  const isManager = authorizationHasPermission(authorization, 'identity', 'onboarding.read') ||
+    authorizationHasPermission(authorization, 'identity', 'onboarding.manage')
   const isAssignee = assignment.member?.toString() === userIdStr
   const isConfiguredSigner = item.type === 'esign'
     ? ensureArray(item?.config?.signers).some(signer => signer?.member?.toString() === userIdStr)
@@ -8547,10 +8665,6 @@ const renderDocumentsWorkspacePage = async (req, res) => {
     return res.redirect(`/documents?error=${encodeURIComponent(orgContext.error)}`)
   }
 
-  if (!ONBOARDING_MANAGER_ROLES.includes(orgContext.memberRole)) {
-    return res.redirect('/documents?error=Document workspace is available to owners, admins, and HR managers only')
-  }
-
   const adminContext = await loadOnboardingAdminContext(req, orgContext.organizationId, { workflowType: 'all' })
 
   return res.render('onboarding-admin', {
@@ -8581,7 +8695,18 @@ app.get('/documents', getSessionUser, requireCurrentOrganizationActiveSubscripti
     }
 
     const orgContext = await getCurrentOrganizationContext(req.user)
-    const canAccessWorkspace = !orgContext.error && ONBOARDING_MANAGER_ROLES.includes(orgContext.memberRole)
+    let canAccessWorkspace = false
+    if (!orgContext.error) {
+      const currentOrganization = await Organization.findById(orgContext.organizationId)
+      const currentMember = currentOrganization?.members?.find((candidate) =>
+        candidate.status === 'active' && candidate.account.toString() === req.user._id.toString()
+      )
+      const authorization = currentMember
+        ? await resolveOrganizationAuthorization({ account: req.user, organization: currentOrganization, member: currentMember })
+        : null
+      canAccessWorkspace = authorizationHasPermission(authorization, 'identity', 'onboarding.read') ||
+        authorizationHasPermission(authorization, 'identity', 'onboarding.manage')
+    }
     const currentOrganizationName = orgContext.organizationName
       || req.user.currentOrganization?.name
       || 'Current organization'

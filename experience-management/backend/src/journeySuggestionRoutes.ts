@@ -9,7 +9,7 @@ import {
   getJourneySuggestionRun, JourneySuggestionError, listJourneySuggestionAudit,
   listJourneySuggestionEvidence, listJourneySuggestionRuns, reviewJourneySuggestionChange
 } from './journeySuggestions.js';
-import { resolveRequestSpace, SpaceError, type SpaceContext } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError, type SpaceContext } from './spaces.js';
 import {
   assertCanQueueAiAction, assertSubscriptionFeature, SubscriptionEntitlementError
 } from './subscriptionEntitlements.js';
@@ -42,7 +42,7 @@ function context(request: express.Request) {
 }
 
 function requireEditor(space: SpaceContext) {
-  if (space.role === 'member') throw new JourneySuggestionError(
+  if (!spaceRoleOrIdpPermission(space, 'journeys.edit')) throw new JourneySuggestionError(
     'You do not have permission to review AI journey suggestions in this space.', 403,
     'JOURNEY_SUGGESTION_FORBIDDEN');
 }

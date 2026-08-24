@@ -16,6 +16,13 @@ export interface SignupValues {
   organizationName?: string;
 }
 
+export async function signInE2eBootstrap(page: Page) {
+  const response = await page.request.post('/__e2e__/auth/session');
+  expect(response.status(), 'could not establish the IdP-compatible E2E session').toBe(200);
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+}
+
 export async function submitSignup(page: Page, values: SignupValues) {
   const password = values.password || accountPassword;
   await page.goto('/signup');

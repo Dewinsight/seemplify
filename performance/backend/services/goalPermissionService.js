@@ -1,4 +1,4 @@
-const { hasPermission } = require('../middleware/rbac');
+const { claimedPermissions, hasPermission } = require('../middleware/rbac');
 
 const GOAL_PERMISSION_SCOPES = Object.freeze({
   VIEW_OWN: 'okr:view:own',
@@ -44,6 +44,10 @@ function resolveUserId(req) {
 
 function resolveRole(req) {
   return req?.userRole || 'employee';
+}
+
+function actorHasPermission(req, permission) {
+  return hasPermission(resolveRole(req), permission, req?.session?.user || req?.user);
 }
 
 function uniqueIds(values = []) {
@@ -106,6 +110,8 @@ function getActor(req) {
 }
 
 function isHr(req) {
+  const centralPermissions = claimedPermissions(req?.session?.user || req?.user);
+  if (centralPermissions) return false;
   return resolveRole(req) === 'hr_admin';
 }
 
@@ -136,12 +142,20 @@ function isGoalDepartmentVisible(req, goal) {
 
 function canViewGoal(req, goal) {
   if (!isGoalInCurrentOrganization(req, goal)) return false;
-  if (isHr(req) || isOwner(req, goal)) return true;
-  if (goal.type === 'organization') return true;
-  if (goal.type === 'department' && isGoalDepartmentVisible(req, goal)) return true;
-  if (goal.type === 'team' && isGoalTeamVisible(req, goal)) return true;
-  if (isDirectReport(req, goal.ownerId)) return true;
-  return normalizeId(goal?.createdBy?.userId) === resolveUserId(req);
+  if (actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_ALL) || isHr(req)) return true;
+  if (isOwner(req, goal)) return actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_OWN);
+  if (goal.type === 'organization') return actorHasPermission(req, 'okr:view:organization');
+  if (goal.type === 'department') {
+    return actorHasPermission(req, 'okr:view:department') && isGoalDepartmentVisible(req, goal);
+  }
+  if (goal.type === 'team') {
+    return actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_TEAM) && isGoalTeamVisible(req, goal);
+  }
+  if (isDirectReport(req, goal.ownerId)) {
+    return actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_DIRECT_REPORTS);
+  }
+  return normalizeId(goal?.createdBy?.userId) === resolveUserId(req) &&
+    actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_OWN);
 }
 
 function canAssignGoal(req, { ownerId, type = 'individual', teamId, departmentId } = {}) {
@@ -149,40 +163,44 @@ function canAssignGoal(req, { ownerId, type = 'individual', teamId, departmentId
   const userId = resolveUserId(req);
   if (!userId || !resolveOrganizationId(req)) return false;
 
-  if (isHr(req)) return true;
+  if (actorHasPermission(req, 'goal:assign:all') || isHr(req)) return true;
   if (type === 'organization') {
-    return hasPermission(role, GOAL_PERMISSION_SCOPES.ASSIGN_ORGANIZATION);
+    return actorHasPermission(req, GOAL_PERMISSION_SCOPES.ASSIGN_ORGANIZATION);
   }
   if (type === 'department') {
-    return hasPermission(role, GOAL_PERMISSION_SCOPES.ASSIGN_DEPARTMENT) &&
+    return actorHasPermission(req, GOAL_PERMISSION_SCOPES.ASSIGN_DEPARTMENT) &&
       (isHr(req) || getManagedDepartmentIds(req).includes(normalizeId(departmentId)));
   }
   if (type === 'team') {
-    return hasPermission(role, 'okr:create:team') && getManagedTeamIds(req).includes(normalizeId(teamId));
+    return actorHasPermission(req, 'okr:create:team') && getManagedTeamIds(req).includes(normalizeId(teamId));
   }
-  if (normalizeId(ownerId) === userId) return hasPermission(role, GOAL_PERMISSION_SCOPES.CREATE_OWN);
-  return hasPermission(role, GOAL_PERMISSION_SCOPES.ASSIGN_DIRECT_REPORTS) && isDirectReport(req, ownerId);
+  if (normalizeId(ownerId) === userId) return actorHasPermission(req, GOAL_PERMISSION_SCOPES.CREATE_OWN);
+  return actorHasPermission(req, GOAL_PERMISSION_SCOPES.ASSIGN_DIRECT_REPORTS) && isDirectReport(req, ownerId);
 }
 
 function canSubmitGoal(req, goal) {
   if (!isGoalInCurrentOrganization(req, goal) || !isOwner(req, goal)) return false;
   if (goal?.assignment?.assignedBy?.userId) return false;
-  return ['draft', 'changes_requested'].includes(goal?.lifecycle?.state || 'draft');
+  return actorHasPermission(req, 'okr:submit:own') &&
+    ['draft', 'changes_requested'].includes(goal?.lifecycle?.state || 'draft');
 }
 
 function canDecideGoal(req, goal) {
   if (!isGoalInCurrentOrganization(req, goal) || isOwner(req, goal)) return false;
-  if (isHr(req)) return true;
+  if (actorHasPermission(req, 'okr:decide:all') || isHr(req)) return true;
   const setterId = normalizeId(goal?.assignment?.assignedBy?.userId);
-  if (setterId) return setterId === resolveUserId(req);
-  return hasPermission(resolveRole(req), GOAL_PERMISSION_SCOPES.DECIDE_DIRECT_REPORTS) &&
+  if (setterId) {
+    return setterId === resolveUserId(req) &&
+      actorHasPermission(req, GOAL_PERMISSION_SCOPES.DECIDE_DIRECT_REPORTS);
+  }
+  return actorHasPermission(req, GOAL_PERMISSION_SCOPES.DECIDE_DIRECT_REPORTS) &&
     isDirectReport(req, goal.ownerId);
 }
 
 function canAcknowledgeGoal(req, goal) {
   if (!isGoalInCurrentOrganization(req, goal) || !isOwner(req, goal)) return false;
   if (!goal?.assignment?.assignedBy?.userId) return false;
-  return hasPermission(resolveRole(req), GOAL_PERMISSION_SCOPES.ACKNOWLEDGE_OWN) &&
+  return actorHasPermission(req, GOAL_PERMISSION_SCOPES.ACKNOWLEDGE_OWN) &&
     goal?.assignment?.acknowledgementStatus === 'pending';
 }
 
@@ -190,7 +208,7 @@ function canRequestGoalChange(req, goal) {
   if (!isGoalInCurrentOrganization(req, goal) || !isOwner(req, goal)) return false;
   if (!goal?.assignment?.assignedBy?.userId) return false;
   if (goal?.periodId?.settings?.allowEmployeeChangeRequests === false) return false;
-  return hasPermission(resolveRole(req), GOAL_PERMISSION_SCOPES.REQUEST_CHANGE_OWN) &&
+  return actorHasPermission(req, GOAL_PERMISSION_SCOPES.REQUEST_CHANGE_OWN) &&
     ['pending_acknowledgement', 'active', 'changes_requested'].includes(goal?.lifecycle?.state);
 }
 
@@ -200,45 +218,53 @@ function canEditGoal(req, goal) {
   if (['closed', 'cancelled', 'rejected'].includes(state) || ['closed', 'cancelled', 'rejected'].includes(goal?.status)) {
     return false;
   }
-  if (isHr(req)) return true;
-  if (isOwner(req, goal)) return !goal?.assignment?.assignedBy?.userId;
-  if (!hasPermission(resolveRole(req), GOAL_PERMISSION_SCOPES.ASSIGN_DIRECT_REPORTS)) return false;
+  if (actorHasPermission(req, 'okr:edit:all') || isHr(req)) return true;
+  if (isOwner(req, goal)) {
+    return actorHasPermission(req, 'okr:edit:own') && !goal?.assignment?.assignedBy?.userId;
+  }
+  if (!actorHasPermission(req, GOAL_PERMISSION_SCOPES.ASSIGN_DIRECT_REPORTS)) return false;
   return isDirectReport(req, goal.ownerId);
 }
 
 function canCheckInGoal(req, goal) {
   if (!isGoalInCurrentOrganization(req, goal)) return false;
-  if (isHr(req)) return true;
+  if (actorHasPermission(req, 'okr:checkin:all') || isHr(req)) return true;
   if (isOwner(req, goal)) {
-    return hasPermission(resolveRole(req), GOAL_PERMISSION_SCOPES.CHECK_IN_OWN);
+    return actorHasPermission(req, GOAL_PERMISSION_SCOPES.CHECK_IN_OWN);
   }
-  return hasPermission(resolveRole(req), GOAL_PERMISSION_SCOPES.CHECK_IN_DIRECT_REPORTS) &&
+  return actorHasPermission(req, GOAL_PERMISSION_SCOPES.CHECK_IN_DIRECT_REPORTS) &&
     isDirectReport(req, goal.ownerId);
 }
 
 function canAlignGoal(req, goal) {
-  return hasPermission(resolveRole(req), GOAL_PERMISSION_SCOPES.ALIGN) && canEditGoal(req, goal);
+  return actorHasPermission(req, GOAL_PERMISSION_SCOPES.ALIGN) && canEditGoal(req, goal);
 }
 
 function buildGoalVisibilityQuery(req) {
   const organizationId = resolveOrganizationId(req);
   if (!organizationId) return null;
-  if (isHr(req)) return { organizationId };
+  if (actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_ALL) || isHr(req)) return { organizationId };
 
   const userId = resolveUserId(req);
   const directReports = getDirectReportIds(req);
   const teamIds = uniqueIds(getUserTeamIds(req).concat(getManagedTeamIds(req)));
   const departmentIds = uniqueIds(getUserDepartmentIds(req).concat(getManagedDepartmentIds(req)));
-  const visibility = [
-    { ownerId: userId },
-    { 'createdBy.userId': userId },
-    { type: 'organization' }
-  ];
-  if (directReports.length > 0) visibility.push({ ownerId: { $in: directReports } });
-  if (teamIds.length > 0) visibility.push({ type: 'team', 'teamHierarchy.teamId': { $in: teamIds } });
-  if (departmentIds.length > 0) visibility.push({ type: 'department', 'teamHierarchy.departmentId': { $in: departmentIds } });
+  const visibility = [];
+  if (actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_OWN)) {
+    visibility.push({ ownerId: userId }, { 'createdBy.userId': userId });
+  }
+  if (actorHasPermission(req, 'okr:view:organization')) visibility.push({ type: 'organization' });
+  if (actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_DIRECT_REPORTS) && directReports.length > 0) {
+    visibility.push({ ownerId: { $in: directReports } });
+  }
+  if (actorHasPermission(req, GOAL_PERMISSION_SCOPES.VIEW_TEAM) && teamIds.length > 0) {
+    visibility.push({ type: 'team', 'teamHierarchy.teamId': { $in: teamIds } });
+  }
+  if (actorHasPermission(req, 'okr:view:department') && departmentIds.length > 0) {
+    visibility.push({ type: 'department', 'teamHierarchy.departmentId': { $in: departmentIds } });
+  }
 
-  return { organizationId, $or: visibility };
+  return visibility.length > 0 ? { organizationId, $or: visibility } : { organizationId, _id: { $exists: false } };
 }
 
 function getGoalPermissionFlags(req, goal) {

@@ -76,6 +76,40 @@ const DEFAULT_ROLES = Object.freeze([
 
 const cloneDefaults = () => DEFAULT_ROLES.map(role => ({ ...role, sourceRoles: [...role.sourceRoles], permissions: [...role.permissions] }));
 
+function getIdentityOrganization(user, organizationId) {
+    const candidates = [
+        user?.currentOrganization,
+        ...(user?.organizations || []),
+        ...(user?.userinfo?.organizations || []),
+    ].filter(Boolean);
+    return candidates.find(org => String(org.id || org._id) === String(organizationId)) || null;
+}
+
+function effectiveAccessFromIdentity(user, organizationId) {
+    const organization = getIdentityOrganization(user, organizationId);
+    if (!organization) return null;
+    const authorization = organization.authorization && typeof organization.authorization === 'object'
+        ? organization.authorization
+        : null;
+    const permissionsByApp = authorization?.permissionsByApp || organization.appPermissions;
+    if (!permissionsByApp || !Object.prototype.hasOwnProperty.call(permissionsByApp, 'time-attendance')) {
+        return null;
+    }
+    const permissions = Array.from(new Set(permissionsByApp['time-attendance'] || [])).sort();
+    const scopes = authorization?.permissionScopesByApp?.['time-attendance'] || Object.fromEntries(
+        permissions.map(permission => [permission, 'organization'])
+    );
+    return {
+        managedBy: 'seemplify-idp',
+        roleKeys: authorization?.roleKeys || [],
+        roleNames: authorization?.roleNames || [],
+        permissions,
+        scopes,
+        canAccessManagement: permissions.includes(PERMISSIONS.MANAGEMENT_VIEW),
+        canManageAccess: permissions.includes(PERMISSIONS.ACCESS_MANAGE),
+    };
+}
+
 async function getOrCreateAccessPolicy(organizationId, actor = {}) {
     let policy = await AttendanceAccessPolicy.findOne({ organizationId });
     if (policy) return policy;
@@ -140,6 +174,8 @@ function effectiveAccessFromPolicy(policy, user, organizationId) {
 }
 
 async function getEffectiveAccess({ organizationId, user }) {
+    const identityAccess = effectiveAccessFromIdentity(user, organizationId);
+    if (identityAccess) return identityAccess;
     const policy = await getOrCreateAccessPolicy(organizationId, user);
     return effectiveAccessFromPolicy(policy, user, organizationId);
 }
@@ -167,6 +203,7 @@ module.exports = {
     EDITABLE_PERMISSIONS,
     DEFAULT_ROLES,
     getOrCreateAccessPolicy,
+    effectiveAccessFromIdentity,
     getEffectiveAccess,
     effectiveAccessFromPolicy,
     hasAttendancePermission,

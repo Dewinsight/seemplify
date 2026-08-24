@@ -25,9 +25,11 @@ import { invalidateClaimsCache } from '../index.js'
 import {
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin
+  requestHasIdentityPermission,
+  requireIdentityPermission
 } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
+import { resolveOrganizationAuthorization } from '../services/accessControlService.js'
 
 const router = express.Router()
 
@@ -189,7 +191,7 @@ router.get('/:orgId/members',
   async (req, res) => {
     try {
       const organization = await Organization.findById(req.params.orgId)
-        .populate('members.account', 'sub email profile.name emailVerified createdAt')
+        .populate('members.account', 'sub email profile.name emailVerified createdAt isSuperAdmin authorizationRevision')
         .populate('members.invitedBy', 'email profile.name')
       await organization.save()
       const { appIdSet, appNameById } = getHubAppMetadata()
@@ -210,11 +212,16 @@ router.get('/:orgId/members',
         workflowType: 'onboarding'
       })
 
-      const members = organization.members
+      const members = (await Promise.all(organization.members
         .filter(m => m.status === 'active')
-        .map((m) => {
+        .map(async (m) => {
           const structure = getMemberStructure(memberStructure, m.account._id, organization)
           const onboardingState = getMemberOnboardingState(m.account._id, onboardingStateByMember)
+          const authorization = await resolveOrganizationAuthorization({
+            account: m.account,
+            organization,
+            member: m
+          })
           return {
             departmentId: structure.departmentId,
             departmentName: structure.departmentName,
@@ -237,9 +244,10 @@ router.get('/:orgId/members',
             onboardingStatus: onboardingState.status,
             onboardingStatusSource: onboardingState.source,
             onboardingLatestAssignmentId: onboardingState.latestAssignment?._id || null,
+            authorization,
             ...getMemberAppAccessSummary(m, appNameById, appIdSet)
           }
-        })
+        })))
         .sort((a, b) => {
           const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, staff: 5 }
           return (rolePriority[a.role] || 6) - (rolePriority[b.role] || 6)
@@ -342,12 +350,9 @@ router.get('/:orgId/members/:memberId',
 router.get('/:orgId/members/:memberId/payroll-sync',
   requireAuthOrAPIToken,
   requireOrganizationMember,
+  requireIdentityPermission('members.view'),
   async (req, res) => {
     try {
-      if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
-        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
-      }
-
       const organization = await Organization.findById(req.params.orgId)
         .populate('members.account', 'sub email profile')
 
@@ -425,12 +430,9 @@ router.get('/:orgId/members/:memberId/payroll-sync',
 router.put('/:orgId/members/:memberId/payroll-sync',
   requireAuthOrAPIToken,
   requireOrganizationMember,
+  requireIdentityPermission('members.manage'),
   async (req, res) => {
     try {
-      if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
-        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
-      }
-
       const organization = await Organization.findById(req.params.orgId)
         .populate('members.account', 'sub email profile')
 
@@ -659,7 +661,7 @@ router.put('/:orgId/members/:memberId/payroll-sync',
 router.post('/:orgId/members/profile-reminders',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireIdentityPermission('notifications.send'),
   async (req, res) => {
     try {
       if (!emailService.isConfigured()) {
@@ -725,8 +727,9 @@ router.put('/:orgId/members/:memberId',
       const hasBranch = Object.prototype.hasOwnProperty.call(body, 'branch')
       const { role, designation, employeeId, appAccess, branch } = body
 
-      const canManageRole = ['owner', 'admin'].includes(req.memberRole)
-      const canManageMemberMetadata = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
+      const canManageRole = requestHasIdentityPermission(req, 'roles.assign')
+      const canManageMemberMetadata = requestHasIdentityPermission(req, 'members.manage')
+      const canManageAppAccess = requestHasIdentityPermission(req, 'apps.assign')
 
       if (!hasRole && !hasDesignation && !hasEmployeeId && !hasDepartment && !hasBranch && !hasAppAccess) {
         return res.status(400).json({ error: 'At least one member field is required' })
@@ -736,8 +739,12 @@ router.put('/:orgId/members/:memberId',
         return res.status(403).json({ error: 'Admin or owner role required to update role' })
       }
 
-      if ((hasDesignation || hasEmployeeId || hasDepartment || hasBranch || hasAppAccess) && !canManageMemberMetadata) {
+      if ((hasDesignation || hasEmployeeId || hasDepartment || hasBranch) && !canManageMemberMetadata) {
         return res.status(403).json({ error: 'Admin, owner, or HR manager role required to update member details' })
+      }
+
+      if (hasAppAccess && !canManageAppAccess) {
+        return res.status(403).json({ error: 'Product assignment permission is required to update app access' })
       }
 
       if (hasDepartment) {
@@ -751,7 +758,7 @@ router.put('/:orgId/members/:memberId',
         }
       }
 
-      if (hasRole && role === 'owner' && req.memberRole !== 'owner') {
+      if (hasRole && role === 'owner' && !requestHasIdentityPermission(req, 'owner.transfer')) {
         return res.status(403).json({ error: 'Only owner can assign owner role' })
       }
 
@@ -923,7 +930,7 @@ router.put('/:orgId/members/:memberId',
 router.delete('/:orgId/members/:memberId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireIdentityPermission('members.remove'),
   async (req, res) => {
     try {
       const memberId = req.params.memberId
@@ -937,7 +944,7 @@ router.delete('/:orgId/members/:memberId',
         return res.status(404).json({ error: 'Member not found' })
       }
 
-      if (targetMember.role === 'owner' && req.memberRole !== 'owner' && !isSelf) {
+      if (targetMember.role === 'owner' && !requestHasIdentityPermission(req, 'owner.transfer') && !isSelf) {
         return res.status(403).json({ error: 'Only owner can remove other owners' })
       }
 

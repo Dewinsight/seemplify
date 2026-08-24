@@ -7,6 +7,10 @@
 
 import { Organization } from '../models/Organization.js'
 import { normalizeAppAccess } from './appAccess.js'
+import {
+  getOrCreateGlobalAccessPolicy,
+  resolveOrganizationAuthorization
+} from '../services/accessControlService.js'
 
 export function organizationClaimAppAccess(accountMembership, organizationMember) {
   // The Organization member is the canonical authorization record used by
@@ -261,9 +265,11 @@ export async function buildOrganizationClaims(account) {
 
   const organizationDocs = organizationIds.length > 0
     ? await Organization.find({ _id: { $in: organizationIds } })
-      .select('name departments branches members.account members.status members.designation members.employeeId members.branch members.appAccess')
+      .select('name departments branches accessControl members.account members.status members.role members.designation members.employeeId members.branch members.appAccess members.accessControl')
       .lean()
     : []
+
+  const accessPolicy = await getOrCreateGlobalAccessPolicy()
 
   const organizationDocById = new Map(
     organizationDocs.map((orgDoc) => [orgDoc._id.toString(), orgDoc])
@@ -314,13 +320,22 @@ export async function buildOrganizationClaims(account) {
         permissions: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves', 'manage_attendance', 'manage_performance', 'manage_idp_department']
       }))
 
-    // Get team permissions for this organization (now optimized)
-    const teamPermissions = await getTeamPermissions(account, orgId)
+    // Get team permissions and the complete IdP-managed product permission
+    // matrix for this organization.
+    const [teamPermissions, authorization] = await Promise.all([
+      getTeamPermissions(account, orgId),
+      resolveOrganizationAuthorization({
+        account,
+        organization: fullOrgDoc,
+        member: memberEntry,
+        policy: accessPolicy
+      })
+    ])
 
     return {
       id: orgId,
       name: fullOrgDoc.name || orgDoc.name || null,
-      role: org.role,
+      role: memberEntry.role || org.role,
       designation: memberEntry?.designation || null,
       employeeId: memberEntry?.employeeId || null,
       departmentId: memberDepartmentId,
@@ -332,11 +347,12 @@ export async function buildOrganizationClaims(account) {
       // membership from authorization to enter a particular product.
       appAccess: organizationClaimAppAccess(org, memberEntry),
       departmentHeadPermissions: headedDepartments,
-      permissions: getPermissionsForRole(org.role),
-      appPermissions: {
-        smarthr: getPermissionsForRole(org.role, 'smarthr'),
-        'leave-management': getPermissionsForRole(org.role, 'leave-management')
+      permissions: authorization?.permissionsByApp?.identity || getPermissionsForRole(memberEntry.role || org.role),
+      appPermissions: authorization?.permissionsByApp || {
+        smarthr: getPermissionsForRole(memberEntry.role || org.role, 'smarthr'),
+        'leave-management': getPermissionsForRole(memberEntry.role || org.role, 'leave-management')
       },
+      authorization,
       // Team-based permissions for this organization
       teamPermissions: teamPermissions,
       joinedAt: org.joinedAt

@@ -38,8 +38,11 @@ function validateRequestLimit(value) {
 
 router.get('/', asyncHandler(async (req, res) => {
   const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
-  const includeInactive = req.query.includeInactive === 'true' &&
-    ['owner', 'admin'].includes(req.organizationRole);
+  const includeInactive = req.query.includeInactive === 'true' && (
+    req.hasCentralAuthorization
+      ? req.organizationPermissions?.includes('manage_policies')
+      : ['owner', 'admin'].includes(req.organizationRole)
+  );
   res.json({ leaveTypes: getPolicyLeaveTypes(policy, { includeInactive }) });
 }));
 

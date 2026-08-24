@@ -28,7 +28,7 @@ import {
   linkPersonaClaimEvidence, listPersonaVersions, personaUsage, submitPersonaVersion, withdrawPersonaReview
 } from './journeyPersonaVersions.js';
 import { getJourneyRichMapSnapshot, type JourneyRichMapSnapshot } from './journeyRichCards.js';
-import { resolveRequestSpace, SpaceError, type SpaceContext } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError, type SpaceContext } from './spaces.js';
 import {
   assertSubscriptionFeature, consumeSubscriptionUsage, effectiveSubscriptionForSpace, SubscriptionEntitlementError
 } from './subscriptionEntitlements.js';
@@ -81,7 +81,7 @@ function context(request: express.Request) {
  * Phase 1 capability carrier; granular journey capabilities arrive with the
  * collaboration phase without changing this call site. */
 function requireEditor(space: SpaceContext) {
-  if (space.role === 'member') {
+  if (!spaceRoleOrIdpPermission(space, 'journeys.edit')) {
     throw new JourneyMapError('You do not have permission to change journey maps in this space.', 403, 'JOURNEY_MAP_FORBIDDEN');
   }
   return space;

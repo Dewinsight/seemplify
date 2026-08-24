@@ -672,17 +672,17 @@
         <div class="header-subtitle"><%= organization.name %> · Departments, teams, members, and role access</div>
       </div>
       <div class="header-actions">
-        <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
+        <% if (canInviteMembers) { %>
           <a href="/organizations/<%= organization._id %>/invitations" class="btn btn-primary">+ Invite Member</a>
         <% } %>
-        <% if (['owner', 'admin'].includes(yourRole)) { %>
+        <% if (canSendNotifications) { %>
           <button type="button" class="btn btn-secondary" onclick="sendProfileReminders(this)">Send Profile Reminders</button>
           <a href="/organizations/<%= organization._id %>/notifications" class="btn btn-secondary">Send Notification</a>
         <% } %>
       </div>
     </div>
 
-    <%- include('partials/organization-tabs', { organization, yourRole, activeSection: activeView }) %>
+    <%- include('partials/organization-tabs', { organization, yourRole, activeSection: activeView, canViewMembers, canInviteMembers, canManageInvitations, canViewAccessControl }) %>
 
     <section data-organization-panel="structure" <%= activeView === 'structure' ? '' : 'hidden' %>>
       <% if (departments && departments.length > 0) { %>
@@ -690,7 +690,7 @@
           <aside class="department-browser" aria-label="Departments">
             <div class="department-browser__header">
               <h2>Departments</h2>
-              <% if (canManageTeams) { %>
+              <% if (canManageDepartments) { %>
                 <button type="button" class="department-create" onclick="showDepartmentModal()">Add</button>
               <% } %>
             </div>
@@ -730,10 +730,10 @@
                     <h2><%= department.name %></h2>
                     <p class="department-detail__description"><%= department.description || 'Manage this department, its leadership, and the teams within it.' %></p>
                   </div>
-                  <% if (canManageTeams) { %>
+                  <% if (canManageDepartments || canManageTeams) { %>
                     <div class="department-detail__actions">
-                      <button type="button" class="btn btn-secondary btn-sm" onclick='editDepartment(<%- JSON.stringify(department) %>)'>Edit department</button>
-                      <button type="button" class="btn btn-primary btn-sm" onclick="showCreateModal('<%= department.id %>')">Create team</button>
+                      <% if (canManageDepartments) { %><button type="button" class="btn btn-secondary btn-sm" onclick='editDepartment(<%- JSON.stringify(department) %>)'>Edit department</button><% } %>
+                      <% if (canManageTeams) { %><button type="button" class="btn btn-primary btn-sm" onclick="showCreateModal('<%= department.id %>')">Create team</button><% } %>
                     </div>
                   <% } %>
                 </header>
@@ -797,7 +797,7 @@
         <div class="card empty-state">
           <h2>No departments yet</h2>
           <p>Create a department first, then add teams and assign people within it.</p>
-          <% if (canManageTeams) { %><button type="button" class="btn btn-primary" onclick="showDepartmentModal()">Create department</button><% } %>
+          <% if (canManageDepartments) { %><button type="button" class="btn btn-primary" onclick="showDepartmentModal()">Create department</button><% } %>
         </div>
       <% } %>
     </section>
@@ -808,7 +808,7 @@
           <h2>Locations</h2>
           <p>Manage the branches and offices where members of this organization work.</p>
         </div>
-        <% if (canManageMemberMetadata) { %>
+        <% if (canManageLocations) { %>
           <button type="button" class="btn btn-primary" onclick="showBranchModal()">+ Add location</button>
         <% } %>
       </div>
@@ -822,7 +822,7 @@
                 <th scope="col">Location</th>
                 <th scope="col">Manager</th>
                 <th scope="col">Members</th>
-                <% if (canManageMemberMetadata) { %><th scope="col"><span class="sr-only">Actions</span></th><% } %>
+                <% if (canManageLocations) { %><th scope="col"><span class="sr-only">Actions</span></th><% } %>
               </tr>
             </thead>
             <tbody>
@@ -839,7 +839,7 @@
                   <td class="location-address"><%= locationParts.join(', ') || 'Location not set' %></td>
                   <td class="location-address"><%= branch.managerName || 'Not assigned' %></td>
                   <td class="location-address"><%= branch.memberCount %> member<%= branch.memberCount === 1 ? '' : 's' %></td>
-                  <% if (canManageMemberMetadata) { %>
+                  <% if (canManageLocations) { %>
                     <td>
                       <div class="location-actions">
                         <button type="button" class="btn btn-secondary btn-sm" onclick="editBranchById('<%= branch.id %>')">Edit</button>
@@ -856,7 +856,7 @@
         <div class="card empty-state">
           <h2>No locations yet</h2>
           <p>Add a branch or office, then assign organization members to it from the Members tab.</p>
-          <% if (canManageMemberMetadata) { %><button type="button" class="btn btn-primary" onclick="showBranchModal()">Add first location</button><% } %>
+          <% if (canManageLocations) { %><button type="button" class="btn btn-primary" onclick="showBranchModal()">Add first location</button><% } %>
         </div>
       <% } %>
     </section>
@@ -1065,7 +1065,7 @@
           <div class="app-access-box">
             <label style="display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px;">App Access</label>
             <div style="margin-bottom: 8px;">
-              <% if (canManageMemberMetadata) { %>
+              <% if (canManageAppAccess) { %>
                 <select class="role-select" onchange="toggleMemberAppMode('<%= member.id %>', this.value)">
                   <option value="all" <%= member.appAccess?.mode !== 'selected' ? 'selected' : '' %>>All apps</option>
                   <option value="selected" <%= member.appAccess?.mode === 'selected' ? 'selected' : '' %>>Selected apps only</option>
@@ -1074,7 +1074,7 @@
                 <strong><%= member.appAccessLabel || 'All apps' %></strong>
               <% } %>
             </div>
-            <% if (canManageMemberMetadata) { %>
+            <% if (canManageAppAccess) { %>
               <div id="member-apps-<%= member.id %>" style="<%= member.appAccess?.mode === 'selected' ? '' : 'display:none;' %>">
                 <div class="app-access-grid">
                   <% availableApps.forEach(app => { %>
@@ -1096,7 +1096,7 @@
             <% } %>
           </div>
 
-          <% if (canManageMemberRoles && member.id.toString() !== user._id.toString()) { %>
+          <% if (canRemoveMembers && member.id.toString() !== user._id.toString()) { %>
             <div class="member-actions" style="margin-top: 16px;">
               <button class="btn btn-danger btn-sm" onclick="removeMember('<%= member.id %>', '<%= member.email %>')">Remove</button>
             </div>
@@ -1107,7 +1107,7 @@
     </div>
     <div id="memberDirectoryEmpty" class="member-directory-empty" hidden>No members match these filters.</div>
 
-    <% if (yourRole === 'owner') { %>
+    <% if (canTransferOwnership) { %>
       <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
           <button class="btn btn-primary" onclick="showTransferModal()">Transfer Ownership</button>
@@ -1313,6 +1313,7 @@
 
   <script>
     const orgId = '<%= organization._id %>';
+    const canManageTeamsClient = <%- JSON.stringify(Boolean(canManageTeams)) %>;
     const memberCards = Array.from(document.querySelectorAll('.member-card'));
     const departments = <%- JSON.stringify(departments || []) %>;
     const orgMembers = <%- JSON.stringify(orgMembers || []) %>;
@@ -1574,10 +1575,10 @@
               </svg>
               <input type="search" placeholder="Search by name, email, or employee ID" aria-label="Search team members" oninput="filterTeamMemberRows(this.value)">
             </label>
-            <button id="teamMemberAddToggle" class="btn btn-primary team-member-add-toggle" type="button" aria-expanded="false" onclick="toggleTeamMemberAddPanel()">+ Add member</button>
+            <button id="teamMemberAddToggle" class="btn btn-primary team-member-add-toggle" type="button" aria-expanded="false" onclick="toggleTeamMemberAddPanel()" style="${canManageTeamsClient ? '' : 'display:none'}">+ Add member</button>
           </div>
 
-          <div id="teamMemberAddPanel" class="team-member-add-panel" hidden>
+          <div id="teamMemberAddPanel" class="team-member-add-panel" hidden style="${canManageTeamsClient ? '' : 'display:none'}">
             <form class="team-member-add-form" onsubmit="event.preventDefault(); addMemberToTeam('${currentTeam.id}');">
               <div class="form-group">
                 <label for="newMemberId">Organization member</label>
@@ -1618,7 +1619,7 @@
                         <div class="team-member-email">${escapeHtml(member.email || '')}</div>
                       </td>
                       <td>
-                        <select class="team-member-role-select" aria-label="Role for ${escapeHtml(memberName)}" onchange="updateTeamMemberRole('${currentTeam.id}', '${member.id}', this.value)">
+                        <select class="team-member-role-select" aria-label="Role for ${escapeHtml(memberName)}" onchange="updateTeamMemberRole('${currentTeam.id}', '${member.id}', this.value)" ${canManageTeamsClient ? '' : 'disabled'}>
                           <option value="member" ${member.role === 'member' ? 'selected' : ''}>Member</option>
                           <option value="line_manager" ${member.role === 'line_manager' ? 'selected' : ''}>Line Manager</option>
                           <option value="team_lead" ${member.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
@@ -1631,6 +1632,7 @@
                           data-team-id="${escapeHtml(currentTeam.id)}"
                           data-member-id="${escapeHtml(member.id)}"
                           data-member-name="${escapeHtml(memberName)}"
+                          style="${canManageTeamsClient ? '' : 'display:none'}"
                           onclick="removeMemberFromTeam(this.dataset.teamId, this.dataset.memberId, this.dataset.memberName)">Remove</button>
                       </td>
                     </tr>

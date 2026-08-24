@@ -36,7 +36,7 @@ const {
   provisionIdpAdminIdentity,
   provisionIdpIdentity
 } = await import('../src/auth.js');
-const { idpOrganizationIdForSpace } = await import('../src/spaces.js');
+const { idpOrganizationIdForSpace, idpPermissionsForSpaceUser } = await import('../src/spaces.js');
 const { app } = await import('../src/app.js');
 const { SharedAiGatewayClient } = await import('../src/sharedAiGateway.js');
 
@@ -110,6 +110,42 @@ test('IdP provisioning rejects incomplete or unentitled identities', () => {
       appAccess: { mode: 'selected', appIds: ['recruiter'] }
     }]
   }), (error: unknown) => (error as { code?: string }).code === 'EXPERIENCE_ACCESS_DENIED');
+});
+
+test('signed Experience permissions override the legacy organization role and preserve empty denies', () => {
+  const user = provisionIdpIdentity({
+    sub: 'matrix-user', email: 'matrix.user@example.test', email_verified: true,
+    name: 'Matrix User', current_organization: { id: 'matrix-org' },
+    organizations: [{
+      id: 'matrix-org', name: 'Matrix Organisation', role: 'owner', appAccess: { mode: 'all' },
+      authorization: {
+        organizationRevision: 9,
+        permissionsByApp: {
+          'experience-management': ['spaces.read', 'journeys.read', 'journeys.comment']
+        }
+      }
+    }]
+  });
+  const membership = db.prepare(`SELECT membership.space_id,membership.role
+    FROM space_memberships membership JOIN spaces ON spaces.id=membership.space_id
+    WHERE membership.user_id=? AND spaces.slug LIKE 'idp-%'`).get(user.id) as { space_id: string; role: string };
+  assert.equal(membership.role, 'member');
+  assert.deepEqual(
+    [...(idpPermissionsForSpaceUser(membership.space_id, user.id) || [])].sort(),
+    ['journeys.comment', 'journeys.read', 'spaces.read']
+  );
+
+  provisionIdpIdentity({
+    sub: 'matrix-user', email: 'matrix.user@example.test', email_verified: true,
+    name: 'Matrix User', organizations: [{
+      id: 'matrix-org', name: 'Matrix Organisation', role: 'owner', appAccess: { mode: 'all' },
+      authorization: { organizationRevision: 10, permissionsByApp: { 'experience-management': [] } }
+    }]
+  });
+  assert.deepEqual([...(idpPermissionsForSpaceUser(membership.space_id, user.id) || [])], []);
+  const deniedMembership = db.prepare('SELECT role FROM space_memberships WHERE space_id=? AND user_id=?')
+    .get(membership.space_id, user.id) as { role: string };
+  assert.equal(deniedMembership.role, 'member');
 });
 
 test('IdP Admin SSO grants the matching Experience platform role', () => {

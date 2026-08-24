@@ -4,8 +4,7 @@ import { Account } from '../models/Account.js'
 import {
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
-  requireOrganizationOwner,
+  requireIdentityPermission,
   rateLimit
 } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken, requireScopes } from '../middleware/apiAuth.js'
@@ -14,13 +13,6 @@ import { subscriptionService } from '../services/subscriptionService.js'
 import { deleteOrganizationCascade } from '../services/adminOrganizationManagementService.js'
 
 const router = express.Router()
-
-const requireOrganizationDepartmentManager = (req, res, next) => {
-  if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
-    return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
-  }
-  next()
-}
 
 const serializeBranch = (branch) => ({
   id: branch._id,
@@ -261,7 +253,7 @@ router.get('/:orgId/departments',
 router.post('/:orgId/departments',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationDepartmentManager,
+  requireIdentityPermission('departments.manage'),
   async (req, res) => {
     try {
       const department = await req.organization.addDepartment(req.body || {}, req.user._id)
@@ -282,7 +274,7 @@ router.post('/:orgId/departments',
 router.put('/:orgId/departments/:departmentId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationDepartmentManager,
+  requireIdentityPermission('departments.manage'),
   async (req, res) => {
     try {
       const department = await req.organization.updateDepartment(req.params.departmentId, req.body || {})
@@ -316,7 +308,7 @@ router.get('/:orgId/branches',
 router.post('/:orgId/branches',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationDepartmentManager,
+  requireIdentityPermission('locations.manage'),
   async (req, res) => {
     try {
       const branch = await req.organization.addBranch(req.body || {})
@@ -332,7 +324,7 @@ router.post('/:orgId/branches',
 router.put('/:orgId/branches/:branchId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationDepartmentManager,
+  requireIdentityPermission('locations.manage'),
   async (req, res) => {
     try {
       const branch = await req.organization.updateBranch(req.params.branchId, req.body || {})
@@ -348,7 +340,7 @@ router.put('/:orgId/branches/:branchId',
 router.delete('/:orgId/branches/:branchId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationDepartmentManager,
+  requireIdentityPermission('locations.manage'),
   async (req, res) => {
     try {
       await req.organization.removeBranch(req.params.branchId)
@@ -369,7 +361,7 @@ router.delete('/:orgId/branches/:branchId',
 router.put('/:orgId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireIdentityPermission('organization.manage'),
   async (req, res) => {
     try {
       const { name, description, settings } = req.body
@@ -447,7 +439,7 @@ router.put('/:orgId',
 router.delete('/:orgId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationOwner,
+  requireIdentityPermission('organization.delete'),
   async (req, res) => {
     try {
       const organization = req.organization
@@ -526,7 +518,7 @@ router.post('/:orgId/switch',
 router.post('/:orgId/transfer-ownership',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationOwner,
+  requireIdentityPermission('owner.transfer'),
   async (req, res) => {
     try {
       const { newOwnerId } = req.body

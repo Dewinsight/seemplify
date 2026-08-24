@@ -9,6 +9,7 @@ import { Notification } from '../models/Notification.js'
 import { emailService } from '../services/emailService.js'
 import { uploadBufferToCloudinary } from '../services/cloudinaryService.js'
 import { subscriptionService } from '../services/subscriptionService.js'
+import { resolveOrganizationAuthorization } from '../services/accessControlService.js'
 import { SimpleLmsCourse } from '../models/SimpleLmsCourse.js'
 import { SimpleLmsProgram } from '../models/SimpleLmsProgram.js'
 import { SimpleLmsEnrollment } from '../models/SimpleLmsEnrollment.js'
@@ -291,6 +292,41 @@ const isPlatformAdmin = (account) => Boolean(account?.isSystemAdmin || account?.
 
 const canManageOrganizationData = (memberRole) => SIMPLE_LMS_ORG_MANAGER_ROLES.includes(memberRole)
 
+const hasLmsPermission = (orgContext, permissionId) => (
+  orgContext?.lmsPermissions instanceof Set && orgContext.lmsPermissions.has(permissionId)
+)
+
+const hasOrganizationWideLmsScope = (orgContext) => [
+  'edit_any_course',
+  'delete_any_course',
+  'manage_course_content',
+  'manage_enrollments',
+  'view_enrollments',
+  'view_student_progress',
+  'view_analytics',
+  'view_all_analytics',
+  'manage_lms_settings',
+  'manage_user_roles'
+].some(permissionId => hasLmsPermission(orgContext, permissionId))
+
+const requireLmsPermission = (res, orgContext, permissionId, message) => {
+  if (hasLmsPermission(orgContext, permissionId)) return true
+  res.status(403).json({
+    error: message || `The IdP has not granted ${permissionId}.`,
+    code: 'IDP_PERMISSION_REQUIRED',
+    permission: `lms:${permissionId}`
+  })
+  return false
+}
+
+const rejectIdpManagedLmsPermission = (req, res) => res.status(409).json({
+  error: 'Publishing permissions are managed in the IdP permission matrix.',
+  code: 'IDP_ACCESS_CONTROL_REQUIRED',
+  manageUrl: toIdString(req.user?.currentOrganization)
+    ? `/organizations/${toIdString(req.user.currentOrganization)}/access-control`
+    : '/organizations'
+})
+
 async function getSessionFromCookies(req) {
   try {
     const sessionCookie = req.cookies?._session
@@ -383,7 +419,7 @@ const resolveCurrentOrganizationContext = async (account) => {
   }
 
   const organization = await Organization.findById(organizationId)
-    .select('name members settings')
+    .select('name members departments accessControl settings')
     .lean()
   if (!organization) {
     return { error: 'Organization not found for current session.' }
@@ -397,11 +433,24 @@ const resolveCurrentOrganizationContext = async (account) => {
     return { error: 'You are not an active member of the current organization.' }
   }
 
+  const authorization = await resolveOrganizationAuthorization({
+    account,
+    organization,
+    member: memberRecord
+  })
+  const lmsPermissions = new Set(authorization?.permissionsByApp?.lms || [])
+
+  if (!authorization || !Object.prototype.hasOwnProperty.call(authorization.permissionsByApp || {}, 'lms')) {
+    return { error: 'Simple LMS access is not assigned by the IdP for this organization.' }
+  }
+
   return {
     organizationId,
     organizationName: organization.name || 'Organization',
     memberRole: memberRecord.role,
-    organization
+    organization,
+    authorization,
+    lmsPermissions
   }
 }
 
@@ -442,12 +491,27 @@ const buildAssignableMembers = ({ orgMembers, scope, accountId }) => {
     }))
 }
 
-const canManageCourse = ({ course, accountId, memberRole, scope, platformAdmin }) => {
+const canManageCourse = ({
+  course,
+  accountId,
+  memberRole,
+  scope,
+  platformAdmin,
+  lmsPermissions = null,
+  ownPermission = 'edit_own_courses',
+  anyPermission = 'edit_any_course'
+}) => {
   if (!course) return false
   if (platformAdmin && course.isSystemCourse) return true
 
   if (course.organization && toIdString(course.organization) !== toIdString(scope.organizationId)) {
     return false
+  }
+
+  if (lmsPermissions instanceof Set) {
+    return lmsPermissions.has(anyPermission) || (
+      toIdString(course.createdBy) === toIdString(accountId) && lmsPermissions.has(ownPermission)
+    )
   }
 
   if (canManageOrganizationData(memberRole)) {
@@ -531,7 +595,6 @@ const buildAssignableMemberIds = ({
   targetMemberId,
   targetTeamId,
   accountId,
-  memberRole,
   scope,
   orgMembers,
   teams
@@ -549,7 +612,7 @@ const buildAssignableMemberIds = ({
     if (!normalizedMemberId) {
       throw new Error('Select a member to assign.')
     }
-    if (!canManageOrganizationData(memberRole) && !scope.manageableMemberIdSet.has(normalizedMemberId)) {
+    if (!scope.canManageOrganization && !scope.manageableMemberIdSet.has(normalizedMemberId)) {
       throw new Error('You do not have permission to assign this member.')
     }
     memberIdSet.add(normalizedMemberId)
@@ -561,7 +624,7 @@ const buildAssignableMemberIds = ({
     if (!normalizedTeamId) {
       throw new Error('Select a team to assign.')
     }
-    if (!canManageOrganizationData(memberRole) && !scope.manageableTeamIds.has(normalizedTeamId)) {
+    if (!scope.canManageOrganization && !scope.manageableTeamIds.has(normalizedTeamId)) {
       throw new Error('You do not have permission to assign this team.')
     }
 
@@ -577,7 +640,7 @@ const buildAssignableMemberIds = ({
     }
 
     for (const memberId of teamAccountIds) {
-      if (!canManageOrganizationData(memberRole) && !scope.manageableMemberIdSet.has(memberId)) {
+      if (!scope.canManageOrganization && !scope.manageableMemberIdSet.has(memberId)) {
         continue
       }
       memberIdSet.add(memberId)
@@ -591,8 +654,8 @@ const buildAssignableMemberIds = ({
   }
 
   if (targetType === 'organization') {
-    if (!canManageOrganizationData(memberRole)) {
-      throw new Error('Only owner, admin, or HR manager can assign to the whole organization.')
+    if (!scope.canManageOrganization) {
+      throw new Error('The IdP has not granted organization-wide learning assignment.')
     }
     orgMembers.forEach(member => memberIdSet.add(member.accountId))
     return Array.from(memberIdSet)
@@ -741,6 +804,9 @@ pageRouter.get('/', requirePageAuth, requirePageSubscriptionAccess, async (req, 
     if (orgContext.error) {
       return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
     }
+    if (!hasLmsPermission(orgContext, 'view_courses')) {
+      return res.status(403).send('Simple LMS access has not been granted by your organization administrator.')
+    }
 
     await markSimpleLmsDashboardViewed({
       accountId: req.user._id,
@@ -751,20 +817,21 @@ pageRouter.get('/', requirePageAuth, requirePageSubscriptionAccess, async (req, 
       getSimpleLmsAccessScope({
         organizationId: orgContext.organizationId,
         accountId: req.user._id,
-        memberRole: orgContext.memberRole
+        memberRole: orgContext.memberRole,
+        canManageOrganization: hasOrganizationWideLmsScope(orgContext)
       }),
       getLmsPlanAccess(orgContext.organizationId),
-      SimpleLmsPermission.hasPublishWithoutReview({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id
-      })
+      Promise.resolve(hasLmsPermission(orgContext, 'publish_courses'))
     ])
 
-    const canManageOrg = canManageOrganizationData(orgContext.memberRole)
+    const canManageOrg = hasLmsPermission(orgContext, 'edit_any_course') ||
+      hasLmsPermission(orgContext, 'manage_enrollments') ||
+      hasLmsPermission(orgContext, 'manage_lms_settings')
     const hasHierarchyScope = scope.manageableMembers.length > 0
-    const canCreateCourses = canManageOrg || hasHierarchyScope || isPlatformAdmin(req.user)
-    const canAssignCourses = canManageOrg || hasHierarchyScope
-    const canReviewOrgRequests = canManageOrg
+    const canCreateCourses = hasLmsPermission(orgContext, 'create_courses')
+    const canAssignCourses = hasLmsPermission(orgContext, 'manage_enrollments')
+    const canReviewOrgRequests = hasLmsPermission(orgContext, 'manage_enrollments') ||
+      hasLmsPermission(orgContext, 'publish_courses')
     const canReviewPlatformRequests = isPlatformAdmin(req.user)
     const canPublishWithoutReview = publishWithoutReviewAllowed || canReviewPlatformRequests
     const currencySettings = getSimpleLmsCurrencySettings(orgContext.organization)
@@ -816,16 +883,7 @@ pageRouter.get('/', requirePageAuth, requirePageSubscriptionAccess, async (req, 
         .populate('course', 'title visibility status')
         .sort({ createdAt: -1 })
         .lean(),
-      canReviewOrgRequests
-        ? SimpleLmsRequest.find({
-          organization: orgContext.organizationId,
-          requestType: 'publish_without_review',
-          status: 'pending'
-        })
-          .populate('requestedBy', 'email profile.name')
-          .sort({ createdAt: -1 })
-          .lean()
-        : Promise.resolve([]),
+      Promise.resolve([]),
       canReviewPlatformRequests
         ? SimpleLmsRequest.find({
           requestType: { $in: ['system_course_access', 'public_course_publish'] },
@@ -837,17 +895,7 @@ pageRouter.get('/', requirePageAuth, requirePageSubscriptionAccess, async (req, 
           .sort({ createdAt: -1 })
           .lean()
         : Promise.resolve([]),
-      canReviewOrgRequests
-        ? SimpleLmsPermission.find({
-          organization: orgContext.organizationId,
-          canPublishWithoutReview: true,
-          isActive: true
-        })
-          .populate('account', 'email profile.name')
-          .populate('grantedBy', 'email profile.name')
-          .sort({ updatedAt: -1 })
-          .lean()
-        : Promise.resolve([]),
+      Promise.resolve([]),
       SimpleLmsRequest.countDocuments({
         organization: orgContext.organizationId,
         requestType: 'system_course_access',
@@ -968,13 +1016,14 @@ apiRouter.post('/upload/banner', upload.single('banner'), async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'create_courses', 'The IdP has not granted course creation.')) return
 
     const scope = await getSimpleLmsAccessScope({
       organizationId: orgContext.organizationId,
       accountId: req.user._id,
       memberRole: orgContext.memberRole
     })
-    const canCreateCourses = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0 || isPlatformAdmin(req.user)
+    const canCreateCourses = hasLmsPermission(orgContext, 'create_courses')
     if (!canCreateCourses) {
       return res.status(403).json({ error: 'You do not have permission to upload LMS course banners.' })
     }
@@ -1013,10 +1062,7 @@ apiRouter.put('/settings/currency', async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
-
-    if (!canManageOrganizationData(orgContext.memberRole)) {
-      return res.status(403).json({ error: 'Only owner, admin, or HR manager can update currency settings.' })
-    }
+    if (!requireLmsPermission(res, orgContext, 'manage_lms_settings', 'The IdP has not granted LMS settings management.')) return
 
     const defaultCurrency = normalizeCurrencyCode(req.body.defaultCurrency, '')
     if (!defaultCurrency) {
@@ -1061,6 +1107,7 @@ apiRouter.post('/courses', async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'create_courses', 'The IdP has not granted course creation.')) return
 
     const [scope, planAccess, hasPublishWithoutReview] = await Promise.all([
       getSimpleLmsAccessScope({
@@ -1069,17 +1116,14 @@ apiRouter.post('/courses', async (req, res) => {
         memberRole: orgContext.memberRole
       }),
       getLmsPlanAccess(orgContext.organizationId),
-      SimpleLmsPermission.hasPublishWithoutReview({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id
-      })
+      Promise.resolve(hasLmsPermission(orgContext, 'publish_courses'))
     ])
 
     if (!planAccess.hasLmsFeature) {
       return res.status(403).json({ error: 'Simple LMS is not available on your current subscription plan.' })
     }
 
-    const creatorCanCreate = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0 || isPlatformAdmin(req.user)
+    const creatorCanCreate = hasLmsPermission(orgContext, 'create_courses')
     if (!creatorCanCreate) {
       return res.status(403).json({ error: 'You do not have permission to create LMS courses.' })
     }
@@ -1221,14 +1265,21 @@ apiRouter.put('/courses/:courseId', async (req, res) => {
         memberRole: orgContext.memberRole
       }),
       SimpleLmsCourse.findById(courseId),
-      SimpleLmsPermission.hasPublishWithoutReview({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id
-      })
+      Promise.resolve(hasLmsPermission(orgContext, 'publish_courses'))
     ])
 
     if (!course || !course.isActive) {
       return res.status(404).json({ error: 'Course not found.' })
+    }
+
+    const ownsCourse = toIdString(course.createdBy) === toIdString(req.user._id)
+    const hasEditPermission = hasLmsPermission(orgContext, 'edit_any_course') ||
+      (ownsCourse && hasLmsPermission(orgContext, 'edit_own_courses'))
+    if (!hasEditPermission) {
+      return res.status(403).json({
+        error: 'The IdP has not granted permission to edit this course.',
+        code: 'IDP_PERMISSION_REQUIRED'
+      })
     }
 
     const platformAdmin = isPlatformAdmin(req.user)
@@ -1240,7 +1291,8 @@ apiRouter.put('/courses/:courseId', async (req, res) => {
         ...scope,
         organizationId: orgContext.organizationId
       },
-      platformAdmin
+      platformAdmin,
+      lmsPermissions: orgContext.lmsPermissions
     })
     if (!canEdit) {
       return res.status(403).json({ error: 'You do not have permission to update this course.' })
@@ -1356,6 +1408,16 @@ apiRouter.post('/courses/:courseId/archive', async (req, res) => {
       return res.status(404).json({ error: 'Course not found.' })
     }
 
+    const ownsCourse = toIdString(course.createdBy) === toIdString(req.user._id)
+    const hasDeletePermission = hasLmsPermission(orgContext, 'delete_any_course') ||
+      (ownsCourse && hasLmsPermission(orgContext, 'delete_own_courses'))
+    if (!hasDeletePermission) {
+      return res.status(403).json({
+        error: 'The IdP has not granted permission to archive this course.',
+        code: 'IDP_PERMISSION_REQUIRED'
+      })
+    }
+
     const platformAdmin = isPlatformAdmin(req.user)
     const canEdit = canManageCourse({
       course,
@@ -1365,7 +1427,10 @@ apiRouter.post('/courses/:courseId/archive', async (req, res) => {
         ...scope,
         organizationId: orgContext.organizationId
       },
-      platformAdmin
+      platformAdmin,
+      lmsPermissions: orgContext.lmsPermissions,
+      ownPermission: 'delete_own_courses',
+      anyPermission: 'delete_any_course'
     })
     if (!canEdit) {
       return res.status(403).json({ error: 'You do not have permission to archive this course.' })
@@ -1400,17 +1465,16 @@ apiRouter.post('/courses/:courseId/request-publication', async (req, res) => {
         _id: courseId,
         organization: orgContext.organizationId
       }),
-      SimpleLmsPermission.hasPublishWithoutReview({
-        organizationId: orgContext.organizationId,
-        accountId: req.user._id
-      })
+      Promise.resolve(hasLmsPermission(orgContext, 'publish_courses'))
     ])
 
     if (!course) {
       return res.status(404).json({ error: 'Course not found in your organization.' })
     }
 
-    const canRequest = canManageOrganizationData(orgContext.memberRole) || toIdString(course.createdBy) === toIdString(req.user._id)
+    const ownsCourse = toIdString(course.createdBy) === toIdString(req.user._id)
+    const canRequest = hasLmsPermission(orgContext, 'publish_courses') ||
+      (ownsCourse && hasLmsPermission(orgContext, 'edit_own_courses'))
     if (!canRequest) {
       return res.status(403).json({ error: 'Only the course owner or org managers can request publication.' })
     }
@@ -1484,13 +1548,14 @@ apiRouter.post('/programs', async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'manage_course_content', 'The IdP has not granted program creation.')) return
 
     const scope = await getSimpleLmsAccessScope({
       organizationId: orgContext.organizationId,
       accountId: req.user._id,
       memberRole: orgContext.memberRole
     })
-    const canCreatePrograms = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0
+    const canCreatePrograms = hasLmsPermission(orgContext, 'manage_course_content')
     if (!canCreatePrograms) {
       return res.status(403).json({ error: 'You do not have permission to create programs.' })
     }
@@ -1575,6 +1640,7 @@ apiRouter.put('/programs/:programId', async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'manage_course_content', 'The IdP has not granted program editing.')) return
 
     const programId = String(req.params.programId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(programId)) {
@@ -1586,7 +1652,7 @@ apiRouter.put('/programs/:programId', async (req, res) => {
       accountId: req.user._id,
       memberRole: orgContext.memberRole
     })
-    const canEditPrograms = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0
+    const canEditPrograms = hasLmsPermission(orgContext, 'manage_course_content')
     if (!canEditPrograms) {
       return res.status(403).json({ error: 'You do not have permission to update programs.' })
     }
@@ -1599,7 +1665,7 @@ apiRouter.put('/programs/:programId', async (req, res) => {
       return res.status(404).json({ error: 'Program not found.' })
     }
 
-    if (!canManageOrganizationData(orgContext.memberRole) && toIdString(program.createdBy) !== toIdString(req.user._id)) {
+    if (!hasLmsPermission(orgContext, 'edit_any_course') && toIdString(program.createdBy) !== toIdString(req.user._id)) {
       return res.status(403).json({ error: 'Only the program owner or org managers can edit this program.' })
     }
 
@@ -1690,16 +1756,18 @@ apiRouter.post('/assignments/course', async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'manage_enrollments', 'The IdP has not granted course assignment.')) return
 
     const [scope, orgMembersResult] = await Promise.all([
       getSimpleLmsAccessScope({
         organizationId: orgContext.organizationId,
         accountId: req.user._id,
-        memberRole: orgContext.memberRole
+        memberRole: orgContext.memberRole,
+        canManageOrganization: hasOrganizationWideLmsScope(orgContext)
       }),
       getOrganizationMembersWithTeamContext({ organizationId: orgContext.organizationId })
     ])
-    const canAssignCourses = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0
+    const canAssignCourses = hasLmsPermission(orgContext, 'manage_enrollments')
     if (!canAssignCourses) {
       return res.status(403).json({ error: 'You do not have permission to assign courses.' })
     }
@@ -1766,16 +1834,18 @@ apiRouter.post('/assignments/program', async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'manage_enrollments', 'The IdP has not granted program assignment.')) return
 
     const [scope, orgMembersResult] = await Promise.all([
       getSimpleLmsAccessScope({
         organizationId: orgContext.organizationId,
         accountId: req.user._id,
-        memberRole: orgContext.memberRole
+        memberRole: orgContext.memberRole,
+        canManageOrganization: hasOrganizationWideLmsScope(orgContext)
       }),
       getOrganizationMembersWithTeamContext({ organizationId: orgContext.organizationId })
     ])
-    const canAssignCourses = canManageOrganizationData(orgContext.memberRole) || scope.manageableMembers.length > 0
+    const canAssignCourses = hasLmsPermission(orgContext, 'manage_enrollments')
     if (!canAssignCourses) {
       return res.status(403).json({ error: 'You do not have permission to assign programs.' })
     }
@@ -1851,6 +1921,7 @@ apiRouter.post('/enrollments/:enrollmentId/lessons/:lessonKey/complete', async (
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'view_lessons', 'The IdP has not granted lesson access.')) return
 
     const enrollmentId = String(req.params.enrollmentId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
@@ -1918,6 +1989,7 @@ apiRouter.post('/enrollments/:enrollmentId/quizzes/:lessonKey/submit', async (re
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'take_quizzes', 'The IdP has not granted quiz participation.')) return
 
     const enrollmentId = String(req.params.enrollmentId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
@@ -2009,6 +2081,7 @@ apiRouter.post('/enrollments/:enrollmentId/viewed', async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'view_own_progress', 'The IdP has not granted learning progress access.')) return
 
     const enrollmentId = String(req.params.enrollmentId || '').trim()
     if (!mongoose.Types.ObjectId.isValid(enrollmentId)) {
@@ -2042,12 +2115,14 @@ apiRouter.post('/system-courses/:courseId/request-access', async (req, res) => {
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
+    if (!requireLmsPermission(res, orgContext, 'enroll_courses', 'The IdP has not granted course enrolment.')) return
 
     const [scope, planAccess, orgMembersResult] = await Promise.all([
       getSimpleLmsAccessScope({
         organizationId: orgContext.organizationId,
         accountId: req.user._id,
-        memberRole: orgContext.memberRole
+        memberRole: orgContext.memberRole,
+        canManageOrganization: hasOrganizationWideLmsScope(orgContext)
       }),
       getLmsPlanAccess(orgContext.organizationId),
       getOrganizationMembersWithTeamContext({ organizationId: orgContext.organizationId })
@@ -2100,6 +2175,14 @@ apiRouter.post('/system-courses/:courseId/request-access', async (req, res) => {
     const targetType = String(req.body.targetType || 'self').trim()
     const targetMemberId = String(req.body.targetMemberId || '').trim()
     const targetTeamId = String(req.body.targetTeamId || '').trim()
+
+    if (targetType !== 'self' && !hasLmsPermission(orgContext, 'manage_enrollments')) {
+      return res.status(403).json({
+        error: 'The IdP has not granted learning assignment for other members.',
+        code: 'IDP_PERMISSION_REQUIRED',
+        permission: 'lms:manage_enrollments'
+      })
+    }
 
     buildAssignableMemberIds({
       targetType,
@@ -2183,13 +2266,12 @@ apiRouter.post('/system-courses/:courseId/request-access', async (req, res) => {
   }
 })
 
-apiRouter.post('/permissions/publish-without-review/request', async (req, res) => {
+apiRouter.post('/permissions/publish-without-review/request', rejectIdpManagedLmsPermission, async (req, res) => {
   try {
     const orgContext = await resolveCurrentOrganizationContext(req.user)
     if (orgContext.error) {
       return res.status(400).json({ error: orgContext.error })
     }
-
     const existingPending = await SimpleLmsRequest.findOne({
       organization: orgContext.organizationId,
       requestedBy: req.user._id,
@@ -2242,7 +2324,7 @@ apiRouter.post('/permissions/publish-without-review/request', async (req, res) =
   }
 })
 
-apiRouter.post('/permissions/publish-without-review/:accountId/grant', async (req, res) => {
+apiRouter.post('/permissions/publish-without-review/:accountId/grant', rejectIdpManagedLmsPermission, async (req, res) => {
   try {
     const orgContext = await resolveCurrentOrganizationContext(req.user)
     if (orgContext.error) {
@@ -2303,7 +2385,7 @@ apiRouter.post('/permissions/publish-without-review/:accountId/grant', async (re
   }
 })
 
-apiRouter.post('/permissions/publish-without-review/:accountId/revoke', async (req, res) => {
+apiRouter.post('/permissions/publish-without-review/:accountId/revoke', rejectIdpManagedLmsPermission, async (req, res) => {
   try {
     const orgContext = await resolveCurrentOrganizationContext(req.user)
     if (orgContext.error) {
@@ -2373,13 +2455,20 @@ apiRouter.post('/requests/:requestId/review', async (req, res) => {
 
     const platformAdmin = isPlatformAdmin(req.user)
     const sameOrganization = toIdString(request.organization) === orgContext.organizationId
-    const canReviewOrgRequest = sameOrganization && canManageOrganizationData(orgContext.memberRole)
+    const canReviewOrgRequest = sameOrganization && (
+      hasLmsPermission(orgContext, 'manage_enrollments') ||
+      hasLmsPermission(orgContext, 'publish_courses')
+    )
     const canReviewPlatformRequest =
       platformAdmin ||
       (request.notificationRecipient && toIdString(request.notificationRecipient) === toIdString(req.user._id))
 
-    if (request.requestType === 'publish_without_review' && !canReviewOrgRequest) {
-      return res.status(403).json({ error: 'You do not have permission to review this request.' })
+    if (request.requestType === 'publish_without_review') {
+      return res.status(409).json({
+        error: 'Publishing permissions are managed in the IdP permission matrix.',
+        code: 'IDP_ACCESS_CONTROL_REQUIRED',
+        manageUrl: `/organizations/${orgContext.organizationId}/access-control`
+      })
     }
     if (['system_course_access', 'public_course_publish'].includes(request.requestType) && !canReviewPlatformRequest) {
       return res.status(403).json({ error: 'You do not have permission to review this request.' })

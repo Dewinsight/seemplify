@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { signInE2eBootstrap } from './auth';
 
 const rootPermissions = [
   'users.read', 'users.create', 'users.manage', 'roles.read', 'roles.manage',
@@ -67,11 +68,7 @@ async function json(route: Route, value: unknown, status = 200) {
 }
 
 async function loginRoot(page: Page) {
-  await page.goto('/login');
-  await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  await signInE2eBootstrap(page);
 }
 
 async function installControlPlaneMocks(page: Page) {
@@ -284,7 +281,7 @@ test.describe('platform administrator control plane', () => {
     await page.getByLabel('Default reasoning effort').selectOption('max');
     await page.getByLabel('Model for Analyst chat').selectOption('gpt-5.6-luna');
     await page.getByLabel('Effort for Analyst chat').selectOption('xhigh');
-    await page.getByRole('checkbox', { name: /Connected ChatGPT/ }).uncheck();
+    await page.getByRole('checkbox', { name: 'ChatGPT / Codex' }).uncheck();
     await page.getByRole('button', { name: 'Save policy' }).click();
     await expect(page.getByText('Platform Codex defaults saved.')).toBeVisible();
     expect(mock.writes).toHaveLength(1);
@@ -294,7 +291,7 @@ test.describe('platform administrator control plane', () => {
       codexActionOverrides: {
         'analyst.chat': { model: 'gpt-5.6-luna', reasoningEffort: 'xhigh' }
       },
-      runtimePolicy: { chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+      runtimePolicy: { chatgptEnabled: false, defaultRuntime: 'chatgpt' }
     });
 
     page.once('dialog', (dialog) => dialog.accept());

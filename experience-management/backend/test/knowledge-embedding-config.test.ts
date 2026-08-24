@@ -98,8 +98,8 @@ test('runtime schema 3 migration is additive and carries durable rollout state',
   ]) assert.match(migration, new RegExp(contract, 'u'));
   assert.match(migration, /ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS/u);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 33,
-    maximumRuntimeSchemaVersion: 33,
+    minimumRuntimeSchemaVersion: 34,
+    maximumRuntimeSchemaVersion: 34,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });

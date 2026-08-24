@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Roles & Permissions - Seemplify Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style><%- include('../../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=3"></script>
+  <style>
+    .access-layout { display:grid; grid-template-columns:260px minmax(0,1fr); gap:20px; align-items:start; }
+    .access-panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; }
+    .access-panel__header { padding:16px; border-bottom:1px solid var(--border); }
+    .access-panel__header h2 { margin:0; font-size:17px; }
+    .access-panel__header p { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.45; }
+    .access-role-list { padding:8px; display:grid; gap:4px; }
+    .access-role { width:100%; padding:10px 12px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+    .access-role:hover { background:var(--hover-bg); }
+    .access-role.active { border-color:var(--border); background:var(--hover-bg); }
+    .access-role strong,.access-role span { display:block; }
+    .access-role span { margin-top:3px; color:var(--muted); font-size:12px; }
+    .access-workbench { min-width:0; }
+    .access-toolbar { display:flex; gap:12px; align-items:end; justify-content:space-between; padding:16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .access-field { display:grid; gap:6px; min-width:220px; }
+    .access-field label { font-size:12px; font-weight:650; color:var(--muted); }
+    .access-field input,.access-field textarea,.access-field select,.permission-state { width:100%; box-sizing:border-box; border:1px solid var(--border); border-radius:7px; background:var(--input-bg,var(--bg)); color:var(--text); padding:9px 10px; }
+    .access-field textarea { min-height:72px; resize:vertical; }
+    .role-editor { display:grid; grid-template-columns:minmax(180px,.7fr) minmax(280px,1.3fr); gap:12px; padding:16px; border-bottom:1px solid var(--border); }
+    .permission-table-wrap { overflow:auto; }
+    .permission-table { width:100%; border-collapse:collapse; }
+    .permission-table th,.permission-table td { padding:11px 14px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
+    .permission-table th { font-size:12px; color:var(--muted); font-weight:650; }
+    .permission-table td:first-child { min-width:260px; }
+    .permission-name { font-weight:650; }
+    .permission-detail { display:block; margin-top:3px; color:var(--muted); font-size:12px; }
+    .permission-state { min-width:128px; padding:7px 9px; }
+    .sensitive { color:#b45309; font-size:12px; font-weight:650; }
+    .access-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:16px; flex-wrap:wrap; }
+    .access-status { color:var(--muted); font-size:13px; }
+    .access-status.error { color:#dc2626; }
+    .audit-list { margin-top:20px; }
+    .audit-row { display:grid; grid-template-columns:150px minmax(0,1fr) 180px; gap:12px; padding:11px 14px; border-bottom:1px solid var(--border); font-size:13px; }
+    .audit-row:last-child { border-bottom:0; }
+    .audit-meta { color:var(--muted); }
+    .new-role-form { display:none; padding:12px; border-top:1px solid var(--border); }
+    .new-role-form.open { display:grid; gap:10px; }
+    @media (max-width:900px) {
+      .access-layout { grid-template-columns:1fr; }
+      .access-role-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .role-editor { grid-template-columns:1fr; }
+      .audit-row { grid-template-columns:1fr; gap:4px; }
+    }
+    @media (max-width:560px) { .access-role-list { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'access-control' }) %>
+    <main class="admin-content">
+      <div class="admin-header">
+        <div>
+          <h1>Roles & Permissions</h1>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:14px;">Global role policy used to issue product permissions in OIDC claims.</p>
+        </div>
+        <div class="admin-header-actions">
+          <span class="access-status">Policy revision <strong id="revision"><%= accessControl.revision %></strong></span>
+        </div>
+      </div>
+
+      <div class="access-layout">
+        <aside class="access-panel">
+          <div class="access-panel__header">
+            <h2>Global roles</h2>
+            <p>Built-in roles map existing organization and team roles. Custom roles are assigned by organization admins.</p>
+          </div>
+          <div id="roleList" class="access-role-list"></div>
+          <% if (admin?.isSuperAdmin) { %>
+            <button type="button" class="btn btn-secondary btn-sm" style="margin:8px 12px 12px;" onclick="toggleNewRole()">Create role</button>
+            <form id="newRoleForm" class="new-role-form" onsubmit="createRole(event)">
+              <div class="access-field"><label for="newRoleName">Role name</label><input id="newRoleName" required maxlength="100"></div>
+              <div class="access-field"><label for="newRoleKey">Role key</label><input id="newRoleKey" required pattern="[a-z][a-z0-9_-]{1,63}" maxlength="64"></div>
+              <button class="btn btn-primary btn-sm" type="submit">Create</button>
+            </form>
+          <% } %>
+        </aside>
+
+        <section class="access-panel access-workbench" aria-labelledby="roleNameHeading">
+          <div class="access-toolbar">
+            <div>
+              <h2 id="roleNameHeading" style="margin:0;font-size:18px;">Role</h2>
+              <div id="roleSource" class="access-status" style="margin-top:5px;"></div>
+            </div>
+            <div class="access-field">
+              <label for="productSelect">Product</label>
+              <select id="productSelect" onchange="renderPermissions()"></select>
+            </div>
+          </div>
+          <div class="role-editor">
+            <div class="access-field"><label for="roleName">Name</label><input id="roleName" maxlength="100" <%= admin?.isSuperAdmin ? '' : 'disabled' %>></div>
+            <div class="access-field"><label for="roleDescription">Description</label><textarea id="roleDescription" maxlength="500" <%= admin?.isSuperAdmin ? '' : 'disabled' %>></textarea></div>
+          </div>
+          <div class="permission-table-wrap">
+            <table class="permission-table">
+              <thead><tr><th>Permission</th><th>Scope</th><th>Policy</th></tr></thead>
+              <tbody id="permissionRows"></tbody>
+            </table>
+          </div>
+          <div class="access-footer">
+            <div id="saveStatus" class="access-status" role="status" aria-live="polite"></div>
+            <% if (admin?.isSuperAdmin) { %>
+              <div style="display:flex;gap:8px;">
+                <button id="deleteRoleButton" type="button" class="btn btn-danger btn-sm" onclick="deleteRole()">Delete role</button>
+                <button type="button" class="btn btn-primary" onclick="saveRole()">Save role</button>
+              </div>
+            <% } else { %>
+              <span class="access-status">Super Admin access is required to change the global policy.</span>
+            <% } %>
+          </div>
+        </section>
+      </div>
+
+      <section class="access-panel audit-list">
+        <div class="access-panel__header"><h2>Recent policy changes</h2></div>
+        <div id="auditRows"></div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let state = <%- JSON.stringify(accessControl).replace(/</g, '\\u003c') %>;
+    let selectedRoleKey = state.roles[0]?.key || '';
+    const canEdit = <%= admin?.isSuperAdmin ? 'true' : 'false' %>;
+
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[character]));
+    const productById = (appId) => state.catalog.find((item) => item.appId === appId);
+    const selectedRole = () => state.roles.find((role) => role.key === selectedRoleKey);
+    const hasToken = (rows, appId, permissionId) => (rows || []).some((row) => row.appId === appId && ((row.permissions || []).includes('*') || (row.permissions || []).includes(permissionId)));
+
+    function expandWildcards(role) {
+      ['grants', 'denies'].forEach((field) => {
+        const expanded = new Map();
+        (role[field] || []).forEach((row) => {
+          const values = (row.permissions || []).includes('*') ? (productById(row.appId)?.permissions || []).map((item) => item.id) : (row.permissions || []);
+          if (!expanded.has(row.appId)) expanded.set(row.appId, new Set());
+          values.forEach((value) => expanded.get(row.appId).add(value));
+        });
+        role[field] = Array.from(expanded.entries()).map(([appId, values]) => ({ appId, permissions:Array.from(values).sort() }));
+      });
+    }
+    state.roles.forEach(expandWildcards);
+
+    function setPermissionState(appId, permissionId, value) {
+      const role = selectedRole();
+      ['grants', 'denies'].forEach((field) => {
+        let row = role[field].find((item) => item.appId === appId);
+        if (!row) { row = { appId, permissions:[] }; role[field].push(row); }
+        row.permissions = row.permissions.filter((item) => item !== permissionId);
+      });
+      if (value === 'allow') role.grants.find((row) => row.appId === appId).permissions.push(permissionId);
+      if (value === 'deny') role.denies.find((row) => row.appId === appId).permissions.push(permissionId);
+    }
+
+    function renderRoleList() {
+      document.getElementById('roleList').innerHTML = state.roles.map((role) => `
+        <button type="button" class="access-role ${role.key === selectedRoleKey ? 'active' : ''}" onclick="selectRole('${escapeHtml(role.key)}')">
+          <strong>${escapeHtml(role.name)}</strong><span>${escapeHtml(role.key)}${role.locked ? ' · built in' : ''}</span>
+        </button>`).join('');
+    }
+
+    function selectRole(key) {
+      selectedRoleKey = key;
+      const role = selectedRole();
+      document.getElementById('roleName').value = role?.name || '';
+      document.getElementById('roleDescription').value = role?.description || '';
+      document.getElementById('roleNameHeading').textContent = role?.name || 'Role';
+      const sources = [...(role?.sourceOrganizationRoles || []).map((value) => `Organization: ${value}`), ...(role?.sourceTeamRoles || []).map((value) => `Team: ${value}`)];
+      document.getElementById('roleSource').textContent = sources.length ? `Automatically assigned from ${sources.join(', ')}` : 'Assigned explicitly by an organization administrator';
+      const deleteButton = document.getElementById('deleteRoleButton');
+      if (deleteButton) deleteButton.hidden = role?.locked === true;
+      renderRoleList(); renderPermissions();
+    }
+
+    function renderProducts() {
+      const select = document.getElementById('productSelect');
+      select.innerHTML = state.catalog.map((item) => `<option value="${escapeHtml(item.appId)}">${escapeHtml(item.name)} (${item.permissions.length})</option>`).join('');
+    }
+
+    function renderPermissions() {
+      const role = selectedRole();
+      const appId = document.getElementById('productSelect').value;
+      const product = productById(appId);
+      document.getElementById('permissionRows').innerHTML = (product?.permissions || []).map((item) => {
+        const current = hasToken(role.denies, appId, item.id) ? 'deny' : (hasToken(role.grants, appId, item.id) ? 'allow' : 'none');
+        return `<tr><td><span class="permission-name">${escapeHtml(item.label)}</span><span class="permission-detail">${escapeHtml(item.id)}</span></td><td>${escapeHtml(item.scope)}${item.sensitive ? '<br><span class="sensitive">Sensitive</span>' : ''}</td><td><select class="permission-state" aria-label="${escapeHtml(role.name)}: ${escapeHtml(item.label)}" ${canEdit ? '' : 'disabled'} onchange="setPermissionState('${escapeHtml(appId)}','${escapeHtml(item.id)}',this.value)"><option value="none" ${current === 'none' ? 'selected' : ''}>Not granted</option><option value="allow" ${current === 'allow' ? 'selected' : ''}>Allow</option><option value="deny" ${current === 'deny' ? 'selected' : ''}>Deny</option></select></td></tr>`;
+      }).join('');
+    }
+
+    async function saveRole() {
+      const role = selectedRole();
+      role.name = document.getElementById('roleName').value.trim();
+      role.description = document.getElementById('roleDescription').value.trim();
+      const status = document.getElementById('saveStatus');
+      status.className = 'access-status'; status.textContent = 'Saving…';
+      const response = await fetch(`/api/admin/access-control/roles/${encodeURIComponent(role.key)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...role, expectedRevision:state.revision }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { status.className = 'access-status error'; status.textContent = data.error || 'Role could not be saved.'; return; }
+      state = data; state.roles.forEach(expandWildcards); selectedRoleKey = role.key; document.getElementById('revision').textContent = state.revision; status.textContent = 'Role saved and OIDC claims invalidated.'; renderAll();
+    }
+
+    function toggleNewRole() { document.getElementById('newRoleForm').classList.toggle('open'); }
+    async function createRole(event) {
+      event.preventDefault();
+      const name = document.getElementById('newRoleName').value.trim();
+      const key = document.getElementById('newRoleKey').value.trim();
+      const response = await fetch('/api/admin/access-control/roles', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ key, name, description:'', grants:[], denies:[], expectedRevision:state.revision }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { document.getElementById('saveStatus').className='access-status error'; document.getElementById('saveStatus').textContent=data.error || 'Role could not be created.'; return; }
+      state=data; state.roles.forEach(expandWildcards); selectedRoleKey=key; document.getElementById('newRoleForm').reset(); toggleNewRole(); renderAll();
+    }
+
+    async function deleteRole() {
+      const role = selectedRole();
+      if (!role || role.locked || !confirm(`Delete ${role.name}? Existing member assignments will be removed.`)) return;
+      const response = await fetch(`/api/admin/access-control/roles/${encodeURIComponent(role.key)}?expectedRevision=${encodeURIComponent(state.revision)}`, { method:'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { document.getElementById('saveStatus').className='access-status error'; document.getElementById('saveStatus').textContent=data.error || 'Role could not be deleted.'; return; }
+      state=data; state.roles.forEach(expandWildcards); selectedRoleKey=state.roles[0]?.key || ''; renderAll();
+    }
+
+    function renderAudit() {
+      document.getElementById('auditRows').innerHTML = state.auditEvents.length ? state.auditEvents.map((event) => `<div class="audit-row"><span class="audit-meta">${escapeHtml(new Date(event.createdAt).toLocaleString())}</span><strong>${escapeHtml(event.summary)}</strong><span class="audit-meta">${escapeHtml(event.actorEmail)} · r${escapeHtml(event.revision)}</span></div>`).join('') : '<div class="audit-row"><span class="audit-meta">No policy changes recorded yet.</span></div>';
+    }
+    function renderAll() { document.getElementById('revision').textContent=state.revision; renderRoleList(); renderAudit(); selectRole(selectedRoleKey); }
+    renderProducts(); renderAll();
+  </script>
+</body>
+</html>

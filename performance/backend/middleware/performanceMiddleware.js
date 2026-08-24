@@ -1,4 +1,4 @@
-const { getUserRole } = require('./rbac');
+const { claimedPermissions, getUserRole } = require('./rbac');
 
 const ROLE_PERMISSIONS = {
   'create:okrs': new Set(['employee', 'team_lead', 'line_manager', 'hr_admin']),
@@ -8,6 +8,15 @@ const ROLE_PERMISSIONS = {
   'view:team-performance': new Set(['team_lead', 'line_manager', 'hr_admin']),
   'view:team-analytics': new Set(['team_lead', 'line_manager', 'hr_admin'])
 };
+
+const CENTRAL_PERMISSION_MAP = Object.freeze({
+  'create:okrs': ['okr:create:own', 'okr:create:team', 'okr:create:organization'],
+  'participate:reviews': ['review:self_assess', 'review:conduct:direct_reports', 'review:view:all'],
+  'analyze:feedback': ['feedback:view:received', 'feedback:view:direct_reports', 'feedback:view:all'],
+  'evaluate:reviews': ['review:conduct:direct_reports', 'review:view:all'],
+  'view:team-performance': ['analytics:view:team', 'analytics:view:direct_reports', 'analytics:view:organization'],
+  'view:team-analytics': ['analytics:view:team', 'analytics:view:direct_reports', 'analytics:view:organization']
+});
 
 function organizationId(value) {
   return String(value?.id || value?._id || value?.organizationId || value || '').trim();
@@ -61,6 +70,22 @@ const requirePerformancePermission = (permission) => {
     const organizationPermissions = user.organizationPermissions || currentOrg?.permissions || [];
     const role = req.userRole || getUserRole(user) || 'employee';
     req.userRole = role;
+    const centralPermissions = claimedPermissions(user);
+    if (centralPermissions) {
+      const mappedPermissions = CENTRAL_PERMISSION_MAP[permission] || [];
+      const granted = mappedPermissions.some((candidate) => centralPermissions.has(candidate));
+      if (!granted) {
+        return res.status(403).json({
+          error: `Performance permission '${permission}' required`,
+          code: 'PERFORMANCE_PERMISSION_DENIED'
+        });
+      }
+      req.hasFullAccess = mappedPermissions.some((candidate) =>
+        (candidate.endsWith(':all') || candidate.endsWith(':organization')) && centralPermissions.has(candidate)
+      );
+      req.hasTeamPermission = !req.hasFullAccess;
+      return next();
+    }
     const roleAllows = ROLE_PERMISSIONS[permission]?.has(role) === true;
     if (role === 'hr_admin' || organizationRole === 'owner' || organizationPermissions.includes('admin:performance')) {
       req.hasFullAccess = true;

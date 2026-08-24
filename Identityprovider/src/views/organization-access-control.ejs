@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Roles & Permissions - <%= organization.name %> - Seemplify Identity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css?v=4">
+  <script src="/js/theme.js?v=3"></script>
+  <style>
+    .access-tabs { display:flex; gap:18px; border-bottom:1px solid var(--border); margin:18px 0; }
+    .access-tab { padding:11px 2px; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); cursor:pointer; font-weight:650; }
+    .access-tab.active { color:var(--text); border-bottom-color:var(--brand-2); }
+    .access-layout { display:grid; grid-template-columns:260px minmax(0,1fr); gap:18px; align-items:start; }
+    .access-panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; }
+    .access-panel__header { padding:15px 16px; border-bottom:1px solid var(--border); }
+    .access-panel__header h2 { margin:0; font-size:17px; }
+    .access-panel__header p { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.45; }
+    .selector-list { display:grid; gap:4px; padding:8px; max-height:620px; overflow:auto; }
+    .selector-item { width:100%; padding:10px 11px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+    .selector-item:hover { background:var(--hover-bg); }
+    .selector-item.active { border-color:var(--border); background:var(--hover-bg); }
+    .selector-item strong,.selector-item span { display:block; }
+    .selector-item span { color:var(--muted); font-size:12px; margin-top:3px; }
+    .workbench-toolbar { display:flex; justify-content:space-between; gap:12px; align-items:end; padding:15px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .field { display:grid; gap:6px; min-width:220px; }
+    .field label { color:var(--muted); font-size:12px; font-weight:650; }
+    .field input,.field textarea,.field select,.permission-state { width:100%; box-sizing:border-box; border:1px solid var(--border); border-radius:7px; background:var(--input-bg,var(--bg)); color:var(--text); padding:9px 10px; }
+    .field textarea { min-height:70px; resize:vertical; }
+    .role-editor { display:grid; grid-template-columns:minmax(180px,.7fr) minmax(280px,1.3fr); gap:12px; padding:16px; border-bottom:1px solid var(--border); }
+    .permission-table-wrap { overflow:auto; }
+    .permission-table { width:100%; border-collapse:collapse; }
+    .permission-table th,.permission-table td { padding:11px 14px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
+    .permission-table th { color:var(--muted); font-size:12px; }
+    .permission-table td:first-child { min-width:250px; }
+    .permission-name { font-weight:650; }
+    .permission-detail { display:block; color:var(--muted); font-size:12px; margin-top:3px; }
+    .permission-state { min-width:145px; padding:7px 9px; }
+    .effective-allow { color:#047857; font-weight:650; }
+    .effective-deny { color:#b91c1c; font-weight:650; }
+    .sensitive { color:#b45309; font-size:12px; font-weight:650; }
+    .platform-only { color:var(--muted); font-size:12px; font-weight:650; }
+    .workbench-footer { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:15px 16px; flex-wrap:wrap; }
+    .status { color:var(--muted); font-size:13px; }
+    .status.error { color:#b91c1c; }
+    .role-assignment { padding:15px 16px; border-bottom:1px solid var(--border); }
+    .role-checks { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:8px; margin-top:10px; }
+    .role-check { display:flex; gap:8px; align-items:flex-start; border:1px solid var(--border); border-radius:7px; padding:9px 10px; }
+    .audit-list { margin-top:20px; }
+    .audit-row { display:grid; grid-template-columns:160px minmax(0,1fr) 190px; gap:12px; padding:11px 14px; border-bottom:1px solid var(--border); font-size:13px; }
+    .audit-meta { color:var(--muted); }
+    .new-role { display:none; padding:12px; border-top:1px solid var(--border); gap:9px; }
+    .new-role.open { display:grid; }
+    [hidden] { display:none !important; }
+    @media (max-width:900px) {
+      .access-layout { grid-template-columns:1fr; }
+      .selector-list { grid-template-columns:repeat(2,minmax(0,1fr)); max-height:none; }
+      .role-editor { grid-template-columns:1fr; }
+      .audit-row { grid-template-columns:1fr; gap:4px; }
+    }
+    @media (max-width:560px) { .selector-list { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body class="idp-workspace-page">
+  <%- include('partials/nav', { activePage: 'organizations' }) %>
+  <div class="container">
+    <a href="<%= yourRole === 'system_admin' ? `/admin/organizations/${organization._id}` : `/organizations/${organization._id}/members?view=members` %>" class="back-link">← Back to organization</a>
+    <div class="header">
+      <div><h1>Roles &amp; permissions</h1><div class="header-subtitle"><%= organization.name %> · Organization overrides and member assignments</div></div>
+      <div class="header-actions"><span class="status">Organization revision <strong id="organizationRevision"><%= accessControl.organizationRevision %></strong></span></div>
+    </div>
+    <% if (yourRole !== 'system_admin') { %>
+      <%- include('partials/organization-tabs', { organization, yourRole, activeSection: 'access-control', canViewMembers, canInviteMembers, canManageInvitations, canViewAccessControl }) %>
+    <% } %>
+
+    <div class="access-tabs" role="tablist" aria-label="Access control views">
+      <button id="rolesTab" type="button" class="access-tab active" role="tab" aria-selected="true" onclick="showSection('roles')">Role overrides</button>
+      <% if (accessControl.canViewMemberAccess) { %><button id="membersTab" type="button" class="access-tab" role="tab" aria-selected="false" onclick="showSection('members')">Member assignments</button><% } %>
+      <% if (accessControl.canReadAudit) { %><button id="auditTab" type="button" class="access-tab" role="tab" aria-selected="false" onclick="showSection('audit')">Audit history</button><% } %>
+    </div>
+
+    <section id="rolesSection">
+      <div class="access-layout">
+        <aside class="access-panel">
+          <div class="access-panel__header"><h2>Organization roles</h2><p>Inherited global permissions remain active until this organization explicitly allows or denies them.</p></div>
+          <div id="roleList" class="selector-list"></div>
+          <% if (canManage) { %>
+            <button type="button" class="btn btn-secondary btn-sm" style="margin:8px 12px 12px;" onclick="toggleNewRole()">Create organization role</button>
+            <form id="newRoleForm" class="new-role" onsubmit="createOrganizationRole(event)">
+              <div class="field"><label for="newRoleName">Role name</label><input id="newRoleName" required maxlength="100"></div>
+              <div class="field"><label for="newRoleKey">Role key</label><input id="newRoleKey" required pattern="[a-z][a-z0-9_-]{1,63}"></div>
+              <button class="btn btn-primary btn-sm" type="submit">Create</button>
+            </form>
+          <% } %>
+        </aside>
+        <div class="access-panel">
+          <div class="workbench-toolbar">
+            <div><h2 id="roleHeading" style="margin:0;font-size:18px;">Role</h2><div id="roleInheritance" class="status" style="margin-top:5px;"></div></div>
+            <div class="field"><label for="roleProduct">Product</label><select id="roleProduct" onchange="renderRolePermissions()"></select></div>
+          </div>
+          <div class="role-editor">
+            <div class="field"><label for="roleName">Organization label</label><input id="roleName" maxlength="100" <%= canManage ? '' : 'disabled' %>></div>
+            <div class="field"><label for="roleDescription">Organization description</label><textarea id="roleDescription" maxlength="500" <%= canManage ? '' : 'disabled' %>></textarea></div>
+          </div>
+          <div class="permission-table-wrap">
+            <table class="permission-table"><thead><tr><th>Permission</th><th>Inherited</th><th>Organization override</th></tr></thead><tbody id="rolePermissionRows"></tbody></table>
+          </div>
+          <div class="workbench-footer">
+            <div id="roleStatus" class="status" role="status" aria-live="polite"></div>
+            <% if (canManage) { %><div style="display:flex;gap:8px;"><button type="button" class="btn btn-secondary btn-sm" onclick="resetRoleOverride()">Reset override</button><button type="button" class="btn btn-primary" onclick="saveRoleOverride()">Save override</button></div><% } %>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <% if (accessControl.canViewMemberAccess) { %><section id="membersSection" hidden>
+      <div class="access-layout">
+        <aside class="access-panel">
+          <div class="access-panel__header"><h2>Members</h2><p>Assign additional roles or a direct exception. Canonical organization and team roles still apply.</p></div>
+          <div id="memberList" class="selector-list"></div>
+        </aside>
+        <div class="access-panel">
+          <div class="workbench-toolbar">
+            <div><h2 id="memberHeading" style="margin:0;font-size:18px;">Member</h2><div id="memberRole" class="status" style="margin-top:5px;"></div></div>
+            <div class="field"><label for="memberProduct">Product</label><select id="memberProduct" onchange="renderMemberPermissions()"></select></div>
+          </div>
+          <div class="role-assignment"><strong>Additional roles</strong><div id="memberRoleChecks" class="role-checks"></div></div>
+          <div class="permission-table-wrap">
+            <table class="permission-table"><thead><tr><th>Permission</th><th>Effective access</th><th>Direct exception</th></tr></thead><tbody id="memberPermissionRows"></tbody></table>
+          </div>
+          <div class="workbench-footer"><div id="memberStatus" class="status" role="status" aria-live="polite"></div><% if (canManage) { %><button type="button" class="btn btn-primary" onclick="saveMember()">Save member access</button><% } %></div>
+        </div>
+      </div>
+    </section><% } %>
+
+    <% if (accessControl.canReadAudit) { %><section id="auditSection" hidden class="access-panel audit-list"><div class="access-panel__header"><h2>Access-control changes</h2></div><div id="auditRows"></div></section><% } %>
+  </div>
+
+  <script>
+    let state = <%- JSON.stringify(accessControl).replace(/</g, '\\u003c') %>;
+    const organizationId = <%- JSON.stringify(String(organization._id)) %>;
+    const canEdit = <%= canManage ? 'true' : 'false' %>;
+    let selectedRoleKey = state.globalRoles.find((role) => role.key === 'hr_manager')?.key || state.globalRoles[0]?.key || '';
+    let selectedMemberId = state.members[0]?.accountId || '';
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[character]));
+    const productById = (appId) => state.catalog.find((item) => item.appId === appId);
+    const globalRole = (key) => state.globalRoles.find((role) => role.key === key);
+    const overrideFor = (key) => state.roleOverrides.find((role) => role.roleKey === key);
+    const selectedMember = () => state.members.find((member) => member.accountId === selectedMemberId);
+    const hasToken = (rows, appId, permissionId) => (rows || []).some((row) => row.appId === appId && ((row.permissions || []).includes('*') || (row.permissions || []).includes(permissionId)));
+    function expandRows(rows) {
+      const map = new Map();
+      (rows || []).forEach((row) => {
+        const values = (row.permissions || []).includes('*') ? (productById(row.appId)?.permissions || []).map((item) => item.id) : (row.permissions || []);
+        if (!map.has(row.appId)) map.set(row.appId,new Set()); values.forEach((value) => map.get(row.appId).add(value));
+      });
+      return Array.from(map.entries()).map(([appId,values]) => ({appId,permissions:Array.from(values).sort()}));
+    }
+    function normalizeState() {
+      state.globalRoles.forEach((role) => { role.grants=expandRows(role.grants); role.denies=expandRows(role.denies); });
+      state.roleOverrides.forEach((role) => { role.grants=expandRows(role.grants); role.denies=expandRows(role.denies); });
+      state.members.forEach((member) => { member.accessControl.grants=expandRows(member.accessControl.grants); member.accessControl.denies=expandRows(member.accessControl.denies); });
+    }
+    normalizeState();
+    function setRowState(target, appId, permissionId, value) {
+      ['grants','denies'].forEach((field) => { let row=target[field].find((item)=>item.appId===appId); if(!row){row={appId,permissions:[]};target[field].push(row);} row.permissions=row.permissions.filter((item)=>item!==permissionId); });
+      if(value==='allow') target.grants.find((row)=>row.appId===appId).permissions.push(permissionId);
+      if(value==='deny') target.denies.find((row)=>row.appId===appId).permissions.push(permissionId);
+    }
+    function showSection(section) {
+      ['roles',...(state.canViewMemberAccess ? ['members'] : []),...(state.canReadAudit ? ['audit'] : [])].forEach((name) => { document.getElementById(`${name}Section`).hidden=name!==section; const tab=document.getElementById(`${name}Tab`); tab.classList.toggle('active',name===section); tab.setAttribute('aria-selected',name===section?'true':'false'); });
+    }
+    function fillProducts() { const html=state.catalog.map((item)=>`<option value="${escapeHtml(item.appId)}">${escapeHtml(item.name)} (${item.permissions.length})</option>`).join(''); document.getElementById('roleProduct').innerHTML=html; const memberProduct=document.getElementById('memberProduct');if(memberProduct)memberProduct.innerHTML=html; }
+    function combinedRoles() { const map=new Map(state.globalRoles.map((role)=>[role.key,role])); state.roleOverrides.forEach((role)=>{if(!map.has(role.roleKey))map.set(role.roleKey,{key:role.roleKey,name:role.name,description:role.description,grants:[],denies:[],sourceOrganizationRoles:[],sourceTeamRoles:[]});}); return Array.from(map.values()); }
+    function renderRoleList() { document.getElementById('roleList').innerHTML=combinedRoles().map((role)=>`<button type="button" class="selector-item ${role.key===selectedRoleKey?'active':''}" onclick="selectRole('${escapeHtml(role.key)}')"><strong>${escapeHtml(overrideFor(role.key)?.name||role.name)}</strong><span>${escapeHtml(role.key)}${overrideFor(role.key)?' · overridden':' · inherited'}</span></button>`).join(''); }
+    function selectRole(key) { selectedRoleKey=key; const base=globalRole(key); const override=overrideFor(key); document.getElementById('roleHeading').textContent=override?.name||base?.name||key; document.getElementById('roleName').value=override?.name||base?.name||key; document.getElementById('roleDescription').value=override?.description||base?.description||''; document.getElementById('roleInheritance').textContent=base?'Inherited from the global IdP policy':'Custom role for this organization'; renderRoleList(); renderRolePermissions(); }
+    function ensureOverride() { let override=overrideFor(selectedRoleKey); if(!override){const base=globalRole(selectedRoleKey);override={roleKey:selectedRoleKey,name:base?.name||selectedRoleKey,description:base?.description||'',grants:[],denies:[],isActive:true};state.roleOverrides.push(override);} return override; }
+    function renderRolePermissions() { const appId=document.getElementById('roleProduct').value; const product=productById(appId); const base=globalRole(selectedRoleKey); const override=overrideFor(selectedRoleKey); document.getElementById('rolePermissionRows').innerHTML=(product?.permissions||[]).map((item)=>{const inherited=hasToken(base?.denies,appId,item.id)?'deny':(hasToken(base?.grants,appId,item.id)?'allow':'none');const current=hasToken(override?.denies,appId,item.id)?'deny':(hasToken(override?.grants,appId,item.id)?'allow':'inherit');return `<tr><td><span class="permission-name">${escapeHtml(item.label)}</span><span class="permission-detail">${escapeHtml(item.id)} · ${escapeHtml(item.scope)}</span></td><td class="${inherited==='allow'?'effective-allow':inherited==='deny'?'effective-deny':''}">${inherited==='allow'?'Allowed':inherited==='deny'?'Denied':'Not granted'}${item.sensitive?'<br><span class="sensitive">Sensitive</span>':''}${item.delegable===false?'<br><span class="platform-only">Platform controlled</span>':''}</td><td><select class="permission-state" ${canEdit?'':'disabled'} aria-label="${escapeHtml(item.label)} override" onchange="setRowState(ensureOverride(),'${escapeHtml(appId)}','${escapeHtml(item.id)}',this.value)"><option value="inherit" ${current==='inherit'?'selected':''}>Inherit global</option><option value="allow" ${item.delegable===false?'disabled':''} ${current==='allow'?'selected':''}>Allow here${item.delegable===false?' (platform only)':''}</option><option value="deny" ${current==='deny'?'selected':''}>Deny here</option></select></td></tr>`;}).join(''); }
+    async function saveRoleOverride() { const override=ensureOverride();override.name=document.getElementById('roleName').value.trim();override.description=document.getElementById('roleDescription').value.trim();await mutate(`/api/organizations/${organizationId}/access-control/roles/${encodeURIComponent(selectedRoleKey)}`,'PUT',{...override,expectedRevision:state.organizationRevision},'roleStatus',()=>{selectRole(selectedRoleKey);}); }
+    async function resetRoleOverride() { if(!overrideFor(selectedRoleKey))return; if(!confirm('Reset this role to the global IdP policy?'))return; await mutate(`/api/organizations/${organizationId}/access-control/roles/${encodeURIComponent(selectedRoleKey)}?expectedRevision=${encodeURIComponent(state.organizationRevision)}`,'DELETE',null,'roleStatus',()=>{selectRole(combinedRoles()[0]?.key||'');}); }
+    function toggleNewRole(){document.getElementById('newRoleForm').classList.toggle('open');}
+    async function createOrganizationRole(event){event.preventDefault();const key=document.getElementById('newRoleKey').value.trim();const name=document.getElementById('newRoleName').value.trim();selectedRoleKey=key;await mutate(`/api/organizations/${organizationId}/access-control/roles/${encodeURIComponent(key)}`,'PUT',{roleKey:key,name,description:'',grants:[],denies:[],expectedRevision:state.organizationRevision},'roleStatus',()=>{document.getElementById('newRoleForm').reset();toggleNewRole();selectRole(key);});}
+    function renderMemberList(){const list=document.getElementById('memberList');if(!list)return;list.innerHTML=state.members.map((member)=>`<button type="button" class="selector-item ${member.accountId===selectedMemberId?'active':''}" onclick="selectMember('${escapeHtml(member.accountId)}')"><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.email)} · ${escapeHtml(member.organizationRole)}</span></button>`).join('');}
+    function selectMember(accountId){selectedMemberId=accountId;const member=selectedMember();document.getElementById('memberHeading').textContent=member?.name||'Member';document.getElementById('memberRole').textContent=`Organization role: ${member?.organizationRole||'staff'} · Effective roles: ${(member?.effective?.roleNames||[]).join(', ')||'none'}`;renderMemberList();renderMemberRoleChecks();renderMemberPermissions();}
+    function renderMemberRoleChecks(){const member=selectedMember();document.getElementById('memberRoleChecks').innerHTML=combinedRoles().filter((role)=>!['organization_owner','organization_admin'].includes(role.key)).map((role)=>`<label class="role-check"><input type="checkbox" value="${escapeHtml(role.key)}" ${(member?.accessControl?.roleKeys||[]).includes(role.key)?'checked':''} ${canEdit?'':'disabled'} onchange="toggleMemberRole('${escapeHtml(role.key)}',this.checked)"><span><strong>${escapeHtml(overrideFor(role.key)?.name||role.name)}</strong><span class="permission-detail">${escapeHtml(role.key)}</span></span></label>`).join('');}
+    function toggleMemberRole(key,checked){const roles=new Set(selectedMember().accessControl.roleKeys||[]);if(checked)roles.add(key);else roles.delete(key);selectedMember().accessControl.roleKeys=Array.from(roles);}
+    function renderMemberPermissions(){const member=selectedMember();const appId=document.getElementById('memberProduct').value;const product=productById(appId);document.getElementById('memberPermissionRows').innerHTML=(product?.permissions||[]).map((item)=>{const effective=(member?.effective?.permissionsByApp?.[appId]||[]).includes(item.id);const current=hasToken(member?.accessControl?.denies,appId,item.id)?'deny':(hasToken(member?.accessControl?.grants,appId,item.id)?'allow':'inherit');return `<tr><td><span class="permission-name">${escapeHtml(item.label)}</span><span class="permission-detail">${escapeHtml(item.id)} · ${escapeHtml(item.scope)}</span></td><td class="${effective?'effective-allow':'effective-deny'}">${effective?'Allowed':'Denied'}${item.sensitive?'<br><span class="sensitive">Sensitive</span>':''}${item.delegable===false?'<br><span class="platform-only">Platform controlled</span>':''}</td><td><select class="permission-state" ${canEdit?'':'disabled'} aria-label="${escapeHtml(member?.name)}: ${escapeHtml(item.label)}" onchange="setRowState(selectedMember().accessControl,'${escapeHtml(appId)}','${escapeHtml(item.id)}',this.value)"><option value="inherit" ${current==='inherit'?'selected':''}>Use role policy</option><option value="allow" ${item.delegable===false?'disabled':''} ${current==='allow'?'selected':''}>Allow directly${item.delegable===false?' (platform only)':''}</option><option value="deny" ${current==='deny'?'selected':''}>Deny directly</option></select></td></tr>`;}).join('');}
+    async function saveMember(){const member=selectedMember();await mutate(`/api/organizations/${organizationId}/access-control/members/${encodeURIComponent(member.accountId)}`,'PUT',{...member.accessControl,expectedRevision:state.organizationRevision},'memberStatus',()=>{selectMember(selectedMemberId);});}
+    function renderAudit(){const rows=document.getElementById('auditRows');if(!rows)return;rows.innerHTML=state.auditEvents.length?state.auditEvents.map((event)=>`<div class="audit-row"><span class="audit-meta">${escapeHtml(new Date(event.createdAt).toLocaleString())}</span><strong>${escapeHtml(event.summary)}</strong><span class="audit-meta">${escapeHtml(event.actorEmail)} · r${escapeHtml(event.revision)}</span></div>`).join(''):'<div class="audit-row"><span class="audit-meta">No access-control changes recorded yet.</span></div>';}
+    async function mutate(url,method,body,statusId,after){const status=document.getElementById(statusId);status.className='status';status.textContent='Saving…';const response=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const data=await response.json().catch(()=>({}));if(!response.ok){status.className='status error';status.textContent=data.error||'The change could not be saved.';return;}state=data;normalizeState();document.getElementById('organizationRevision').textContent=state.organizationRevision;status.textContent='Saved. New OIDC claims will use this policy.';renderRoleList();renderMemberList();renderAudit();after?.();}
+    fillProducts();renderRoleList();renderMemberList();renderAudit();if(selectedRoleKey)selectRole(selectedRoleKey);if(selectedMemberId)selectMember(selectedMemberId);
+  </script>
+</body>
+</html>

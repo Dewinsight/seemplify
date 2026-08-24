@@ -88,6 +88,14 @@ const requireOrgAdmin = async (req, res, next) => {
   }
 }
 
+const rejectLegacyPermissionMutation = (req, res) => res.status(409).json({
+  error: 'LMS access is managed by the Seemplify IdP permission matrix.',
+  code: 'IDP_ACCESS_CONTROL_REQUIRED',
+  manageUrl: req.params?.organizationId
+    ? `/organizations/${req.params.organizationId}/access-control`
+    : '/organizations'
+})
+
 // ============================================================================
 // LMS Role Endpoints
 // ============================================================================
@@ -165,7 +173,7 @@ router.get('/roles/:organizationId', requireAuth, requireOrgAdmin, async (req, r
  * POST /api/lms/roles/:organizationId
  * Assign or remove LMS role to a user (admin only or self-assign for admins)
  */
-router.post('/roles/:organizationId', requireAuth, async (req, res) => {
+router.post('/roles/:organizationId', requireAuth, rejectLegacyPermissionMutation, async (req, res) => {
   try {
     const { organizationId } = req.params
     const { userId, role } = req.body
@@ -247,7 +255,7 @@ router.post('/roles/:organizationId', requireAuth, async (req, res) => {
  * DELETE /api/lms/roles/:organizationId/:roleId
  * Remove LMS role (admin only)
  */
-router.delete('/roles/:organizationId/:roleId', requireAuth, requireOrgAdmin, async (req, res) => {
+router.delete('/roles/:organizationId/:roleId', requireAuth, requireOrgAdmin, rejectLegacyPermissionMutation, async (req, res) => {
   try {
     const { roleId } = req.params
     
@@ -278,7 +286,7 @@ router.delete('/roles/:organizationId/:roleId', requireAuth, requireOrgAdmin, as
  * POST /api/lms/access-requests/:organizationId
  * Submit access request (non-admins)
  */
-router.post('/access-requests/:organizationId', requireAuth, async (req, res) => {
+router.post('/access-requests/:organizationId', requireAuth, rejectLegacyPermissionMutation, async (req, res) => {
   try {
     const { organizationId } = req.params
     const { role, reason } = req.body
@@ -393,7 +401,7 @@ router.get('/access-requests/my/:organizationId', requireAuth, async (req, res) 
  * PUT /api/lms/access-requests/:organizationId/:requestId/approve
  * Approve access request (admin only)
  */
-router.put('/access-requests/:organizationId/:requestId/approve', requireAuth, requireOrgAdmin, async (req, res) => {
+router.put('/access-requests/:organizationId/:requestId/approve', requireAuth, requireOrgAdmin, rejectLegacyPermissionMutation, async (req, res) => {
   try {
     const { requestId } = req.params
     const { notes } = req.body
@@ -424,7 +432,7 @@ router.put('/access-requests/:organizationId/:requestId/approve', requireAuth, r
  * POST /api/lms/access-requests/:requestId/approve
  * Approve access request (admin only) - simplified route for UI
  */
-router.post('/access-requests/:requestId/approve', requireAuth, async (req, res) => {
+router.post('/access-requests/:requestId/approve', requireAuth, rejectLegacyPermissionMutation, async (req, res) => {
   try {
     const { requestId } = req.params
     const account = req.account
@@ -470,7 +478,7 @@ router.post('/access-requests/:requestId/approve', requireAuth, async (req, res)
  * POST /api/lms/access-requests/:requestId/reject
  * Reject access request (admin only) - simplified route for UI
  */
-router.post('/access-requests/:requestId/reject', requireAuth, async (req, res) => {
+router.post('/access-requests/:requestId/reject', requireAuth, rejectLegacyPermissionMutation, async (req, res) => {
   try {
     const { requestId } = req.params
     const account = req.account
@@ -516,7 +524,7 @@ router.post('/access-requests/:requestId/reject', requireAuth, async (req, res) 
  * PUT /api/lms/access-requests/:organizationId/:requestId/deny
  * Deny access request (admin only)
  */
-router.put('/access-requests/:organizationId/:requestId/deny', requireAuth, requireOrgAdmin, async (req, res) => {
+router.put('/access-requests/:organizationId/:requestId/deny', requireAuth, requireOrgAdmin, rejectLegacyPermissionMutation, async (req, res) => {
   try {
     const { requestId } = req.params
     const { notes } = req.body

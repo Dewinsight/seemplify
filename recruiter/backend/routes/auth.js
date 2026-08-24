@@ -867,6 +867,18 @@ router.get('/oidc/callback', async (req, res) => {
           claimedLocalOrgIds.add(localOrganizationId);
           authoritativeRolesByLocalOrgId.set(localOrganizationId, orgClaim.role);
           user.addOrganizationMembership(organization._id, orgClaim.role, true);
+          const syncedMembership = user.organizationMemberships.find((membership) =>
+            String(membership.organization?._id || membership.organization) === localOrganizationId
+          );
+          if (syncedMembership) {
+            const centralPermissions = orgClaim.authorization?.permissionsByApp?.smarthr;
+            syncedMembership.idpPermissions = Array.isArray(centralPermissions)
+              ? centralPermissions
+              : (Array.isArray(orgClaim.appPermissions?.smarthr) ? orgClaim.appPermissions.smarthr : undefined);
+            syncedMembership.idpPermissionScopes = orgClaim.authorization?.permissionScopesByApp?.smarthr || undefined;
+            syncedMembership.idpAccessRoleKeys = orgClaim.authorization?.roleKeys || undefined;
+            syncedMembership.idpAuthorizationRevision = orgClaim.authorization?.organizationRevision || null;
+          }
           shouldSaveUser = true;
           if (organizationClaimAllowsRecruiter(orgClaim)) {
             recruiterAuthorizedLocalOrgIds.add(organization._id.toString());

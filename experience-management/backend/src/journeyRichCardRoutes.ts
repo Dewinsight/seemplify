@@ -13,7 +13,7 @@ import {
   retireJourneyChannel, retireJourneyTouchpoint, unlinkJourneyCardTouchpoint,
   updateJourneyCardRichDetail, updateJourneyChannel, updateJourneyTouchpoint
 } from './journeyRichCards.js';
-import { resolveRequestSpace, SpaceError } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError } from './spaces.js';
 import {
   assertSubscriptionFeature, SubscriptionEntitlementError
 } from './subscriptionEntitlements.js';
@@ -35,7 +35,7 @@ function context(request: express.Request) {
 }
 
 function requireEditor(space: ReturnType<typeof resolveRequestSpace>) {
-  if (space.role === 'member') {
+  if (!spaceRoleOrIdpPermission(space, 'journeys.edit')) {
     throw new JourneyRichCardError('You do not have permission to change rich journey cards in this space.', 403,
       'JOURNEY_RICH_CARD_FORBIDDEN');
   }

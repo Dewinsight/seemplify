@@ -71,7 +71,9 @@ const enrichMemberships = async (memberships) => {
             membership.permissions || [],
             Object.keys(roleCatalog).length > 0 ? new Set(Object.keys(roleCatalog)) : null
         );
-        const capabilities = collectUserCapabilities({ permissions }, roleCatalog);
+        const capabilities = Array.isArray(membership.idpCapabilities)
+            ? Array.from(new Set(membership.idpCapabilities.filter(Boolean)))
+            : collectUserCapabilities({ permissions }, roleCatalog);
 
         return {
             _id: membership.organization._id,
@@ -397,6 +399,12 @@ exports.updateUserRole = async (req, res) => {
             organization: req.organization
         });
         if (!membership) return res.status(404).json({ error: 'User not found in this organization' });
+        if (membership.managedByIdp || Array.isArray(membership.idpCapabilities)) {
+            return res.status(409).json({
+                error: 'Approver roles and permissions for this member are managed by Seemplify Identity.',
+                code: 'IDP_ACCESS_CONTROL_REQUIRED'
+            });
+        }
 
         if (typeof isAdmin !== 'undefined') {
             membership.isAdmin = isAdmin;

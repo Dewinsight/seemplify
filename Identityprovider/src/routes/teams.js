@@ -6,13 +6,14 @@ import { getDerivedManagerInfo, hasLineManagerRole } from '../utils/teamManager.
 import {
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireIdentityPermission,
   requireTeamMember,
   requireTeamAdminOrManager
 } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
 import webhookService from '../services/webhookService.js'
 import { invalidateClaimsCache } from '../index.js'
+import { authorizationHasPermission, resolveOrganizationAuthorization } from '../services/accessControlService.js'
 
 const router = express.Router()
 
@@ -96,7 +97,7 @@ router.get('/organizations/:orgId/teams',
 router.post('/organizations/:orgId/teams',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireIdentityPermission('teams.manage'),
   async (req, res) => {
     try {
       await req.organization.save()
@@ -376,8 +377,11 @@ router.delete('/:teamId',
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
 
-      if (!member || !['owner', 'admin'].includes(member.role)) {
-        return res.status(403).json({ error: 'Organization admin or owner role required' })
+      const authorization = member
+        ? await resolveOrganizationAuthorization({ account: req.user, organization, member })
+        : null
+      if (!member || !authorizationHasPermission(authorization, 'identity', 'teams.manage')) {
+        return res.status(403).json({ error: 'Organization team management permission required' })
       }
 
       // Check for sub-teams

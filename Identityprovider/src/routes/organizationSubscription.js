@@ -1,5 +1,5 @@
 import express from 'express'
-import { requireAuth, requireOrganizationMember, requireOrganizationAdmin } from '../middleware/permissions.js'
+import { requireAuth, requireOrganizationMember, requireIdentityPermission } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
 import { Organization } from '../models/Organization.js'
 import { subscriptionService } from '../services/subscriptionService.js'
@@ -141,7 +141,7 @@ router.get('/:orgId/subscription/requests',
 router.post('/:orgId/subscription/request',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin, // Only admins can request subscriptions
+  requireIdentityPermission('subscriptions.request'),
   async (req, res) => {
     try {
       const { planId, billingCycle, contactInfo, message } = req.body
@@ -222,7 +222,7 @@ router.post('/:orgId/subscription/request',
 router.delete('/:orgId/subscription/requests/:requestId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireIdentityPermission('subscriptions.request'),
   async (req, res) => {
     try {
       // First verify the request belongs to this organization

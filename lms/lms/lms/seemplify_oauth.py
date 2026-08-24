@@ -34,6 +34,71 @@ DEFAULT_LMS_ROLE = 'LMS Student'
 # Roles that grant Frappe desk access
 DESK_ACCESS_ROLES = ['Course Creator', 'Moderator', 'Batch Evaluator', 'Course Evaluator', 'System Manager']
 
+LMS_ROLE_PERMISSION_MARKERS = (
+    ('Moderator', {
+        'manage_lms_settings', 'manage_user_roles', 'edit_any_course',
+        'delete_any_course', 'publish_courses', 'import_data'
+    }),
+    ('Batch Evaluator', {
+        'manage_batches', 'create_batches', 'edit_batches', 'delete_batches',
+        'manage_batch_enrollments', 'grade_assignments', 'evaluate_quizzes'
+    }),
+    ('Course Evaluator', {
+        'evaluate_certifications', 'issue_certificates', 'revoke_certificates',
+        'grade_final_evaluations', 'manage_evaluator_schedule'
+    }),
+    ('Course Creator', {
+        'create_courses', 'create_chapters', 'create_lessons', 'create_quizzes',
+        'create_assignments', 'edit_own_courses', 'manage_course_content'
+    }),
+    ('LMS Student', {
+        'view_courses', 'enroll_courses', 'view_lessons', 'submit_assignments',
+        'take_quizzes', 'view_certificates', 'view_own_progress'
+    })
+)
+
+
+def extract_idp_lms_permissions(claims):
+    """Return (is_authoritative, permissions) from the canonical IdP claims."""
+    if not isinstance(claims, dict):
+        return False, set()
+
+    permission_maps = []
+    if isinstance(claims.get('product_permissions'), dict):
+        permission_maps.append(claims['product_permissions'])
+
+    current_organization = claims.get('current_organization')
+    if isinstance(current_organization, dict):
+        if isinstance(current_organization.get('appPermissions'), dict):
+            permission_maps.append(current_organization['appPermissions'])
+        authorization = current_organization.get('authorization')
+        if isinstance(authorization, dict) and isinstance(authorization.get('permissionsByApp'), dict):
+            permission_maps.append(authorization['permissionsByApp'])
+
+    authorization = claims.get('authorization')
+    if isinstance(authorization, dict) and isinstance(authorization.get('permissionsByApp'), dict):
+        permission_maps.append(authorization['permissionsByApp'])
+
+    for permission_map in permission_maps:
+        if 'lms' in permission_map:
+            permissions = permission_map.get('lms')
+            return True, {
+                str(permission).strip()
+                for permission in (permissions if isinstance(permissions, list) else [])
+                if str(permission).strip()
+            }
+
+    return False, set()
+
+
+def get_frappe_role_for_permissions(permissions):
+    """Project fine-grained IdP permissions onto the closest Frappe LMS role."""
+    normalized = {str(permission).strip() for permission in (permissions or []) if str(permission).strip()}
+    for frappe_role, markers in LMS_ROLE_PERMISSION_MARKERS:
+        if normalized.intersection(markers):
+            return frappe_role
+    return None
+
 
 def process_seemplify_login(login_info):
     """
@@ -61,10 +126,15 @@ def process_seemplify_login(login_info):
     
     frappe.logger().info(f"Processing Seemplify login for: {email}")
     
-    # Extract LMS role from claims
+    has_idp_matrix, lms_permissions = extract_idp_lms_permissions(login_info)
     lms_role_claim = login_info.get('lms_role')
     
-    if lms_role_claim and isinstance(lms_role_claim, dict):
+    if has_idp_matrix:
+        frappe_role = get_frappe_role_for_permissions(lms_permissions)
+        frappe.logger().info(f"IdP LMS permission matrix resolved for {email}: {frappe_role or 'no access'}")
+        login_info['_lms_frappe_role'] = frappe_role
+        login_info['_lms_permissions'] = sorted(lms_permissions)
+    elif lms_role_claim and isinstance(lms_role_claim, dict):
         role_name = lms_role_claim.get('role')
         frappe_role = LMS_ROLE_MAPPING.get(role_name, DEFAULT_LMS_ROLE)
         
@@ -163,14 +233,18 @@ def assign_lms_role_from_claim(email, lms_role_claim):
         frappe.logger().warning(f"User {email} does not exist")
         return None
     
-    # Determine the Frappe role from the claim
-    if lms_role_claim and isinstance(lms_role_claim, dict):
+    has_idp_matrix, lms_permissions = extract_idp_lms_permissions(lms_role_claim)
+
+    # Canonical permission claims take precedence over the transitional role claim.
+    if has_idp_matrix:
+        frappe_role = get_frappe_role_for_permissions(lms_permissions)
+    elif lms_role_claim and isinstance(lms_role_claim, dict):
         idp_role = lms_role_claim.get('role')
         frappe_role = LMS_ROLE_MAPPING.get(idp_role, DEFAULT_LMS_ROLE)
     else:
         frappe_role = DEFAULT_LMS_ROLE
     
-    frappe.logger().info(f"Assigning LMS role to {email}: {frappe_role}")
+    frappe.logger().info(f"Assigning LMS role to {email}: {frappe_role or 'no access'}")
     
     # Get user document
     user_doc = frappe.get_doc('User', email)
@@ -182,8 +256,9 @@ def assign_lms_role_from_claim(email, lms_role_claim):
             user_doc.remove_roles(old_role)
             frappe.logger().info(f"Removed old LMS role {old_role} from {email}")
     
-    # Add the new role
-    if frappe_role not in [r.role for r in user_doc.roles]:
+    # Add the new role when the IdP grants LMS access. An authoritative empty
+    # list removes every prior LMS role instead of falling back to Student.
+    if frappe_role and frappe_role not in [r.role for r in user_doc.roles]:
         user_doc.add_roles(frappe_role)
         frappe.logger().info(f"Added LMS role {frappe_role} to {email}")
     
@@ -353,7 +428,9 @@ def setup_seemplify_social_login():
     
     # Get configuration from site config or environment
     client_id = frappe.conf.get('seemplify_client_id', 'lms')
-    client_secret = frappe.conf.get('seemplify_client_secret', 'lms-seemplify-secret-2026')
+    client_secret = frappe.conf.get('seemplify_client_secret')
+    if not client_secret:
+        frappe.throw(_('Seemplify OAuth client secret is not configured'))
     base_url = frappe.conf.get('seemplify_base_url', 'https://auth.seemplifyai.com')
     
     social_login = frappe.get_doc({

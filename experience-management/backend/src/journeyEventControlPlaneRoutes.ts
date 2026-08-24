@@ -23,7 +23,7 @@ import {
   updateJourneyEventSource,
   validateJourneyControlIdempotencyKey
 } from './journeyEventControlPlaneRepository.js';
-import { resolveRequestSpace, SpaceError, type SpaceContext } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError, type SpaceContext } from './spaces.js';
 import { assertSubscriptionFeature, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import {
   JourneyEventIngestionError,
@@ -93,7 +93,7 @@ function context(request: Request) {
 }
 
 function requireEditor(space: SpaceContext) {
-  if (space.role === 'member') {
+  if (!spaceRoleOrIdpPermission(space, 'journeys.edit')) {
     throw new JourneyEventControlRepositoryError(
       'Space owner or admin access is required to change connected-journey sources.',
       403,

@@ -11,7 +11,7 @@ import {
   listJourneyAnonymousInstances
 } from './journeyStageProcessing.js';
 import { journeyStagePredicateOperators, journeyStageRuleRoles } from './journeyStageRules.js';
-import { resolveRequestSpace, SpaceError } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError } from './spaces.js';
 import { SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 
 export const journeyStageRuleRouter = express.Router();
@@ -29,7 +29,7 @@ function context(request: express.Request) {
 
 function editor(request: express.Request) {
   const resolved = context(request);
-  if (resolved.space.role === 'member') throw new JourneyStageRuleRepositoryError(
+  if (!spaceRoleOrIdpPermission(resolved.space, 'journeys.edit')) throw new JourneyStageRuleRepositoryError(
     'You do not have permission to manage journey stage rules.', 403, 'JOURNEY_STAGE_RULE_FORBIDDEN'
   );
   return resolved;

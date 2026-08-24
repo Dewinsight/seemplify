@@ -203,7 +203,7 @@ exports.requireSpecificPermission = (requiredPermission) => {
 
       const userRole = user.getOrganizationRole(organizationId);
 
-      if (!userRole || !exports.hasPermission(userRole, requiredPermission)) {
+      if (!userRole || !user.hasOrganizationPermission(organizationId, requiredPermission)) {
         return res.status(403).json({
           msg: `Insufficient permissions. Required: ${requiredPermission}`,
           userRole,

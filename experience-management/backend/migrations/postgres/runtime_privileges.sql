@@ -179,7 +179,8 @@ BEGIN
     'journey_profile_privacy_states',
     'journey_profile_export_jobs',
     'journey_profile_privacy_jobs',
-    'journey_identity_correction_runs'
+    'journey_identity_correction_runs',
+    'idp_space_authorizations'
   ] LOOP
     IF to_regclass('public.' || protected_table) IS NULL THEN
       RAISE EXCEPTION 'Required runtime privilege target public.% is missing', protected_table;

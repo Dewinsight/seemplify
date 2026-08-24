@@ -23,7 +23,7 @@ const BASE_RUNTIME_EXTENSION_TABLES = Object.freeze([
   'assistant_audit_events'
 ]);
 
-export const LATEST_RUNTIME_SCHEMA_VERSION = 33;
+export const LATEST_RUNTIME_SCHEMA_VERSION = 34;
 
 export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VERSION) {
   const tables = [...BASE_RUNTIME_EXTENSION_TABLES];
@@ -140,6 +140,9 @@ export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VE
       'journey_identity_segment_versions','journey_identity_segment_memberships',
       'journey_profile_privacy_states','journey_profile_export_jobs','journey_profile_privacy_jobs',
       'journey_identity_correction_runs');
+  }
+  if (runtimeVersion >= 34) {
+    tables.push('idp_space_authorizations');
   }
   return tables;
 }
@@ -4440,6 +4443,37 @@ export const journeyHierarchyBlueprintRuntimeContract = Object.freeze({
   defaults: journeyHierarchyBlueprintRequiredDefaults, checks: journeyHierarchyBlueprintRequiredChecks,
   constraints: journeyHierarchyBlueprintRequiredConstraints, triggers: journeyHierarchyBlueprintRequiredTriggers
 });
+
+const idpSpaceAuthorizationExactColumns = Object.freeze({
+  idp_space_authorizations: [
+    ['space_id', 'text', false], ['user_id', 'text', false], ['permissions_json', 'text', false],
+    ['authorization_revision', 'integer', true], ['updated_at', 'text', false]
+  ]
+});
+const idpSpaceAuthorizationPrimaryKeys = Object.freeze({
+  idp_space_authorizations: ['space_id', 'user_id']
+});
+const idpSpaceAuthorizationRequiredIndexes = Object.freeze({
+  idp_space_authorizations_revision: ['(authorization_revision, updated_at)']
+});
+const idpSpaceAuthorizationRequiredDefaults = Object.freeze({
+  'idp_space_authorizations.permissions_json': "'[]'::text"
+});
+const idpSpaceAuthorizationRequiredConstraints = Object.freeze({
+  idp_space_authorizations_membership_fk: [
+    'foreign key (space_id, user_id)',
+    'references space_memberships(space_id, user_id)',
+    'on delete cascade'
+  ]
+});
+
+export const idpSpaceAuthorizationRuntimeContract = Object.freeze({
+  columns: idpSpaceAuthorizationExactColumns,
+  primaryKeys: idpSpaceAuthorizationPrimaryKeys,
+  indexes: idpSpaceAuthorizationRequiredIndexes,
+  defaults: idpSpaceAuthorizationRequiredDefaults,
+  constraints: idpSpaceAuthorizationRequiredConstraints
+});
 // runtime 29
 
 function contractError(code, message) {
@@ -4490,6 +4524,7 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
   const journeyPortfolioTables = runtimeVersion >= 27;
   const journeyCollaborationTables = runtimeVersion >= 28;
   const journeyHierarchyBlueprintTables = runtimeVersion >= 29;
+  const idpSpaceAuthorizationTables = runtimeVersion >= 34;
   const exactColumnContract = runtimeVersion >= 10
     ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns, ...reviewedReplyExactColumns, ...adminControlExactColumns, ...managedPlanExactColumns, ...deepAnalysisExactColumns }
     : runtimeVersion >= 9
@@ -4523,6 +4558,7 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
   if (journeyPortfolioTables) Object.assign(exactColumnContract, journeyPortfolioExactColumns);
   if (journeyCollaborationTables) Object.assign(exactColumnContract, journeyCollaborationExactColumns);
   if (journeyHierarchyBlueprintTables) Object.assign(exactColumnContract, journeyHierarchyBlueprintExactColumns);
+  if (idpSpaceAuthorizationTables) Object.assign(exactColumnContract, idpSpaceAuthorizationExactColumns);
   const primaryKeyContract = runtimeVersion >= 10
     ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys, ...reviewedReplyPrimaryKeys, ...adminControlPrimaryKeys, ...managedPlanPrimaryKeys, ...deepAnalysisPrimaryKeys }
     : runtimeVersion >= 9
@@ -4553,6 +4589,7 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
   if (journeyPortfolioTables) Object.assign(primaryKeyContract, journeyPortfolioPrimaryKeys);
   if (journeyCollaborationTables) Object.assign(primaryKeyContract, journeyCollaborationPrimaryKeys);
   if (journeyHierarchyBlueprintTables) Object.assign(primaryKeyContract, journeyHierarchyBlueprintPrimaryKeys);
+  if (idpSpaceAuthorizationTables) Object.assign(primaryKeyContract, idpSpaceAuthorizationPrimaryKeys);
   const foreignKeyContract = runtimeVersion >= 10
     ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys, ...reviewedReplyRequiredForeignKeys, ...adminControlRequiredForeignKeys, ...deepAnalysisRequiredForeignKeys]
     : runtimeVersion >= 8
@@ -4611,6 +4648,7 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
   if (journeyPortfolioTables) Object.assign(indexContract, journeyPortfolioRequiredIndexes);
   if (journeyCollaborationTables) Object.assign(indexContract, journeyCollaborationRequiredIndexes);
   if (journeyHierarchyBlueprintTables) Object.assign(indexContract, journeyHierarchyBlueprintRequiredIndexes);
+  if (idpSpaceAuthorizationTables) Object.assign(indexContract, idpSpaceAuthorizationRequiredIndexes);
   const defaultContract = runtimeVersion >= 10
     ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults, ...reviewedReplyRequiredDefaults, ...adminControlRequiredDefaults, ...managedPlanRequiredDefaults, ...deepAnalysisRequiredDefaults }
     : runtimeVersion >= 9
@@ -4641,6 +4679,7 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
   if (journeyPortfolioTables) Object.assign(defaultContract, journeyPortfolioRequiredDefaults);
   if (journeyCollaborationTables) Object.assign(defaultContract, journeyCollaborationRequiredDefaults);
   if (journeyHierarchyBlueprintTables) Object.assign(defaultContract, journeyHierarchyBlueprintRequiredDefaults);
+  if (idpSpaceAuthorizationTables) Object.assign(defaultContract, idpSpaceAuthorizationRequiredDefaults);
   const checkContract = runtimeVersion >= 9
     ? { ...requiredChecks, ...assistantRequiredChecks, ...assistantPhase1RequiredChecks, ...reviewedIntelligenceRequiredChecks, ...reviewedReplyRequiredChecks, ...adminControlRequiredChecks, ...managedPlanRequiredChecks }
     : runtimeVersion >= 8
@@ -4792,7 +4831,8 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
     ...(journeySavedViewTables ? journeySavedViewRequiredConstraints : {}),
     ...(journeyPortfolioTables ? journeyPortfolioRequiredConstraints : {}),
     ...(journeyCollaborationTables ? journeyCollaborationRequiredConstraints : {}),
-    ...(journeyHierarchyBlueprintTables ? journeyHierarchyBlueprintRequiredConstraints : {})
+    ...(journeyHierarchyBlueprintTables ? journeyHierarchyBlueprintRequiredConstraints : {}),
+    ...(idpSpaceAuthorizationTables ? idpSpaceAuthorizationRequiredConstraints : {})
   };
   const requiredNamedTriggers = {
     ...(journeyEventControlPlaneTables ? journeyEventControlPlaneRequiredTriggers : {}),
@@ -5156,6 +5196,9 @@ export async function assertRuntimePrivileges(query, runtimeRole, options = {}) 
       ['journey_profile_privacy_jobs', true, true, true, false],
       ['journey_identity_correction_runs', true, true, true, false]
     );
+  }
+  if (privilegeRuntimeVersion >= 34) {
+    expectations.push(['idp_space_authorizations', true, true, true, true]);
   }
   for (const [table, select, insert, update, remove] of expectations) {
     const qualified = `${schema}.${table}`;

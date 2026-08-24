@@ -77,7 +77,14 @@ const requireOrganization = async (req, res, next) => {
     req.organizationId = orgId;
     req.organizationRole = userOrg.role;
     req.organizationName = userOrg.name;
-    req.organizationPermissions = userOrg.appPermissions?.['leave-management'] || [];
+    req.organizationPermissions = userOrg.authorization?.permissionsByApp?.['leave-management']
+      || userOrg.appPermissions?.['leave-management']
+      || [];
+    req.organizationPermissionScopes = userOrg.authorization?.permissionScopesByApp?.['leave-management'] || {};
+    req.hasCentralAuthorization = Boolean(
+      userOrg.authorization?.permissionsByApp &&
+      Object.prototype.hasOwnProperty.call(userOrg.authorization.permissionsByApp, 'leave-management')
+    );
     req.teamPermissionRows = Array.isArray(userOrg.teamPermissions) ? userOrg.teamPermissions : [];
     req.teamPermissions = req.teamPermissionRows.flatMap(row => row.permissions || []);
     req.departmentHeadPermissions = Array.isArray(userOrg.departmentHeadPermissions) ? userOrg.departmentHeadPermissions : [];
@@ -114,6 +121,47 @@ const requireLeavePermission = (permission) => {
       const teamPermissions = req.teamPermissions || [];
       const role = req.organizationRole;
       const hasDepartmentHeadAccess = (req.departmentHeadPermissions || []).length > 0;
+
+      // Once the IdP emits the versioned permission matrix it is authoritative.
+      // Do not let legacy role fallbacks re-grant a permission explicitly
+      // removed by an organization or member override.
+      if (req.hasCentralAuthorization) {
+        const organizationWideEquivalent = {
+          approve_leaves: 'approve_all_leaves',
+          view_team_leaves: 'view_all_leaves',
+          view_direct_reports_leaves: 'view_all_leaves',
+        }[permission];
+        const hasOrganizationWideEquivalent = Boolean(
+          organizationWideEquivalent && permissions.includes(organizationWideEquivalent)
+        );
+        if (!permissions.includes(permission) && !hasOrganizationWideEquivalent) {
+          return res.status(403).json({
+            error: `Permission '${permission}' is not assigned by Seemplify Identity.`,
+            code: 'PERMISSION_DENIED',
+          });
+        }
+
+        const permissionScope = hasOrganizationWideEquivalent
+          ? 'organization'
+          : (req.organizationPermissionScopes?.[permission] || 'organization');
+        if (['team', 'reports'].includes(permissionScope)) {
+          req.hasTeamPermission = true;
+          req.scopedEmployeeIds = req.teamPermissionRows.flatMap(row => row.directReports || row.directReportAccountIds || []);
+          if (hasDepartmentHeadAccess) {
+            req.hasDepartmentHeadAccess = true;
+            req.scopedEmployeeIds = Array.from(new Set([
+              ...(req.scopedEmployeeIds || []),
+              ...(req.departmentHeadScope.directReports || []),
+            ]));
+          }
+        } else if (permissionScope === 'department') {
+          req.hasDepartmentHeadAccess = hasDepartmentHeadAccess;
+          req.scopedEmployeeIds = req.departmentHeadScope.directReports || [];
+        } else if (permissionScope === 'organization') {
+          req.hasFullAccess = true;
+        }
+        return next();
+      }
 
       // Owner has all permissions
       if (role === 'owner' || permissions.includes('*')) {
@@ -178,6 +226,29 @@ const requireLeavePermission = (permission) => {
 // Check if user can approve leave for specific user (team hierarchy check)
 // Supports: line_manager, team_lead roles, and parent team hierarchy
 const canApproveLeaveForUser = async (approverId, requesterId, organizationId, userinfo) => {
+  const centralOrganization = (userinfo?.organizations || []).find(
+    org => String(org.id || org._id) === String(organizationId)
+  );
+  const centralPermissionsByApp = centralOrganization?.authorization?.permissionsByApp;
+  const hasCentralAuthorization = Boolean(
+    centralPermissionsByApp &&
+    Object.prototype.hasOwnProperty.call(centralPermissionsByApp, 'leave-management')
+  );
+  const centralPermissions = hasCentralAuthorization
+    ? (centralPermissionsByApp['leave-management'] || [])
+    : [];
+  if (hasCentralAuthorization && centralPermissions.includes('approve_all_leaves')) {
+    return { canApprove: true, reason: 'idp_organization_permission', roleType: 'idp' };
+  }
+  if (hasCentralAuthorization && !centralPermissions.includes('approve_leaves')) {
+    return { canApprove: false, reason: 'idp_permission_denied', roleType: 'idp' };
+  }
+  const centralScope = centralOrganization?.authorization
+    ?.permissionScopesByApp?.['leave-management']?.approve_leaves;
+  if (hasCentralAuthorization && centralScope === 'organization') {
+    return { canApprove: true, reason: 'idp_organization_permission', roleType: 'idp' };
+  }
+
   // Get requester's teams to check hierarchy
   const requesterTeams = (userinfo.teams || []).filter(
     team => team.organizationId === organizationId
@@ -257,9 +328,17 @@ const canApproveLeaveForUser = async (approverId, requesterId, organizationId, u
   }
 
   // Check organization role permissions
-  const org = (userinfo.organizations || []).find(o => o.id === organizationId);
+  const org = centralOrganization;
   if (org) {
     const orgPerms = org.appPermissions?.['leave-management'] || [];
+
+    if (hasCentralAuthorization) {
+      return {
+        canApprove: false,
+        reason: 'outside_idp_permission_scope',
+        roleType: 'idp',
+      };
+    }
 
     // Owner can approve all
     if (org.role === 'owner' || orgPerms.includes('*')) {

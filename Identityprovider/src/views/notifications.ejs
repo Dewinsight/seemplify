@@ -344,7 +344,7 @@
     <% } %>
 
     <!-- Notification Composer -->
-    <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
+    <% if (canSendNotifications) { %>
     <div class="notification-composer">
       <h2>Send Notification</h2>
       <form id="notificationForm" onsubmit="sendNotification(event)">
@@ -397,7 +397,7 @@
     <% } else { %>
     <div class="notification-composer">
       <p style="color: var(--muted); text-align: center; padding: 20px;">
-        You need Admin, Owner, or HR Manager role to send notifications.
+        Your IdP role does not grant permission to send organization notifications.
       </p>
     </div>
     <% } %>

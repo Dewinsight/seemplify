@@ -1,4 +1,5 @@
 import { expect, test, type Request, type Route } from '@playwright/test';
+import { signInE2eBootstrap } from './auth';
 
 test('cold sidebar chunks keep the current shell mounted without a document navigation', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop browser exercises the cold lazy-route transition.');
@@ -17,11 +18,7 @@ test('cold sidebar chunks keep the current shell mounted without a document navi
     await route.continue();
   });
 
-  await page.goto('/login');
-  await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  await signInE2eBootstrap(page);
 
   const sidebar = page.getByRole('complementary');
   const previousHeading = page.getByRole('heading', { name: 'Experience overview' });
@@ -99,11 +96,7 @@ test('cold sidebar chunks keep the current shell mounted without a document navi
 });
 
 test('plan-disabled features are absent from navigation and direct routes redirect', async ({ page }) => {
-  await page.goto('/login');
-  await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  await signInE2eBootstrap(page);
   const session = await page.evaluate(async () => (await fetch('/api/auth/session')).json());
   await page.route(/\/api\/auth\/session(?:\?.*)?$/, (route) => route.fulfill({
     status: 200,

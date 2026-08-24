@@ -113,7 +113,12 @@ async function syncMembership(user, organization, claim) {
         { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     const idpRole = text(claim.role).toLowerCase();
-    const isAdmin = ADMIN_ROLES.has(idpRole);
+    const centralCapabilities = claim.authorization?.permissionsByApp?.[APPROVER_APP_ID]
+        || claim.appPermissions?.[APPROVER_APP_ID];
+    const hasCentralAuthorization = Array.isArray(centralCapabilities);
+    const isAdmin = hasCentralAuthorization
+        ? centralCapabilities.includes('roles.manage')
+        : ADMIN_ROLES.has(idpRole);
     const defaultRole = isAdmin ? 'ExecutiveApprover' : 'Requester';
     const membership = await UserOrganization.findOne({ user: user._id, organization: organization._id });
 
@@ -123,6 +128,9 @@ async function syncMembership(user, organization, claim) {
             organization: organization._id,
             managedByIdp: true,
             idpRole,
+            idpRoleKeys: claim.authorization?.roleKeys || undefined,
+            idpCapabilities: hasCentralAuthorization ? centralCapabilities : undefined,
+            idpAuthorizationRevision: claim.authorization?.organizationRevision || null,
             isAdmin,
             permissions: [{ department: department._id, roles: [defaultRole] }]
         });
@@ -130,6 +138,9 @@ async function syncMembership(user, organization, claim) {
 
     membership.managedByIdp = true;
     membership.idpRole = idpRole;
+    membership.idpRoleKeys = claim.authorization?.roleKeys || undefined;
+    membership.idpCapabilities = hasCentralAuthorization ? centralCapabilities : undefined;
+    membership.idpAuthorizationRevision = claim.authorization?.organizationRevision || null;
     membership.isAdmin = isAdmin;
     if (!Array.isArray(membership.permissions) || membership.permissions.length === 0) {
         membership.permissions = [{ department: department._id, roles: [defaultRole] }];

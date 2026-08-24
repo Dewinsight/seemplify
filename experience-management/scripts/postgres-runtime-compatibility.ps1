@@ -46,6 +46,9 @@ function Test-ProjectSupportsPostgresRuntimeVersion([string]$ProjectDir, [int]$R
   if ($RequiredVersion -ge 29 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0029_journey_hierarchy_blueprints.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 30 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0030_journey_stage_reprojection.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 31 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0031_journey_identity_profiles.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 32 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0032_managed_file_storage.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 33 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0033_azure_knowledge_embeddings.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 34 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0034_idp_space_authorizations.sql') -PathType Leaf)) { return $false }
   return $true
 }
 

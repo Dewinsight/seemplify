@@ -10,6 +10,7 @@ export interface AuthSession {
   authenticated: boolean; email: string | null; user: SessionUser | null;
   emailVerified: boolean; onboardingRequired: boolean; profile: UserProfile | null;
   permissions?: { platformAdmin: boolean; rootPlatformAdmin: boolean; platformRoles: Array<'superadmin' | 'support' | 'billing_approver' | 'analyst'> };
+  productPermissions?: string[] | null;
   spaces: SpaceSummary[]; activeSpace: SpaceSummary | null; pendingSpaceInvitations: PendingSpaceInvitation[];
   subscription?: {
     planCode: 'starter' | 'team' | 'enterprise'; planName: string;

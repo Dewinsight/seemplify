@@ -95,16 +95,24 @@ const injectOrgContext = async (req, res, next) => {
             roleDocs = await Role.find({ organization: orgId, isActive: true }, 'key capabilities');
         }
         const roleCatalog = buildRoleCatalog(roleDocs);
+        const centralCapabilities = Array.isArray(membership.idpCapabilities)
+            ? membership.idpCapabilities.filter(Boolean)
+            : null;
+        if (centralCapabilities) roleCatalog.__idp = centralCapabilities;
         const validRoleKeys = Object.keys(roleCatalog);
 
         req.organization = orgId;
         req.membership = membership;
         // Inject org-specific role data into req.user for downstream middleware (verifyRole)
-        req.user.isAdmin = membership.isAdmin;
-        req.user.permissions = sanitizePermissions(
-            membership.permissions || [],
-            validRoleKeys.length > 0 ? new Set(validRoleKeys) : null
-        );
+        req.user.isAdmin = centralCapabilities
+            ? centralCapabilities.includes('roles.manage')
+            : membership.isAdmin;
+        req.user.permissions = centralCapabilities
+            ? [{ department: null, roles: ['__idp'] }]
+            : sanitizePermissions(
+                membership.permissions || [],
+                validRoleKeys.length > 0 ? new Set(validRoleKeys) : null
+            );
         req.user.roleCatalog = roleCatalog;
         req.user.capabilities = collectUserCapabilities(req.user, roleCatalog);
         next();

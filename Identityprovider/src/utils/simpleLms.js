@@ -267,8 +267,15 @@ export async function getHierarchyScopedMembers({ organizationId, accountId }) {
   return { members, managedTeamIds, teams }
 }
 
-export async function getSimpleLmsAccessScope({ organizationId, accountId, memberRole }) {
-  const canManageOrganization = SIMPLE_LMS_ORG_MANAGER_ROLES.includes(memberRole)
+export async function getSimpleLmsAccessScope({
+  organizationId,
+  accountId,
+  memberRole,
+  canManageOrganization: explicitCanManageOrganization = null
+}) {
+  const canManageOrganization = typeof explicitCanManageOrganization === 'boolean'
+    ? explicitCanManageOrganization
+    : SIMPLE_LMS_ORG_MANAGER_ROLES.includes(memberRole)
 
   if (canManageOrganization) {
     const { members, teams } = await getOrganizationMembersWithTeamContext({ organizationId })

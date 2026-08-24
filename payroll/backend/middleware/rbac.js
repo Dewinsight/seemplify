@@ -219,7 +219,21 @@ function getCurrentOrganization(user) {
 /**
  * Check if user has a specific permission
  */
-function hasPermission(role, permission) {
+function claimedPermissions(user) {
+  if (!user) return null;
+  const current = getCurrentOrganization(user);
+  const currentId = current?.id || current?._id?.toString?.();
+  const organization = (user.organizations || user.userinfo?.organizations || []).find((item) =>
+    !currentId || String(item.id || item._id) === String(currentId)
+  ) || current;
+  const permissionsByApp = organization?.authorization?.permissionsByApp || organization?.appPermissions;
+  if (!permissionsByApp || !Object.prototype.hasOwnProperty.call(permissionsByApp, 'payroll-management')) return null;
+  return new Set(permissionsByApp['payroll-management'] || []);
+}
+
+function hasPermission(role, permission, user = null) {
+  const centralPermissions = claimedPermissions(user);
+  if (centralPermissions) return centralPermissions.has(permission);
   const allowedRoles = PERMISSIONS[permission];
   if (!allowedRoles) return false;
   return allowedRoles.includes(role);
@@ -230,9 +244,14 @@ function hasPermission(role, permission) {
  */
 function canAccessUserData(requestingUser, targetUserId) {
   const role = getUserRole(requestingUser);
+  const centralPermissions = claimedPermissions(requestingUser);
   
-  // HR Admin can access all
-  if (role === 'hr_admin') return true;
+  // Organization-wide payroll access is authoritative when supplied by IdP.
+  if (
+    centralPermissions?.has('compensation:manage:all') ||
+    centralPermissions?.has('payslip:view:all') ||
+    (!centralPermissions && role === 'hr_admin')
+  ) return true;
   
   // Can always access own data
   if (requestingUser.id === targetUserId || requestingUser.sub === targetUserId) {
@@ -240,7 +259,11 @@ function canAccessUserData(requestingUser, targetUserId) {
   }
   
   // Line managers can access direct reports
-  if (role === 'line_manager') {
+  if (
+    centralPermissions?.has('compensation:view:team_full') ||
+    centralPermissions?.has('payslip:view:team_full') ||
+    (!centralPermissions && role === 'line_manager')
+  ) {
     const directReports = getDirectReports(requestingUser);
     return directReports.includes(targetUserId);
   }
@@ -328,7 +351,7 @@ const requirePermission = (permission) => {
 
     const role = getUserRole(req.session.user);
     
-    if (!hasPermission(role, permission)) {
+    if (!hasPermission(role, permission, req.session.user)) {
       return res.status(403).json({
         success: false,
         error: `Permission denied: ${permission}`,
@@ -355,7 +378,7 @@ const requireAnyPermission = (...permissions) => {
     if (!req.session?.user) return; // requireAuth already responded
 
     const role = getUserRole(req.session.user);
-    const hasAny = permissions.some(p => hasPermission(role, p));
+    const hasAny = permissions.some(p => hasPermission(role, p, req.session.user));
     
     if (!hasAny) {
       return res.status(403).json({
@@ -410,7 +433,12 @@ const requireHRAdmin = (req, res, next) => requireAuth(req, res, () => {
 
   const role = getUserRole(req.session.user);
   
-  if (role !== 'hr_admin') {
+  const centralPermissions = claimedPermissions(req.session.user);
+  const allowed = centralPermissions
+    ? centralPermissions.has('admin:settings')
+    : role === 'hr_admin';
+
+  if (!allowed) {
     return res.status(403).json({
       success: false,
       error: 'HR Admin access required',
@@ -434,7 +462,13 @@ const requireManager = (req, res, next) => requireAuth(req, res, () => {
 
   const role = getUserRole(req.session.user);
   
-  if (role !== 'line_manager' && role !== 'hr_admin') {
+  const centralPermissions = claimedPermissions(req.session.user);
+  const allowed = centralPermissions
+    ? ['compensation:view:team_full', 'report:view:team', 'compensation:manage:team']
+      .some((permission) => centralPermissions.has(permission))
+    : role === 'line_manager' || role === 'hr_admin';
+
+  if (!allowed) {
     return res.status(403).json({
       success: false,
       error: 'Manager access required',
@@ -459,7 +493,13 @@ const requireTeamLead = (req, res, next) => requireAuth(req, res, () => {
 
   const role = getUserRole(req.session.user);
   
-  if (role !== 'team_lead' && role !== 'line_manager' && role !== 'hr_admin') {
+  const centralPermissions = claimedPermissions(req.session.user);
+  const allowed = centralPermissions
+    ? ['compensation:view:team_summary', 'bonus:request:team', 'report:view:team']
+      .some((permission) => centralPermissions.has(permission))
+    : role === 'team_lead' || role === 'line_manager' || role === 'hr_admin';
+
+  if (!allowed) {
     return res.status(403).json({
       success: false,
       error: 'Team Lead access required',
@@ -482,6 +522,7 @@ module.exports = {
   getDirectReports,
   getManagedTeams,
   getCurrentOrganization,
+  claimedPermissions,
   hasPermission,
   canAccessUserData,
   requireAuth,

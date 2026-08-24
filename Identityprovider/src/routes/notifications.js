@@ -8,7 +8,8 @@ import { hasLineManagerRole } from '../utils/teamManager.js'
 import {
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin
+  requestHasIdentityPermission,
+  requireIdentityPermission
 } from '../middleware/permissions.js'
 
 const router = express.Router()
@@ -103,17 +104,15 @@ router.post('/:orgId/notifications',
       }
 
       // Permission checks based on target type
-      const userRole = req.memberRole
-      const allowedRoles = {
-        organization: ['owner', 'admin'],
-        team: ['owner', 'admin', 'hr_manager'],
-        member: ['owner', 'admin', 'hr_manager']
-      }
+      let canSend = requestHasIdentityPermission(req, 'notifications.send')
 
-      let canSend = allowedRoles[targetType].includes(userRole)
-
-      // Special case: team managers can send to their own team
-      if (targetType === 'team' && !canSend) {
+      // Team-scoped notification authority still requires an explicit IdP grant;
+      // the team relationship only constrains the resource it can be used on.
+      if (
+        targetType === 'team' &&
+        !canSend &&
+        requestHasIdentityPermission(req, 'notifications.send.assigned')
+      ) {
         const team = await Team.findById(targetId)
         if (team && team.organization.toString() === organizationId) {
           if (hasLineManagerRole(team, req.user._id)) {
@@ -206,7 +205,7 @@ router.post('/:orgId/notifications',
 router.get('/:orgId/notifications',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireIdentityPermission('notifications.read'),
   async (req, res) => {
     try {
       const { page = 1, limit = 20, status } = req.query
@@ -267,7 +266,7 @@ router.get('/:orgId/notifications',
 router.get('/:orgId/notifications/:notificationId',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requireIdentityPermission('notifications.read'),
   async (req, res) => {
     try {
       const notification = await Notification.findOne({

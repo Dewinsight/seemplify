@@ -14,12 +14,19 @@ import {
 import {
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
+  requestHasIdentityPermission,
   rateLimit
 } from '../middleware/permissions.js'
+import { authorizationHasPermission, resolveOrganizationAuthorization } from '../services/accessControlService.js'
 import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
+
+async function canManageInvitations(account, organization, member) {
+  const authorization = await resolveOrganizationAuthorization({ account, organization, member })
+  return authorizationHasPermission(authorization, 'identity', 'invitations.manage') ||
+    authorizationHasPermission(authorization, 'identity', 'members.invite')
+}
 
 function getHubAppMetadata() {
   const apps = getOrganizationManagedHubApps().map(app => ({
@@ -185,8 +192,8 @@ router.post('/:invitationId/resend',
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
 
-      if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
-        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+      if (!member || !await canManageInvitations(req.user, organization, member)) {
+        return res.status(403).json({ error: 'Invitation management permission required' })
       }
 
       // Generate new token
@@ -259,8 +266,8 @@ router.delete('/:invitationId',
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
 
-      if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
-        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+      if (!member || !await canManageInvitations(req.user, organization, member)) {
+        return res.status(403).json({ error: 'Invitation management permission required' })
       }
 
       await OrganizationInvite.findByIdAndDelete(req.params.invitationId)
@@ -575,7 +582,8 @@ router.post('/:orgId/invitations',
         body: req.body
       })
 
-      const canInvite = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
+      const canInvite = requestHasIdentityPermission(req, 'members.invite') ||
+        requestHasIdentityPermission(req, 'invitations.manage')
       if (!canInvite) {
         return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
       }
@@ -584,7 +592,7 @@ router.post('/:orgId/invitations',
 
       const {
         email,
-        role = 'recruiter',
+        role = 'staff',
         designation: rawDesignation = '',
         employeeId: rawEmployeeId = '',
         department: requestedDepartmentId = null,
@@ -628,12 +636,25 @@ router.post('/:orgId/invitations',
       if (!validRoles.includes(role)) {
         return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
       }
+      if (role !== 'staff' && !requestHasIdentityPermission(req, 'roles.assign')) {
+        return res.status(403).json({
+          error: 'Permission to assign organization roles is required.',
+          code: 'ORGANIZATION_PERMISSION_REQUIRED',
+          requiredPermission: 'roles.assign'
+        })
+      }
 
       let appAccess
-      try {
-        appAccess = parseInvitationAppAccess(req.body, appIdSet)
-      } catch (validationError) {
-        return res.status(400).json({ error: validationError.message })
+      if (requestHasIdentityPermission(req, 'apps.assign')) {
+        try {
+          appAccess = parseInvitationAppAccess(req.body, appIdSet)
+        } catch (validationError) {
+          return res.status(400).json({ error: validationError.message })
+        }
+      } else {
+        // Inviting a person does not implicitly grant access to every product.
+        // An apps.assign holder can expand this centrally after the member joins.
+        appAccess = { mode: APP_ACCESS_MODE_SELECTED, appIds: [] }
       }
 
       // Check if user is already a member

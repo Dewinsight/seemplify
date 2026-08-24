@@ -33,9 +33,26 @@ const normalizeAppAccess = (raw = {}) => {
   return { mode, appIds }
 }
 
-const buildLearningAccess = ({ existingAccess, organizationRole, enabled }) => {
+const learningPermissionsFromClaim = (claim = {}) => {
+  const permissionsByApp = claim?.authorization?.permissionsByApp || claim?.appPermissions
+  if (!permissionsByApp || !Object.prototype.hasOwnProperty.call(permissionsByApp, 'seemplify-learning')) return null
+  return new Set(Array.isArray(permissionsByApp['seemplify-learning'])
+    ? permissionsByApp['seemplify-learning'].map((value) => String(value || '').trim()).filter(Boolean)
+    : [])
+}
+
+const learningRoleFromPermissions = (permissions, organizationRole) => {
+  if (!(permissions instanceof Set)) return defaultLearningRoleForOrganizationRole(organizationRole)
+  if (['platform.manage', 'courses.manage', 'partners.manage', 'sales.manage']
+    .some((permission) => permissions.has(permission))) return 'learning_admin'
+  if (permissions.has('learners.manage')) return 'learning_manager'
+  if (permissions.has('courses.create')) return 'instructor'
+  return 'learner'
+}
+
+const buildLearningAccess = ({ existingAccess, organizationRole, enabled, idpPermissions = null }) => {
   const current = normalizeOrganizationLearningAccess(existingAccess, organizationRole)
-  if (current.managedBy === 'organization_admin') {
+  if (!(idpPermissions instanceof Set) && current.managedBy === 'organization_admin') {
     return {
       enabled,
       role: current.role,
@@ -47,7 +64,7 @@ const buildLearningAccess = ({ existingAccess, organizationRole, enabled }) => {
   }
   return {
     enabled,
-    role: defaultLearningRoleForOrganizationRole(organizationRole),
+    role: learningRoleFromPermissions(idpPermissions, organizationRole),
     catalogAccess: 'all_available',
     managedBy: 'idp_default',
     updatedAt: new Date(),
@@ -136,6 +153,7 @@ const upsertOrganizationMembership = async ({
   organizationRole,
   appAccess,
   enabled,
+  idpPermissions = null,
   profile = {}
 }) => {
   const normalizedRole = normalizeOrganizationRole(organizationRole)
@@ -148,7 +166,8 @@ const upsertOrganizationMembership = async ({
   const organizationLearningAccess = buildLearningAccess({
     existingAccess: organizationMember?.learningAccess,
     organizationRole: normalizedRole,
-    enabled
+    enabled,
+    idpPermissions
   })
 
   if (!organizationMember) {
@@ -245,7 +264,11 @@ export async function syncIdpUserAndOrganizations(userinfo = {}) {
     emailVerified: userinfo.email_verified !== false
   })
   const organizationClaims = Array.isArray(userinfo.organizations) ? userinfo.organizations : []
-  const allowedClaims = organizationClaims.filter(organizationClaimAllowsLearning)
+  const allowedClaims = organizationClaims.filter((claim) => {
+    if (!organizationClaimAllowsLearning(claim)) return false
+    const permissions = learningPermissionsFromClaim(claim)
+    return permissions === null || permissions.has('workspace.access') || permissions.has('platform.manage')
+  })
   if (organizationClaims.length > 0 && allowedClaims.length === 0) {
     const error = new Error('Your organisation has not assigned Seemplify Learning to this account.')
     error.code = 'IDP_LEARNING_ACCESS_DENIED'
@@ -261,6 +284,7 @@ export async function syncIdpUserAndOrganizations(userinfo = {}) {
       organizationRole: claim.role,
       appAccess: claim.appAccess,
       enabled: true,
+      idpPermissions: learningPermissionsFromClaim(claim),
       profile: claim
     })
     localOrganizationByIdpId.set(String(claim.id), organization)
@@ -306,7 +330,11 @@ export async function syncIdpOrganizationMembers({ organization, remoteMembers =
         organization,
         organizationRole: member?.role,
         appAccess: member?.appAccess,
-        enabled,
+        enabled: enabled && (() => {
+          const permissions = learningPermissionsFromClaim(member)
+          return permissions === null || permissions.has('workspace.access') || permissions.has('platform.manage')
+        })(),
+        idpPermissions: learningPermissionsFromClaim(member),
         profile: member
       })
       if (existing) results.updated += 1
@@ -322,6 +350,11 @@ export async function syncIdpOrganizationMembers({ organization, remoteMembers =
 }
 
 export async function updateMemberLearningAccess({ organization, accountId, role, catalogAccess, updatedBy }) {
+  if (organization.idpOrganizationId) {
+    const error = new Error('Learning roles for this organisation are managed by Seemplify Identity. Update the member permission matrix in the IdP.')
+    error.code = 'IDP_ACCESS_CONTROL_REQUIRED'
+    throw error
+  }
   const member = (organization.members || []).find((entry) => (
     entry.status === 'active' && toIdString(entry.account) === toIdString(accountId)
   ))
@@ -368,4 +401,4 @@ export async function updateMemberLearningAccess({ organization, accountId, role
   return access
 }
 
-export { findOrganizationByIdpId, normalizeOrganizationRole }
+export { findOrganizationByIdpId, learningPermissionsFromClaim, learningRoleFromPermissions, normalizeOrganizationRole }

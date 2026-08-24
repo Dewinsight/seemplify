@@ -25,7 +25,7 @@ import {
   readLatestJourneyActualPathRollup, readLatestJourneyActualPathSnapshot
 } from './journeyActualPathAnalytics.js';
 import { JourneyPathAnalyticsConfigurationError } from './journeyPathAnalytics.js';
-import { resolveRequestSpace, SpaceError } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError } from './spaces.js';
 import { SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import {
   createJourneyMetricAlertDefinition, createJourneyMetricAlertDefinitionVersion,
@@ -59,7 +59,7 @@ function context(request: express.Request) {
 }
 function editor(request: express.Request) {
   const resolved = context(request);
-  if (resolved.space.role === 'member') throw new JourneyMetricsError('You do not have permission to manage journey metrics.', 403,
+  if (!spaceRoleOrIdpPermission(resolved.space, 'journeys.edit')) throw new JourneyMetricsError('You do not have permission to manage journey metrics.', 403,
     'JOURNEY_METRICS_FORBIDDEN');
   return resolved;
 }

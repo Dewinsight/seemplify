@@ -79,9 +79,11 @@ const PERMISSIONS = {
   'okr:create:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'okr:edit:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'okr:view:team': ['team_lead', 'line_manager', 'hr_admin'],
+  'okr:view:department': ['line_manager', 'hr_admin'],
   'okr:view:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'okr:review:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'okr:view:all': ['hr_admin'],
+  'okr:view:organization': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'okr:create:team': ['line_manager', 'hr_admin'],
   'okr:create:organization': ['hr_admin'],
   'okr:submit:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
@@ -92,6 +94,9 @@ const PERMISSIONS = {
   'okr:assign:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'okr:decide:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'okr:bulk_assign': ['team_lead', 'line_manager', 'hr_admin'],
+  'okr:edit:all': ['hr_admin'],
+  'okr:decide:all': ['hr_admin'],
+  'okr:checkin:all': ['hr_admin'],
   'okr:align': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   // Canonical goal permissions. The `okr:*` names above remain temporary
   // compatibility aliases for older clients.
@@ -99,6 +104,7 @@ const PERMISSIONS = {
   'goal:assign:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'goal:assign:department': ['line_manager', 'hr_admin'],
   'goal:assign:organization': ['hr_admin'],
+  'goal:assign:all': ['hr_admin'],
 
   // Goal period permissions
   'goal_period:view': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
@@ -333,7 +339,21 @@ function getCurrentTeam(user) {
 /**
  * Check if user has a specific permission
  */
-function hasPermission(role, permission) {
+function claimedPermissions(user) {
+  if (!user) return null;
+  const current = getCurrentOrganization(user);
+  const currentId = current?.id || current?._id?.toString?.();
+  const organization = (user.organizations || user.userinfo?.organizations || []).find((item) =>
+    !currentId || String(item.id || item._id) === String(currentId)
+  ) || current;
+  const permissionsByApp = organization?.authorization?.permissionsByApp || organization?.appPermissions;
+  if (!permissionsByApp || !Object.prototype.hasOwnProperty.call(permissionsByApp, 'performance-management')) return null;
+  return new Set(permissionsByApp['performance-management'] || []);
+}
+
+function hasPermission(role, permission, user = null) {
+  const centralPermissions = claimedPermissions(user);
+  if (centralPermissions) return centralPermissions.has(permission);
   const allowedRoles = PERMISSIONS[permission];
   if (!allowedRoles) return false;
   return allowedRoles.includes(role);
@@ -344,9 +364,10 @@ function hasPermission(role, permission) {
  */
 function canAccessUserData(requestingUser, targetUserId) {
   const role = getUserRole(requestingUser);
+  const centralPermissions = claimedPermissions(requestingUser);
 
-  // HR Admin can access all
-  if (role === 'hr_admin') return true;
+  // Organization-wide access is authoritative when the IdP matrix is present.
+  if (centralPermissions?.has('user:view:all') || (!centralPermissions && role === 'hr_admin')) return true;
 
   // Can always access own data
   if (requestingUser.id === targetUserId || requestingUser.sub === targetUserId) {
@@ -354,7 +375,10 @@ function canAccessUserData(requestingUser, targetUserId) {
   }
 
   // Team appraisers can access direct reports
-  if (role === 'line_manager' || role === 'team_lead') {
+  if (
+    centralPermissions?.has('user:view:direct_reports') ||
+    (!centralPermissions && (role === 'line_manager' || role === 'team_lead'))
+  ) {
     const directReports = getDirectReports(requestingUser);
     return directReports.includes(targetUserId);
   }
@@ -478,7 +502,7 @@ const requirePermission = (permission) => {
 
     const role = getUserRole(req.session.user);
 
-    if (!hasPermission(role, permission)) {
+    if (!hasPermission(role, permission, req.session.user)) {
       return res.status(403).json({
         success: false,
         error: `Permission denied: ${permission}`,
@@ -513,7 +537,7 @@ const requireAnyPermission = (...permissions) => {
     }
 
     const role = getUserRole(req.session.user);
-    const hasAny = permissions.some(p => hasPermission(role, p));
+    const hasAny = permissions.some(p => hasPermission(role, p, req.session.user));
 
     if (!hasAny) {
       return res.status(403).json({
@@ -581,7 +605,12 @@ const requireHRAdmin = (req, res, next) => {
 
   const role = getUserRole(req.session.user);
 
-  if (role !== 'hr_admin') {
+  const centralPermissions = claimedPermissions(req.session.user);
+  const allowed = centralPermissions
+    ? centralPermissions.has('admin:settings')
+    : role === 'hr_admin';
+
+  if (!allowed) {
     return res.status(403).json({
       success: false,
       error: 'HR Admin access required',
@@ -608,7 +637,13 @@ const requireManager = (req, res, next) => {
 
   const role = getUserRole(req.session.user);
 
-  if (role !== 'line_manager' && role !== 'team_lead' && role !== 'hr_admin') {
+  const centralPermissions = claimedPermissions(req.session.user);
+  const allowed = centralPermissions
+    ? ['review:conduct:direct_reports', 'analytics:view:team', 'analytics:view:organization']
+      .some((permission) => centralPermissions.has(permission))
+    : role === 'line_manager' || role === 'team_lead' || role === 'hr_admin';
+
+  if (!allowed) {
     return res.status(403).json({
       success: false,
       error: 'Manager or team lead access required',
@@ -635,8 +670,10 @@ const requireDirectReportAccess = (getTargetUserId) => {
 
     const role = getUserRole(req.session.user);
 
-    // HR Admin can access all
-    if (role === 'hr_admin') {
+    // Organization-wide access is permission-driven when the IdP supplied the
+    // canonical product matrix. Legacy sessions retain the historic role gate.
+    const centralPermissions = claimedPermissions(req.session.user);
+    if (centralPermissions?.has('user:view:all') || (!centralPermissions && role === 'hr_admin')) {
       return next();
     }
 
@@ -666,6 +703,7 @@ module.exports = {
   getManagedTeams,
   getCurrentOrganization,
   getCurrentTeam,
+  claimedPermissions,
   hasPermission,
   canAccessUserData,
   requireAuth,

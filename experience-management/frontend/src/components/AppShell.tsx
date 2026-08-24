@@ -20,7 +20,7 @@ import type { AuthSession, PendingSpaceInvitation, SpaceSession, SubscriptionFea
 
 type SubscriptionFeature = keyof SubscriptionFeatures;
 
-const navigation: Array<{ to: string; label: string; icon: typeof Gauge; end?: boolean; feature?: SubscriptionFeature }> = [
+const navigation: Array<{ to: string; label: string; icon: typeof Gauge; end?: boolean; feature?: SubscriptionFeature; permission?: string }> = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
   { to: '/surveys', label: 'Surveys', icon: ClipboardList, feature: 'surveys' },
   { to: '/campaigns', label: 'Campaigns', icon: Megaphone, feature: 'campaigns' },
@@ -31,7 +31,7 @@ const navigation: Array<{ to: string; label: string; icon: typeof Gauge; end?: b
   { to: '/knowledge-bases', label: 'Knowledge bases', icon: BookOpenText, feature: 'knowledgeBases' },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles, feature: 'terra' },
   { to: '/tickets', label: 'Service recovery', icon: Inbox, feature: 'serviceRecovery' },
-  { to: '/settings/space', label: 'Space settings', icon: Settings2 }
+  { to: '/settings/space', label: 'Space settings', icon: Settings2, permission: 'spaces.manage' }
 ];
 
 function featureEnabled(session: AuthSession | null, feature?: SubscriptionFeature) {
@@ -40,10 +40,23 @@ function featureEnabled(session: AuthSession | null, feature?: SubscriptionFeatu
   return session.subscription ? session.subscription.features[feature] === true : true;
 }
 
+function productPermissionEnabled(session: AuthSession | null, permission?: string) {
+  if (!permission) return true;
+  // null is the explicit local-account compatibility path. IdP-linked spaces
+  // always return an authoritative array, including an intentionally empty one.
+  if (!session || session.productPermissions === undefined) return true;
+  return session.productPermissions === null || session.productPermissions.includes(permission);
+}
+
 function routeFeature(path: string): SubscriptionFeature | undefined {
   return navigation
     .filter((item) => item.feature && (path === item.to || path.startsWith(`${item.to}/`)))
     .sort((left, right) => right.to.length - left.to.length)[0]?.feature;
+}
+
+function routeProductPermission(path: string): string | undefined {
+  if (path === '/settings/space' || path.startsWith('/settings/space/')) return 'spaces.manage';
+  return undefined;
 }
 
 function Brand() {
@@ -123,15 +136,15 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
           {!session?.activeSpace && <option value="">Loading space…</option>}
           {session?.spaces.map((space) => <option value={space.id} key={space.id}>{space.name}</option>)}
         </select>
-        <Link to="/settings/space" onClick={close} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Manage spaces"><Settings2 className="h-4 w-4" /></Link>
+        {productPermissionEnabled(session, 'spaces.manage') && <Link to="/settings/space" onClick={close} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Manage spaces"><Settings2 className="h-4 w-4" /></Link>}
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-3 px-0.5 text-[11px] text-muted-foreground">
         <span className="capitalize">{session?.activeSpace?.role || 'Loading'}</span>
-        <Link to="/settings/space?create=1" onClick={close} className="font-medium hover:text-foreground hover:underline">Create space</Link>
+        {productPermissionEnabled(session, 'spaces.manage') && <Link to="/settings/space?create=1" onClick={close} className="font-medium hover:text-foreground hover:underline">Create space</Link>}
       </div>
     </div>
     <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary navigation">
-      {navigation.filter((item) => featureEnabled(session, item.feature)).map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={close} className={({ isActive }) => cn('flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', isActive && 'bg-secondary text-secondary-foreground')}>
+      {navigation.filter((item) => featureEnabled(session, item.feature) && productPermissionEnabled(session, item.permission)).map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={close} className={({ isActive }) => cn('flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', isActive && 'bg-secondary text-secondary-foreground')}>
         <Icon className="h-4 w-4" />{label}
       </NavLink>)}
     </nav>
@@ -258,6 +271,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         setSession((current) => current ? {
           ...current,
           permissions: next.permissions,
+          productPermissions: next.productPermissions,
           pendingSpaceInvitations: next.pendingSpaceInvitations,
           subscription: next.subscription
         } : current);
@@ -314,7 +328,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const providerGateBlocking = !providerGateExempt
     && (providerStateLoading || Boolean(providerStateError) || providerSetupRequired);
   const routeBlockedByPlan = Boolean(session && !featureEnabled(session, routeFeature(routePath)));
-  const guardedChildren = routeBlockedByPlan
+  const requiredProductPermission = routeProductPermission(routePath);
+  const routeBlockedByPermission = Boolean(session
+    && !productPermissionEnabled(session, requiredProductPermission));
+  const guardedChildren = routeBlockedByPermission
+    ? <section className="mx-auto mt-8 max-w-2xl rounded-lg border bg-card p-6" role="alert" aria-labelledby="product-access-heading">
+      <p className="text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">Experience access</p>
+      <h1 id="product-access-heading" className="mt-2 text-2xl font-semibold tracking-tight">Your role does not include this area</h1>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">Seemplify Identity controls this permission for your organisation. Ask an IdP administrator to update your role or an organisation override.</p>
+      <div className="mt-4 flex flex-wrap gap-2"><a href="https://auth.seemplifyai.com/organizations" className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground">Open Identity administration</a><Link to="/" className="inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold">Back to overview</Link></div>
+      {requiredProductPermission && <p className="mt-4 font-mono text-[11px] text-muted-foreground">Required: {requiredProductPermission}</p>}
+    </section>
+    : routeBlockedByPlan
     ? <Navigate to="/" />
     : providerGateBlocking
     ? (providerStateLoading

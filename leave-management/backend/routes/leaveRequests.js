@@ -121,7 +121,7 @@ router.get('/approvals',
     };
 
     // If user has full org permissions, show all pending
-    if (req.hasFullAccess || req.organizationRole === 'admin' || req.organizationRole === 'hr_manager') {
+    if (req.hasFullAccess || (!req.hasCentralAuthorization && (req.organizationRole === 'admin' || req.organizationRole === 'hr_manager'))) {
       // Show all pending requests for org
     } else if (req.hasDepartmentHeadAccess) {
       query.userId = { $in: req.scopedEmployeeIds || [] };
@@ -192,7 +192,7 @@ router.get('/team',
     };
 
     // If not full access, filter to team members
-    if (!req.hasFullAccess && req.organizationRole !== 'admin' && req.organizationRole !== 'hr_manager') {
+    if (!req.hasFullAccess && (req.hasCentralAuthorization || (req.organizationRole !== 'admin' && req.organizationRole !== 'hr_manager'))) {
       if (req.hasDepartmentHeadAccess) {
         query.userId = { $in: req.scopedEmployeeIds || [] };
       } else {
@@ -254,7 +254,7 @@ router.get('/all',
     };
 
     // Only admins and HR managers can use this endpoint
-    if (req.organizationRole !== 'admin' && req.organizationRole !== 'hr_manager' && !req.hasFullAccess) {
+    if (!req.hasFullAccess && (req.hasCentralAuthorization || (req.organizationRole !== 'admin' && req.organizationRole !== 'hr_manager'))) {
       return res.status(403).json({
         error: 'Admin or HR Manager role required',
         code: 'PERMISSION_DENIED',
@@ -367,11 +367,22 @@ router.get('/:id', asyncHandler(async (req, res) => {
   // Verify access (own request or has view permission)
   if (request.userId !== req.user.id) {
     // Check if user has permission to view others' requests
-    const hasPermission = req.hasFullAccess ||
-      req.organizationRole === 'admin' ||
-      req.organizationRole === 'hr_manager' ||
-      req.hasDepartmentHeadAccess ||
-      req.teamPermissions?.includes('view_team_leaves');
+    const centrallyScopedIds = new Set((req.teamPermissionRows || [])
+      .flatMap((row) => row.directReports || row.directReportAccountIds || [])
+      .map(String));
+    const centralCanView = req.hasCentralAuthorization && (
+      req.organizationPermissions?.includes('view_all_leaves') ||
+      ((req.organizationPermissions?.includes('view_team_leaves') ||
+        req.organizationPermissions?.includes('view_direct_reports_leaves')) &&
+        centrallyScopedIds.has(String(request.userId)))
+    );
+    const hasPermission = req.hasFullAccess || centralCanView ||
+      (!req.hasCentralAuthorization && (
+        req.organizationRole === 'admin' ||
+        req.organizationRole === 'hr_manager' ||
+        req.hasDepartmentHeadAccess ||
+        req.teamPermissions?.includes('view_team_leaves')
+      ));
 
     if (!hasPermission) {
       throw new AppError('Access denied', 403, 'ACCESS_DENIED');

@@ -36,7 +36,7 @@ import {
   listJourneyProfileTimeline,
   resolveJourneyIdentityForSpace
 } from './journeyIdentityRepository.js';
-import { resolveRequestSpace, SpaceError } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError } from './spaces.js';
 import { SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 
 export const journeyIdentityRouter = express.Router();
@@ -55,7 +55,7 @@ function context(request: express.Request) {
 
 function editor(request: express.Request) {
   const resolved = context(request);
-  if (resolved.space.role === 'member') {
+  if (!spaceRoleOrIdpPermission(resolved.space, 'journeys.edit')) {
     throw new JourneyIdentityRepositoryError(
       'You do not have permission to manage journey identities.',
       403,

@@ -82,7 +82,7 @@ import {
 } from './xIntegration.js';
 import {
   acceptPendingSpaceInvitationForAccount, acceptSpaceInvitation, createSpace, createSpaceInvitation, getSpaceForUser,
-  assertSpaceOperationalById, invitationPreview, listPendingSpaceInvitationsForAccount, listSpaceInvitations, listSpaceMembers, listSpacesForUser,
+  assertSpaceOperationalById, idpPermissionsForSpaceUser, invitationPreview, listPendingSpaceInvitationsForAccount, listSpaceInvitations, listSpaceMembers, listSpacesForUser,
   removeSpaceMember, renameSpace, resolveRequestSpace, revokeSpaceInvitation, setActiveSpace, SpaceError, spaceSession,
   updateSpaceMember
 } from './spaces.js';
@@ -275,6 +275,13 @@ function entitledJourneySpace(request: express.Request, options: { ai?: boolean;
 }
 
 function requireLegacyJourneyCapability(space: ReturnType<typeof authenticatedSpace>, capability: 'read' | 'edit' | 'export') {
+  const idpPermissions = idpPermissionsForSpaceUser(space.id, space.userId);
+  if (idpPermissions !== null) {
+    const required = capability === 'read' ? 'journeys.read' : capability === 'edit' ? 'journeys.edit' : 'journeys.export';
+    if (idpPermissions.has(required)) return space;
+    throw new JourneyMapError(`You do not have permission to ${capability} journey maps in this space.`, 403,
+      capability === 'export' ? 'JOURNEY_EXPORT_FORBIDDEN' : 'JOURNEY_MAP_FORBIDDEN');
+  }
   if (space.role !== 'member') return space;
   if (capability === 'read') return space;
   if (capability === 'export') {

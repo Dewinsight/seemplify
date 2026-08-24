@@ -7,6 +7,22 @@ import {
   normalizeDepartmentName
 } from '../utils/departments.js'
 
+const PermissionGrantSchema = new mongoose.Schema({
+  appId: { type: String, required: true, trim: true },
+  permissions: { type: [String], default: [] }
+}, { _id: false })
+
+const OrganizationRoleOverrideSchema = new mongoose.Schema({
+  roleKey: { type: String, required: true, trim: true },
+  name: { type: String, default: '', trim: true, maxLength: 100 },
+  description: { type: String, default: '', trim: true, maxLength: 500 },
+  grants: { type: [PermissionGrantSchema], default: [] },
+  denies: { type: [PermissionGrantSchema], default: [] },
+  isActive: { type: Boolean, default: true },
+  updatedAt: { type: Date, default: Date.now },
+  updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AiinAccount', default: null }
+}, { _id: false })
+
 function normalizeEmployeeId(value = '') {
   return String(value || '').trim()
 }
@@ -72,6 +88,13 @@ const OrganizationSchema = new mongoose.Schema({
         default: []
       }
     },
+    accessControl: {
+      roleKeys: { type: [String], default: [] },
+      grants: { type: [PermissionGrantSchema], default: [] },
+      denies: { type: [PermissionGrantSchema], default: [] },
+      updatedAt: { type: Date, default: null },
+      updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AiinAccount', default: null }
+    },
     onboardingStatusOverride: {
       type: String,
       enum: ['not_started', 'pending', 'in_progress', 'completed', 'cancelled'],
@@ -124,6 +147,12 @@ const OrganizationSchema = new mongoose.Schema({
         default: ['NGN']
       }
     }
+  },
+  accessControl: {
+    revision: { type: Number, default: 1 },
+    roleOverrides: { type: [OrganizationRoleOverrideSchema], default: [] },
+    updatedAt: { type: Date, default: null },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AiinAccount', default: null }
   },
   departments: [{
     name: {

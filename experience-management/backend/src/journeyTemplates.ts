@@ -12,7 +12,7 @@ import {
 import { createJourneyMapFromTemplate, JourneyMapError } from './journeyMaps.js';
 import { journeyTemplateSeeds, type JourneyTemplateSeed } from './journeyTemplateCatalog.js';
 import { hasControlPlanePermission } from './platformRbac.js';
-import { resolveRequestSpace, SpaceError, type SpaceContext } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError, type SpaceContext } from './spaces.js';
 import {
   assertSubscriptionFeature, assertSubscriptionQuota, SubscriptionEntitlementError
 } from './subscriptionEntitlements.js';
@@ -696,13 +696,13 @@ function sessionContext(request: Request) {
 }
 
 function requireSpaceAdmin(space: SpaceContext) {
-  if (!['owner', 'admin'].includes(space.role)) {
+  if (!spaceRoleOrIdpPermission(space, 'journey_templates.manage')) {
     throw new JourneyTemplateError('Space administrator access is required.', 403, 'JOURNEY_TEMPLATE_ADMIN_REQUIRED');
   }
 }
 
 function requireMapEditor(space: SpaceContext) {
-  if (space.role === 'member') {
+  if (!spaceRoleOrIdpPermission(space, 'journeys.edit')) {
     throw new JourneyTemplateError('You do not have permission to create journey maps in this space.', 403,
       'JOURNEY_MAP_FORBIDDEN');
   }

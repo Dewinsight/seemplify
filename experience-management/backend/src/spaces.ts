@@ -31,6 +31,8 @@ export type IdpOrganizationClaim = {
   id: string;
   name: string;
   role?: string | null;
+  permissions?: string[] | null;
+  authorizationRevision?: number | null;
 };
 
 export class SpaceError extends Error {
@@ -112,8 +114,12 @@ export function idpOrganizationIdForSpace(spaceId: string | null | undefined) {
   } catch { return null; }
 }
 
-function idpSpaceRole(value: unknown): SpaceRole {
+function idpSpaceRole(value: unknown, permissions: string[] | null | undefined): SpaceRole {
   const role = String(value || '').trim().toLowerCase();
+  if (Array.isArray(permissions)) {
+    if (!permissions.includes('spaces.manage')) return 'member';
+    return role === 'owner' ? 'owner' : 'admin';
+  }
   if (role === 'owner') return 'owner';
   if (role === 'admin') return 'admin';
   return 'member';
@@ -133,7 +139,13 @@ export function syncIdpOrganizationsForUser(input: {
   const entitled = input.organizations.map((organization) => ({
     id: String(organization.id || '').trim(),
     name: cleanSpaceName(organization.name, 'Seemplify organization'),
-    role: idpSpaceRole(organization.role)
+    permissions: Array.isArray(organization.permissions)
+      ? [...new Set(organization.permissions.map(String).map((value) => value.trim()).filter(Boolean))].sort()
+      : null,
+    authorizationRevision: Number.isFinite(Number(organization.authorizationRevision))
+      ? Number(organization.authorizationRevision)
+      : null,
+    role: idpSpaceRole(organization.role, organization.permissions)
   })).filter((organization) => organization.id);
   if (!entitled.length) {
     throw new SpaceError('No Experience Management organization was supplied by the identity provider.', 403,
@@ -159,6 +171,15 @@ export function syncIdpOrganizationsForUser(input: {
         VALUES (?,?,?,?,?)
         ON CONFLICT(space_id,user_id) DO UPDATE SET role=excluded.role,updated_at=excluded.updated_at`)
         .run(row.id, input.user.id, organization.role, now, now);
+      if (organization.permissions === null) {
+        db.prepare('DELETE FROM idp_space_authorizations WHERE space_id=? AND user_id=?').run(row.id, input.user.id);
+      } else {
+        db.prepare(`INSERT INTO idp_space_authorizations
+          (space_id,user_id,permissions_json,authorization_revision,updated_at) VALUES (?,?,?,?,?)
+          ON CONFLICT(space_id,user_id) DO UPDATE SET permissions_json=excluded.permissions_json,
+            authorization_revision=excluded.authorization_revision,updated_at=excluded.updated_at`)
+          .run(row.id, input.user.id, JSON.stringify(organization.permissions), organization.authorizationRevision, now);
+      }
       localByOrganization.set(organization.id, row.id);
     }
 
@@ -221,6 +242,15 @@ function createSpaceSchema() {
       PRIMARY KEY(space_id,user_id)
     );
     CREATE INDEX IF NOT EXISTS space_memberships_user ON space_memberships(user_id,joined_at);
+    CREATE TABLE IF NOT EXISTS idp_space_authorizations (
+      space_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      permissions_json TEXT NOT NULL DEFAULT '[]',
+      authorization_revision INTEGER,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(space_id,user_id),
+      FOREIGN KEY(space_id,user_id) REFERENCES space_memberships(space_id,user_id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS space_invitations (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -825,6 +855,34 @@ function initializeSpaces() {
 }
 
 if (db.provider === 'sqlite') initializeSpaces();
+
+/** Null means the session predates centralized product permissions. An empty
+ * set is an authoritative IdP denial and must never fall back to a local role. */
+export function idpPermissionsForSpaceUser(spaceId: string, userId: string): ReadonlySet<string> | null {
+  const row = db.prepare('SELECT permissions_json FROM idp_space_authorizations WHERE space_id=? AND user_id=?')
+    .get(spaceId, userId) as { permissions_json?: string } | undefined;
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(String(row.permissions_json || '[]'));
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function idpHasSpacePermission(spaceId: string, userId: string, permission: string) {
+  const permissions = idpPermissionsForSpaceUser(spaceId, userId);
+  return permissions === null ? null : permissions.has(permission);
+}
+
+export function spaceRoleOrIdpPermission(
+  space: Pick<SpaceContext, 'id' | 'userId' | 'role'>,
+  permission: string,
+  legacyRoles: readonly SpaceRole[] = ['owner', 'admin']
+) {
+  const decision = idpHasSpacePermission(space.id, space.userId, permission);
+  return decision === null ? legacyRoles.includes(space.role) : decision;
+}
 
 export function ensureDefaultSpaceForUser(user: { id: string; name: string }, requestedName?: unknown) {
   return db.transaction(() => {

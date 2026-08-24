@@ -121,11 +121,11 @@
         <div class="header-subtitle"><%= organization.name %></div>
       </div>
       <div class="header-actions">
-        <button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button>
+        <% if (canInviteMembers || canManageInvitations) { %><button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button><% } %>
       </div>
     </div>
 
-    <%- include('partials/organization-tabs', { organization, yourRole, activeSection: 'invitations' }) %>
+    <%- include('partials/organization-tabs', { organization, yourRole, activeSection: 'invitations', canViewMembers, canInviteMembers, canManageInvitations, canViewAccessControl }) %>
 
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
@@ -150,17 +150,19 @@
               <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
             </div>
           </div>
-          <div class="invite-actions">
-            <button class="btn btn-secondary btn-sm" onclick="resendInvite('<%= invite.id %>')">Resend</button>
-            <button class="btn btn-danger btn-sm" onclick="cancelInvite('<%= invite.id %>', '<%= invite.email %>')">Cancel</button>
-          </div>
+          <% if (canManageInvitations || canInviteMembers) { %>
+            <div class="invite-actions">
+              <button class="btn btn-secondary btn-sm" onclick="resendInvite('<%= invite.id %>')">Resend</button>
+              <button class="btn btn-danger btn-sm" onclick="cancelInvite('<%= invite.id %>', '<%= invite.email %>')">Cancel</button>
+            </div>
+          <% } %>
         </div>
       <% }) %>
     <% } else { %>
       <div class="card empty-state">
         <h3>No pending invitations</h3>
-        <p>Invite members to join your organization.</p>
-        <button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button>
+        <p><%= (canInviteMembers || canManageInvitations) ? 'Invite members to join your organization.' : 'There are no pending invitations.' %></p>
+        <% if (canInviteMembers || canManageInvitations) { %><button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button><% } %>
       </div>
     <% } %>
   </div>
@@ -179,12 +181,15 @@
         <div class="form-group">
           <label for="role">Role</label>
           <select id="role" name="role">
-            <option value="admin">Admin</option>
-            <option value="hr_manager">HR Manager</option>
-            <option value="recruiter" selected>Recruiter</option>
-            <option value="interviewer">Interviewer</option>
-            <option value="staff">Staff</option>
+            <% if (canAssignRoles) { %>
+              <option value="admin">Admin</option>
+              <option value="hr_manager">HR Manager</option>
+              <option value="recruiter" selected>Recruiter</option>
+              <option value="interviewer">Interviewer</option>
+            <% } %>
+            <option value="staff" <%= canAssignRoles ? '' : 'selected' %>>Staff</option>
           </select>
+          <% if (!canAssignRoles) { %><div class="field-help">Your access allows invitations with the Staff role. A role administrator can change it later.</div><% } %>
         </div>
         <div class="form-group">
           <label for="designation">Designation *</label>
@@ -197,7 +202,7 @@
         <div class="form-group">
           <div class="field-toolbar">
             <label for="department">Department *</label>
-            <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
+            <% if (canManageDepartments) { %>
               <button type="button" class="btn btn-secondary btn-sm" id="toggleCreateDepartmentBtn" onclick="toggleCreateDepartmentPanel()">+ Create department</button>
             <% } %>
           </div>
@@ -206,7 +211,7 @@
               <option value="<%= department.id %>"><%= department.name %></option>
             <% }) %>
           </select>
-          <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
+          <% if (canManageDepartments) { %>
             <div class="inline-create-panel" id="createDepartmentPanel">
               <div class="inline-create-panel-title">Create department</div>
               <div class="inline-create-grid">
@@ -234,7 +239,7 @@
           </select>
           <div class="field-help" id="teamHelpText">Department is derived from the selected team.</div>
         </div>
-        <div class="form-group">
+        <div class="form-group" <%= canAssignApps ? '' : 'hidden' %>>
           <label>Initial App Access</label>
           <div style="display: grid; gap: 10px;">
             <label class="app-access-mode-option">
@@ -275,6 +280,7 @@
             <% } %>
           </div>
         </div>
+        <% if (!canAssignApps) { %><div class="field-help">This invitation starts with no product access. A product-access administrator can assign products after the member joins.</div><% } %>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="hideInviteModal()">Cancel</button>
           <button type="submit" class="btn btn-primary" id="sendInviteBtn">Send Invitation</button>
@@ -285,7 +291,8 @@
 
   <script>
     const orgId = '<%= organization._id %>';
-    const canCreateDepartments = <%- JSON.stringify(['owner', 'admin', 'hr_manager'].includes(yourRole || '')) %>;
+    const canCreateDepartments = <%- JSON.stringify(Boolean(canManageDepartments)) %>;
+    const canAssignAppsClient = <%- JSON.stringify(Boolean(canAssignApps)) %>;
     const availableApps = <%- JSON.stringify(availableApps || []) %>;
     let departments = <%- JSON.stringify(departments || []) %>;
     const teams = <%- JSON.stringify(teams || []) %>;
@@ -461,8 +468,10 @@
       const employeeId = document.getElementById('employeeId').value.trim();
       const department = document.getElementById('department').value;
       const team = document.getElementById('team').value || null;
-      const appAccessMode = document.querySelector('input[name="appAccessMode"]:checked')?.value || 'all';
-      const selectedAppIds = appAccessMode === 'selected' ? getSelectedAppIds() : [];
+      const appAccessMode = canAssignAppsClient
+        ? (document.querySelector('input[name="appAccessMode"]:checked')?.value || 'all')
+        : 'selected';
+      const selectedAppIds = canAssignAppsClient && appAccessMode === 'selected' ? getSelectedAppIds() : [];
       const sendInviteBtn = document.getElementById('sendInviteBtn');
 
       if (!designation) {
@@ -473,7 +482,7 @@
         alert('Team is required.');
         return;
       }
-      if (appAccessMode === 'selected' && selectedAppIds.length === 0) {
+      if (canAssignAppsClient && appAccessMode === 'selected' && selectedAppIds.length === 0) {
         alert('Select at least one app or switch to "All apps".');
         return;
       }

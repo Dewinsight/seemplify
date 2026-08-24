@@ -179,6 +179,14 @@ const AccountSchema = new mongoose.Schema({
     default: false
   },
 
+  // Incremented whenever a role policy or member assignment affecting this
+  // account changes. It is part of the OIDC claims-cache key so policy changes
+  // invalidate safely across multiple IdP processes.
+  authorizationRevision: {
+    type: Number,
+    default: 0
+  },
+
   // =====================================================
   // SAML Support
   // =====================================================
@@ -392,7 +400,13 @@ const AccountSchema = new mongoose.Schema({
     }
   },
 
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+})
+
+AccountSchema.pre('save', function(next) {
+  this.updatedAt = new Date()
+  next()
 })
 
 // Indexes for organization and team lookups

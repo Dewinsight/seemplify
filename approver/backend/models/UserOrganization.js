@@ -5,6 +5,9 @@ const UserOrganizationSchema = new mongoose.Schema({
     organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true },
     managedByIdp: { type: Boolean, default: false },
     idpRole: { type: String, trim: true, default: '' },
+    idpRoleKeys: { type: [String], default: undefined },
+    idpCapabilities: { type: [String], default: undefined },
+    idpAuthorizationRevision: { type: Number, default: null },
     isAdmin: { type: Boolean, default: false }, // Org-level admin for THIS org
     permissions: [{
         department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },

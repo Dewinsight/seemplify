@@ -13,7 +13,7 @@ import {
   updateJourneyResearchGap, updateJourneyResearchMonitor, updateJourneyResearchNotification
 } from './journeyResearchHub.js';
 import { KnowledgeError } from './knowledgeRepository.js';
-import { resolveRequestSpace, SpaceError } from './spaces.js';
+import { resolveRequestSpace, spaceRoleOrIdpPermission, SpaceError } from './spaces.js';
 import { SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 
 export const journeyResearchRouter = express.Router();
@@ -31,7 +31,7 @@ function context(request: express.Request) {
 
 function editor(request: express.Request) {
   const resolved = context(request);
-  if (resolved.space.role === 'member') throw new JourneyResearchError(
+  if (!spaceRoleOrIdpPermission(resolved.space, 'journeys.edit')) throw new JourneyResearchError(
     'You do not have permission to manage journey research.', 403, 'JOURNEY_RESEARCH_FORBIDDEN');
   return resolved;
 }

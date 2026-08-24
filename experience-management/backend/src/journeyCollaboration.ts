@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { db } from './database.js';
 import { assertSubscriptionFeature, assertSubscriptionQuota, effectiveSubscriptionForSpace } from './subscriptionEntitlements.js';
+import { idpPermissionsForSpaceUser } from './spaces.js';
 import {
   decodeJourneyPageCursor, encodeJourneyPageCursor, journeyCollaborationCapabilities,
   journeyCollaborationLimits, journeyCollaborationRoles, journeyCollaborationTargetTypes,
@@ -627,7 +628,7 @@ function targetJourneyDefinitionId(spaceId: string, target: JourneyTargetReferen
 
 export type EffectiveJourneyRole = {
   role: JourneyCollaborationRole;
-  source: 'space_membership' | 'space_assignment' | 'journey_assignment';
+  source: 'idp' | 'space_membership' | 'space_assignment' | 'journey_assignment';
   readOnly: boolean;
   capabilities: ReadonlySet<JourneyCollaborationCapability>;
 };
@@ -647,6 +648,22 @@ export function effectiveJourneyRole(spaceId: string, userId: string,
   journeyDefinitionId?: string | null): EffectiveJourneyRole {
   const member = membership(spaceId, userId);
   const baseRole = roleFromSpaceMembership(member.role);
+  const idpPermissions = idpPermissionsForSpaceUser(spaceId, userId);
+  if (idpPermissions !== null) {
+    const capabilities = new Set(journeyCollaborationCapabilities
+      .filter((capability) => idpPermissions.has(capability)));
+    const role: JourneyCollaborationRole = capabilities.has('journeys.manage_roles') || capabilities.has('journeys.manage_shares')
+      ? 'administrator'
+      : capabilities.has('journeys.review') || capabilities.has('journeys.publish')
+        ? 'approver'
+        : capabilities.has('journeys.edit')
+          ? 'editor'
+          : capabilities.has('journeys.manage_portfolio') || capabilities.has('journeys.request_review')
+            ? 'contributor'
+            : 'viewer';
+    const readOnly = !effectiveSubscriptionForSpace(spaceId).plan.features.journeyCollaboration || !settingsRow(spaceId).enabled;
+    return { role, source: 'idp', readOnly, capabilities };
+  }
   // Downgrades preserve collaboration records but stop scoped grants from
   // expanding core product permissions until the feature is restored.
   if (!effectiveSubscriptionForSpace(spaceId).plan.features.journeyCollaboration || !settingsRow(spaceId).enabled) {

@@ -6,6 +6,7 @@ from frappe.website.utils import cleanup_page_name, is_signup_disabled
 import requests
 
 from lms.lms.utils import get_country_code
+from lms.lms.seemplify_oauth import extract_idp_lms_permissions, get_frappe_role_for_permissions
 
 # LMS Role mapping from IDP to Frappe
 LMS_ROLE_MAPPING = {
@@ -177,18 +178,20 @@ def process_oauth_lms_role(login_manager):
 			frappe.logger().debug(f"No OAuth info found for {user}")
 			return
 		
-		# Extract LMS role claim
+		has_idp_matrix, lms_permissions = extract_idp_lms_permissions(oauth_info)
 		lms_role_claim = oauth_info.get('lms_role')
-		
-		if not lms_role_claim:
-			frappe.logger().debug(f"No lms_role claim found for {user}")
+
+		if has_idp_matrix:
+			frappe_role = get_frappe_role_for_permissions(lms_permissions)
+			idp_role = 'permission_matrix'
+		elif lms_role_claim and isinstance(lms_role_claim, dict):
+			idp_role = lms_role_claim.get('role')
+			frappe_role = lms_role_claim.get('frappe_role') or LMS_ROLE_MAPPING.get(idp_role, 'LMS Student')
+		else:
+			frappe.logger().debug(f"No authoritative LMS permission claim found for {user}")
 			return
 		
-		# Get the role name (could be in 'role' or 'frappe_role' field)
-		idp_role = lms_role_claim.get('role')
-		frappe_role = lms_role_claim.get('frappe_role') or LMS_ROLE_MAPPING.get(idp_role, 'LMS Student')
-		
-		frappe.logger().info(f"Processing LMS role for {user}: {idp_role} -> {frappe_role}")
+		frappe.logger().info(f"Processing LMS role for {user}: {idp_role} -> {frappe_role or 'no access'}")
 		
 		# Assign the role to the user
 		assign_lms_role_to_user(user, frappe_role)
@@ -251,7 +254,7 @@ def assign_lms_role_to_user(user_email, frappe_role):
 		frappe.logger().warning(f"User {user_email} does not exist")
 		return
 	
-	if not frappe.db.exists('Role', frappe_role):
+	if frappe_role and not frappe.db.exists('Role', frappe_role):
 		frappe.logger().warning(f"Role {frappe_role} does not exist")
 		return
 	
@@ -263,8 +266,9 @@ def assign_lms_role_to_user(user_email, frappe_role):
 		if old_role != frappe_role:
 			user_doc.remove_roles(old_role)
 	
-	# Add the new role
-	if frappe_role not in [r.role for r in user_doc.roles]:
+	# Add the role only when the IdP matrix grants LMS access. When the
+	# authoritative matrix is empty, old LMS roles remain removed.
+	if frappe_role and frappe_role not in [r.role for r in user_doc.roles]:
 		user_doc.add_roles(frappe_role)
 		frappe.logger().info(f"Assigned role {frappe_role} to user {user_email}")
 	
