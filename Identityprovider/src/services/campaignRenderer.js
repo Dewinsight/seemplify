@@ -1,15 +1,15 @@
 import { createCampaignAttributionToken, isSeemplifyOwnedUrl, withCampaignTrackingParams } from './campaignAttributionService.js'
 
 const DEFAULT_THEME = Object.freeze({
-  background: '#f1efe9',
+  background: '#0f0e13',
   surface: '#fffdfa',
   surfaceSoft: '#f5f2ec',
   accent: '#7047eb',
-  accentSecondary: '#a98eff',
+  accentSecondary: '#a982ff',
   heading: '#191816',
-  text: '#4e4943',
+  text: '#4f4b45',
   muted: '#716b63',
-  footer: '#17151b'
+  footer: '#18161f'
 })
 
 function escapeHtml(value = '') {
@@ -96,8 +96,8 @@ function getRecipientAttributes(recipient = {}) {
     HEADCOUNT: recipient.headcount || '',
     LOCATION: recipient.location || '',
     COMPANYDESCRIPTION: recipient.companyDescription || '',
-    CUSTOM_OPENING: recipient.personalization?.customOpening || '',
-    CUSTOM_BENEFITS: recipient.personalization?.customBenefits || '',
+    CUSTOM_OPENING: recipient.personalization?.customOpening || 'Bring the work around your people into one connected place, with clearer handoffs and less repeated admin.',
+    CUSTOM_BENEFITS: recipient.personalization?.customBenefits || 'Start with the workflows your team needs today, then keep the same identity, context, and controls as you grow.',
     FREE_TRIAL_URL: recipient.personalization?.freeTrialUrl || 'https://auth.seemplifyai.com/signup'
   }
 }
@@ -129,9 +129,9 @@ function renderButton({ label, url, variant = 'primary', theme, context }) {
   const finalLabel = escapeHtml(personalizeText(label, context))
   const finalUrl = escapeHtml(safeLinkUrl(personalizeText(url, context)))
   if (!finalLabel || !finalUrl) return ''
-  const background = variant === 'secondary' ? theme.surface : theme.accent
-  const color = variant === 'secondary' ? theme.accent : '#ffffff'
-  const border = variant === 'secondary' ? `1px solid ${theme.accent}` : `1px solid ${theme.accent}`
+  const background = variant === 'hero' ? '#f7f5fa' : theme.footer
+  const color = variant === 'hero' ? '#0f0e13' : '#ffffff'
+  const border = variant === 'secondary' ? '1px solid #5d5765' : `1px solid ${background}`
   return `
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="display:inline-table;margin:0 10px 10px 0;vertical-align:top;">
       <tr>
@@ -164,7 +164,7 @@ function renderBlock(block = {}, theme, context) {
     const imageUrl = safeImageUrl(personalizeText(block.imageUrl || '', context))
     const imageAlt = escapeHtml(personalizeText(block.imageAlt || 'Seemplify', context))
     const primary = block.ctaLabel && block.ctaUrl
-      ? renderButton({ label: block.ctaLabel, url: block.ctaUrl, variant: 'primary', theme, context })
+      ? renderButton({ label: block.ctaLabel, url: block.ctaUrl, variant: 'hero', theme, context })
       : ''
     const secondary = block.secondaryLabel && block.secondaryUrl
       ? renderButton({ label: block.secondaryLabel, url: block.secondaryUrl, variant: 'secondary', theme, context })
@@ -297,13 +297,22 @@ export function renderVisualEmail(designInput = {}, context = {}) {
         <td align="center" class="seemplify-pad" style="padding:26px 18px 44px;">
           <table role="presentation" width="640" class="seemplify-shell" cellspacing="0" cellpadding="0" border="0" style="width:640px;max-width:640px;">
             <tr>
-              <td align="left" style="padding:0 4px 18px;">
-                <img src="https://auth.seemplifyai.com/images/seemplifylogo.png" width="142" alt="Seemplify" style="display:block;width:142px;max-width:142px;height:auto;border:0;" />
+              <td style="padding:0 4px 18px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td align="left">
+                      <img src="https://auth.seemplifyai.com/images/seemplifylogo.png" width="142" alt="Seemplify" style="display:block;width:142px;max-width:142px;height:auto;border:0;" />
+                    </td>
+                    <td align="right" style="color:#bbb5c2;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;">
+                      People operations, connected.
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
             ${rows}
             <tr>
-              <td style="padding:10px 8px 0;color:${design.theme.muted};font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:18px;text-align:center;">
+              <td style="padding:10px 8px 0;color:#a59eac;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:18px;text-align:center;">
                 Seemplify · Run simple, run smart
               </td>
             </tr>

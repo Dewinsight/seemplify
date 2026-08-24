@@ -10,6 +10,7 @@ import { getSystemCampaignTemplates } from '../src/services/campaignTemplateLibr
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url))
 const identityRoot = path.resolve(testDirectory, '..')
+const repositoryRoot = path.resolve(identityRoot, '..')
 const viewPath = path.join(identityRoot, 'src', 'views', 'admin', 'campaigns.ejs')
 const consoleScriptPath = path.join(identityRoot, 'src', 'public', 'js', 'admin-campaign-console.js')
 const adminCssPath = path.join(identityRoot, 'src', 'public', 'css', 'admin.css')
@@ -47,13 +48,37 @@ html = html
   .replace(/<script src="\/js\/theme\.js[^>]*><\/script>/i, '')
   .replace(/<script src="\/js\/admin-campaign-console\.js"><\/script>/i, '')
   .replace(/<link rel="stylesheet" href="\/css\/admin\.css">/i, '')
+  .replaceAll('src="/images/seemplifylogo.png"', 'src="https://auth.seemplifyai.com/images/seemplifylogo.png"')
+html = html.replace('<head>', '<head><base href="https://auth.seemplifyai.com/">')
 html = html.replace('</head>', `<style>${await readFile(adminCssPath, 'utf8')}</style></head>`)
+
+const imageFixtures = new Map([
+  ['https://auth.seemplifyai.com/images/seemplifylogo.png', path.join(identityRoot, 'src', 'public', 'images', 'seemplifylogo.png')],
+  ['https://auth.seemplifyai.com/images/campaigns/seemplify-platform-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'seemplify-platform-gloss.jpg')],
+  ['https://auth.seemplifyai.com/images/campaigns/payroll-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'payroll-gloss.jpg')],
+  ['https://auth.seemplifyai.com/images/campaigns/people-journey-gloss.jpg', path.join(identityRoot, 'src', 'public', 'images', 'campaigns', 'people-journey-gloss.jpg')],
+  ['https://seemplifyai.com/images/product-showcases/recruiter.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'recruiter.png')],
+  ['https://seemplifyai.com/images/product-showcases/leave-management.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'leave-management.png')],
+  ['https://seemplifyai.com/images/product-showcases/time-attendance.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'time-attendance.png')],
+  ['https://seemplifyai.com/images/product-showcases/learning.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'learning.png')],
+  ['https://seemplifyai.com/images/product-showcases/experience-management.png', path.join(repositoryRoot, 'marketing-site', 'public', 'images', 'product-showcases', 'experience-management.png')]
+])
 
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1536, height: 1024 }, deviceScaleFactor: 1 })
 const pageErrors = []
 page.on('pageerror', (error) => pageErrors.push(error.message))
-await page.route('https://**/*', (route) => route.abort())
+await page.route('https://**/*', async (route) => {
+  const fixturePath = imageFixtures.get(route.request().url())
+  if (!fixturePath) {
+    await route.abort()
+    return
+  }
+  await route.fulfill({
+    body: await readFile(fixturePath),
+    contentType: fixturePath.endsWith('.jpg') ? 'image/jpeg' : 'image/png'
+  })
+})
 
 try {
   await page.setContent(html, { waitUntil: 'domcontentloaded' })
@@ -122,6 +147,15 @@ try {
   await page.addScriptTag({ path: consoleScriptPath })
 
   assert.equal(await page.locator('[data-workspace-step-target]').count(), 5)
+  assert.equal(await page.locator('#templateList .campaign-template-card').count(), templates.length)
+  assert.equal(await page.locator('#templateList .campaign-template-card-preview').count(), templates.length)
+  assert.equal(await page.locator('.campaign-preview-brand img[alt="Seemplify"]').count(), 1)
+  await page.locator('#templateSearchInput').fill('Payroll')
+  assert.equal(await page.locator('#templateList .campaign-template-card').count(), 1)
+  await page.locator('#templateList [data-apply-template]').click()
+  assert.equal(await page.locator('[data-workspace-step-target="content"]').evaluate((element) => element.classList.contains('is-active')), true)
+  assert.match(await page.locator('#visualPreview').textContent(), /Run payroll with calm/i)
+  await page.locator('#templateSearchInput').fill('')
   await page.locator('[data-workspace-step-target="sequence"]').click()
   await page.locator('#addSequenceStepBtn').click()
   assert.equal(await page.locator('#sequenceStepList .campaign-sequence-card').count(), 2)
@@ -167,6 +201,8 @@ try {
   assert.equal(savedPayload.sequence.steps[1].content.htmlContent.includes('Edited directly in the live preview'), true)
   assert.equal(savedPayload.audienceId, 'audience-customers')
 
+  await page.locator('[data-workspace-step-target="content"]').click()
+  await page.locator('#visualModeBtn').click()
   await page.screenshot({ path: screenshotPath, fullPage: true })
   assert.deepEqual(pageErrors, [])
   console.log(`Campaign builder UI QA passed. Screenshot: ${screenshotPath}`)

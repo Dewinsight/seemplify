@@ -62,6 +62,7 @@ test('the system library covers the platform and every template has visual, tria
 
   templates.forEach((template) => {
     assert.equal(template.designMode, 'visual')
+    assert.equal(template.design?.theme?.background, '#0f0e13')
     assert.match(template.subject, /\{\{ contact\.FIRSTNAME \}\}/)
     assert.ok(String(template.previewText || '').length > 20)
     assert.ok(Array.isArray(template.design?.blocks) && template.design.blocks.length >= 5)
@@ -85,6 +86,9 @@ test('visual campaigns render responsive email tables, generated imagery, prehea
   const rendered = renderVisualEmail(template.design, { campaign, recipient: {} })
   assert.match(rendered, /role="presentation"/)
   assert.match(rendered, /seemplify-platform-gloss\.jpg/)
+  assert.match(rendered, /seemplifylogo\.png/)
+  assert.match(rendered, /People operations, connected\./)
+  assert.match(rendered, /background:#0f0e13/)
   assert.match(rendered, /prefers-reduced-motion/)
   assert.match(rendered, /display:none;max-height:0/)
   assert.doesNotMatch(rendered, /display:grid/)

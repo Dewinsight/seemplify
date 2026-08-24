@@ -78,6 +78,9 @@ test('transactional HTML receives the shared Seemplify frame once', () => {
   assert.match(rendered, /data-seemplify-email-shell="transactional"/);
   assert.match(rendered, /Seemplify Identity/);
   assert.match(rendered, /Password reset/);
+  assert.match(rendered, /seemplifylogo\.png/);
+  assert.match(rendered, /People operations, connected\./);
+  assert.match(rendered, /background:#0f0e13/);
   assert.doesNotMatch(rendered, /<body[^>]*>[\s\S]*<body/i);
 
   const preserved = renderBrandedTransactionalHtml({

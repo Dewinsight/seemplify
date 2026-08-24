@@ -108,6 +108,8 @@
     linkHost: null,
     campaignSearch: '',
     campaignStatusFilter: 'all',
+    templateSearch: '',
+    templateCategoryFilter: 'all',
     audiencePreview: null,
     customerContacts: [],
     selectedCustomerIds: new Set(),
@@ -163,6 +165,8 @@
     selectedCampaignSummary: document.getElementById('selectedCampaignSummary'),
     audienceList: document.getElementById('audienceList'),
     templateList: document.getElementById('templateList'),
+    templateSearchInput: document.getElementById('templateSearchInput'),
+    templateCategoryFilter: document.getElementById('templateCategoryFilter'),
     senderHealthList: document.getElementById('senderHealthList'),
     audienceUploadForm: document.getElementById('audienceUploadForm'),
     audienceName: document.getElementById('audienceName'),
@@ -258,13 +262,13 @@
         id: uid('text'),
         type: 'text',
         title: 'Why teams switch',
-        body: '{{ contact.CUSTOM_OPENING }}'
+        body: 'Bring the work around your people into one connected place, with clearer handoffs and less repeated admin.'
       },
       {
         id: uid('features'),
         type: 'features',
         title: 'What Seemplify improves',
-        body: '{{ contact.CUSTOM_BENEFITS }}',
+        body: 'Start with the workflows your team needs today, then keep the same identity, context, and controls as you grow.',
         items: [
           'Structured recruiting to onboarding handoff',
           'Cleaner approvals and employee administration',
@@ -519,6 +523,7 @@
     renderForm()
     renderSequenceBuilder()
     renderAudienceList()
+    renderTemplateList()
     renderVisualPreview()
     renderHtmlEditor()
     updateActionState()
@@ -541,7 +546,9 @@
     const step = getActiveSequenceStep()
     if (step) step.content = content
     state.draft.content = content
+    if (els.campaignTemplate) els.campaignTemplate.value = String(template._id || '')
     renderForm()
+    renderTemplateList()
     renderVisualPreview()
     renderHtmlEditor()
     syncModeUi(getDraftMode(state.draft))
@@ -1062,18 +1069,55 @@
       return
     }
 
-    els.templateList.innerHTML = state.templates.map((template) => `
-      <article class="campaign-template-card">
-        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
-          <div>
-            <div style="font-weight:700; color:var(--text);">${escapeHtml(template.name)}</div>
-            <div class="admin-card-subtitle">${escapeHtml(template.description || '')}</div>
+    const query = String(state.templateSearch || '').trim().toLowerCase()
+    const categoryFilter = String(state.templateCategoryFilter || 'all')
+    const selectedTemplateId = String(state.draft?.content?.template?.templateId || state.draft?.content?.template?._id || '')
+    const templates = state.templates.filter((template) => {
+      const category = String(template.category || '').toLowerCase()
+      const isProduct = category === 'product_marketing' || category === 'product_launch'
+      const matchesCategory = categoryFilter === 'all' || (categoryFilter === 'product' ? isProduct : !isProduct)
+      if (!matchesCategory) return false
+      if (!query) return true
+      return [template.name, template.description, template.category, ...(Array.isArray(template.tags) ? template.tags : [])]
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    })
+
+    if (templates.length === 0) {
+      els.templateList.innerHTML = '<div class="campaign-empty-state">No templates match this search.</div>'
+      return
+    }
+
+    const categoryLabel = (category = '') => String(category || 'Custom')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (character) => character.toUpperCase())
+
+    els.templateList.innerHTML = templates.map((template) => {
+      const design = template?.content?.design || template?.design || {}
+      const blocks = Array.isArray(design.blocks) ? design.blocks : []
+      const artworkBlock = blocks.find((block) => block?.imageUrl) || {}
+      const artwork = String(artworkBlock.imageUrl || '')
+      const isSelected = String(template._id) === selectedTemplateId
+      return `
+        <article class="campaign-template-card ${isSelected ? 'is-selected' : ''}">
+          <div class="campaign-template-card-preview"${artwork ? ` style="background-image:url('${escapeHtml(artwork)}')"` : ''}>
+            <div class="campaign-template-brand-bar">
+              <img src="/images/seemplifylogo.png" alt="Seemplify">
+              <span>Designed email</span>
+            </div>
           </div>
-          <button class="btn btn-secondary btn-sm" type="button" data-apply-template="${escapeHtml(template._id)}">Use</button>
-        </div>
-        <div class="admin-card-subtitle">${escapeHtml(template.category || 'custom')}</div>
-      </article>
-    `).join('')
+          <div class="campaign-template-card-body">
+            <div class="campaign-template-card-copy">
+              <div class="campaign-template-card-title">${escapeHtml(template.name)}</div>
+              <div class="campaign-template-card-description">${escapeHtml(template.description || '')}</div>
+              <div class="campaign-template-card-category">${escapeHtml(categoryLabel(template.category))}</div>
+            </div>
+            <button class="btn ${isSelected ? 'btn-primary' : 'btn-secondary'} btn-sm" type="button" data-apply-template="${escapeHtml(template._id)}">${isSelected ? 'Selected' : 'Use'}</button>
+          </div>
+        </article>
+      `
+    }).join('')
   }
 
   function renderSenderHealth() {
@@ -1584,13 +1628,13 @@
       }
       if (block.type === 'hero') {
         return `
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#291b4d;border-radius:12px;overflow:hidden;color:#ffffff;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#18161f;border-radius:10px;overflow:hidden;color:#ffffff;">
             ${block.imageUrl ? `<tr><td><img src="${escapeHtml(block.imageUrl)}" alt="${escapeHtml(block.imageAlt || '')}" width="680" style="display:block;width:100%;max-width:680px;height:auto;border:0;"></td></tr>` : ''}
             <tr><td style="padding:32px;">
               <div style="font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#d9cff8;">${block.eyebrow || ''}</div>
               <h1 style="margin:14px 0;font-size:34px;line-height:1.08;color:#ffffff;">${block.title || ''}</h1>
               <div style="font-size:15px;line-height:1.7;color:#f5f1ff;">${block.body || ''}</div>
-              ${block.ctaLabel ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px;"><tr><td style="border-radius:8px;background:#8f6cf4;"><a href="${escapeHtml(block.ctaUrl || '#')}" style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-weight:700;">${block.ctaLabel}</a></td></tr></table>` : ''}
+              ${block.ctaLabel ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px;"><tr><td style="border-radius:7px;background:#f7f5fa;"><a href="${escapeHtml(block.ctaUrl || '#')}" style="display:inline-block;padding:13px 20px;color:#0f0e13;text-decoration:none;font-weight:700;">${block.ctaLabel}</a></td></tr></table>` : ''}
             </td></tr>
           </table>
         `
@@ -1630,7 +1674,7 @@
       `
     }).join('<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td height="16" style="height:16px;font-size:0;line-height:0;">&nbsp;</td></tr></table>')
 
-    return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(state.draft.content.subject || 'Seemplify')}</title></head><body style="margin:0;padding:0;background:#f1efe9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;"><div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(state.draft.content.previewText || '')}</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f1efe9;"><tr><td align="center" style="padding:28px 12px;"><table role="presentation" width="680" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:680px;"><tr><td style="padding:12px 4px 20px;color:#221934;font-size:22px;font-weight:800;">seemplify<span style="color:#7047eb;">.</span></td></tr><tr><td>${sections}</td></tr></table></td></tr></table></body></html>`
+    return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(state.draft.content.subject || 'Seemplify')}</title></head><body style="margin:0;padding:0;background:#0f0e13;font-family:Arial,Helvetica,sans-serif;"><div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(state.draft.content.previewText || '')}</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#0f0e13;"><tr><td align="center" style="padding:28px 12px;"><table role="presentation" width="680" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:680px;"><tr><td style="padding:0 4px 20px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="left"><img src="https://auth.seemplifyai.com/images/seemplifylogo.png" width="142" alt="Seemplify" style="display:block;width:142px;max-width:142px;height:auto;border:0;"></td><td align="right" style="color:#bbb5c2;font-size:12px;line-height:18px;">People operations, connected.</td></tr></table></td></tr><tr><td>${sections}</td></tr></table></td></tr></table></body></html>`
   }
 
   function renderHtmlEditor() {
@@ -2297,6 +2341,20 @@
     els.campaignStatusFilter.addEventListener('change', function () {
       state.campaignStatusFilter = els.campaignStatusFilter.value || 'all'
       renderCampaignList()
+    })
+  }
+
+  if (els.templateSearchInput) {
+    els.templateSearchInput.addEventListener('input', function () {
+      state.templateSearch = els.templateSearchInput.value
+      renderTemplateList()
+    })
+  }
+
+  if (els.templateCategoryFilter) {
+    els.templateCategoryFilter.addEventListener('change', function () {
+      state.templateCategoryFilter = els.templateCategoryFilter.value || 'all'
+      renderTemplateList()
     })
   }
 

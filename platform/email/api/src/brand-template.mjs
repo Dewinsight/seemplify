@@ -1,12 +1,12 @@
 const BRAND = Object.freeze({
-  canvas: '#f1efe9',
+  canvas: '#0f0e13',
   surface: '#fffdfa',
   text: '#191816',
   muted: '#625e57',
   line: '#ded8cf',
   accent: '#7047eb',
   accentSoft: '#f3f0ff',
-  footer: '#17151b',
+  footer: '#a59eac',
   logoUrl: 'https://auth.seemplifyai.com/images/seemplifylogo.png',
 });
 
@@ -94,7 +94,16 @@ export function renderBrandedTransactionalHtml({ html, subject, fromName, tag } 
           <table role="presentation" width="620" class="seemplify-shell" cellspacing="0" cellpadding="0" border="0" data-seemplify-email-shell="transactional" style="width:620px;max-width:620px;">
             <tr>
               <td style="padding:0 4px 18px;">
-                <img src="${BRAND.logoUrl}" width="142" alt="Seemplify" style="display:block;width:142px;max-width:142px;height:auto;border:0;" />
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td align="left">
+                      <img src="${BRAND.logoUrl}" width="142" alt="Seemplify" style="display:block;width:142px;max-width:142px;height:auto;border:0;" />
+                    </td>
+                    <td align="right" style="color:${BRAND.footer};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;">
+                      People operations, connected.
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
             <tr>

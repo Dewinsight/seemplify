@@ -4,15 +4,15 @@ const AUTH_ASSET_ROOT = 'https://auth.seemplifyai.com/images/campaigns'
 const MARKETING_ASSET_ROOT = 'https://seemplifyai.com/images/product-showcases'
 
 const DEFAULT_THEME = Object.freeze({
-  background: '#f1efe9',
+  background: '#0f0e13',
   surface: '#fffdfa',
   surfaceSoft: '#f5f2ec',
   accent: '#7047eb',
-  accentSecondary: '#a98eff',
+  accentSecondary: '#a982ff',
   heading: '#191816',
-  text: '#4e4943',
+  text: '#4f4b45',
   muted: '#716b63',
-  footer: '#17151b'
+  footer: '#18161f'
 })
 
 function createMarketingTemplate({
@@ -54,13 +54,13 @@ function createMarketingTemplate({
       id: `${slug}-opening`,
       type: 'text',
       title: 'A better way to run the work',
-      body: '{{ contact.CUSTOM_OPENING }}'
+      body: 'Bring the work around your people into one connected place, with clearer handoffs and less repeated admin.'
     },
     {
       id: `${slug}-features`,
       type: 'features',
       title: featureTitle,
-      body: '{{ contact.CUSTOM_BENEFITS }}',
+      body: 'Start with the workflows your team needs today, then keep the same identity, context, and controls as you grow.',
       items: featureItems
     }
   ]
