@@ -355,14 +355,17 @@ UserSchema.methods.hasOrganizationPermission = function(organizationId, permissi
   
   const permissions = {
     owner: ['all'],
-    admin: ['manage_users', 'manage_jobs', 'manage_candidates', 'view_analytics'],
-    hr_manager: ['manage_jobs', 'manage_candidates', 'view_analytics'],
-    recruiter: ['manage_candidates', 'view_jobs'],
-    interviewer: ['view_candidates', 'view_jobs'],
-    employee: ['view_jobs'] // Employees have minimal read-only access
+    admin: ['all'],
+    hr_manager: ['manage_users', 'manage_settings', 'view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+    recruiter: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+    interviewer: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+    employee: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+    member: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+    staff: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics']
   };
-  
-  return permissions[role].includes(permission) || permissions[role].includes('all');
+
+  const rolePermissions = permissions[role] || [];
+  return rolePermissions.includes(permission) || rolePermissions.includes('all');
 };
 
 UserSchema.methods.isOrganizationMember = function(organizationId) {

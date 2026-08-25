@@ -11,6 +11,10 @@ import {
   getOrCreateGlobalAccessPolicy,
   resolveOrganizationAuthorization
 } from '../services/accessControlService.js'
+import {
+  PRODUCT_PERMISSION_CATALOG,
+  getDefaultRolePermissions
+} from '../config/accessControlCatalog.js'
 
 export function organizationClaimAppAccess(accountMembership, organizationMember) {
   // The Organization member is the canonical authorization record used by
@@ -19,58 +23,13 @@ export function organizationClaimAppAccess(accountMembership, organizationMember
   return normalizeAppAccess(organizationMember?.appAccess || accountMembership?.appAccess)
 }
 
-// Base permissions (organization-level)
-const basePermissions = {
-  owner: ['*'], // All permissions
-  admin: [
-    'manage_users',
-    'manage_organizations',
-    'manage_invitations',
-    'manage_members',
-    'manage_roles',
-    'manage_jobs',
-    'manage_candidates',
-    'view_analytics'
-  ],
-  hr_manager: [
-    'manage_jobs',
-    'manage_candidates',
-    'view_analytics'
-  ],
-  recruiter: [
-    'manage_candidates',
-    'view_jobs',
-    'view_candidates'
-  ],
-  interviewer: [
-    'view_candidates',
-    'view_jobs'
-  ]
-}
+// Organization roles are resolved exclusively from the canonical catalogue.
+// This empty fallback remains only for dynamically registered non-org roles.
+const basePermissions = {}
 
-// App-specific permissions (extensible)
+// App-specific permissions for product-local roles that are not IdP
+// organization roles (for example the Simple LMS evaluator roles).
 const appPermissions = {
-  // SmartHR permissions
-  smarthr: {
-    owner: ['*'],
-    admin: ['manage_users', 'manage_jobs', 'manage_candidates', 'view_analytics'],
-    hr_manager: ['manage_jobs', 'manage_candidates', 'view_analytics'],
-    recruiter: ['manage_candidates', 'view_jobs', 'view_candidates'],
-    interviewer: ['view_candidates', 'view_jobs']
-  },
-
-  // Leave Management permissions
-  'leave-management': {
-    owner: ['*'],
-    admin: ['manage_leaves', 'approve_leaves', 'view_all_leaves', 'manage_policies'],
-    hr_manager: ['approve_leaves', 'view_all_leaves', 'view_analytics'],
-    recruiter: ['view_own_leaves', 'request_leaves'],
-    interviewer: ['view_own_leaves', 'request_leaves'],
-    // Team-based permissions (separate from organization role)
-    line_manager: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves'],
-    team_lead: ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves']
-  },
-
   // LMS permissions (role-based, not org-role based)
   // Based on Frappe LMS DocType permissions
   lms: {
@@ -174,6 +133,12 @@ const appPermissions = {
  * @returns {string[]} - Array of permission strings
  */
 export function getPermissionsForRole(role, appContext = null) {
+  // Keep legacy/fallback claims aligned with the canonical IdP policy. This
+  // path is used only when a resolved authorization matrix is unavailable,
+  // but it must never silently restore the old restricted role tables.
+  const canonicalPermissions = getDefaultRolePermissions(role, appContext || 'identity')
+  if (canonicalPermissions !== null) return canonicalPermissions
+
   // If app context provided, return app-specific permissions
   if (appContext && appPermissions[appContext]) {
     return appPermissions[appContext][role] || []
@@ -224,10 +189,10 @@ export function getAccountPermissions(account) {
     permissions[orgId] = {
       role: org.role,
       basePermissions: getPermissionsForRole(org.role),
-      appPermissions: {
-        smarthr: getPermissionsForRole(org.role, 'smarthr'),
-        'leave-management': getPermissionsForRole(org.role, 'leave-management')
-      }
+      appPermissions: Object.fromEntries(PRODUCT_PERMISSION_CATALOG.map((product) => [
+        product.appId,
+        getPermissionsForRole(org.role, product.appId)
+      ]))
     }
   }
 
@@ -388,7 +353,10 @@ export async function buildOrganizationClaims(account) {
  * @returns {string[]} - Array of app identifiers
  */
 export function getRegisteredApps() {
-  return Object.keys(appPermissions)
+  return Array.from(new Set([
+    ...PRODUCT_PERMISSION_CATALOG.map((product) => product.appId),
+    ...Object.keys(appPermissions)
+  ]))
 }
 
 /**

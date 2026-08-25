@@ -5,7 +5,10 @@ import test from 'node:test'
 import {
   ACCESS_CONTROL_SCHEMA_VERSION,
   DEFAULT_ACCESS_ROLES,
+  HR_MANAGER_TOP_LEVEL_EXCLUSIONS,
+  MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS,
   PRODUCT_PERMISSION_CATALOG,
+  getDefaultRolePermissions,
   getPermissionDefinition
 } from '../src/config/accessControlCatalog.js'
 import {
@@ -16,6 +19,7 @@ import {
 import { LMS_ROLE_PERMISSIONS } from '../src/models/LmsRole.js'
 import { requireSameOriginMutation } from '../src/middleware/sameOriginMutation.js'
 import { getAllOrganizationManagedHubApps } from '../src/config/hubApps.js'
+import { getPermissionsForRole, getRegisteredApps } from '../src/utils/permissions.js'
 
 const policy = {
   revision: 7,
@@ -42,49 +46,80 @@ test('permission catalogue and built-in roles contain only unique known tokens',
       }
     }
   }
+
+  for (const exclusions of [MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS, HR_MANAGER_TOP_LEVEL_EXCLUSIONS]) {
+    for (const [appId, permissionIds] of Object.entries(exclusions)) {
+      for (const permissionId of permissionIds) {
+        const definition = getPermissionDefinition(appId, permissionId)
+        assert.ok(definition, `exclusion references unknown permission ${appId}:${permissionId}`)
+        assert.notEqual(definition.delegable, false, `non-delegable permission does not need an exclusion ${appId}:${permissionId}`)
+      }
+    }
+  }
 })
 
-test('ordinary staff receive every assigned product baseline and all self-service permissions', () => {
-  const employee = DEFAULT_ACCESS_ROLES.find((role) => role.key === 'employee')
-  const grantsByApp = new Map(employee.grants.map((row) => [row.appId, new Set(row.permissions)]))
-
-  for (const product of PRODUCT_PERMISSION_CATALOG) {
-    assert.ok(grantsByApp.has(product.appId), `employee baseline omitted ${product.appId}`)
-    for (const permission of product.permissions.filter((entry) => entry.scope === 'self')) {
-      assert.ok(
-        grantsByApp.get(product.appId).has(permission.id),
-        `employee baseline omitted self-service ${product.appId}:${permission.id}`
+test('every ordinary organization role receives every non-administrative permission across all products', () => {
+  for (const sourceRole of ['staff', 'recruiter', 'interviewer']) {
+    for (const product of PRODUCT_PERMISSION_CATALOG) {
+      const expected = product.permissions
+        .filter((permission) => permission.delegable !== false)
+        .map((permission) => permission.id)
+        .filter((permissionId) => !(MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS[product.appId] || []).includes(permissionId))
+        .sort()
+      assert.deepEqual(
+        getDefaultRolePermissions(sourceRole, product.appId),
+        expected,
+        `${sourceRole} does not have the complete non-admin ${product.appId} baseline`
       )
     }
   }
 
-  for (const adminPermission of ['members.manage', 'security.manage', 'webhooks.manage', 'settings.manage']) {
-    assert.ok(!grantsByApp.get('messaging').has(adminPermission))
-  }
-  assert.ok(!grantsByApp.get('identity').has('access.manage'))
-  assert.ok(!grantsByApp.get('identity').has('roles.assign'))
+  assert.ok(getDefaultRolePermissions('staff', 'messaging').includes('members.view'))
+  assert.ok(getDefaultRolePermissions('staff', 'messaging').includes('calls.start'))
+  assert.ok(getDefaultRolePermissions('staff', 'messaging').includes('notifications.read'))
+  assert.ok(!getDefaultRolePermissions('staff', 'messaging').includes('members.manage'))
+  assert.ok(!getDefaultRolePermissions('staff', 'identity').includes('access.manage'))
 })
 
-test('HR manager is a near-admin superset of ordinary staff without protected administration', () => {
-  const employee = DEFAULT_ACCESS_ROLES.find((role) => role.key === 'employee')
-  const hrManager = DEFAULT_ACCESS_ROLES.find((role) => role.key === 'hr_manager')
-  const employeeByApp = new Map(employee.grants.map((row) => [row.appId, new Set(row.permissions)]))
-  const hrByApp = new Map(hrManager.grants.map((row) => [row.appId, new Set(row.permissions)]))
-
-  for (const product of PRODUCT_PERMISSION_CATALOG) {
-    assert.ok(hrByApp.has(product.appId), `HR manager baseline omitted ${product.appId}`)
-    for (const permissionId of employeeByApp.get(product.appId) || []) {
-      assert.ok(hrByApp.get(product.appId).has(permissionId), `HR manager lost ${product.appId}:${permissionId}`)
+test('legacy permission helpers use the same all-product role policy', () => {
+  assert.deepEqual(getRegisteredApps().sort(), PRODUCT_PERMISSION_CATALOG.map((product) => product.appId).sort())
+  for (const sourceRole of ['staff', 'recruiter', 'interviewer', 'hr_manager', 'admin']) {
+    for (const product of PRODUCT_PERMISSION_CATALOG) {
+      assert.deepEqual(
+        getPermissionsForRole(sourceRole, product.appId),
+        getDefaultRolePermissions(sourceRole, product.appId),
+        `legacy helper drifted for ${sourceRole}:${product.appId}`
+      )
     }
+  }
+})
+
+test('HR manager matches admin across products except explicit top-level controls', () => {
+  for (const product of PRODUCT_PERMISSION_CATALOG) {
+    const adminPermissions = getDefaultRolePermissions('admin', product.appId)
+    const expectedHrPermissions = adminPermissions.filter((permissionId) => (
+      !(HR_MANAGER_TOP_LEVEL_EXCLUSIONS[product.appId] || []).includes(permissionId)
+    ))
+    assert.deepEqual(
+      getDefaultRolePermissions('hr_manager', product.appId),
+      expectedHrPermissions,
+      `HR manager differs unexpectedly from admin for ${product.appId}`
+    )
   }
 
   for (const [appId, permissionId] of [
     ['identity', 'members.remove'],
+    ['lms', 'manage_lms_settings'],
     ['messaging', 'files.manage'],
+    ['messaging', 'settings.manage'],
     ['community', 'articles.publish'],
+    ['community', 'settings.manage'],
     ['automation-hub', 'connections.manage'],
+    ['automation-hub', 'settings.manage'],
+    ['experience-management', 'journeys.manage_roles'],
+    ['approver', 'workflow.manage'],
     ['seemplify-learning', 'courses.manage']
-  ]) assert.ok(hrByApp.get(appId).has(permissionId), `HR manager lacks ${appId}:${permissionId}`)
+  ]) assert.ok(getDefaultRolePermissions('hr_manager', appId).includes(permissionId), `HR manager lacks ${appId}:${permissionId}`)
 
   for (const [appId, permissionId] of [
     ['identity', 'access.manage'],
@@ -93,14 +128,12 @@ test('HR manager is a near-admin superset of ordinary staff without protected ad
     ['identity', 'organization.delete'],
     ['smarthr', 'manage_billing'],
     ['messaging', 'security.manage'],
-    ['messaging', 'webhooks.manage'],
-    ['openwebui', 'settings.manage'],
-    ['automation-hub', 'settings.manage']
-  ]) assert.ok(!hrByApp.get(appId).has(permissionId), `HR manager received protected ${appId}:${permissionId}`)
+    ['messaging', 'webhooks.manage']
+  ]) assert.ok(!getDefaultRolePermissions('hr_manager', appId).includes(permissionId), `HR manager received protected ${appId}:${permissionId}`)
 })
 
-test('schema version two refreshes locked role baselines without replacing custom roles', () => {
-  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 2)
+test('schema version three refreshes locked role baselines without replacing custom roles', () => {
+  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 3)
   const customRole = {
     key: 'project_coordinator', name: 'Project Coordinator', locked: false,
     sourceOrganizationRoles: [], sourceTeamRoles: [],
@@ -286,7 +319,14 @@ test('assigned products retain an authoritative permission list after explicit d
     member,
     policy
   })
-  assert.deepEqual(authorization.permissionsByApp.smarthr, ['submit_interview_feedback'])
+  assert.deepEqual(authorization.permissionsByApp.smarthr, [
+    'manage_candidates',
+    'manage_interviews',
+    'manage_jobs',
+    'submit_interview_feedback',
+    'view_analytics',
+    'view_candidates'
+  ])
   assert.ok(!authorization.permissionsByApp.smarthr.includes('view_jobs'))
 })
 

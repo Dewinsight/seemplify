@@ -180,10 +180,13 @@ exports.enforceOrganizationIsolation = (req, res, next) => {
 
 const ROLE_PERMISSIONS = {
   owner: ['all'],
-  admin: ['manage_users', 'manage_jobs', 'manage_candidates', 'view_analytics', 'manage_settings'],
-  hr_manager: ['manage_jobs', 'manage_candidates', 'view_analytics'],
-  recruiter: ['manage_candidates', 'view_jobs', 'view_candidates'],
-  interviewer: ['view_candidates', 'view_jobs']
+  admin: ['all'],
+  hr_manager: ['manage_users', 'manage_settings', 'view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+  recruiter: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+  interviewer: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+  employee: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+  member: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics'],
+  staff: ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'submit_interview_feedback', 'view_analytics']
 };
 
 exports.hasPermission = (role, permission) => {

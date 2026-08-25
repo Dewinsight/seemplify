@@ -6,6 +6,7 @@ import {
   getGeneralDepartment,
   normalizeDepartmentName
 } from '../utils/departments.js'
+import { getDefaultRolePermissions } from '../config/accessControlCatalog.js'
 
 const PermissionGrantSchema = new mongoose.Schema({
   appId: { type: String, required: true, trim: true },
@@ -1048,38 +1049,8 @@ OrganizationSchema.methods.hasPermission = function(accountId, permission) {
 
   if (!member) return false
 
-  // Define permissions for each role
-  const rolePermissions = {
-    owner: ['*'], // All permissions
-    admin: [
-      'manage_users',
-      'manage_organizations',
-      'manage_invitations',
-      'manage_members',
-      'manage_roles',
-      'manage_jobs',
-      'manage_candidates',
-      'view_analytics'
-    ],
-    hr_manager: [
-      'manage_jobs',
-      'manage_candidates',
-      'view_analytics'
-    ],
-    recruiter: [
-      'manage_candidates',
-      'view_jobs',
-      'view_candidates'
-    ],
-    interviewer: [
-      'view_candidates',
-      'view_jobs'
-    ],
-    staff: [] // Staff role has no permissions by default
-  }
-
-  const permissions = rolePermissions[member.role] || []
-  return permissions.includes('*') || permissions.includes(permission)
+  const permissions = getDefaultRolePermissions(member.role, 'identity') || []
+  return permissions.includes(permission)
 }
 
 // Static method to find organizations for an account

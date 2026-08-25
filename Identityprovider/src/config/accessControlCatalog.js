@@ -6,7 +6,7 @@
  * responsible for resource-level checks such as "is this a direct report?".
  */
 
-export const ACCESS_CONTROL_SCHEMA_VERSION = 2
+export const ACCESS_CONTROL_SCHEMA_VERSION = 3
 
 const permission = (id, label, scope, description = '', options = {}) => ({
   id,
@@ -460,51 +460,50 @@ const allExcept = (appId, excludedPermissions = []) => {
   return grant(appId, row.permissions.filter((permissionId) => !excluded.has(permissionId)))
 }
 
-const employeeGrants = [
-  grant('identity', ['organization.view', 'members.view', 'subscriptions.view']),
-  grant('smarthr', ['view_jobs', 'submit_interview_feedback']),
-  grant('leave-management', ['view_own_leaves', 'request_leaves']),
-  grant('performance-management', [
-    'okr:view:own', 'okr:create:own', 'okr:edit:own', 'okr:submit:own', 'okr:acknowledge:own',
-    'okr:request_change:own', 'okr:checkin:own', 'okr:align', 'okr:view:organization', 'goal:create:self', 'goal_period:view',
-    'review:view:own', 'review:self_assess', 'review_cycle:view', 'feedback:view:received',
-    'feedback:view:sent', 'feedback:send', 'feedback:request', 'support_plan:view:own',
-    'recognition:create', 'analytics:view:own', 'team:view:own'
-  ]),
-  grant('payroll-management', [
-    'payslip:view:own', 'payslip:download:own', 'compensation:view:own', 'compensation:manage:own'
-  ]),
-  grant('time-attendance', ['employee.view', 'corrections.request']),
-  grant('lms', [
-    'view_courses', 'enroll_courses', 'view_lessons', 'submit_assignments', 'take_quizzes',
-    'view_certificates', 'view_own_progress', 'participate_discussions', 'view_batches',
-    'view_live_classes', 'edit_own_courses', 'delete_own_courses'
-  ]),
-  grant('seemplify-learning', ['workspace.access', 'courses.learn']),
-  grant('openwebui', ['chat.use', 'models.use', 'knowledge.read']),
-  grant('outline', ['documents.read', 'documents.create', 'documents.edit']),
-  grant('messaging', [
-    'workspace.access', 'messages.read', 'messages.write', 'channels.read', 'channels.create',
-    'calls.read', 'calls.join', 'calls.start', 'files.read', 'files.upload',
-    'documents.read', 'documents.create', 'documents.edit', 'documents.delete', 'documents.share',
-    'pages.read', 'pages.create', 'pages.edit', 'pages.delete', 'pages.share',
-    'boards.read', 'boards.create', 'boards.edit', 'boards.delete',
-    'databases.read', 'databases.manage', 'calendar.read', 'calendar.manage',
-    'mail.read', 'mail.send', 'mail.manage_connections', 'ai.use', 'search.use',
-    'analytics.read', 'notifications.read', 'members.view', 'external_collaboration.read',
-    'governance.read', 'beta.read', 'beta.vote', 'settings.read'
-  ]),
-  grant('community', [
-    'community.access', 'posts.read', 'posts.create', 'posts.manage:own', 'comments.create',
-    'comments.manage:own', 'reactions.use', 'channels.read', 'channels.write',
-    'direct_messages.read', 'direct_messages.write', 'forums.read', 'forums.create',
-    'articles.read', 'articles.create', 'events.read', 'events.register', 'profiles.read',
-    'profiles.manage:own', 'relationships.manage', 'reports.create', 'search.use', 'members.read'
-  ]),
-  grant('automation-hub', ['automations.read', 'automations.create', 'automations.edit', 'automations.run', 'executions.read']),
-  grant('experience-management', ['spaces.read', 'journey_templates.read', 'journey_rollout.read', 'analytics.read', 'activity.read', 'journeys.read', 'journeys.comment', 'journeys.watch', 'journeys.view_activity']),
-  grant('approver', ['projects.submit'])
-]
+// Ordinary organization members receive every delegable product capability by
+// default. Only product administration, cross-person sensitive controls, and
+// policy/security operations are held back. New catalogue entries therefore
+// reach members automatically unless they are deliberately classified here.
+export const MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS = Object.freeze({
+  identity: [
+    'organization.manage', 'members.invite', 'members.manage', 'members.remove',
+    'roles.assign', 'access.manage', 'apps.assign', 'departments.manage', 'teams.manage',
+    'locations.manage', 'invitations.manage', 'notifications.send', 'onboarding.manage',
+    'onboarding.assign', 'subscriptions.request', 'audit.read'
+  ],
+  smarthr: ['manage_users', 'manage_settings', 'manage_billing', 'manage_licenses'],
+  'performance-management': ['goal_period:manage', 'review_cycle:create', 'review_cycle:manage', 'admin:settings', 'admin:reports'],
+  'payroll-management': [
+    'payslip:view:all', 'compensation:manage:all', 'bonus:view:all', 'salary:approve:team',
+    'salary:view:all', 'overtime:approve:team', 'payrollrun:view', 'payrollrun:manage',
+    'payrollrun:execute', 'payrollrun:approve', 'tax:configure', 'tax:view:all',
+    'salarygrade:view', 'salarygrade:manage', 'salarygrade:delete', 'report:view:all',
+    'report:export', 'admin:settings', 'admin:reports'
+  ],
+  'time-attendance': ['policy.manage', 'access.manage'],
+  lms: ['manage_lms_settings', 'manage_user_roles'],
+  'seemplify-learning': ['sales.manage'],
+  openwebui: ['users.manage', 'settings.manage'],
+  outline: ['users.manage', 'settings.manage'],
+  messaging: [
+    'messages.manage', 'channels.manage', 'calls.manage', 'files.manage', 'boards.manage',
+    'notifications.manage', 'members.manage', 'external_collaboration.manage',
+    'governance.manage', 'security.read', 'security.manage', 'webhooks.manage',
+    'beta.manage', 'settings.manage'
+  ],
+  community: [
+    'posts.moderate', 'channels.manage', 'forums.moderate', 'events.manage',
+    'reports.read', 'spaces.manage', 'members.manage', 'settings.manage'
+  ],
+  'automation-hub': ['settings.manage'],
+  'experience-management': ['audit.read', 'journeys.manage_roles'],
+  approver: ['projects.override', 'scoring.manage', 'rules.manage', 'roles.manage', 'workflow.manage']
+})
+
+const memberGrants = PRODUCT_PERMISSION_CATALOG.map((entry) => allExcept(
+  entry.appId,
+  MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS[entry.appId] || []
+))
 
 const managerGrants = [
   grant('identity', ['teams.manage.assigned', 'notifications.send.assigned']),
@@ -529,26 +528,20 @@ const managerGrants = [
 
 // HR managers are organization-wide operational administrators. They receive
 // every assigned product's delegable feature permission except the small set
-// of ownership, access-policy, billing, security, and product-settings controls
+// of ownership, access-policy, commercial, and top-level security controls
 // that remain reserved for an organization administrator or owner.
-const hrManagerAdminExclusions = Object.freeze({
+export const HR_MANAGER_TOP_LEVEL_EXCLUSIONS = Object.freeze({
   identity: ['access.manage', 'roles.assign', 'subscriptions.request'],
   smarthr: ['manage_billing', 'manage_licenses'],
   'time-attendance': ['access.manage'],
-  lms: ['manage_lms_settings', 'manage_user_roles'],
+  lms: ['manage_user_roles'],
   'seemplify-learning': ['sales.manage'],
-  openwebui: ['users.manage', 'settings.manage'],
-  outline: ['users.manage', 'settings.manage'],
-  messaging: ['security.manage', 'webhooks.manage', 'settings.manage'],
-  community: ['settings.manage'],
-  'automation-hub': ['settings.manage'],
-  'experience-management': ['journeys.manage_roles'],
-  approver: ['projects.override', 'roles.manage', 'workflow.manage']
+  messaging: ['security.manage', 'webhooks.manage']
 })
 
 const hrManagerGrants = PRODUCT_PERMISSION_CATALOG.map((entry) => allExcept(
   entry.appId,
-  hrManagerAdminExclusions[entry.appId] || []
+  HR_MANAGER_TOP_LEVEL_EXCLUSIONS[entry.appId] || []
 ))
 
 export const DEFAULT_ACCESS_ROLES = Object.freeze([
@@ -578,7 +571,7 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
   {
     key: 'hr_manager',
     name: 'HR Manager',
-    description: 'Near-admin organization operations without ownership, access-policy, billing, security, or product-settings administration.',
+    description: 'Near-admin authority across products without ownership, access-policy, commercial, or top-level security controls.',
     sourceOrganizationRoles: ['hr_manager'],
     sourceTeamRoles: [],
     grants: hrManagerGrants,
@@ -588,36 +581,30 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
   {
     key: 'recruiter',
     name: 'Recruiter',
-    description: 'Recruitment operations plus standard employee access.',
+    description: 'Full non-administrative product access.',
     sourceOrganizationRoles: ['recruiter'],
     sourceTeamRoles: [],
-    grants: [
-      ...employeeGrants,
-      grant('smarthr', ['view_jobs', 'manage_jobs', 'view_candidates', 'manage_candidates', 'manage_interviews', 'view_analytics'])
-    ],
+    grants: memberGrants,
     denies: [],
     locked: true
   },
   {
     key: 'interviewer',
     name: 'Interviewer',
-    description: 'Candidate interview access plus standard employee access.',
+    description: 'Full non-administrative product access.',
     sourceOrganizationRoles: ['interviewer'],
     sourceTeamRoles: [],
-    grants: [
-      ...employeeGrants,
-      grant('smarthr', ['view_jobs', 'view_candidates', 'submit_interview_feedback'])
-    ],
+    grants: memberGrants,
     denies: [],
     locked: true
   },
   {
     key: 'employee',
     name: 'Employee',
-    description: 'Self-service and standard collaboration access.',
+    description: 'Full non-administrative product access.',
     sourceOrganizationRoles: ['staff'],
     sourceTeamRoles: [],
-    grants: employeeGrants,
+    grants: memberGrants,
     denies: [],
     locked: true
   },
@@ -627,7 +614,7 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
     description: 'Direct-report and team management permissions in addition to employee access.',
     sourceOrganizationRoles: [],
     sourceTeamRoles: ['line_manager'],
-    grants: [...employeeGrants, ...managerGrants],
+    grants: [...memberGrants, ...managerGrants],
     denies: [],
     locked: true
   },
@@ -637,7 +624,7 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
     description: 'Team-scoped review and coordination permissions in addition to employee access.',
     sourceOrganizationRoles: [],
     sourceTeamRoles: ['team_lead'],
-    grants: [...employeeGrants, ...managerGrants],
+    grants: [...memberGrants, ...managerGrants],
     denies: [],
     locked: true
   },
@@ -648,7 +635,7 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
     sourceOrganizationRoles: [],
     sourceTeamRoles: ['department_head'],
     grants: [
-      ...employeeGrants,
+      ...memberGrants,
       ...managerGrants,
       grant('performance-management', ['okr:view:department', 'goal:assign:department']),
       grant('approver', ['projects.review.coe', 'dashboard.review', 'scoring.manage'])
@@ -668,6 +655,27 @@ export function getKnownAppIds() {
 
 export function getKnownPermissionIds(appId) {
   return (getProductPermissionCatalog(appId)?.permissions || []).map((entry) => entry.id)
+}
+
+export function getDefaultRolePermissions(sourceRole, appId = 'identity') {
+  const matchingRoles = DEFAULT_ACCESS_ROLES.filter((role) => (
+    (role.sourceOrganizationRoles || []).includes(sourceRole) ||
+    (role.sourceTeamRoles || []).includes(sourceRole)
+  ))
+  if (matchingRoles.length === 0) return null
+
+  const permissions = new Set()
+  for (const role of matchingRoles) {
+    for (const row of role.grants || []) {
+      if (row.appId !== appId) continue
+      for (const permissionId of row.permissions || []) permissions.add(permissionId)
+    }
+    for (const row of role.denies || []) {
+      if (row.appId !== appId) continue
+      for (const permissionId of row.permissions || []) permissions.delete(permissionId)
+    }
+  }
+  return Array.from(permissions).sort()
 }
 
 export function getPermissionDefinition(appId, permissionId) {
