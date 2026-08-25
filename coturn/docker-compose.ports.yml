@@ -9,6 +9,7 @@ services:
     environment:
       - TURN_AUTH_SECRET=${TURN_AUTH_SECRET}
       - COTURN_EXTERNAL_IP=${COTURN_EXTERNAL_IP:-}
+      - COTURN_RELAY_IP=${COTURN_RELAY_IP:-}
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
       - ./entrypoint.sh:/entrypoint.sh:ro
