@@ -1,0 +1,110 @@
+name: Bootstrap KVM8 GitHub Actions Runners
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-kvm8-github-runners
+  cancel-in-progress: false
+
+jobs:
+  install:
+    # This public-repository bootstrap lane intentionally remains GitHub-hosted:
+    # it must be able to recover the self-hosted runners when they are offline.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Hostinger SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Package runner stack and registration token
+        env:
+          RUNNER_TOKEN: ${{ secrets.KVM8_RUNNER_REGISTRATION_TOKEN }}
+        run: |
+          test -n "$RUNNER_TOKEN"
+          tar -czf /tmp/kvm8-github-runner.tgz \
+            -C deploy/hostinger/github-runner .
+          umask 077
+          printf 'RUNNER_TOKEN=%s\n' "$RUNNER_TOKEN" > /tmp/kvm8-github-runner.env
+
+      - name: Upload runner stack
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_upload_with_lock /tmp/kvm8-github-runner.tgz \
+            "$SSH_USER@$SSH_HOST" /tmp/kvm8-github-runner.tgz
+          hostinger_upload_with_lock /tmp/kvm8-github-runner.env \
+            "$SSH_USER@$SSH_HOST" /tmp/kvm8-github-runner.env
+          rm -f /tmp/kvm8-github-runner.env
+
+      - name: Install, constrain, and verify runners
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          target=/opt/seemplify/github-actions-runner
+          install -d -m 750 "$target"
+          tar -xzf /tmp/kvm8-github-runner.tgz -C "$target"
+          install -m 600 /tmp/kvm8-github-runner.env "$target/.env"
+          rm -f /tmp/kvm8-github-runner.tgz /tmp/kvm8-github-runner.env
+
+          printf 'KVM8 capacity before runner install:\n'
+          nproc
+          free -h
+          df -h / /opt
+          docker stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}' || true
+
+          cd "$target"
+          docker compose --env-file .env -f compose.yml config --quiet
+          docker compose --env-file .env -f compose.yml up -d --build
+
+          for attempt in $(seq 1 30); do
+            if docker compose -f compose.yml ps --status running --services \
+                | grep -qx worker \
+              && docker compose -f compose.yml ps --status running --services \
+                | grep -qx control; then
+              break
+            fi
+            if [[ "$attempt" == 30 ]]; then
+              docker compose -f compose.yml ps
+              docker compose -f compose.yml logs --tail 100
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Remove the short-lived token from both disk and the recreated
+          # container definitions once the persistent runner state exists.
+          : > .env
+          chmod 600 .env
+          docker compose --env-file .env -f compose.yml up -d --no-build --force-recreate
+          sleep 5
+
+          docker compose -f compose.yml ps
+          docker inspect kvm8-shared-worker kvm8-deploy-controller \
+            --format '{{.Name}} NanoCPUs={{.HostConfig.NanoCpus}} Memory={{.HostConfig.Memory}} MemoryReservation={{.HostConfig.MemoryReservation}} MemorySwap={{.HostConfig.MemorySwap}} CpuShares={{.HostConfig.CpuShares}} PidsLimit={{.HostConfig.PidsLimit}}' \
+            2>/dev/null || docker compose -f compose.yml ps -q \
+              | xargs -r docker inspect \
+                --format '{{.Name}} NanoCPUs={{.HostConfig.NanoCpus}} Memory={{.HostConfig.Memory}} MemoryReservation={{.HostConfig.MemoryReservation}} MemorySwap={{.HostConfig.MemorySwap}} CpuShares={{.HostConfig.CpuShares}} PidsLimit={{.HostConfig.PidsLimit}}'
+          REMOTE
