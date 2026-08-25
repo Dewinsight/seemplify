@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   inspect:
-    runs-on: ubuntu-latest
+    runs-on: dewinsight-kvm8
     steps:
       - name: Configure SSH
         env:

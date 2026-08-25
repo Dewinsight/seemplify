@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   qa:
-    runs-on: ubuntu-latest
+    runs-on: dewinsight-kvm8
     defaults:
       run:
         working-directory: coturn/turn-api
@@ -34,7 +34,7 @@ jobs:
 
   deploy:
     needs: qa
-    runs-on: ubuntu-latest
+    runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4
       - name: Configure Hostinger SSH

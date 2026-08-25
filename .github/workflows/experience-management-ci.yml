@@ -13,7 +13,9 @@ concurrency:
 jobs:
   sdk-runtime-matrix:
     name: SDK runtime (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    # Pull requests in this public repository stay on an isolated GitHub-hosted
+    # runner; trusted main-branch verification uses the shared KVM8 worker.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'dewinsight-kvm8' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -38,7 +40,7 @@ jobs:
       - run: npm run test:sdk:consumer
 
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'dewinsight-kvm8' }}
     timeout-minutes: 45
     defaults:
       run:
