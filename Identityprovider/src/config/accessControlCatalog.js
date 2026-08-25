@@ -6,7 +6,7 @@
  * responsible for resource-level checks such as "is this a direct report?".
  */
 
-export const ACCESS_CONTROL_SCHEMA_VERSION = 1
+export const ACCESS_CONTROL_SCHEMA_VERSION = 2
 
 const permission = (id, label, scope, description = '', options = {}) => ({
   id,
@@ -454,10 +454,15 @@ const all = (appId) => ({
     .map((entry) => entry.id)
 })
 const grant = (appId, permissions) => ({ appId, permissions })
+const allExcept = (appId, excludedPermissions = []) => {
+  const excluded = new Set(excludedPermissions)
+  const row = all(appId)
+  return grant(appId, row.permissions.filter((permissionId) => !excluded.has(permissionId)))
+}
 
 const employeeGrants = [
   grant('identity', ['organization.view', 'members.view', 'subscriptions.view']),
-  grant('smarthr', ['view_jobs']),
+  grant('smarthr', ['view_jobs', 'submit_interview_feedback']),
   grant('leave-management', ['view_own_leaves', 'request_leaves']),
   grant('performance-management', [
     'okr:view:own', 'okr:create:own', 'okr:edit:own', 'okr:submit:own', 'okr:acknowledge:own',
@@ -466,9 +471,15 @@ const employeeGrants = [
     'feedback:view:sent', 'feedback:send', 'feedback:request', 'support_plan:view:own',
     'recognition:create', 'analytics:view:own', 'team:view:own'
   ]),
-  grant('payroll-management', ['payslip:view:own', 'payslip:download:own', 'compensation:view:own']),
+  grant('payroll-management', [
+    'payslip:view:own', 'payslip:download:own', 'compensation:view:own', 'compensation:manage:own'
+  ]),
   grant('time-attendance', ['employee.view', 'corrections.request']),
-  grant('lms', ['view_courses', 'enroll_courses', 'view_lessons', 'submit_assignments', 'take_quizzes', 'view_certificates', 'view_own_progress', 'participate_discussions', 'view_batches', 'view_live_classes']),
+  grant('lms', [
+    'view_courses', 'enroll_courses', 'view_lessons', 'submit_assignments', 'take_quizzes',
+    'view_certificates', 'view_own_progress', 'participate_discussions', 'view_batches',
+    'view_live_classes', 'edit_own_courses', 'delete_own_courses'
+  ]),
   grant('seemplify-learning', ['workspace.access', 'courses.learn']),
   grant('openwebui', ['chat.use', 'models.use', 'knowledge.read']),
   grant('outline', ['documents.read', 'documents.create', 'documents.edit']),
@@ -516,6 +527,30 @@ const managerGrants = [
   grant('approver', ['projects.review.coe', 'dashboard.review'])
 ]
 
+// HR managers are organization-wide operational administrators. They receive
+// every assigned product's delegable feature permission except the small set
+// of ownership, access-policy, billing, security, and product-settings controls
+// that remain reserved for an organization administrator or owner.
+const hrManagerAdminExclusions = Object.freeze({
+  identity: ['access.manage', 'roles.assign', 'subscriptions.request'],
+  smarthr: ['manage_billing', 'manage_licenses'],
+  'time-attendance': ['access.manage'],
+  lms: ['manage_lms_settings', 'manage_user_roles'],
+  'seemplify-learning': ['sales.manage'],
+  openwebui: ['users.manage', 'settings.manage'],
+  outline: ['users.manage', 'settings.manage'],
+  messaging: ['security.manage', 'webhooks.manage', 'settings.manage'],
+  community: ['settings.manage'],
+  'automation-hub': ['settings.manage'],
+  'experience-management': ['journeys.manage_roles'],
+  approver: ['projects.override', 'roles.manage', 'workflow.manage']
+})
+
+const hrManagerGrants = PRODUCT_PERMISSION_CATALOG.map((entry) => allExcept(
+  entry.appId,
+  hrManagerAdminExclusions[entry.appId] || []
+))
+
 export const DEFAULT_ACCESS_ROLES = Object.freeze([
   {
     key: 'organization_owner',
@@ -543,22 +578,10 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
   {
     key: 'hr_manager',
     name: 'HR Manager',
-    description: 'Organization-wide HR operations without permission-policy administration.',
+    description: 'Near-admin organization operations without ownership, access-policy, billing, security, or product-settings administration.',
     sourceOrganizationRoles: ['hr_manager'],
     sourceTeamRoles: [],
-    grants: [
-      grant('identity', ['organization.view', 'members.view', 'members.invite', 'members.manage', 'apps.assign', 'departments.manage', 'teams.manage', 'locations.manage', 'invitations.manage', 'notifications.read', 'notifications.send', 'onboarding.read', 'onboarding.manage', 'onboarding.assign', 'subscriptions.view', 'subscriptions.request', 'access.read', 'audit.read']),
-      all('smarthr'), all('leave-management'), all('performance-management'), all('payroll-management'),
-      grant('time-attendance', PRODUCT_PERMISSION_CATALOG.find((entry) => entry.appId === 'time-attendance').permissions.map((entry) => entry.id).filter((id) => id !== 'access.manage')),
-      all('lms'), all('seemplify-learning'),
-      grant('openwebui', ['chat.use', 'models.use', 'knowledge.read', 'knowledge.manage']),
-      grant('outline', ['documents.read', 'documents.create', 'documents.edit', 'documents.delete', 'collections.manage', 'sharing.manage']),
-      grant('messaging', ['messages.read', 'messages.write', 'channels.create', 'channels.manage', 'calls.join', 'calls.start', 'calls.manage', 'files.upload']),
-      grant('community', ['posts.read', 'posts.create', 'posts.manage:own', 'posts.moderate']),
-      grant('automation-hub', ['automations.read', 'automations.create', 'automations.edit', 'automations.delete', 'automations.run', 'executions.read', 'executions.manage', 'connections.read']),
-      grant('experience-management', ['spaces.read', 'spaces.manage', 'analytics.read', 'journey_templates.read', 'journey_templates.manage', 'journey_rollout.read', 'journey_rollout.manage', 'activity.read', 'audit.read', 'journeys.read', 'journeys.comment', 'journeys.watch', 'journeys.edit', 'journeys.manage_portfolio', 'journeys.request_review', 'journeys.review', 'journeys.publish', 'journeys.manage_shares', 'journeys.manage_views', 'journeys.view_activity', 'journeys.export']),
-      grant('approver', ['projects.submit', 'projects.review.coe', 'projects.review.governance', 'dashboard.review', 'scoring.manage', 'rules.manage'])
-    ],
+    grants: hrManagerGrants,
     denies: [],
     locked: true
   },

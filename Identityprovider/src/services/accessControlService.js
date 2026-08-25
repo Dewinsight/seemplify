@@ -143,11 +143,22 @@ function permissionMapToObject(permissionMap) {
     .map(([appId, permissions]) => [appId, Array.from(permissions).sort()]))
 }
 
-function mergeDefaultRoles(existingRoles = []) {
+export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false } = {}) {
   const roles = (existingRoles || []).map((role) => cloneRole(role.toObject ? role.toObject() : role))
-  const existingKeys = new Set(roles.map((role) => role.key))
   for (const defaultRole of DEFAULT_ACCESS_ROLES) {
-    if (!existingKeys.has(defaultRole.key)) roles.push(cloneRole(defaultRole))
+    const existingIndex = roles.findIndex((role) => role.key === defaultRole.key)
+    if (existingIndex < 0) {
+      roles.push(cloneRole(defaultRole))
+      continue
+    }
+    if (!refreshLocked || defaultRole.locked !== true) continue
+    const existing = roles[existingIndex]
+    roles[existingIndex] = {
+      ...cloneRole(defaultRole),
+      createdAt: existing.createdAt,
+      updatedAt: new Date(),
+      updatedBy: existing.updatedBy
+    }
   }
   return roles
 }
@@ -168,12 +179,14 @@ export async function getOrCreateGlobalAccessPolicy() {
     }
   }
 
-  const mergedRoles = mergeDefaultRoles(policy.roles)
-  if (mergedRoles.length !== policy.roles.length || policy.schemaVersion !== ACCESS_CONTROL_SCHEMA_VERSION) {
+  const schemaUpgrade = policy.schemaVersion !== ACCESS_CONTROL_SCHEMA_VERSION
+  const mergedRoles = mergeDefaultRoles(policy.roles, { refreshLocked: schemaUpgrade })
+  if (mergedRoles.length !== policy.roles.length || schemaUpgrade) {
     policy.roles = mergedRoles
     policy.schemaVersion = ACCESS_CONTROL_SCHEMA_VERSION
     policy.revision += 1
     await policy.save()
+    if (schemaUpgrade) await bumpAccountAuthorizationRevisions()
   }
   return policy
 }

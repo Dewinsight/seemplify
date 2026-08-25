@@ -22,7 +22,7 @@ const AccessRoleSchema = new mongoose.Schema({
 
 const AccessControlPolicySchema = new mongoose.Schema({
   key: { type: String, required: true, unique: true, default: 'global', immutable: true },
-  schemaVersion: { type: Number, required: true, default: 1 },
+  schemaVersion: { type: Number, required: true, default: 2 },
   revision: { type: Number, required: true, default: 1 },
   roles: { type: [AccessRoleSchema], default: [] },
   createdAt: { type: Date, default: Date.now },

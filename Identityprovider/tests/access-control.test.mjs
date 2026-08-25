@@ -3,11 +3,13 @@ import fs from 'node:fs'
 import test from 'node:test'
 
 import {
+  ACCESS_CONTROL_SCHEMA_VERSION,
   DEFAULT_ACCESS_ROLES,
   PRODUCT_PERMISSION_CATALOG,
   getPermissionDefinition
 } from '../src/config/accessControlCatalog.js'
 import {
+  mergeDefaultRoles,
   resolveOrganizationAuthorization,
   sanitizePermissionRows
 } from '../src/services/accessControlService.js'
@@ -40,6 +42,83 @@ test('permission catalogue and built-in roles contain only unique known tokens',
       }
     }
   }
+})
+
+test('ordinary staff receive every assigned product baseline and all self-service permissions', () => {
+  const employee = DEFAULT_ACCESS_ROLES.find((role) => role.key === 'employee')
+  const grantsByApp = new Map(employee.grants.map((row) => [row.appId, new Set(row.permissions)]))
+
+  for (const product of PRODUCT_PERMISSION_CATALOG) {
+    assert.ok(grantsByApp.has(product.appId), `employee baseline omitted ${product.appId}`)
+    for (const permission of product.permissions.filter((entry) => entry.scope === 'self')) {
+      assert.ok(
+        grantsByApp.get(product.appId).has(permission.id),
+        `employee baseline omitted self-service ${product.appId}:${permission.id}`
+      )
+    }
+  }
+
+  for (const adminPermission of ['members.manage', 'security.manage', 'webhooks.manage', 'settings.manage']) {
+    assert.ok(!grantsByApp.get('messaging').has(adminPermission))
+  }
+  assert.ok(!grantsByApp.get('identity').has('access.manage'))
+  assert.ok(!grantsByApp.get('identity').has('roles.assign'))
+})
+
+test('HR manager is a near-admin superset of ordinary staff without protected administration', () => {
+  const employee = DEFAULT_ACCESS_ROLES.find((role) => role.key === 'employee')
+  const hrManager = DEFAULT_ACCESS_ROLES.find((role) => role.key === 'hr_manager')
+  const employeeByApp = new Map(employee.grants.map((row) => [row.appId, new Set(row.permissions)]))
+  const hrByApp = new Map(hrManager.grants.map((row) => [row.appId, new Set(row.permissions)]))
+
+  for (const product of PRODUCT_PERMISSION_CATALOG) {
+    assert.ok(hrByApp.has(product.appId), `HR manager baseline omitted ${product.appId}`)
+    for (const permissionId of employeeByApp.get(product.appId) || []) {
+      assert.ok(hrByApp.get(product.appId).has(permissionId), `HR manager lost ${product.appId}:${permissionId}`)
+    }
+  }
+
+  for (const [appId, permissionId] of [
+    ['identity', 'members.remove'],
+    ['messaging', 'files.manage'],
+    ['community', 'articles.publish'],
+    ['automation-hub', 'connections.manage'],
+    ['seemplify-learning', 'courses.manage']
+  ]) assert.ok(hrByApp.get(appId).has(permissionId), `HR manager lacks ${appId}:${permissionId}`)
+
+  for (const [appId, permissionId] of [
+    ['identity', 'access.manage'],
+    ['identity', 'roles.assign'],
+    ['identity', 'owner.transfer'],
+    ['identity', 'organization.delete'],
+    ['smarthr', 'manage_billing'],
+    ['messaging', 'security.manage'],
+    ['messaging', 'webhooks.manage'],
+    ['openwebui', 'settings.manage'],
+    ['automation-hub', 'settings.manage']
+  ]) assert.ok(!hrByApp.get(appId).has(permissionId), `HR manager received protected ${appId}:${permissionId}`)
+})
+
+test('schema version two refreshes locked role baselines without replacing custom roles', () => {
+  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 2)
+  const customRole = {
+    key: 'project_coordinator', name: 'Project Coordinator', locked: false,
+    sourceOrganizationRoles: [], sourceTeamRoles: [],
+    grants: [{ appId: 'messaging', permissions: ['messages.read'] }], denies: []
+  }
+  const staleEmployee = {
+    ...DEFAULT_ACCESS_ROLES.find((role) => role.key === 'employee'),
+    grants: [{ appId: 'identity', permissions: ['organization.view'] }]
+  }
+
+  const merged = mergeDefaultRoles([staleEmployee, customRole], { refreshLocked: true })
+  const refreshedEmployee = merged.find((role) => role.key === 'employee')
+  const preservedCustom = merged.find((role) => role.key === 'project_coordinator')
+
+  assert.ok(refreshedEmployee.grants.some((row) => (
+    row.appId === 'messaging' && row.permissions.includes('messages.read')
+  )))
+  assert.deepEqual(preservedCustom.grants, customRole.grants)
 })
 
 test('every organization-managed Hub product has an IdP permission matrix', () => {
@@ -189,7 +268,7 @@ test('effective authorization applies roles, direct exceptions, app assignment, 
   assert.ok(!Object.prototype.hasOwnProperty.call(authorization.permissionsByApp, 'lms'))
 })
 
-test('assigned products retain an authoritative empty permission list', async () => {
+test('assigned products retain an authoritative permission list after explicit denies', async () => {
   const member = {
     account: 'account-2',
     status: 'active',
@@ -207,7 +286,8 @@ test('assigned products retain an authoritative empty permission list', async ()
     member,
     policy
   })
-  assert.deepEqual(authorization.permissionsByApp.smarthr, [])
+  assert.deepEqual(authorization.permissionsByApp.smarthr, ['submit_interview_feedback'])
+  assert.ok(!authorization.permissionsByApp.smarthr.includes('view_jobs'))
 })
 
 test('organization owner recovery permissions survive organization and member denies', async () => {
