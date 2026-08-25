@@ -52,7 +52,9 @@ jobs:
         working-directory: Identityprovider
         run: |
           npm ci --ignore-scripts
-          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs test/nylas-platform-configuration.test.mjs test/media-platform-configuration.test.mjs test/recruiter-admin-sso-secret.test.mjs src/__tests__/subscription-extension-reactivation.test.mjs src/__tests__/subscription-required-recovery.test.mjs
+          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs test/nylas-platform-configuration.test.mjs test/media-platform-configuration.test.mjs test/recruiter-admin-sso-secret.test.mjs test/browser-notification-relay.test.mjs src/__tests__/subscription-extension-reactivation.test.mjs src/__tests__/subscription-required-recovery.test.mjs
+      - name: Check browser notification secret provisioner
+        run: bash -n deploy/hostinger/ensure-browser-notification-secrets.sh
       - name: Test shared gateway authentication
         working-directory: recruiter/backend
         run: node --test tests/internalServiceAuth.test.js
@@ -99,6 +101,7 @@ jobs:
             tools/local-knowledge \
             deploy/hostinger/core-apps.compose.yml \
             deploy/hostinger/extended-apps.compose.yml \
+            deploy/hostinger/ensure-browser-notification-secrets.sh \
             deploy/hostinger/generate-idp-clients.sh \
             deploy/hostinger/smoke-hostinger.sh
       - name: Upload release
@@ -167,10 +170,12 @@ jobs:
           cp -a "$release_root/marketing-site/." /opt/seemplify/source/marketing-site/
           install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
           install -m 644 "$release_root/deploy/hostinger/extended-apps.compose.yml" /opt/seemplify/deploy/hostinger/extended-apps.compose.yml
+          install -m 755 "$release_root/deploy/hostinger/ensure-browser-notification-secrets.sh" /opt/seemplify/deploy/hostinger/ensure-browser-notification-secrets.sh
           install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /usr/local/sbin/seemplify-smoke
           IDENTITY_PROVIDER_IMAGE="$identity_image" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
+          IDENTITY_PROVIDER_IMAGE="$identity_image" /opt/seemplify/deploy/hostinger/ensure-browser-notification-secrets.sh
 
           test -s /opt/seemplify/secrets/platform-integrations/credential-encryption-key
           test -s /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
