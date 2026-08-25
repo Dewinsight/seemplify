@@ -330,10 +330,12 @@ export async function buildOrganizationClaims(account) {
       appAccess: organizationClaimAppAccess(org, memberEntry),
       departmentHeadPermissions: headedDepartments,
       permissions: authorization?.permissionsByApp?.identity || getPermissionsForRole(memberEntry.role || org.role),
-      appPermissions: authorization?.permissionsByApp || {
-        smarthr: getPermissionsForRole(memberEntry.role || org.role, 'smarthr'),
-        'leave-management': getPermissionsForRole(memberEntry.role || org.role, 'leave-management')
-      },
+      appPermissions: authorization?.permissionsByApp || Object.fromEntries(
+        PRODUCT_PERMISSION_CATALOG.map((product) => [
+          product.appId,
+          getPermissionsForRole(memberEntry.role || org.role, product.appId)
+        ])
+      ),
       authorization,
       // Team-based permissions for this organization
       teamPermissions: teamPermissions,
