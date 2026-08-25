@@ -14,6 +14,8 @@ const BrowserPushSubscriptionSchema = new mongoose.Schema({
   userAgentHash: { type: String, default: '', maxlength: 128 },
   lastConfirmedAt: { type: Date, default: Date.now },
   lastDeliveredAt: { type: Date, default: null },
+  lastFailureAt: { type: Date, default: null },
+  lastFailureStatus: { type: Number, default: 0, min: 0, max: 599 },
   failureCount: { type: Number, default: 0, min: 0, max: 1000 }
 }, { timestamps: true })
 

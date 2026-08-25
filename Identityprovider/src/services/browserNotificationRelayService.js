@@ -9,6 +9,8 @@ const objectIdPattern = /^[a-f\d]{24}$/i
 const subjectPattern = /^[\w:./@-]{3,200}$/
 const identifierPattern = /^[\w:.-]{3,200}$/
 const callKinds = new Set(['direct_call', 'voice_invite', 'meeting_invite'])
+const durableActivityKinds = new Set(['direct_message', 'mention', 'thread_reply', 'missed_call'])
+const highPriorityKinds = new Set([...callKinds, ...durableActivityKinds])
 
 const bounded = (value, maximum, fallback = '') => {
   const normalized = typeof value === 'string' ? value : fallback
@@ -102,6 +104,18 @@ const configureWebPush = (env = process.env) => {
   return true
 }
 
+export const pushDeliveryOptionsFor = (event = {}) => ({
+  TTL: callKinds.has(event.kind) ? 45 : durableActivityKinds.has(event.kind) ? 24 * 60 * 60 : 60 * 60,
+  urgency: event.urgent === true || highPriorityKinds.has(event.kind) ? 'high' : 'normal'
+})
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+
+const transientPushFailure = (error) => {
+  const status = Number(error?.statusCode || error?.status || 0)
+  return status === 408 || status === 429 || status >= 500 || status === 0
+}
+
 export const upsertRelaySubscription = async (payload) => {
   const identity = normalizeRelayIdentity(payload?.identity)
   const deviceId = String(payload?.deviceId || '')
@@ -146,25 +160,34 @@ export const removeRelaySubscription = async (identityValue, deviceId) => {
 
 const deliverPush = async (subscription, event, env) => {
   if (!configureWebPush(env)) return { delivered: false, reason: 'web_push_not_configured' }
-  try {
-    await webpush.sendNotification(
-      { endpoint: subscription.endpoint, keys: subscription.keys },
-      JSON.stringify(event),
-      { TTL: callKinds.has(event.kind) ? 45 : 300, urgency: event.urgent ? 'high' : 'normal' }
-    )
-    await BrowserPushSubscription.updateOne(
-      { _id: subscription._id },
-      { $set: { lastDeliveredAt: new Date(), failureCount: 0 } }
-    )
-    return { delivered: true }
-  } catch (error) {
-    if ([404, 410].includes(error?.statusCode)) {
-      await BrowserPushSubscription.deleteOne({ _id: subscription._id })
-      return { delivered: false, reason: 'expired' }
+  let lastError
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await webpush.sendNotification(
+        { endpoint: subscription.endpoint, keys: subscription.keys },
+        JSON.stringify(event),
+        pushDeliveryOptionsFor(event)
+      )
+      await BrowserPushSubscription.updateOne(
+        { _id: subscription._id },
+        { $set: { lastDeliveredAt: new Date(), failureCount: 0, lastFailureAt: null, lastFailureStatus: 0 } }
+      )
+      return { delivered: true }
+    } catch (error) {
+      lastError = error
+      if ([404, 410].includes(error?.statusCode)) {
+        await BrowserPushSubscription.deleteOne({ _id: subscription._id })
+        return { delivered: false, reason: 'expired' }
+      }
+      if (!transientPushFailure(error) || attempt === 2) break
+      await wait(250 * (2 ** attempt))
     }
-    await BrowserPushSubscription.updateOne({ _id: subscription._id }, { $inc: { failureCount: 1 } })
-    return { delivered: false, reason: 'failed' }
   }
+  await BrowserPushSubscription.updateOne(
+    { _id: subscription._id },
+    { $inc: { failureCount: 1 }, $set: { lastFailureAt: new Date(), lastFailureStatus: Number(lastError?.statusCode || 0) } }
+  )
+  return { delivered: false, reason: 'failed' }
 }
 
 export const publishRelayEvent = async (payload, env = process.env) => {
@@ -204,9 +227,11 @@ export const listRelayEvents = async (idpSubject, after, limit = 30) => {
     title: record.title,
     body: record.body,
     deepLink: record.deepLink,
+    conversationId: record.conversationId,
     callId: record.callId,
     occurredAt: record.occurredAt,
     expiresAt: record.expiresAt,
+    urgent: record.urgent,
     silent: record.silent
   }))
 }

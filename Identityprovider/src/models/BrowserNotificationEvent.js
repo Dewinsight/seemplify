@@ -8,10 +8,12 @@ const BrowserNotificationEventSchema = new mongoose.Schema({
   title: { type: String, default: '', maxlength: 120 },
   body: { type: String, default: '', maxlength: 240 },
   deepLink: { type: String, default: '/messaging', maxlength: 500 },
+  conversationId: { type: String, default: null, maxlength: 160 },
   callId: { type: String, default: null, maxlength: 200 },
   occurredAt: { type: Date, required: true },
   expiresAt: { type: Date, default: null },
   silent: { type: Boolean, default: false },
+  urgent: { type: Boolean, default: false },
   purgeAt: { type: Date, default: () => new Date(Date.now() + 24 * 60 * 60 * 1000) }
 }, { timestamps: true })
 
