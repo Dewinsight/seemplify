@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { replaceCVIngestionJob, retryCVIngestionJob, type CVIngestionJob } from "@/services/candidateService"
-import { getCVIngestionJob, getCVIngestionJobs, type CVIngestionState } from "@/services/cvIngestionService"
+import { getCVIngestionJob, getCVIngestionJobs, type CVIngestionJobList, type CVIngestionState } from "@/services/cvIngestionService"
 import { toast } from "sonner"
 import { CvProcessingTimeline } from "@/components/cv-processing/CvProcessingTimeline"
 
@@ -30,17 +30,25 @@ function candidateName(job: CVIngestionJob) {
   return job.candidate?.name || job.candidate?.email || job.candidateId || "—"
 }
 
+function isReanalysis(job: CVIngestionJob) {
+  return job.phase === "retrying"
+    || Number(job.retry?.manualRequests || 0) > 0
+    || Number(job.attempts || 0) > 1
+}
+
 function stateLabel(job: CVIngestionJob) {
-  if (job.state === "waiting_for_chatgpt") return "Waiting"
+  const reanalysis = isReanalysis(job)
+  if (job.state === "waiting_for_chatgpt") return reanalysis ? "Re-analysis waiting" : "Analysis waiting"
   if (job.state === "completed") return "Completed"
   if (job.state === "failed") return "Failed"
   if (job.state === "cancelled") return "Cancelled"
   if (job.state === "deleted") return "Deleted"
   if (job.stage === "profile_creation" || job.stage === "finalizing") return "Creating profile"
-  if (job.stage === "analyzing") return "AI analysis"
-  if (job.stage === "extracting") return "Text extraction"
+  if (job.stage === "analyzing") return reanalysis ? "Re-analysis running" : "AI analysis running"
+  if (job.stage === "extracting") return reanalysis ? "Re-processing text" : "Text extraction"
   if (job.stage === "uploading" || job.stage === "stored") return "Securing file"
-  return job.state === "processing" ? "Processing" : "Queued"
+  if (job.state === "processing") return reanalysis ? "Re-processing CV" : "Processing"
+  return reanalysis ? "Re-analysis queued" : "Queued"
 }
 
 function StateMark({ job }: { job: CVIngestionJob }) {
@@ -72,6 +80,7 @@ export default function CvProcessingPage() {
   const replacementInputRef = useRef<HTMLInputElement>(null)
   const [retentionDays, setRetentionDays] = useState<number | null>(null)
   const [coverageStartedAt, setCoverageStartedAt] = useState<string | null>(null)
+  const [processingSummary, setProcessingSummary] = useState<CVIngestionJobList["processingSummary"]>()
 
   useEffect(() => {
     const timer = window.setTimeout(() => { setSearch(searchInput.trim()); setPage(1) }, 350)
@@ -93,6 +102,7 @@ export default function CvProcessingPage() {
       setTotal(result.total || 0)
       setRetentionDays(typeof result.retentionDays === "number" ? result.retentionDays : null)
       setCoverageStartedAt(result.coverageStartedAt || null)
+      setProcessingSummary(result.processingSummary)
       setError(null)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "CV processing history could not be loaded")
@@ -229,6 +239,24 @@ export default function CvProcessingPage() {
         </Button>
       </header>
 
+      <section className="mb-4 border border-amber-200 bg-amber-50/70 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/25" aria-labelledby="cv-queue-heading">
+        <div className="flex items-start gap-3">
+          <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
+          <div>
+            <h2 id="cv-queue-heading" className="text-sm font-medium text-foreground">
+              {processingSummary?.mode === "parallel" ? `CV analysis capacity: ${processingSummary.concurrency}` : "One-at-a-time CV analysis"}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {processingSummary?.mode === "parallel"
+                ? `Up to ${processingSummary.concurrency} CVs can run at once.`
+                : "CVs are analysed sequentially: one runs while the rest remain in the queue."}
+              {processingSummary ? ` ${processingSummary.active} running now · ${processingSummary.queued} queued · ${processingSummary.waitingForRuntime} waiting for a ChatGPT runtime.` : ""}
+              {processingSummary?.reanalysis ? ` ${processingSummary.reanalysis} active ${processingSummary.reanalysis === 1 ? "item is a re-analysis" : "items are re-analyses"}.` : ""}
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section className="mb-4 grid gap-3 border bg-card p-4 md:grid-cols-[minmax(220px,1fr)_180px_180px]">
         <div className="relative">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -279,7 +307,7 @@ export default function CvProcessingPage() {
                   <TableRow key={job.jobId} className="cursor-pointer" onClick={() => void openJob(job.jobId)}>
                     <TableCell><div className="max-w-72 truncate font-medium">{fileName(job)}</div><div className="font-mono text-[11px] text-muted-foreground">{job.jobId}</div></TableCell>
                     <TableCell className="capitalize">{job.source.replace("-", " ")}</TableCell>
-                    <TableCell><div className="flex items-center gap-2"><StateMark job={job} /><span>{stateLabel(job)}</span>{typeof job.progress === "number" && !["completed", "failed", "cancelled", "deleted"].includes(job.state) ? <span className="text-xs text-muted-foreground">{job.progress}%</span> : null}</div></TableCell>
+                    <TableCell><div className="flex items-center gap-2"><StateMark job={job} /><span>{stateLabel(job)}</span>{typeof job.progress === "number" && !["completed", "failed", "cancelled", "deleted"].includes(job.state) ? <span className="text-xs text-muted-foreground">{job.progress}%</span> : null}</div>{job.jobId === processingSummary?.currentJobId ? <p className="mt-1 pl-6 text-xs text-muted-foreground">Running now; queued CVs follow one by one</p> : null}</TableCell>
                     <TableCell><div className="max-w-52 truncate">{candidateName(job)}</div></TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(job.updatedAt || job.completedAt || job.failedAt || job.createdAt)}</TableCell>
                     <TableCell><Button variant="ghost" size="sm" aria-label={`View processing details for ${fileName(job)}`} onClick={(event) => { event.stopPropagation(); void openJob(job.jobId) }}>View</Button></TableCell>
@@ -305,6 +333,7 @@ export default function CvProcessingPage() {
             <div className="mt-6 space-y-6">
               <div className="border p-4">
                 <div className="flex items-start justify-between gap-4"><div><p className="font-medium">{fileName(selected)}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{selected.jobId}</p>{selected.revision ? <p className="mt-1 text-xs text-muted-foreground">Revision {selected.revision}</p> : null}</div><div className="flex items-center gap-2 text-sm"><StateMark job={selected} />{stateLabel(selected)}</div></div>
+                {isReanalysis(selected) && !["completed", "failed", "cancelled", "deleted"].includes(selected.state) ? <p className="mt-3 text-sm text-muted-foreground">This is a re-analysis attempt. {selected.jobId === processingSummary?.currentJobId ? "It is running now." : "It will run when it reaches the front of the one-at-a-time queue."}</p> : null}
                 {selected.state === "waiting_for_chatgpt" && selected.retry?.canRunNow ? <Button className="mt-4" size="sm" onClick={() => void retrySelected("analysis")} disabled={retrying}>{retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}Run analysis now</Button> : null}
                 {selected.retry?.available ? <Button className="mt-4" size="sm" onClick={() => void retrySelected()} disabled={retrying}>{retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}Retry processing</Button> : null}
                 {selected.retry?.replacementAvailable && !selected.retry.available ? <><Button className="mt-4" size="sm" variant="outline" onClick={() => replacementInputRef.current?.click()} disabled={replacing}>{replacing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}Upload corrected CV</Button><input ref={replacementInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.tif,.tiff" aria-label={`Choose a corrected CV for ${fileName(selected)}`} onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSelected(file); event.target.value = "" }} /></> : null}

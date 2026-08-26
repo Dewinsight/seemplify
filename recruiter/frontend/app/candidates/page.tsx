@@ -180,7 +180,7 @@ function CandidateCvStatus({
             </>
           ) : null}
           <button type="button" className="font-medium underline-offset-2 hover:underline" onClick={onOpenQueue}>
-            Processing queue
+            View CV processing
           </button>
         </div>
       ) : null}
@@ -850,8 +850,14 @@ export default function CandidatesPage() {
                 Discover and manage top talent for your organization
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <StartTourButton />
+              <Button asChild variant="outline" className="border-gray-200 dark:border-gray-700">
+                <Link href="/cv-processing">
+                  <Clock3 className="h-4 w-4 mr-2" />
+                  CV processing
+                </Link>
+              </Button>
               <Button asChild variant="outline" className="border-gray-200 dark:border-gray-700">
                 <Link href="/candidates/lists">
                   <ListPlus className="h-4 w-4 mr-2" />

@@ -2538,6 +2538,16 @@ test('organization history, detail, and retry remain tenant scoped while admin o
   ]);
   const listA = await cvQueue.listOrganizationHistory(organizationA._id, { limit: 25 });
   assert.deepEqual(listA.jobs.map((job) => job.jobId), [jobA.job.publicId]);
+  assert.deepEqual(listA.processingSummary, {
+    mode: 'sequential',
+    concurrency: 1,
+    active: 0,
+    queued: 1,
+    waitingForRuntime: 0,
+    reanalysis: 0,
+    currentJobId: null,
+    nextJobId: jobA.job.publicId
+  });
   assert.equal(await cvQueue.getOrganizationJobDetail(organizationA._id, jobB.job.publicId), null);
   await assert.rejects(
     () => cvQueue.retryFailedJob(jobB.job.publicId, { organizationId: organizationA._id }),

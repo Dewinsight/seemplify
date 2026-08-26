@@ -22,6 +22,16 @@ export type CVIngestionJobList = {
   jobs: CVIngestionJob[];
   retentionDays?: number;
   coverageStartedAt?: string | null;
+  processingSummary?: {
+    mode: "sequential" | "parallel";
+    concurrency: number;
+    active: number;
+    queued: number;
+    waitingForRuntime: number;
+    reanalysis: number;
+    currentJobId?: string | null;
+    nextJobId?: string | null;
+  };
   measuredAt?: string | null;
 };
 

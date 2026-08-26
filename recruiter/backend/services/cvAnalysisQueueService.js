@@ -1743,6 +1743,35 @@ function historyQuery(input = {}, { mandatoryFilter = {}, searchClauses = [] } =
   return { page, limit, filter };
 }
 
+function isReanalysisJob(job = {}) {
+  return processingAttemptCount(job) > 1
+    || Number(job.retry?.manualRequests || 0) > 0;
+}
+
+async function organizationProcessingSummary(organizationId) {
+  const activeJobs = await CVProcessingJob.find({
+    organization: organizationId,
+    state: { $in: TELEMETRY_ACTIVE_STATES }
+  })
+    .select('publicId state createdAt startedAt attempts processingAttempts retry.manualRequests')
+    .sort({ createdAt: 1, publicId: 1 })
+    .lean();
+  const concurrencyLimit = workerConcurrency();
+  const runningJobs = activeJobs.filter((job) => job.state === 'processing');
+  const queuedJobs = activeJobs.filter((job) => job.state === 'queued');
+  const waitingJobs = activeJobs.filter((job) => job.state === 'waiting_for_chatgpt');
+  return {
+    mode: concurrencyLimit === 1 ? 'sequential' : 'parallel',
+    concurrency: concurrencyLimit,
+    active: runningJobs.length,
+    queued: queuedJobs.length,
+    waitingForRuntime: waitingJobs.length,
+    reanalysis: activeJobs.filter(isReanalysisJob).length,
+    currentJobId: runningJobs[0]?.publicId || null,
+    nextJobId: queuedJobs[0]?.publicId || null
+  };
+}
+
 async function listOrganizationHistory(organizationId, input = {}) {
   if (!mongoose.isValidObjectId(organizationId)) {
     throw manualRetryError(
@@ -1758,7 +1787,7 @@ async function listOrganizationHistory(organizationId, input = {}) {
     mandatoryFilter: { organizationKey },
     searchClauses
   });
-  const [total, rows, earliest] = await Promise.all([
+  const [total, rows, earliest, processingSummary] = await Promise.all([
     CVProcessingAudit.countDocuments(filter),
     CVProcessingAudit.find(filter)
       .sort({ jobCreatedAt: -1, publicId: -1 })
@@ -1768,7 +1797,8 @@ async function listOrganizationHistory(organizationId, input = {}) {
     CVProcessingAudit.findOne({ organizationKey })
       .sort({ jobCreatedAt: 1 })
       .select('jobCreatedAt')
-      .lean()
+      .lean(),
+    organizationProcessingSummary(organizationId)
   ]);
   const live = rows.length
     ? await adminJobQuery({
@@ -1796,6 +1826,7 @@ async function listOrganizationHistory(organizationId, input = {}) {
     retainedIndefinitely: false,
     retentionDays: AUDIT_RETENTION_DAYS,
     coverageStartedAt: earliest?.jobCreatedAt || null,
+    processingSummary,
     measuredAt: new Date().toISOString()
   };
 }
