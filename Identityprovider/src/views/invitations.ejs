@@ -105,9 +105,190 @@
       gap: 8px;
       margin-top: 12px;
     }
+    .invite-modal-content {
+      width: min(820px, 100%);
+    }
+    .recipient-input-help {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .recipient-input-help .field-help {
+      margin-top: 0;
+    }
+    .recipient-feedback {
+      display: none;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .recipient-feedback.active {
+      display: block;
+    }
+    .recipient-feedback.error {
+      border-color: color-mix(in srgb, var(--error) 55%, var(--line));
+      background: color-mix(in srgb, var(--error) 9%, transparent);
+      color: var(--error);
+    }
+    .recipient-feedback.success {
+      border-color: color-mix(in srgb, var(--success) 55%, var(--line));
+      background: color-mix(in srgb, var(--success) 9%, transparent);
+      color: var(--text);
+    }
+    .recipient-review {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      overflow: hidden;
+    }
+    .recipient-review-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .recipient-review-title {
+      font-size: 14px;
+      font-weight: 650;
+      color: var(--text);
+    }
+    .recipient-review-title:focus {
+      outline: none;
+    }
+    .recipient-review-summary {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .recipient-review-actions,
+    .recipient-row-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .recipient-list {
+      display: grid;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .recipient-row {
+      display: grid;
+      grid-template-columns: 28px minmax(220px, 1fr) minmax(150px, 0.42fr) auto;
+      align-items: start;
+      gap: 10px;
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .recipient-row:last-child {
+      border-bottom: 0;
+    }
+    .recipient-row.invalid {
+      background: color-mix(in srgb, var(--error) 7%, transparent);
+    }
+    .recipient-index {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      margin-top: 8px;
+      border-radius: 999px;
+      background: var(--panel-strong);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .recipient-field label {
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+    .recipient-field input {
+      min-height: 40px;
+      padding: 9px 11px;
+      font-size: 13px;
+    }
+    .recipient-field-error {
+      display: none;
+      margin-top: 4px;
+      color: var(--error);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .recipient-field-error.active {
+      display: block;
+    }
+    .recipient-row-actions {
+      padding-top: 22px;
+    }
+    .recipient-action-button {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .recipient-action-button:hover:not(:disabled) {
+      border-color: var(--muted);
+      background: var(--input-bg);
+      color: var(--text);
+    }
+    .recipient-action-button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .recipient-action-button.remove:hover:not(:disabled) {
+      border-color: var(--error);
+      color: var(--error);
+    }
+    .recipient-send-status {
+      min-height: 18px;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .recipient-send-status.error {
+      color: var(--error);
+    }
+    .recipient-send-status.success {
+      color: var(--success);
+    }
+    @media (max-width: 700px) {
+      .recipient-input-help,
+      .recipient-review-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .recipient-review-actions .btn {
+        flex: 1 1 0;
+      }
+      .recipient-row {
+        grid-template-columns: 28px minmax(0, 1fr);
+      }
+      .recipient-row .recipient-field,
+      .recipient-row-actions {
+        grid-column: 2;
+      }
+      .recipient-row-actions {
+        padding-top: 0;
+      }
+    }
   </style>
   <link rel="stylesheet" href="/css/main.css?v=4">
   <script src="/js/theme.js?v=3"></script>
+  <script src="/js/invitation-recipient-parser.js?v=1"></script>
 </head>
 <body class="idp-workspace-page">
   <%- include('partials/nav', { activePage: 'organizations' }) %>
@@ -168,15 +349,33 @@
   </div>
 
   <div class="modal" id="inviteModal">
-    <div class="modal-content">
+    <div class="modal-content invite-modal-content" role="dialog" aria-modal="true" aria-labelledby="inviteModalTitle">
       <div class="modal-header">
-        <h2>Invite Member</h2>
-        <button class="modal-close" onclick="hideInviteModal()">&times;</button>
+        <h2 id="inviteModalTitle">Invite Members</h2>
+        <button class="modal-close" type="button" aria-label="Close invitation dialog" onclick="hideInviteModal()">&times;</button>
       </div>
-      <form id="inviteForm">
+      <form id="inviteForm" novalidate>
         <div class="form-group">
-          <label for="email">Email Address *</label>
-          <input type="email" id="email" name="email" required placeholder="colleague@company.com">
+          <label for="recipientSource">Recipient emails *</label>
+          <textarea id="recipientSource" name="recipientSource" required rows="4" placeholder="Paste emails, a copied message, a spreadsheet column, or any mixed text"></textarea>
+          <div class="recipient-input-help">
+            <div class="field-help">We’ll find email addresses anywhere in the text, remove duplicates, and keep their pasted order.</div>
+            <button type="button" class="btn btn-secondary btn-sm" id="reviewRecipientsBtn" onclick="reviewRecipientText()">Review emails</button>
+          </div>
+          <div class="recipient-feedback" id="recipientFeedback" role="status" aria-live="polite"></div>
+          <section class="recipient-review" id="recipientReview" aria-labelledby="recipientReviewTitle" hidden>
+            <div class="recipient-review-header">
+              <div>
+                <div class="recipient-review-title" id="recipientReviewTitle" tabindex="-1">Check recipients</div>
+                <div class="recipient-review-summary" id="recipientReviewSummary"></div>
+              </div>
+              <div class="recipient-review-actions">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="sortRecipientsAlphabetically()">Sort A–Z</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="reviewRecipientText()">Extract again</button>
+              </div>
+            </div>
+            <div class="recipient-list" id="recipientList"></div>
+          </section>
         </div>
         <div class="form-group">
           <label for="role">Role</label>
@@ -194,10 +393,6 @@
         <div class="form-group">
           <label for="designation">Designation *</label>
           <input type="text" id="designation" name="designation" required placeholder="e.g. Software Engineer">
-        </div>
-        <div class="form-group">
-          <label for="employeeId">Employee ID</label>
-          <input type="text" id="employeeId" name="employeeId" maxlength="80" placeholder="e.g. EMP-0042">
         </div>
         <div class="form-group">
           <div class="field-toolbar">
@@ -283,7 +478,7 @@
         <% if (!canAssignApps) { %><div class="field-help">This invitation starts with no product access. A product-access administrator can assign products after the member joins.</div><% } %>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="hideInviteModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="sendInviteBtn">Send Invitation</button>
+          <button type="submit" class="btn btn-primary" id="sendInviteBtn" disabled>Review emails to continue</button>
         </div>
       </form>
     </div>
@@ -296,6 +491,231 @@
     const availableApps = <%- JSON.stringify(availableApps || []) %>;
     let departments = <%- JSON.stringify(departments || []) %>;
     const teams = <%- JSON.stringify(teams || []) %>;
+    const recipientParser = globalThis.InvitationRecipientParser;
+    let recipients = [];
+    let nextRecipientId = 1;
+    let reviewedRecipientSource = '';
+    let isSendingInvitations = false;
+    let inviteDialogTrigger = null;
+    let previousBodyOverflow = '';
+
+    function setRecipientFeedback(message = '', kind = '') {
+      const feedback = document.getElementById('recipientFeedback');
+      feedback.textContent = message;
+      feedback.className = `recipient-feedback${message ? ' active' : ''}${kind ? ` ${kind}` : ''}`;
+    }
+
+    function updateSendInviteButton() {
+      const button = document.getElementById('sendInviteBtn');
+      if (isSendingInvitations) return;
+
+      const isReviewed = recipients.length > 0 && document.getElementById('recipientSource').value === reviewedRecipientSource;
+      const recipientsAreValid = isReviewed && validateRecipients(false);
+      button.disabled = !recipientsAreValid;
+      button.textContent = isReviewed
+        ? `Send ${recipients.length} invitation${recipients.length === 1 ? '' : 's'}`
+        : 'Review emails to continue';
+    }
+
+    function recipientRowMarkup(recipient, index) {
+      return `
+        <div class="recipient-row" data-recipient-id="${recipient.id}">
+          <span class="recipient-index" aria-hidden="true">${index + 1}</span>
+          <div class="recipient-field">
+            <label for="recipient-email-${recipient.id}">Email address</label>
+            <input type="email" id="recipient-email-${recipient.id}" data-recipient-email value="${escapeHtml(recipient.email)}" autocomplete="off">
+            <div class="recipient-field-error" data-recipient-error></div>
+            <div class="recipient-send-status${recipient.sendError ? ' error' : ''}" data-recipient-status>${escapeHtml(recipient.sendError || '')}</div>
+          </div>
+          <div class="recipient-field">
+            <label for="recipient-employee-${recipient.id}">Employee ID <span aria-hidden="true">·</span> optional</label>
+            <input type="text" id="recipient-employee-${recipient.id}" data-recipient-employee-id value="${escapeHtml(recipient.employeeId || '')}" maxlength="80" placeholder="e.g. EMP-0042" autocomplete="off">
+            <div class="recipient-field-error" data-employee-id-error></div>
+          </div>
+          <div class="recipient-row-actions">
+            <button type="button" class="recipient-action-button" data-recipient-action="up" aria-label="Move ${escapeHtml(recipient.email)} up" ${index === 0 ? 'disabled' : ''}>↑</button>
+            <button type="button" class="recipient-action-button" data-recipient-action="down" aria-label="Move ${escapeHtml(recipient.email)} down" ${index === recipients.length - 1 ? 'disabled' : ''}>↓</button>
+            <button type="button" class="recipient-action-button remove" data-recipient-action="remove" aria-label="Remove ${escapeHtml(recipient.email)}">×</button>
+          </div>
+        </div>`;
+    }
+
+    function renderRecipientReview() {
+      const review = document.getElementById('recipientReview');
+      review.hidden = recipients.length === 0;
+      if (recipients.length === 0) {
+        document.getElementById('recipientList').innerHTML = '';
+        updateSendInviteButton();
+        return;
+      }
+
+      document.getElementById('recipientReviewSummary').textContent =
+        `${recipients.length} unique address${recipients.length === 1 ? '' : 'es'} in sending order. Add employee IDs only where needed.`;
+      const list = document.getElementById('recipientList');
+      list.innerHTML = recipients.map(recipientRowMarkup).join('');
+      recipients.forEach((recipient) => {
+        const row = list.querySelector(`[data-recipient-id="${recipient.id}"]`);
+        row.querySelector('[data-recipient-email]').value = recipient.email;
+        row.querySelector('[data-recipient-employee-id]').value = recipient.employeeId || '';
+      });
+
+      list.querySelectorAll('[data-recipient-email]').forEach((input) => {
+        input.addEventListener('input', (event) => {
+          const row = event.target.closest('[data-recipient-id]');
+          const recipient = recipients.find(item => item.id === Number(row.dataset.recipientId));
+          if (!recipient) return;
+          recipient.email = event.target.value.trim();
+          recipient.sendError = '';
+          validateRecipients(false);
+          updateSendInviteButton();
+        });
+      });
+      list.querySelectorAll('[data-recipient-employee-id]').forEach((input) => {
+        input.addEventListener('input', (event) => {
+          const row = event.target.closest('[data-recipient-id]');
+          const recipient = recipients.find(item => item.id === Number(row.dataset.recipientId));
+          if (!recipient) return;
+          recipient.employeeId = event.target.value.trim();
+          recipient.sendError = '';
+          validateRecipients(false);
+          updateSendInviteButton();
+        });
+      });
+      list.querySelectorAll('[data-recipient-action]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const row = button.closest('[data-recipient-id]');
+          changeRecipientOrder(Number(row.dataset.recipientId), button.dataset.recipientAction);
+        });
+      });
+
+      validateRecipients(false);
+      updateSendInviteButton();
+    }
+
+    function validateRecipients(focusFirstInvalid = false) {
+      if (recipients.length === 0) return false;
+      const emailKeys = new Set();
+      const employeeIdKeys = new Set();
+      let firstInvalidInput = null;
+      let isValid = true;
+
+      recipients.forEach((recipient) => {
+        const row = document.querySelector(`[data-recipient-id="${recipient.id}"]`);
+        if (!row) return;
+        const emailInput = row.querySelector('[data-recipient-email]');
+        const employeeIdInput = row.querySelector('[data-recipient-employee-id]');
+        const emailError = row.querySelector('[data-recipient-error]');
+        const employeeIdError = row.querySelector('[data-employee-id-error]');
+        const normalizedEmail = recipient.email.trim().toLowerCase();
+        const employeeIdKey = recipient.employeeId.trim().toLowerCase();
+        let emailMessage = '';
+        let employeeIdMessage = '';
+
+        if (!recipientParser.isValidEmail(normalizedEmail)) {
+          emailMessage = 'Enter a complete, valid email address.';
+        } else if (emailKeys.has(normalizedEmail)) {
+          emailMessage = 'This address is already in the batch.';
+        } else {
+          emailKeys.add(normalizedEmail);
+          recipient.email = normalizedEmail;
+        }
+
+        if (employeeIdKey && employeeIdKeys.has(employeeIdKey)) {
+          employeeIdMessage = 'Employee IDs must be unique in this batch.';
+        } else if (employeeIdKey) {
+          employeeIdKeys.add(employeeIdKey);
+        }
+
+        emailError.textContent = emailMessage;
+        emailError.classList.toggle('active', Boolean(emailMessage));
+        employeeIdError.textContent = employeeIdMessage;
+        employeeIdError.classList.toggle('active', Boolean(employeeIdMessage));
+        row.classList.toggle('invalid', Boolean(emailMessage || employeeIdMessage));
+        emailInput.setAttribute('aria-invalid', String(Boolean(emailMessage)));
+        employeeIdInput.setAttribute('aria-invalid', String(Boolean(employeeIdMessage)));
+
+        if (emailMessage || employeeIdMessage) {
+          isValid = false;
+          firstInvalidInput ||= emailMessage ? emailInput : employeeIdInput;
+        }
+      });
+
+      if (focusFirstInvalid) firstInvalidInput?.focus();
+      return isValid;
+    }
+
+    function reviewRecipientText() {
+      const source = document.getElementById('recipientSource');
+      const result = recipientParser.extractEmailAddresses(source.value);
+      if (result.emails.length === 0) {
+        recipients = [];
+        reviewedRecipientSource = '';
+        renderRecipientReview();
+        setRecipientFeedback('No email addresses were found. Paste the original message or list and try again.', 'error');
+        source.focus();
+        return;
+      }
+
+      recipients = result.emails.map(email => ({
+        id: nextRecipientId++,
+        email,
+        employeeId: '',
+        sendError: ''
+      }));
+      reviewedRecipientSource = source.value;
+      renderRecipientReview();
+
+      const notes = [`Found ${recipients.length} unique email address${recipients.length === 1 ? '' : 'es'}. Check the list and order before sending.`];
+      if (result.duplicateCount > 0) {
+        notes.push(`${result.duplicateCount} duplicate${result.duplicateCount === 1 ? ' was' : 's were'} removed.`);
+      }
+      if (result.truncatedCount > 0) {
+        notes.push(`This batch is limited to ${result.limit}; ${result.truncatedCount} additional address${result.truncatedCount === 1 ? ' was' : 'es were'} not added.`);
+      }
+      setRecipientFeedback(notes.join(' '), result.truncatedCount > 0 ? '' : 'success');
+      document.getElementById('recipientReviewTitle').focus?.();
+    }
+
+    function changeRecipientOrder(recipientId, action) {
+      const index = recipients.findIndex(recipient => recipient.id === recipientId);
+      if (index < 0) return;
+      if (action === 'remove') {
+        recipients.splice(index, 1);
+      } else {
+        const targetIndex = action === 'up' ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= recipients.length) return;
+        [recipients[index], recipients[targetIndex]] = [recipients[targetIndex], recipients[index]];
+      }
+      renderRecipientReview();
+      if (recipients.length === 0) {
+        reviewedRecipientSource = '';
+        setRecipientFeedback('All extracted addresses were removed. Paste or review the text again.', 'error');
+      }
+    }
+
+    function sortRecipientsAlphabetically() {
+      recipients.sort((left, right) => left.email.localeCompare(right.email));
+      renderRecipientReview();
+      setRecipientFeedback('Recipients sorted alphabetically. Check the order before sending.', 'success');
+    }
+
+    function invalidateRecipientReview() {
+      const source = document.getElementById('recipientSource');
+      if (recipients.length === 0 || source.value === reviewedRecipientSource) return;
+      recipients = [];
+      reviewedRecipientSource = '';
+      renderRecipientReview();
+      setRecipientFeedback('The pasted text changed. Review it again before sending.', '');
+    }
+
+    function setRecipientSendStatus(recipientId, message, kind = '') {
+      const recipient = recipients.find(item => item.id === recipientId);
+      if (recipient) recipient.sendError = kind === 'error' ? message : '';
+      const status = document.querySelector(`[data-recipient-id="${recipientId}"] [data-recipient-status]`);
+      if (!status) return;
+      status.textContent = message;
+      status.className = `recipient-send-status${kind ? ` ${kind}` : ''}`;
+    }
 
     function sortDepartments(list) {
       return [...list].sort((left, right) => left.name.localeCompare(right.name));
@@ -329,21 +749,32 @@
     }
 
     function showInviteModal() {
+      inviteDialogTrigger = document.activeElement;
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
       document.getElementById('inviteModal').classList.add('active');
       renderDepartmentOptions(document.getElementById('department').value || getDefaultDepartmentId());
       syncTeamOptions();
       updateAppAccessSelectorVisibility();
       resetCreateDepartmentPanel();
+      setTimeout(() => document.getElementById('recipientSource').focus(), 0);
     }
 
     function hideInviteModal() {
+      if (isSendingInvitations) return;
       document.getElementById('inviteModal').classList.remove('active');
+      document.body.style.overflow = previousBodyOverflow;
       document.getElementById('inviteForm').reset();
+      recipients = [];
+      reviewedRecipientSource = '';
+      setRecipientFeedback();
+      renderRecipientReview();
       clearSelectedApps();
       renderDepartmentOptions(getDefaultDepartmentId());
       syncTeamOptions();
       updateAppAccessSelectorVisibility();
       resetCreateDepartmentPanel();
+      inviteDialogTrigger?.focus?.();
     }
 
     function setTeamHelpText(message, isWarning = false) {
@@ -462,10 +893,16 @@
 
     document.getElementById('inviteForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const email = document.getElementById('email').value;
+      const form = e.currentTarget;
+      const source = document.getElementById('recipientSource');
+      if (recipients.length === 0 || source.value !== reviewedRecipientSource) {
+        reviewRecipientText();
+        return;
+      }
+      if (!validateRecipients(true) || !form.reportValidity()) return;
+
       const role = document.getElementById('role').value;
       const designation = document.getElementById('designation').value.trim();
-      const employeeId = document.getElementById('employeeId').value.trim();
       const department = document.getElementById('department').value;
       const team = document.getElementById('team').value || null;
       const appAccessMode = canAssignAppsClient
@@ -487,35 +924,63 @@
         return;
       }
 
-      try {
-        sendInviteBtn.disabled = true;
-        sendInviteBtn.textContent = 'Sending...';
-        const response = await fetch(`/api/organizations/${orgId}/invitations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            role,
-            designation,
-            employeeId,
-            department,
-            team,
-            appAccess: { mode: appAccessMode, appIds: selectedAppIds }
-          })
-        });
-        if (response.ok) {
-          window.location.reload();
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to send invitation');
-          sendInviteBtn.disabled = false;
-          sendInviteBtn.textContent = 'Send Invitation';
+      isSendingInvitations = true;
+      sendInviteBtn.disabled = true;
+      const batch = recipients.map(recipient => ({ ...recipient }));
+      const failures = [];
+      let sentCount = 0;
+
+      for (let index = 0; index < batch.length; index += 1) {
+        const recipient = batch[index];
+        sendInviteBtn.textContent = `Sending ${index + 1} of ${batch.length}…`;
+        setRecipientSendStatus(recipient.id, 'Sending…');
+        try {
+          const response = await fetch(`/api/organizations/${orgId}/invitations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: recipient.email,
+              role,
+              designation,
+              employeeId: recipient.employeeId,
+              department,
+              team,
+              appAccess: { mode: appAccessMode, appIds: selectedAppIds }
+            })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const message = data.error || 'Invitation could not be sent.';
+            failures.push({ ...recipient, sendError: message });
+            setRecipientSendStatus(recipient.id, message, 'error');
+            continue;
+          }
+          sentCount += 1;
+          setRecipientSendStatus(recipient.id, 'Invitation sent', 'success');
+        } catch (error) {
+          const message = 'Network error. Check your connection and try again.';
+          failures.push({ ...recipient, sendError: message });
+          setRecipientSendStatus(recipient.id, message, 'error');
         }
-      } catch (error) {
-        alert('Failed to send invitation');
-        sendInviteBtn.disabled = false;
-        sendInviteBtn.textContent = 'Send Invitation';
       }
+
+      if (failures.length === 0) {
+        sendInviteBtn.textContent = `${sentCount} invitation${sentCount === 1 ? '' : 's'} sent`;
+        setRecipientFeedback(`${sentCount} invitation${sentCount === 1 ? '' : 's'} sent successfully.`, 'success');
+        window.location.reload();
+        return;
+      }
+
+      recipients = failures;
+      source.value = failures.map(recipient => recipient.email).join('\n');
+      reviewedRecipientSource = source.value;
+      isSendingInvitations = false;
+      renderRecipientReview();
+      setRecipientFeedback(
+        `${sentCount} invitation${sentCount === 1 ? '' : 's'} sent. ${failures.length} recipient${failures.length === 1 ? '' : 's'} still need attention. Fix the listed issue${failures.length === 1 ? '' : 's'} and send again.`,
+        'error'
+      );
+      updateSendInviteButton();
     });
 
     async function resendInvite(inviteId) {
@@ -552,6 +1017,33 @@
     document.querySelectorAll('input[name="appAccessMode"]').forEach(input => {
       input.addEventListener('change', updateAppAccessSelectorVisibility);
     });
+    document.getElementById('recipientSource').addEventListener('input', invalidateRecipientReview);
+    document.getElementById('recipientSource').addEventListener('paste', () => {
+      setTimeout(reviewRecipientText, 0);
+    });
+    document.addEventListener('keydown', (event) => {
+      const modal = document.getElementById('inviteModal');
+      if (!modal.classList.contains('active')) return;
+      if (event.key === 'Escape') {
+        hideInviteModal();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(modal.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+      )).filter(element => element.offsetParent !== null);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+    renderRecipientReview();
     renderDepartmentOptions(getDefaultDepartmentId());
     syncTeamOptions();
     updateAppAccessSelectorVisibility();
