@@ -174,7 +174,7 @@ export default function CvProcessingPage() {
     setRetrying(true)
     try {
       await retryCVIngestionJob(selected.jobId, stage)
-      toast.success("CV processing restarted")
+      toast.success(selected.state === "waiting_for_chatgpt" ? "CV analysis queued now" : "CV processing restarted")
       await Promise.all([openJob(selected.jobId), load({ silent: true })])
     } catch (retryError) {
       toast.error(retryError instanceof Error ? retryError.message : "CV processing could not be retried")
@@ -305,12 +305,14 @@ export default function CvProcessingPage() {
             <div className="mt-6 space-y-6">
               <div className="border p-4">
                 <div className="flex items-start justify-between gap-4"><div><p className="font-medium">{fileName(selected)}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{selected.jobId}</p>{selected.revision ? <p className="mt-1 text-xs text-muted-foreground">Revision {selected.revision}</p> : null}</div><div className="flex items-center gap-2 text-sm"><StateMark job={selected} />{stateLabel(selected)}</div></div>
+                {selected.state === "waiting_for_chatgpt" && selected.retry?.canRunNow ? <Button className="mt-4" size="sm" onClick={() => void retrySelected("analysis")} disabled={retrying}>{retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}Run analysis now</Button> : null}
                 {selected.retry?.available ? <Button className="mt-4" size="sm" onClick={() => void retrySelected()} disabled={retrying}>{retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}Retry processing</Button> : null}
                 {selected.retry?.replacementAvailable && !selected.retry.available ? <><Button className="mt-4" size="sm" variant="outline" onClick={() => replacementInputRef.current?.click()} disabled={replacing}>{replacing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}Upload corrected CV</Button><input ref={replacementInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.tif,.tiff" aria-label={`Choose a corrected CV for ${fileName(selected)}`} onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSelected(file); event.target.value = "" }} /></> : null}
               </div>
               <CvProcessingTimeline job={selected} />
               <div>
-                <h3 className="text-sm font-medium">Attempts</h3>
+                <h3 className="text-sm font-medium">Attempt history</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Previous errors remain here for audit. The status at the top is the current result.</p>
                 <div className="mt-3 divide-y border">{(selected.attemptHistory || []).map((attempt) => <div key={`${attempt.number}:${attempt.startedAt}`} className="px-3 py-2 text-sm"><div className="flex justify-between"><span>Attempt {attempt.number} · {attempt.trigger}</span><span className="capitalize text-muted-foreground">{attempt.status.replaceAll("_", " ")}</span></div><p className="mt-1 text-xs text-muted-foreground">{attempt.stage ? `Stage: ${attempt.stage.replaceAll("_", " ")} · ` : ""}Started {formatDate(attempt.startedAt)}{attempt.finishedAt ? ` · Finished ${formatDate(attempt.finishedAt)}` : ""}{attempt.errorCode ? ` · ${attempt.errorCode}` : ""}</p>{attempt.errorMessage ? <p className="mt-1 text-xs text-red-700">{attempt.errorMessage}</p> : null}</div>)}{!selected.attemptHistory?.length ? <p className="px-3 py-4 text-sm text-muted-foreground">No attempt history was retained.</p> : null}</div>
               </div>
             </div>

@@ -48,7 +48,7 @@ router.get('/jobs/:jobId', ...canView, async (request, response) => {
 
 router.post('/jobs/:jobId/retry', ...canRetry, async (request, response) => {
   try {
-    const result = await cvAnalysisQueue.retryFailedJob(request.params.jobId, {
+    const result = await cvAnalysisQueue.retryJobNow(request.params.jobId, {
       administrator: true,
       stage: request.body?.stage,
       requestedBy: {

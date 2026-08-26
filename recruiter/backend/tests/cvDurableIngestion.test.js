@@ -494,6 +494,19 @@ test('a public CV is projected from Azure storage onto its candidate before Chat
   assert.equal(detail.candidate.id, String(candidate._id));
   assert.equal(detail.artifacts.profile.available, true);
   assert.equal(detail.artifacts.managedFile.provider, 'azure-blob');
+  assert.equal(detail.retry.canRunNow, true);
+
+  cvQueue._setDependenciesForTests({
+    queue: { async getJob() { return null; } }
+  });
+  const reinitiated = await cvQueue.retryJobNow(processingJob.publicId, {
+    organizationId,
+    stage: 'analysis',
+    requestedBy: { type: 'user', id: new mongoose.Types.ObjectId(), name: 'Test recruiter' }
+  });
+  assert.equal(reinitiated.job.state, 'queued');
+  assert.equal(reinitiated.job.stage, 'retry_scheduled');
+  assert.equal(reinitiated.job.retry.manualRequests, 1);
 });
 
 test('offline and BUSY deliveries do not consume the five bounded failure attempts', async () => {

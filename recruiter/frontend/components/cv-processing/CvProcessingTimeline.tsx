@@ -34,14 +34,25 @@ export function CvProcessingTimeline({ job, dark = false }: { job: CVIngestionJo
   ] as const
   const muted = dark ? "text-gray-500" : "text-muted-foreground"
   const border = dark ? "border-gray-700" : "border-border"
+  const waitingForRuntime = job.state === "waiting_for_chatgpt"
+  const runtimeOwnerRequired = waitingForRuntime && job.error?.code === "ORG_AUTOMATION_RUNTIME_REQUIRED"
+  const errorPanelClass = waitingForRuntime
+    ? dark
+      ? "border border-amber-900 bg-amber-950/40 p-3 text-sm text-amber-100"
+      : "border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+    : dark
+      ? "border border-red-900 bg-red-950/40 p-3 text-sm text-red-200"
+      : "border border-red-200 bg-red-50 p-3 text-sm text-red-800"
 
   return (
     <div className="space-y-5" data-testid="cv-processing-timeline">
       {job.error?.message ? (
-        <div className={dark ? "border border-red-900 bg-red-950/40 p-3 text-sm text-red-200" : "border border-red-200 bg-red-50 p-3 text-sm text-red-800"}>
-          <p className="font-medium">{job.error.code || "Processing failed"}</p>
-          <p className="mt-1">{job.error.message}</p>
-          <p className="mt-2 text-xs opacity-80">Stage: {(job.error.stage || job.stage || "not reported").replaceAll("_", " ")} · Failed: {formatDate(job.error.at || job.failedAt)}</p>
+        <div className={errorPanelClass}>
+          <p className="font-medium">{runtimeOwnerRequired ? "Waiting for the job owner's ChatGPT" : job.error.code || "Processing failed"}</p>
+          <p className="mt-1">{runtimeOwnerRequired
+            ? "The recruiter who posted this job—or an assigned hiring-team member—needs an active ChatGPT connection. The CV is safely stored and will stay in the queue."
+            : job.error.message}</p>
+          <p className="mt-2 text-xs opacity-80">{waitingForRuntime ? "Last attempt" : "Stage"}: {(job.error.stage || job.stage || "not reported").replaceAll("_", " ")} · {waitingForRuntime ? "Checked" : "Failed"}: {formatDate(job.error.at || job.failedAt)}{runtimeOwnerRequired ? ` · ${job.error.code}` : ""}</p>
         </div>
       ) : null}
 

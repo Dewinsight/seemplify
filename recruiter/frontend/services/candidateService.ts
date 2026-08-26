@@ -610,6 +610,7 @@ export interface CVIngestionJob {
   error?: { code?: string | null; message?: string | null; stage?: string | null; at?: string | null } | null;
   retry?: {
     available?: boolean;
+    canRunNow?: boolean;
     availableUntil?: string | null;
     nextAttemptAt?: string | null;
     requestedStage?: 'failed' | 'parsing' | 'analysis' | null;

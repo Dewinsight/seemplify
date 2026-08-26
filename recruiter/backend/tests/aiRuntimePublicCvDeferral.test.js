@@ -13,6 +13,7 @@ const {
 } = require('../services/cvAnalysisQueueService');
 const { handleLoginRuntimeCheck } = require('../services/cvLoginRuntimeService');
 const AIUserRuntimeAccount = require('../models/AIUserRuntimeAccount');
+const Job = require('../models/Job');
 const Notification = require('../models/Notification');
 const Organization = require('../models/Organization');
 const User = require('../models/User');
@@ -71,7 +72,7 @@ test('every ChatGPT runtime-gate failure defers instead of failing a CV', () => 
   assert.equal(isRuntimeGateError({ code: 'AI_RUNTIME_ERROR', message: 'boom' }), false);
 });
 
-test('an actorless public CV uses the newest connected and authorized workspace member account', async () => {
+test('a public CV prefers the connected job poster before another authorized workspace member', async () => {
   const organizationId = new mongoose.Types.ObjectId();
   const stale = await User.create({
     email: 'stale@example.test',
@@ -88,6 +89,14 @@ test('an actorless public CV uses the newest connected and authorized workspace 
     currentOrganization: organizationId,
     organizationMemberships: [{ organization: organizationId, role: 'owner', isActive: true }],
     profile: { firstName: 'Olu', lastName: 'Owner' }
+  });
+  const poster = await User.create({
+    email: 'poster@example.test',
+    password: 'Password-123!',
+    idpSubject: 'poster-subject',
+    currentOrganization: organizationId,
+    organizationMemberships: [{ organization: organizationId, role: 'recruiter', isActive: true }],
+    profile: { firstName: 'Jo', lastName: 'Poster' }
   });
   const outsider = await User.create({
     email: 'outsider@example.test',
@@ -113,6 +122,15 @@ test('an actorless public CV uses the newest connected and authorized workspace 
     connectedAt: new Date('2026-06-01')
   });
   await AIUserRuntimeAccount.create({
+    user: poster._id,
+    organization: organizationId,
+    idpSubject: 'poster-subject',
+    subjectKey: 'e'.repeat(24),
+    status: 'connected',
+    dataSharingAcknowledgedAt: new Date(),
+    connectedAt: new Date('2026-05-01')
+  });
+  await AIUserRuntimeAccount.create({
     user: outsider._id,
     organization: organizationId,
     idpSubject: 'outsider-subject',
@@ -126,6 +144,43 @@ test('an actorless public CV uses the newest connected and authorized workspace 
   assert.ok(resolved, 'a connected authorized member must supply the workspace runtime');
   assert.equal(resolved.id, String(owner._id));
   assert.equal(resolved.user.email, 'owner@example.test');
+
+  const postedJob = await Job.create({
+    title: 'Runtime ownership test',
+    department: new mongoose.Types.ObjectId(),
+    location: 'Remote',
+    type: 'Full-time',
+    level: 'Senior',
+    description: 'Test role',
+    requirements: 'Test requirements',
+    responsibilities: 'Test responsibilities',
+    experience: '5 years',
+    education: 'Degree',
+    organization: organizationId,
+    createdBy: poster._id,
+    recruiters: [owner._id]
+  });
+  const jobOwned = await resolveOrganizationRuntimeActor(organizationId, postedJob._id);
+  assert.ok(jobOwned);
+  assert.equal(jobOwned.id, String(poster._id), 'the job poster owns public-application analysis');
+
+  const fallbackJob = await Job.create({
+    title: 'Runtime fallback test',
+    department: new mongoose.Types.ObjectId(),
+    location: 'Remote',
+    type: 'Full-time',
+    level: 'Senior',
+    description: 'Test role',
+    requirements: 'Test requirements',
+    responsibilities: 'Test responsibilities',
+    experience: '5 years',
+    education: 'Degree',
+    organization: organizationId,
+    createdBy: stale._id,
+    recruiters: [owner._id]
+  });
+  const assignedFallback = await resolveOrganizationRuntimeActor(organizationId, fallbackJob._id);
+  assert.equal(assignedFallback.id, String(owner._id), 'an assigned recruiter is used when the poster is not routable');
 
   const nobody = await resolveOrganizationRuntimeActor(new mongoose.Types.ObjectId());
   assert.equal(nobody, null, 'an organization with no routable account resolves to none');

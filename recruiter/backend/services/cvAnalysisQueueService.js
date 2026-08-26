@@ -371,6 +371,9 @@ function retrySummary(job = {}, { includeActor = false, includeCapabilities = fa
   const extractedTextAvailable = Boolean(job.resumeText);
   return {
     available: available && (durableAvailable || extractedTextAvailable) && (cloudinaryAvailable || durableAvailable),
+    canRunNow: job.state === 'waiting_for_chatgpt'
+      && extractedTextAvailable
+      && cloudinaryAvailable,
     availableUntil,
     nextAttemptAt: job.retry?.nextAttemptAt || null,
     deferredCycles: Number(job.retry?.deferredCycles || 0),
@@ -2065,7 +2068,7 @@ function isUnboundedRuntimeDeferral(error) {
  * runtime the administrator selected — exactly as if the recruiter had
  * uploaded the CV themselves, so queued work uses the correct connected account.
  */
-async function resolveOrganizationRuntimeActor(organizationId) {
+async function resolveOrganizationRuntimeActor(organizationId, jobAppliedForId = null) {
   const key = String(organizationId || '').trim();
   if (!mongoose.isValidObjectId(key)) return null;
   try {
@@ -2098,7 +2101,31 @@ async function resolveOrganizationRuntimeActor(organizationId) {
       .sort({ connectedAt: -1 })
       .select('user organization connectedAt')
       .lean();
-    const selected = accounts.find((account) => String(account.organization || '') === key)
+    // A public application belongs to a job, so its runtime ownership follows
+    // that job's human ownership rather than whichever organization member
+    // happened to connect ChatGPT last. The poster is primary; an explicitly
+    // assigned hiring manager or recruiter is the deterministic fallback for
+    // legacy/imported jobs or a poster without a routable connection.
+    let assignedUserIds = [];
+    if (mongoose.isValidObjectId(String(jobAppliedForId || ''))) {
+      const appliedJob = await Job.findOne({
+        _id: jobAppliedForId,
+        organization: organizationId
+      }).select('createdBy hiringManager recruiters').lean();
+      assignedUserIds = [
+        appliedJob?.createdBy,
+        appliedJob?.hiringManager,
+        ...(appliedJob?.recruiters || [])
+      ]
+        .filter(Boolean)
+        .map((value) => String(value))
+        .filter((value, index, values) => values.indexOf(value) === index);
+    }
+    const assignedAccount = assignedUserIds
+      .map((userId) => accounts.find((account) => String(account.user) === userId))
+      .find(Boolean);
+    const selected = assignedAccount
+      || accounts.find((account) => String(account.organization || '') === key)
       || accounts[0];
     const owner = selected ? memberById.get(String(selected.user)) : null;
     if (!owner) return null;
@@ -5040,7 +5067,10 @@ async function processJob(bullJob, workerToken) {
     ]);
     const runtimeActor = processingJob.actor
       ? null
-      : await resolveOrganizationRuntimeActor(processingJob.organization);
+      : await resolveOrganizationRuntimeActor(
+        processingJob.organization,
+        processingJob.jobAppliedFor
+      );
     const effectiveActorId = processingJob.actor ? String(processingJob.actor) : runtimeActor?.id;
     const effectiveActor = actor || runtimeActor?.user || null;
     const canonicalActorId = effectiveActor?.idpSubject || undefined;
@@ -5226,7 +5256,7 @@ async function processJob(bullJob, workerToken) {
   } catch (error) {
     if (!processingJob.actor && error?.code === 'AI_RUNTIME_ACCOUNT_REQUIRED') {
       error.code = 'ORG_AUTOMATION_RUNTIME_REQUIRED';
-      error.message = 'Sign in to Recruiter with a connected ChatGPT account, or connect or refresh ChatGPT, to continue public CV analysis';
+      error.message = 'The recruiter who posted this job, or an assigned hiring-team member, must have a connected ChatGPT account and sign in to Recruiter before public CV analysis can continue';
     }
     const cancelledJob = await CVProcessingJob.findOne({
       _id: processingJob._id,
@@ -5710,15 +5740,27 @@ async function retryFailedJob(publicId, {
   };
 }
 
-async function retryJobNow(publicId, { requestedBy, stage = 'failed' } = {}) {
-  const job = await CVProcessingJob.findOne({ publicId: String(publicId || '') }).select('+resumeText');
+async function retryJobNow(publicId, {
+  organizationId,
+  administrator = false,
+  requestedBy,
+  stage = 'failed'
+} = {}) {
+  if (!administrator && !organizationId) {
+    throw manualRetryError('CV_RETRY_ORGANIZATION_REQUIRED', 'An organization is required to retry CV processing', 403);
+  }
+  const job = await CVProcessingJob.findOne({
+    publicId: String(publicId || ''),
+    ...(administrator ? {} : { organization: organizationId })
+  }).select('+resumeText');
   if (!job) throw manualRetryError('CV_JOB_NOT_FOUND', 'CV processing job was not found', 404);
   if (job.source === 'ai-interview') {
     throw manualRetryError('CV_RETRY_EXTERNAL_JOB', 'AI Interview CV jobs retry automatically in the AI Interview service');
   }
   if (job.state === 'failed') {
     return retryFailedJob(job.publicId, {
-      administrator: true,
+      administrator,
+      organizationId,
       requestedBy: requestedBy || { type: 'system', name: 'Seemplify ChatGPT Gateway' },
       stage
     });
@@ -5795,6 +5837,7 @@ async function promoteWaitingJobsForOrganization(organizationId, { limit = 25 } 
   for (const job of waiting) {
     try {
       await retryJobNow(job.publicId, {
+        organizationId,
         requestedBy: { type: 'system', name: 'Login runtime check' }
       });
       promoted += 1;
@@ -7434,7 +7477,7 @@ async function retryBatchNow(publicId, organizationId, requestedBy) {
     }
     if (!['waiting_for_chatgpt', 'failed'].includes(job.state)) continue;
     try {
-      await retryJobNow(job.publicId, { requestedBy });
+      await retryJobNow(job.publicId, { organizationId, requestedBy });
       promoted += 1;
     } catch (error) {
       if (!['CV_RETRY_NOT_WAITING', 'CV_RETRY_ALREADY_RUNNING'].includes(error?.code)) throw error;

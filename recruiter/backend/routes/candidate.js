@@ -206,7 +206,7 @@ router.post(
   requirePermission('manage_candidates'),
   async (req, res) => {
     try {
-      const result = await cvAnalysisQueue.retryFailedJob(req.params.jobId, {
+      const result = await cvAnalysisQueue.retryJobNow(req.params.jobId, {
         organizationId: req.user.currentOrganization,
         stage: req.body?.stage,
         requestedBy: {
