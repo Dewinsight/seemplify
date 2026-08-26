@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Profile Picture - Seemplify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style><%- include('../public/css/idp-theme.css') %></style>
+    <link rel="stylesheet" href="/css/main.css?v=3">
+    <link rel="stylesheet" href="/css/profile-dashboard.css?v=2">
+    <link rel="stylesheet" href="/css/profile-avatar.css?v=1">
+    <script src="/js/theme.js?v=3"></script>
+</head>
+<body class="idp-workspace-page">
+<%- include('partials/nav', { activePage: 'profile' }) %>
+<main class="container avatar-page">
+    <div class="header">
+        <div>
+            <div class="profile-kicker">Seemplify Identity</div>
+            <h1>Profile Picture</h1>
+            <div class="header-subtitle">Update it once here. Workspace and other Seemplify apps will use the same picture.</div>
+        </div>
+    </div>
+    <%- include('partials/profile-nav', { activeProfileSection }) %>
+
+    <div id="avatarSuccess" class="alert alert-success" role="status" aria-live="polite"></div>
+    <div id="avatarError" class="alert alert-error" role="alert"></div>
+
+    <section class="card avatar-owner-card" aria-labelledby="avatar-card-title">
+        <div class="avatar-owner-preview">
+            <% if (user.profile?.picture) { %>
+                <img id="currentAvatar" src="<%= user.profile.picture %>" alt="Current profile picture">
+            <% } else { %>
+                <span id="currentAvatarFallback" aria-label="No profile picture set"><%= (user.profile?.name || user.email || 'S')[0].toUpperCase() %></span>
+            <% } %>
+        </div>
+        <div class="avatar-owner-copy">
+            <span class="ownership-badge">Canonical account picture</span>
+            <h2 id="avatar-card-title"><%= user.profile?.name || user.email %></h2>
+            <p>Your photo belongs to your Seemplify identity—not to an individual app. Changes are supplied through the standard OpenID profile.</p>
+            <div class="avatar-actions">
+                <input id="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+                <button id="chooseAvatar" class="btn btn-primary" type="button">
+                    <span aria-hidden="true">＋</span> Choose a picture
+                </button>
+                <% if (user.profile?.picture) { %>
+                    <button id="removeAvatar" class="btn btn-secondary" type="button">Remove picture</button>
+                <% } %>
+            </div>
+            <p class="avatar-file-hint">JPEG, PNG, or WebP. Up to 5 MB. The final picture is cropped to a square.</p>
+        </div>
+    </section>
+
+    <section class="avatar-propagation" aria-label="Where this picture is used">
+        <div><strong>One picture</strong><span>Managed in Identity</span></div>
+        <span class="propagation-arrow" aria-hidden="true">→</span>
+        <div><strong>Every product</strong><span>Workspace, calls, messages, and community</span></div>
+    </section>
+</main>
+
+<div id="cropOverlay" class="identity-crop-overlay" hidden>
+    <button id="cropBackdrop" class="identity-crop-backdrop" type="button" tabindex="-1" aria-label="Cancel profile picture crop"></button>
+    <section class="identity-crop-dialog" role="dialog" aria-modal="true" aria-labelledby="cropTitle" aria-describedby="cropDescription">
+        <header>
+            <div><span class="profile-kicker">Profile picture</span><h2 id="cropTitle">Position and crop</h2></div>
+            <button id="closeCrop" class="crop-icon-button" type="button" aria-label="Close profile picture crop">×</button>
+        </header>
+        <p id="cropDescription">Drag the photo to reposition it. You can also focus the crop area and use the arrow keys.</p>
+        <div id="cropViewport" class="identity-crop-viewport" tabindex="0" aria-label="Profile picture crop area. Use arrow keys to reposition.">
+            <img id="cropImage" alt="Selected profile picture">
+            <span class="identity-crop-grid" aria-hidden="true"></span>
+            <span class="identity-crop-mask" aria-hidden="true"></span>
+        </div>
+        <div class="identity-crop-controls">
+            <label for="cropZoom">Zoom</label>
+            <input id="cropZoom" type="range" min="1" max="3" step="0.05" value="1">
+            <button id="resetCrop" class="btn btn-secondary" type="button">Reset</button>
+        </div>
+        <p id="cropError" class="identity-crop-error" role="alert" hidden></p>
+        <footer>
+            <button id="cancelCrop" class="btn btn-secondary" type="button">Cancel</button>
+            <button id="applyCrop" class="btn btn-primary" type="button">Apply and upload</button>
+        </footer>
+    </section>
+</div>
+
+<script src="/js/profile-avatar.js?v=1"></script>
+<script src="/js/invitation-gatekeeper.js"></script>
+</body>
+</html>

@@ -147,6 +147,7 @@
     font-weight: 750;
     letter-spacing: 0.02em;
   }
+  body .idp-global-nav img.user-avatar { object-fit: cover; }
 
   body .idp-global-nav .user-toggle .top-nav-user-info {
     min-width: 0;
@@ -416,7 +417,11 @@
     </a>
     <details class="user-dropdown">
       <summary class="user-toggle">
-        <span class="user-avatar" aria-hidden="true"><%= navUserInitials %></span>
+        <% if (user.profile?.picture) { %>
+          <img class="user-avatar" src="<%= user.profile.picture %>" alt="">
+        <% } else { %>
+          <span class="user-avatar" aria-hidden="true"><%= navUserInitials %></span>
+        <% } %>
         <div class="top-nav-user-info">
           <div class="top-nav-user-name">
             <%= navUserDisplayName %>

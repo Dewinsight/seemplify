@@ -192,6 +192,7 @@ async function getCachedClaims(acc) {
     email_verified: acc.emailVerified,
     name: acc.profile?.name,
     preferred_username: acc.profile?.preferred_username,
+    picture: acc.profile?.picture || undefined,
     // Organization claims (with permissions)
     organizations: organizationClaims,
     current_organization: currentOrganization,
@@ -1022,7 +1023,7 @@ const config = {
       // Grant all requested scopes
       grant.addOIDCScope('openid email profile offline_access');
       grant.addOIDCClaims([
-        'email', 'email_verified', 'name', 'preferred_username', 'organizations', 'teams',
+        'email', 'email_verified', 'name', 'preferred_username', 'picture', 'organizations', 'teams',
         'team_permissions', 'current_organization', 'currentOrganization', 'authorization',
         'roles', 'product_permissions', 'platform_roles', 'platform_permissions'
       ]);
@@ -1038,7 +1039,7 @@ const config = {
     openid: ['sub'],
     email: ['email', 'email_verified'],
     profile: [
-      'name', 'preferred_username', 'organizations', 'teams', 'team_permissions',
+      'name', 'preferred_username', 'picture', 'organizations', 'teams', 'team_permissions',
       'current_organization', 'currentOrganization', 'authorization', 'roles',
       'product_permissions', 'platform_roles', 'platform_permissions'
     ]
@@ -6342,7 +6343,8 @@ app.get('/api/profile', getSessionUser, async (req, res) => {
       emailVerified: req.user.emailVerified,
       profile: {
         name: req.user.profile?.name || null,
-        preferred_username: req.user.profile?.preferred_username || null
+        preferred_username: req.user.profile?.preferred_username || null,
+        picture: req.user.profile?.picture || null
       },
       createdAt: req.user.createdAt
     })
@@ -10367,6 +10369,15 @@ app.get('/profile/personal', getSessionUser, async (req, res) => {
     res.render('profile-personal', buildProfilePageViewModel(req, 'personal'))
   } catch (error) {
     console.error('Error loading personal page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/avatar', getSessionUser, async (req, res) => {
+  try {
+    res.render('profile-avatar', buildProfilePageViewModel(req, 'avatar'))
+  } catch (error) {
+    console.error('Error loading profile picture page:', error)
     res.status(500).send('Error loading page')
   }
 })

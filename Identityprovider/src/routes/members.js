@@ -191,7 +191,7 @@ router.get('/:orgId/members',
   async (req, res) => {
     try {
       const organization = await Organization.findById(req.params.orgId)
-        .populate('members.account', 'sub email profile.name emailVerified createdAt isSuperAdmin authorizationRevision')
+        .populate('members.account', 'sub email profile.name profile.picture emailVerified createdAt isSuperAdmin authorizationRevision')
         .populate('members.invitedBy', 'email profile.name')
       await organization.save()
       const { appIdSet, appNameById } = getHubAppMetadata()
@@ -231,6 +231,7 @@ router.get('/:orgId/members',
             sub: m.account.sub,
             email: m.account.email,
             name: m.account.profile?.name,
+            picture: m.account.profile?.picture || null,
             designation: m.designation || '',
             employeeId: m.employeeId || '',
             emailVerified: m.account.emailVerified,

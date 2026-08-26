@@ -98,6 +98,7 @@ function memberData(account, organization, member, extra = {}) {
     idpSubject: account.sub,
     email: account.email,
     name: account.profile?.name,
+    picture: account.profile?.picture || null,
     organizationId: organization._id.toString(),
     organization: { id: organization._id.toString(), name: organization.name },
     role: member?.role,

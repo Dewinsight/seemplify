@@ -21,6 +21,13 @@ const AccountSchema = new mongoose.Schema({
   profile: {
     name: String,
     preferred_username: String,
+    // Canonical cross-product avatar. Only `picture` is exposed to clients;
+    // provider metadata remains private so storage objects can be replaced.
+    picture: String,
+    pictureStorageProvider: { type: String, enum: ['cloudinary', 'azure-blob'] },
+    pictureStorageKey: String,
+    pictureStorageContainer: String,
+    pictureStorageResourceType: String,
     // Extended personal information for employee self-service
     personalInfo: {
       dateOfBirth: Date,

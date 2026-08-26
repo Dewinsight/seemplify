@@ -207,7 +207,8 @@ export const uploadBufferToCloudinary = async ({
   buffer,
   filename,
   folder,
-  resourceType = 'auto'
+  resourceType = 'auto',
+  mimeType = ''
 }) => {
   const policy = await getStorageRuntimeConfiguration('identity-provider')
   if (!policy?.configured || !['cloudinary', 'azure-blob'].includes(policy.defaultProvider)) {
@@ -222,7 +223,7 @@ export const uploadBufferToCloudinary = async ({
     const safeFilename = String(filename || 'file').replace(/[^a-zA-Z0-9._-]+/gu, '-').slice(-180)
     const storageKey = `${safeFolder}/${crypto.randomUUID()}-${safeFilename}`
     const blob = service.getContainerClient(configuration.containerName).getBlockBlobClient(storageKey)
-    await blob.uploadData(buffer, { blobHTTPHeaders: { blobContentType: resourceType === 'image' ? 'image/*' : 'application/octet-stream' } })
+    await blob.uploadData(buffer, { blobHTTPHeaders: { blobContentType: mimeType || (resourceType === 'image' ? 'image/jpeg' : 'application/octet-stream') } })
     const url = await blob.generateSasUrl({
       permissions: BlobSASPermissions.parse('r'),
       expiresOn: new Date(Date.now() + 10 * 365 * 24 * 60 * 60_000)
