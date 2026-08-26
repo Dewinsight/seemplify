@@ -606,10 +606,6 @@ router.post('/:orgId/invitations',
         return res.status(400).json({ error: 'Valid email is required' })
       }
 
-      if (!designation) {
-        return res.status(400).json({ error: 'Designation is required' })
-      }
-
       if (!teamId) {
         return res.status(400).json({ error: 'Team is required' })
       }
@@ -717,7 +713,7 @@ router.post('/:orgId/invitations',
             <h2>You've been invited to join ${req.organization.name}</h2>
             <p><strong>${req.user.profile?.name || req.user.email}</strong> has invited you to join their organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${role}</p>
-            <p><strong>Designation:</strong> ${designation}</p>
+            ${designation ? `<p><strong>Designation:</strong> ${designation}</p>` : ''}
             ${employeeId ? `<p><strong>Employee ID:</strong> ${employeeId}</p>` : ''}
             <p><strong>Department:</strong> ${department.name}</p>
             <p><strong>Team:</strong> ${invitedTeam.name}</p>

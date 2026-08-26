@@ -7008,6 +7008,7 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
       canAssignRoles: hasIdentityPermission('roles.assign'),
       canAssignApps: hasIdentityPermission('apps.assign'),
       canManageDepartments: hasIdentityPermission('departments.manage'),
+      canManageTeams: hasIdentityPermission('teams.manage'),
       canViewMembers: hasIdentityPermission('members.view'),
       canViewAccessControl: hasIdentityPermission('access.read') || hasIdentityPermission('access.manage'),
       identityPermissions: organizationAuthorization.permissionsByApp?.identity || [],
