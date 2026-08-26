@@ -29,9 +29,12 @@ the new history, retry, replacement, and capability endpoints available.
   a coordinated cutover; in-flight status and public capabilities depend on
   them.
 - Existing private Cloudinary credentials and the configured Recruiter AI
-  runtime. Anonymous public applicants use the organization-enabled local
-  runtime; a ChatGPT-only policy without an organization automation identity
-  leaves those jobs waiting by design.
+  runtime. In ChatGPT-only mode, anonymous public applications use the newest
+  connected, consented ChatGPT account belonging to an active Recruiter member
+  of that organization. If no eligible account is available, AI enrichment
+  waits durably and the next Recruiter login promotes it for another attempt.
+  The public candidate and managed CV reference are committed before AI
+  analysis, so the uploaded CV remains visible and downloadable while waiting.
 - Mongo roles must be able to list, create, and update indexes. The CV job,
   audit, cleanup, batch, and AI Interview intake collections initialize their
   indexes automatically.

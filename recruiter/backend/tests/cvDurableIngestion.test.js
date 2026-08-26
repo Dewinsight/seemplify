@@ -417,6 +417,85 @@ test('full shared capacity preserves preprocessed durable state without counting
   assert.deepEqual(moves, [{ timestamp: 1_250, token: 'worker-token' }]);
 });
 
+test('a public CV is projected from Azure storage onto its candidate before ChatGPT enrichment', async () => {
+  const submitted = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
+  const candidate = await Candidate.create({
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    email: 'public-ada@example.test',
+    phone: '+44 7700 900123',
+    position: 'Platform Engineer',
+    experience: 'See CV',
+    education: 'See CV',
+    source: 'public',
+    organization: organizationId,
+    processingMetadata: {
+      cvProcessingJobId: submitted.job.publicId,
+      cvIngestionState: 'accepted'
+    }
+  });
+  const processingJob = await CVProcessingJob.findOneAndUpdate(
+    { _id: submitted.job._id },
+    { $set: { source: 'public', linkedCandidate: candidate._id } },
+    { new: true }
+  );
+  cvQueue._setDependenciesForTests({
+    storageConfigurationResolver: async () => ({
+      configured: true,
+      defaultProvider: 'azure-blob',
+      providers: { azureBlob: { configured: true, containerName: 'candidate-cvs' } }
+    }),
+    cloudinary: {
+      async uploadFile() {
+        return {
+          success: true,
+          resumeUrl: 'https://storage.example.test/candidate-cvs/ada.pdf?sig=test',
+          publicId: `resumes/documents/${processingJob.publicId}`,
+          storageProvider: 'azure-blob',
+          storageKey: `resumes/documents/${processingJob.publicId}`,
+          storageContainer: 'candidate-cvs',
+          resourceType: 'blob',
+          deliveryType: 'authenticated'
+        };
+      }
+    },
+    cvParser: {
+      async parseCV() {
+        return extractedText;
+      },
+      async analyzeText() {
+        throw Object.assign(new Error('Connect ChatGPT to use Seemplify AI features.'), {
+          code: 'AI_RUNTIME_ACCOUNT_REQUIRED'
+        });
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => cvQueue._processJobForTests(bullJob(processingJob)),
+    /connected ChatGPT account/
+  );
+
+  const [storedCandidate, storedJob, detail] = await Promise.all([
+    Candidate.findById(candidate._id).lean(),
+    CVProcessingJob.findById(processingJob._id).select('+resumeText').lean(),
+    cvQueue.getAdminJobDetail(processingJob.publicId)
+  ]);
+  assert.equal(storedJob.state, 'waiting_for_chatgpt');
+  assert.equal(storedJob.lastError.code, 'ORG_AUTOMATION_RUNTIME_REQUIRED');
+  assert.equal(storedCandidate.resumeStorageProvider, 'azure-blob');
+  assert.equal(storedCandidate.resumeStorageContainer, 'candidate-cvs');
+  assert.equal(storedCandidate.resumeStorageKey, `resumes/documents/${processingJob.publicId}`);
+  assert.equal(storedCandidate.resumeUrl, 'https://storage.example.test/candidate-cvs/ada.pdf?sig=test');
+  assert.equal(storedCandidate.resumeText, extractedText);
+  assert.equal(storedCandidate.processingMetadata.uploadSuccess, true);
+  assert.equal(storedCandidate.processingMetadata.parseSuccess, true);
+  assert.notEqual(storedCandidate.processingMetadata.aiSuccess, true);
+  assert.equal(detail.candidate.id, String(candidate._id));
+  assert.equal(detail.artifacts.profile.available, true);
+  assert.equal(detail.artifacts.managedFile.provider, 'azure-blob');
+});
+
 test('offline and BUSY deliveries do not consume the five bounded failure attempts', async () => {
   const result = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
   const deferredErrors = [

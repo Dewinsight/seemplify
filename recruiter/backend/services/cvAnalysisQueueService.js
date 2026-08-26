@@ -23,6 +23,7 @@ const creditsService = require('./creditsService');
 const publicApplicationCapacityService = require('./publicApplicationCapacityService');
 const publicApplicationCapability = require('./publicApplicationCapabilityService');
 const organizationCvWriteFence = require('./organizationCvWriteFenceService');
+const { recruiterOrganizationAuthorized } = require('./sharedAIUserSecurity');
 const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
 const {
   createGlobalDispatchConnection,
@@ -1865,10 +1866,15 @@ function adminOperationalJob(job, sampledAt) {
   const actor = job.actor && typeof job.actor === 'object' ? job.actor : null;
   const organization = job.organization && typeof job.organization === 'object' ? job.organization : null;
   const appliedJob = job.jobAppliedFor && typeof job.jobAppliedFor === 'object' ? job.jobAppliedFor : null;
-  const candidate = job.candidate && typeof job.candidate === 'object' ? job.candidate : null;
   const linkedCandidate = job.linkedCandidate && typeof job.linkedCandidate === 'object'
     ? job.linkedCandidate
     : null;
+  // Public applications create the candidate before CV enrichment. Treat that
+  // committed application candidate as visible while analysis is still
+  // pending; `job.candidate` is only populated after AI completes.
+  const candidate = job.candidate && typeof job.candidate === 'object'
+    ? job.candidate
+    : linkedCandidate;
   const applicantName = [job.formData?.firstName, job.formData?.lastName].filter(Boolean).join(' ');
   return {
     ...operational,
@@ -1950,7 +1956,10 @@ async function adminJobsFromAudits(audits) {
   const organizationIds = [...new Set(audits.map((audit) => audit.organizationKey).filter(objectIdLike))];
   const actorIds = [...new Set(audits.map((audit) => audit.actorKey).filter(objectIdLike))];
   const jobIds = [...new Set(audits.map((audit) => audit.jobKey).filter(objectIdLike))];
-  const candidateIds = [...new Set(audits.map((audit) => audit.candidate).filter(objectIdLike))];
+  const candidateIds = [...new Set(audits.flatMap((audit) => [
+    audit.candidate,
+    audit.linkedCandidate
+  ]).filter(objectIdLike))];
   const [organizations, actors, jobs, candidates] = await Promise.all([
     organizationIds.length ? Organization.find({ _id: { $in: organizationIds } }).select('name').lean() : [],
     actorIds.length ? User.find({ _id: { $in: actorIds } }).select('email profile.firstName profile.lastName profile.displayName').lean() : [],
@@ -1966,7 +1975,7 @@ async function adminJobsFromAudits(audits) {
     const organization = organizationById.get(String(audit.organizationKey || ''));
     const actor = actorById.get(String(audit.actorKey || ''));
     const appliedJob = jobById.get(String(audit.jobKey || ''));
-    const candidate = candidateById.get(String(audit.candidate || ''));
+    const candidate = candidateById.get(String(audit.candidate || audit.linkedCandidate || ''));
     const isExternal = audit.producer === 'ai-interview';
     return {
       ...operational,
@@ -2057,12 +2066,47 @@ function isUnboundedRuntimeDeferral(error) {
  * uploaded the CV themselves, so queued work uses the correct connected account.
  */
 async function resolveOrganizationRuntimeActor(organizationId) {
-  if (!String(organizationId || '')) return null;
-  // A personal ChatGPT connection consents to work the person initiates. It
-  // is not an organization-owned service account and must never be borrowed
-  // for an anonymous applicant/background job. Until an explicit org runtime
-  // assignment and disclosure exist, actorless work remains durably deferred.
-  return null;
+  const key = String(organizationId || '').trim();
+  if (!mongoose.isValidObjectId(key)) return null;
+  try {
+    const AIUserRuntimeAccount = require('../models/AIUserRuntimeAccount');
+    // A connected Recruiter account with Recruiter data-sharing consent is the
+    // workspace runtime for actorless public CV work. Prefer an account that
+    // was connected while this workspace was active, then fall back to another
+    // currently authorized member (for legitimate multi-workspace users).
+    const members = await User.find({
+      sharedAIOnly: { $ne: true },
+      idpSubject: { $exists: true, $ne: '' },
+      organizationMemberships: {
+        $elemMatch: { organization: organizationId, isActive: { $ne: false } }
+      }
+    }).select(
+      'email idpSubject sharedAIOnly organizationMemberships '
+      + 'recruiterAuthorizedOrganizations recruiterAppAccessSyncedAt '
+      + 'currentOrganization profile.firstName profile.lastName profile.displayName'
+    ).lean();
+    const eligibleMembers = members.filter((member) => (
+      recruiterOrganizationAuthorized(member, key)
+    ));
+    if (!eligibleMembers.length) return null;
+    const memberById = new Map(eligibleMembers.map((member) => [String(member._id), member]));
+    const accounts = await AIUserRuntimeAccount.find({
+      user: { $in: eligibleMembers.map((member) => member._id) },
+      status: 'connected',
+      dataSharingAcknowledgedAt: { $ne: null }
+    })
+      .sort({ connectedAt: -1 })
+      .select('user organization connectedAt')
+      .lean();
+    const selected = accounts.find((account) => String(account.organization || '') === key)
+      || accounts[0];
+    const owner = selected ? memberById.get(String(selected.user)) : null;
+    if (!owner) return null;
+    return { id: String(owner._id), user: owner };
+  } catch (error) {
+    console.warn('Organization runtime actor lookup failed:', error.message);
+    return null;
+  }
 }
 
 async function historySearchClauses(searchValue, { organizationId, administrator = false } = {}) {
@@ -2250,6 +2294,58 @@ async function syncLinkedCandidateProcessing(job, {
       ]
     },
     update
+  );
+  return Number(result.matchedCount || result.n || 0) === 1;
+}
+
+/**
+ * Publish the independently durable CV artifact onto an already-created
+ * candidate without waiting for AI enrichment. Public applications commit the
+ * candidate first, then upload the CV; managed storage is therefore a useful
+ * checkpoint in its own right. Keeping this projection separate prevents a
+ * missing organization automation runtime from making a safely stored
+ * Azure/Cloudinary CV invisible in Recruiter.
+ */
+async function projectStoredCvOntoLinkedCandidate(job) {
+  if (!job?.linkedCandidate || !job.cloudinary?.publicId) return false;
+  const storage = job.cloudinary;
+  const set = {
+    resumeUrl: storage.resumeUrl,
+    cloudinaryPublicId: storage.publicId,
+    cloudinaryResourceType: storage.resourceType,
+    cloudinaryDeliveryType: storage.deliveryType,
+    resumeStorageProvider: storage.storageProvider || 'cloudinary',
+    resumeStorageKey: storage.storageKey || storage.publicId,
+    resumeStorageContainer: storage.storageContainer || undefined,
+    resumeStorageResourceType: storage.resourceType,
+    'processingMetadata.uploadSuccess': true,
+    'processingMetadata.fileSize': Number(job.fileSize || 0),
+    'processingMetadata.originalName': job.originalName || '',
+    'processingMetadata.cvProcessingJobId': job.publicId,
+    'processingMetadata.cvProcessingUpdatedAt': new Date()
+  };
+  if (job.resumeText) {
+    set.resumeText = job.resumeText;
+    set['processingMetadata.parseSuccess'] = true;
+  }
+  // Omit absent optional provider coordinates instead of clearing a valid
+  // value; Mongoose's handling of undefined in $set varies by version.
+  for (const [key, value] of Object.entries(set)) {
+    if (value === undefined) delete set[key];
+  }
+  const result = await Candidate.updateOne(
+    {
+      _id: job.linkedCandidate,
+      organization: job.organization,
+      ...(job.jobAppliedFor ? { jobAppliedFor: job.jobAppliedFor } : {}),
+      deletionState: { $ne: 'tombstoned' },
+      $or: [
+        { 'processingMetadata.cvProcessingJobId': job.publicId },
+        { 'processingMetadata.cvProcessingJobId': { $exists: false } },
+        { 'processingMetadata.cvProcessingJobId': null }
+      ]
+    },
+    { $set: set }
   );
   return Number(result.matchedCount || result.n || 0) === 1;
 }
@@ -4884,6 +4980,11 @@ async function processJob(bullJob, workerToken) {
             ...(processingJob.artifacts?.toObject?.() || processingJob.artifacts || {}),
             cloudinaryStoredAt: new Date()
           };
+          await projectStoredCvOntoLinkedCandidate(processingJob).catch((error) => {
+            // The processing record and provider object are already durable.
+            // Maintenance/retry can repair this denormalized candidate view.
+            console.error('CV managed-file candidate projection will be repaired:', error.message);
+          });
           await updateProcessingStage(processingJob, bullJob, 'stored', 30);
         }
 
@@ -4921,6 +5022,9 @@ async function processJob(bullJob, workerToken) {
             textExtractedAt: new Date(),
             extractedTextLength: resumeText.length
           };
+          await projectStoredCvOntoLinkedCandidate(processingJob).catch((error) => {
+            console.error('CV extracted-text candidate projection will be repaired:', error.message);
+          });
         }
       } finally {
         await materialized.cleanup().catch(() => {});
@@ -5122,7 +5226,7 @@ async function processJob(bullJob, workerToken) {
   } catch (error) {
     if (!processingJob.actor && error?.code === 'AI_RUNTIME_ACCOUNT_REQUIRED') {
       error.code = 'ORG_AUTOMATION_RUNTIME_REQUIRED';
-      error.message = 'Enable Local or configure an organization-owned runtime for public CV automation';
+      error.message = 'Sign in to Recruiter with a connected ChatGPT account, or connect or refresh ChatGPT, to continue public CV analysis';
     }
     const cancelledJob = await CVProcessingJob.findOne({
       _id: processingJob._id,
@@ -6034,6 +6138,9 @@ async function recoverStaleJobs() {
     }).sort({ createdAt: 1, _id: 1 }).limit(500);
     for (const job of stale) {
       if (job.supersedes && !(await activateReplacementRevision(job))) continue;
+      await projectStoredCvOntoLinkedCandidate(job).catch((error) => {
+        console.error('CV managed-file candidate projection repair failed:', error.message);
+      });
       await syncLinkedCandidateProcessing(job).catch((error) => {
         console.error('CV candidate processing projection repair failed:', error.message);
       });
@@ -6592,7 +6699,7 @@ function adminJobQuery(filter, limit) {
     .populate('actor', 'email profile.firstName profile.lastName profile.displayName')
     .populate('jobAppliedFor', 'title')
     .populate('candidate', 'firstName lastName email')
-    .populate('linkedCandidate', 'firstName lastName email')
+    .populate('linkedCandidate', 'firstName lastName email createdAt')
     .lean();
 }
 
@@ -7407,8 +7514,12 @@ function artifactSummary(job = {}) {
       completedAt: job.artifacts?.analysisCompletedAt || null
     },
     profile: {
-      available: Boolean(job.candidate || job.artifacts?.profileCommittedAt),
-      committedAt: job.artifacts?.profileCommittedAt || job.completedAt || null
+      available: Boolean(job.candidate || job.linkedCandidate || job.artifacts?.profileCommittedAt),
+      committedAt: job.artifacts?.profileCommittedAt
+        || job.linkedCandidate?.createdAt
+        || (job.linkedCandidate ? job.createdAt : null)
+        || job.completedAt
+        || null
     }
   };
 }
@@ -7434,6 +7545,7 @@ module.exports = {
   _activateReplacementRevisionForTests: activateReplacementRevision,
   _repairReplacementActivationsForTests: repairReplacementActivations,
   _mergeAnalysisOntoCandidateForTests: mergeAnalysisOntoCandidate,
+  _projectStoredCvOntoLinkedCandidateForTests: projectStoredCvOntoLinkedCandidate,
   _sharedDispatchWorkerState: sharedDispatchWorkerState,
   _cvUsageExecutionIdForTests: cvUsageExecutionId,
   _evaluateWorkerReadinessForTests: evaluateWorkerReadiness,

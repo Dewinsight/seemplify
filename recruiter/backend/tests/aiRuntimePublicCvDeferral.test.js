@@ -46,6 +46,7 @@ test('routing health accepts locked CV activities running on a connected ChatGPT
 test('every ChatGPT runtime-gate failure defers instead of failing a CV', () => {
   const gateCodes = [
     'AI_RUNTIME_ACCOUNT_REQUIRED',
+    'ORG_AUTOMATION_RUNTIME_REQUIRED',
     'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED',
     'AI_RUNTIME_CHATGPT_DISABLED',
     'CHATGPT_NOT_CONNECTED',
@@ -70,17 +71,29 @@ test('every ChatGPT runtime-gate failure defers instead of failing a CV', () => 
   assert.equal(isRuntimeGateError({ code: 'AI_RUNTIME_ERROR', message: 'boom' }), false);
 });
 
-test('an actorless job never borrows a member personal ChatGPT account', async () => {
+test('an actorless public CV uses the newest connected and authorized workspace member account', async () => {
   const organizationId = new mongoose.Types.ObjectId();
   const stale = await User.create({
     email: 'stale@example.test',
     password: 'Password-123!',
+    idpSubject: 'stale-subject',
+    currentOrganization: organizationId,
+    organizationMemberships: [{ organization: organizationId, role: 'recruiter', isActive: true }],
     profile: { firstName: 'Stale', lastName: 'Older' }
   });
   const owner = await User.create({
     email: 'owner@example.test',
     password: 'Password-123!',
+    idpSubject: 'owner-subject',
+    currentOrganization: organizationId,
+    organizationMemberships: [{ organization: organizationId, role: 'owner', isActive: true }],
     profile: { firstName: 'Olu', lastName: 'Owner' }
+  });
+  const outsider = await User.create({
+    email: 'outsider@example.test',
+    password: 'Password-123!',
+    idpSubject: 'outsider-subject',
+    profile: { firstName: 'Out', lastName: 'Sider' }
   });
   // Disconnected and consent-missing accounts must never be picked.
   await AIUserRuntimeAccount.create({
@@ -99,20 +112,34 @@ test('an actorless job never borrows a member personal ChatGPT account', async (
     dataSharingAcknowledgedAt: new Date(),
     connectedAt: new Date('2026-06-01')
   });
+  await AIUserRuntimeAccount.create({
+    user: outsider._id,
+    organization: organizationId,
+    idpSubject: 'outsider-subject',
+    subjectKey: 'd'.repeat(24),
+    status: 'connected',
+    dataSharingAcknowledgedAt: new Date(),
+    connectedAt: new Date('2026-08-01')
+  });
 
   const resolved = await resolveOrganizationRuntimeActor(organizationId);
-  assert.equal(resolved, null, 'personal consent only covers work the member initiates');
+  assert.ok(resolved, 'a connected authorized member must supply the workspace runtime');
+  assert.equal(resolved.id, String(owner._id));
+  assert.equal(resolved.user.email, 'owner@example.test');
 
   const nobody = await resolveOrganizationRuntimeActor(new mongoose.Types.ObjectId());
   assert.equal(nobody, null, 'an organization with no routable account resolves to none');
 
-  // An older account without an organization is equally ineligible.
+  // An older account row without the denormalized organization still resolves
+  // through authoritative active membership without mutating the account.
   const orphanOrgId = new mongoose.Types.ObjectId();
   const orphanUser = await User.create({
     email: 'orphan@example.test',
     password: 'Password-123!',
+    idpSubject: 'orphan-subject',
     profile: { firstName: 'Ora', lastName: 'Orphan' },
-    currentOrganization: orphanOrgId
+    currentOrganization: orphanOrgId,
+    organizationMemberships: [{ organization: orphanOrgId, role: 'recruiter', isActive: true }]
   });
   await AIUserRuntimeAccount.create({
     user: orphanUser._id,
@@ -122,9 +149,10 @@ test('an actorless job never borrows a member personal ChatGPT account', async (
     connectedAt: new Date('2026-07-01')
   });
   const viaOrphan = await resolveOrganizationRuntimeActor(orphanOrgId);
-  assert.equal(viaOrphan, null);
+  assert.ok(viaOrphan);
+  assert.equal(viaOrphan.id, String(orphanUser._id));
   const healed = await AIUserRuntimeAccount.findOne({ user: orphanUser._id }).lean();
-  assert.equal(healed.organization, undefined, 'actorless lookup must not mutate a personal account');
+  assert.equal(healed.organization, undefined, 'runtime lookup must not rewrite account ownership');
 });
 
 test('login wakes waiting CV analyses once and tells the recruiter once', async () => {
