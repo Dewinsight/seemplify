@@ -19,6 +19,7 @@ RUN apt-get update \
       libicu74 \
       libssl3 \
       openssh-client \
+      python3 \
       rsync \
       sudo \
       tar \
