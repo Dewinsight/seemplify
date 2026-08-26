@@ -6893,7 +6893,8 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         description: department.description || '',
         headAccount: department.headAccount?.toString() || '',
         headName: orgMembers.find((orgMember) => orgMember._id.toString() === department.headAccount?.toString())?.profile?.name || '',
-        parentDepartment: department.parentDepartment?.toString() || ''
+        parentDepartment: department.parentDepartment?.toString() || '',
+        isSystem: !!department.isSystem
       })),
       branches: (organization.branches || []).map((branch) => ({
         id: branch._id.toString(),

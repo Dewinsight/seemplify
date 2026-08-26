@@ -734,6 +734,7 @@
                     <div class="department-detail__actions">
                       <% if (canManageDepartments) { %><button type="button" class="btn btn-secondary btn-sm" onclick='editDepartment(<%- JSON.stringify(department) %>)'>Edit department</button><% } %>
                       <% if (canManageTeams) { %><button type="button" class="btn btn-primary btn-sm" onclick="showCreateModal('<%= department.id %>')">Create team</button><% } %>
+                      <% if (canManageDepartments && !department.isSystem) { %><button type="button" class="btn btn-danger btn-sm" onclick="deleteDepartment('<%= department.id %>', <%= JSON.stringify(department.name) %>)">Delete department</button><% } %>
                     </div>
                   <% } %>
                 </header>
@@ -1163,6 +1164,7 @@
         <div class="form-group">
           <label for="parentDepartment">Parent Department</label>
           <select id="parentDepartment"></select>
+          <p id="departmentRootHelp" style="display: none; margin: 8px 0 0; color: var(--muted); font-size: 13px;">General is the organization root. Its name and position stay fixed, but you can update its description and department head.</p>
         </div>
         <div class="form-group">
           <label for="departmentHead">Head of Department</label>
@@ -2006,6 +2008,9 @@
       document.getElementById('departmentForm').reset();
       document.getElementById('departmentId').value = '';
       hydrateDepartmentSelectors();
+      document.getElementById('departmentName').disabled = false;
+      document.getElementById('parentDepartment').disabled = false;
+      document.getElementById('departmentRootHelp').style.display = 'none';
       document.getElementById('departmentModal').classList.add('active');
     }
 
@@ -2017,6 +2022,9 @@
       document.getElementById('departmentDescription').value = department.description || '';
       document.getElementById('parentDepartment').value = department.parentDepartment || '';
       document.getElementById('departmentHead').value = department.headAccount || '';
+      document.getElementById('departmentName').disabled = !!department.isSystem;
+      document.getElementById('parentDepartment').disabled = !!department.isSystem;
+      document.getElementById('departmentRootHelp').style.display = department.isSystem ? 'block' : 'none';
       document.getElementById('departmentModal').classList.add('active');
     }
 
@@ -2200,6 +2208,17 @@
         alert(data.error || 'Failed to save department');
       }
     });
+
+    async function deleteDepartment(departmentId, departmentName) {
+      if (!confirm(`Delete department "${departmentName}"? Delete or move its teams and child departments first. This cannot be undone.`)) return;
+      const response = await fetch(`/api/organizations/${orgId}/departments/${departmentId}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        window.location.href = `/organizations/${orgId}/members?view=structure`;
+      } else {
+        alert(data.error || 'Failed to delete department');
+      }
+    }
 
     document.getElementById('branchForm').addEventListener('submit', async (event) => {
       event.preventDefault();

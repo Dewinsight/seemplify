@@ -440,6 +440,9 @@ OrganizationSchema.methods.updateDepartment = async function(departmentId, updat
     if (!nextName) {
       throw new Error('Department name is required')
     }
+    if (department.isSystem && nextName !== department.name) {
+      throw new Error('The General department is the organization root and cannot be renamed')
+    }
     const duplicate = (this.departments || []).some((candidate) =>
       candidate._id.toString() !== department._id.toString() &&
       normalizeDepartmentName(candidate.name).toLowerCase() === nextName.toLowerCase()
@@ -460,6 +463,9 @@ OrganizationSchema.methods.updateDepartment = async function(departmentId, updat
 
   if (Object.prototype.hasOwnProperty.call(updates, 'parentDepartment')) {
     const parentDepartment = updates.parentDepartment || null
+    if (department.isSystem && parentDepartment) {
+      throw new Error('The General department must remain at the organization root')
+    }
     if (parentDepartment && parentDepartment.toString() === department._id.toString()) {
       throw new Error('Department cannot be its own parent')
     }
@@ -470,6 +476,32 @@ OrganizationSchema.methods.updateDepartment = async function(departmentId, updat
   }
 
   department.updatedAt = new Date()
+  await this.save()
+  return department
+}
+
+OrganizationSchema.methods.removeDepartment = async function(departmentId) {
+  const department = this.getDepartmentById(departmentId)
+  if (!department) throw new Error('Department not found')
+  if (department.isSystem) {
+    throw new Error('The General department is the organization root and cannot be deleted')
+  }
+
+  const childCount = (this.departments || []).filter((candidate) => (
+    candidate.parentDepartment?.toString() === department._id.toString()
+  )).length
+  if (childCount > 0) {
+    throw new Error(`Move or delete ${childCount} child department${childCount === 1 ? '' : 's'} before deleting this department`)
+  }
+
+  const assignedCount = (this.members || []).filter((member) => (
+    member.status === 'active' && member.department?.toString() === department._id.toString()
+  )).length
+  if (assignedCount > 0) {
+    throw new Error(`Reassign ${assignedCount} member${assignedCount === 1 ? '' : 's'} before deleting this department`)
+  }
+
+  this.departments.pull(department._id)
   await this.save()
   return department
 }

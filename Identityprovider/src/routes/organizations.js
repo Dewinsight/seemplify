@@ -1,6 +1,7 @@
 import express from 'express'
 import { Organization } from '../models/Organization.js'
 import { Account } from '../models/Account.js'
+import { Team } from '../models/Team.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -11,6 +12,7 @@ import { requireAuthOrAPIToken, requireScopes } from '../middleware/apiAuth.js'
 import { invalidateClaimsCache } from '../index.js'
 import { subscriptionService } from '../services/subscriptionService.js'
 import { deleteOrganizationCascade } from '../services/adminOrganizationManagementService.js'
+import { seedDefaultOrganizationTeams } from '../services/organizationStructureService.js'
 
 const router = express.Router()
 
@@ -87,6 +89,14 @@ router.post('/',
         }]
       })
 
+      try {
+        await seedDefaultOrganizationTeams(organization)
+      } catch (structureError) {
+        await Team.deleteMany({ organization: organization._id }).catch(() => {})
+        await Organization.findByIdAndDelete(organization._id).catch(() => {})
+        throw structureError
+      }
+
       let trialSubscription = null
       try {
         trialSubscription = await subscriptionService.assignDefaultTrialToOrganization(
@@ -94,6 +104,7 @@ router.post('/',
           req.user._id
         )
       } catch (trialError) {
+        await Team.deleteMany({ organization: organization._id }).catch(() => {})
         await Organization.findByIdAndDelete(organization._id).catch(() => {})
         throw trialError
       }
@@ -257,6 +268,7 @@ router.post('/:orgId/departments',
   async (req, res) => {
     try {
       const department = await req.organization.addDepartment(req.body || {}, req.user._id)
+      await invalidateOrganizationMemberClaims(req.organization)
       res.status(201).json({
         id: department._id,
         name: department.name,
@@ -278,6 +290,7 @@ router.put('/:orgId/departments/:departmentId',
   async (req, res) => {
     try {
       const department = await req.organization.updateDepartment(req.params.departmentId, req.body || {})
+      await invalidateOrganizationMemberClaims(req.organization)
       res.json({
         id: department._id,
         name: department.name,
@@ -288,6 +301,42 @@ router.put('/:orgId/departments/:departmentId',
     } catch (error) {
       console.error('Update department error:', error)
       res.status(400).json({ error: error.message || 'Failed to update department' })
+    }
+  }
+)
+
+router.delete('/:orgId/departments/:departmentId',
+  requireAuth,
+  requireOrganizationMember,
+  requireIdentityPermission('departments.manage'),
+  async (req, res) => {
+    try {
+      const department = req.organization.getDepartmentById(req.params.departmentId)
+      if (!department) {
+        return res.status(404).json({ error: 'Department not found' })
+      }
+      if (department.isSystem) {
+        return res.status(400).json({
+          error: 'The General department is the organization root and cannot be deleted'
+        })
+      }
+
+      const teamCount = await Team.countDocuments({
+        organization: req.organization._id,
+        department: department._id
+      })
+      if (teamCount > 0) {
+        return res.status(400).json({
+          error: `Move or delete ${teamCount} team${teamCount === 1 ? '' : 's'} before deleting this department`
+        })
+      }
+
+      await req.organization.removeDepartment(department._id)
+      await invalidateOrganizationMemberClaims(req.organization)
+      res.json({ message: 'Department deleted successfully' })
+    } catch (error) {
+      console.error('Delete department error:', error)
+      res.status(400).json({ error: error.message || 'Failed to delete department' })
     }
   }
 )
