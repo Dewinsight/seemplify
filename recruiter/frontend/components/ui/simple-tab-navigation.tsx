@@ -252,7 +252,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
   }
 
   return (
-    <Card className="border-0 bg-white/60 backdrop-blur-xl shadow-lg mb-6">
+    <Card className="mb-6 border border-slate-200 bg-white/80 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <CardContent className="p-4 sm:p-6">
         {/* Desktop Tab Grid */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 lg:gap-4">
@@ -262,12 +262,12 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
               onClick={() => onTabChange(tab.id)}
               className={cn(
                 "relative p-3 sm:p-4 rounded-lg",
-                "border-2 bg-white/80 shadow-sm",
+                "border-2 bg-white/80 shadow-sm dark:bg-slate-800",
                 "simple-tab-transition simple-tab-hover simple-tab-focus",
-                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
+                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900",
                 activeTab === tab.id
-                  ? "border-blue-500 bg-blue-50 text-blue-700 shadow-md"
-                  : "border-transparent hover:border-blue-200 hover:bg-blue-50/50 text-slate-700"
+                  ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:bg-blue-950/40 dark:text-blue-300"
+                  : "border-transparent hover:border-blue-200 hover:bg-blue-50/50 text-slate-700 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700"
               )}
             >
               {/* Tab Content */}
@@ -275,7 +275,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                 {/* Icon */}
                 <div className={cn(
                   "transition-colors duration-200",
-                  activeTab === tab.id ? "text-blue-600" : "text-slate-600"
+                  activeTab === tab.id ? "text-blue-600 dark:text-blue-400" : "text-slate-600 dark:text-slate-400"
                 )}>
                   {tab.icon}
                 </div>
@@ -283,7 +283,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                 {/* Label */}
                 <div className={cn(
                   "text-sm font-medium leading-tight",
-                  activeTab === tab.id ? "text-blue-700" : "text-slate-700"
+                  activeTab === tab.id ? "text-blue-700 dark:text-blue-300" : "text-slate-700 dark:text-slate-300"
                 )}>
                   <span className="hidden sm:inline">{tab.label}</span>
                   <span className="sm:hidden">{tab.shortLabel}</span>

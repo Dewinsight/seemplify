@@ -1056,7 +1056,7 @@ function JobDetailInnerPage() {
                                   {jobData?.isPublic ? 'Public' : 'Private'}
                                 </Badge>
                               </div>
-                              <p className="text-sm text-gray-600">
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
                                 {jobData?.isPublic
                                   ? 'Anyone can apply through your public job link'
                                   : 'Applications can only be added by your hiring team'}
@@ -1064,7 +1064,7 @@ function JobDetailInnerPage() {
                             </div>
                             <div className="flex items-center gap-3">
                               {isUpdatingPublicStatus && (
-                                <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                                <Loader2 className="h-4 w-4 animate-spin text-gray-500 dark:text-gray-400" />
                               )}
                               <Switch
                                 checked={jobData?.isPublic || false}
@@ -1081,7 +1081,7 @@ function JobDetailInnerPage() {
                               {jobData?.publicUrl ? (
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2">
-                                    <label className="text-sm font-medium text-gray-700">Public Job Link:</label>
+                                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Public Job Link:</label>
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -1098,13 +1098,13 @@ function JobDetailInnerPage() {
                                       Copy Link
                                     </Button>
                                   </div>
-                                  <div className="p-3 bg-white rounded-lg border border-green-300">
-                                    <code className="text-sm text-gray-800 break-all">
+                                  <div className="p-3 bg-white rounded-lg border border-green-300 dark:border-green-800 dark:bg-slate-900">
+                                    <code className="text-sm text-gray-800 break-all dark:text-gray-200">
                                       {`${window.location.origin}${jobData?.publicUrl}`}
                                     </code>
                                   </div>
                                   
-                                  <div className="flex items-center gap-4 text-sm text-gray-600">
+                                  <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
                                     <div className="flex items-center gap-1">
                                       <Users className="h-4 w-4" />
                                       <span>{jobData?.analytics?.publicViews || 0} views</span>
@@ -1168,7 +1168,7 @@ function JobDetailInnerPage() {
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                     <span className="text-sm font-medium">Generating public link...</span>
                                   </div>
-                                  <p className="text-xs text-gray-500">
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
                                     Your public job link will be available shortly
                                   </p>
                                 </div>
@@ -1512,7 +1512,7 @@ function JobDetailInnerPage() {
                       {questionsLoading ? (
                         <div className="flex items-center justify-center py-12">
                           <Loader2 className="animate-spin h-8 w-8 text-purple-600 mr-3" />
-                          <span className="text-gray-600">Loading interview questions...</span>
+                          <span className="text-gray-600 dark:text-gray-400">Loading interview questions...</span>
                         </div>
                       ) : interviewQuestions.length === 0 ? (
                         <div className="text-center py-12">
@@ -1588,10 +1588,10 @@ function JobDetailInnerPage() {
                                       <Badge 
                                         variant={question.type === 'technical' ? 'default' : 'secondary'}
                                         className={
-                                          question.type === 'technical' ? 'bg-blue-100 text-blue-700' :
-                                          question.type === 'behavioral' ? 'bg-green-100 text-green-700' :
-                                          question.type === 'situational' ? 'bg-yellow-100 text-yellow-700' :
-                                          'bg-gray-100 text-gray-700'
+                                          question.type === 'technical' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300' :
+                                          question.type === 'behavioral' ? 'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300' :
+                                          question.type === 'situational' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300' :
+                                          'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-300'
                                         }
                                       >
                                         {question.type.replace('_', ' ').toUpperCase()}
@@ -2061,7 +2061,7 @@ function JobDetailInnerPage() {
                       {interviewsLoading ? (
                         <div className="flex items-center justify-center py-8">
                           <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-                          <span className="ml-2 text-gray-600">Loading interviews...</span>
+                          <span className="ml-2 text-gray-600 dark:text-gray-400">Loading interviews...</span>
                         </div>
                       ) : jobInterviews.length === 0 ? (
                         <div className="text-center py-12">
