@@ -80,6 +80,7 @@ const WEBHOOK_MAX_ATTEMPTS = Math.max(1, Number(process.env.IDP_WEBHOOK_MAX_ATTE
 let outboxInterval = null
 
 const AUTHORIZATION_INVALIDATION_EVENTS = new Set([
+  'organization.access_control.updated',
   'organization.member.removed',
   'organization.member.app_access_changed',
   'organization.member.app_access_updated',

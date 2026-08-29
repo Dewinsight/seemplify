@@ -556,6 +556,7 @@ import {
 } from './routes/organizationAccessControl.js'
 import profileRouter from './routes/profile.js'
 import internalMembershipsRouter from './routes/internalMemberships.js'
+import productAccessControlRouter from './routes/productAccessControl.js'
 import platformIntegrationsRouter from './routes/platformIntegrations.js'
 import { startScheduledMembershipWorker } from './routes/internalMemberships.js'
 
@@ -6224,6 +6225,7 @@ app.use('/api', (req, res, next) => {
   })
 }, onboardingRouter)
 app.use('/api/internal/v1/memberships', internalMembershipsRouter)
+app.use('/api/internal/v1/product-access', productAccessControlRouter)
 app.use('/api/internal/v1/platform-integrations', platformIntegrationsRouter)
 
 app.use((req, res, next) => {

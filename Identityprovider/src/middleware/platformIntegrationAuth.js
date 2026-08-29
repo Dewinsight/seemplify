@@ -18,11 +18,12 @@ function serviceSecret(service) {
   throw new Error('Experience service authentication is not configured.')
 }
 
-export function canonicalPlatformConfigurationRequest({ timestamp, nonce, service, method, path }) {
-  return `${timestamp}\n${nonce}\n${service}\n${method}\n${path}`
+export function canonicalPlatformConfigurationRequest({ timestamp, nonce, service, method, path, contentHash = '' }) {
+  const base = `${timestamp}\n${nonce}\n${service}\n${method}\n${path}`
+  return contentHash ? `${base}\n${contentHash}` : base
 }
 
-export function createPlatformIntegrationServiceAuth(allowedServices = ['experience-management']) {
+export function createPlatformIntegrationServiceAuth(allowedServices = ['experience-management'], { requireBodyHash = false } = {}) {
   const allowed = new Set(allowedServices)
   return async function platformIntegrationServiceAuth(req, res, next) {
   const timestamp = String(req.get('x-seemplify-timestamp') || '')
@@ -36,8 +37,17 @@ export function createPlatformIntegrationServiceAuth(allowedServices = ['experie
   }
   let expected
   try {
+    const contentHash = String(req.get('x-seemplify-content-sha256') || '')
+    if (requireBodyHash) {
+      const computedHash = crypto.createHash('sha256').update(JSON.stringify(req.body || {})).digest('hex')
+      if (!/^[a-f0-9]{64}$/iu.test(contentHash)
+          || !crypto.timingSafeEqual(Buffer.from(contentHash, 'hex'), Buffer.from(computedHash, 'hex'))) {
+        return res.status(401).json({ error: 'Invalid service request content hash.' })
+      }
+    }
     expected = crypto.createHmac('sha256', serviceSecret(service)).update(canonicalPlatformConfigurationRequest({
-      timestamp, nonce, service, method: req.method, path: req.originalUrl.split('?')[0]
+      timestamp, nonce, service, method: req.method, path: req.originalUrl.split('?')[0],
+      contentHash: requireBodyHash ? contentHash : ''
     })).digest('hex')
   } catch (error) {
     console.error('Platform integration service authentication unavailable:', error.message)

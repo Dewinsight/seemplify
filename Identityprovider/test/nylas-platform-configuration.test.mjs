@@ -44,3 +44,11 @@ test('platform configuration request canonical form binds service, method, and p
     path: '/api/internal/v1/platform-integrations/nylas'
   }), '123\nnonce\nexperience-management\nGET\n/api/internal/v1/platform-integrations/nylas')
 })
+
+test('signed mutation canonical form also binds the request content', () => {
+  assert.equal(canonicalPlatformConfigurationRequest({
+    timestamp: '123', nonce: 'nonce', service: 'workspace', method: 'PUT',
+    path: '/api/internal/v1/product-access/messaging/roles/employee',
+    contentHash: 'a'.repeat(64)
+  }), `123\nnonce\nworkspace\nPUT\n/api/internal/v1/product-access/messaging/roles/employee\n${'a'.repeat(64)}`)
+})

@@ -13,9 +13,11 @@ import {
 } from '../src/config/accessControlCatalog.js'
 import {
   mergeDefaultRoles,
+  replaceProductPermissionRows,
   resolveOrganizationAuthorization,
   sanitizePermissionRows
 } from '../src/services/accessControlService.js'
+import { canServiceManageProduct } from '../src/routes/productAccessControl.js'
 import { LMS_ROLE_PERMISSIONS } from '../src/models/LmsRole.js'
 import { requireSameOriginMutation } from '../src/middleware/sameOriginMutation.js'
 import { getAllOrganizationManagedHubApps } from '../src/config/hubApps.js'
@@ -256,6 +258,30 @@ test('organization inputs reject unknown and platform-controlled grants', () => 
     sanitizePermissionRows([{ appId: 'lms', permissions: ['*'] }], { allowWildcard: true }),
     [{ appId: 'lms', permissions: ['*'] }]
   )
+})
+
+test('product role edits replace only the calling product permission rows', () => {
+  const existing = [
+    { appId: 'messaging', permissions: ['messages.read'] },
+    { appId: 'community', permissions: ['community.read'] }
+  ]
+  assert.deepEqual(replaceProductPermissionRows(existing, 'messaging', ['messages.write', 'messages.read']), [
+    { appId: 'community', permissions: ['community.read'] },
+    { appId: 'messaging', permissions: ['messages.write', 'messages.read'] }
+  ])
+  assert.deepEqual(replaceProductPermissionRows(existing, 'messaging', []), [
+    { appId: 'community', permissions: ['community.read'] }
+  ])
+})
+
+test('product access service identity is bound to its hosted permission catalogues', () => {
+  assert.equal(canServiceManageProduct('workspace', 'messaging'), true)
+  assert.equal(canServiceManageProduct('workspace', 'community'), true)
+  assert.equal(canServiceManageProduct('workspace', 'automation-hub'), true)
+  assert.equal(canServiceManageProduct('workspace', 'payroll-management'), false)
+  assert.equal(canServiceManageProduct('payroll', 'payroll-management'), true)
+  assert.equal(canServiceManageProduct('identity-provider', 'leave-management'), true)
+  assert.equal(canServiceManageProduct('unknown-service', 'messaging'), false)
 })
 
 test('built-in organization roles never receive platform-only product permissions', () => {

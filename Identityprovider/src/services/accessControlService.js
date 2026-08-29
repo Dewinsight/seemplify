@@ -11,6 +11,7 @@ import {
   getPermissionDefinition
 } from '../config/accessControlCatalog.js'
 import { normalizeAppAccess } from '../utils/appAccess.js'
+import { sendWebhook } from './webhookService.js'
 
 const ROLE_KEY_PATTERN = /^[a-z][a-z0-9_-]{1,63}$/
 const PROTECTED_ASSIGNMENT_ROLE_KEYS = new Set(['organization_owner', 'organization_admin'])
@@ -141,6 +142,50 @@ function removePermissionRows(target, rows = []) {
 function permissionMapToObject(permissionMap) {
   return Object.fromEntries(Array.from(permissionMap.entries())
     .map(([appId, permissions]) => [appId, Array.from(permissions).sort()]))
+}
+
+function productPermissionIds(rows = [], appId = '') {
+  return uniqueStrings((rows || [])
+    .filter((row) => String(row?.appId || '') === String(appId || ''))
+    .flatMap((row) => row.permissions || []))
+}
+
+export function replaceProductPermissionRows(rows = [], appId = '', permissions = []) {
+  const normalizedAppId = String(appId || '').trim()
+  const next = clonePermissionRows(rows).filter((row) => row.appId !== normalizedAppId)
+  const normalizedPermissions = uniqueStrings(permissions)
+  if (normalizedPermissions.length) next.push({ appId: normalizedAppId, permissions: normalizedPermissions })
+  return next.sort((left, right) => left.appId.localeCompare(right.appId))
+}
+
+async function notifyOrganizationAccessControlChanged(organization, actor, metadata = {}) {
+  try {
+    await sendWebhook('organization.access_control.updated', {
+      organizationId: toId(organization),
+      revision: organization.accessControl?.revision || 1,
+      actorSubject: actor?.sub || null,
+      ...metadata
+    })
+  } catch (error) {
+    console.error('Failed to queue organization access-control webhook delivery.', error)
+  }
+}
+
+async function notifyGlobalAccessControlChanged(policy, actor, action) {
+  const organizations = await Organization.find({ 'members.status': 'active' }).select('_id accessControl.revision').lean()
+  const deliveries = await Promise.allSettled(organizations.map((organization) => sendWebhook(
+    'organization.access_control.updated',
+    {
+      organizationId: toId(organization),
+      revision: organization.accessControl?.revision || 1,
+      policyRevision: policy.revision,
+      actorSubject: actor?.sub || null,
+      source: 'global',
+      action
+    }
+  )))
+  const failures = deliveries.filter((delivery) => delivery.status === 'rejected')
+  if (failures.length) console.error(`Failed to queue ${failures.length} global access-control webhook delivery group(s).`)
 }
 
 export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false } = {}) {
@@ -426,6 +471,7 @@ export async function saveGlobalRole(input, actor) {
     summary: `${existing ? 'Updated' : 'Created'} global role ${role.name}.`,
     revision: policy.revision
   })
+  await notifyGlobalAccessControlChanged(policy, actor, existing ? 'role.updated' : 'role.created')
   return policy
 }
 
@@ -456,10 +502,11 @@ export async function deleteGlobalRole(key, actor, expectedRevisionInput = undef
     scope: 'global', actor, action: 'role.deleted', targetType: 'role', targetKey: normalizedKey,
     summary: `Deleted global role ${existing.name}.`, revision: policy.revision
   })
+  await notifyGlobalAccessControlChanged(policy, actor, 'role.deleted')
   return policy
 }
 
-export async function saveOrganizationRoleOverride({ organization, input, actor }) {
+export async function saveOrganizationRoleOverride({ organization, input, actor, auditMetadata = {} }) {
   const policy = await getOrCreateGlobalAccessPolicy()
   const expectedRevision = Number(input.expectedRevision)
   const currentRevision = organization.accessControl?.revision || 1
@@ -496,12 +543,19 @@ export async function saveOrganizationRoleOverride({ organization, input, actor 
     scope: 'organization', organization, actor, action: index >= 0 ? 'role_override.updated' : 'role_override.created',
     targetType: 'role', targetKey: key,
     summary: `${index >= 0 ? 'Updated' : 'Created'} ${sanitized.name} for ${organization.name}.`,
-    revision: organization.accessControl.revision
+    revision: organization.accessControl.revision,
+    metadata: auditMetadata
+  })
+  await notifyOrganizationAccessControlChanged(organization, actor, {
+    action: index >= 0 ? 'role_override.updated' : 'role_override.created',
+    targetType: 'role',
+    targetKey: key,
+    ...auditMetadata
   })
   return organization
 }
 
-export async function deleteOrganizationRoleOverride({ organization, key, actor, expectedRevision: expectedRevisionInput }) {
+export async function deleteOrganizationRoleOverride({ organization, key, actor, expectedRevision: expectedRevisionInput, auditMetadata = {} }) {
   const normalizedKey = roleKey(key)
   const expectedRevision = Number(expectedRevisionInput)
   const currentRevision = organization.accessControl?.revision || 1
@@ -528,12 +582,19 @@ export async function deleteOrganizationRoleOverride({ organization, key, actor,
     scope: 'organization', organization, actor, action: 'role_override.deleted',
     targetType: 'role', targetKey: normalizedKey,
     summary: `Removed the ${normalizedKey} organization override.`,
-    revision: organization.accessControl.revision
+    revision: organization.accessControl.revision,
+    metadata: auditMetadata
+  })
+  await notifyOrganizationAccessControlChanged(organization, actor, {
+    action: 'role_override.deleted',
+    targetType: 'role',
+    targetKey: normalizedKey,
+    ...auditMetadata
   })
   return organization
 }
 
-export async function saveMemberAccessControl({ organization, accountId, input, actor }) {
+export async function saveMemberAccessControl({ organization, accountId, input, actor, auditMetadata = {} }) {
   const expectedRevision = Number(input.expectedRevision)
   const currentRevision = organization.accessControl?.revision || 1
   if (Number.isFinite(expectedRevision) && expectedRevision !== currentRevision) {
@@ -584,7 +645,13 @@ export async function saveMemberAccessControl({ organization, accountId, input, 
     targetType: 'member', targetKey: toId(member.account),
     summary: `Updated role and permission assignments for an organization member.`,
     revision: organization.accessControl.revision,
-    metadata: { roleKeys: requestedRoleKeys }
+    metadata: { roleKeys: requestedRoleKeys, ...auditMetadata }
+  })
+  await notifyOrganizationAccessControlChanged(organization, actor, {
+    action: 'member_access.updated',
+    targetType: 'member',
+    targetKey: toId(member.account),
+    ...auditMetadata
   })
   return member
 }
@@ -626,12 +693,13 @@ export async function getOrganizationAccessControlView({ organization, account =
     ? (organization.members || []).filter((member) => member.status === 'active')
     : []
   const accountIds = visibleMembers.map((member) => member.account)
-  const accounts = await Account.find({ _id: { $in: accountIds } }).select('email profile teams organizations').lean()
+  const accounts = await Account.find({ _id: { $in: accountIds } }).select('sub email profile teams organizations').lean()
   const accountById = new Map(accounts.map((candidate) => [toId(candidate), candidate]))
   for (const member of visibleMembers) {
     const memberAccount = accountById.get(toId(member.account))
     members.push({
       accountId: toId(member.account),
+      subjectId: memberAccount?.sub || '',
       email: memberAccount?.email || '',
       name: memberAccount?.profile?.name || memberAccount?.email || 'Member',
       organizationRole: member.role,
@@ -669,6 +737,166 @@ export async function getOrganizationAccessControlView({ organization, account =
     canReadAudit,
     viewerAccountId: account ? toId(account) : null
   }
+}
+
+function productDefinition(appId) {
+  const normalized = String(appId || '').trim()
+  const definition = PRODUCT_PERMISSION_CATALOG.find((product) => product.appId === normalized)
+  if (!definition) {
+    const error = new Error(`Unknown product '${normalized}'.`)
+    error.code = 'UNKNOWN_PRODUCT'
+    throw error
+  }
+  return definition
+}
+
+function productRoleView(globalRole, override, appId) {
+  const inheritedGrants = productPermissionIds(globalRole?.grants, appId)
+  const inheritedDenies = productPermissionIds(globalRole?.denies, appId)
+  const overrideGrants = productPermissionIds(override?.grants, appId)
+  const overrideDenies = productPermissionIds(override?.denies, appId)
+  const effective = new Set(inheritedGrants)
+  inheritedDenies.forEach((permissionId) => effective.delete(permissionId))
+  overrideGrants.forEach((permissionId) => effective.add(permissionId))
+  overrideDenies.forEach((permissionId) => effective.delete(permissionId))
+  return {
+    key: globalRole?.key || override?.roleKey,
+    name: override?.name || globalRole?.name || override?.roleKey,
+    description: override?.description || globalRole?.description || '',
+    source: globalRole ? (override ? 'overridden' : 'global') : 'organization',
+    locked: globalRole?.locked === true,
+    isCustom: !globalRole,
+    isActive: override ? override.isActive !== false : globalRole?.isActive !== false,
+    inherited: { grants: inheritedGrants, denies: inheritedDenies },
+    override: override ? { grants: overrideGrants, denies: overrideDenies } : null,
+    effectivePermissions: Array.from(effective).sort()
+  }
+}
+
+export async function getProductAccessControlView({ organization, account, appId }) {
+  const product = productDefinition(appId)
+  const view = await getOrganizationAccessControlView({ organization, account })
+  const globalByKey = new Map(view.globalRoles.map((role) => [role.key, role]))
+  const overrideByKey = new Map(view.roleOverrides.map((role) => [role.roleKey, role]))
+  const roleKeys = new Set([...globalByKey.keys(), ...overrideByKey.keys()])
+  return {
+    schemaVersion: view.schemaVersion,
+    policyRevision: view.policyRevision,
+    organizationRevision: view.organizationRevision,
+    organization: view.organization,
+    product,
+    roles: Array.from(roleKeys)
+      .map((key) => productRoleView(globalByKey.get(key), overrideByKey.get(key), product.appId))
+      .filter((role) => role.isActive)
+      .sort((left, right) => left.name.localeCompare(right.name)),
+    members: view.members.map((member) => ({
+      accountId: member.accountId,
+      subjectId: member.subjectId,
+      email: member.email,
+      name: member.name,
+      organizationRole: member.organizationRole,
+      roleKeys: member.accessControl.roleKeys,
+      direct: {
+        grants: productPermissionIds(member.accessControl.grants, product.appId),
+        denies: productPermissionIds(member.accessControl.denies, product.appId)
+      },
+      effectivePermissions: member.effective?.permissionsByApp?.[product.appId] || [],
+      effectiveRoleKeys: member.effective?.roleKeys || []
+    })),
+    auditEvents: view.auditEvents.filter((event) => !event.metadata?.appId || event.metadata.appId === product.appId),
+    canManage: await canManageOrganizationAccess(account, organization),
+    canReadAudit: view.canReadAudit,
+    viewerAccountId: view.viewerAccountId
+  }
+}
+
+export async function saveOrganizationProductRoleOverride({ organization, roleKey: key, appId, input, actor }) {
+  productDefinition(appId)
+  const existing = (organization.accessControl?.roleOverrides || []).find((override) => override.roleKey === key)
+  return saveOrganizationRoleOverride({
+    organization,
+    actor,
+    auditMetadata: { appId },
+    input: {
+      roleKey: key,
+      name: input.name || existing?.name,
+      description: input.description ?? existing?.description,
+      grants: replaceProductPermissionRows(existing?.grants || [], appId, input.grants),
+      denies: replaceProductPermissionRows(existing?.denies || [], appId, input.denies),
+      isActive: input.isActive ?? existing?.isActive,
+      expectedRevision: input.expectedRevision
+    }
+  })
+}
+
+export async function resetOrganizationProductRoleOverride({ organization, roleKey: key, appId, expectedRevision, actor }) {
+  productDefinition(appId)
+  const existing = (organization.accessControl?.roleOverrides || []).find((override) => override.roleKey === key)
+  if (!existing) return organization
+  return saveOrganizationRoleOverride({
+    organization,
+    actor,
+    auditMetadata: { appId, reset: true },
+    input: {
+      roleKey: key,
+      name: existing.name,
+      description: existing.description,
+      grants: replaceProductPermissionRows(existing.grants || [], appId, []),
+      denies: replaceProductPermissionRows(existing.denies || [], appId, []),
+      isActive: existing.isActive,
+      expectedRevision
+    }
+  })
+}
+
+export async function deleteOrganizationProductRole({ organization, roleKey: key, appId, expectedRevision, actor }) {
+  productDefinition(appId)
+  const policy = await getOrCreateGlobalAccessPolicy()
+  if ((policy.roles || []).some((role) => role.key === key)) {
+    return resetOrganizationProductRoleOverride({ organization, roleKey: key, appId, expectedRevision, actor })
+  }
+  const existing = (organization.accessControl?.roleOverrides || []).find((override) => override.roleKey === key)
+  if (!existing) return organization
+  const usedByOtherProducts = [...(existing.grants || []), ...(existing.denies || [])]
+    .some((row) => row.appId !== appId && (row.permissions || []).length)
+  if (usedByOtherProducts) {
+    const error = new Error('This organization role is used by another product and must be deleted in Identity.')
+    error.code = 'ROLE_USED_BY_OTHER_PRODUCTS'
+    error.statusCode = 409
+    throw error
+  }
+  if ((organization.members || []).some((member) => (member.accessControl?.roleKeys || []).includes(key))) {
+    const error = new Error('Move assigned members to another role before deleting this organization role.')
+    error.code = 'ROLE_ASSIGNED'
+    error.statusCode = 409
+    throw error
+  }
+  return deleteOrganizationRoleOverride({
+    organization, key, actor, expectedRevision,
+    auditMetadata: { appId }
+  })
+}
+
+export async function saveMemberProductAccessControl({ organization, accountId, appId, input, actor }) {
+  productDefinition(appId)
+  const member = findCanonicalMember(organization, accountId)
+  if (!member) {
+    const error = new Error('Active organization member not found.')
+    error.code = 'MEMBER_NOT_FOUND'
+    throw error
+  }
+  return saveMemberAccessControl({
+    organization,
+    accountId,
+    actor,
+    auditMetadata: { appId },
+    input: {
+      roleKeys: input.roleKeys ?? member.accessControl?.roleKeys ?? [],
+      grants: replaceProductPermissionRows(member.accessControl?.grants || [], appId, input.grants),
+      denies: replaceProductPermissionRows(member.accessControl?.denies || [], appId, input.denies),
+      expectedRevision: input.expectedRevision
+    }
+  })
 }
 
 export async function canManageOrganizationAccess(account, organization) {
