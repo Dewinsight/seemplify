@@ -132,6 +132,11 @@
 
 .alert-action[hidden] { display: none; }
 
+#alertSuccess:not(.show),
+#alertError:not(.show) {
+    display: none;
+}
+
 input[aria-invalid="true"] {
     border-color: var(--error) !important;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--error) 24%, transparent);

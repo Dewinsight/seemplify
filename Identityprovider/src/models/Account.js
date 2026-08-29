@@ -54,13 +54,24 @@ const AccountSchema = new mongoose.Schema({
     },
     // Tax information
     taxInfo: {
-      w4Allowances: Number,
-      additionalWithholding: Number,
+      taxId: String,
       filingStatus: {
         type: String,
         enum: ['single', 'married_jointly', 'married_separately', 'head_of_household', 'widow']
       },
+      w4Allowances: { type: Number, default: 0 },
+      additionalWithholding: { type: Number, default: 0 },
+      multipleJobs: { type: Boolean, default: false },
       lastUpdated: Date
+    },
+    completionReminders: {
+      lastSentAt: Date,
+      sendCount: { type: Number, default: 0 },
+      lastCompletedAt: Date,
+      lastMissingSteps: {
+        type: [String],
+        default: []
+      }
     }
   },
   // Password reset fields
@@ -349,61 +360,6 @@ const AccountSchema = new mongoose.Schema({
       type: Map,
       of: Date,
       default: {}
-    }
-  },
-
-  // =====================================================
-  // EMPLOYEE PROFILE - HR Information
-  // =====================================================
-  profile: {
-    // Basic profile info
-    name: { type: String },
-    preferred_username: { type: String },
-
-    // Extended personal information
-    personalInfo: {
-      dateOfBirth: Date,
-      mailingAddress: {
-        street: String,
-        street2: String,
-        city: String,
-        state: String,
-        zipCode: String,
-        country: { type: String, default: 'USA' }
-      },
-      phoneNumbers: {
-        mobile: String,
-        home: String,
-        work: String
-      },
-      emergencyContacts: [{
-        name: String,
-        relationship: String,
-        phone: String,
-        email: String
-      }]
-    },
-
-    // Tax withholding information
-    taxInfo: {
-      taxId: String,
-      filingStatus: {
-        type: String,
-        enum: ['single', 'married_jointly', 'married_separately', 'head_of_household']
-      },
-      w4Allowances: { type: Number, default: 0 },
-      additionalWithholding: { type: Number, default: 0 },
-      multipleJobs: { type: Boolean, default: false },
-      lastUpdated: Date
-    },
-    completionReminders: {
-      lastSentAt: Date,
-      sendCount: { type: Number, default: 0 },
-      lastCompletedAt: Date,
-      lastMissingSteps: {
-        type: [String],
-        default: []
-      }
     }
   },
 

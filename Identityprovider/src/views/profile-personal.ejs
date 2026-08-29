@@ -7,7 +7,7 @@
     <style><%- include('../public/css/idp-theme.css') %></style>
     <link rel="stylesheet" href="/css/main.css?v=3">
     <link rel="stylesheet" href="/css/profile-dashboard.css?v=3">
-    <link rel="stylesheet" href="/css/profile-personal.css?v=1">
+    <link rel="stylesheet" href="/css/profile-personal.css?v=2">
     <script src="/js/theme.js?v=3"></script>
 </head>
 <body class="idp-workspace-page">
@@ -113,7 +113,7 @@
 </div>
 
 <script id="profilePersonalConfig" type="application/json"><%- JSON.stringify({ setupMode, emergencyContacts: user.profile?.personalInfo?.emergencyContacts || [] }).replace(/</g, '\\u003c') %></script>
-<script src="/js/profile-personal.js?v=1"></script>
+<script src="/js/profile-personal.js?v=2"></script>
 <script src="/js/invitation-gatekeeper.js"></script>
 </body>
 </html>

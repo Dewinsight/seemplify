@@ -185,9 +185,12 @@
     requirement.querySelector('.profile-requirement__state').textContent = complete ? 'Ready' : 'Required'
   }
 
-  function updateChecklist(errors = clientErrors(collectData())) {
+  function updateChecklist(errors) {
     let completed = 0
-    const errorKeys = Object.keys(errors)
+    const validationErrors = errors && !(errors instanceof Event)
+      ? errors
+      : clientErrors(collectData())
+    const errorKeys = Object.keys(validationErrors)
     for (const [key, fields] of Object.entries(requirementErrorKeys)) {
       const complete = !errorKeys.some(errorKey => fields.some(field => errorKey === field || errorKey.startsWith(`${field}.`)))
       renderRequirementState(key, complete)
@@ -335,11 +338,18 @@
   byId('saveContactBtn')?.addEventListener('click', saveContact)
   form.addEventListener('submit', submitPersonal)
   form.addEventListener('input', event => {
-    if (event.target?.id) setFieldError(event.target.id, '')
+    const contactErrorKey = {
+      contactName: 'name',
+      contactRelationship: 'relationship',
+      contactPhone: 'phone',
+      contactEmail: 'email'
+    }[event.target?.id]
+    if (contactErrorKey) setContactError(contactErrorKey, '')
+    else if (event.target?.id) setFieldError(event.target.id, '')
     clearErrorAlert()
     updateChecklist()
   })
-  form.addEventListener('change', updateChecklist)
+  form.addEventListener('change', () => updateChecklist())
   renderContacts()
   updateChecklist()
 })()

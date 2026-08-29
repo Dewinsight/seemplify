@@ -33,6 +33,15 @@ function renderProfilePage() {
   })
 }
 
+async function renderProfileWizardPage() {
+  const wizard = await ejs.renderFile(join(root, 'src', 'views', 'partials', 'profile-completion-wizard.ejs'), {
+    profileCompletion: getProfileCompletion(user),
+    profileCompletionEnforced: true,
+    currentProfileSection: ''
+  })
+  return `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/css/main.css"><style>${await readFile(join(publicRoot, 'css', 'idp-theme.css'), 'utf8')}</style></head><body class="idp-workspace-page"><main><h1>Identity home</h1></main>${wizard}</body></html>`
+}
+
 function mimeType(pathname) {
   return ({ '.css': 'text/css', '.js': 'text/javascript' })[extname(pathname)] || 'application/octet-stream'
 }
@@ -49,6 +58,14 @@ const server = createServer(async (request, response) => {
     response.setHeader('content-type', 'text/html; charset=utf-8')
     return response.end(await renderProfilePage())
   }
+  if (request.method === 'GET' && url.pathname === '/dashboard') {
+    response.setHeader('content-type', 'text/html; charset=utf-8')
+    return response.end(await renderProfileWizardPage())
+  }
+  if (request.method === 'GET' && url.pathname === '/api/invitations/pending') {
+    response.setHeader('content-type', 'application/json')
+    return response.end('[]')
+  }
   if (request.method === 'GET' && url.pathname === '/') {
     response.setHeader('content-type', 'text/html; charset=utf-8')
     return response.end('<!doctype html><html><body><h1>Identity home</h1></body></html>')
@@ -60,7 +77,8 @@ const server = createServer(async (request, response) => {
       response.statusCode = 422
       return response.end(JSON.stringify({ error: 'Check the fields and try again.', fieldErrors: validation.fieldErrors }))
     }
-    const completion = getProfileCompletion({ profile: { personalInfo: validation.value } })
+    user.profile.personalInfo = validation.value
+    const completion = getProfileCompletion(user)
     return response.end(JSON.stringify({ success: true, profileCompletion: completion }))
   }
   if (request.method === 'GET' && (url.pathname.startsWith('/css/') || url.pathname.startsWith('/js/'))) {
@@ -96,8 +114,19 @@ if (process.argv.includes('--serve')) {
 const browser = await chromium.launch({ headless: true })
 
 try {
+  const wizardPage = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  await wizardPage.goto(`${baseUrl}/dashboard`)
+  assert.equal(await wizardPage.getByRole('dialog', { name: 'Complete your employee profile' }).isVisible(), true)
+  assert.match(await wizardPage.getByRole('dialog').innerText(), /0 of 1 required sections completed/i)
+  assert.equal(await wizardPage.getByRole('button', { name: 'Close wizard' }).count(), 0)
+  await wizardPage.getByRole('button', { name: 'Complete Setup' }).click()
+  await wizardPage.waitForURL(`${baseUrl}/profile/personal?wizard=1`)
+  await wizardPage.close()
+
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   await page.goto(`${baseUrl}/profile/personal?wizard=1`)
+  assert.equal(await page.locator('#alertError').isVisible(), false)
+  assert.equal(await page.locator('#alertSuccess').isVisible(), false)
 
   await page.getByRole('button', { name: 'Save and continue' }).click()
   await page.getByRole('alert').waitFor()
@@ -107,6 +136,9 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'dateOfBirth')
 
   await page.getByLabel('Date of birth').fill('1990-04-20')
+  await page.getByLabel('Date of birth').dispatchEvent('change')
+  assert.match(await page.locator('#profileChecklistCount').innerText(), /1 of 4 ready/i)
+  assert.equal(await page.locator('.profile-requirement.is-complete').count(), 1)
   await page.getByLabel('Street address').fill('12 Example Street')
   await page.getByLabel('City').fill('London')
   await page.getByLabel('Postal or ZIP code').fill('SW1A 1AA')
@@ -117,8 +149,11 @@ try {
   await page.getByRole('button', { name: 'Add contact' }).click()
   assert.equal(await page.locator('#contactName').getAttribute('aria-invalid'), 'true')
   await page.getByLabel('Full name').fill('Jane Example')
+  assert.equal(await page.locator('#contactName').getAttribute('aria-invalid'), 'false')
   await page.getByLabel('Relationship').fill('Friend')
+  assert.equal(await page.locator('#contactRelationship').getAttribute('aria-invalid'), 'false')
   await page.getByLabel('Phone number', { exact: true }).fill('+44 7700 900456')
+  assert.equal(await page.locator('#contactPhone').getAttribute('aria-invalid'), 'false')
   await page.getByRole('button', { name: 'Save and continue' }).click()
   assert.match(await page.getByRole('alert').innerText(), /select “add contact” to add these contact details/i)
   assert.equal(await page.locator('#emergencyContactSection').getAttribute('aria-invalid'), 'true')
@@ -158,6 +193,13 @@ try {
   await page.waitForURL(`${baseUrl}/`)
   assert.equal(await page.getByRole('heading', { name: 'Identity home' }).isVisible(), true)
 
+  await page.goto(`${baseUrl}/profile/personal`)
+  assert.match(await page.locator('#profileChecklistCount').innerText(), /4 of 4 ready/i)
+  assert.match(await page.locator('.profile-nav-status').innerText(), /complete/i)
+  assert.equal(await page.getByLabel('Street address').inputValue(), '12 Example Street')
+  assert.equal(await page.locator('.profile-requirement.is-complete').count(), 4)
+
+  user.profile.personalInfo = {}
   const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } })
   await mobile.goto(`${baseUrl}/profile/personal?wizard=1`)
   assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
