@@ -78,12 +78,21 @@ function evaluateClockIn(policy, { now = new Date(), hasLocation = false } = {})
     }
 
     if (rules.enforceClockInWindow) {
-        const start = parseTime(shift.startTime, '09:00');
-        const earliest = start - Number(rules.earliestClockInMinutes || 0);
-        const latest = start + Number(rules.latestClockInMinutes || 0);
-        const current = minutesOfDay(localNow);
-        if (current < earliest) return { allowed: false, warnings: [], code: 'CLOCK_IN_TOO_EARLY' };
-        if (current > latest) return { allowed: false, warnings: [], code: 'CLOCK_IN_WINDOW_CLOSED' };
+        if (shift.startAt) {
+            const scheduledStart = new Date(shift.startAt).getTime();
+            const current = now.getTime();
+            const earliest = scheduledStart - Number(rules.earliestClockInMinutes || 0) * 60000;
+            const latest = scheduledStart + Number(rules.latestClockInMinutes || 0) * 60000;
+            if (current < earliest) return { allowed: false, warnings: [], code: 'CLOCK_IN_TOO_EARLY' };
+            if (current > latest) return { allowed: false, warnings: [], code: 'CLOCK_IN_WINDOW_CLOSED' };
+        } else {
+            const start = parseTime(shift.startTime, '09:00');
+            const earliest = start - Number(rules.earliestClockInMinutes || 0);
+            const latest = start + Number(rules.latestClockInMinutes || 0);
+            const current = minutesOfDay(localNow);
+            if (current < earliest) return { allowed: false, warnings: [], code: 'CLOCK_IN_TOO_EARLY' };
+            if (current > latest) return { allowed: false, warnings: [], code: 'CLOCK_IN_WINDOW_CLOSED' };
+        }
     }
 
     if (policy?.geofencing?.enabled && policy?.geofencing?.enforced && !hasLocation) {

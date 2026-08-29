@@ -30,3 +30,20 @@ test('does not create location exceptions while geofencing is disabled', () => {
     });
     expect(report.rows[0].exceptions.map(item => item.type)).not.toContain('unverified_location');
 });
+
+test('uses published shift times for late and early-departure reporting', () => {
+    const entries = [
+        { userId: 'u1', timestamp: new Date('2026-08-03T10:05:00Z'), entryType: 'clock_in' },
+        { userId: 'u1', timestamp: new Date('2026-08-03T17:55:00Z'), entryType: 'clock_out' },
+    ];
+    const report = buildAttendanceExceptions(entries, {
+        timezone: 'UTC',
+        workSchedule: { defaultShift: { startTime: '09:00', endTime: '17:00' } },
+        gracePeriod: { lateArrival: 5, earlyDeparture: 5 },
+        breakRules: { requiredAfterMinutes: 999, minimumBreakMinutes: 0 },
+        clockSettings: { autoClockOut: { afterHours: 12 } },
+    }, {
+        shifts: [{ userId: 'u1', startAt: new Date('2026-08-03T10:00:00Z'), endAt: new Date('2026-08-03T18:00:00Z') }],
+    });
+    expect(report.rows[0].exceptions.map(item => item.type)).not.toEqual(expect.arrayContaining(['late_arrival', 'early_departure']));
+});

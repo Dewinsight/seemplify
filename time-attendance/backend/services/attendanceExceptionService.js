@@ -20,7 +20,7 @@ function groupEntries(entries, timezone) {
     return groups;
 }
 
-function analyzeDay(entries, policy, timezone) {
+function analyzeDay(entries, policy, timezone, scheduledShift = null) {
     const sorted = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     let openClock = null;
     let openBreak = null;
@@ -73,10 +73,14 @@ function analyzeDay(entries, policy, timezone) {
     const firstLocal = firstClockIn ? utcToZonedTime(firstClockIn, timezone) : null;
     const lastLocal = lastClockOut ? utcToZonedTime(lastClockOut, timezone) : null;
     const lateMinutes = firstLocal
-        ? Math.max(0, firstLocal.getHours() * 60 + firstLocal.getMinutes() - parseTime(shift.startTime, '09:00') - Number(grace.lateArrival || 0))
+        ? Math.max(0, scheduledShift
+            ? (firstClockIn - new Date(scheduledShift.startAt)) / 60000 - Number(grace.lateArrival || 0)
+            : firstLocal.getHours() * 60 + firstLocal.getMinutes() - parseTime(shift.startTime, '09:00') - Number(grace.lateArrival || 0))
         : 0;
     const earlyDepartureMinutes = lastLocal
-        ? Math.max(0, parseTime(shift.endTime, '17:00') - (lastLocal.getHours() * 60 + lastLocal.getMinutes()) - Number(grace.earlyDeparture || 0))
+        ? Math.max(0, scheduledShift
+            ? (new Date(scheduledShift.endAt) - lastClockOut) / 60000 - Number(grace.earlyDeparture || 0)
+            : parseTime(shift.endTime, '17:00') - (lastLocal.getHours() * 60 + lastLocal.getMinutes()) - Number(grace.earlyDeparture || 0))
         : 0;
     const breakRules = policy?.breakRules || {};
     const breakShortfall = workMinutes >= Number(breakRules.requiredAfterMinutes || 360)
@@ -117,10 +121,19 @@ function analyzeDay(entries, policy, timezone) {
     };
 }
 
-function buildAttendanceExceptions(entries, policy) {
+function buildAttendanceExceptions(entries, policy, calendarContext = {}) {
     const timezone = policy?.timezone || 'UTC';
+    const shiftsByDay = new Map();
+    for (const shift of calendarContext.shifts || []) {
+        const key = `${shift.userId}|${dateKey(shift.startAt, timezone)}`;
+        const current = shiftsByDay.get(key);
+        shiftsByDay.set(key, current ? {
+            startAt: new Date(shift.startAt) < new Date(current.startAt) ? shift.startAt : current.startAt,
+            endAt: new Date(shift.endAt) > new Date(current.endAt) ? shift.endAt : current.endAt,
+        } : shift);
+    }
     const rows = Array.from(groupEntries(entries, timezone).values())
-        .map(group => analyzeDay(group, policy, timezone))
+        .map(group => analyzeDay(group, policy, timezone, shiftsByDay.get(`${group[0]?.userId}|${dateKey(group[0]?.timestamp, timezone)}`)))
         .filter(row => row.exceptions.length > 0)
         .sort((a, b) => b.date.localeCompare(a.date) || a.userName.localeCompare(b.userName));
 

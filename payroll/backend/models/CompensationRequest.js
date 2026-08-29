@@ -108,11 +108,22 @@ const CompensationRequestSchema = new Schema({
     comment: String,
     date: { type: Date, default: Date.now }
   }],
+  approvalPolicySnapshot: {
+    policyId: String,
+    approvalRequired: Boolean,
+    requireSeparationOfDuties: Boolean,
+    defaultOvertimeMultiplier: Number,
+    allowMultiplierOverride: Boolean,
+    requireEvidenceReference: Boolean,
+    preventTimesheetOverlap: Boolean,
+    maximumHoursPerRequest: Number,
+    approverRoles: [String],
+  },
 
   // Processing bookkeeping (set when a payroll run is finalized/exported)
   processedInRunId: { type: Schema.Types.ObjectId, ref: 'PayrollRun' },
   processedAt: Date
-}, { timestamps: true });
+}, { timestamps: true, optimisticConcurrency: true });
 
 CompensationRequestSchema.index({ organizationId: 1, status: 1, effectiveDate: -1 });
 

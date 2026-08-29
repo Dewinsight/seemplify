@@ -256,6 +256,20 @@ describe('PayrollFinalizationService', () => {
     expect(harness.stats.profileSaves).toBe(1);
   });
 
+  test('attendance-linked earnings are not cast as compensation request ids', async () => {
+    const seed = initialState();
+    seed.payslips[0].earnings.push({
+      type: 'overtime',
+      linkedRequestId: 'time-attendance:507f1f77bcf86cd799439011',
+      amount: 75,
+    });
+    const harness = createHarness(seed);
+
+    await expect(harness.service.finalizeRun(finalizationInput))
+      .resolves.toMatchObject({ status: 'exported' });
+    expect(harness.state().requests[0]).toMatchObject({ status: 'processed', processedInRunId: 'run-1' });
+  });
+
   test('concurrent finalization requests serialize on the approved claim', async () => {
     const harness = createHarness();
 

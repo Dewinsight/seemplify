@@ -54,6 +54,19 @@ describe('manual overtime capture', () => {
     expect(() => normalizeManualOvertimeCapture(valid({ overtimeHours: 3 }))).toThrow('cannot exceed');
   });
 
+  test('enforces the configured request limit and multiplier', () => {
+    expect(() => normalizeManualOvertimeCapture(valid({
+      overtimeHours: 2,
+      maximumHours: 1.5,
+    }))).toThrow('no more than 1.5 hours');
+
+    const result = normalizeManualOvertimeCapture(valid({
+      overtimeMultiplier: 3,
+      forcedMultiplier: 1.25,
+    }));
+    expect(result.overtimeMultiplier).toBe(1.25);
+  });
+
   test('rejects future and invalid work intervals', () => {
     expect(() => normalizeManualOvertimeCapture(valid({
       overtimeContext: { ...valid().overtimeContext, startedAt: '2026-08-10T19:30:00.000Z', endedAt: '2026-08-10T20:30:00.000Z' },

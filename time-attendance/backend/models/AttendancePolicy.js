@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const { defaultSchedulingSettings } = require('../services/schedulingPolicyService');
 
 /**
  * AttendancePolicy Model
@@ -110,6 +111,35 @@ const ApprovalDelegationSchema = new Schema({
     endsAt: { type: Date, required: true },
 }, { _id: false });
 
+const SchedulingRequestPolicySchema = new Schema({
+    approvalRequired: { type: Boolean, default: true },
+    approvalMode: { type: String, enum: ['single', 'multi'], default: 'single' },
+    approvalLevels: {
+        type: [ApprovalLevelSchema],
+        default: () => [{ name: 'Line manager', approverType: 'line_manager' }],
+        validate: {
+            validator: levels => Array.isArray(levels) && levels.length > 0 && levels.length <= 10,
+            message: 'Between one and ten approval levels are required',
+        },
+    },
+}, { _id: false });
+
+const SchedulingSettingsSchema = new Schema({
+    usePublishedShiftsAsAttendanceSchedule: { type: Boolean, default: true },
+    enforceAvailability: { type: Boolean, default: true },
+    requireAvailabilityRecord: { type: Boolean, default: false },
+    enforceMinimumRest: { type: Boolean, default: true },
+    enforceMaximumWeeklyHours: { type: Boolean, default: true },
+    allowConflictOverride: { type: Boolean, default: false },
+    allowEmployeeRelease: { type: Boolean, default: true },
+    allowShiftSwap: { type: Boolean, default: true },
+    requestPolicies: {
+        cover: { type: SchedulingRequestPolicySchema, default: () => ({}) },
+        release: { type: SchedulingRequestPolicySchema, default: () => ({}) },
+        swap: { type: SchedulingRequestPolicySchema, default: () => ({}) },
+    },
+}, { _id: false });
+
 const AttendancePolicySchema = new Schema({
     // Organization (from IdP)
     organizationId: {
@@ -136,6 +166,12 @@ const AttendancePolicySchema = new Schema({
             type: Number,
             default: 40
         },
+        maximumHoursPerWeek: {
+            type: Number,
+            default: 48,
+            min: 0,
+            max: 168,
+        },
         workDays: {
             type: [Number],
             default: [1, 2, 3, 4, 5]  // Monday to Friday (0=Sunday)
@@ -151,6 +187,11 @@ const AttendancePolicySchema = new Schema({
 
     restRules: {
         minimumMinutesBetweenShifts: { type: Number, default: 660, min: 0, max: 1440 },
+    },
+
+    schedulingSettings: {
+        type: SchedulingSettingsSchema,
+        default: defaultSchedulingSettings,
     },
 
     breakRules: {
@@ -366,6 +407,7 @@ AttendancePolicySchema.statics.getOrCreateDefault = async function (organization
                 type: 'fixed',
                 standardHoursPerDay: 8,
                 standardHoursPerWeek: 40,
+                maximumHoursPerWeek: 48,
                 workDays: [1, 2, 3, 4, 5],
                 defaultShift: {
                     name: 'Standard Shift',
@@ -385,11 +427,23 @@ AttendancePolicySchema.statics.getOrCreateDefault = async function (organization
                 lateArrival: 15,
                 earlyDeparture: 15,
             },
+            schedulingSettings: defaultSchedulingSettings(),
         });
 
         await policy.save();
     }
 
+    // Mongoose can hydrate defaults for a legacy document without persisting
+    // them. Store the seeded policy so every service observes the same values.
+    await this.updateOne(
+        { organizationId, schedulingSettings: { $exists: false } },
+        { $set: { schedulingSettings: defaultSchedulingSettings() } }
+    );
+    await this.updateOne(
+        { organizationId, 'workSchedule.maximumHoursPerWeek': { $exists: false } },
+        { $set: { 'workSchedule.maximumHoursPerWeek': 48 } }
+    );
+    if (!policy.schedulingSettings) policy = await this.findOne({ organizationId });
     return policy;
 };
 

@@ -1,6 +1,6 @@
 const { Shift, LeaveSnapshot } = require('../models');
 
-async function findShiftConflicts({ organizationId, userId, startAt, endAt, excludeShiftId, minimumRestMinutes = 0 }) {
+async function findShiftConflicts({ organizationId, userId, startAt, endAt, excludeShiftId, excludeShiftIds = [], minimumRestMinutes = 0 }) {
     const start = new Date(startAt);
     const end = new Date(endAt);
     const errors = [];
@@ -11,11 +11,13 @@ async function findShiftConflicts({ organizationId, userId, startAt, endAt, excl
     }
     if (!userId) return { valid: true, errors, warnings };
 
+    const excludedIds = [excludeShiftId, ...excludeShiftIds].filter(Boolean);
+    const exclusion = excludedIds.length ? { _id: { $nin: excludedIds } } : {};
     const overlap = await Shift.findOne({
         organizationId,
         userId,
         status: { $ne: 'cancelled' },
-        ...(excludeShiftId ? { _id: { $ne: excludeShiftId } } : {}),
+        ...exclusion,
         startAt: { $lt: end },
         endAt: { $gt: start },
     }).lean();
@@ -31,8 +33,8 @@ async function findShiftConflicts({ organizationId, userId, startAt, endAt, excl
     if (leave) errors.push({ code: 'LEAVE_CONFLICT', message: 'This shift overlaps approved leave', leaveId: leave.externalLeaveId });
 
     if (minimumRestMinutes > 0) {
-        const previous = await Shift.findOne({ organizationId, userId, status: { $ne: 'cancelled' }, endAt: { $lte: start } }).sort({ endAt: -1 }).lean();
-        const next = await Shift.findOne({ organizationId, userId, status: { $ne: 'cancelled' }, startAt: { $gte: end } }).sort({ startAt: 1 }).lean();
+        const previous = await Shift.findOne({ organizationId, userId, status: { $ne: 'cancelled' }, ...exclusion, endAt: { $lte: start } }).sort({ endAt: -1 }).lean();
+        const next = await Shift.findOne({ organizationId, userId, status: { $ne: 'cancelled' }, ...exclusion, startAt: { $gte: end } }).sort({ startAt: 1 }).lean();
         if (previous && (start - new Date(previous.endAt)) / 60000 < minimumRestMinutes) warnings.push({ code: 'INSUFFICIENT_REST', message: 'Rest before this shift is below policy', shiftId: previous._id });
         if (next && (new Date(next.startAt) - end) / 60000 < minimumRestMinutes) warnings.push({ code: 'INSUFFICIENT_REST', message: 'Rest after this shift is below policy', shiftId: next._id });
     }

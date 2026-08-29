@@ -614,6 +614,11 @@ test('reminds active onboarding and exposes retirement closeout in People Transi
 });
 
 test('captures off-system overtime with business context before payroll approval', async ({ page, request }) => {
+  await page.route('**/api/compensation/policy', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ approvalRequired: true, requireSeparationOfDuties: true, defaultOvertimeMultiplier: 1.5, allowMultiplierOverride: false, requireEvidenceReference: true, preventTimesheetOverlap: true, maximumHoursPerRequest: 12, approverRoles: ['hr_admin'] }),
+  }));
   await page.goto('/requests');
   await dismissPageGuide(page);
 
@@ -655,6 +660,7 @@ test('captures off-system overtime with business context before payroll approval
 test('configures payroll approval policy and scoped accounting delivery contact', async ({ page }) => {
   const policies: any[] = [];
   const contacts: any[] = [];
+  let manualOvertimePolicy: any = { approvalRequired: true, requireSeparationOfDuties: true, defaultOvertimeMultiplier: 1.5, allowMultiplierOverride: false, requireEvidenceReference: false, preventTimesheetOverlap: true, maximumHoursPerRequest: 24, approverRoles: ['hr_admin'] };
   await page.route('**/api/payroll/approval-policies', async route => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON(); policies.push({ _id: 'policy-e2e', active: true, ...body });
@@ -670,18 +676,27 @@ test('configures payroll approval policy and scoped accounting delivery contact'
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contacts) });
   });
   await page.route('**/api/payroll/employer-entities', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ entities: [{ _id: 'entity-ng', legalName: 'Nigeria Limited', jurisdictionCode: 'NG-LA' }] }) }));
+  await page.route('**/api/compensation/policy', async route => {
+    if (route.request().method() === 'PUT') manualOvertimePolicy = { ...manualOvertimePolicy, ...route.request().postDataJSON() };
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(manualOvertimePolicy) });
+  });
   await page.goto('/admin/settings/payroll-workflow');
   await dismissPageGuide(page);
   await page.getByPlaceholder('Policy name').fill('Two-level payroll approval');
   await page.getByText('Approval levels').locator('select').selectOption('2');
   await page.getByRole('button', { name: 'Add policy' }).click();
   await expect(page.getByText('Two-level payroll approval · Default')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Manual overtime' })).toBeVisible();
+  await page.getByLabel('Maximum hours per request').fill('12');
+  await page.getByRole('button', { name: 'Save manual overtime policy' }).click();
   await page.getByPlaceholder('Contact name').fill('Nigeria accounting');
   await page.getByPlaceholder('accounting@example.com').fill('accounts.ng@example.invalid');
   await page.getByLabel('Accounting contact legal employer').selectOption('entity-ng');
   await page.getByRole('button', { name: 'Add contact' }).click();
   await expect(page.getByText('accounts.ng@example.invalid')).toBeVisible();
   expect(policies[0]).toMatchObject({ approvalRequired: true, requireSeparationOfDuties: true, levels: [{ minimumApprovals: 1 }, { minimumApprovals: 1 }] });
+  expect(manualOvertimePolicy.maximumHoursPerRequest).toBe(12);
+  expect(manualOvertimePolicy.approverRoles).toEqual(['hr_admin']);
   expect(contacts[0]).toMatchObject({ employerEntityId: 'entity-ng', email: 'accounts.ng@example.invalid' });
 });
 

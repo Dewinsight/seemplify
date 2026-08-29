@@ -171,6 +171,7 @@ async function resolveCalculationPolicy({ policy, organizationId, userId, teamId
         workSchedule: {
             standardHoursPerDay: rules.work?.standardHoursPerDay,
             standardHoursPerWeek: rules.work?.standardHoursPerWeek,
+            maximumHoursPerWeek: rules.work?.maximumHoursPerWeek,
             workDays: rules.work?.workDays,
             defaultShift: {
                 startTime: rules.work?.defaultStartTime,

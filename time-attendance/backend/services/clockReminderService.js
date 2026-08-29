@@ -1,7 +1,8 @@
 const { utcToZonedTime } = require('date-fns-tz');
 const { format } = require('date-fns');
-const { AttendancePolicy, ClockReminderLog, TimeEntry } = require('../models');
+const { AttendancePolicy, ClockReminderLog, TimeEntry, Shift, SchedulePublication, EmployeeRoster } = require('../models');
 const emailService = require('./emailService');
+const { localDayBounds } = require('./timeCalculationService');
 
 let running = false;
 
@@ -16,6 +17,59 @@ async function knownUsers(organizationId) {
         { $sort: { timestamp: -1 } },
         { $group: { _id: '$userId', userEmail: { $first: '$userEmail' }, userName: { $first: '$userName' }, lastEntryType: { $first: '$entryType' } } },
     ]);
+}
+
+function localTimeText(value, timezone) {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value));
+    const part = type => parts.find(item => item.type === type)?.value || '00';
+    return `${part('hour')}:${part('minute')}`;
+}
+
+async function scheduledUsersForDay(policy, now) {
+    const bounds = localDayBounds(now, policy.timezone || 'UTC');
+    const publication = await SchedulePublication.findOne({
+        organizationId: policy.organizationId,
+        periodStart: { $lte: bounds.end },
+        periodEnd: { $gt: bounds.start },
+    }).lean();
+    if (!publication || policy.schedulingSettings?.usePublishedShiftsAsAttendanceSchedule === false) return null;
+    const shifts = await Shift.find({
+        organizationId: policy.organizationId,
+        userId: { $nin: [null, ''] },
+        status: { $in: ['published', 'completed'] },
+        startAt: { $lte: bounds.end },
+        endAt: { $gt: bounds.start },
+    }).sort({ startAt: 1 }).lean();
+    const userIds = [...new Set(shifts.map(shift => String(shift.userId)))];
+    const roster = await EmployeeRoster.find({ organizationId: policy.organizationId, userId: { $in: userIds } }).select('userId email name').lean();
+    const people = new Map(roster.map(member => [String(member.userId), member]));
+    const grouped = new Map();
+    for (const shift of shifts) {
+        const id = String(shift.userId);
+        const member = people.get(id);
+        if (!member?.email) continue;
+        const timezone = shift.timezone || policy.timezone || 'UTC';
+        const current = grouped.get(id) || {
+            _id: id,
+            userEmail: member.email,
+            userName: member.name || member.email,
+            timezone,
+            shiftStart: localTimeText(shift.startAt, timezone),
+            shiftEnd: localTimeText(shift.endAt, timezone),
+            shiftStartAt: new Date(shift.startAt),
+            shiftEndAt: new Date(shift.endAt),
+        };
+        if (new Date(shift.startAt) < current.shiftStartAt) {
+            current.shiftStartAt = new Date(shift.startAt);
+            current.shiftStart = localTimeText(shift.startAt, timezone);
+        }
+        if (new Date(shift.endAt) > current.shiftEndAt) {
+            current.shiftEndAt = new Date(shift.endAt);
+            current.shiftEnd = localTimeText(shift.endAt, timezone);
+        }
+        grouped.set(id, current);
+    }
+    return [...grouped.values()];
 }
 
 async function sendOnce(policy, user, type, localDate, shiftTime) {
@@ -57,22 +111,31 @@ async function checkClockReminders(now = new Date()) {
         });
         for (const policy of policies) {
             const localNow = utcToZonedTime(now, policy.timezone || 'UTC');
-            if (!(policy.workSchedule?.workDays || [1, 2, 3, 4, 5]).includes(localNow.getDay())) continue;
-            const currentMinute = localNow.getHours() * 60 + localNow.getMinutes();
-            const localDate = format(localNow, 'yyyy-MM-dd');
-            const users = await knownUsers(policy.organizationId);
+            const scheduledUsers = await scheduledUsersForDay(policy, now);
+            if (scheduledUsers === null && !(policy.workSchedule?.workDays || [1, 2, 3, 4, 5]).includes(localNow.getDay())) continue;
+            const users = scheduledUsers === null ? await knownUsers(policy.organizationId) : scheduledUsers;
             for (const user of users) {
-                const todayEntries = await TimeEntry.getTodayEntries(user._id, policy.organizationId, policy.timezone || 'UTC');
+                const timezone = user.timezone || policy.timezone || 'UTC';
+                const userLocalNow = utcToZonedTime(now, timezone);
+                const currentMinute = userLocalNow.getHours() * 60 + userLocalNow.getMinutes();
+                const localDate = format(userLocalNow, 'yyyy-MM-dd');
+                const todayEntries = await TimeEntry.getTodayEntries(user._id, policy.organizationId, timezone);
                 const hasClockedIn = todayEntries.some(entry => entry.entryType === 'clock_in');
                 const lastWorkEntry = [...todayEntries].reverse().find(entry => ['clock_in', 'clock_out'].includes(entry.entryType));
                 const isClockedIn = lastWorkEntry?.entryType === 'clock_in';
-                const shiftStart = policy.workSchedule?.defaultShift?.startTime || '09:00';
-                const shiftEnd = policy.workSchedule?.defaultShift?.endTime || '17:00';
+                const shiftStart = user.shiftStart || policy.workSchedule?.defaultShift?.startTime || '09:00';
+                const shiftEnd = user.shiftEnd || policy.workSchedule?.defaultShift?.endTime || '17:00';
                 const notifications = policy.notifications || {};
-                if (notifications.clockInReminder !== false && !hasClockedIn && currentMinute >= parseMinutes(shiftStart, '09:00') + Number(notifications.clockInReminderMinutesAfter ?? 15) && currentMinute < parseMinutes(shiftEnd, '17:00')) {
+                const clockInReminderDue = user.shiftStartAt
+                    ? now >= new Date(new Date(user.shiftStartAt).getTime() + Number(notifications.clockInReminderMinutesAfter ?? 15) * 60000) && now < new Date(user.shiftEndAt)
+                    : currentMinute >= parseMinutes(shiftStart, '09:00') + Number(notifications.clockInReminderMinutesAfter ?? 15) && currentMinute < parseMinutes(shiftEnd, '17:00');
+                const clockOutReminderDue = user.shiftEndAt
+                    ? now >= new Date(new Date(user.shiftEndAt).getTime() + Number(notifications.clockOutReminderMinutesAfter ?? 0) * 60000)
+                    : currentMinute >= parseMinutes(shiftEnd, '17:00') + Number(notifications.clockOutReminderMinutesAfter ?? 0);
+                if (notifications.clockInReminder !== false && !hasClockedIn && clockInReminderDue) {
                     if (await sendOnce(policy, user, 'clock_in', localDate, shiftStart)) sent += 1;
                 }
-                if (notifications.clockOutReminder !== false && isClockedIn && currentMinute >= parseMinutes(shiftEnd, '17:00') + Number(notifications.clockOutReminderMinutesAfter ?? 0)) {
+                if (notifications.clockOutReminder !== false && isClockedIn && clockOutReminderDue) {
                     if (await sendOnce(policy, user, 'clock_out', localDate, shiftEnd)) sent += 1;
                 }
             }
@@ -92,4 +155,4 @@ function startClockReminderScheduler() {
     console.log('Clock reminder scheduler started (every 5 minutes)');
 }
 
-module.exports = { checkClockReminders, startClockReminderScheduler, parseMinutes };
+module.exports = { checkClockReminders, scheduledUsersForDay, startClockReminderScheduler, parseMinutes };

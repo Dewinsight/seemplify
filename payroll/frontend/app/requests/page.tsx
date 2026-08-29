@@ -87,6 +87,7 @@ export default function MyRequestsPage() {
     const [showNewModal, setShowNewModal] = useState(false);
     const [user, setUser] = useState<any>(null);
     const [submitError, setSubmitError] = useState('');
+    const [overtimePolicy, setOvertimePolicy] = useState<any>(null);
 
     // New Request Form State
     const [formData, setFormData] = useState(emptyRequest);
@@ -109,8 +110,13 @@ export default function MyRequestsPage() {
                 setUser(userRes.user);
 
                 // Fetch My Requests
-                const requestsRes = await api.get('/compensation/team?mode=my');
+                const [requestsRes, policyRes] = await Promise.all([
+                    api.get('/compensation/team?mode=my'),
+                    api.get('/compensation/policy'),
+                ]);
                 setRequests(requestsRes.data);
+                setOvertimePolicy(policyRes.data);
+                setFormData((current) => ({ ...current, overtimeMultiplier: String(policyRes.data?.defaultOvertimeMultiplier ?? 1.5) }));
             } catch (error) {
                 console.error('Failed to fetch data:', error);
             } finally {
@@ -161,7 +167,7 @@ export default function MyRequestsPage() {
             setRequests(res.data);
 
             setShowNewModal(false);
-            setFormData(emptyRequest());
+            setFormData({ ...emptyRequest(), overtimeMultiplier: String(overtimePolicy?.defaultOvertimeMultiplier ?? 1.5) });
         } catch (error: any) {
             setSubmitError(error?.response?.data?.error || 'Failed to submit request.');
         } finally {
@@ -361,7 +367,7 @@ export default function MyRequestsPage() {
                                             type="number"
                                             required
                                             min="0.25"
-                                            max="24"
+                                            max={overtimePolicy?.maximumHoursPerRequest ?? 24}
                                             step="0.25"
                                             value={formData.overtimeHours}
                                             onChange={(e) => setFormData({ ...formData, overtimeHours: e.target.value })}
@@ -376,11 +382,13 @@ export default function MyRequestsPage() {
                                             value={formData.overtimeMultiplier}
                                             onChange={(e) => setFormData({ ...formData, overtimeMultiplier: e.target.value })}
                                             className="payroll-field"
+                                            disabled={overtimePolicy?.allowMultiplierOverride === false}
                                         >
                                             <option value="1">1.0x</option>
                                             <option value="1.5">1.5x</option>
                                             <option value="2">2.0x</option>
                                         </select>
+                                        {overtimePolicy?.allowMultiplierOverride === false && <p className="payroll-field-help text-xs">Set by payroll policy.</p>}
                                     </div>
                                     </div>
                                     <p className="payroll-field-help text-xs">Payroll calculates the amount from the worker&apos;s configured rate and the approved multiplier.</p>
@@ -396,7 +404,7 @@ export default function MyRequestsPage() {
                                     </div>
                                     <div>
                                         <label htmlFor="overtime-evidence" className="payroll-field-label">Supporting reference</label>
-                                        <input id="overtime-evidence" value={formData.evidenceReference} onChange={(e) => setFormData({ ...formData, evidenceReference: e.target.value })} className="payroll-field" placeholder="Calendar event, CRM activity, ticket, or document reference" maxLength={500} />
+                                        <input id="overtime-evidence" required={overtimePolicy?.requireEvidenceReference === true} value={formData.evidenceReference} onChange={(e) => setFormData({ ...formData, evidenceReference: e.target.value })} className="payroll-field" placeholder="Calendar event, CRM activity, ticket, or document reference" maxLength={500} />
                                     </div>
                                     <label className="flex items-start gap-3 rounded-md border border-[var(--suite-line)] p-3 text-sm text-[var(--suite-muted)]">
                                         <input type="checkbox" required checked={formData.confirmedNotInTimesheet} onChange={(e) => setFormData({ ...formData, confirmedNotInTimesheet: e.target.checked })} className="mt-0.5 h-4 w-4" />

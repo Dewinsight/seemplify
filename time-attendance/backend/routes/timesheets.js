@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, isHRAdmin, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
-const { Timesheet, TimeEntry, AttendancePolicy, EmployeeRoster, LeaveSnapshot, PublicHolidaySnapshot } = require('../models');
+const { Timesheet, TimeEntry, AttendancePolicy, EmployeeRoster, LeaveSnapshot, PublicHolidaySnapshot, Shift, SchedulePublication } = require('../models');
 const { startOfWeek, endOfWeek, getISOWeek, getYear, format, parseISO, eachDayOfInterval } = require('date-fns');
 const { generateTimesheetExcelReport } = require('../services/timesheetExportService');
 const { calculatePeriod, canRecalculateTimesheet } = require('../services/timeCalculationService');
@@ -414,9 +414,21 @@ async function refreshTimesheetEntries(timesheet, suppliedPolicy = null, options
         EmployeeRoster.findOne({ organizationId: timesheet.organizationId, userId: timesheet.userId }).lean(),
     ]);
 
-    const [leaves, holidays] = await Promise.all([
+    const [leaves, holidays, shifts, schedulePublications] = await Promise.all([
         LeaveSnapshot.find({ organizationId: timesheet.organizationId, userId: timesheet.userId, status: 'approved', startAt: { $lte: timesheet.endDate }, endAt: { $gte: timesheet.startDate } }).lean(),
         PublicHolidaySnapshot.find({ organizationId: timesheet.organizationId, status: 'active', $or: [{ date: { $gte: timesheet.startDate, $lte: timesheet.endDate } }, { isRecurring: true }] }).lean(),
+        Shift.find({
+            organizationId: timesheet.organizationId,
+            userId: timesheet.userId,
+            status: { $in: ['published', 'completed'] },
+            startAt: { $lte: timesheet.endDate },
+            endAt: { $gt: timesheet.startDate },
+        }).sort({ startAt: 1 }).lean(),
+        SchedulePublication.find({
+            organizationId: timesheet.organizationId,
+            periodStart: { $lte: timesheet.endDate },
+            periodEnd: { $gt: timesheet.startDate },
+        }).select('periodStart periodEnd version').lean(),
     ]);
     const effective = await resolveCalculationPolicy({
         policy,
@@ -432,7 +444,7 @@ async function refreshTimesheetEntries(timesheet, suppliedPolicy = null, options
     const calculation = calculatePeriod(entries, {
         start: timesheet.startDate,
         end: timesheet.endDate,
-    }, calculationPolicy, { leaves, holidays });
+    }, calculationPolicy, { leaves, holidays, shifts, schedulePublications });
     timesheet.dailyEntries = calculation.dailyEntries;
     timesheet.summary = calculation.summary;
     timesheet.policySnapshot = {

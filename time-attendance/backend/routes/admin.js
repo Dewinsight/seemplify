@@ -3,10 +3,11 @@ const router = express.Router();
 const { requireAuth, requireOrganization, requireHRAdmin } = require('../middleware/auth');
 const { AttendancePolicy } = require('../models');
 const { normalizeApprovalSettings } = require('../services/approvalConfigurationService');
+const { normalizeSchedulingSettings } = require('../services/schedulingPolicyService');
 
 function sanitizePolicyUpdate(input = {}) {
     const allowed = [
-        'workSchedule', 'overtime', 'gracePeriod', 'restRules', 'timesheetSettings', 'clockSettings',
+        'workSchedule', 'overtime', 'gracePeriod', 'restRules', 'schedulingSettings', 'timesheetSettings', 'clockSettings',
         'geofencing', 'notifications', 'payroll', 'presence', 'timezone', 'jurisdiction', 'activeRulePack',
     ];
     const output = {};
@@ -34,6 +35,9 @@ function sanitizePolicyUpdate(input = {}) {
     }
     if (output.timesheetSettings) {
         output.timesheetSettings = normalizeApprovalSettings(output.timesheetSettings);
+    }
+    if (output.schedulingSettings) {
+        output.schedulingSettings = normalizeSchedulingSettings(output.schedulingSettings);
     }
     return output;
 }

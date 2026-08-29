@@ -8,7 +8,7 @@ const {
     isDepartmentHead,
     getDepartmentHeadScope,
 } = require('../middleware/auth');
-const { TimeEntry, Timesheet, AttendancePolicy, EmployeeRoster } = require('../models');
+const { TimeEntry, Timesheet, AttendancePolicy, EmployeeRoster, Shift, SchedulePublication } = require('../models');
 const geofenceService = require('../services/geofenceService');
 const { enrichLocationWithAddress } = require('../services/geocodingService');
 const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
@@ -23,6 +23,66 @@ const {
 // Apply auth middleware to all clock routes
 router.use(requireAuth);
 router.use(requireOrganization);
+
+function localTimeText(value, timezone) {
+    return new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+    }).format(new Date(value));
+}
+
+async function policyForPublishedShift(policyDocument, userId, organizationId, now = new Date()) {
+    const policy = policyDocument?.toObject ? policyDocument.toObject() : { ...(policyDocument || {}) };
+    if (policy.schedulingSettings?.usePublishedShiftsAsAttendanceSchedule === false) return policy;
+    const bounds = localDayBounds(now, policy.timezone || 'UTC');
+    const [shifts, publication] = await Promise.all([
+        Shift.find({
+            organizationId,
+            userId,
+            status: { $in: ['published', 'completed'] },
+            startAt: { $lte: bounds.end },
+            endAt: { $gt: bounds.start },
+        }).sort({ startAt: 1 }).lean(),
+        SchedulePublication.findOne({
+            organizationId,
+            periodStart: { $lte: bounds.end },
+            periodEnd: { $gt: bounds.start },
+        }).lean(),
+    ]);
+    if (!publication) return policy;
+    const shift = shifts.find(item => new Date(item.startAt) <= now && new Date(item.endAt) > now)
+        || shifts.find(item => new Date(item.startAt) > now)
+        || shifts[shifts.length - 1];
+    if (!shift) {
+        return {
+            ...policy,
+            workSchedule: { ...policy.workSchedule, workDays: [] },
+        };
+    }
+    const timezone = shift.timezone || policy.timezone || 'UTC';
+    const weekday = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' }).format(now);
+    const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekday);
+    return {
+        ...policy,
+        timezone,
+        workSchedule: {
+            ...policy.workSchedule,
+            type: 'fixed',
+            workDays: [dayOfWeek],
+            defaultShift: {
+                ...(policy.workSchedule?.defaultShift || {}),
+                startTime: localTimeText(shift.startAt, timezone),
+                endTime: localTimeText(shift.endAt, timezone),
+                breakDuration: shift.breakMinutes,
+                scheduledShiftId: String(shift._id),
+                startAt: shift.startAt,
+                endAt: shift.endAt,
+            },
+        },
+    };
+}
 
 // Authenticated event stream used by the hub for near-instant cross-app updates.
 router.get('/events', (req, res) => {
@@ -146,7 +206,8 @@ router.get('/status', async (req, res) => {
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
 
         // Get today's entries
-        const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+        const storedPolicy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+        const policy = await policyForPublishedShift(storedPolicy, userId, organizationId);
         const todayEntries = await TimeEntry.getTodayEntries(userId, organizationId, policy.timezone || 'UTC');
 
         // Pair every session and break exactly once. The bounded lookback lets
@@ -224,7 +285,8 @@ router.post('/in', async (req, res) => {
         const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
         const lockDisposition = getLockedPeriodDisposition('clock_in', lockedTimesheet);
 
-        const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+        const storedPolicy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+        const policy = await policyForPublishedShift(storedPolicy, userId, organizationId);
         if (policy.clockSettings?.requireNote && !String(note || '').trim()) {
             return res.status(400).json({ error: 'A note is required to clock in', code: 'NOTE_REQUIRED' });
         }

@@ -102,6 +102,15 @@ function employmentPeriod(profile, payStart, payEnd) {
   };
 }
 
+function resolveProfileHourlyRate(profile, basePay, basicSalary) {
+  const standardHours = Number(profile.workTerms?.standardHoursPerMonth || profile.standardHoursPerMonth || 176);
+  return Number(
+    basePay.payBasis === 'hourly'
+      ? basePay.rate
+      : profile.hourlyRate || (Number(basicSalary || 0) > 0 ? Number(basicSalary) / standardHours : 0)
+  );
+}
+
 function refreshMutableRunEmployerSnapshot(run, employerContext) {
   const entity = employerContext?.entity;
   const readiness = employerContext?.readiness;
@@ -864,12 +873,7 @@ class PayrollEngineService {
       );
     }
 
-    const standardHours = Number(profile.workTerms?.standardHoursPerMonth || profile.standardHoursPerMonth || 176);
-    const hourlyRate = Number(
-      basePay.payBasis === 'hourly'
-        ? basePay.rate
-        : profile.hourlyRate || (basicSalary > 0 ? basicSalary / standardHours : 0)
-    );
+    const hourlyRate = resolveProfileHourlyRate(profile, basePay, basicSalary);
     const addAttendanceAmount = (line, importId, amount, earningType = 'other') => {
       const rounded = roundMoney(amount);
       if (rounded > 0) {
@@ -989,9 +993,6 @@ class PayrollEngineService {
         const linkedRequestId = req._id.toString();
 
         if (req.type === 'overtime' && isVariableCompensationEnabled(req.type, settings)) {
-          const hourlyRate = basePay.payBasis === 'hourly'
-            ? Number(profile.workTerms?.rate || 0)
-            : (basicSalary > 0 ? (basicSalary / 176) : 0); // default working hours/month for salaried staff
           const hours = Number(req.overtimeHours || 0);
           const multiplier = Number(req.overtimeMultiplier || 1.5);
           const requestCurrency = normalizeCurrencyCode(req.currency, payslipCurrency);
@@ -1440,3 +1441,4 @@ module.exports.isVariableCompensationEnabled = isVariableCompensationEnabled;
 module.exports.daysBetweenInclusive = daysBetweenInclusive;
 module.exports.employmentPeriod = employmentPeriod;
 module.exports.refreshMutableRunEmployerSnapshot = refreshMutableRunEmployerSnapshot;
+module.exports.resolveProfileHourlyRate = resolveProfileHourlyRate;

@@ -327,6 +327,20 @@ describe('PayrollRetractionService', () => {
     expect(harness.stats.payslipDeletes).toBe(1);
   });
 
+  test('attendance-linked earnings do not become compensation request ids during retraction', async () => {
+    const seed = initialState();
+    seed.payslips[0].earnings.push({
+      type: 'overtime',
+      linkedRequestId: 'time-attendance:507f1f77bcf86cd799439011',
+      amount: 75,
+    });
+    const harness = createHarness(seed);
+
+    await expect(harness.service.retractRun(retractionInput))
+      .resolves.toMatchObject({ resetCompensationRequests: 1, resetTimeAttendanceImports: 1 });
+    expect(harness.state().requests[0].status).toBe('approved');
+  });
+
   test('concurrent retraction requests serialize on the run claim', async () => {
     const harness = createHarness();
 

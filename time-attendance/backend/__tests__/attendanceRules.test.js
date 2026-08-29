@@ -15,6 +15,26 @@ test('clock-in rules evaluate the organization timezone and location requirement
     expect(evaluateClockIn(policy, { now: new Date('2026-08-10T08:45:00Z'), hasLocation: true }).allowed).toBe(true);
 });
 
+test('clock-in windows use the actual published shift instant for overnight work', () => {
+    const overnightPolicy = {
+        ...policy,
+        workSchedule: {
+            ...policy.workSchedule,
+            workDays: [1, 2],
+            defaultShift: {
+                startTime: '22:00',
+                endTime: '06:00',
+                startAt: new Date('2026-08-10T21:00:00.000Z'),
+                endAt: new Date('2026-08-11T05:00:00.000Z'),
+            },
+        },
+        geofencing: { enabled: false, enforced: false },
+    };
+    expect(evaluateClockIn(overnightPolicy, { now: new Date('2026-08-10T20:00:00.000Z') }).code).toBe('CLOCK_IN_TOO_EARLY');
+    expect(evaluateClockIn(overnightPolicy, { now: new Date('2026-08-10T21:30:00.000Z') }).allowed).toBe(true);
+    expect(evaluateClockIn(overnightPolicy, { now: new Date('2026-08-10T22:30:00.000Z') }).code).toBe('CLOCK_IN_WINDOW_CLOSED');
+});
+
 test('policy summary makes explicit clock-in behavior clear', () => {
     expect(buildPolicySummary(policy)).toMatchObject({
         explicitClockInRequired: true,

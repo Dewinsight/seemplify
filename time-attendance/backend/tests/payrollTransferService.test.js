@@ -1,11 +1,55 @@
 const { Timesheet, AttendancePolicy, Shift, EmployeeRoster } = require('../models');
-const { buildTransferPayload, transferOne } = require('../services/payrollTransferService');
+const { buildCostAllocationRows, buildTransferPayload, transferOne } = require('../services/payrollTransferService');
 
 function queryResult(value) {
     return { lean: async () => value };
 }
 
 afterEach(() => jest.restoreAllMocks());
+
+test('allocates actual approved hours across scheduled cost-coded shifts', () => {
+    const rows = buildCostAllocationRows({
+        summary: { totalHours: 6 },
+        dailyEntries: [{ totalHours: 6, scheduledShiftIds: ['shift-a', 'shift-b'] }],
+    }, [
+        { _id: 'shift-a', startAt: new Date('2026-08-03T08:00:00Z'), endAt: new Date('2026-08-03T12:00:00Z'), costCentreCode: 'OPS' },
+        { _id: 'shift-b', startAt: new Date('2026-08-03T12:00:00Z'), endAt: new Date('2026-08-03T20:00:00Z'), costCentreCode: 'SALES' },
+    ]);
+    expect(rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ payCode: 'OPS', quantity: 2 }),
+        expect.objectContaining({ payCode: 'SALES', quantity: 4 }),
+    ]));
+    expect(rows.reduce((sum, row) => sum + row.quantity, 0)).toBe(6);
+});
+
+test('does not inflate a coded allocation when part of the worked schedule is uncoded', () => {
+    const rows = buildCostAllocationRows({
+        dailyEntries: [{ totalHours: 8, scheduledShiftIds: ['shift-coded', 'shift-uncoded'] }],
+    }, [
+        { _id: 'shift-coded', startAt: new Date('2026-08-03T08:00:00Z'), endAt: new Date('2026-08-03T12:00:00Z'), costCentreCode: 'OPS' },
+        { _id: 'shift-uncoded', startAt: new Date('2026-08-03T12:00:00Z'), endAt: new Date('2026-08-03T16:00:00Z') },
+    ]);
+    expect(rows).toEqual([expect.objectContaining({ payCode: 'OPS', quantity: 4 })]);
+});
+
+test('cost allocations use worked hours rather than copying planned shift duration', async () => {
+    jest.spyOn(Shift, 'find').mockReturnValue(queryResult([{
+        _id: 'shift-1',
+        startAt: new Date('2026-08-03T08:00:00Z'),
+        endAt: new Date('2026-08-03T20:00:00Z'),
+        breakMinutes: 0,
+        costCentreCode: 'OPS',
+    }]));
+    jest.spyOn(EmployeeRoster, 'findOne').mockReturnValue(queryResult({ employeeId: 'EMP-001' }));
+    const payload = await buildTransferPayload({
+        _id: 'timesheet-cost', version: 1, organizationId: 'org-1', userId: 'employee-1', userEmail: 'employee@example.test',
+        startDate: new Date('2026-08-03'), endDate: new Date('2026-08-09'), periodType: 'weekly',
+        summary: { regularHours: 6, overtimeHours: 0, breakTime: 0, totalHours: 6 },
+        dailyEntries: [{ totalHours: 6, scheduledShiftIds: ['shift-1'] }],
+        payrollIntegration: { idempotencyKey: 'timesheet:timesheet-cost:v1' },
+    }, { payroll: { payCodes: {} }, overtime: { multiplier: 1.5 } });
+    expect(payload.payCodeLines).toContainEqual(expect.objectContaining({ category: 'cost_allocation', quantity: 6 }));
+});
 
 test('approved payroll payload carries the signed integration envelope and mapped pay codes', async () => {
     jest.spyOn(Shift, 'find').mockReturnValue(queryResult([]));

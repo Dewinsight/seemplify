@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const express = require('express');
 const TimeAttendanceImport = require('../models/TimeAttendanceImport');
+const { getOrCreateCompensationPolicy } = require('../services/compensationPolicyService');
+const { findManualOvertimeForImport } = require('../services/manualOvertimeConflictService');
 
 const router = express.Router();
 
@@ -38,6 +40,27 @@ router.post('/timesheets', async (req, res) => {
     if (String(req.body.idempotencyKey) !== idempotencyKey) return res.status(400).json({ error: 'Body and header idempotency keys must match' });
     if (!Array.isArray(req.body.payCodeLines)) return res.status(400).json({ error: 'payCodeLines must be an array' });
     if (req.body.payCodeLines.some(line => !line.payCode || !Number.isFinite(Number(line.quantity)))) return res.status(400).json({ error: 'Every pay-code line requires a payCode and numeric quantity' });
+    const importsOvertime = req.body.payCodeLines.some(line => (
+      line.category === 'overtime'
+      || (line.category === 'adjustment' && line.metadata?.adjustmentCategory === 'overtime')
+    ) && Number(line.quantity) !== 0);
+    if (importsOvertime) {
+      const compensationPolicy = await getOrCreateCompensationPolicy(req.body.organizationId);
+      if (compensationPolicy.preventTimesheetOverlap) {
+        const conflict = await findManualOvertimeForImport({
+          organizationId: req.body.organizationId,
+          userId: req.body.userId,
+          period: req.body.period,
+        });
+        if (conflict) {
+          return res.status(409).json({
+            error: 'This timesheet overlaps a manual overtime request. Cancel or reject the manual claim before transferring the timesheet.',
+            code: 'MANUAL_OVERTIME_CONFLICT',
+            compensationRequestId: conflict._id,
+          });
+        }
+      }
+    }
     const sourcePayloadHash = crypto.createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
     let supersedesImportId;
     if (req.body.eventType === 'adjustment') {

@@ -17,6 +17,7 @@ require('./models/PayrollArtifact');
 require('./models/PayrollDelivery');
 require('./models/Payslip');
 require('./models/CompensationRequest');
+require('./models/CompensationApprovalPolicy');
 require('./models/BankAccountChangeRequest');
 require('./models/SalaryGrade');
 require('./models/ExchangeRate');
@@ -36,6 +37,7 @@ const PayrollDelivery = require('./models/PayrollDelivery');
 const BankAccountChangeRequest = require('./models/BankAccountChangeRequest');
 const Payslip = require('./models/Payslip');
 const PayrollSequence = require('./models/PayrollSequence');
+const CompensationApprovalPolicy = require('./models/CompensationApprovalPolicy');
 const ExchangeRate = require('./models/ExchangeRate');
 const { consolidateExactInstantDuplicates } = require('./services/ExchangeRateIndexMigrationService');
 const {
@@ -173,6 +175,7 @@ async function migratePayrollIndexes() {
     PayrollArtifact.createIndexes(),
     PayrollDelivery.createIndexes(),
     BankAccountChangeRequest.createIndexes(),
+    CompensationApprovalPolicy.createIndexes(),
   ]);
   const migrations = [
     { model: PayrollRun, legacy: 'runNumber_1', compound: { organizationId: 1, runNumber: 1 }, name: 'organizationId_1_runNumber_1' },
@@ -249,6 +252,7 @@ async function startServer() {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
+    await require('./services/compensationPolicyService').seedDefaultCompensationPolicies();
     console.log('Connected to MongoDB (Payroll DB)');
     await migratePayrollIndexes();
     await taxJurisdictionService.seedGlobalDefaults();

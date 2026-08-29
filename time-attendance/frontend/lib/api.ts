@@ -337,6 +337,7 @@ export const schedulingApi = {
     reconcileRoster: async () => (await api.post('/v1/scheduling/roster/reconcile')).data,
     getTemplates: async () => (await api.get('/v1/scheduling/templates')).data,
     createTemplate: async (data: any) => (await api.post('/v1/scheduling/templates', data)).data,
+    generateFromTemplate: async (templateId: string, data: any) => (await api.post(`/v1/scheduling/templates/${templateId}/generate`, data)).data,
     getShifts: async (params?: any) => (await api.get('/v1/scheduling/shifts', { params })).data,
     createShift: async (data: any) => (await api.post('/v1/scheduling/shifts', data)).data,
     acknowledge: async (id: string, accepted = true, note = '') => (await api.post(`/v1/scheduling/shifts/${id}/acknowledge`, { accepted, note })).data,
@@ -344,6 +345,10 @@ export const schedulingApi = {
     getRequests: async () => (await api.get('/v1/scheduling/requests')).data,
     createRequest: async (data: any) => (await api.post('/v1/scheduling/requests', data)).data,
     reviewRequest: async (id: string, approved: boolean, note = '') => (await api.post(`/v1/scheduling/requests/${id}/review`, { approved, note })).data,
+    respondToRequest: async (id: string, accepted: boolean, note = '') => (await api.post(`/v1/scheduling/requests/${id}/respond`, { accepted, note })).data,
+    cancelRequest: async (id: string, note = '') => (await api.post(`/v1/scheduling/requests/${id}/cancel`, { note })).data,
+    getSwapOptions: async (shiftId: string) => (await api.get(`/v1/scheduling/shifts/${shiftId}/swap-options`)).data,
+    getPolicy: async () => (await api.get('/v1/scheduling/policy')).data,
     getAvailability: async () => (await api.get('/v1/scheduling/availability')).data,
     setAvailability: async (date: string, data: any) => (await api.put(`/v1/scheduling/availability/${date}`, data)).data,
 };

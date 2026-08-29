@@ -65,6 +65,65 @@ describe('timeCalculationService', () => {
         expect(result.summary.overtimeHours).toBe(5);
     });
 
+    test('uses published shifts as the authoritative attendance schedule', () => {
+        const result = calculatePeriod([], {
+            start: new Date('2026-08-29T00:00:00Z'),
+            end: new Date('2026-08-31T23:59:59Z'),
+        }, {
+            ...policy,
+            schedulingSettings: { usePublishedShiftsAsAttendanceSchedule: true },
+        }, {
+            shifts: [{
+                _id: 'shift-1',
+                startAt: new Date('2026-08-29T08:00:00Z'),
+                endAt: new Date('2026-08-29T16:00:00Z'),
+                breakMinutes: 30,
+            }],
+            schedulePublications: [{ periodStart: '2026-08-29T00:00:00Z', periodEnd: '2026-08-31T23:59:59Z' }],
+        });
+
+        expect(result.dailyEntries[0]).toMatchObject({
+            status: 'absent',
+            scheduledShiftIds: ['shift-1'],
+            scheduledMinutes: 450,
+        });
+        expect(result.dailyEntries[0].exceptions.map(item => item.type)).toContain('absence');
+        expect(result.dailyEntries[2].status).toBe('weekend');
+        expect(result.dailyEntries[2].exceptions.map(item => item.type)).not.toContain('absence');
+    });
+
+    test('treats publication end instants as exclusive schedule coverage', () => {
+        const result = calculatePeriod([], {
+            start: new Date('2026-08-31T00:00:00Z'),
+            end: new Date('2026-08-31T23:59:59Z'),
+        }, {
+            ...policy,
+            schedulingSettings: { usePublishedShiftsAsAttendanceSchedule: true },
+        }, {
+            schedulePublications: [{ periodStart: '2026-08-24T00:00:00Z', periodEnd: '2026-08-31T00:00:00Z' }],
+        });
+        expect(result.dailyEntries[0].status).toBe('absent');
+        expect(result.dailyEntries[0].exceptions.map(item => item.type)).toContain('absence');
+    });
+
+    test('resets the weekly overtime threshold inside fortnightly periods', () => {
+        const entries = [];
+        for (let day = 3; day <= 14; day += 1) {
+            const date = new Date(Date.UTC(2026, 7, day));
+            if ([0, 6].includes(date.getUTCDay())) continue;
+            const localDay = String(day).padStart(2, '0');
+            entries.push(entry('clock_in', `2026-08-${localDay}T09:00:00Z`));
+            entries.push(entry('clock_out', `2026-08-${localDay}T17:00:00Z`));
+        }
+
+        const result = calculatePeriod(entries, {
+            start: new Date('2026-08-03T00:00:00Z'),
+            end: new Date('2026-08-16T23:59:59Z'),
+        }, { ...policy, overtime: { ...policy.overtime, dailyThreshold: 12 } });
+
+        expect(result.summary).toMatchObject({ totalHours: 80, regularHours: 80, overtimeHours: 0 });
+    });
+
     test('detects duplicate sessions without multiplying break pairs', () => {
         const result = buildSessions([
             entry('clock_in', '2026-08-03T08:00:00Z'),

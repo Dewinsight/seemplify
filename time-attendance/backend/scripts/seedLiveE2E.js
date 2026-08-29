@@ -15,6 +15,8 @@ const {
     TimeEntry,
     Timesheet,
 } = require('../models');
+const { buildApprovalWorkflow } = require('../services/approvalConfigurationService');
+const { defaultRequestPolicy } = require('../services/schedulingPolicyService');
 const { getPeriodBounds } = require('../services/timeCalculationService');
 
 const ORGANIZATION_ID = 'org-live-e2e';
@@ -273,13 +275,28 @@ async function seed() {
         createdBy: EMPLOYEE_ID,
     });
 
+    const coverRequestPolicy = defaultRequestPolicy();
+    const coverApproval = buildApprovalWorkflow(coverRequestPolicy, {
+        managerId: EMPLOYEE_ID,
+        managerName: 'Alex Live',
+        managerEmail: 'alex.live@example.test',
+        teamId: TEAM_ID,
+    });
+
     await ShiftRequest.create({
         organizationId: ORGANIZATION_ID,
         type: 'cover',
         shiftId: openShift._id,
         requestedBy: REPORT_ID,
+        subjectUserId: REPORT_ID,
+        targetUserId: REPORT_ID,
         reason: 'Live E2E coverage request',
         status: 'pending',
+        targetResponse: { status: 'not_required' },
+        assignedApprover: coverApproval.assignedApprover,
+        approvalWorkflow: coverApproval.workflow,
+        requestPolicySnapshot: coverRequestPolicy,
+        changeHistory: [{ action: 'created', actorId: REPORT_ID, actorName: 'Jamie Live', details: 'cover' }],
     });
 
     await AttendanceException.create({

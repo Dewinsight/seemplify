@@ -133,6 +133,7 @@ const startServer = async () => {
         await connectDatabase();
         await require('./models/AutomationRequestNonce').init();
         await require('./models/AutomationEventOutbox').init();
+        await require('./services/defaultPolicySeedService').seedDefaultAttendancePolicies();
 
         // Initialize OIDC client
         await initializeOIDC();

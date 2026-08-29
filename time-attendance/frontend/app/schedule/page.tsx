@@ -37,6 +37,8 @@ type ShiftTemplate = {
   endTime?: string;
   breakMinutes?: number;
   workMode?: string;
+  scheduleType?: 'fixed' | 'flexible' | 'rotating';
+  rotation?: { cycleDays?: number; activeDays?: number[] };
 };
 
 function applyTemplateTimes(startValue: string, template: ShiftTemplate) {
@@ -58,6 +60,12 @@ export default function SchedulePage() {
   const [openShifts, setOpenShifts] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
+  const [schedulePolicy, setSchedulePolicy] = useState<any>(null);
+  const [availability, setAvailability] = useState<any[]>([]);
+  const [availabilityForm, setAvailabilityForm] = useState({ date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), available: true, startTime: '09:00', endTime: '17:00', note: '' });
+  const [swapFor, setSwapFor] = useState<string | null>(null);
+  const [swapOptions, setSwapOptions] = useState<any[]>([]);
+  const [selectedSwap, setSelectedSwap] = useState('');
   const [rosterMembers, setRosterMembers] = useState<RosterMember[]>([]);
   const [rosterTeams, setRosterTeams] = useState<RosterTeam[]>([]);
   const [memberSearch, setMemberSearch] = useState("");
@@ -67,6 +75,8 @@ export default function SchedulePage() {
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [lastRosterSync, setLastRosterSync] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showTemplate, setShowTemplate] = useState(false);
+  const [templateForm, setTemplateForm] = useState({ name: '', scheduleType: 'fixed', startTime: '09:00', endTime: '17:00', breakMinutes: 60, workMode: 'office', cycleDays: 14, activeDays: '0,1,2,3,4,7,8,9,10,11' });
   const automaticRosterSyncAttempted = useRef(false);
   const [form, setForm] = useState<any>({
     userId: "",
@@ -76,6 +86,7 @@ export default function SchedulePage() {
     workMode: "office",
     breakMinutes: 60,
     openShift: false,
+    repeatUntil: "",
   });
   const role = user?.currentOrganization?.role;
   const manager =
@@ -127,16 +138,20 @@ export default function SchedulePage() {
 
   const load = useCallback(async () => {
     const rosterPromise = manager ? refreshRoster() : Promise.resolve();
-    const [mine, open, requestData, templateData] = await Promise.all([
+    const [mine, open, requestData, templateData, policyData, availabilityData] = await Promise.all([
         schedulingApi.getShifts(range),
         schedulingApi.getShifts({ ...range, open: true, status: "published" }),
         schedulingApi.getRequests(),
         schedulingApi.getTemplates(),
+        schedulingApi.getPolicy(),
+        schedulingApi.getAvailability(),
       ]);
     setShifts(mine.shifts || []);
     setOpenShifts(open.shifts || []);
     setRequests(requestData.requests || []);
     setTemplates(templateData.templates || []);
+    setSchedulePolicy(policyData);
+    setAvailability(availabilityData.availability || []);
     await rosterPromise;
   }, [manager, range, refreshRoster]);
 
@@ -170,15 +185,27 @@ export default function SchedulePage() {
   const createShift = async () => {
     setMessage("");
     try {
-      await schedulingApi.createShift({
-        ...form,
-        teamId: form.teamId || undefined,
-        userId: form.openShift ? null : form.userId,
-        startAt: new Date(form.startAt),
-        endAt: new Date(form.endAt),
-      });
+      if (form.templateId && form.repeatUntil) {
+        const result = await schedulingApi.generateFromTemplate(form.templateId, {
+          userId: form.openShift ? null : form.userId,
+          teamId: form.teamId || undefined,
+          openShift: form.openShift,
+          startDate: form.startAt.slice(0, 10),
+          endDate: form.repeatUntil,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        });
+        setMessage(`${result.generatedCount} draft shift${result.generatedCount === 1 ? '' : 's'} generated${result.existingCount ? `; ${result.existingCount} already existed` : ''}.`);
+      } else {
+        await schedulingApi.createShift({
+          ...form,
+          teamId: form.teamId || undefined,
+          userId: form.openShift ? null : form.userId,
+          startAt: new Date(form.startAt),
+          endAt: new Date(form.endAt),
+        });
+        setMessage("Draft shift created.");
+      }
       setShowCreate(false);
-      setMessage("Draft shift created.");
       await load();
     } catch (error: any) {
       setMessage(
@@ -210,7 +237,64 @@ export default function SchedulePage() {
       type: "cover",
       reason: "I am available to cover this shift.",
     });
-    setMessage("Cover request sent for manager approval.");
+    setMessage(schedulePolicy?.schedulingSettings?.requestPolicies?.cover?.approvalRequired === false ? "Open shift assigned." : "Cover request sent for approval.");
+    await load();
+  };
+  const createTemplate = async () => {
+    try {
+      await schedulingApi.createTemplate({
+        name: templateForm.name,
+        scheduleType: templateForm.scheduleType,
+        startTime: templateForm.startTime,
+        endTime: templateForm.endTime,
+        breakMinutes: templateForm.breakMinutes,
+        workMode: templateForm.workMode,
+        rotation: templateForm.scheduleType === 'rotating' ? {
+          cycleDays: templateForm.cycleDays,
+          activeDays: templateForm.activeDays.split(',').map(value => Number(value.trim())).filter(Number.isInteger),
+        } : undefined,
+      });
+      setShowTemplate(false);
+      setTemplateForm({ name: '', scheduleType: 'fixed', startTime: '09:00', endTime: '17:00', breakMinutes: 60, workMode: 'office', cycleDays: 14, activeDays: '0,1,2,3,4,7,8,9,10,11' });
+      setMessage('Shift template created.');
+      await load();
+    } catch (error: any) {
+      setMessage(getApiErrorMessage(error, 'The shift template could not be created.'));
+    }
+  };
+  const requestRelease = async (id: string) => {
+    await schedulingApi.createRequest({ shiftId: id, type: 'release', reason: 'I need this published shift released.' });
+    setMessage(schedulePolicy?.schedulingSettings?.requestPolicies?.release?.approvalRequired === false ? 'Shift released and reopened.' : 'Release request sent for approval.');
+    await load();
+  };
+  const openSwap = async (id: string) => {
+    const data = await schedulingApi.getSwapOptions(id);
+    setSwapFor(id);
+    setSwapOptions(data.options || []);
+    setSelectedSwap(data.options?.[0]?.shiftId || '');
+  };
+  const requestSwap = async () => {
+    const option = swapOptions.find(item => String(item.shiftId) === String(selectedSwap));
+    if (!swapFor || !option) return;
+    await schedulingApi.createRequest({
+      shiftId: swapFor,
+      type: 'swap',
+      targetUserId: option.targetUserId,
+      offeredShiftId: option.shiftId,
+      reason: 'I would like to exchange these published shifts.',
+    });
+    setMessage('Swap sent to the other employee for consent.');
+    setSwapFor(null);
+    await load();
+  };
+  const respondToSwap = async (id: string, accepted: boolean) => {
+    await schedulingApi.respondToRequest(id, accepted);
+    setMessage(accepted ? 'Swap accepted and routed to its next required decision.' : 'Swap declined.');
+    await load();
+  };
+  const saveAvailability = async () => {
+    await schedulingApi.setAvailability(availabilityForm.date, availabilityForm);
+    setMessage(`Availability saved for ${new Date(`${availabilityForm.date}T12:00:00`).toLocaleDateString()}.`);
     await load();
   };
   const review = async (id: string, approved: boolean) => {
@@ -230,6 +314,12 @@ export default function SchedulePage() {
         </div>
         {manager && (
           <div className="flex gap-2">
+            <button
+              onClick={() => setShowTemplate(!showTemplate)}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white"
+            >
+              Template
+            </button>
             <button
               onClick={() => setShowCreate(!showCreate)}
               className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white"
@@ -252,6 +342,19 @@ export default function SchedulePage() {
           {message}
         </div>
       )}
+      {showTemplate && <section className="rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] p-5">
+        <div><h2 className="text-sm font-semibold text-[var(--suite-ink)]">Create a shift template</h2><p className="mt-1 text-xs text-[var(--suite-muted)]">Use a fixed weekday pattern or a zero-based rotating cycle, then generate up to 93 days at a time.</p></div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="space-y-1.5 text-xs font-medium text-zinc-400">Name<input aria-label="Template name" required value={templateForm.name} onChange={event => setTemplateForm({ ...templateForm, name: event.target.value })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]" /></label>
+          <label className="space-y-1.5 text-xs font-medium text-zinc-400">Pattern<select aria-label="Template pattern" value={templateForm.scheduleType} onChange={event => setTemplateForm({ ...templateForm, scheduleType: event.target.value })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]"><option value="fixed">Weekdays</option><option value="rotating">Rotating cycle</option></select></label>
+          <label className="space-y-1.5 text-xs font-medium text-zinc-400">Starts<input aria-label="Template starts" type="time" value={templateForm.startTime} onChange={event => setTemplateForm({ ...templateForm, startTime: event.target.value })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]" /></label>
+          <label className="space-y-1.5 text-xs font-medium text-zinc-400">Ends<input aria-label="Template ends" type="time" value={templateForm.endTime} onChange={event => setTemplateForm({ ...templateForm, endTime: event.target.value })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]" /></label>
+          <label className="space-y-1.5 text-xs font-medium text-zinc-400">Break minutes<input aria-label="Template break minutes" type="number" min={0} max={720} value={templateForm.breakMinutes} onChange={event => setTemplateForm({ ...templateForm, breakMinutes: Number(event.target.value) })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]" /></label>
+          <label className="space-y-1.5 text-xs font-medium text-zinc-400">Work mode<select aria-label="Template work mode" value={templateForm.workMode} onChange={event => setTemplateForm({ ...templateForm, workMode: event.target.value })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]"><option value="office">Office</option><option value="remote">Remote</option><option value="client_site">Client site</option><option value="other">Other</option></select></label>
+          {templateForm.scheduleType === 'rotating' && <><label className="space-y-1.5 text-xs font-medium text-zinc-400">Cycle days<input aria-label="Rotation cycle days" type="number" min={1} max={365} value={templateForm.cycleDays} onChange={event => setTemplateForm({ ...templateForm, cycleDays: Number(event.target.value) })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]" /></label><label className="space-y-1.5 text-xs font-medium text-zinc-400">Working day offsets<input aria-label="Rotation active days" value={templateForm.activeDays} onChange={event => setTemplateForm({ ...templateForm, activeDays: event.target.value })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]" /><span className="block font-normal text-[var(--suite-muted)]">Example: 0,1,2,7,8,9 in a 14-day cycle.</span></label></>}
+        </div>
+        <div className="mt-5 flex gap-3"><button onClick={createTemplate} disabled={!templateForm.name.trim()} className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Save template</button><button onClick={() => setShowTemplate(false)} className="px-3 py-2 text-sm text-zinc-400">Cancel</button></div>
+      </section>}
       {showCreate && (
         <section className="rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -393,6 +496,7 @@ export default function SchedulePage() {
                   setForm({
                     ...form,
                     templateId: e.target.value || undefined,
+                    repeatUntil: e.target.value ? form.repeatUntil : "",
                     ...(template ? applyTemplateTimes(form.startAt, template) : {}),
                     ...(template?.breakMinutes !== undefined
                       ? { breakMinutes: template.breakMinutes }
@@ -412,6 +516,10 @@ export default function SchedulePage() {
                 ))}
               </select>
             </label>
+            {form.templateId && <label className="space-y-1.5 text-xs font-medium text-zinc-400">Repeat through
+              <input aria-label="Repeat template through" type="date" min={form.startAt.slice(0, 10)} max={localInput(new Date(new Date(form.startAt).getTime() + 92 * 86400000)).slice(0, 10)} value={form.repeatUntil} onChange={(event) => setForm({ ...form, repeatUntil: event.target.value })} className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]" />
+              <span className="block font-normal text-[var(--suite-muted)]">Leave empty for one shift. Rotating templates follow their saved cycle.</span>
+            </label>}
             <label className="flex items-start gap-3 rounded-lg border border-zinc-800 px-3 py-2.5 text-sm text-zinc-300">
               <input
                 type="checkbox"
@@ -472,7 +580,7 @@ export default function SchedulePage() {
         </section>
       )}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <section className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
+        <section className="self-start overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
               <CalendarClock className="h-4 w-4 text-teal-400" />
@@ -522,8 +630,9 @@ export default function SchedulePage() {
                   </div>
                   {shift.userId === user?.id &&
                     shift.status === "published" &&
-                    shift.acknowledgement?.status === "pending" && (
-                      <div className="flex gap-2">
+                    (
+                      <div className="flex flex-wrap gap-2">
+                        {shift.acknowledgement?.status === "pending" && <>
                         <button
                           onClick={() => acknowledge(shift._id, true)}
                           className="rounded-md border border-teal-500/40 px-2.5 py-1.5 text-xs text-teal-300"
@@ -536,9 +645,21 @@ export default function SchedulePage() {
                         >
                           Flag issue
                         </button>
+                        </>}
+                        {schedulePolicy?.schedulingSettings?.allowEmployeeRelease !== false && <button onClick={() => requestRelease(shift._id)} className="rounded-md border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300">Release</button>}
+                        {schedulePolicy?.schedulingSettings?.allowShiftSwap !== false && <button onClick={() => openSwap(shift._id)} className="rounded-md border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300">Swap</button>}
                       </div>
                     )}
                 </div>
+                {swapFor === shift._id && <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+                  <label className="text-xs font-medium text-zinc-400">Exchange for
+                    <select aria-label="Shift to receive" value={selectedSwap} onChange={(event) => setSelectedSwap(event.target.value)} className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200">
+                      {swapOptions.map(option => <option key={option.shiftId} value={option.shiftId}>{option.assignee?.name} · {new Date(option.startAt).toLocaleString()}</option>)}
+                    </select>
+                  </label>
+                  {!swapOptions.length && <p className="mt-2 text-xs text-zinc-500">No eligible team shifts are available to exchange.</p>}
+                  <div className="mt-3 flex gap-3"><button disabled={!selectedSwap} onClick={requestSwap} className="text-xs font-medium text-teal-400 disabled:opacity-40">Send swap</button><button onClick={() => setSwapFor(null)} className="text-xs text-zinc-500">Cancel</button></div>
+                </div>}
               </div>
             ))
           ) : (
@@ -548,6 +669,18 @@ export default function SchedulePage() {
           )}
         </section>
         <aside className="space-y-6">
+          <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+            <h2 className="text-sm font-semibold text-white">Your availability</h2>
+            <p className="mt-1 text-xs text-zinc-500">Managers cannot assign outside unavailable dates or time windows when policy enforcement is on.</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <input aria-label="Availability date" type="date" value={availabilityForm.date} onChange={(event) => setAvailabilityForm({ ...availabilityForm, date: event.target.value })} className="col-span-2 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-200" />
+              <input aria-label="Available from" type="time" disabled={!availabilityForm.available} value={availabilityForm.startTime} onChange={(event) => setAvailabilityForm({ ...availabilityForm, startTime: event.target.value })} className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-200 disabled:opacity-40" />
+              <input aria-label="Available until" type="time" disabled={!availabilityForm.available} value={availabilityForm.endTime} onChange={(event) => setAvailabilityForm({ ...availabilityForm, endTime: event.target.value })} className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-200 disabled:opacity-40" />
+              <label className="col-span-2 flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={availabilityForm.available} onChange={(event) => setAvailabilityForm({ ...availabilityForm, available: event.target.checked })} />Available that day</label>
+              <button onClick={saveAvailability} className="col-span-2 rounded-md bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-950">Save availability</button>
+            </div>
+            {!!availability.length && <p className="mt-3 text-xs text-zinc-500">{availability.length} date{availability.length === 1 ? '' : 's'} recorded.</p>}
+          </section>
           <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
               <Users className="h-4 w-4 text-zinc-500" />
@@ -589,7 +722,7 @@ export default function SchedulePage() {
                       <span className="capitalize text-zinc-300">
                         {request.type}
                       </span>
-                      <span className="text-zinc-500">{request.status}</span>
+                      <span className="text-zinc-500">{request.status === 'pending_target' ? 'awaiting colleague' : request.status.replaceAll('_', ' ')}</span>
                     </div>
                     {manager && request.status === "pending" && (
                       <div className="mt-2 flex gap-3">
@@ -608,6 +741,7 @@ export default function SchedulePage() {
                         </button>
                       </div>
                     )}
+                    {request.type === 'swap' && request.status === 'pending_target' && request.targetUserId === user?.id && <div className="mt-2 flex gap-3"><button onClick={() => respondToSwap(request._id, true)} className="flex items-center gap-1 text-teal-400"><Check className="h-3 w-3" />Accept swap</button><button onClick={() => respondToSwap(request._id, false)} className="text-zinc-400">Decline</button></div>}
                   </div>
                 ))
               ) : (

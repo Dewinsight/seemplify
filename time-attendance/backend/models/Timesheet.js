@@ -59,6 +59,13 @@ const DailyEntrySchema = new Schema({
         type: Number,
         default: 0
     },
+    scheduledShiftIds: [{
+        type: Schema.Types.ObjectId,
+        ref: 'Shift',
+    }],
+    scheduledStart: Date,
+    scheduledEnd: Date,
+    scheduledMinutes: { type: Number, default: 0 },
     status: {
         type: String,
         enum: ['present', 'absent', 'leave', 'holiday', 'weekend', 'partial'],

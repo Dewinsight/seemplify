@@ -62,7 +62,7 @@ function collectCompensationRequestIds(payslips = []) {
   for (const payslip of payslips) {
     for (const earning of payslip?.earnings || []) {
       const requestId = String(earning?.linkedRequestId || '').trim();
-      if (requestId) requestIds.add(requestId);
+      if (requestId && !requestId.startsWith('time-attendance:')) requestIds.add(requestId);
     }
   }
   return Array.from(requestIds);

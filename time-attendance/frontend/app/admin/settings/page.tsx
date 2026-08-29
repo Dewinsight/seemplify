@@ -47,6 +47,7 @@ export default function SettingsPage() {
                     timezone: data.policy.timezone || 'UTC',
                     workSchedule: {
                         ...(data.policy.workSchedule || {}),
+                        maximumHoursPerWeek: data.policy.workSchedule?.maximumHoursPerWeek ?? 48,
                         defaultShift: {
                             name: 'Standard Shift',
                             startTime: data.policy.workSchedule?.defaultShift?.startTime || data.policy.workSchedule?.startTime || '09:00',
@@ -83,6 +84,26 @@ export default function SettingsPage() {
                         approvalLevels: data.policy.timesheetSettings?.approvalLevels?.length
                             ? data.policy.timesheetSettings.approvalLevels
                             : [{ name: 'Line manager', approverType: 'line_manager' }],
+                    },
+                    schedulingSettings: {
+                        usePublishedShiftsAsAttendanceSchedule: data.policy.schedulingSettings?.usePublishedShiftsAsAttendanceSchedule !== false,
+                        enforceAvailability: data.policy.schedulingSettings?.enforceAvailability !== false,
+                        requireAvailabilityRecord: data.policy.schedulingSettings?.requireAvailabilityRecord === true,
+                        enforceMinimumRest: data.policy.schedulingSettings?.enforceMinimumRest !== false,
+                        enforceMaximumWeeklyHours: data.policy.schedulingSettings?.enforceMaximumWeeklyHours !== false,
+                        allowConflictOverride: data.policy.schedulingSettings?.allowConflictOverride === true,
+                        allowEmployeeRelease: data.policy.schedulingSettings?.allowEmployeeRelease !== false,
+                        allowShiftSwap: data.policy.schedulingSettings?.allowShiftSwap !== false,
+                        requestPolicies: Object.fromEntries(['cover', 'release', 'swap'].map((type) => {
+                            const configured = data.policy.schedulingSettings?.requestPolicies?.[type] || {};
+                            return [type, {
+                                approvalRequired: configured.approvalRequired !== false,
+                                approvalMode: configured.approvalMode || 'single',
+                                approvalLevels: configured.approvalLevels?.length
+                                    ? configured.approvalLevels
+                                    : [{ name: 'Line manager', approverType: 'line_manager' }],
+                            }];
+                        })),
                     },
                     presence: {
                         enabled: data.policy.presence?.enabled !== false,
@@ -195,6 +216,27 @@ export default function SettingsPage() {
             timesheetSettings: {
                 ...policy.timesheetSettings,
                 approvalLevels: policy.timesheetSettings.approvalLevels.filter((_: any, levelIndex: number) => levelIndex !== index),
+            },
+        });
+    };
+
+    const setShiftRequestApproval = (type: 'cover' | 'release' | 'swap', value: string) => {
+        const approvalRequired = value !== 'none';
+        const approvalMode = value === 'multi' ? 'multi' : 'single';
+        const approvalLevels = approvalMode === 'multi'
+            ? [
+                { name: 'Line manager', approverType: 'line_manager' },
+                { name: 'HR Manager / Attendance Admin', approverType: 'hr' },
+            ]
+            : [{ name: 'Line manager', approverType: 'line_manager' }];
+        setPolicy({
+            ...policy,
+            schedulingSettings: {
+                ...policy.schedulingSettings,
+                requestPolicies: {
+                    ...policy.schedulingSettings.requestPolicies,
+                    [type]: { approvalRequired, approvalMode, approvalLevels },
+                },
             },
         });
     };
@@ -382,6 +424,48 @@ export default function SettingsPage() {
                             </div>
                         </div>
                     )}
+                </section>
+
+                <section className="bg-zinc-900/50 border border-white/5 rounded-xl p-6">
+                    <div className="mb-5">
+                        <h2 className="text-lg font-semibold text-white">Shift policy</h2>
+                        <p className="mt-1 text-sm text-zinc-500">Control how published shifts drive attendance and how cover, release, and swap requests are decided.</p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                        {[
+                            ['usePublishedShiftsAsAttendanceSchedule', 'Use published shifts for attendance', 'Published assignments determine expected work days, clock windows, and timesheet exceptions.'],
+                            ['enforceAvailability', 'Enforce recorded availability', 'Block assignments outside an employee’s unavailable day or time window.'],
+                            ['requireAvailabilityRecord', 'Require an availability record', 'Block assignments until the employee has explicitly recorded availability for that date.'],
+                            ['enforceMinimumRest', 'Enforce minimum rest', 'Block assignments that breach the configured rest period.'],
+                            ['enforceMaximumWeeklyHours', 'Enforce weekly scheduled hours', 'Block assignments above the applicable weekly-hours policy.'],
+                            ['allowEmployeeRelease', 'Allow employees to release shifts', 'Employees can ask to turn an assigned published shift into an open shift.'],
+                            ['allowShiftSwap', 'Allow employee shift swaps', 'Both employees must consent before any configured manager approval.'],
+                        ].map(([key, label, help]) => (
+                            <label key={key} className="flex items-start gap-3 rounded-lg border border-zinc-800 p-4">
+                                <input type="checkbox" checked={!!policy.schedulingSettings[key]} onChange={(event) => setPolicy({ ...policy, schedulingSettings: { ...policy.schedulingSettings, [key]: event.target.checked } })} className="mt-0.5 h-4 w-4 accent-teal-500" />
+                                <span><span className="block text-sm font-medium text-zinc-200">{label}</span><span className="mt-1 block text-xs leading-5 text-zinc-500">{help}</span></span>
+                            </label>
+                        ))}
+                    </div>
+                    <div className="mt-6 border-t border-zinc-800 pt-5">
+                        <h3 className="text-sm font-medium text-zinc-200">Request decisions</h3>
+                        <div className="mt-3 grid gap-4 md:grid-cols-3">
+                            {(['cover', 'release', 'swap'] as const).map((type) => {
+                                const request = policy.schedulingSettings.requestPolicies[type];
+                                const value = !request.approvalRequired ? 'none' : request.approvalMode === 'multi' ? 'multi' : 'single';
+                                return <label key={type} className="text-sm capitalize text-zinc-400">{type}
+                                    <select aria-label={`${type} approval`} value={value} onChange={(event) => setShiftRequestApproval(type, event.target.value)} className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white">
+                                        <option value="none">Apply after required consent</option>
+                                        <option value="single">Line manager approval</option>
+                                        <option value="multi">Line manager, then HR</option>
+                                    </select>
+                                </label>;
+                            })}
+                        </div>
+                        <label className="mt-5 block max-w-xs text-sm text-zinc-400">Maximum scheduled hours per week
+                            <input type="number" min={1} max={168} value={policy.workSchedule.maximumHoursPerWeek} onChange={(event) => setPolicy({ ...policy, workSchedule: { ...policy.workSchedule, maximumHoursPerWeek: Number(event.target.value) } })} className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white" />
+                        </label>
+                    </div>
                 </section>
 
                 <section className="bg-zinc-900/50 border border-white/5 rounded-xl p-6">

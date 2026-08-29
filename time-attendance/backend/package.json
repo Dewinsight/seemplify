@@ -9,6 +9,7 @@
         "test": "jest",
         "rules:seed:dry-run": "node scripts/seedRulePacks.js",
         "rules:seed": "node scripts/seedRulePacks.js --apply",
+        "policies:seed": "node scripts/seedDefaultPolicies.js",
         "indexes:modernize:dry-run": "node scripts/syncModernizationIndexes.js",
         "indexes:modernize": "node scripts/syncModernizationIndexes.js --apply",
         "calculations:shadow": "node scripts/compareShadowCalculations.js",

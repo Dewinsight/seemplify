@@ -28,6 +28,11 @@ type MockState = {
     locationEnabled: boolean;
     clockBodies: any[];
     shiftBodies: any[];
+    shiftRequestBodies: any[];
+    availabilityBodies: any[];
+    templateGenerationBodies: any[];
+    templateBodies: any[];
+    swapResponded: boolean;
     policyBodies: any[];
     rulePackBodies: any[];
     rulePackAssignmentBodies: any[];
@@ -101,6 +106,20 @@ const policy = {
         periodType: 'weekly', autoSubmit: false, autoApprove: false, submissionDeadline: 2, approvalDeadline: 3,
         approvalMode: 'single',
         approvalLevels: [{ name: 'Line manager', approverType: 'line_manager' }],
+    },
+    schedulingSettings: {
+        usePublishedShiftsAsAttendanceSchedule: true,
+        enforceAvailability: true,
+        requireAvailabilityRecord: false,
+        enforceMinimumRest: true,
+        enforceMaximumWeeklyHours: true,
+        allowEmployeeRelease: true,
+        allowShiftSwap: true,
+        requestPolicies: {
+            cover: { approvalRequired: true, approvalMode: 'single', approvalLevels: [{ name: 'Line manager', approverType: 'line_manager' }] },
+            release: { approvalRequired: true, approvalMode: 'single', approvalLevels: [{ name: 'Line manager', approverType: 'line_manager' }] },
+            swap: { approvalRequired: true, approvalMode: 'single', approvalLevels: [{ name: 'Line manager', approverType: 'line_manager' }] },
+        },
     },
     notifications: { managerReports: { enabled: true, frequency: 'weekly', sendHourUtc: 9, includeExcel: true } },
     presence: { enabled: true, rawEventRetentionDays: 90, dailySummaryRetentionDays: 730 },
@@ -239,6 +258,10 @@ async function installApiMock(page: Page, state: MockState) {
             synchronization: { state: state.rosterSynced ? 'ready' : 'empty', lastReconciledAt: state.rosterSynced ? NOW : null },
         });
         if (method === 'GET' && path === '/api/v1/scheduling/templates') return json(route, { templates: [{ _id: 'template-1', name: 'Day shift', startTime: '09:00', endTime: '17:00', breakMinutes: 30, workMode: 'remote' }] });
+        if (method === 'POST' && path === '/api/v1/scheduling/templates') { state.templateBodies.push(request.postDataJSON()); return json(route, { template: { _id: 'template-new', ...request.postDataJSON() } }); }
+        if (method === 'GET' && path === '/api/v1/scheduling/policy') return json(route, { schedulingSettings: policy.schedulingSettings, restRules: { minimumMinutesBetweenShifts: 660 }, maximumWeeklyHours: 40, timezone: 'Europe/London' });
+        if (method === 'GET' && path === '/api/v1/scheduling/availability') return json(route, { availability: state.availabilityBodies });
+        if (method === 'PUT' && path.startsWith('/api/v1/scheduling/availability/')) { state.availabilityBodies.push(request.postDataJSON()); return json(route, { availability: request.postDataJSON() }); }
         if (method === 'GET' && path === '/api/v1/scheduling/roster') return json(route, roster());
         if (method === 'POST' && path === '/api/v1/scheduling/roster/reconcile') {
             state.rosterSynced = true;
@@ -249,12 +272,14 @@ async function installApiMock(page: Page, state: MockState) {
             if (url.searchParams.get('open') === 'true') return json(route, { shifts: [{ _id: 'shift-open', userId: null, startAt: TOMORROW, endAt: TOMORROW_END, workMode: 'office', status: 'published' }] });
             return json(route, { shifts: [{ _id: 'shift-1', userId: 'employee-1', startAt: TOMORROW, endAt: TOMORROW_END, workMode: 'remote', status: 'published', acknowledgement: { status: state.shiftAcknowledged ? 'accepted' : 'pending' } }] });
         }
-        if (method === 'GET' && path === '/api/v1/scheduling/requests') return json(route, { requests: [{ _id: 'request-1', type: 'cover', status: 'pending' }] });
+        if (method === 'GET' && path === '/api/v1/scheduling/requests') return json(route, { requests: [{ _id: 'request-1', type: 'cover', status: 'pending' }, { _id: 'swap-target', type: 'swap', status: state.swapResponded ? 'pending' : 'pending_target', targetUserId: 'employee-1' }] });
+        if (method === 'GET' && path === '/api/v1/scheduling/shifts/shift-1/swap-options') return json(route, { options: [{ shiftId: 'shift-2', targetUserId: 'employee-2', startAt: '2026-08-12T09:00:00.000Z', endAt: '2026-08-12T17:00:00.000Z', assignee: { name: 'Jamie Lee' } }] });
         if (method === 'POST' && path === '/api/v1/scheduling/publish') return json(route, { publishedCount: 2 });
         if (method === 'POST' && path === '/api/v1/scheduling/shifts/shift-1/acknowledge') { state.shiftAcknowledged = true; return json(route, { success: true }); }
         if (method === 'POST' && path === '/api/v1/scheduling/shifts') { state.shiftBodies.push(request.postDataJSON()); return json(route, { shift: { _id: 'shift-new' } }); }
-        if (method === 'POST' && path === '/api/v1/scheduling/requests') { state.coverRequested = true; return json(route, { request: { _id: 'request-new' } }); }
+        if (method === 'POST' && path === '/api/v1/scheduling/requests') { const body = request.postDataJSON(); state.shiftRequestBodies.push(body); if (body.type === 'cover') state.coverRequested = true; return json(route, { request: { _id: 'request-new' } }); }
         if (method === 'POST' && path === '/api/v1/scheduling/requests/request-1/review') { state.requestReviewed = true; return json(route, { success: true }); }
+        if (method === 'POST' && path === '/api/v1/scheduling/requests/swap-target/respond') { state.swapResponded = true; return json(route, { success: true }); }
 
         if (method === 'GET' && path === '/api/v1/exceptions') {
             const period = {
@@ -315,6 +340,7 @@ async function installApiMock(page: Page, state: MockState) {
             state.rulePackAssignmentBodies.push(body);
             return json(route, { assigned: body.userIds.length, matched: body.userIds.length, rulePack: { id: 'rule-pack-1', key: 'ng-default', name: 'Nigeria default', version: 1 } });
         }
+        if (method === 'POST' && path === '/api/v1/scheduling/templates/template-1/generate') { state.templateGenerationBodies.push(request.postDataJSON()); return json(route, { generatedCount: 5, existingCount: 0, requestedCount: 5 }); }
         if (method === 'POST' && path === '/api/v1/rule-packs/seed-defaults') {
             const inserted = state.rulePacks.length ? 0 : 31;
             if (!state.rulePacks.length) state.rulePacks = [rulePack];
@@ -369,7 +395,7 @@ const test = base.extend<{ mockState: MockState }>({
             approvalConflict: false,
             timesheetStatus: 'draft', timesheetPayrollState: 'not_ready',
             timesheetCorrectionRequested: false, managerExceptionFlagged: false,
-            locationEnabled: false, clockBodies: [], shiftBodies: [], policyBodies: [], rulePackBodies: [], rulePackAssignmentBodies: [],
+            locationEnabled: false, clockBodies: [], shiftBodies: [], shiftRequestBodies: [], availabilityBodies: [], templateGenerationBodies: [], templateBodies: [], swapResponded: false, policyBodies: [], rulePackBodies: [], rulePackAssignmentBodies: [],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
         page.on('console', message => {
@@ -612,6 +638,8 @@ test('defaults to one line-manager approval and makes multiple stages optional',
     await expect(page.getByLabel('Approval stage 2', { exact: true })).toHaveValue('hr');
     await page.getByRole('button', { name: 'Add stage' }).click();
     await expect(page.getByLabel('Approval stage 3', { exact: true })).toHaveValue('hr');
+    await expect(page.getByLabel('cover approval')).toHaveValue('single');
+    await page.getByLabel('cover approval').selectOption('multi');
     page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: 'Save Changes' }).click();
 
@@ -623,6 +651,35 @@ test('defaults to one line-manager approval and makes multiple stages optional',
             { approverType: 'hr' },
         ],
     });
+    expect(mockState.policyBodies.at(-1)?.schedulingSettings.requestPolicies.cover).toMatchObject({
+        approvalRequired: true,
+        approvalMode: 'multi',
+        approvalLevels: [{ approverType: 'line_manager' }, { approverType: 'hr' }],
+    });
+});
+
+test('records availability and completes release, swap, and consent actions', async ({ page, mockState }) => {
+    await authenticate(page);
+    await page.goto('/schedule');
+    await page.getByLabel('Availability date').fill('2026-08-11');
+    await page.getByLabel('Available from').fill('08:00');
+    await page.getByLabel('Available until').fill('16:00');
+    await page.getByRole('button', { name: 'Save availability' }).click();
+    await expect(page.getByText(/Availability saved/)).toBeVisible();
+    expect(mockState.availabilityBodies.at(-1)).toMatchObject({ date: '2026-08-11', available: true, startTime: '08:00', endTime: '16:00' });
+
+    await page.getByRole('button', { name: 'Release' }).click();
+    await expect(page.getByText('Release request sent for approval.')).toBeVisible();
+    expect(mockState.shiftRequestBodies.at(-1)).toMatchObject({ type: 'release', shiftId: 'shift-1' });
+
+    await page.getByRole('button', { name: 'Swap', exact: true }).click();
+    await expect(page.getByLabel('Shift to receive')).toContainText('Jamie Lee');
+    await page.getByRole('button', { name: 'Send swap' }).click();
+    expect(mockState.shiftRequestBodies.at(-1)).toMatchObject({ type: 'swap', shiftId: 'shift-1', targetUserId: 'employee-2', offeredShiftId: 'shift-2' });
+
+    await page.getByRole('button', { name: 'Accept swap' }).click();
+    await expect(page.getByText(/Swap accepted/)).toBeVisible();
+    expect(mockState.swapResponded).toBe(true);
 });
 
 test('keeps the team attendance workspace readable at wide and standard desktop widths', async ({ page, mockState: _mockState }) => {
@@ -693,7 +750,7 @@ test('validates open shifts, cover requests and manager review actions', async (
     await page.goto('/schedule');
     await expect(page.getByRole('button', { name: 'Request cover' })).toBeVisible();
     await page.getByRole('button', { name: 'Request cover' }).click();
-    await expect(page.getByText('Cover request sent for manager approval.')).toBeVisible();
+    await expect(page.getByText('Cover request sent for approval.')).toBeVisible();
     expect(mockState.coverRequested).toBe(true);
 
     await page.getByRole('button', { name: 'Approve' }).click();
@@ -877,6 +934,30 @@ test('recovers an empty rule-pack catalog and creates a custom draft', async ({ 
 
     await expect(page.getByRole('heading', { name: 'London operations rules' })).toBeVisible();
     expect(mockState.calls).toContain('POST /api/v1/rule-packs');
+});
+
+test('generates a governed template range without duplicating manual shift entry', async ({ page, mockState }) => {
+    await authenticate(page);
+    await page.goto('/schedule');
+    await page.getByRole('button', { name: 'Template', exact: true }).click();
+    await page.getByLabel('Template name').fill('Four on, four off');
+    await page.getByLabel('Template pattern').selectOption('rotating');
+    await page.getByLabel('Rotation cycle days').fill('8');
+    await page.getByLabel('Rotation active days').fill('0,1,2,3');
+    await page.getByRole('button', { name: 'Save template' }).click();
+    await expect(page.getByText('Shift template created.')).toBeVisible();
+    expect(mockState.templateBodies.at(-1)).toMatchObject({ scheduleType: 'rotating', rotation: { cycleDays: 8, activeDays: [0, 1, 2, 3] } });
+    await page.getByRole('button', { name: 'New shift' }).click();
+    await page.getByLabel('Team').selectOption('team-1');
+    await page.getByLabel('Assign to').selectOption('employee-2');
+    await page.getByLabel('Shift template').selectOption('template-1');
+    const start = await page.getByLabel('Shift starts').inputValue();
+    const end = new Date(`${start.slice(0, 10)}T12:00:00`);
+    end.setDate(end.getDate() + 6);
+    await page.getByLabel('Repeat template through').fill(end.toISOString().slice(0, 10));
+    await page.getByRole('button', { name: 'Create draft' }).click();
+    await expect(page.getByText('5 draft shifts generated.')).toBeVisible();
+    expect(mockState.templateGenerationBodies.at(-1)).toMatchObject({ userId: 'employee-2', teamId: 'team-1', openShift: false });
 });
 
 test('lets an employee recall and redo an approved timesheet before payroll accepts attendance', async ({ page, mockState }) => {

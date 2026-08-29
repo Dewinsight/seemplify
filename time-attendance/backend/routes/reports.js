@@ -23,11 +23,12 @@ router.get('/exceptions', async (req, res) => {
             return res.status(400).json({ error: 'Exception reports are limited to 92 days' });
         }
 
-        const [entries, policy] = await Promise.all([
+        const [entries, policy, shifts] = await Promise.all([
             TimeEntry.find({ organizationId: req.organizationId, timestamp: { $gte: start, $lte: end } }).sort({ timestamp: 1 }).lean(),
             AttendancePolicy.getOrCreateDefault(req.organizationId, req.organizationName, req.user.id),
+            Shift.find({ organizationId: req.organizationId, status: { $in: ['published', 'completed'] }, startAt: { $lte: end }, endAt: { $gte: start } }).lean(),
         ]);
-        const report = buildAttendanceExceptions(entries, policy);
+        const report = buildAttendanceExceptions(entries, policy, { shifts });
 
         if (req.query.format === 'xlsx') {
             const workbook = new ExcelJS.Workbook();
@@ -474,7 +475,7 @@ router.get('/capacity-forecast', async (req, res) => {
         const end = req.query.end ? parseISO(req.query.end) : new Date(start.getTime() + 28 * 86400000);
         const policy = await AttendancePolicy.getOrCreateDefault(req.organizationId, req.organizationName, req.user.id);
         const weeks = Math.max(1, (end - start) / (7 * 86400000));
-        const threshold = Number(policy.workSchedule?.standardHoursPerWeek || 40) * weeks;
+        const threshold = Number(policy.workSchedule?.maximumHoursPerWeek || 48) * weeks;
         const rows = await Shift.aggregate([
             { $match: { organizationId: req.organizationId, status: { $in: ['draft', 'published'] }, userId: { $exists: true, $ne: null }, startAt: { $lt: end }, endAt: { $gt: start } } },
             { $project: { userId: 1, hours: { $divide: [{ $subtract: ['$endAt', '$startAt'] }, 3600000] }, breakHours: { $divide: ['$breakMinutes', 60] } } },

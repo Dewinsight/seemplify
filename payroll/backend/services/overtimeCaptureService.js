@@ -28,10 +28,13 @@ function normalizeManualOvertimeCapture({
   reason,
   effectiveDate,
   overtimeContext,
+  maximumHours = 24,
+  forcedMultiplier,
   now = new Date(),
 }) {
   const hours = Number(overtimeHours);
-  const multiplier = Number(overtimeMultiplier || 1.5);
+  const multiplier = Number(forcedMultiplier ?? overtimeMultiplier ?? 1.5);
+  const requestMaximumHours = Math.min(24, Math.max(0.25, Number(maximumHours) || 24));
   const description = clean(reason, 1000);
   const date = new Date(effectiveDate);
 
@@ -50,8 +53,8 @@ function normalizeManualOvertimeCapture({
     };
   }
 
-  if (!Number.isFinite(hours) || hours <= 0 || hours > 24) {
-    fail('Overtime hours must be greater than 0 and no more than 24 hours.');
+  if (!Number.isFinite(hours) || hours <= 0 || hours > requestMaximumHours) {
+    fail(`Overtime hours must be greater than 0 and no more than ${requestMaximumHours} hours.`);
   }
   if (!Number.isFinite(multiplier) || multiplier < 1 || multiplier > 3) {
     fail('Overtime multiplier must be between 1.0 and 3.0.');

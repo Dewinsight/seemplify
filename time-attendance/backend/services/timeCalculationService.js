@@ -203,6 +203,19 @@ function calculatePeriod(entries, period, policy = {}, calendarContext = {}) {
         startKey: formatInTimeZone(new Date(leave.startAt || leave.startDate), timeZone, 'yyyy-MM-dd'),
         endKey: formatInTimeZone(new Date(leave.endAt || leave.endDate), timeZone, 'yyyy-MM-dd'),
     }));
+    const usePublishedShifts = policy.schedulingSettings?.usePublishedShiftsAsAttendanceSchedule !== false;
+    const scheduledShiftsByDay = new Map();
+    if (usePublishedShifts) {
+        for (const shift of calendarContext.shifts || []) {
+            const key = formatInTimeZone(new Date(shift.startAt), timeZone, 'yyyy-MM-dd');
+            if (!scheduledShiftsByDay.has(key)) scheduledShiftsByDay.set(key, []);
+            scheduledShiftsByDay.get(key).push(shift);
+        }
+    }
+    const scheduleCoverage = usePublishedShifts ? (calendarContext.schedulePublications || []).map(publication => ({
+        startKey: formatInTimeZone(new Date(publication.periodStart), timeZone, 'yyyy-MM-dd'),
+        endKey: formatInTimeZone(new Date(new Date(publication.periodEnd).getTime() - 1), timeZone, 'yyyy-MM-dd'),
+    })) : [];
 
     for (const date of enumerateLocalDates(period.start, period.end, timeZone)) {
         const key = formatInTimeZone(date, timeZone, 'yyyy-MM-dd');
@@ -210,6 +223,9 @@ function calculatePeriod(entries, period, policy = {}, calendarContext = {}) {
         const dayOfWeek = local.getDay();
         const onLeave = leaves.some(leave => key >= leave.startKey && key <= leave.endKey);
         const holiday = holidayKeys.has(key) || recurringHolidayMonthDays.has(key.slice(5));
+        const scheduledShifts = scheduledShiftsByDay.get(key) || [];
+        const publishedScheduleCoversDay = scheduleCoverage.some(range => key >= range.startKey && key <= range.endKey);
+        const scheduledWorkDay = publishedScheduleCoversDay ? scheduledShifts.length > 0 : workDays.includes(dayOfWeek);
         days.set(key, {
             date,
             dayOfWeek,
@@ -222,7 +238,18 @@ function calculatePeriod(entries, period, policy = {}, calendarContext = {}) {
             totalHours: 0,
             regularHours: 0,
             overtimeHours: 0,
-            status: holiday ? 'holiday' : onLeave ? 'leave' : workDays.includes(dayOfWeek) ? 'absent' : 'weekend',
+            status: holiday ? 'holiday' : onLeave ? 'leave' : scheduledWorkDay ? 'absent' : 'weekend',
+            scheduledShiftIds: scheduledShifts.map(shift => shift._id).filter(Boolean),
+            scheduledStart: scheduledShifts.length
+                ? new Date(Math.min(...scheduledShifts.map(shift => new Date(shift.startAt).getTime())))
+                : null,
+            scheduledEnd: scheduledShifts.length
+                ? new Date(Math.max(...scheduledShifts.map(shift => new Date(shift.endAt).getTime())))
+                : null,
+            scheduledMinutes: scheduledShifts.reduce((sum, shift) => (
+                sum + Math.max(0, Math.round((new Date(shift.endAt) - new Date(shift.startAt)) / 60000) - Number(shift.breakMinutes || 0))
+            ), 0),
+            publishedScheduleCoversDay,
             exceptions: [],
             timeEntryIds: [],
             sessions: [],
@@ -279,12 +306,17 @@ function calculatePeriod(entries, period, policy = {}, calendarContext = {}) {
 
     const dailyEntries = Array.from(days.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
     if (policy.workSchedule?.type !== 'flexible') {
-        const [shiftStartHour, shiftStartMinute] = String(policy.workSchedule?.defaultShift?.startTime || '09:00').split(':').map(Number);
-        const [shiftEndHour, shiftEndMinute] = String(policy.workSchedule?.defaultShift?.endTime || '17:00').split(':').map(Number);
-        const scheduledStart = shiftStartHour * 60 + shiftStartMinute;
-        let scheduledEnd = shiftEndHour * 60 + shiftEndMinute;
-        if (scheduledEnd <= scheduledStart) scheduledEnd += 1440;
         for (const day of dailyEntries.filter(item => ['present', 'partial'].includes(item.status))) {
+            if (day.publishedScheduleCoversDay && !day.scheduledStart) continue;
+            const [defaultStartHour, defaultStartMinute] = String(policy.workSchedule?.defaultShift?.startTime || '09:00').split(':').map(Number);
+            const [defaultEndHour, defaultEndMinute] = String(policy.workSchedule?.defaultShift?.endTime || '17:00').split(':').map(Number);
+            const scheduledStart = day.scheduledStart
+                ? Number(formatInTimeZone(day.scheduledStart, timeZone, 'HH')) * 60 + Number(formatInTimeZone(day.scheduledStart, timeZone, 'mm'))
+                : defaultStartHour * 60 + defaultStartMinute;
+            let scheduledEnd = day.scheduledEnd
+                ? Number(formatInTimeZone(day.scheduledEnd, timeZone, 'HH')) * 60 + Number(formatInTimeZone(day.scheduledEnd, timeZone, 'mm'))
+                : defaultEndHour * 60 + defaultEndMinute;
+            if (scheduledEnd <= scheduledStart) scheduledEnd += 1440;
             if (day.clockIn) {
                 const [hour, minute] = formatInTimeZone(new Date(day.clockIn), timeZone, 'HH:mm').split(':').map(Number);
                 const late = hour * 60 + minute - scheduledStart - Number(policy.gracePeriod?.lateArrival || 0);
@@ -297,7 +329,9 @@ function calculatePeriod(entries, period, policy = {}, calendarContext = {}) {
                 const early = scheduledEnd - actualEnd - Number(policy.gracePeriod?.earlyDeparture || 0);
                 if (early > 0) day.exceptions.push({ type: 'early_departure', description: `Clock-out was ${early} minutes before the configured grace period`, minutes: early });
             }
-            const expectedBreak = Number(policy.breakRules?.minimumBreakMinutes ?? policy.workSchedule?.defaultShift?.breakDuration ?? 0);
+            const scheduledShiftBreaks = (scheduledShiftsByDay.get(formatInTimeZone(day.date, timeZone, 'yyyy-MM-dd')) || [])
+                .reduce((sum, shift) => sum + Number(shift.breakMinutes || 0), 0);
+            const expectedBreak = scheduledShiftBreaks || Number(policy.breakRules?.minimumBreakMinutes ?? policy.workSchedule?.defaultShift?.breakDuration ?? 0);
             const breakRequiredAfter = Number(policy.breakRules?.requiredAfterMinutes ?? (Number(policy.workSchedule?.standardHoursPerDay || 8) * 60 * 0.75));
             if (expectedBreak > 0 && day.totalMinutes >= breakRequiredAfter && day.breakDuration === 0) {
                 day.exceptions.push({ type: 'missed_break', description: `No break was recorded; the configured break is ${expectedBreak} minutes`, minutes: expectedBreak });
@@ -340,16 +374,35 @@ function calculatePeriod(entries, period, policy = {}, calendarContext = {}) {
     }
 
     if (policy.overtime?.enabled !== false && weeklyThreshold > 0) {
-        let weeklyExcess = Math.max(0, regularMinutes - weeklyThreshold * 60);
-        for (let index = dailyEntries.length - 1; index >= 0 && weeklyExcess > 0; index -= 1) {
-            const day = dailyEntries[index];
-            const available = Math.round(day.regularHours * 60);
-            const moved = Math.min(available, weeklyExcess);
-            day.regularHours = Number(((available - moved) / 60).toFixed(2));
-            day.overtimeHours = Number((day.overtimeHours + moved / 60).toFixed(2));
-            regularMinutes -= moved;
-            overtimeMinutes += moved;
-            weeklyExcess -= moved;
+        // Weekly thresholds reset every local Monday. Applying the threshold once
+        // to a fortnightly or monthly timesheet incorrectly turns every hour
+        // after the first week into overtime.
+        const weeks = new Map();
+        for (const day of dailyEntries) {
+            const localDate = utcToZonedTime(day.date, timeZone);
+            const offsetFromMonday = (localDate.getDay() + 6) % 7;
+            const monday = new Date(localDate);
+            monday.setHours(0, 0, 0, 0);
+            monday.setDate(monday.getDate() - offsetFromMonday);
+            const weekKey = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+            if (!weeks.has(weekKey)) weeks.set(weekKey, []);
+            weeks.get(weekKey).push(day);
+        }
+
+        for (const weekDays of weeks.values()) {
+            let weeklyRegularMinutes = weekDays.reduce((sum, day) => sum + Math.round(day.regularHours * 60), 0);
+            let weeklyExcess = Math.max(0, weeklyRegularMinutes - weeklyThreshold * 60);
+            for (let index = weekDays.length - 1; index >= 0 && weeklyExcess > 0; index -= 1) {
+                const day = weekDays[index];
+                const available = Math.round(day.regularHours * 60);
+                const moved = Math.min(available, weeklyExcess);
+                day.regularHours = Number(((available - moved) / 60).toFixed(2));
+                day.overtimeHours = Number((day.overtimeHours + moved / 60).toFixed(2));
+                regularMinutes -= moved;
+                overtimeMinutes += moved;
+                weeklyRegularMinutes -= moved;
+                weeklyExcess -= moved;
+            }
         }
     }
 
