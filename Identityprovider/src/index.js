@@ -10361,7 +10361,8 @@ function buildProfilePageViewModel(req, currentProfileSection) {
     currentProfileSection,
     activeProfileSection: currentProfileSection,
     profileCompletion: req.profileCompletion || getProfileCompletion(req.user),
-    profileCompletionEnforced: false
+    profileCompletionEnforced: false,
+    profileSetupMode: req.query?.wizard === '1'
   }
 }
 

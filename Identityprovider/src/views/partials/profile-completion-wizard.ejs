@@ -124,6 +124,12 @@
             opacity: 0.78;
         }
 
+        .profile-wizard-step.is-complete .profile-wizard-step-index {
+            border-color: var(--brand);
+            background: var(--brand);
+            color: white;
+        }
+
         .profile-wizard-step-index {
             display: inline-flex;
             align-items: center;
@@ -178,13 +184,13 @@
     </style>
 
     <div id="profileCompletionWizard" class="profile-wizard-overlay <%= isEnforcedWizard ? 'is-locked' : '' %>" hidden>
-        <div class="profile-wizard-modal" role="dialog" aria-modal="true" aria-labelledby="profileWizardTitle">
+        <div class="profile-wizard-modal" role="dialog" aria-modal="true" aria-labelledby="profileWizardTitle" aria-describedby="profileWizardDescription" tabindex="-1">
             <% if (!isEnforcedWizard) { %>
                 <button type="button" class="profile-wizard-close" id="profileWizardClose" aria-label="Close wizard">&times;</button>
             <% } %>
             <div class="profile-wizard-kicker">Profile Setup</div>
             <h2 id="profileWizardTitle" class="profile-wizard-title">Complete your employee profile</h2>
-            <p class="profile-wizard-copy">
+            <p id="profileWizardDescription" class="profile-wizard-copy">
                 Payroll and HR need these items before your profile is fully ready. Complete each step below.
             </p>
             <% if (isEnforcedWizard) { %>
@@ -193,7 +199,7 @@
                 </p>
             <% } %>
 
-            <div class="profile-wizard-progress">
+            <div class="profile-wizard-progress" role="progressbar" aria-label="Profile completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= profileCompletion.percent %>">
                 <div class="profile-wizard-progress-bar" style="width: <%= profileCompletion.percent %>%;"></div>
             </div>
             <div class="profile-wizard-progress-label">
@@ -203,7 +209,7 @@
             <div class="profile-wizard-steps">
                 <% profileCompletion.steps.forEach((step, index) => { %>
                     <div class="profile-wizard-step <%= step.complete ? 'is-complete' : '' %> <%= profileCompletion.nextIncompleteStep?.key === step.key ? 'is-current' : '' %>">
-                        <div class="profile-wizard-step-index"><%= index + 1 %></div>
+                        <div class="profile-wizard-step-index" aria-hidden="true"><%= step.complete ? '✓' : index + 1 %></div>
                         <div>
                             <div class="profile-wizard-step-title"><%= step.label %></div>
                             <div class="profile-wizard-step-copy"><%= step.description %></div>
@@ -235,8 +241,10 @@
             const primaryButton = document.getElementById('profileWizardPrimary');
             const closeButton = document.getElementById('profileWizardClose');
             const dismissButton = document.getElementById('profileWizardDismiss');
+            const dialog = modal?.querySelector('[role="dialog"]');
             const isProfileSectionPage = Boolean(currentProfileSection);
             const shouldAutoOpen = profileCompletionEnforced || !isProfileSectionPage;
+            let previouslyFocused = null;
 
             if (!modal || !profileCompletion || profileCompletion.complete) {
                 return;
@@ -247,11 +255,14 @@
             function closeWizard() {
                 modal.hidden = true;
                 document.body.classList.remove('profile-wizard-open');
+                previouslyFocused?.focus?.();
             }
 
             function openWizard() {
+                previouslyFocused = document.activeElement;
                 modal.hidden = false;
                 document.body.classList.add('profile-wizard-open');
+                requestAnimationFrame(() => dialog?.focus());
             }
 
             function appendWizardQuery(route) {
@@ -301,6 +312,12 @@
             dismissButton?.addEventListener('click', closeWizard);
             modal.addEventListener('click', (event) => {
                 if (!profileCompletionEnforced && event.target === modal) {
+                    closeWizard();
+                }
+            });
+            modal.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && !profileCompletionEnforced) {
+                    event.preventDefault();
                     closeWizard();
                 }
             });

@@ -10,6 +10,7 @@ const completeAccount = {
       mailingAddress: {
         street: '1 Example Street',
         city: 'London',
+        zipCode: 'SW1A 1AA',
         country: 'UK'
       },
       phoneNumbers: {
@@ -18,6 +19,7 @@ const completeAccount = {
       emergencyContacts: [
         {
           name: 'Emergency Contact',
+          relationship: 'Friend',
           phone: '+44 7000 000001',
           isPrimary: true
         }
@@ -77,4 +79,28 @@ test('legacy payroll-owned fields are absent from Identity completion and sync c
   assert.equal(Object.hasOwn(payrollSync, 'dependents'), false)
   assert.equal(Object.hasOwn(payrollSync, 'dependentsDeclaration'), false)
   assert.equal(Object.hasOwn(payrollSync, 'banking'), false)
+})
+
+test('completion uses the same required-field rules as the profile save validator', () => {
+  const account = structuredClone(completeAccount)
+  account.profile.personalInfo.mailingAddress.zipCode = ''
+  account.profile.personalInfo.emergencyContacts[0].relationship = ''
+
+  const completion = getProfileCompletion(account)
+  const personal = completion.steps.find(step => step.key === 'personal')
+
+  assert.equal(completion.complete, false)
+  assert.equal(personal.complete, false)
+  assert.equal(personal.requirements.find(requirement => requirement.key === 'address').complete, false)
+  assert.equal(personal.requirements.find(requirement => requirement.key === 'emergency-contact').complete, false)
+})
+
+test('completion reports the four visible personal-profile requirement checks', () => {
+  const completion = getProfileCompletion(completeAccount)
+  const personal = completion.steps.find(step => step.key === 'personal')
+
+  assert.deepEqual(personal.requirements.map(requirement => requirement.key), [
+    'identity', 'address', 'phone', 'emergency-contact'
+  ])
+  assert.equal(personal.requirements.every(requirement => requirement.complete), true)
 })

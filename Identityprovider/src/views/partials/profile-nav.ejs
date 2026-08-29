@@ -1,4 +1,13 @@
-<div class="profile-nav">
+<% const personalStep = typeof profileCompletion !== 'undefined' ? profileCompletion?.steps?.find(step => step.key === 'personal') : null; %>
+<div class="profile-nav" aria-label="Profile sections">
     <a href="/profile/avatar" class="<%= activeProfileSection === 'avatar' ? 'active' : '' %>">Profile Picture</a>
-    <a href="/profile/personal" class="<%= activeProfileSection === 'personal' ? 'active' : '' %>">Personal Info</a>
+    <a href="/profile/personal" class="<%= activeProfileSection === 'personal' ? 'active' : '' %>">
+        <span>Personal Info</span>
+        <% if (personalStep) { %>
+            <span class="profile-nav-status <%= personalStep.complete ? 'is-complete' : 'is-required' %>">
+                <span aria-hidden="true"><%= personalStep.complete ? '✓' : '!' %></span>
+                <%= personalStep.complete ? 'Complete' : 'Required' %>
+            </span>
+        <% } %>
+    </a>
 </div>

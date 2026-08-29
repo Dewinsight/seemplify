@@ -1,3 +1,5 @@
+import { validatePersonalProfile } from './personalProfileValidation.js'
+
 const PROFILE_COMPLETION_STEPS = [
   {
     key: 'personal',
@@ -39,14 +41,6 @@ function getPersonalInfo(profile = {}) {
   return profile?.personalInfo || {}
 }
 
-function getMailingAddress(profile = {}) {
-  return getPersonalInfo(profile)?.mailingAddress || {}
-}
-
-function getPhoneNumbers(profile = {}) {
-  return getPersonalInfo(profile)?.phoneNumbers || {}
-}
-
 function getEmergencyContacts(profile = {}) {
   return Array.isArray(getPersonalInfo(profile)?.emergencyContacts)
     ? getPersonalInfo(profile).emergencyContacts
@@ -59,32 +53,66 @@ function getPrimaryEmergencyContact(profile = {}) {
   return contacts.find(contact => contact?.isPrimary === true) || contacts[0]
 }
 
-function isCompleteAddress(address = {}) {
-  return hasText(address?.street) && hasText(address?.city) && hasText(address?.country)
+function toDateInput(value) {
+  const date = normalizeDate(value)
+  return date ? date.toISOString().slice(0, 10) : String(value || '')
+}
+
+function getPersonalProfileValidation(personalInfo = {}) {
+  return validatePersonalProfile({
+    dateOfBirth: toDateInput(personalInfo?.dateOfBirth),
+    mailingAddress: personalInfo?.mailingAddress || {},
+    phoneNumbers: personalInfo?.phoneNumbers || {},
+    emergencyContacts: Array.isArray(personalInfo?.emergencyContacts) ? personalInfo.emergencyContacts : []
+  })
+}
+
+function hasAnyError(fieldErrors, keys) {
+  return Object.keys(fieldErrors).some(key => keys.some(candidate => key === candidate || key.startsWith(`${candidate}.`)))
+}
+
+function getPersonalRequirements(fieldErrors = {}) {
+  return [
+    {
+      key: 'identity',
+      label: 'Date of birth',
+      complete: !hasAnyError(fieldErrors, ['dateOfBirth'])
+    },
+    {
+      key: 'address',
+      label: 'Mailing address',
+      complete: !hasAnyError(fieldErrors, ['street', 'city', 'state', 'zipCode', 'country'])
+    },
+    {
+      key: 'phone',
+      label: 'Phone number',
+      complete: !hasAnyError(fieldErrors, ['mobile', 'home', 'work'])
+    },
+    {
+      key: 'emergency-contact',
+      label: 'Emergency contact',
+      complete: !hasAnyError(fieldErrors, ['emergencyContacts'])
+    }
+  ]
 }
 
 export function getProfileCompletion(account = {}, options = {}) {
   const profile = getProfile(account)
   const personalInfo = getPersonalInfo(profile)
-  const mailingAddress = getMailingAddress(profile)
-  const phoneNumbers = getPhoneNumbers(profile)
   const primaryEmergencyContact = getPrimaryEmergencyContact(profile)
   const reminder = profile?.completionReminders || {}
   const onboarding = EMPTY_ONBOARDING_COMPLETION
+  const personalValidation = getPersonalProfileValidation(personalInfo)
+  const personalRequirements = getPersonalRequirements(personalValidation.fieldErrors)
 
-  const personalComplete = Boolean(
-    normalizeDate(personalInfo?.dateOfBirth) &&
-    isCompleteAddress(mailingAddress) &&
-    hasText(phoneNumbers?.mobile) &&
-    primaryEmergencyContact
-  )
   const completionByKey = {
-    personal: personalComplete
+    personal: personalValidation.valid
   }
 
   const steps = PROFILE_COMPLETION_STEPS.map(step => ({
     ...step,
-    complete: completionByKey[step.key] === true
+    complete: completionByKey[step.key] === true,
+    requirements: step.key === 'personal' ? personalRequirements : []
   }))
 
   const completedCount = steps.filter(step => step.complete).length

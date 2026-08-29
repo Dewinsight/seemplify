@@ -15,6 +15,7 @@
     "test:oidc-recovery": "node --test test/oidc-recovery-page.test.mjs",
     "test:hub-pins": "node --test test/hub-pins.test.mjs",
     "test:profile-completion": "node --test test/profile-completion.test.mjs",
+    "test:profile-ui": "node tests/profile-personal-ui.playwright.mjs",
     "test:browser-notifications": "node --test test/browser-notification-relay.test.mjs",
     "test:browser-notification-client": "node test/browser-notification-client.playwright.mjs",
     "test:surface-retirement": "node --test test/legacy-ui-redirects.test.mjs",
