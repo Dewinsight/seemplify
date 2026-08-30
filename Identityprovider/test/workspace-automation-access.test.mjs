@@ -44,7 +44,7 @@ test('returns only the freshly rebuilt requested organization claim', async () =
   const identity = await resolveWorkspaceAutomationAccess({
     subject: 'identity-subject-1',
     organizationId: 'org-a',
-    sessionIssuedAt
+    sessionIat: sessionIssuedAt
   }, {
     AccountModel,
     buildClaims: async () => [claim, { id: 'org-b', authorization: {} }],
@@ -63,7 +63,7 @@ test('fails closed when canonical Identity membership was revoked', async () => 
     resolveWorkspaceAutomationAccess({
       subject: 'identity-subject-1',
       organizationId: 'org-a',
-      sessionIssuedAt
+      sessionIat: sessionIssuedAt
     }, {
       AccountModel,
       buildClaims: async () => [],
@@ -83,7 +83,7 @@ test('fails closed for an unverified Identity account', async () => {
     resolveWorkspaceAutomationAccess({
       subject: 'identity-subject-1',
       organizationId: 'org-a',
-      sessionIssuedAt
+      sessionIat: sessionIssuedAt
     }, {
       AccountModel: UnverifiedAccountModel,
       buildClaims: async () => assert.fail('claims must not build'),
@@ -100,7 +100,7 @@ test('embedded editor access rejects missing, future, and centrally revoked Iden
       resolveWorkspaceAutomationAccess({
         subject: account.sub,
         organizationId: 'org-a',
-        sessionIssuedAt: invalidIssuedAt
+        sessionIat: invalidIssuedAt
       }, { AccountModel, buildClaims: claimsMustNotBuild, now }),
       (error) => error.status === 401 && error.code === 'N8N_IDENTITY_SESSION_INVALID'
     )
@@ -120,7 +120,7 @@ test('embedded editor access rejects missing, future, and centrally revoked Iden
     resolveWorkspaceAutomationAccess({
       subject: account.sub,
       organizationId: 'org-a',
-      sessionIssuedAt
+      sessionIat: sessionIssuedAt
     }, { AccountModel: RevokedAccountModel, buildClaims: claimsMustNotBuild, now }),
     (error) => error.status === 401 && error.code === 'N8N_IDENTITY_SESSION_REVOKED'
   )

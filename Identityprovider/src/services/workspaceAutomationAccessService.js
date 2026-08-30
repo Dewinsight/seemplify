@@ -39,7 +39,7 @@ const requireActiveIdentitySession = ({ account, sessionIssuedAt, now = Date.now
  * Workspace session and its local membership mirror so n8n session issuance
  * fails closed immediately after an Identity revocation.
  */
-export async function resolveWorkspaceAutomationAccess({ subject, organizationId, sessionIssuedAt }, {
+export async function resolveWorkspaceAutomationAccess({ subject, organizationId, sessionIat }, {
   AccountModel = Account,
   buildClaims = buildOrganizationClaims,
   requireSessionIssuedAt = true,
@@ -61,7 +61,7 @@ export async function resolveWorkspaceAutomationAccess({ subject, organizationId
   if (requireSessionIssuedAt) {
     requireActiveIdentitySession({
       account,
-      sessionIssuedAt,
+      sessionIssuedAt: sessionIat,
       now: typeof now === 'function' ? now() : now
     })
   }
