@@ -26,7 +26,9 @@ import {
   getOidcLaunchPath,
   appRequiresOrganization,
   getOrganizationManagedHubApps,
-  getOrganizationScopedDirectLaunchUrl
+  getOrganizationScopedAutomationSurfaceUrls,
+  getOrganizationScopedDirectLaunchUrl,
+  resolveAutomationHubSurface
 } from './config/hubApps.js'
 import { getPlanFeatureKeyForApp } from './config/planFeatures.js'
 import bcrypt from 'bcryptjs'
@@ -4593,6 +4595,38 @@ app.get('/simple-lms', async (req, res) => {
 })
 
 
+const AUTOMATION_EDITOR_ALLOWED_FRAME_ORIGINS = new Set([
+  'https://workspace.seemplifyai.com',
+  'https://api-workspace.seemplifyai.com',
+  'http://localhost:4200',
+  'http://localhost:3333'
+])
+
+function setAutomationEditorResponseHeaders(res, frameOrigins = []) {
+  const safeFrameOrigins = frameOrigins.filter((origin) => AUTOMATION_EDITOR_ALLOWED_FRAME_ORIGINS.has(origin))
+  const frameSource = safeFrameOrigins.length
+    ? `frame-src 'self' ${safeFrameOrigins.join(' ')}`
+    : "frame-src 'none'"
+  res.set({
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      frameSource,
+      "img-src 'self' data:",
+      "style-src 'self'",
+      "font-src 'self'",
+      "base-uri 'none'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "object-src 'none'"
+    ].join('; '),
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Cross-Origin-Opener-Policy': 'same-origin'
+  })
+}
+
 // Hub App Launch - Creates SSO token and redirects to app's auth endpoint
 // Supports both OIDC and SAML based on app.authType
 app.get('/launch/:appId', async (req, res) => {
@@ -4648,7 +4682,7 @@ app.get('/launch/:appId', async (req, res) => {
       ? await Promise.all([
         getCurrentOrganizationSubscriptionAccessState(account, { includeFeatures: true }),
         Organization.findById(currentOrgId)
-          .select('members.account members.status members.appAccess')
+          .select('name members.account members.status members.appAccess')
           .lean()
       ])
       : [null, null]
@@ -4756,6 +4790,72 @@ app.get('/launch/:appId', async (req, res) => {
         }
       })
       return res.redirect(samlSsoUrl)
+    }
+
+    // The default Identity launch keeps users inside a minimal Identity shell,
+    // while the exact external surface request opens the same Workspace-brokered
+    // n8n instance. Both paths reuse all membership and subscription checks above.
+    if (app.appId === 'automation-hub') {
+      const requestedSurface = resolveAutomationHubSurface(req.query)
+      const automationSurfaceUrls = getOrganizationScopedAutomationSurfaceUrls(app, currentOrgId)
+      if (!requestedSurface || !automationSurfaceUrls) {
+        await logAppLaunchActivity({
+          req,
+          account,
+          app,
+          status: 'blocked_invalid_launch_context',
+          details: {
+            organizationId: currentOrgId,
+            authType: 'direct'
+          }
+        })
+        setAutomationEditorResponseHeaders(res)
+        return res.status(400).render('automation-workspace', {
+          user: account,
+          organizationName: currentOrganization?.name || 'Current organization',
+          workspaceEmbedUrl: '',
+          externalLaunchPath: '',
+          errorMessage: 'The automation editor could not be opened safely. Return to the app launcher and open Automations again.'
+        })
+      }
+
+      if (requestedSurface === 'external') {
+        void logAppLaunchActivity({
+          req,
+          account,
+          app,
+          status: 'launched_direct',
+          details: {
+            redirectUrl: automationSurfaceUrls.externalUrl,
+            authType: 'direct',
+            launchDurationMs: Date.now() - launchStartTime
+          }
+        })
+        return res.redirect(automationSurfaceUrls.externalUrl)
+      }
+
+      setAutomationEditorResponseHeaders(res, [
+        automationSurfaceUrls.workspaceOrigin,
+        automationSurfaceUrls.workspaceApiOrigin
+      ])
+      void logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_embedded',
+        details: {
+          redirectUrl: automationSurfaceUrls.embedUrl,
+          authType: 'direct',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
+      return res.render('automation-workspace', {
+        user: account,
+        organizationName: currentOrganization?.name || 'Current organization',
+        workspaceEmbedUrl: automationSurfaceUrls.embedUrl,
+        externalLaunchPath: '/launch/automation-hub?surface=external',
+        errorMessage: ''
+      })
     }
 
     // Check if app uses direct link (no SSO)

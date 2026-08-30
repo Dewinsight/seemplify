@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import ejs from 'ejs'
 
 import { PRODUCT_PERMISSION_CATALOG } from '../src/config/accessControlCatalog.js'
 import { applyOidcClientSecretOverrides } from '../src/config/oidcClients.js'
@@ -106,27 +107,102 @@ test('the n8n Hub surface stays hidden until integration and visibility gates ar
   assert.equal(app.apiUrl, 'https://automations.seemplifyai.com/')
 })
 
-test('Identity scopes the standalone n8n launch to its active organization', async () => {
-  const { getOrganizationScopedDirectLaunchUrl } = await loadHubAppLaunchHelpers()
-  const url = getOrganizationScopedDirectLaunchUrl({
+test('Identity derives embedded and external n8n surfaces from one pinned Workspace broker', async () => {
+  const {
+    getOrganizationScopedAutomationSurfaceUrls,
+    getOrganizationScopedDirectLaunchUrl,
+  } = await loadHubAppLaunchHelpers()
+  const app = {
     appId: 'automation-hub',
     url: 'https://workspace.seemplifyai.com/automations?editor=standalone',
-  }, '64B7F9A1C2D3E4F506172839')
+  }
+  const surfaces = getOrganizationScopedAutomationSurfaceUrls(
+    app,
+    '64B7F9A1C2D3E4F506172839',
+    { NODE_ENV: 'production' },
+  )
 
-  assert.equal(
-    url,
+  assert.deepEqual(surfaces, {
+    embedUrl: 'https://workspace.seemplifyai.com/automations?organizationId=64b7f9a1c2d3e4f506172839',
+    externalUrl: 'https://workspace.seemplifyai.com/automations?editor=standalone&organizationId=64b7f9a1c2d3e4f506172839',
+    workspaceOrigin: 'https://workspace.seemplifyai.com',
+    workspaceApiOrigin: 'https://api-workspace.seemplifyai.com',
+  })
+  assert.equal(getOrganizationScopedDirectLaunchUrl(app, '64B7F9A1C2D3E4F506172839'),
     'https://workspace.seemplifyai.com/automations?editor=standalone&organizationId=64b7f9a1c2d3e4f506172839',
   )
 })
 
 test('Identity refuses malformed organization context for a standalone n8n launch', async () => {
-  const { getOrganizationScopedDirectLaunchUrl } = await loadHubAppLaunchHelpers()
+  const {
+    getOrganizationScopedAutomationSurfaceUrls,
+    getOrganizationScopedDirectLaunchUrl,
+  } = await loadHubAppLaunchHelpers()
   for (const organizationId of ['', 'org-a', '../org-a', '64b7f9a1c2d3e4f506172839%0d%0a']) {
     assert.equal(getOrganizationScopedDirectLaunchUrl({
       appId: 'automation-hub',
       url: 'https://workspace.seemplifyai.com/automations?editor=standalone',
     }, organizationId), '')
+    assert.equal(getOrganizationScopedAutomationSurfaceUrls({
+      appId: 'automation-hub',
+      url: 'https://workspace.seemplifyai.com/automations?editor=standalone',
+    }, organizationId, { NODE_ENV: 'production' }), null)
   }
+})
+
+test('Identity rejects caller-controlled Workspace hosts, paths, ports, fragments, and query parameters', async () => {
+  const { getOrganizationScopedAutomationSurfaceUrls } = await loadHubAppLaunchHelpers()
+  const unsafeUrls = [
+    'https://evil.test/automations?editor=standalone',
+    'https://workspace.seemplifyai.com.evil.test/automations?editor=standalone',
+    'https://user:pass@workspace.seemplifyai.com/automations?editor=standalone',
+    'https://workspace.seemplifyai.com:444/automations?editor=standalone',
+    'http://workspace.seemplifyai.com/automations?editor=standalone',
+    'https://workspace.seemplifyai.com/automations/other?editor=standalone',
+    'https://workspace.seemplifyai.com/automations?editor=standalone&next=https://evil.test',
+    'https://workspace.seemplifyai.com/automations?editor=standalone#other',
+    'https://workspace.seemplifyai.com/automations?editor=standalone&editor=standalone',
+  ]
+
+  for (const url of unsafeUrls) {
+    assert.equal(getOrganizationScopedAutomationSurfaceUrls({
+      appId: 'automation-hub',
+      url,
+    }, '64b7f9a1c2d3e4f506172839', { NODE_ENV: 'production' }), null, url)
+  }
+})
+
+test('Identity accepts local Workspace automation embedding only outside production', async () => {
+  const { getOrganizationScopedAutomationSurfaceUrls } = await loadHubAppLaunchHelpers()
+  const app = {
+    appId: 'automation-hub',
+    url: 'http://localhost:4200/automations?editor=standalone',
+  }
+
+  assert.equal(getOrganizationScopedAutomationSurfaceUrls(
+    app,
+    '64b7f9a1c2d3e4f506172839',
+    { NODE_ENV: 'production' },
+  ), null)
+  assert.equal(getOrganizationScopedAutomationSurfaceUrls(
+    app,
+    '64b7f9a1c2d3e4f506172839',
+    { NODE_ENV: 'development' },
+  )?.workspaceOrigin, 'http://localhost:4200')
+})
+
+test('Identity selects only the default embedded surface or exact external query', async () => {
+  const { resolveAutomationHubSurface } = await loadHubAppLaunchHelpers()
+  assert.equal(resolveAutomationHubSurface({}), 'embedded')
+  assert.equal(resolveAutomationHubSurface({ surface: 'external' }), 'external')
+  for (const query of [
+    { surface: 'embedded' },
+    { surface: 'external', next: 'https://evil.test' },
+    { surface: ['external', 'external'] },
+    { Surface: 'external' },
+    [],
+    null,
+  ]) assert.equal(resolveAutomationHubSurface(query), '')
 })
 
 test('Identity leaves unrelated direct application launch URLs unchanged', async () => {
@@ -137,17 +213,77 @@ test('Identity leaves unrelated direct application launch URLs unchanged', async
   }, '64b7f9a1c2d3e4f506172839'), 'https://example.test/start?mode=direct')
 })
 
-test('the Hub direct-launch route logs and redirects with the organization-scoped URL', async () => {
+test('the Hub route embeds by default and redirects only for the exact external surface', async () => {
   const source = await readFile(new URL('../src/index.js', import.meta.url), 'utf8')
   const launchStart = source.indexOf("app.get('/launch/:appId'")
   const launchEnd = source.indexOf('// Special handling for Outline', launchStart)
   const directLaunchSource = source.slice(launchStart, launchEnd)
 
+  assert.match(directLaunchSource, /app\.appId === 'automation-hub'/)
+  assert.match(directLaunchSource, /resolveAutomationHubSurface\(req\.query\)/)
+  assert.match(directLaunchSource, /getOrganizationScopedAutomationSurfaceUrls\(app, currentOrgId\)/)
+  assert.match(directLaunchSource, /requestedSurface === 'external'/)
+  assert.match(directLaunchSource, /return res\.redirect\(automationSurfaceUrls\.externalUrl\)/)
+  assert.match(directLaunchSource, /return res\.render\('automation-workspace'/)
+  assert.match(directLaunchSource, /workspaceEmbedUrl: automationSurfaceUrls\.embedUrl/)
+  assert.match(directLaunchSource, /externalLaunchPath: '\/launch\/automation-hub\?surface=external'/)
   assert.match(directLaunchSource, /getOrganizationScopedDirectLaunchUrl\(app, currentOrgId\)/)
   assert.match(directLaunchSource, /status: 'blocked_invalid_launch_context'/)
   assert.match(directLaunchSource, /redirectUrl: directLaunchUrl/)
   assert.match(directLaunchSource, /return res\.redirect\(directLaunchUrl\)/)
   assert.doesNotMatch(directLaunchSource, /return res\.redirect\(app\.url\)/)
+})
+
+test('the Identity editor shell is accessible and exposes only fixed internal navigation', async () => {
+  const [view, styles] = await Promise.all([
+    readFile(new URL('../src/views/automation-workspace.ejs', import.meta.url), 'utf8'),
+    readFile(new URL('../src/public/css/automation-workspace.css', import.meta.url), 'utf8'),
+  ])
+
+  assert.match(view, /<html lang="en">/)
+  assert.match(view, /<main class="editor-shell">/)
+  assert.match(view, /title="n8n automation editor for <%= organizationName %>"/)
+  assert.match(view, /aria-label="Automation editor actions"/)
+  assert.match(view, /role="status"/)
+  assert.match(view, /role="alert" aria-live="assertive"/)
+  assert.match(view, /target="_blank" rel="noopener noreferrer"/)
+  assert.match(view, /href="<%= externalLaunchPath %>"/)
+  assert.doesNotMatch(view, /<script|javascript:|onload=|onerror=/i)
+  assert.match(styles, /a:focus-visible/)
+  assert.match(styles, /@media \(max-width: 680px\)/)
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/)
+})
+
+test('the Identity editor shell escapes organization and editor URL output', async () => {
+  const view = await readFile(new URL('../src/views/automation-workspace.ejs', import.meta.url), 'utf8')
+  const rendered = ejs.render(view, {
+    brand: { name: 'Seemplify' },
+    organizationName: '<img src=x onerror=alert(1)>',
+    workspaceEmbedUrl: 'https://workspace.seemplifyai.com/automations?organizationId=64b7f9a1c2d3e4f506172839&safe=1',
+    externalLaunchPath: '/launch/automation-hub?surface=external',
+    errorMessage: '',
+  })
+
+  assert.doesNotMatch(rendered, /<img src=x onerror=/)
+  assert.match(rendered, /&lt;img src=x onerror=alert\(1\)&gt;/)
+  assert.match(rendered, /organizationId=64b7f9a1c2d3e4f506172839&amp;safe=1/)
+  assert.match(rendered, /href="\/launch\/automation-hub\?surface=external"/)
+})
+
+test('the Identity editor response pins framing and denies being embedded itself', async () => {
+  const source = await readFile(new URL('../src/index.js', import.meta.url), 'utf8')
+  const headersStart = source.indexOf('function setAutomationEditorResponseHeaders')
+  const headersEnd = source.indexOf('// Hub App Launch', headersStart)
+  const headerSource = source.slice(headersStart, headersEnd)
+
+  assert.match(headerSource, /AUTOMATION_EDITOR_ALLOWED_FRAME_ORIGINS\.has\(origin\)/)
+  assert.match(headerSource, /frame-src 'self' \$\{safeFrameOrigins\.join\(' '\)\}/)
+  assert.match(headerSource, /frame-src 'none'/)
+  assert.match(headerSource, /frame-ancestors 'none'/)
+  assert.match(headerSource, /'X-Frame-Options': 'DENY'/)
+  assert.match(headerSource, /"form-action 'self'"/)
+  assert.match(headerSource, /"object-src 'none'"/)
+  assert.doesNotMatch(headerSource, /req\.query|req\.headers|\*/)
 })
 
 test('end-user n8n login is Workspace-brokered and only delegated node OAuth is registered', async () => {

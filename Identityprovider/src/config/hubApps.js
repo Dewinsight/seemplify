@@ -32,6 +32,12 @@ const N8N_EDITOR_HOSTS = new Set([
 const WORKSPACE_HOSTS = new Set([
   'workspace.seemplifyai.com'
 ])
+const WORKSPACE_AUTOMATION_PRODUCTION_ORIGIN = 'https://workspace.seemplifyai.com'
+const WORKSPACE_AUTOMATION_API_PRODUCTION_ORIGIN = 'https://api-workspace.seemplifyai.com'
+const WORKSPACE_AUTOMATION_DEVELOPMENT_ORIGINS = new Set([
+  WORKSPACE_AUTOMATION_PRODUCTION_ORIGIN,
+  'http://localhost:4200'
+])
 
 function pinnedHttpsUrl(value, allowedHosts, requiredPath = '') {
   try {
@@ -57,6 +63,70 @@ export function getWorkspaceAutomationLaunchUrl(env = process.env) {
   return parsed.toString()
 }
 
+function getPinnedWorkspaceAutomationUrl(value, env = process.env) {
+  try {
+    const parsed = new URL(String(value || '').trim())
+    const allowedOrigins = String(env.NODE_ENV || '').trim().toLowerCase() === 'production'
+      ? new Set([WORKSPACE_AUTOMATION_PRODUCTION_ORIGIN])
+      : WORKSPACE_AUTOMATION_DEVELOPMENT_ORIGINS
+    if (!allowedOrigins.has(parsed.origin) || parsed.username || parsed.password) return null
+    if (parsed.pathname !== '/automations' || parsed.hash) return null
+    const queryKeys = [...parsed.searchParams.keys()]
+    if (queryKeys.some((key) => key !== 'editor')) return null
+    if (queryKeys.length && (
+      parsed.searchParams.getAll('editor').length !== 1 ||
+      parsed.searchParams.get('editor') !== 'standalone'
+    )) return null
+    parsed.search = ''
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The Identity editor and external Workspace entry always resolve to the same
+ * Workspace broker. The configured application URL supplies no caller-owned
+ * host, path, query, fragment, or credentials after this validation step.
+ */
+export function getOrganizationScopedAutomationSurfaceUrls(app, organizationId, env = process.env) {
+  if (app?.appId !== 'automation-hub') return null
+
+  const normalizedOrganizationId = String(organizationId || '').trim().toLowerCase()
+  if (!/^[a-f0-9]{24}$/.test(normalizedOrganizationId)) return null
+
+  const workspaceUrl = getPinnedWorkspaceAutomationUrl(app?.url, env)
+  if (!workspaceUrl) return null
+
+  const embedUrl = new URL(workspaceUrl)
+  embedUrl.searchParams.set('organizationId', normalizedOrganizationId)
+
+  const externalUrl = new URL(workspaceUrl)
+  externalUrl.searchParams.set('editor', 'standalone')
+  externalUrl.searchParams.set('organizationId', normalizedOrganizationId)
+
+  return Object.freeze({
+    embedUrl: embedUrl.toString(),
+    externalUrl: externalUrl.toString(),
+    workspaceOrigin: workspaceUrl.origin,
+    workspaceApiOrigin: workspaceUrl.origin === WORKSPACE_AUTOMATION_PRODUCTION_ORIGIN
+      ? WORKSPACE_AUTOMATION_API_PRODUCTION_ORIGIN
+      : 'http://localhost:3333'
+  })
+}
+
+/**
+ * Only the absence of a query or the exact `surface=external` query selects a
+ * surface. Arrays, duplicate keys, and additional parameters fail closed.
+ */
+export function resolveAutomationHubSurface(query = {}) {
+  if (!query || typeof query !== 'object' || Array.isArray(query)) return ''
+  const keys = Object.keys(query)
+  if (keys.length === 0) return 'embedded'
+  if (keys.length === 1 && keys[0] === 'surface' && query.surface === 'external') return 'external'
+  return ''
+}
+
 /**
  * Carry Identity's active organization into the Workspace-hosted standalone
  * n8n surface. Workspace still resolves the reference against the current
@@ -65,17 +135,7 @@ export function getWorkspaceAutomationLaunchUrl(env = process.env) {
 export function getOrganizationScopedDirectLaunchUrl(app, organizationId) {
   const configuredUrl = String(app?.url || '').trim()
   if (app?.appId !== 'automation-hub') return configuredUrl
-
-  const normalizedOrganizationId = String(organizationId || '').trim().toLowerCase()
-  if (!/^[a-f0-9]{24}$/.test(normalizedOrganizationId)) return ''
-
-  try {
-    const launch = new URL(configuredUrl)
-    launch.searchParams.set('organizationId', normalizedOrganizationId)
-    return launch.toString()
-  } catch {
-    return ''
-  }
+  return getOrganizationScopedAutomationSurfaceUrls(app, organizationId)?.externalUrl || ''
 }
 
 /**

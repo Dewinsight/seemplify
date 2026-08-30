@@ -1,0 +1,218 @@
+:root {
+  color-scheme: dark light;
+  --canvas: #0f0e13;
+  --surface: #18161f;
+  --line: #312d39;
+  --text: #f7f5fa;
+  --muted: #bbb5c2;
+  --accent: #8b63ff;
+  --accent-hover: #9a78ff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --canvas: #f1efe9;
+    --surface: #fffdfa;
+    --line: #cbc6bc;
+    --text: #191816;
+    --muted: #625e57;
+    --accent: #7047eb;
+    --accent-hover: #6338df;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 320px;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+.automation-bar {
+  align-items: center;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.automation-title,
+.automation-actions {
+  align-items: center;
+  display: flex;
+}
+
+.automation-title { gap: 12px; min-width: 0; }
+.automation-actions { gap: 8px; flex: 0 0 auto; }
+
+.brand-link {
+  align-items: center;
+  display: inline-flex;
+  min-height: 40px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.divider {
+  align-self: stretch;
+  border-left: 1px solid var(--line);
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 22px;
+}
+
+.automation-title p {
+  overflow: hidden;
+  max-width: min(42vw, 420px);
+  margin: 1px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-actions a {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-decoration: none;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.automation-actions .secondary-action:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+
+.automation-actions .primary-action {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.automation-actions .primary-action:hover {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.editor-shell {
+  position: relative;
+  min-height: 0;
+  padding: 12px;
+}
+
+.editor-shell iframe {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.loading-status {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  transform: translate(-50%, -50%);
+}
+
+.fallback-message {
+  position: absolute;
+  z-index: 2;
+  inset: 50% auto auto 50%;
+  width: min(420px, calc(100% - 48px));
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.editor-error {
+  width: min(560px, calc(100% - 32px));
+  margin: clamp(48px, 12vh, 120px) auto 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.editor-error h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.editor-error p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.editor-error a {
+  display: inline-flex;
+  margin-top: 16px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@media (max-width: 680px) {
+  .automation-bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px 12px;
+  }
+
+  .automation-actions a { min-height: 44px; }
+  .automation-actions .primary-action { flex: 1; }
+  .automation-title p { max-width: calc(100vw - 196px); }
+  .editor-shell { padding: 8px; }
+  .editor-shell iframe { min-height: 480px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .automation-actions a { transition: none; }
+}

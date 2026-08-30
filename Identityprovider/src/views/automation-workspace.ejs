@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Automations · <%= brand.name %></title>
+  <link rel="stylesheet" href="/css/automation-workspace.css">
+</head>
+<body>
+  <header class="automation-bar">
+    <div class="automation-title">
+      <a class="brand-link" href="/" aria-label="Back to <%= brand.name %> apps">
+        <span><%= brand.name %></span>
+      </a>
+      <span class="divider" aria-hidden="true"></span>
+      <div>
+        <h1>Automations</h1>
+        <p><%= organizationName %></p>
+      </div>
+    </div>
+    <nav class="automation-actions" aria-label="Automation editor actions">
+      <a class="secondary-action" href="/">Back to apps</a>
+      <% if (externalLaunchPath) { %>
+        <a class="primary-action" href="<%= externalLaunchPath %>" target="_blank" rel="noopener noreferrer">Open full editor</a>
+      <% } %>
+    </nav>
+  </header>
+
+  <main class="editor-shell">
+    <% if (errorMessage) { %>
+      <section class="editor-error" role="alert" aria-live="assertive">
+        <h2>Automations are unavailable</h2>
+        <p><%= errorMessage %></p>
+        <a href="/">Return to apps</a>
+      </section>
+    <% } else { %>
+      <p class="loading-status" role="status">Opening the automation editor…</p>
+      <iframe
+        src="<%= workspaceEmbedUrl %>"
+        title="n8n automation editor for <%= organizationName %>"
+        allow="clipboard-read; clipboard-write"
+        referrerpolicy="no-referrer">
+      </iframe>
+      <noscript>
+        <p class="fallback-message">JavaScript is required for the editor. Use “Open full editor” to continue.</p>
+      </noscript>
+    <% } %>
+  </main>
+</body>
+</html>
