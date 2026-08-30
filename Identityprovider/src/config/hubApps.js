@@ -26,6 +26,37 @@ function environmentFlagEnabled(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase())
 }
 
+const N8N_EDITOR_HOSTS = new Set([
+  'automations.seemplifyai.com'
+])
+const WORKSPACE_HOSTS = new Set([
+  'workspace.seemplifyai.com'
+])
+
+function pinnedHttpsUrl(value, allowedHosts, requiredPath = '') {
+  try {
+    const parsed = new URL(String(value || '').trim())
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return ''
+    if (!allowedHosts.has(parsed.hostname.toLowerCase())) return ''
+    if (requiredPath && parsed.pathname !== requiredPath) return ''
+    return parsed.toString()
+  } catch {
+    return ''
+  }
+}
+
+export function getN8nEditorUrl(env = process.env) {
+  return pinnedHttpsUrl(env.AUTOMATIONS_URL, N8N_EDITOR_HOSTS)
+}
+
+export function getWorkspaceAutomationLaunchUrl(env = process.env) {
+  const launch = pinnedHttpsUrl(env.WORKSPACE_AUTOMATIONS_URL, WORKSPACE_HOSTS, '/automations')
+  if (!launch) return ''
+  const parsed = new URL(launch)
+  if (parsed.searchParams.get('editor') !== 'standalone' || [...parsed.searchParams.keys()].length !== 1) return ''
+  return parsed.toString()
+}
+
 /**
  * Community is intentionally dormant in production until its public DNS,
  * Workspace routes, and protected OIDC client secret have all been deployed.
@@ -36,6 +67,20 @@ export function isCommunityProductionReady(env = process.env) {
     Boolean(productionSafeUrl(env.COMMUNITY_URL, '')) &&
     Boolean(productionSafeUrl(env.COMMUNITY_API_URL, '')) &&
     Boolean(String(env.COMMUNITY_OIDC_CLIENT_SECRET || '').trim())
+}
+
+/**
+ * Keep the n8n surface dormant until its editor, Workspace-brokered launch,
+ * and delegated Workspace-node client have all been explicitly provisioned.
+ * End users never enter through n8n's native OIDC account namespace: both the
+ * Hub card and embedded editor use Workspace's organization-scoped exchange.
+ */
+export function isN8nProductionReady(env = process.env) {
+  return environmentFlagEnabled(env.N8N_HUB_ENABLED) &&
+    environmentFlagEnabled(env.N8N_INTEGRATION_ENABLED) &&
+    Boolean(getN8nEditorUrl(env)) &&
+    Boolean(getWorkspaceAutomationLaunchUrl(env)) &&
+    Boolean(String(env.N8N_WORKSPACE_NODE_OIDC_CLIENT_SECRET || '').trim())
 }
 
 // Development apps configuration
@@ -183,6 +228,24 @@ const developmentApps = [
     isPublic: true,
     category: 'productivity',
     order: 8,
+    badge: 'Beta',
+    isBeta: true
+  },
+  {
+    appId: 'automation-hub',
+    name: 'Automations',
+    description: 'Build and run connected Workspace workflows with n8n',
+    icon: 'bolt',
+    color: '#5f6654',
+    url: process.env.WORKSPACE_AUTOMATIONS_URL || 'http://localhost:4200/automations?editor=standalone',
+    apiUrl: process.env.AUTOMATIONS_URL || 'http://localhost:5678',
+    clientId: 'messaging',
+    authType: 'direct',
+    isActive: environmentFlagEnabled(process.env.N8N_HUB_ENABLED) &&
+      environmentFlagEnabled(process.env.N8N_INTEGRATION_ENABLED),
+    isPublic: true,
+    category: 'productivity',
+    order: 8.05,
     badge: 'Beta',
     isBeta: true
   },
@@ -379,6 +442,23 @@ const productionApps = [
     isPublic: true,
     category: 'productivity',
     order: 8,
+    badge: 'Beta',
+    isBeta: true
+  },
+  {
+    appId: 'automation-hub',
+    name: 'Automations',
+    description: 'Build and run connected Workspace workflows with n8n',
+    icon: 'bolt',
+    color: '#5f6654',
+    url: getWorkspaceAutomationLaunchUrl(process.env),
+    apiUrl: getN8nEditorUrl(process.env),
+    clientId: 'messaging',
+    authType: 'direct',
+    isActive: isN8nProductionReady(process.env),
+    isPublic: true,
+    category: 'productivity',
+    order: 8.05,
     badge: 'Beta',
     isBeta: true
   },

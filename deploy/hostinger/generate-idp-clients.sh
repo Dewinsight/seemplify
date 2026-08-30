@@ -22,6 +22,16 @@ case "${COMMUNITY_PRODUCTION_ENABLED:-false}" in
     ;;
 esac
 
+case "${N8N_INTEGRATION_ENABLED:-false}" in
+  1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+    : "${OIDC_N8N_WORKSPACE_NODE_SECRET:?OIDC_N8N_WORKSPACE_NODE_SECRET is required when N8N_INTEGRATION_ENABLED=true}"
+    ;;
+  *)
+    # Stale secrets must not register the n8n node client while integration is dormant.
+    unset OIDC_N8N_WORKSPACE_NODE_SECRET
+    ;;
+esac
+
 output_dir=$(dirname "$output_clients")
 output_name=$(basename "$output_clients")
 install -d -m 700 "$output_dir"
@@ -36,6 +46,7 @@ docker run --rm \
   -e OIDC_TIME_SECRET \
   -e OIDC_LEARNING_SECRET \
   -e OIDC_MESSAGING_SECRET \
+  -e OIDC_N8N_WORKSPACE_NODE_SECRET \
   -e OIDC_COMMUNITY_SECRET \
   -e OIDC_APPROVER_SECRET \
   -e OIDC_EXPERIENCE_SECRET \
@@ -55,6 +66,7 @@ docker run --rm \
       "time-attendance": process.env.OIDC_TIME_SECRET,
       "seemplify-learning": process.env.OIDC_LEARNING_SECRET,
       messaging: process.env.OIDC_MESSAGING_SECRET,
+      "n8n-workspace-node": process.env.OIDC_N8N_WORKSPACE_NODE_SECRET,
       community: process.env.OIDC_COMMUNITY_SECRET,
       approver: process.env.OIDC_APPROVER_SECRET,
       "experience-management": process.env.OIDC_EXPERIENCE_SECRET

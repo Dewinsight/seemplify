@@ -7,7 +7,7 @@ export const PLAN_FEATURES = Object.freeze([
   { key: 'outlineDocs', label: 'Outline Docs', appIds: ['outline'] },
   { key: 'aiChat', label: 'AI Assistant', appIds: ['openwebui'] },
   { key: 'lms', label: 'Seemplify Learning', appIds: ['lms', 'seemplify-learning'] },
-  { key: 'workspace', label: 'Workspace', appIds: ['messaging'] },
+  { key: 'workspace', label: 'Workspace', appIds: ['messaging', 'automation-hub'] },
   { key: 'experienceManagement', label: 'Experience Management', appIds: ['experience-management'] },
   { key: 'approver', label: 'Approver', appIds: ['approver'] }
 ])

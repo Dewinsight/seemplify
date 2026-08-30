@@ -20,6 +20,16 @@ export const setProviderInstance = (provider) => {
   console.log('✅ Provider instance set for API auth')
 }
 
+export const findOidcAccessToken = async (token) => {
+  if (!providerInstance) {
+    throw Object.assign(new Error('OIDC provider not initialized'), {
+      status: 503,
+      code: 'OIDC_PROVIDER_UNAVAILABLE'
+    })
+  }
+  return providerInstance.AccessToken.find(String(token || '').trim())
+}
+
 /**
  * Validate API Token using OIDC provider's AccessToken model
  * Works with opaque tokens issued by oidc-provider
@@ -40,7 +50,7 @@ export const validateAPIToken = async (req, res, next) => {
 
     // Find the AccessToken using the provider's model
     // This works with opaque tokens (default for oidc-provider)
-    const accessToken = await providerInstance.AccessToken.find(token)
+    const accessToken = await findOidcAccessToken(token)
     
     if (!accessToken) {
       return res.status(401).json({ error: 'Invalid or expired token' })

@@ -226,6 +226,28 @@
       "token_endpoint_auth_method": "client_secret_basic"
     },
     {
+      "client_id": "n8n-workspace-node",
+      "client_secret": "n8n-workspace-node-development-secret",
+      "redirect_uri_patterns": [
+        "http://localhost:5678/rest/oauth2-credential/callback",
+        "https://automations.seemplifyai.com/rest/oauth2-credential/callback",
+        "https://automations-dev.seemplifyai.com/rest/oauth2-credential/callback"
+      ],
+      "allowed_origins": [
+        "http://localhost:5678",
+        "https://automations.seemplifyai.com",
+        "https://automations-dev.seemplifyai.com"
+      ],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "token_endpoint_auth_method": "client_secret_basic"
+    },
+    {
       "client_id": "community",
       "client_secret": "community-development-secret",
       "redirect_uri_patterns": [

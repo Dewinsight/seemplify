@@ -1,18 +1,21 @@
 # Seemplify Platform Automation Plan
 
-**Status:** Requirements retained; the standalone application boundary was superseded by Workspace Automations on 2026-08-19
+**Status:** Requirements retained; editor boundary updated for shared n8n on 2026-08-29
 **Scope:** Every Seemplify product, the Workspace surfaces, public developer
 integrations, and external providers
 **Companion plans:** `AI_AUTOMATION_ROADMAP.md` and the Experience Management
 orchestration safety ADR
 
-> Architecture correction: Automations is a native Workspace capability, not a
-> separately entitled Seemplify application. The old `automation-hub/` service,
-> OIDC client, plan feature, app card, and hostname were retired. Workflow
-> definitions, runs, approvals, internal actions, product ingress, developer
-> applications, and connector references now live in the Workspace backend and
-> `/automations` Workspace route. Nango remains a replaceable OAuth/connector
-> boundary and is not the workflow engine.
+> Target architecture: Workspace remains the tenant, permission, context, and
+> bounded-action authority. One Seemplify-owned, self-hosted n8n instance will
+> supply the same editor at `automations.seemplifyai.com` and inside Workspace
+> `/automations`. Identity owns launch authorization and application assignment.
+> Private nodes call permission-scoped Workspace APIs as the delegated user;
+> they never query product databases. n8n is the planned replacement for the
+> native Automation Center, but the native editor and runtime remain live until
+> the licence, tenant/session, event-parity, migration, and authenticated
+> acceptance gates in `N8N-WORKSPACE-INTEGRATION.md` pass. Nango remains a
+> separate replaceable connector boundary.
 
 ## Implementation snapshot
 

@@ -19,6 +19,7 @@ test('every registered hub app has a plan feature', () => {
 
 test('newly added hub apps have independent access controls', () => {
   assert.equal(getPlanFeatureKeyForApp('messaging'), 'workspace')
+  assert.equal(getPlanFeatureKeyForApp('automation-hub'), 'workspace')
   assert.equal(getPlanFeatureKeyForApp('experience-management'), 'experienceManagement')
   assert.equal(getPlanFeatureKeyForApp('approver'), 'approver')
 })

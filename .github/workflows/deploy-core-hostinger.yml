@@ -59,6 +59,9 @@ jobs:
             test/internal-membership-service-auth.test.mjs \
             test/recruiter-admin-sso-secret.test.mjs \
             test/profile-completion.test.mjs \
+            test/workspace-automation-access.test.mjs \
+            test/workspace-platform-integration-auth.test.mjs \
+            test/workspace-automations-boundary.test.mjs \
             tests/access-control.test.mjs \
             src/__tests__/account-profile-schema.test.mjs \
             src/__tests__/organization-access-control-routing.test.mjs \
@@ -306,7 +309,6 @@ jobs:
 
           test -s /opt/seemplify/secrets/platform-integrations/credential-encryption-key
           test -s /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
-
           export IDENTITY_PROVIDER_IMAGE="$identity_image"
           export RECRUITER_BACKEND_IMAGE="$recruiter_image"
           export RECRUITER_FRONTEND_IMAGE="$recruiter_frontend_image"

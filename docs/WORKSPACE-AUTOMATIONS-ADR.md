@@ -1,15 +1,26 @@
 # Workspace Automations architecture decision
 
 **Decision date:** 2026-08-19  
-**Decision:** Automations is part of Workspace, not a standalone application.
+**Superseded:** 2026-08-29
+**Current decision:** Workspace remains the authorization and API boundary,
+while one self-hosted n8n editor is staged to appear both inside Workspace and
+as an Identity-launched application. The native editor remains live until the
+documented release gates pass.
+
+The earlier no-standalone-runtime decision below is retained as history. It is
+superseded only for the editing/orchestration surface. n8n does not become a
+second identity authority and receives no database-level Workspace access.
+See `N8N-WORKSPACE-INTEGRATION.md` for the current contract.
 
 ## Product boundary
 
-Workspace owns the Automation Center, workflow definitions and versions, run
+Under the original decision, Workspace owned the Automation Center, workflow definitions and versions, run
 state, waits, approvals, audit history, commands, developer applications,
 connector references, and orchestration worker. Automations inherits the
-Workspace entitlement and organization context. It has no separate app card,
+Workspace entitlement and organization context. It had no separate app card,
 plan toggle, OIDC client, login, frontend, hostname, database, or deployment.
+The 2026-08-29 decision adds those n8n runtime elements while retaining
+Workspace as the guarded action/context API.
 
 Every Seemplify product remains authoritative for its own consequential state.
 Leave records leave decisions, Payroll finalizes payroll, Time & Attendance
@@ -52,6 +63,11 @@ automation-eligible lifecycle events to
 `https://api-workspace.seemplifyai.com/hooks/identity`. Workspace mounts the
 separate Identity, Leave, Payroll, Time, and Recruiter automation keys and the
 Nango API key from `/opt/seemplify/secrets/workspace-automation`.
+Workspace-to-Identity access revalidation uses an exact versioned HKDF-SHA256
+subkey derived from the existing Workspace OIDC client secret, never the raw
+OIDC value or generic Experience/platform key. This avoids an unrecoverable new
+credential but couples OIDC and internal-signing rotation until a future
+direction-specific input can be stored in the encrypted vault.
 
 Deployment must preserve exact-main revision verification, signed ingress
 tests, target action contract tests, and an authenticated browser acceptance

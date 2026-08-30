@@ -71,6 +71,7 @@ import {
   normalizeAppAccess
 } from './utils/appAccess.js'
 import { externalProductAccessDecision } from './utils/externalProductAccess.js'
+import { matchesRegisteredUrl } from './utils/registeredUrlMatcher.js'
 import {
   EXTERNAL_HUB_PINNED_APP_IDS,
   buildKnownHubPinAppIdSet,
@@ -757,30 +758,6 @@ const clientsData = JSON.parse(readFileSync(clientsConfigPath, 'utf-8'))
 const { applyOidcClientSecretOverrides } = await import('./config/oidcClients.js')
 const configuredOidcClients = applyOidcClientSecretOverrides(clientsData.clients)
 
-// Helper function to validate redirect URI against patterns
-function validateRedirectUri(uri, patterns) {
-  return patterns.some(pattern => {
-    // Convert pattern to regex (simple wildcard support)
-    const regexPattern = pattern
-      .replace(/\*/g, '.*')
-      .replace(/\//g, '\\/')
-    const regex = new RegExp(`^${regexPattern}$`)
-    return regex.test(uri)
-  })
-}
-
-// Helper function to validate origin against allowed origins
-function validateOrigin(origin, allowedOrigins) {
-  if (!origin) return false
-  return allowedOrigins.some(allowed => {
-    const regexPattern = allowed
-      .replace(/\*/g, '.*')
-      .replace(/\//g, '\\/')
-    const regex = new RegExp(`^${regexPattern}$`)
-    return regex.test(origin)
-  })
-}
-
 const SIGNUP_ATTRIBUTION_FIELDS = [
   ATTRIBUTION_QUERY_PARAM,
   'visitorId',
@@ -963,6 +940,10 @@ const config = {
     }
   },
   scopes: ['openid', 'offline_access', 'email', 'profile'],
+  clientBasedCORS: (ctx, origin, client) => {
+    const metadata = clientsMetadata.get(client?.clientId)
+    return matchesRegisteredUrl(origin, metadata?.allowed_origins)
+  },
   // Allow hub_token to be passed through the authorization request
   // This enables IdP-initiated SSO from the hub
   extraParams: ['hub_token'],
@@ -1076,6 +1057,24 @@ const config = {
 }
 
 const provider = new Provider(ISSUER_URL, config)
+
+// oidc-provider performs exact redirect matching by default. Preserve that
+// behavior for normal registrations while honoring the deliberately narrow,
+// whole-host-label wildcards in the checked-in client catalog.
+const defaultRedirectUriAllowed = provider.Client.prototype.redirectUriAllowed
+const defaultPostLogoutRedirectUriAllowed = provider.Client.prototype.postLogoutRedirectUriAllowed
+provider.Client.prototype.redirectUriAllowed = function redirectUriAllowed(value) {
+  const patterns = clientsMetadata.get(this.clientId)?.redirect_uri_patterns
+  return patterns
+    ? matchesRegisteredUrl(value, patterns)
+    : defaultRedirectUriAllowed.call(this, value)
+}
+provider.Client.prototype.postLogoutRedirectUriAllowed = function postLogoutRedirectUriAllowed(value) {
+  const patterns = clientsMetadata.get(this.clientId)?.redirect_uri_patterns
+  return patterns
+    ? matchesRegisteredUrl(value, patterns)
+    : defaultPostLogoutRedirectUriAllowed.call(this, value)
+}
 
 // Set provider instance for API authentication middleware
 setProviderInstance(provider)
@@ -1200,7 +1199,7 @@ app.use((req, res, next) => {
   }
 
   // Validate origin against all allowed origins
-  if (origin && validateOrigin(origin, allAllowedOrigins)) {
+  if (origin && matchesRegisteredUrl(origin, allAllowedOrigins)) {
     res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Access-Control-Allow-Credentials', 'true')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')

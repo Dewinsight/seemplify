@@ -12,8 +12,19 @@ export function materializeProductionOidcClients(clients = [], secrets = {}) {
 
   return (Array.isArray(clients) ? clients : [])
     .filter(client => secretByClient.has(client?.client_id))
-    .map(client => ({
-      ...client,
-      client_secret: secretByClient.get(client.client_id)
-    }))
+    .map(client => {
+      const productionBoundary = client.client_id === 'n8n-workspace-node'
+        ? {
+            redirect_uri_patterns: [
+              'https://automations.seemplifyai.com/rest/oauth2-credential/callback'
+            ],
+            allowed_origins: ['https://automations.seemplifyai.com']
+          }
+        : {}
+      return {
+        ...client,
+        ...productionBoundary,
+        client_secret: secretByClient.get(client.client_id)
+      }
+    })
 }

@@ -26,8 +26,36 @@ fi
 mkdir -p "${DESTINATION}"
 chmod 700 "${BACKUP_ROOT}" "${DESTINATION}"
 
+PAUSED_CONTAINERS=()
+
+resume_paused_containers() {
+  local index container
+  for ((index=${#PAUSED_CONTAINERS[@]} - 1; index >= 0; index--)); do
+    container="${PAUSED_CONTAINERS[$index]}"
+    docker unpause "${container}" >/dev/null 2>&1 || true
+  done
+  PAUSED_CONTAINERS=()
+}
+
+pause_container_if_running() {
+  local container="$1"
+  if [[ "$(docker inspect --format '{{.State.Status}}' "${container}" 2>/dev/null || true)" == running ]]; then
+    docker pause "${container}" >/dev/null
+    PAUSED_CONTAINERS+=("${container}")
+  fi
+}
+
+pause_volume_writers() {
+  local volume="$1"
+  local container
+  while IFS= read -r container; do
+    [[ -n "${container}" ]] && pause_container_if_running "${container}"
+  done < <(docker ps --filter "volume=${volume}" --format '{{.Names}}' | sort -u)
+}
+
 cleanup_failed_backup() {
   local exit_code=$?
+  resume_paused_containers
   if (( exit_code != 0 )); then
     printf 'Backup failed at %s\n' "$(date -u +%FT%TZ)" >"${DESTINATION}/FAILED"
   fi
@@ -58,6 +86,17 @@ archive_volume() {
     tar -C /source -czf "/backup/${output_name}" .
 }
 
+archive_volume_if_present() {
+  local volume="$1"
+  local output_name="$2"
+
+  if ! docker volume inspect "${volume}" >/dev/null 2>&1; then
+    printf 'optional_volume_skipped=%s\n' "${volume}" >>"${DESTINATION}/SKIPPED"
+    return 0
+  fi
+  archive_volume "${volume}" "${output_name}"
+}
+
 require_container seemplify-shared-mongodb-1
 require_container seemplify-shared-experience-postgres-1
 require_container seemplify-mail-mariadb-1
@@ -75,6 +114,39 @@ docker exec seemplify-shared-experience-postgres-1 sh -lc \
 docker exec seemplify-mail-mariadb-1 sh -lc \
   'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" exec mariadb-dump --user=root --all-databases --single-transaction --routines --events --triggers' \
   | gzip -9 >"${DESTINATION}/mail-mariadb.sql.gz"
+
+# n8n is staged independently from the core stack, so its backup is
+# conditional. When present, use a native PostgreSQL dump and preserve its home
+# volume. Neither the n8n volumes nor the legacy Automation Hub volume are ever
+# removed by this script.
+N8N_POSTGRES_CONTAINER="seemplify-automations-n8n-db-1"
+N8N_APP_CONTAINER="seemplify-automations-n8n-1"
+pause_container_if_running "${N8N_APP_CONTAINER}"
+if [[ "$(docker inspect --format '{{.State.Status}}' "${N8N_POSTGRES_CONTAINER}" 2>/dev/null || true)" == running ]]; then
+  docker exec "${N8N_POSTGRES_CONTAINER}" sh -lc \
+    'exec pg_dump --format=custom \
+      --username "$(cat /run/seemplify/n8n/database-user)" \
+      --dbname "$(cat /run/seemplify/n8n/database-name)"' \
+    >"${DESTINATION}/n8n-postgres.dump"
+else
+  printf 'optional_container_skipped=%s\n' "${N8N_POSTGRES_CONTAINER}" >>"${DESTINATION}/SKIPPED"
+fi
+archive_volume_if_present seemplify-automations_n8n-home n8n-home.tar.gz
+resume_paused_containers
+
+if [[ -n "${LEGACY_AUTOMATION_HUB_SQLITE_VOLUME:-}" ]]; then
+  if [[ ! "${LEGACY_AUTOMATION_HUB_SQLITE_VOLUME}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]]; then
+    echo "Refusing invalid legacy Automation Hub volume name" >&2
+    exit 1
+  fi
+  pause_volume_writers "${LEGACY_AUTOMATION_HUB_SQLITE_VOLUME}"
+  archive_volume_if_present \
+    "${LEGACY_AUTOMATION_HUB_SQLITE_VOLUME}" \
+    legacy-automation-hub-sqlite.tar.gz
+  resume_paused_containers
+else
+  printf 'optional_volume_unconfigured=LEGACY_AUTOMATION_HUB_SQLITE_VOLUME\n' >>"${DESTINATION}/SKIPPED"
+fi
 
 DOKPLOY_POSTGRES_CONTAINER="$(docker ps --filter name=dokploy-postgres --format '{{.Names}}' | head -n 1)"
 if [[ -z "${DOKPLOY_POSTGRES_CONTAINER}" ]]; then

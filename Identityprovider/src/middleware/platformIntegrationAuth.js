@@ -3,19 +3,58 @@ import fs from 'fs'
 import WebhookReadinessNonce from '../models/WebhookReadinessNonce.js'
 
 const TTL_MS = 5 * 60_000
+export const WORKSPACE_PLATFORM_INTEGRATION_HMAC_DERIVATION_VERSION = 'v1'
+export const WORKSPACE_PLATFORM_INTEGRATION_HMAC_HKDF_INFO = 'seemplify:workspace-platform-integration:v1'
+export const WORKSPACE_PLATFORM_INTEGRATION_HMAC_HKDF_SALT = 'seemplify:workspace-platform-integration:hkdf-salt:v1'
 
-function serviceSecret(service) {
+export function deriveWorkspacePlatformIntegrationHmacKey(value) {
+  return Buffer.from(crypto.hkdfSync(
+    'sha256',
+    Buffer.from(value, 'utf8'),
+    Buffer.from(WORKSPACE_PLATFORM_INTEGRATION_HMAC_HKDF_SALT, 'utf8'),
+    Buffer.from(WORKSPACE_PLATFORM_INTEGRATION_HMAC_HKDF_INFO, 'utf8'),
+    32
+  ))
+}
+
+export function resolvePlatformIntegrationServiceSecret(service, {
+  env = process.env,
+  readFileSync = fs.readFileSync
+} = {}) {
   const servicePrefix = String(service || '').toUpperCase().replace(/[^A-Z0-9]+/gu, '_')
-  const file = String(process.env[`IDP_${servicePrefix}_PLATFORM_INTEGRATION_HMAC_SECRET_FILE`] || process.env.IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE || '').trim()
-  if (process.env.NODE_ENV === 'production' && !file) {
+  const requiresDedicatedSecret = service === 'workspace'
+  const dedicatedFile = env[`IDP_${servicePrefix}_PLATFORM_INTEGRATION_HMAC_SECRET_FILE`]
+  const file = String(dedicatedFile || (requiresDedicatedSecret ? '' : env.IDP_PLATFORM_INTEGRATION_HMAC_SECRET_FILE) || '').trim()
+  const derivationVersion = String(env.IDP_WORKSPACE_PLATFORM_INTEGRATION_HMAC_DERIVATION_VERSION
+    || WORKSPACE_PLATFORM_INTEGRATION_HMAC_DERIVATION_VERSION).trim()
+  if (requiresDedicatedSecret && derivationVersion !== WORKSPACE_PLATFORM_INTEGRATION_HMAC_DERIVATION_VERSION) {
+    throw new Error('Workspace platform integration HMAC derivation version is unsupported.')
+  }
+  if (env.NODE_ENV === 'production' && !file && !requiresDedicatedSecret) {
     throw new Error('IDP platform integration HMAC secret file is not configured.')
   }
   const value = file
-    ? fs.readFileSync(file, 'utf8').trim()
-    : String(process.env[`IDP_${servicePrefix}_PLATFORM_INTEGRATION_HMAC_SECRET`] || process.env.IDP_PLATFORM_INTEGRATION_HMAC_SECRET || process.env.EXPERIENCE_ADMIN_SSO_SECRET || '').trim()
-  if (value.length >= 32) return value
-  if (process.env.NODE_ENV !== 'production') return 'experience-admin-development-secret-change-me'
-  throw new Error('Experience service authentication is not configured.')
+    ? readFileSync(file, 'utf8').trim()
+    : String(
+      (requiresDedicatedSecret ? env.MESSAGING_OIDC_CLIENT_SECRET : env[`IDP_${servicePrefix}_PLATFORM_INTEGRATION_HMAC_SECRET`])
+        || (requiresDedicatedSecret ? '' : env.IDP_PLATFORM_INTEGRATION_HMAC_SECRET)
+        || (requiresDedicatedSecret ? '' : env.EXPERIENCE_ADMIN_SSO_SECRET)
+        || ''
+    ).trim()
+  if (value.length >= 32) {
+    return requiresDedicatedSecret ? deriveWorkspacePlatformIntegrationHmacKey(value) : value
+  }
+  if (env.NODE_ENV !== 'production') {
+    const developmentValue = requiresDedicatedSecret
+      ? 'workspace-identity-development-secret-change-me'
+      : 'experience-admin-development-secret-change-me'
+    return requiresDedicatedSecret
+      ? deriveWorkspacePlatformIntegrationHmacKey(developmentValue)
+      : developmentValue
+  }
+  throw new Error(requiresDedicatedSecret
+    ? 'Workspace service authentication is not configured.'
+    : 'Experience service authentication is not configured.')
 }
 
 export function canonicalPlatformConfigurationRequest({ timestamp, nonce, service, method, path, contentHash = '' }) {
@@ -45,7 +84,7 @@ export function createPlatformIntegrationServiceAuth(allowedServices = ['experie
         return res.status(401).json({ error: 'Invalid service request content hash.' })
       }
     }
-    expected = crypto.createHmac('sha256', serviceSecret(service)).update(canonicalPlatformConfigurationRequest({
+    expected = crypto.createHmac('sha256', resolvePlatformIntegrationServiceSecret(service)).update(canonicalPlatformConfigurationRequest({
       timestamp, nonce, service, method: req.method, path: req.originalUrl.split('?')[0],
       contentHash: requireBodyHash ? contentHash : ''
     })).digest('hex')

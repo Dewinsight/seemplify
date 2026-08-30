@@ -7,8 +7,46 @@ import {
   getStorageRuntimeConfiguration,
   STORAGE_SOLUTION_ACCESS
 } from '../services/mediaPlatformConfigurationService.js'
+import {
+  resolveWorkspaceAutomationAccess,
+  resolveWorkspaceAutomationTokenAccess
+} from '../services/workspaceAutomationAccessService.js'
 
 const router = express.Router()
+
+router.post('/workspace/automation-access', createPlatformIntegrationServiceAuth(['workspace'], { requireBodyHash: true }), async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store')
+    const identity = await resolveWorkspaceAutomationAccess(req.body || {})
+    return res.json({ allowed: true, identity })
+  } catch (error) {
+    const status = Number(error?.status) || 503
+    if (status >= 500) console.error('Failed to verify Workspace automation access:', error.message)
+    return res.status(status).json({
+      code: error?.code || 'IDENTITY_ACCESS_CHECK_FAILED',
+      error: status >= 500
+        ? 'Seemplify Identity could not verify Workspace automation access.'
+        : error.message
+    })
+  }
+})
+
+router.post('/workspace/n8n-token-access', createPlatformIntegrationServiceAuth(['workspace'], { requireBodyHash: true }), async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store')
+    const identity = await resolveWorkspaceAutomationTokenAccess(req.body || {})
+    return res.json({ allowed: true, identity })
+  } catch (error) {
+    const status = Number(error?.status) || 503
+    if (status >= 500) console.error('Failed to verify delegated n8n token access:', error.message)
+    return res.status(status).json({
+      code: error?.code || 'N8N_TOKEN_CHECK_FAILED',
+      error: status >= 500
+        ? 'Seemplify Identity could not verify this n8n token.'
+        : error.message
+    })
+  }
+})
 
 router.get('/nylas', requirePlatformIntegrationService, async (_req, res) => {
   try {

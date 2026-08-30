@@ -261,7 +261,24 @@ readlink -f /var/backups/seemplify/latest
 The backup includes native dumps of MongoDB, Experience PostgreSQL,
 Dokploy PostgreSQL and MariaDB; a Redis RDB; and archives of Qdrant,
 Weaviate, Postal, Mail API, Experience runtime, Dokploy and gateway
-state, including the Workspace uploads volume.
+state, including the Workspace uploads volume. If the separately staged n8n
+containers exist, it also writes a native n8n PostgreSQL dump and archives the
+n8n home volume. All generated files are covered by `SHA256SUMS`.
+
+Keep the pre-n8n Automation Hub SQLite volume as a rollback asset. Record only
+its Docker volume name in root-owned `/etc/seemplify/backup.env`:
+
+```bash
+LEGACY_AUTOMATION_HUB_SQLITE_VOLUME=<verified-volume-name>
+N8N_BACKUP_RETENTION_DAYS=30
+```
+
+The backup service conditionally archives that complete volume, including any
+SQLite WAL/SHM files. A missing n8n or legacy volume is recorded in `SKIPPED`
+without failing unrelated platform backups. Backup automation never removes or
+reattaches the source volumes. Separately, the Workspace-owned n8n release
+script fails dark deploy and cutover unless the configured legacy volume exists
+and a checksum-verified archive is produced; rollback remains best-effort.
 
 Run an isolated, non-production restore verification with:
 
@@ -317,6 +334,26 @@ as the unprivileged `node` user and receives supplemental group `0` only so it
 can read the bind-mounted HMAC file at
 `/run/seemplify/platform-integration-hmac`. Do not make the host secret
 world-readable and do not copy it into an image or environment variable.
+
+Workspace uses a protocol-separated key derived from the existing pairwise OIDC
+client secret that Identity exposes as `MESSAGING_OIDC_CLIENT_SECRET` and
+Workspace exposes as `OIDC_CLIENT_SECRET`. Both sides require at least 32
+characters and apply HKDF-SHA256 to exactly 32 bytes with fixed salt
+`seemplify:workspace-platform-integration:hkdf-salt:v1` and versioned info
+`seemplify:workspace-platform-integration:v1`. The raw OIDC secret is never used
+as an HMAC key, and `experience-hmac-secret` is neither mounted by Workspace nor
+accepted as a fallback. Deployment compares SHA-256 fingerprints of the two
+OIDC inputs inside their containers without printing either fingerprint and
+requires derivation version `v1` on both images.
+
+This creates no new stored credential while encrypted-vault recovery material
+is unavailable. The operational tradeoff is rotation coupling: changing the
+Workspace OIDC client secret also changes this derived protocol key, so Identity
+and Workspace must receive the same new OIDC value in one coordinated rollout.
+`IDP_WORKSPACE_PLATFORM_INTEGRATION_HMAC_SECRET_FILE` remains the preferred
+future override when a direction-specific input can be created and safely added
+to the encrypted vault; both sides still apply the same HKDF contract to that
+file. Data backups require no new secret inventory.
 
 Azure Speech for AI Interview is centrally configured in Identity under
 **Admin → Media & Speech**. Identity encrypts the write-only provider key and

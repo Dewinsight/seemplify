@@ -16,6 +16,12 @@ application IDs.
 | Transactional mail | `deploy-mail-service.yml` | `mail.compose.yml` |
 | TURN credentials API and Coturn | `deploy-coturn-hostinger.yml` | `coturn/docker-compose.yml` |
 
+## Staged, not production-enabled
+
+| Scope | Current verification | Compose definition |
+| --- | --- | --- |
+| Shared n8n Automation editor | Workspace `qa-n8n-workspace.yml` and manual `deploy-n8n-hostinger.yml`; protected dark QA is available, but public cutover is source-locked until tenant/session, event-delivery, and migration controls are implemented | Canonical manifest: Workspace `deploy/hostinger/automation-n8n.compose.yml`; this repository intentionally carries no duplicate compose |
+
 Each application workflow builds immutable images labeled with
 `org.opencontainers.image.revision`, deploys the exact tested commit, waits for
 health, verifies the running revision, and performs public smoke checks. Shared
