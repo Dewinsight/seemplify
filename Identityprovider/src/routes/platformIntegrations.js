@@ -9,7 +9,8 @@ import {
 } from '../services/mediaPlatformConfigurationService.js'
 import {
   resolveWorkspaceAutomationAccess,
-  resolveWorkspaceAutomationTokenAccess
+  resolveWorkspaceAutomationTokenAccess,
+  resolveWorkspaceProtectedApproverAccess
 } from '../services/workspaceAutomationAccessService.js'
 
 const router = express.Router()
@@ -43,6 +44,23 @@ router.post('/workspace/n8n-token-access', createPlatformIntegrationServiceAuth(
       code: error?.code || 'N8N_TOKEN_CHECK_FAILED',
       error: status >= 500
         ? 'Seemplify Identity could not verify this n8n token.'
+        : error.message
+    })
+  }
+})
+
+router.post('/workspace/protected-approver-access', createPlatformIntegrationServiceAuth(['workspace'], { requireBodyHash: true }), async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store')
+    const approver = await resolveWorkspaceProtectedApproverAccess(req.body || {})
+    return res.json({ allowed: true, approver })
+  } catch (error) {
+    const status = Number(error?.status) || 503
+    if (status >= 500) console.error('Failed to verify protected-action approver access:', error.message)
+    return res.status(status).json({
+      code: error?.code || 'N8N_APPROVER_ACCESS_CHECK_FAILED',
+      error: status >= 500
+        ? 'Seemplify Identity could not verify this protected-action approver.'
         : error.message
     })
   }

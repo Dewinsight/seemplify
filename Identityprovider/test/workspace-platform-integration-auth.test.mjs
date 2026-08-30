@@ -15,6 +15,8 @@ import {
 } from '../src/middleware/platformIntegrationAuth.js'
 
 const routePath = '/api/internal/v1/platform-integrations/workspace/automation-access'
+const protectedApproverRoutePath =
+  '/api/internal/v1/platform-integrations/workspace/protected-approver-access'
 
 test('Workspace platform signing derivation matches the v1 cross-service contract vector', () => {
   assert.equal(
@@ -25,8 +27,10 @@ test('Workspace platform signing derivation matches the v1 cross-service contrac
   )
 })
 
-function signedRequest(secret, nonce) {
-  const body = { subject: 'identity-subject-1', organizationId: 'identity-org-1' }
+function signedRequest(secret, nonce, {
+  path = routePath,
+  body = { subject: 'identity-subject-1', organizationId: 'identity-org-1' },
+} = {}) {
   const timestamp = String(Date.now())
   const contentHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex')
   const headers = {
@@ -41,14 +45,14 @@ function signedRequest(secret, nonce) {
       nonce,
       service: 'workspace',
       method: 'POST',
-      path: routePath,
+      path,
       contentHash,
     }),
   ).digest('hex')
   return {
     body,
     method: 'POST',
-    originalUrl: routePath,
+    originalUrl: path,
     get(name) { return headers[String(name).toLowerCase()] },
   }
 }
@@ -180,4 +184,40 @@ test('Workspace automation access accepts only the versioned protocol-derived ke
   )
   assert.equal(fileOverrideSignature.continued, true)
   assert.equal(fileOverrideSignature.statusCode, 200)
+
+  const protectedApproverRoute = router.stack.find(
+    (layer) => layer.route?.path === '/workspace/protected-approver-access',
+  )
+  assert.ok(protectedApproverRoute, 'Protected approver access route must exist')
+  const protectedApproverAuthentication = protectedApproverRoute.route.stack[0].handle
+  const protectedBody = {
+    subject: 'identity-subject-1',
+    organizationId: 'identity-org-1',
+    actionId: 'boards.board.archive',
+  }
+  const protectedRequest = signedRequest(
+    deriveWorkspacePlatformIntegrationHmacKey(dedicatedSecret),
+    'protected-approver-nonce-0008',
+    { path: protectedApproverRoutePath, body: protectedBody },
+  )
+  const protectedAuthenticated = await authenticate(
+    protectedApproverAuthentication,
+    protectedRequest,
+  )
+  assert.equal(protectedAuthenticated.continued, true)
+  assert.equal(protectedAuthenticated.statusCode, 200)
+
+  const tamperedRequest = signedRequest(
+    deriveWorkspacePlatformIntegrationHmacKey(dedicatedSecret),
+    'protected-tamper-nonce-0009',
+    { path: protectedApproverRoutePath, body: protectedBody },
+  )
+  tamperedRequest.body = { ...protectedBody, actionId: 'payroll.finalize_run' }
+  const protectedTamper = await authenticate(
+    protectedApproverAuthentication,
+    tamperedRequest,
+  )
+  assert.equal(protectedTamper.continued, false)
+  assert.equal(protectedTamper.statusCode, 401)
+  assert.equal(protectedTamper.responseBody.error, 'Invalid service request content hash.')
 })

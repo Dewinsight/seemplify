@@ -372,13 +372,15 @@ test('Identity retains the Workspace automation permission namespace', () => {
   ]) assert.ok(automationPermissions.includes(permissionId), `missing Workspace permission ${permissionId}`)
 })
 
-test('Workspace editor sessions revalidate through a body-bound signed Identity endpoint', async () => {
+test('Workspace automation access revalidates through body-bound signed Identity endpoints', async () => {
   const routeSource = await readFile(new URL('../src/routes/platformIntegrations.js', import.meta.url), 'utf8')
   assert.match(routeSource, /router\.post\('\/workspace\/automation-access'/)
   assert.match(routeSource, /router\.post\('\/workspace\/n8n-token-access'/)
+  assert.match(routeSource, /router\.post\('\/workspace\/protected-approver-access'/)
   assert.match(routeSource, /createPlatformIntegrationServiceAuth\(\['workspace'\], \{ requireBodyHash: true \}\)/)
   assert.match(routeSource, /resolveWorkspaceAutomationAccess\(req\.body \|\| \{\}\)/)
   assert.match(routeSource, /resolveWorkspaceAutomationTokenAccess\(req\.body \|\| \{\}\)/)
+  assert.match(routeSource, /resolveWorkspaceProtectedApproverAccess\(req\.body \|\| \{\}\)/)
   assert.match(routeSource, /Cache-Control', 'no-store'/)
 })
 
