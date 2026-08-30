@@ -25,7 +25,8 @@ import {
   getOidcLaunchApiUrl,
   getOidcLaunchPath,
   appRequiresOrganization,
-  getOrganizationManagedHubApps
+  getOrganizationManagedHubApps,
+  getOrganizationScopedDirectLaunchUrl
 } from './config/hubApps.js'
 import { getPlanFeatureKeyForApp } from './config/planFeatures.js'
 import bcrypt from 'bcryptjs'
@@ -4759,18 +4760,32 @@ app.get('/launch/:appId', async (req, res) => {
 
     // Check if app uses direct link (no SSO)
     if (app.authType === 'direct') {
+      const directLaunchUrl = getOrganizationScopedDirectLaunchUrl(app, currentOrgId)
+      if (!directLaunchUrl) {
+        await logAppLaunchActivity({
+          req,
+          account,
+          app,
+          status: 'blocked_invalid_launch_context',
+          details: {
+            organizationId: currentOrgId,
+            authType: 'direct'
+          }
+        })
+        return res.redirect('/?error=invalid_launch_context')
+      }
       void logAppLaunchActivity({
         req,
         account,
         app,
         status: 'launched_direct',
         details: {
-          redirectUrl: app.url,
+          redirectUrl: directLaunchUrl,
           authType: 'direct',
           launchDurationMs: Date.now() - launchStartTime
         }
       })
-      return res.redirect(app.url)
+      return res.redirect(directLaunchUrl)
     }
 
     // Special handling for Outline - it uses direct OIDC, not backend-initiated

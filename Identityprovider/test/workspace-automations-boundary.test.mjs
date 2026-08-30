@@ -40,6 +40,12 @@ async function loadHubApps(nodeEnv, env = {}) {
   }
 }
 
+async function loadHubAppLaunchHelpers() {
+  const moduleUrl = new URL('../src/config/hubApps.js', import.meta.url)
+  moduleUrl.searchParams.set('workspace-automations-launch-helper', String(hubAppsImport += 1))
+  return import(moduleUrl.href)
+}
+
 function automationApp(apps) {
   return apps.find((candidate) => candidate.appId === 'automation-hub')
 }
@@ -98,6 +104,50 @@ test('the n8n Hub surface stays hidden until integration and visibility gates ar
   assert.equal(app.authType, 'direct')
   assert.equal(app.url, 'https://workspace.seemplifyai.com/automations?editor=standalone')
   assert.equal(app.apiUrl, 'https://automations.seemplifyai.com/')
+})
+
+test('Identity scopes the standalone n8n launch to its active organization', async () => {
+  const { getOrganizationScopedDirectLaunchUrl } = await loadHubAppLaunchHelpers()
+  const url = getOrganizationScopedDirectLaunchUrl({
+    appId: 'automation-hub',
+    url: 'https://workspace.seemplifyai.com/automations?editor=standalone',
+  }, '64B7F9A1C2D3E4F506172839')
+
+  assert.equal(
+    url,
+    'https://workspace.seemplifyai.com/automations?editor=standalone&organizationId=64b7f9a1c2d3e4f506172839',
+  )
+})
+
+test('Identity refuses malformed organization context for a standalone n8n launch', async () => {
+  const { getOrganizationScopedDirectLaunchUrl } = await loadHubAppLaunchHelpers()
+  for (const organizationId of ['', 'org-a', '../org-a', '64b7f9a1c2d3e4f506172839%0d%0a']) {
+    assert.equal(getOrganizationScopedDirectLaunchUrl({
+      appId: 'automation-hub',
+      url: 'https://workspace.seemplifyai.com/automations?editor=standalone',
+    }, organizationId), '')
+  }
+})
+
+test('Identity leaves unrelated direct application launch URLs unchanged', async () => {
+  const { getOrganizationScopedDirectLaunchUrl } = await loadHubAppLaunchHelpers()
+  assert.equal(getOrganizationScopedDirectLaunchUrl({
+    appId: 'another-direct-app',
+    url: 'https://example.test/start?mode=direct',
+  }, '64b7f9a1c2d3e4f506172839'), 'https://example.test/start?mode=direct')
+})
+
+test('the Hub direct-launch route logs and redirects with the organization-scoped URL', async () => {
+  const source = await readFile(new URL('../src/index.js', import.meta.url), 'utf8')
+  const launchStart = source.indexOf("app.get('/launch/:appId'")
+  const launchEnd = source.indexOf('// Special handling for Outline', launchStart)
+  const directLaunchSource = source.slice(launchStart, launchEnd)
+
+  assert.match(directLaunchSource, /getOrganizationScopedDirectLaunchUrl\(app, currentOrgId\)/)
+  assert.match(directLaunchSource, /status: 'blocked_invalid_launch_context'/)
+  assert.match(directLaunchSource, /redirectUrl: directLaunchUrl/)
+  assert.match(directLaunchSource, /return res\.redirect\(directLaunchUrl\)/)
+  assert.doesNotMatch(directLaunchSource, /return res\.redirect\(app\.url\)/)
 })
 
 test('end-user n8n login is Workspace-brokered and only delegated node OAuth is registered', async () => {

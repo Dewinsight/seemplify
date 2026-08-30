@@ -58,6 +58,27 @@ export function getWorkspaceAutomationLaunchUrl(env = process.env) {
 }
 
 /**
+ * Carry Identity's active organization into the Workspace-hosted standalone
+ * n8n surface. Workspace still resolves the reference against the current
+ * user's entitled organization list before it selects anything.
+ */
+export function getOrganizationScopedDirectLaunchUrl(app, organizationId) {
+  const configuredUrl = String(app?.url || '').trim()
+  if (app?.appId !== 'automation-hub') return configuredUrl
+
+  const normalizedOrganizationId = String(organizationId || '').trim().toLowerCase()
+  if (!/^[a-f0-9]{24}$/.test(normalizedOrganizationId)) return ''
+
+  try {
+    const launch = new URL(configuredUrl)
+    launch.searchParams.set('organizationId', normalizedOrganizationId)
+    return launch.toString()
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Community is intentionally dormant in production until its public DNS,
  * Workspace routes, and protected OIDC client secret have all been deployed.
  * Development keeps its existing zero-configuration local defaults.
