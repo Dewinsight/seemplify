@@ -14,8 +14,12 @@ const account = {
   emailVerified: true,
   profile: { name: 'Automation Operator', preferred_username: 'operator' },
   organizations: [],
-  teams: []
+  teams: [],
+  security: {}
 }
+
+const sessionIssuedAt = 1_788_067_200
+const now = () => sessionIssuedAt * 1000 + 30_000
 
 const AccountModel = {
   findOne(filter) {
@@ -39,10 +43,12 @@ test('returns only the freshly rebuilt requested organization claim', async () =
   }
   const identity = await resolveWorkspaceAutomationAccess({
     subject: 'identity-subject-1',
-    organizationId: 'org-a'
+    organizationId: 'org-a',
+    sessionIssuedAt
   }, {
     AccountModel,
-    buildClaims: async () => [claim, { id: 'org-b', authorization: {} }]
+    buildClaims: async () => [claim, { id: 'org-b', authorization: {} }],
+    now
   })
 
   assert.equal(identity.sub, account.sub)
@@ -56,10 +62,12 @@ test('fails closed when canonical Identity membership was revoked', async () => 
   await assert.rejects(
     resolveWorkspaceAutomationAccess({
       subject: 'identity-subject-1',
-      organizationId: 'org-a'
+      organizationId: 'org-a',
+      sessionIssuedAt
     }, {
       AccountModel,
-      buildClaims: async () => []
+      buildClaims: async () => [],
+      now
     }),
     (error) => error.status === 403 && error.code === 'IDENTITY_ACCESS_REVOKED'
   )
@@ -74,9 +82,47 @@ test('fails closed for an unverified Identity account', async () => {
   await assert.rejects(
     resolveWorkspaceAutomationAccess({
       subject: 'identity-subject-1',
-      organizationId: 'org-a'
-    }, { AccountModel: UnverifiedAccountModel, buildClaims: async () => assert.fail('claims must not build') }),
+      organizationId: 'org-a',
+      sessionIssuedAt
+    }, {
+      AccountModel: UnverifiedAccountModel,
+      buildClaims: async () => assert.fail('claims must not build'),
+      now
+    }),
     (error) => error.status === 403 && error.code === 'IDENTITY_ACCESS_REVOKED'
+  )
+})
+
+test('embedded editor access rejects missing, future, and centrally revoked Identity sessions', async () => {
+  const claimsMustNotBuild = async () => assert.fail('revoked sessions must not build claims')
+  for (const invalidIssuedAt of [undefined, 'not-a-number', sessionIssuedAt + 120]) {
+    await assert.rejects(
+      resolveWorkspaceAutomationAccess({
+        subject: account.sub,
+        organizationId: 'org-a',
+        sessionIssuedAt: invalidIssuedAt
+      }, { AccountModel, buildClaims: claimsMustNotBuild, now }),
+      (error) => error.status === 401 && error.code === 'N8N_IDENTITY_SESSION_INVALID'
+    )
+  }
+
+  const RevokedAccountModel = {
+    findOne: () => ({
+      select: () => ({
+        lean: async () => ({
+          ...account,
+          security: { sessionInvalidBefore: new Date(sessionIssuedAt * 1000) }
+        })
+      })
+    })
+  }
+  await assert.rejects(
+    resolveWorkspaceAutomationAccess({
+      subject: account.sub,
+      organizationId: 'org-a',
+      sessionIssuedAt
+    }, { AccountModel: RevokedAccountModel, buildClaims: claimsMustNotBuild, now }),
+    (error) => error.status === 401 && error.code === 'N8N_IDENTITY_SESSION_REVOKED'
   )
 })
 

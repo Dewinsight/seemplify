@@ -4531,15 +4531,23 @@ app.post('/signup', async (req, res) => {
 app.get('/logout', async (req, res) => {
   try {
     const sessionCookie = req.cookies['_session']
+    const logoutAt = new Date()
     if (sessionCookie) {
       const adapter = new MongoAdapter('Session')
+      const sessionData = await adapter.find(sessionCookie)
+      if (sessionData?.accountId) {
+        await Account.updateOne(
+          { sub: sessionData.accountId },
+          { $max: { 'security.sessionInvalidBefore': logoutAt } }
+        )
+      }
       await adapter.destroy(sessionCookie)
     }
 
     res.clearCookie('_session')
     // A parent-domain marker lets every Seemplify app reject browser tokens
     // issued before this central logout, including already-open app tabs.
-    res.cookie('seemplify_logout_at', String(Date.now()), {
+    res.cookie('seemplify_logout_at', String(logoutAt.getTime()), {
       domain: process.env.NODE_ENV === 'production' ? '.seemplifyai.com' : undefined,
       path: '/',
       secure: process.env.NODE_ENV === 'production',

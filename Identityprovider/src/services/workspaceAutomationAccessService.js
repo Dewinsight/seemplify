@@ -6,6 +6,32 @@ const text = (value) => String(value || '').trim()
 
 const accessError = (message, status, code) => Object.assign(new Error(message), { status, code })
 export const N8N_WORKSPACE_NODE_CLIENT_ID = 'n8n-workspace-node'
+const MAX_SESSION_CLOCK_SKEW_SECONDS = 60
+
+const requireActiveIdentitySession = ({ account, sessionIssuedAt, now = Date.now() }) => {
+  const issuedAt = Number(sessionIssuedAt)
+  const currentSeconds = Math.floor(Number(now) / 1000)
+  if (
+    !Number.isInteger(issuedAt)
+    || issuedAt < 1
+    || issuedAt > currentSeconds + MAX_SESSION_CLOCK_SKEW_SECONDS
+  ) {
+    throw accessError(
+      'The originating Seemplify Identity session is required.',
+      401,
+      'N8N_IDENTITY_SESSION_INVALID'
+    )
+  }
+  const invalidBefore = new Date(account?.security?.sessionInvalidBefore || 0).getTime()
+  if (Number.isFinite(invalidBefore) && invalidBefore > 0 && issuedAt * 1000 <= invalidBefore) {
+    throw accessError(
+      'The originating Seemplify Identity session was signed out.',
+      401,
+      'N8N_IDENTITY_SESSION_REVOKED'
+    )
+  }
+  return issuedAt
+}
 
 /**
  * Rebuild the requested Workspace organization claim from Identity's canonical
@@ -13,9 +39,11 @@ export const N8N_WORKSPACE_NODE_CLIENT_ID = 'n8n-workspace-node'
  * Workspace session and its local membership mirror so n8n session issuance
  * fails closed immediately after an Identity revocation.
  */
-export async function resolveWorkspaceAutomationAccess({ subject, organizationId }, {
+export async function resolveWorkspaceAutomationAccess({ subject, organizationId, sessionIssuedAt }, {
   AccountModel = Account,
-  buildClaims = buildOrganizationClaims
+  buildClaims = buildOrganizationClaims,
+  requireSessionIssuedAt = true,
+  now = Date.now
 } = {}) {
   const normalizedSubject = text(subject)
   const normalizedOrganizationId = text(organizationId)
@@ -25,10 +53,17 @@ export async function resolveWorkspaceAutomationAccess({ subject, organizationId
 
   const query = AccountModel.findOne({ sub: normalizedSubject })
   const account = typeof query?.select === 'function'
-    ? await query.select('sub email emailVerified profile organizations teams').lean()
+    ? await query.select('sub email emailVerified profile organizations teams security.sessionInvalidBefore').lean()
     : await query
   if (!account || account.emailVerified !== true) {
     throw accessError('The Seemplify Identity account is not active and verified.', 403, 'IDENTITY_ACCESS_REVOKED')
+  }
+  if (requireSessionIssuedAt) {
+    requireActiveIdentitySession({
+      account,
+      sessionIssuedAt,
+      now: typeof now === 'function' ? now() : now
+    })
   }
 
   const organizationClaims = await buildClaims(account)
@@ -84,5 +119,5 @@ export async function resolveWorkspaceAutomationTokenAccess({ accessToken, organ
   return resolveWorkspaceAutomationAccess({
     subject: text(tokenRecord.accountId),
     organizationId
-  }, { AccountModel, buildClaims })
+  }, { AccountModel, buildClaims, requireSessionIssuedAt: false })
 }

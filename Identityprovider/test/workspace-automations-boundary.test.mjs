@@ -196,6 +196,26 @@ test('Workspace editor sessions revalidate through a body-bound signed Identity 
   assert.match(routeSource, /Cache-Control', 'no-store'/)
 })
 
+test('central Identity logout durably invalidates previously issued embedded editor sessions', async () => {
+  const [accountSource, indexSource, accessSource] = await Promise.all([
+    readFile(new URL('../src/models/Account.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/index.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/services/workspaceAutomationAccessService.js', import.meta.url), 'utf8'),
+  ])
+  assert.match(accountSource, /sessionInvalidBefore:\s*Date/)
+  const logoutStart = indexSource.indexOf("app.get('/logout'")
+  const logoutEnd = indexSource.indexOf("app.get('/simple-lms'", logoutStart)
+  const logoutSource = indexSource.slice(logoutStart, logoutEnd)
+  assert.match(logoutSource, /adapter\.find\(sessionCookie\)/)
+  assert.match(logoutSource, /\$max:\s*\{\s*'security\.sessionInvalidBefore': logoutAt\s*\}/)
+  assert.ok(
+    logoutSource.indexOf("'security.sessionInvalidBefore'") < logoutSource.indexOf('adapter.destroy(sessionCookie)'),
+    'the durable revocation marker must advance before the central session is destroyed'
+  )
+  assert.match(accessSource, /issuedAt \* 1000 <= invalidBefore/)
+  assert.match(accessSource, /N8N_IDENTITY_SESSION_REVOKED/)
+})
+
 test('registered callbacks match exact URLs and one whole wildcard hostname label', () => {
   assert.equal(matchesRegisteredUrl(
     'https://automations.seemplifyai.com/rest/oauth2-credential/callback',

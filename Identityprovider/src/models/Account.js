@@ -97,7 +97,12 @@ const AccountSchema = new mongoose.Schema({
         device: String,
         version: String
       }
-    }]
+    }],
+
+    // Central sign-out advances this timestamp before the OIDC session is
+    // destroyed. Downstream embedded products bind their own sessions to the
+    // originating Identity session iat and revalidate it against this value.
+    sessionInvalidBefore: Date
   },
 
   // Organization memberships
