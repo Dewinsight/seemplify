@@ -65,5 +65,12 @@ test('bootstrap fails before mutation on insufficient capacity and verifies ever
   assert.match(bootstrap, /grep -qx seemplify-worker/);
   assert.match(bootstrap, /grep -qx workspace-worker/);
   assert.match(bootstrap, /grep -qx control/);
+  assert.match(bootstrap, /exec -T seemplify-worker[\s\\]+test -s \/runner\/\.runner/);
+  assert.match(bootstrap, /exec -T workspace-worker[\s\\]+test -s \/runner\/\.runner/);
   assert.match(bootstrap, /: > \.env/);
+  assert.ok(
+    bootstrap.lastIndexOf('test -s /runner/.runner')
+      > bootstrap.indexOf(': > .env'),
+    'the tokenless restart must be verified after the registration token is removed',
+  );
 });

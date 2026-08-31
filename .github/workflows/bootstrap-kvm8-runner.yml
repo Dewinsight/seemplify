@@ -90,16 +90,22 @@ jobs:
           docker compose --env-file .env -f compose.yml config --quiet
           docker compose --env-file .env -f compose.yml up -d --build --remove-orphans
 
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 60); do
             if docker compose -f compose.yml ps --status running --services \
                 | grep -qx seemplify-worker \
               && docker compose -f compose.yml ps --status running --services \
                 | grep -qx workspace-worker \
               && docker compose -f compose.yml ps --status running --services \
-                | grep -qx control; then
+                | grep -qx control \
+              && docker compose -f compose.yml exec -T seemplify-worker \
+                test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T workspace-worker \
+                test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T control \
+                test -s /runner/.runner; then
               break
             fi
-            if [[ "$attempt" == 30 ]]; then
+            if [[ "$attempt" == 60 ]]; then
               docker compose -f compose.yml ps
               docker compose -f compose.yml logs --tail 100
               exit 1
@@ -112,7 +118,24 @@ jobs:
           : > .env
           chmod 600 .env
           docker compose --env-file .env -f compose.yml up -d --no-build --force-recreate
-          sleep 5
+
+          for attempt in $(seq 1 30); do
+            if [[ $(docker compose -f compose.yml ps --status running --services | wc -l) -eq 3 ]] \
+              && docker compose -f compose.yml exec -T seemplify-worker \
+                test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T workspace-worker \
+                test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T control \
+                test -s /runner/.runner; then
+              break
+            fi
+            if [[ "$attempt" == 30 ]]; then
+              docker compose -f compose.yml ps
+              docker compose -f compose.yml logs --tail 100
+              exit 1
+            fi
+            sleep 2
+          done
 
           docker compose -f compose.yml ps
           docker inspect kvm8-seemplify-worker kvm8-workspace-worker kvm8-deploy-controller \
