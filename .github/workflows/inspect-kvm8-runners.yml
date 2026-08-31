@@ -1,0 +1,60 @@
+name: Inspect KVM8 GitHub Actions Runners
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Hostinger SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Inspect runner containers without mutation
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          runner_containers=(
+            github-actions-runner-seemplify-worker-1
+            github-actions-runner-workspace-worker-1
+            github-actions-runner-control-1
+            github-runner-worker-1
+            github-runner-control-1
+          )
+
+          docker ps -a --filter name=runner \
+            --format 'container={{.Names}} status={{.Status}} image={{.Image}}'
+
+          for container in "${runner_containers[@]}"; do
+            if ! docker inspect "$container" >/dev/null 2>&1; then
+              printf 'container=%s state=absent\n' "$container"
+              continue
+            fi
+            docker inspect "$container" \
+              --format 'container={{.Name}} state={{.State.Status}} running={{.State.Running}} restart_count={{.RestartCount}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} runner_name={{range .Config.Env}}{{if (eq (index (split . "=") 0) "RUNNER_NAME")}}{{index (split . "=") 1}}{{end}}{{end}}'
+            docker top "$container" -eo pid,ppid,stat,etime,args || true
+            docker logs --tail 40 "$container" 2>&1 \
+              | sed -E 's/(token|secret|password|credential)=([^[:space:]]+)/\1=[redacted]/Ig'
+          done
+          REMOTE
