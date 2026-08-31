@@ -11,6 +11,7 @@ const composePath = resolve(runnerDirectory, 'compose.yml');
 const bootstrapPath = resolve(repositoryRoot, '.github', 'workflows', 'bootstrap-kvm8-runner.yml');
 const validationPath = resolve(repositoryRoot, '.github', 'workflows', 'validate-self-hosted-runner-pool.yml');
 const inspectionPath = resolve(repositoryRoot, '.github', 'workflows', 'inspect-kvm8-runners.yml');
+const retirementPath = resolve(repositoryRoot, '.github', 'workflows', 'retire-legacy-kvm8-runners.yml');
 const entrypointPath = resolve(runnerDirectory, 'entrypoint.sh');
 
 const composeResult = spawnSync(
@@ -25,6 +26,7 @@ const compose = JSON.parse(composeResult.stdout);
 const bootstrap = readFileSync(bootstrapPath, 'utf8');
 const validation = readFileSync(validationPath, 'utf8');
 const inspection = readFileSync(inspectionPath, 'utf8');
+const retirement = readFileSync(retirementPath, 'utf8');
 const entrypoint = readFileSync(entrypointPath, 'utf8');
 
 test('dedicates independent constrained runners to Seemplify, Workspace, and deployment control', () => {
@@ -133,4 +135,22 @@ test('runner inspection is read-only and covers current and legacy containers', 
     inspection,
     /docker\s+(?:compose\s+)?(?:stop|start|restart|rm|up|down|kill|prune)\b/,
   );
+});
+
+test('legacy retirement is identity-guarded and preserves runner volumes', () => {
+  assert.match(
+    retirement,
+    /retire_legacy_runner_container github-runner-worker-1 kvm8-shared-worker/,
+  );
+  assert.match(
+    retirement,
+    /retire_legacy_runner_container github-runner-control-1 kvm8-deploy-controller/,
+  );
+  assert.ok(
+    retirement.indexOf('grep -Fxq "RUNNER_NAME=$expected_runner_name"')
+      < retirement.indexOf('docker stop --time 45 "$container"'),
+  );
+  assert.match(retirement, /! docker inspect github-runner-worker-1/);
+  assert.match(retirement, /! docker inspect github-runner-control-1/);
+  assert.doesNotMatch(retirement, /docker volume (?:rm|prune)|docker system prune/);
 });

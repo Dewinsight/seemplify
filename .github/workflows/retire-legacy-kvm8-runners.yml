@@ -1,0 +1,73 @@
+name: Retire Legacy KVM8 GitHub Actions Runners
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Hostinger SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Retire only the superseded runner containers
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          cd /opt/seemplify/github-actions-runner
+          retire_legacy_runner_container() {
+            local container=$1 expected_runner_name=$2 legacy_id current_id
+            if ! docker inspect "$container" >/dev/null 2>&1; then
+              printf 'legacy_container=%s state=already_absent\n' "$container"
+              return
+            fi
+            legacy_id=$(docker inspect --format '{{.Id}}' "$container")
+            for service in seemplify-worker workspace-worker control; do
+              current_id=$(docker compose -f compose.yml ps -q "$service")
+              if [[ -n $current_id && $legacy_id == "$current_id" ]]; then
+                printf 'Refusing to retire a current runner container: %s\n' "$container" >&2
+                exit 1
+              fi
+            done
+            if ! docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" \
+                | grep -Fxq "RUNNER_NAME=$expected_runner_name"; then
+              printf 'Refusing to retire a container with an unexpected runner identity: %s\n' \
+                "$container" >&2
+              exit 1
+            fi
+            docker stop --time 45 "$container" >/dev/null
+            docker rm "$container" >/dev/null
+            printf 'retired_legacy_runner=%s\n' "$expected_runner_name"
+          }
+
+          retire_legacy_runner_container github-runner-worker-1 kvm8-shared-worker
+          retire_legacy_runner_container github-runner-control-1 kvm8-deploy-controller
+
+          for service in seemplify-worker workspace-worker control; do
+            test "$(docker compose -f compose.yml ps --status running -q "$service" | wc -l)" -eq 1
+          done
+          ! docker inspect github-runner-worker-1 >/dev/null 2>&1
+          ! docker inspect github-runner-control-1 >/dev/null 2>&1
+          docker compose -f compose.yml ps
+          REMOTE
