@@ -9,6 +9,7 @@ const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, '..', '..', '..');
 const composePath = resolve(runnerDirectory, 'compose.yml');
 const bootstrapPath = resolve(repositoryRoot, '.github', 'workflows', 'bootstrap-kvm8-runner.yml');
+const entrypointPath = resolve(runnerDirectory, 'entrypoint.sh');
 
 const composeResult = spawnSync(
   'docker',
@@ -20,6 +21,7 @@ if (composeResult.status !== 0) {
 }
 const compose = JSON.parse(composeResult.stdout);
 const bootstrap = readFileSync(bootstrapPath, 'utf8');
+const entrypoint = readFileSync(entrypointPath, 'utf8');
 
 test('dedicates independent constrained runners to Seemplify, Workspace, and deployment control', () => {
   assert.deepEqual(Object.keys(compose.services).sort(), [
@@ -67,10 +69,24 @@ test('bootstrap fails before mutation on insufficient capacity and verifies ever
   assert.match(bootstrap, /grep -qx control/);
   assert.match(bootstrap, /exec -T seemplify-worker[\s\\]+test -s \/runner\/\.runner/);
   assert.match(bootstrap, /exec -T workspace-worker[\s\\]+test -s \/runner\/\.runner/);
+  assert.match(bootstrap, /test -s \/runner\/\.credentials/);
+  assert.match(bootstrap, /test -s \/runner\/\.credentials_rsaparams/);
   assert.match(bootstrap, /: > \.env/);
   assert.ok(
     bootstrap.lastIndexOf('test -s /runner/.runner')
       > bootstrap.indexOf(': > .env'),
     'the tokenless restart must be verified after the registration token is removed',
+  );
+});
+
+test('entrypoint repairs partial registration without accepting incomplete credentials', () => {
+  for (const file of ['.runner', '.credentials', '.credentials_rsaparams']) {
+    assert.match(entrypoint, new RegExp(`! -s \\$registration_file`));
+    assert.ok(entrypoint.includes(file));
+  }
+  assert.match(entrypoint, /rm -f -- \.runner \.credentials \.credentials_rsaparams/);
+  assert.ok(
+    entrypoint.indexOf('rm -f -- .runner .credentials .credentials_rsaparams')
+      < entrypoint.indexOf('./config.sh "${config_args[@]}"'),
   );
 });

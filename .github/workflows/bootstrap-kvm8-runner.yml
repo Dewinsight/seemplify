@@ -99,10 +99,22 @@ jobs:
                 | grep -qx control \
               && docker compose -f compose.yml exec -T seemplify-worker \
                 test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T seemplify-worker \
+                test -s /runner/.credentials \
+              && docker compose -f compose.yml exec -T seemplify-worker \
+                test -s /runner/.credentials_rsaparams \
               && docker compose -f compose.yml exec -T workspace-worker \
                 test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T workspace-worker \
+                test -s /runner/.credentials \
+              && docker compose -f compose.yml exec -T workspace-worker \
+                test -s /runner/.credentials_rsaparams \
               && docker compose -f compose.yml exec -T control \
-                test -s /runner/.runner; then
+                test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T control \
+                test -s /runner/.credentials \
+              && docker compose -f compose.yml exec -T control \
+                test -s /runner/.credentials_rsaparams; then
               break
             fi
             if [[ "$attempt" == 60 ]]; then
@@ -123,10 +135,22 @@ jobs:
             if [[ $(docker compose -f compose.yml ps --status running --services | wc -l) -eq 3 ]] \
               && docker compose -f compose.yml exec -T seemplify-worker \
                 test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T seemplify-worker \
+                test -s /runner/.credentials \
+              && docker compose -f compose.yml exec -T seemplify-worker \
+                test -s /runner/.credentials_rsaparams \
               && docker compose -f compose.yml exec -T workspace-worker \
                 test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T workspace-worker \
+                test -s /runner/.credentials \
+              && docker compose -f compose.yml exec -T workspace-worker \
+                test -s /runner/.credentials_rsaparams \
               && docker compose -f compose.yml exec -T control \
-                test -s /runner/.runner; then
+                test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T control \
+                test -s /runner/.credentials \
+              && docker compose -f compose.yml exec -T control \
+                test -s /runner/.credentials_rsaparams; then
               break
             fi
             if [[ "$attempt" == 30 ]]; then
