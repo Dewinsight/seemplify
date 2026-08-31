@@ -92,7 +92,7 @@ jobs:
             github-actions-runner-control-1; do
             if docker inspect "$container" >/dev/null 2>&1 \
               && docker top "$container" -eo args 2>/dev/null \
-                | grep -Fq 'Runner.Worker run'; then
+                | grep -Fq 'Runner.Worker'; then
               printf 'Refusing to recreate an active runner: %s\n' "$container" >&2
               exit 1
             fi
@@ -100,7 +100,8 @@ jobs:
 
           cd "$target"
           docker compose --env-file .env -f compose.yml config --quiet
-          docker compose --env-file .env -f compose.yml up -d --build --remove-orphans
+          docker compose --env-file .env -f compose.yml up -d --build --remove-orphans \
+            < /dev/null
 
           for attempt in $(seq 1 60); do
             if docker compose -f compose.yml ps --status running --services \
@@ -141,7 +142,8 @@ jobs:
           # container definitions once the persistent runner state exists.
           : > .env
           chmod 600 .env
-          docker compose --env-file .env -f compose.yml up -d --no-build --force-recreate
+          docker compose --env-file .env -f compose.yml up -d --no-build --force-recreate \
+            < /dev/null
 
           for attempt in $(seq 1 30); do
             if [[ $(docker compose -f compose.yml ps --status running --services | wc -l) -eq 3 ]] \

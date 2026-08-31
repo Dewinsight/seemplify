@@ -44,7 +44,7 @@ jobs:
             fi
             legacy_id=$(docker inspect --format '{{.Id}}' "$container")
             for service in seemplify-worker workspace-worker control; do
-              current_id=$(docker compose -f compose.yml ps -q "$service")
+              current_id=$(docker compose -f compose.yml ps -a -q "$service")
               if [[ -n $current_id && $legacy_id == "$current_id" ]]; then
                 printf 'Refusing to retire a current runner container: %s\n' "$container" >&2
                 exit 1

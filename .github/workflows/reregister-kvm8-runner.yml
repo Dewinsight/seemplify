@@ -88,7 +88,7 @@ jobs:
           rm -f /tmp/kvm8-runner-repair.env
           trap ': > .repair.env; chmod 600 .repair.env' EXIT
 
-          current_id=$(docker compose -f compose.yml ps -q "$service")
+          current_id=$(docker compose -f compose.yml ps -a -q "$service")
           container_id=$(docker inspect --format '{{.Id}}' "$container")
           if [[ -z $current_id || $current_id != "$container_id" ]]; then
             printf 'Refusing to repair a container outside the current runner stack.\n' >&2
@@ -99,16 +99,18 @@ jobs:
             printf 'Refusing to repair a container with an unexpected runner identity.\n' >&2
             exit 1
           fi
-          if docker top "$container" -eo args 2>/dev/null | grep -Fq 'Runner.Worker run'; then
+          if docker top "$container" -eo args 2>/dev/null | grep -Fq 'Runner.Worker'; then
             printf 'Refusing to repair a runner with an active job process.\n' >&2
             exit 1
           fi
 
-          docker compose -f compose.yml stop --timeout 45 "$service"
+          docker compose -f compose.yml stop --timeout 45 "$service" < /dev/null
           docker compose --env-file .repair.env -f compose.yml run --rm --no-deps \
             --entrypoint bash "$service" -lc \
-            'rm -f -- /runner/.runner /runner/.credentials /runner/.credentials_rsaparams; /opt/runner-hooks/cleanup-workspace.sh'
-          docker compose --env-file .repair.env -f compose.yml up -d --no-deps --force-recreate "$service"
+            'rm -f -- /runner/.runner /runner/.credentials /runner/.credentials_rsaparams; /opt/runner-hooks/cleanup-workspace.sh' \
+            < /dev/null
+          docker compose --env-file .repair.env -f compose.yml up -d --no-deps --force-recreate "$service" \
+            < /dev/null
 
           for attempt in $(seq 1 60); do
             if docker compose -f compose.yml exec -T "$service" test -s /runner/.runner \
@@ -124,10 +126,11 @@ jobs:
             sleep 2
           done
 
-          docker compose -f compose.yml stop --timeout 45 "$service"
+          docker compose -f compose.yml stop --timeout 45 "$service" < /dev/null
           : > .repair.env
           chmod 600 .repair.env
-          docker compose --env-file .repair.env -f compose.yml up -d --no-deps --force-recreate "$service"
+          docker compose --env-file .repair.env -f compose.yml up -d --no-deps --force-recreate "$service" \
+            < /dev/null
           for attempt in $(seq 1 60); do
             if [[ $(docker inspect --format '{{.State.Running}}' "$container") == true ]] \
               && docker logs "$container" 2>&1 | grep -Fq 'Listening for Jobs'; then

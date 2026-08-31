@@ -102,7 +102,7 @@ test('bootstrap fails before mutation on insufficient capacity and verifies ever
   );
   assert.doesNotMatch(bootstrap, /docker volume (?:rm|prune)/);
   assert.ok(
-    bootstrap.indexOf("grep -Fq 'Runner.Worker run'")
+    bootstrap.indexOf("grep -Fq 'Runner.Worker'")
       < bootstrap.indexOf('docker compose --env-file .env -f compose.yml up -d --build --remove-orphans'),
     'bootstrap must reject active jobs before recreating runner containers',
   );
@@ -177,7 +177,7 @@ test('single-runner recovery validates compose and runner identities', () => {
 
 test('stale registration repair is guarded, scoped, and removes its token', () => {
   assert.match(reregistration, /KVM8_RUNNER_REGISTRATION_TOKEN/);
-  assert.match(reregistration, /grep -Fq 'Runner.Worker run'/);
+  assert.match(reregistration, /grep -Fq 'Runner.Worker'/);
   assert.match(
     reregistration,
     /rm -f -- \/runner\/\.runner \/runner\/\.credentials \/runner\/\.credentials_rsaparams/,
@@ -185,5 +185,10 @@ test('stale registration repair is guarded, scoped, and removes its token', () =
   assert.match(reregistration, /\/opt\/runner-hooks\/cleanup-workspace\.sh/);
   assert.match(reregistration, /: > \.repair\.env/);
   assert.match(reregistration, /tokenless=true/);
+  assert.equal(
+    (reregistration.match(/< \/dev\/null/g) || []).length,
+    5,
+    'every mutating Compose command must be isolated from the remote script stdin',
+  );
   assert.doesNotMatch(reregistration, /docker volume (?:rm|prune)|docker system prune/);
 });

@@ -69,7 +69,7 @@ jobs:
           expected_name=$3
           cd /opt/seemplify/github-actions-runner
 
-          current_id=$(docker compose -f compose.yml ps -q "$service")
+          current_id=$(docker compose -f compose.yml ps -a -q "$service")
           container_id=$(docker inspect --format '{{.Id}}' "$container")
           if [[ -z $current_id || $current_id != "$container_id" ]]; then
             printf 'Refusing to recover a container outside the current runner stack.\n' >&2
