@@ -12,6 +12,7 @@ const bootstrapPath = resolve(repositoryRoot, '.github', 'workflows', 'bootstrap
 const validationPath = resolve(repositoryRoot, '.github', 'workflows', 'validate-self-hosted-runner-pool.yml');
 const inspectionPath = resolve(repositoryRoot, '.github', 'workflows', 'inspect-kvm8-runners.yml');
 const retirementPath = resolve(repositoryRoot, '.github', 'workflows', 'retire-legacy-kvm8-runners.yml');
+const recoveryPath = resolve(repositoryRoot, '.github', 'workflows', 'recover-kvm8-runner.yml');
 const entrypointPath = resolve(runnerDirectory, 'entrypoint.sh');
 
 const composeResult = spawnSync(
@@ -27,6 +28,7 @@ const bootstrap = readFileSync(bootstrapPath, 'utf8');
 const validation = readFileSync(validationPath, 'utf8');
 const inspection = readFileSync(inspectionPath, 'utf8');
 const retirement = readFileSync(retirementPath, 'utf8');
+const recovery = readFileSync(recoveryPath, 'utf8');
 const entrypoint = readFileSync(entrypointPath, 'utf8');
 
 test('dedicates independent constrained runners to Seemplify, Workspace, and deployment control', () => {
@@ -97,6 +99,11 @@ test('bootstrap fails before mutation on insufficient capacity and verifies ever
     'legacy retirement must verify the exact runner identity before stopping a container',
   );
   assert.doesNotMatch(bootstrap, /docker volume (?:rm|prune)/);
+  assert.ok(
+    bootstrap.indexOf("grep -Fq 'Runner.Worker run'")
+      < bootstrap.indexOf('docker compose --env-file .env -f compose.yml up -d --build --remove-orphans'),
+    'bootstrap must reject active jobs before recreating runner containers',
+  );
 });
 
 test('entrypoint repairs partial registration without accepting incomplete credentials', () => {
@@ -153,4 +160,15 @@ test('legacy retirement is identity-guarded and preserves runner volumes', () =>
   assert.match(retirement, /! docker inspect github-runner-worker-1/);
   assert.match(retirement, /! docker inspect github-runner-control-1/);
   assert.doesNotMatch(retirement, /docker volume (?:rm|prune)|docker system prune/);
+});
+
+test('single-runner recovery validates compose and runner identities', () => {
+  assert.match(recovery, /type: choice/);
+  assert.match(recovery, /container_id=\$\(docker inspect --format '\{\{\.Id\}\}' "\$container"\)/);
+  assert.match(recovery, /current_id != "\$container_id"/);
+  assert.ok(
+    recovery.indexOf('grep -Fxq "RUNNER_NAME=$expected_name"')
+      < recovery.indexOf('docker restart --time 45 "$container"'),
+  );
+  assert.doesNotMatch(recovery, /docker volume (?:rm|prune)|docker system prune/);
 });

@@ -1,0 +1,94 @@
+name: Recover One KVM8 GitHub Actions Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner service to restart after a lost session
+        required: true
+        type: choice
+        options:
+          - seemplify-worker
+          - workspace-worker
+          - control
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Hostinger SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  ConnectionAttempts 2\n  ConnectTimeout 20\n  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Recover exact runner container
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+          RUNNER_SERVICE: ${{ inputs.runner }}
+        run: |
+          case "$RUNNER_SERVICE" in
+            seemplify-worker)
+              container=github-actions-runner-seemplify-worker-1
+              expected_name=kvm8-seemplify-worker
+              ;;
+            workspace-worker)
+              container=github-actions-runner-workspace-worker-1
+              expected_name=kvm8-workspace-worker
+              ;;
+            control)
+              container=github-actions-runner-control-1
+              expected_name=kvm8-deploy-controller
+              ;;
+            *)
+              printf 'Unsupported runner service: %s\n' "$RUNNER_SERVICE" >&2
+              exit 2
+              ;;
+          esac
+
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" bash -s -- \
+            "$RUNNER_SERVICE" "$container" "$expected_name" <<'REMOTE'
+          set -euo pipefail
+          service=$1
+          container=$2
+          expected_name=$3
+          cd /opt/seemplify/github-actions-runner
+
+          current_id=$(docker compose -f compose.yml ps -q "$service")
+          container_id=$(docker inspect --format '{{.Id}}' "$container")
+          if [[ -z $current_id || $current_id != "$container_id" ]]; then
+            printf 'Refusing to recover a container outside the current runner stack.\n' >&2
+            exit 1
+          fi
+          if ! docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" \
+              | grep -Fxq "RUNNER_NAME=$expected_name"; then
+            printf 'Refusing to recover a container with an unexpected runner identity.\n' >&2
+            exit 1
+          fi
+
+          docker restart --time 45 "$container" >/dev/null
+          for attempt in $(seq 1 30); do
+            if [[ $(docker inspect --format '{{.State.Running}}' "$container") == true ]]; then
+              printf 'recovered_runner=%s\n' "$expected_name"
+              exit 0
+            fi
+            sleep 2
+          done
+          printf 'Runner did not return to the running state: %s\n' "$expected_name" >&2
+          exit 1
+          REMOTE
