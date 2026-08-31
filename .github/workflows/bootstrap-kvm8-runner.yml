@@ -19,6 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate isolated runner stack
+        run: node --test deploy/hostinger/github-runner/runner-contract.test.mjs
+
       - name: Configure Hostinger SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
@@ -70,18 +73,28 @@ jobs:
           rm -f /tmp/kvm8-github-runner.tgz /tmp/kvm8-github-runner.env
 
           printf 'KVM8 capacity before runner install:\n'
-          nproc
+          cpu_count=$(nproc)
+          memory_kib=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+          available_kib=$(df -Pk /opt | awk 'NR == 2 { print $4 }')
+          printf 'cpus=%s memory_kib=%s opt_available_kib=%s\n' \
+            "$cpu_count" "$memory_kib" "$available_kib"
+          if (( cpu_count < 8 || memory_kib < 24000000 || available_kib < 40000000 )); then
+            printf 'KVM8 lacks the required capacity for two isolated build workers.\n' >&2
+            exit 1
+          fi
           free -h
           df -h / /opt
           docker stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}' || true
 
           cd "$target"
           docker compose --env-file .env -f compose.yml config --quiet
-          docker compose --env-file .env -f compose.yml up -d --build
+          docker compose --env-file .env -f compose.yml up -d --build --remove-orphans
 
           for attempt in $(seq 1 30); do
             if docker compose -f compose.yml ps --status running --services \
-                | grep -qx worker \
+                | grep -qx seemplify-worker \
+              && docker compose -f compose.yml ps --status running --services \
+                | grep -qx workspace-worker \
               && docker compose -f compose.yml ps --status running --services \
                 | grep -qx control; then
               break
@@ -102,7 +115,7 @@ jobs:
           sleep 5
 
           docker compose -f compose.yml ps
-          docker inspect kvm8-shared-worker kvm8-deploy-controller \
+          docker inspect kvm8-seemplify-worker kvm8-workspace-worker kvm8-deploy-controller \
             --format '{{.Name}} NanoCPUs={{.HostConfig.NanoCpus}} Memory={{.HostConfig.Memory}} MemoryReservation={{.HostConfig.MemoryReservation}} MemorySwap={{.HostConfig.MemorySwap}} CpuShares={{.HostConfig.CpuShares}} PidsLimit={{.HostConfig.PidsLimit}}' \
             2>/dev/null || docker compose -f compose.yml ps -q \
               | xargs -r docker inspect \

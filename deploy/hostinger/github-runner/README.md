@@ -1,16 +1,24 @@
-# Shared KVM8 GitHub Actions runners
+# Dedicated KVM8 GitHub Actions runners
 
-This stack provides two organization-scoped runners without mounting the host
+This stack provides three organization-scoped runners without mounting the host
 Docker socket or any Seemplify production directory:
 
-- `dewinsight-kvm8`: the single-concurrency build/deployment worker, capped at
-  3 vCPU and 6 GB RAM.
+- `dewinsight-kvm8` / `dewinsight-kvm8-seemplify`: the dedicated Seemplify
+  build/deployment worker, capped at 3 vCPU and 6 GB RAM. The original label is
+  retained so existing Seemplify workflows remain compatible.
+- `dewinsight-kvm8-workspace`: the dedicated Workspace build/deployment worker,
+  capped at 3 vCPU and 6 GB RAM. Workspace jobs use only this label.
 - `dewinsight-kvm8-control`: the low-resource orchestrator used only by the
   `Deploy All Seemplify Apps` workflow. Keeping it separate prevents the
-  orchestrator from occupying the sole worker while it waits for deployments.
+  orchestrator from occupying either build worker while it waits for deployments.
 
-The limits are ceilings, not reservations. When idle, only the runner listener
-processes remain. No CPU or memory reservation is configured.
+CRM remains isolated on its existing KVM2 runner with the
+`dewinsight-kvm2-crm` label. This gives CRM, Seemplify, and Workspace independent
+job slots, while the deploy controller remains a fourth orchestration-only slot.
+
+The limits are ceilings, not reservations. The two build workers can execute at
+the same time, but each is independently constrained. When idle, only the runner
+listener processes remain. No CPU or memory reservation is configured.
 
 ## Registration
 
@@ -24,7 +32,8 @@ processes remain. No CPU or memory reservation is configured.
    docker compose --env-file .env -f compose.yml up -d --build
    ```
 
-4. Confirm that both runners are online, then remove `RUNNER_TOKEN` from `.env`.
+4. Confirm that all three KVM8 runners are online, then remove `RUNNER_TOKEN`
+   from `.env`.
    The persisted runner volumes allow normal restarts and Compose updates
    without the token. A new token is required only if a runner volume is lost.
 

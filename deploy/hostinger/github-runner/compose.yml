@@ -1,5 +1,5 @@
 services:
-  worker:
+  seemplify-worker:
     build:
       context: .
     image: dewinsight/actions-runner:2.336.0
@@ -7,11 +7,43 @@ services:
     environment:
       RUNNER_URL: https://github.com/Dewinsight
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
-      RUNNER_NAME: kvm8-shared-worker
-      RUNNER_LABELS: dewinsight-kvm8
+      RUNNER_NAME: kvm8-seemplify-worker
+      # Keep the established label for backwards-compatible Seemplify jobs;
+      # Workspace uses its own non-overlapping label below.
+      RUNNER_LABELS: dewinsight-kvm8,dewinsight-kvm8-seemplify
       RUNNER_GROUP: ${RUNNER_GROUP:-kvm8-shared}
     volumes:
-      - worker-state:/runner
+      - seemplify-worker-state:/runner
+    cpus: 3.0
+    cpu_shares: 256
+    mem_limit: 6g
+    memswap_limit: 6g
+    pids_limit: 2048
+    oom_score_adj: 500
+    stop_grace_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 6G
+          pids: 2048
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  workspace-worker:
+    build:
+      context: .
+    image: dewinsight/actions-runner:2.336.0
+    restart: unless-stopped
+    environment:
+      RUNNER_URL: https://github.com/Dewinsight
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_NAME: kvm8-workspace-worker
+      RUNNER_LABELS: dewinsight-kvm8-workspace
+      RUNNER_GROUP: ${RUNNER_GROUP:-kvm8-shared}
+    volumes:
+      - workspace-worker-state:/runner
     cpus: 3.0
     cpu_shares: 256
     mem_limit: 6g
@@ -60,5 +92,6 @@ services:
         delay: 5s
 
 volumes:
-  worker-state:
+  seemplify-worker-state:
+  workspace-worker-state:
   control-state:
