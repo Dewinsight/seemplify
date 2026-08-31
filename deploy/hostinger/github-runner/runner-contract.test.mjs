@@ -13,6 +13,7 @@ const validationPath = resolve(repositoryRoot, '.github', 'workflows', 'validate
 const inspectionPath = resolve(repositoryRoot, '.github', 'workflows', 'inspect-kvm8-runners.yml');
 const retirementPath = resolve(repositoryRoot, '.github', 'workflows', 'retire-legacy-kvm8-runners.yml');
 const recoveryPath = resolve(repositoryRoot, '.github', 'workflows', 'recover-kvm8-runner.yml');
+const reregistrationPath = resolve(repositoryRoot, '.github', 'workflows', 'reregister-kvm8-runner.yml');
 const entrypointPath = resolve(runnerDirectory, 'entrypoint.sh');
 
 const composeResult = spawnSync(
@@ -29,6 +30,7 @@ const validation = readFileSync(validationPath, 'utf8');
 const inspection = readFileSync(inspectionPath, 'utf8');
 const retirement = readFileSync(retirementPath, 'utf8');
 const recovery = readFileSync(recoveryPath, 'utf8');
+const reregistration = readFileSync(reregistrationPath, 'utf8');
 const entrypoint = readFileSync(entrypointPath, 'utf8');
 
 test('dedicates independent constrained runners to Seemplify, Workspace, and deployment control', () => {
@@ -171,4 +173,17 @@ test('single-runner recovery validates compose and runner identities', () => {
       < recovery.indexOf('docker restart --time 45 "$container"'),
   );
   assert.doesNotMatch(recovery, /docker volume (?:rm|prune)|docker system prune/);
+});
+
+test('stale registration repair is guarded, scoped, and removes its token', () => {
+  assert.match(reregistration, /KVM8_RUNNER_REGISTRATION_TOKEN/);
+  assert.match(reregistration, /grep -Fq 'Runner.Worker run'/);
+  assert.match(
+    reregistration,
+    /rm -f -- \/runner\/\.runner \/runner\/\.credentials \/runner\/\.credentials_rsaparams/,
+  );
+  assert.match(reregistration, /\/opt\/runner-hooks\/cleanup-workspace\.sh/);
+  assert.match(reregistration, /: > \.repair\.env/);
+  assert.match(reregistration, /tokenless=true/);
+  assert.doesNotMatch(reregistration, /docker volume (?:rm|prune)|docker system prune/);
 });
