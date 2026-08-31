@@ -161,6 +161,34 @@ jobs:
             sleep 2
           done
 
+          retire_legacy_runner_container() {
+            local container=$1 expected_runner_name=$2 legacy_id current_id
+            if ! docker inspect "$container" >/dev/null 2>&1; then return; fi
+            legacy_id=$(docker inspect --format '{{.Id}}' "$container")
+            for service in seemplify-worker workspace-worker control; do
+              current_id=$(docker compose -f compose.yml ps -q "$service")
+              if [[ -n $current_id && $legacy_id == "$current_id" ]]; then
+                printf 'Refusing to retire a current runner container: %s\n' "$container" >&2
+                exit 1
+              fi
+            done
+            if ! docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" \
+                | grep -Fxq "RUNNER_NAME=$expected_runner_name"; then
+              printf 'Refusing to retire a container with an unexpected runner identity: %s\n' \
+                "$container" >&2
+              exit 1
+            fi
+            docker stop --time 45 "$container" >/dev/null
+            docker rm "$container" >/dev/null
+            printf 'retired_legacy_runner=%s\n' "$expected_runner_name"
+          }
+
+          # These exact containers belong to the superseded two-service stack.
+          # Retain its volumes for rollback, but prevent duplicate listeners from
+          # contending with the new durable runner identities.
+          retire_legacy_runner_container github-runner-worker-1 kvm8-shared-worker
+          retire_legacy_runner_container github-runner-control-1 kvm8-deploy-controller
+
           docker compose -f compose.yml ps
           docker inspect kvm8-seemplify-worker kvm8-workspace-worker kvm8-deploy-controller \
             --format '{{.Name}} NanoCPUs={{.HostConfig.NanoCpus}} Memory={{.HostConfig.Memory}} MemoryReservation={{.HostConfig.MemoryReservation}} MemorySwap={{.HostConfig.MemorySwap}} CpuShares={{.HostConfig.CpuShares}} PidsLimit={{.HostConfig.PidsLimit}}' \

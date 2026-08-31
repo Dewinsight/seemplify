@@ -79,6 +79,20 @@ test('bootstrap fails before mutation on insufficient capacity and verifies ever
       > bootstrap.indexOf(': > .env'),
     'the tokenless restart must be verified after the registration token is removed',
   );
+  assert.match(
+    bootstrap,
+    /retire_legacy_runner_container github-runner-worker-1 kvm8-shared-worker/,
+  );
+  assert.match(
+    bootstrap,
+    /retire_legacy_runner_container github-runner-control-1 kvm8-deploy-controller/,
+  );
+  assert.ok(
+    bootstrap.indexOf('grep -Fxq "RUNNER_NAME=$expected_runner_name"')
+      < bootstrap.indexOf('docker stop --time 45 "$container"'),
+    'legacy retirement must verify the exact runner identity before stopping a container',
+  );
+  assert.doesNotMatch(bootstrap, /docker volume (?:rm|prune)/);
 });
 
 test('entrypoint repairs partial registration without accepting incomplete credentials', () => {
