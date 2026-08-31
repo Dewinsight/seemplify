@@ -9,6 +9,7 @@ const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, '..', '..', '..');
 const composePath = resolve(runnerDirectory, 'compose.yml');
 const bootstrapPath = resolve(repositoryRoot, '.github', 'workflows', 'bootstrap-kvm8-runner.yml');
+const validationPath = resolve(repositoryRoot, '.github', 'workflows', 'validate-self-hosted-runner-pool.yml');
 const entrypointPath = resolve(runnerDirectory, 'entrypoint.sh');
 
 const composeResult = spawnSync(
@@ -21,6 +22,7 @@ if (composeResult.status !== 0) {
 }
 const compose = JSON.parse(composeResult.stdout);
 const bootstrap = readFileSync(bootstrapPath, 'utf8');
+const validation = readFileSync(validationPath, 'utf8');
 const entrypoint = readFileSync(entrypointPath, 'utf8');
 
 test('dedicates independent constrained runners to Seemplify, Workspace, and deployment control', () => {
@@ -89,4 +91,14 @@ test('entrypoint repairs partial registration without accepting incomplete crede
     entrypoint.indexOf('rm -f -- .runner .credentials .credentials_rsaparams')
       < entrypoint.indexOf('./config.sh "${config_args[@]}"'),
   );
+});
+
+test('live pool validation targets each isolated label and exact cgroup ceiling', () => {
+  assert.match(validation, /runs-on: dewinsight-kvm8-seemplify/);
+  assert.match(validation, /runs-on: dewinsight-kvm8-workspace/);
+  assert.match(validation, /runs-on: dewinsight-kvm8-control/);
+  assert.equal((validation.match(/300000 100000/g) || []).length, 2);
+  assert.equal((validation.match(/6442450944/g) || []).length, 2);
+  assert.match(validation, /50000 100000/);
+  assert.match(validation, /1073741824/);
 });

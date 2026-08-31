@@ -1,0 +1,44 @@
+name: Validate Self-hosted Runner Pool
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seemplify:
+    name: Validate Seemplify worker
+    runs-on: dewinsight-kvm8-seemplify
+    timeout-minutes: 5
+    steps:
+      - name: Verify isolated resource ceiling
+        run: |
+          set -euo pipefail
+          test "$(cat /sys/fs/cgroup/cpu.max)" = '300000 100000'
+          test "$(cat /sys/fs/cgroup/memory.max)" = '6442450944'
+          test "${RUNNER_NAME:-}" = kvm8-seemplify-worker
+
+  workspace:
+    name: Validate Workspace worker
+    runs-on: dewinsight-kvm8-workspace
+    timeout-minutes: 5
+    steps:
+      - name: Verify isolated resource ceiling
+        run: |
+          set -euo pipefail
+          test "$(cat /sys/fs/cgroup/cpu.max)" = '300000 100000'
+          test "$(cat /sys/fs/cgroup/memory.max)" = '6442450944'
+          test "${RUNNER_NAME:-}" = kvm8-workspace-worker
+
+  control:
+    name: Validate deploy controller
+    runs-on: dewinsight-kvm8-control
+    timeout-minutes: 5
+    steps:
+      - name: Verify orchestration-only resource ceiling
+        run: |
+          set -euo pipefail
+          test "$(cat /sys/fs/cgroup/cpu.max)" = '50000 100000'
+          test "$(cat /sys/fs/cgroup/memory.max)" = '1073741824'
+          test "${RUNNER_NAME:-}" = kvm8-deploy-controller
