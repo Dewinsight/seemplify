@@ -248,6 +248,27 @@
       "token_endpoint_auth_method": "client_secret_basic"
     },
     {
+      "client_id": "messaging-local",
+      "redirect_uri_patterns": [
+        "http://localhost:3333/api/auth/oidc/callback",
+        "http://127.0.0.1:3333/api/auth/oidc/callback"
+      ],
+      "allowed_origins": [
+        "http://localhost:3333",
+        "http://localhost:4200",
+        "http://127.0.0.1:3333",
+        "http://127.0.0.1:4200"
+      ],
+      "response_types": [
+        "code"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "token_endpoint_auth_method": "none"
+    },
+    {
       "client_id": "community",
       "client_secret": "community-development-secret",
       "redirect_uri_patterns": [

@@ -40,6 +40,20 @@ test('Workspace is a launchable IDP app with the stable messaging callback', asy
   assert.notEqual(getOidcLaunchApiUrl(app, 'https://api.seemplifyai.com'), 'https://api.seemplifyai.com')
 })
 
+test('local Workspace uses a loopback-only public client protected by PKCE', async () => {
+  const clients = JSON.parse(await readFile(new URL('../clients.json', import.meta.url), 'utf8')).clients
+  const client = clients.find(item => item.client_id === 'messaging-local')
+
+  assert.ok(client)
+  assert.equal(client.token_endpoint_auth_method, 'none')
+  assert.equal('client_secret' in client, false)
+  assert.deepEqual(client.redirect_uri_patterns, [
+    'http://localhost:3333/api/auth/oidc/callback',
+    'http://127.0.0.1:3333/api/auth/oidc/callback'
+  ])
+  assert.equal(client.redirect_uri_patterns.some(uri => uri.startsWith('https://')), false)
+})
+
 test('Workspace OIDC client secret is supplied by the deployment environment', () => {
   const clients = [
     { client_id: 'messaging', client_secret: 'development-placeholder' },
@@ -142,12 +156,18 @@ test('production Community stays dormant until its complete protected configurat
 test('production client generation omits dormant Community and resolves its protected secret when enabled', () => {
   const clients = [
     { client_id: 'messaging', client_secret: 'development-workspace-secret' },
+    {
+      client_id: 'messaging-local',
+      token_endpoint_auth_method: 'none',
+      redirect_uri_patterns: ['http://localhost:3333/api/auth/oidc/callback']
+    },
     { client_id: 'community', client_secret: 'development-community-secret' }
   ]
   const dormant = materializeProductionOidcClients(clients, {
     messaging: 'protected-workspace-secret'
   })
-  assert.deepEqual(dormant.map(client => client.client_id), ['messaging'])
+  assert.deepEqual(dormant.map(client => client.client_id), ['messaging', 'messaging-local'])
+  assert.equal('client_secret' in dormant.find(client => client.client_id === 'messaging-local'), false)
 
   const protectedCommunitySecret = 'test-only-protected-community-value'
   const enabled = materializeProductionOidcClients(clients, {

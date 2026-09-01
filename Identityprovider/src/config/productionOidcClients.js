@@ -1,7 +1,8 @@
 /**
  * Build the production client catalog from protected deployment secrets.
- * Clients without a non-empty secret are omitted so development placeholders
- * can never leak into a generated production configuration.
+ * Confidential clients without a non-empty secret are omitted so development
+ * placeholders can never leak into production. Explicit public clients use
+ * PKCE and carry no client secret.
  */
 export function materializeProductionOidcClients(clients = [], secrets = {}) {
   const secretByClient = new Map(
@@ -11,8 +12,12 @@ export function materializeProductionOidcClients(clients = [], secrets = {}) {
   )
 
   return (Array.isArray(clients) ? clients : [])
-    .filter(client => secretByClient.has(client?.client_id))
+    .filter(client => (
+      client?.token_endpoint_auth_method === 'none'
+      || secretByClient.has(client?.client_id)
+    ))
     .map(client => {
+      const publicClient = client.token_endpoint_auth_method === 'none'
       const productionBoundary = client.client_id === 'n8n-workspace-node'
         ? {
             redirect_uri_patterns: [
@@ -21,6 +26,11 @@ export function materializeProductionOidcClients(clients = [], secrets = {}) {
             allowed_origins: ['https://automations.seemplifyai.com']
           }
         : {}
+      if (publicClient) {
+        const publicDefinition = { ...client }
+        delete publicDefinition.client_secret
+        return { ...publicDefinition, ...productionBoundary }
+      }
       return {
         ...client,
         ...productionBoundary,
