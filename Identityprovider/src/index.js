@@ -31,6 +31,7 @@ import {
   resolveAutomationHubSurface
 } from './config/hubApps.js'
 import { getPlanFeatureKeyForApp } from './config/planFeatures.js'
+import { getN8nCandidateContext } from './utils/n8nCandidateAccess.js'
 import bcrypt from 'bcryptjs'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
@@ -3623,8 +3624,8 @@ async function getSessionFromCookies(req) {
   }
 }
 
-function getHubAppMetadata() {
-  const apps = getOrganizationManagedHubApps().map(app => ({
+function getHubAppMetadata(options = {}) {
+  const apps = getOrganizationManagedHubApps(options).map(app => ({
     appId: app.appId,
     name: app.name,
     description: app.description || ''
@@ -3637,11 +3638,11 @@ function getHubAppMetadata() {
   }
 }
 
-function getPinEligibleHubApps(req) {
+function getPinEligibleHubApps(req, candidateContext) {
   const hubBrand = getIdpBrand(req)
   const isAkwaIbomHub = hubBrand.name === 'Akwa Ibom State'
 
-  return getHubApps({ isAkwaIbom: isAkwaIbomHub })
+  return getHubApps({ isAkwaIbom: isAkwaIbomHub, candidateContext })
     .filter(app => app.appId !== 'lms')
     .flatMap(app => {
       if (app.appId !== 'smarthr') return [app]
@@ -3664,8 +3665,8 @@ function getPinEligibleHubApps(req) {
     })
 }
 
-function getKnownHubPinAppIdSet(req) {
-  return buildKnownHubPinAppIdSet(getPinEligibleHubApps(req))
+function getKnownHubPinAppIdSet(req, candidateContext) {
+  return buildKnownHubPinAppIdSet(getPinEligibleHubApps(req, candidateContext))
 }
 
 async function getVisibleHubPinAppIdSet(req, account, organization) {
@@ -3674,7 +3675,7 @@ async function getVisibleHubPinAppIdSet(req, account, organization) {
     || ''
   if (!currentOrgId || !organization) return new Set()
 
-  const pinEligibleApps = getPinEligibleHubApps(req)
+  const pinEligibleApps = getPinEligibleHubApps(req, getN8nCandidateContext(account, organization))
   const validAppIds = buildValidAppIdSet(pinEligibleApps)
   const member = organization.members?.find(item =>
     item?.status === 'active' && item?.account?.toString() === account._id.toString()
@@ -4096,6 +4097,7 @@ app.get('/api/hub/attendance-token', async (req, res) => {
 
 // Hub Homepage - Main app launcher (root route)
 app.get('/', async (req, res) => {
+  res.set('Cache-Control', 'private, no-store')
   try {
     // Check for authenticated session
     const sessionAccount = await getSessionFromCookies(req)
@@ -4131,9 +4133,10 @@ app.get('/', async (req, res) => {
       }
     })
 
-    const { appIdSet, appNameById } = getHubAppMetadata()
     const hasOrganizations = organizations.length > 0
     const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString()
+    const candidateContext = getN8nCandidateContext(account, userOrganizations.find(org => org._id?.toString() === currentOrgId))
+    const { appIdSet, appNameById } = getHubAppMetadata({ candidateContext })
     const currentSubscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account, {
       includePendingRequest: true
     })
@@ -4144,7 +4147,7 @@ app.get('/', async (req, res) => {
       appIdSet
     )
 
-    let apps = getPinEligibleHubApps(req)
+    let apps = getPinEligibleHubApps(req, candidateContext)
       .map(app => ({
         ...app,
         iconSvg: getAppIcon(app.icon)
@@ -4223,7 +4226,7 @@ app.get('/', async (req, res) => {
     const pinnedAppIds = resolveHubPinnedAppIds({
       account,
       organizationId: currentOrgId,
-      knownAppIds: getKnownHubPinAppIdSet(req),
+      knownAppIds: getKnownHubPinAppIdSet(req, candidateContext),
       visibleAppIds: visibleHubPinAppIds
     })
 
@@ -4651,7 +4654,16 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(buildInternalLoginRedirect(req.originalUrl || `/launch/${encodeURIComponent(appId)}`))
     }
 
-    app = getAppById(appId)
+    const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || null
+    // Preview changes availability only after a fresh canonical membership read.
+    // It never skips the member-assignment or subscription checks below.
+    const candidateOrganization = appId === 'automation-hub' && currentOrgId
+      ? await Organization.findById(currentOrgId)
+        .select('name members.account members.status members.appAccess')
+        .lean()
+      : null
+    const candidateContext = getN8nCandidateContext(account, candidateOrganization)
+    app = getAppById(appId, { candidateContext })
     if (!app || !app.isActive) {
       await logAppLaunchActivity({
         req,
@@ -4662,7 +4674,6 @@ app.get('/launch/:appId', async (req, res) => {
       return res.status(404).send('App not found')
     }
 
-    const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || null
     const organizationRequired = appRequiresOrganization(app)
     if (organizationRequired && !currentOrgId) {
       await logAppLaunchActivity({
@@ -4681,7 +4692,7 @@ app.get('/launch/:appId', async (req, res) => {
     const [currentSubscriptionAccess, currentOrganization] = organizationRequired
       ? await Promise.all([
         getCurrentOrganizationSubscriptionAccessState(account, { includeFeatures: true }),
-        Organization.findById(currentOrgId)
+        candidateOrganization || Organization.findById(currentOrgId)
           .select('name members.account members.status members.appAccess')
           .lean()
       ])
@@ -4700,7 +4711,7 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect('/?subscription=locked')
     }
 
-    const { appIdSet } = getHubAppMetadata()
+    const { appIdSet } = getHubAppMetadata({ candidateContext })
 
     const currentMember = currentOrganization?.members?.find(
       m => m?.status === 'active' && m?.account?.toString() === account._id.toString()
@@ -5191,7 +5202,7 @@ app.put('/api/hub/pins', getSessionUser, async (req, res) => {
       return res.status(403).json({ error: 'Organization membership is not active' })
     }
 
-    const knownAppIds = getKnownHubPinAppIdSet(req)
+    const knownAppIds = getKnownHubPinAppIdSet(req, getN8nCandidateContext(req.user, organization))
     const visibleAppIds = await getVisibleHubPinAppIdSet(req, req.user, organization)
     const pinnedAppIds = sanitizeHubPinnedAppIds(payloadValidation.pinnedAppIds, {
       knownAppIds,

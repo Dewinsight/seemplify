@@ -40,6 +40,8 @@ services:
       MESSAGING_URL: https://workspace.seemplifyai.com
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
       N8N_HUB_ENABLED: "${N8N_HUB_ENABLED:-false}"
+      N8N_CANDIDATE_ACCESS_JSON: ${N8N_CANDIDATE_ACCESS_JSON:-}
+      N8N_CANDIDATE_RELEASE_SHA: ${N8N_CANDIDATE_RELEASE_SHA:-}
       N8N_INTEGRATION_ENABLED: "${N8N_INTEGRATION_ENABLED:-false}"
       AUTOMATIONS_URL: ${AUTOMATIONS_URL:-https://automations.seemplifyai.com}
       WORKSPACE_AUTOMATIONS_URL: ${WORKSPACE_AUTOMATIONS_URL:-https://workspace.seemplifyai.com/automations?editor=standalone}

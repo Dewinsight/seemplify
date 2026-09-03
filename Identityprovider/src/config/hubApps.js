@@ -2,6 +2,7 @@
  * Hub Apps Configuration
  * Environment-aware app definitions for Identity Provider hub
  */
+import { hasN8nCandidateAccess } from '../utils/n8nCandidateAccess.js'
 
 // Determine environment from NODE_ENV
 const isProduction = process.env.NODE_ENV === 'production'
@@ -157,11 +158,21 @@ export function isCommunityProductionReady(env = process.env) {
  * Hub card and embedded editor use Workspace's organization-scoped exchange.
  */
 export function isN8nProductionReady(env = process.env) {
-  return environmentFlagEnabled(env.N8N_HUB_ENABLED) &&
-    environmentFlagEnabled(env.N8N_INTEGRATION_ENABLED) &&
+  return environmentFlagEnabled(env.N8N_HUB_ENABLED) && isN8nIntegrationReady(env)
+}
+
+function isN8nIntegrationReady(env = process.env) {
+  return environmentFlagEnabled(env.N8N_INTEGRATION_ENABLED) &&
     Boolean(getN8nEditorUrl(env)) &&
     Boolean(getWorkspaceAutomationLaunchUrl(env)) &&
     Boolean(String(env.N8N_WORKSPACE_NODE_OIDC_CLIENT_SECRET || '').trim())
+}
+
+/** Never mutate the static catalog or accept preview context from a request. */
+export function withN8nCandidateReadiness(app, options = {}, env = process.env, now = Date.now()) {
+  if (!app || app.appId !== 'automation-hub' || app.isActive) return app
+  if (!isN8nIntegrationReady(env) || !hasN8nCandidateAccess(options.candidateContext, env, now)) return app
+  return { ...app, isActive: true }
 }
 
 // Development apps configuration
@@ -599,7 +610,8 @@ const productionApps = [
  */
 export function getHubApps(options = {}) {
   const apps = isProduction ? productionApps : developmentApps
-  let filtered = apps.filter(app => app.isActive).sort((a, b) => a.order - b.order)
+  let filtered = apps.map(app => withN8nCandidateReadiness(app, options))
+    .filter(app => app.isActive).sort((a, b) => a.order - b.order)
 
   if (options.isAkwaIbom) {
     filtered = filtered.map(app => {
@@ -628,9 +640,9 @@ export function getAllHubApps() {
  * @param {string} appId - Application ID
  * @returns {Object|undefined} App configuration or undefined
  */
-export function getAppById(appId) {
+export function getAppById(appId, options = {}) {
   const apps = isProduction ? productionApps : developmentApps
-  return apps.find(app => app.appId === appId)
+  return withN8nCandidateReadiness(apps.find(app => app.appId === appId), options)
 }
 
 /**
