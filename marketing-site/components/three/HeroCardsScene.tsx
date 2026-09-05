@@ -108,8 +108,10 @@ function RecordCard({ record, index, angle, palette, spreadRef }: RecordCardProp
     // Staggered entrance: each card rises into place over the first second.
     const intro = easeOut(THREE.MathUtils.clamp((t - 0.15 - index * 0.09) / 1.1, 0, 1))
 
-    g.position.y = 0.16 * visible + Math.sin(t * 0.9 + angle * 3) * 0.035 - (1 - intro) * 0.6
-    g.scale.setScalar(0.88 + 0.12 * intro)
+    // The active card grows as it comes to the front (about 12% in 3D, plus the face's own 3% pop) and lifts a little more.
+    const grow = 1 + 0.12 * visible * visible
+    g.position.y = 0.2 * visible + Math.sin(t * 0.9 + angle * 3) * 0.035 - (1 - intro) * 0.6
+    g.scale.setScalar((0.88 + 0.12 * intro) * grow)
     // Fully hide cards that have turned away, so nothing reads mirrored through the front ones.
     dom.current.style.opacity = facing < 0.05 ? '0' : String((0.08 + visible * 0.92) * intro)
     dom.current.dataset.front = visible > 0.92 ? 'true' : 'false'
