@@ -15,7 +15,9 @@ import styles from '../LandingEffects.module.css'
  */
 
 const CARD_W = 2.3
-const CARD_H = 1.5
+// The slab matches the DOM face exactly (280x152 CSS px at the same scale), so it only shows as edge
+// thickness when a card turns, never as a rim behind it.
+const CARD_H = 2.3 * (152 / 280)
 const CARD_T = 0.05
 const RING_RADIUS = 3.3
 const DOM_WIDTH = 280
@@ -63,8 +65,8 @@ interface Palette {
 }
 
 const PALETTES: Record<MarketingTheme, Palette> = {
-  light: { slab: '#ffffff', shadow: '#312d39', shadowOpacity: 0.42, keyLight: '#ffffff' },
-  dark: { slab: '#221e2c', shadow: '#000000', shadowOpacity: 0.34, keyLight: '#e6dfff' },
+  light: { slab: '#ffffff', shadow: '#312d39', shadowOpacity: 0.3, keyLight: '#ffffff' },
+  dark: { slab: '#18161f', shadow: '#000000', shadowOpacity: 0.45, keyLight: '#e6dfff' },
 }
 
 interface RecordCardProps {
@@ -116,7 +118,7 @@ function RecordCard({ record, index, angle, palette, spreadRef }: RecordCardProp
 
   return (
     <group ref={group}>
-      <RoundedBox args={[CARD_W, CARD_H, CARD_T]} radius={0.07} smoothness={6}>
+      <RoundedBox args={[CARD_W, CARD_H, CARD_T]} radius={0.08} smoothness={6}>
         <meshStandardMaterial ref={material} color={palette.slab} roughness={0.85} metalness={0} transparent />
       </RoundedBox>
       <Html
@@ -267,7 +269,7 @@ export default function HeroCardsScene({ active = true, theme = 'light', compact
         <Carousel palette={palette} spreadRef={spreadRef} hoverRef={hoverRef} dragRef={dragRef} />
       </group>
 
-      <ContactShadows position={[0, (0.82 - CARD_H / 2 - 0.22) * WORLD, 0]} opacity={palette.shadowOpacity} scale={12 * WORLD} blur={3.2} far={3 * WORLD} color={palette.shadow} />
+      <ContactShadows position={[0, (0.82 - CARD_H / 2 - 0.12) * WORLD, 0]} opacity={palette.shadowOpacity} scale={12 * WORLD} blur={4} far={3 * WORLD} color={palette.shadow} />
 
       <Environment resolution={128}>
         <Lightformer form="circle" intensity={light ? 1.2 : 1.6} color="#ffffff" position={[-3, 5, 4]} scale={3} />
