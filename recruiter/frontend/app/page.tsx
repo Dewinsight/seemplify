@@ -29,7 +29,7 @@ import SpotlightCard from '@/components/landing/motion/SpotlightCard';
 import BorderBeam from '@/components/landing/motion/BorderBeam';
 import SignalStats from '@/components/landing/sections/SignalStats';
 import CapabilityMarquee from '@/components/landing/sections/CapabilityMarquee';
-import GlobeSection from '@/components/landing/sections/GlobeSection';
+import SchedulingSection from '@/components/landing/sections/SchedulingSection';
 import {
   BarChartIcon, BriefcaseIcon, CalendarIcon, ChartPieIcon, CpuIcon, ShieldCheckIcon, UsersIcon, ZapIcon,
 } from '@/components/landing/icons/AnimatedIcons';
@@ -704,8 +704,8 @@ export default function LandingPage() {
         </div>
       </section>
       
-      {/* Time-zone globe (cobe) */}
-      <GlobeSection />
+      {/* Interview scheduling across time zones (3D board) */}
+      <SchedulingSection />
 
       {/* How It Works Section - Redesigned */}
       <HowItWorksSection />

@@ -6,18 +6,33 @@ import { motion, useReducedMotion, useScroll } from 'framer-motion';
 import { Award, ChartPie, Radar } from 'lucide-react';
 import BorderBeam from '@/components/landing/motion/BorderBeam';
 
-/** Static stand-in: SSR, reduced motion, or no WebGL. Same silhouette so the layout never jumps. */
+/** Static stand-in: SSR, reduced motion, or no WebGL. A paper stack and a score chip, in CSS only. */
 function HeroPoster() {
   return (
-    <div className="absolute inset-0 flex items-center justify-center" aria-hidden>
-      <div className="h-64 w-64 rounded-full bg-gradient-to-br from-blue-500/40 via-purple-500/40 to-pink-500/30 blur-3xl" />
-      <div className="absolute h-44 w-44 rotate-12 rounded-[28%] border border-white/15 bg-white/[0.04]" />
+    <div className="absolute inset-0" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="absolute left-[16%] top-[26%] h-[48%] w-[34%] rounded-[3px] border border-[color:var(--marketing-line)] bg-[color:var(--marketing-surface)]"
+          style={{ transform: `rotate(${(i - 1) * 7}deg) translate(${i * 3}px, ${i * 5}px)`, boxShadow: 'var(--marketing-shadow)' }}
+        >
+          <div className="mx-[12%] mt-[14%] h-[6%] w-[52%] rounded-full bg-[color:var(--marketing-brand)] opacity-70" />
+          <div className="mx-[12%] mt-[8%] h-[4%] w-[70%] rounded-full bg-[color:var(--marketing-surface-sunken)]" />
+          <div className="mx-[12%] mt-[5%] h-[4%] w-[60%] rounded-full bg-[color:var(--marketing-surface-sunken)]" />
+        </div>
+      ))}
+      <div
+        className="absolute right-[14%] top-[34%] rounded-full px-4 py-2 text-sm font-semibold"
+        style={{ background: 'var(--marketing-brand)', color: 'var(--marketing-canvas)', boxShadow: 'var(--marketing-shadow)' }}
+      >
+        95% match
+      </div>
     </div>
   );
 }
 
 // three.js + R3F only load in the browser, after hydration.
-const RecordCarouselScene = dynamic(() => import('./RecordCarouselScene'), { ssr: false, loading: () => <HeroPoster /> });
+const ShortlistScene = dynamic(() => import('./ShortlistScene'), { ssr: false, loading: () => <HeroPoster /> });
 
 function supportsWebGL() {
   try {
@@ -32,8 +47,8 @@ const chip =
   'absolute overflow-hidden rounded-xl border border-white/15 bg-slate-900/70 px-4 py-3 shadow-xl shadow-black/30 backdrop-blur-md';
 
 /**
- * The hero's 3D stage: one candidate's record carried through every stage of
- * the Recruiter pipeline, with the live chips floating over it.
+ * The hero's 3D stage: a pile of CVs read by the AI, with the strongest five
+ * rising into a ranked shortlist — and the live chips floating over it.
  */
 export default function HeroVisual() {
   const reduceMotion = useReducedMotion();
@@ -44,7 +59,7 @@ export default function HeroVisual() {
   const [compact, setCompact] = useState(false);
   const [inView, setInView] = useState(false);
 
-  // 0 while the hero is fully in view, 1 once it has scrolled away — the carousel spreads with it.
+  // 0 while the hero is fully in view, 1 once it has scrolled away — the set sinks with it.
   const { scrollYProgress } = useScroll({ target: wrapRef, offset: ['start start', 'end start'] });
   useEffect(
     () =>
@@ -72,6 +87,7 @@ export default function HeroVisual() {
     <div
       ref={wrapRef}
       className="relative mx-auto aspect-square w-full max-w-[560px] overflow-hidden rounded-2xl border border-white/15 md:max-w-none"
+      style={{ background: 'radial-gradient(120% 85% at 28% 8%, #e9e1ff 0%, #f6f3ee 52%, #efece5 100%)' }}
       onPointerEnter={() => {
         hoverRef.current = true;
       }}
@@ -80,7 +96,7 @@ export default function HeroVisual() {
       }}
     >
       <div className="absolute inset-0" aria-hidden>
-        {canRender ? <RecordCarouselScene active={inView} compact={compact} spreadRef={spreadRef} hoverRef={hoverRef} /> : <HeroPoster />}
+        {canRender ? <ShortlistScene active={inView} compact={compact} spreadRef={spreadRef} hoverRef={hoverRef} /> : <HeroPoster />}
       </div>
 
       <motion.div

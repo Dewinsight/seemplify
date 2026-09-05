@@ -2,8 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Clock, Globe2 } from 'lucide-react';
-import HiringGlobe from '@/components/landing/globe/HiringGlobe';
-import BorderBeam from '@/components/landing/motion/BorderBeam';
+import SchedulerVisual from '@/components/landing/three/SchedulerVisual';
 import { CalendarIcon, UsersIcon, ZapIcon } from '@/components/landing/icons/AnimatedIcons';
 
 // 13:00 UTC — the same instant in three places a Lagos-based team actually schedules across.
@@ -31,7 +30,7 @@ const POINTS = [
   },
 ];
 
-export default function GlobeSection() {
+export default function SchedulingSection() {
   return (
     <section id="global-hiring" className="relative z-10 container mx-auto px-4 py-20 md:py-28">
       <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
@@ -80,16 +79,14 @@ export default function GlobeSection() {
 
         <motion.div
           className="relative mx-auto w-full max-w-[520px]"
-          initial={{ opacity: 0, scale: 0.9 }}
-          whileInView={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, y: 28 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-10% 0px' }}
           transition={{ duration: 0.8 }}
         >
-          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-500/25 via-purple-500/20 to-cyan-400/20 blur-3xl" />
-          <HiringGlobe className="relative" theme="light" />
+          <SchedulerVisual />
 
-          <div className="absolute -bottom-4 left-1/2 w-[calc(100%-1rem)] max-w-sm -translate-x-1/2 overflow-hidden rounded-xl border border-white/15 bg-slate-900/80 p-3 shadow-2xl backdrop-blur-md">
-            <BorderBeam size={90} duration={8} colorFrom="#67e8f9" colorTo="#a855f7" />
+          <div className="mt-4 rounded-xl border border-white/15 bg-slate-900/80 p-3">
             <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
               <Clock className="h-3.5 w-3.5" />
               Panel interview · same moment, three clocks
