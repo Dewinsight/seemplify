@@ -20,8 +20,11 @@ const CARD_H = 1.5
 const CARD_T = 0.05
 const RING_RADIUS = 3.3
 const DOM_WIDTH = 280
+// The face is laid out at twice its design size (see .recordCard zoom) so the compositor downsamples it
+// to the ~360px it occupies on screen instead of upscaling a 280px raster, which read as blur.
+const DOM_ZOOM = 2
 // drei maps 1 CSS px to (distanceFactor / 400) world units in transform mode.
-const DISTANCE_FACTOR = (CARD_W / DOM_WIDTH) * 400
+const DISTANCE_FACTOR = (CARD_W / (DOM_WIDTH * DOM_ZOOM)) * 400
 // The carousel is authored in small units but rendered 100x larger. drei's transform mode treats one world
 // unit as one CSS pixel at the perspective plane, so a tiny world sits a few pixels from the eye and is
 // magnified ~150x; Chrome's sub-pixel snapping of the overlay then shows up as the DOM faces drifting off
@@ -262,7 +265,7 @@ export default function HeroCardsScene({ active = true, theme = 'light', compact
       <ambientLight intensity={light ? 1.1 : 0.6} />
       <directionalLight position={[3, 6, 4]} intensity={light ? 1.5 : 1.1} color={palette.keyLight} />
 
-      <SilkPlane color={palette.silk} lightMode={light} speed={2.2} scale={1.1} rotation={0.4} noiseIntensity={light ? 0.45 : 0.3} depth={9 * WORLD} />
+      <SilkPlane color={palette.silk} lightMode={light} speed={light ? 2.2 : 1.5} scale={1.1} rotation={0.4} noiseIntensity={light ? 0.45 : 0.25} opacity={light ? 1 : 0.8} depth={9 * WORLD} />
 
       <group scale={WORLD}>
         <Carousel palette={palette} spreadRef={spreadRef} hoverRef={hoverRef} dragRef={dragRef} />

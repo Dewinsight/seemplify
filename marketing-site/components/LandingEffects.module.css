@@ -75,6 +75,8 @@
 /* ---------- hero record cards (DOM faces on 3D slabs) ---------- */
 
 .recordCard {
+  /* Laid out at 2x and mapped back to size in 3D, so the raster is downsampled and stays crisp. */
+  zoom: 2;
   box-sizing: border-box;
   display: grid;
   gap: 10px;

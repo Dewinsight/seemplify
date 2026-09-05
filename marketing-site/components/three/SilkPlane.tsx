@@ -59,7 +59,9 @@ void main() {
                            sin(20.0 * (tex.x + tex.y - 0.1 * tOffset)));
 
   float grain = rnd / 15.0 * uNoiseIntensity;
-  vec3 result = uColor * pattern - vec3(grain);
+  // Dark mode: a quiet fold between 45% and 80% of the base colour, no bright peaks.
+  float darkFold = smoothstep(0.2, 1.0, pattern);
+  vec3 result = mix(uColor * 0.45, uColor * 0.8, darkFold) - vec3(grain * 0.5);
   if (uLightMode > 0.5) {
     float fold = smoothstep(0.28, 0.9, pattern);
     float specular = smoothstep(0.8, 0.995, pattern);
