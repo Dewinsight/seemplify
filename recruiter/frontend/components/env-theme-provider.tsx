@@ -1,63 +1,41 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
-import { ThemeProvider as NextThemesProvider, useTheme } from 'next-themes';
-import { readThemePreference, syncThemeToCookie } from '@/lib/theme-sync';
-import { getEffectiveTheme } from '@/utils/themeConfig';
+import React, { useEffect } from 'react';
+import { ThemeProvider as NextThemesProvider } from 'next-themes';
+import { applyRecruiterTheme, RECRUITER_THEME } from '@/lib/theme-sync';
 
 interface ConfigThemeProviderProps {
   children: React.ReactNode;
   attribute?: string;
-  enableSystem?: boolean;
   disableTransitionOnChange?: boolean;
 }
 
 function ThemeEnforcer({ children }: { children: React.ReactNode }) {
-  const { theme, resolvedTheme, setTheme } = useTheme();
-  const readyToPersist = useRef(false);
-
   useEffect(() => {
-    const sharedTheme = getEffectiveTheme(readThemePreference());
-    // Promote a valid legacy/local preference into the shared cookie immediately.
-    // The RAF guard below still prevents next-themes' initial value from overwriting it.
-    syncThemeToCookie(sharedTheme);
-    if (sharedTheme !== theme) setTheme(sharedTheme);
-    const frame = window.requestAnimationFrame(() => {
-      readyToPersist.current = true;
+    const enforceLightTheme = () => {
+      const root = document.documentElement;
+      if (
+        root.classList.contains('dark') ||
+        !root.classList.contains(RECRUITER_THEME) ||
+        root.dataset.theme !== RECRUITER_THEME ||
+        root.dataset.themePreference !== RECRUITER_THEME ||
+        root.style.colorScheme !== RECRUITER_THEME
+      ) {
+        applyRecruiterTheme();
+      }
+    };
+
+    enforceLightTheme();
+    const observer = new MutationObserver(enforceLightTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'data-theme', 'data-theme-preference', 'style'],
     });
-    return () => window.cancelAnimationFrame(frame);
-    // Read the cross-app preference once before persistence is enabled.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  useEffect(() => {
-    if (!readyToPersist.current || !theme) return;
-    const effectiveTheme = getEffectiveTheme(theme);
-    if (effectiveTheme !== theme) {
-      setTheme(effectiveTheme);
-      return;
-    }
-    syncThemeToCookie(theme);
-  }, [setTheme, theme]);
-
-  useEffect(() => {
-    if (!resolvedTheme) return;
-    document.documentElement.dataset.theme = resolvedTheme;
-    document.documentElement.style.colorScheme = resolvedTheme;
-  }, [resolvedTheme]);
-
-  useEffect(() => {
-    const syncFromSharedPreference = () => {
-      const sharedTheme = getEffectiveTheme(readThemePreference());
-      if (sharedTheme !== theme) setTheme(sharedTheme);
-    };
-    window.addEventListener('focus', syncFromSharedPreference);
-    document.addEventListener('visibilitychange', syncFromSharedPreference);
     return () => {
-      window.removeEventListener('focus', syncFromSharedPreference);
-      document.removeEventListener('visibilitychange', syncFromSharedPreference);
+      observer.disconnect();
     };
-  }, [setTheme, theme]);
+  }, []);
 
   return <>{children}</>;
 }
@@ -65,15 +43,15 @@ function ThemeEnforcer({ children }: { children: React.ReactNode }) {
 export function ConfigThemeProvider({
   children,
   attribute = 'class',
-  enableSystem = true,
   disableTransitionOnChange = true,
 }: ConfigThemeProviderProps) {
   return (
     <NextThemesProvider
       attribute={attribute as 'class'}
-      defaultTheme="system"
+      defaultTheme={RECRUITER_THEME}
+      forcedTheme={RECRUITER_THEME}
       storageKey="seemplify_theme"
-      enableSystem={enableSystem}
+      enableSystem={false}
       disableTransitionOnChange={disableTransitionOnChange}
     >
       <ThemeEnforcer>{children}</ThemeEnforcer>

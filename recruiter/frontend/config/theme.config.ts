@@ -23,14 +23,17 @@ export interface ThemeSettings {
  * - At least one theme must be enabled
  * - Default theme must be one of the enabled themes
  */
+// Temporary product boundary: Recruiter is light-only until its internal
+// surfaces have complete dark-theme coverage. Keep the suite-wide preference
+// untouched so other Seemplify products can continue to honour it.
 export const THEME_CONFIG: ThemeSettings = {
   // Theme Availability
   lightEnabled: true,
-  darkEnabled: true,
-  systemEnabled: true,
+  darkEnabled: false,
+  systemEnabled: false,
   
   // Default Theme (must be enabled above)
-  defaultTheme: 'system'
+  defaultTheme: 'light'
 };
 
 /**

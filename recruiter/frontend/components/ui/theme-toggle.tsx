@@ -5,6 +5,7 @@ import { Monitor, Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 
 import { cn } from "@/lib/utils"
+import { getAvailableThemeOptions } from "@/utils/themeConfig"
 import { Button } from "@/components/ui/button"
 import {
     DropdownMenu,
@@ -22,7 +23,11 @@ const options = [
 
 export function ThemeToggle({ className }: { className?: string }) {
     const { theme = "system", setTheme } = useTheme()
-    const CurrentIcon = options.find((option) => option.value === theme)?.icon || Monitor
+    const availableValues = new Set(getAvailableThemeOptions().map((option) => option.value))
+    const availableOptions = options.filter((option) => availableValues.has(option.value))
+    const CurrentIcon = availableOptions.find((option) => option.value === theme)?.icon || Sun
+
+    if (availableOptions.length <= 1) return null
 
     return (
         <DropdownMenu>
@@ -38,7 +43,7 @@ export function ThemeToggle({ className }: { className?: string }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" aria-label="Appearance">
                 <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
-                    {options.map(({ value, label, icon: Icon }) => (
+                    {availableOptions.map(({ value, label, icon: Icon }) => (
                         <DropdownMenuRadioItem key={value} value={value}>
                             <Icon className="mr-2 h-4 w-4" aria-hidden="true" />
                             {label}

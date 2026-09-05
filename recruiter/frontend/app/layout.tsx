@@ -25,7 +25,7 @@ import ConditionalProviders from "@/components/ConditionalProviders"; // Import 
 import MaintenanceMode from "@/components/MaintenanceMode";
 import { ChristmasPopup } from "@/components/ChristmasPopup";
 import Script from 'next/script'
-import { themeInitScript } from '@/lib/theme-sync'
+import { recruiterThemeInitScript } from '@/lib/theme-sync'
 
 const inter = Inter({ subsets: ["latin"] })
 const suiteSans = IBM_Plex_Sans({
@@ -70,17 +70,24 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className="light"
+      data-theme="light"
+      data-theme-preference="light"
+      style={{ colorScheme: "light" }}
+      suppressHydrationWarning
+    >
       <head>
         {/* Load runtime configuration before any other scripts */}
         <Script src="/__runtime_config__.js" strategy="beforeInteractive" />
         <Script src="https://auth.seemplifyai.com/js/seemplify-browser-realtime.js?v=1" strategy="afterInteractive" />
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script dangerouslySetInnerHTML={{ __html: recruiterThemeInitScript }} />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
       </head>
       <body className={`${inter.className} ${suiteSans.variable} ${suiteDisplay.variable}`}>
         <ErrorBoundary>
-          <ConfigThemeProvider attribute="class" enableSystem disableTransitionOnChange>
+          <ConfigThemeProvider attribute="class" disableTransitionOnChange>
             <MaintenanceMode />
             <ConditionalProviders>{children}</ConditionalProviders>
             <Toaster />

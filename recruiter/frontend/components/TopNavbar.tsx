@@ -13,8 +13,6 @@ import {
   Menu,
   LayoutGrid,
   User,
-  Monitor,
-  Check,
   Shield,
   GraduationCap,
   FileSignature,
@@ -29,8 +27,6 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useTheme } from "next-themes";
-import { getAvailableThemeOptions } from "@/utils/themeConfig";
 import { exitRecruiterToHub } from "@/utils/productExit";
 import { useUser } from "@/context/UserContext";
 import { useOrganization } from "@/context/OrganizationContext";
@@ -40,10 +36,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import {
   Sheet,
@@ -203,7 +195,6 @@ const NavDropdown = ({ item, pathname, isMobile = false, onItemClick }: NavDropd
 
 const TopNavbar = () => {
   const pathname = usePathname();
-  const { setTheme, theme = "system" } = useTheme();
   const { state, getUserDisplayName, getUserAvatar } = useUser();
   const { user } = state;
   const { currentOrganization } = useOrganization();
@@ -239,9 +230,6 @@ const TopNavbar = () => {
     }, []),
   [isFeatureEnabled, navigationItems]);
   
-  // Get available theme options from environment configuration
-  const availableThemes = getAvailableThemeOptions();
-
   return (
     <header
       className={cn("recruiter-topbar", isPeopleTransitionsWorkspace && "recruiter-topbar--people-transitions")}
@@ -375,26 +363,6 @@ const TopNavbar = () => {
                   <span>{settingsNavigation.title}</span>
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <Monitor className="h-[1.2rem] w-[1.2rem]" />
-                  <span className="ml-2">Appearance</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent>
-                    {availableThemes.map((themeOption) => (
-                      <DropdownMenuItem 
-                        key={themeOption.value}
-                        onClick={() => setTheme(themeOption.value)}
-                      >
-                        <span className="flex-1">{themeOption.label}</span>
-                        {theme === themeOption.value && <Check className="ml-2 h-4 w-4" />}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
               <DropdownMenuSeparator />
               {user?.email === 'michael.egbo@aiinnigeria.com' && (
                 <>

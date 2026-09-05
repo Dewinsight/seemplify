@@ -48,8 +48,8 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>)
 }
 
 export function DashboardChart() {
-  const { theme } = useTheme()
-  const isDark = theme === "dark"
+  const { resolvedTheme } = useTheme()
+  const isDark = resolvedTheme === "dark"
 
   // Colors based on theme
   const colors = {

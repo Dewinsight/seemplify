@@ -28,6 +28,47 @@ const suiteTheme = fs.readFileSync(
   path.join(root, "styles", "suite-theme.css"),
   "utf8"
 );
+const rootLayout = fs.readFileSync(path.join(root, "app", "layout.tsx"), "utf8");
+const themeProvider = fs.readFileSync(
+  path.join(root, "components", "env-theme-provider.tsx"),
+  "utf8"
+);
+const themeConfig = fs.readFileSync(
+  path.join(root, "config", "theme.config.ts"),
+  "utf8"
+);
+const themeSync = fs.readFileSync(path.join(root, "lib", "theme-sync.ts"), "utf8");
+const topNavbar = fs.readFileSync(path.join(root, "components", "TopNavbar.tsx"), "utf8");
+const identityHandoff = fs.readFileSync(
+  path.join(root, "components", "auth", "IdentityHandoff.tsx"),
+  "utf8"
+);
+
+test("Recruiter is light-only without changing the suite-wide preference", () => {
+  assert.match(themeConfig, /lightEnabled:\s*true/);
+  assert.match(themeConfig, /darkEnabled:\s*false/);
+  assert.match(themeConfig, /systemEnabled:\s*false/);
+  assert.match(themeConfig, /defaultTheme:\s*'light'/);
+
+  assert.match(rootLayout, /className="light"/);
+  assert.match(rootLayout, /data-theme="light"/);
+  assert.match(rootLayout, /recruiterThemeInitScript/);
+  assert.doesNotMatch(rootLayout, /dangerouslySetInnerHTML=\{\{ __html: themeInitScript \}\}/);
+
+  assert.match(themeProvider, /forcedTheme=\{RECRUITER_THEME\}/);
+  assert.match(themeProvider, /enableSystem=\{false\}/);
+  assert.match(themeProvider, /new MutationObserver\(enforceLightTheme\)/);
+  assert.doesNotMatch(themeProvider, /readThemePreference|syncThemeToCookie|setTheme/);
+
+  const lightInit = themeSync.match(/export const recruiterThemeInitScript = `([^`]+)`;/)?.[1] || "";
+  assert.match(lightInit, /classList\.remove\('dark'\)/);
+  assert.match(lightInit, /classList\.add\('light'\)/);
+  assert.doesNotMatch(lightInit, /localStorage|document\.cookie|seemplify_theme/);
+
+  assert.doesNotMatch(topNavbar, />Appearance</);
+  assert.doesNotMatch(topNavbar, /setTheme|useTheme/);
+  assert.doesNotMatch(identityHandoff, /ThemeToggle/);
+});
 
 test("AI interview cards use theme-aware surfaces", () => {
   const semanticSurfaces = [
@@ -67,7 +108,7 @@ test("AI interview cards use theme-aware surfaces", () => {
   assert.match(suiteTheme, /\.dark\s*\{[\s\S]*--suite-surface:/);
 });
 
-test("AI interview dark mode uses semantic transcript and candidate notice surfaces", () => {
+test("AI interview detail uses semantic transcript and candidate notice surfaces", () => {
   for (const className of [
     "ai-interview-transcript-panel__header",
     "ai-interview-transcript-panel__stat",

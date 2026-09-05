@@ -4,6 +4,7 @@ export type ResolvedTheme = Exclude<ThemePreference, 'system'>;
 export const SHARED_THEME_COOKIE = 'seemplify_theme';
 export const SHARED_THEME_STORAGE = 'seemplify_theme';
 export const LEGACY_THEME_STORAGE = 'seemplify-theme';
+export const RECRUITER_THEME: ResolvedTheme = 'light';
 
 const isThemePreference = (value: string | null): value is ThemePreference =>
   value === 'light' || value === 'dark' || value === 'system';
@@ -96,6 +97,22 @@ export function applyThemePreference(preference: ThemePreference): ResolvedTheme
   return resolved;
 }
 
+/**
+ * Recruiter is temporarily light-only. This changes only the Recruiter DOM and
+ * deliberately does not write the suite-wide preference cookie or storage.
+ * Other Seemplify products can therefore continue to honour the user's global
+ * appearance setting while Recruiter remains isolated from it.
+ */
+export function applyRecruiterTheme(): ResolvedTheme {
+  const root = document.documentElement;
+  root.classList.remove('dark');
+  root.classList.add(RECRUITER_THEME);
+  root.dataset.themePreference = RECRUITER_THEME;
+  root.dataset.theme = RECRUITER_THEME;
+  root.style.colorScheme = RECRUITER_THEME;
+  return RECRUITER_THEME;
+}
+
 export function writeThemePreference(preference: ThemePreference): ResolvedTheme {
   if (typeof window === 'undefined') return preference === 'dark' ? 'dark' : 'light';
   persistStorage(preference);
@@ -108,3 +125,5 @@ export function syncThemeToCookie(preference: string): void {
 }
 
 export const themeInitScript = `(function(){try{var valid=function(v){return v==='light'||v==='dark'||v==='system'};var readCookie=function(n){try{var p=n+'=',a=document.cookie.split(';');for(var i=0;i<a.length;i++){var s=a[i].trim();if(s.indexOf(p)===0)return decodeURIComponent(s.slice(p.length))}}catch(_){}return null};var readStore=function(k){try{return localStorage.getItem(k)}catch(_){return null}};var preference=readCookie('seemplify_theme');if(!valid(preference)){var candidates=[readStore('seemplify_theme'),readStore('seemplify-theme'),readCookie('theme'),readStore('theme'),readStore('themeMode')];preference='system';for(var i=0;i<candidates.length;i++){if(valid(candidates[i])){preference=candidates[i];break}}try{localStorage.setItem('seemplify_theme',preference)}catch(_){}try{var h=location.hostname,shared=h==='seemplifyai.com'||h.endsWith('.seemplifyai.com');document.cookie='seemplify_theme='+encodeURIComponent(preference)+'; Max-Age=31536000; Path=/; SameSite=Lax'+(shared?'; Domain=.seemplifyai.com':'')+(location.protocol==='https:'?'; Secure':'')}catch(_){}}else{try{localStorage.setItem('seemplify_theme',preference)}catch(_){}}var resolved=preference==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):preference;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);root.setAttribute('data-theme-preference',preference);root.setAttribute('data-theme',resolved);root.style.colorScheme=resolved}catch(_){var root=document.documentElement;root.setAttribute('data-theme-preference','system');root.setAttribute('data-theme',matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}})();`;
+
+export const recruiterThemeInitScript = `(function(){var root=document.documentElement;root.classList.remove('dark');root.classList.add('light');root.setAttribute('data-theme-preference','light');root.setAttribute('data-theme','light');root.style.colorScheme='light'})();`;

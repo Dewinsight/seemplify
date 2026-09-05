@@ -3,7 +3,6 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { useBrandConfig } from '@/context/BrandContext'
-import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { getIdpBaseUrl } from '@/utils/env'
 import styles from './IdentityHandoff.module.css'
 
@@ -43,7 +42,6 @@ export function IdentityHandoff({
             )}
             <span className={styles.productName}>Recruiter</span>
           </a>
-          <ThemeToggle className={styles.themeButton} />
         </div>
       </header>
 
