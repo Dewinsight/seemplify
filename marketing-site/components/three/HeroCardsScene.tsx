@@ -22,6 +22,11 @@ const RING_RADIUS = 3.3
 const DOM_WIDTH = 280
 // drei maps 1 CSS px to (distanceFactor / 400) world units in transform mode.
 const DISTANCE_FACTOR = (CARD_W / DOM_WIDTH) * 400
+// The carousel is authored in small units but rendered 100x larger. drei's transform mode treats one world
+// unit as one CSS pixel at the perspective plane, so a tiny world sits a few pixels from the eye and is
+// magnified ~150x; Chrome's sub-pixel snapping of the overlay then shows up as the DOM faces drifting off
+// their slabs. At 100 units per card-width the magnification is ~1.5x and snapping is invisible.
+const WORLD = 100
 
 type Tone = 'brand' | 'positive' | 'warning' | 'neutral'
 
@@ -82,6 +87,7 @@ function RecordCard({ record, index, angle, palette, spreadRef }: RecordCardProp
     [],
   )
 
+  // Priority -2: this runs before drei's <Html> update (priority 0), so the DOM face never lags the slab.
   useFrame(({ clock }) => {
     const g = group.current
     if (!g || !dom.current) return
@@ -106,7 +112,7 @@ function RecordCard({ record, index, angle, palette, spreadRef }: RecordCardProp
     dom.current.style.opacity = facing < 0.05 ? '0' : String((0.08 + visible * 0.92) * intro)
     dom.current.dataset.front = visible > 0.92 ? 'true' : 'false'
     if (material.current) material.current.opacity = facing < 0.05 ? 0 : (0.12 + 0.88 * visible) * intro
-  })
+  }, -2)
 
   return (
     <group ref={group}>
@@ -197,7 +203,10 @@ function Carousel({ palette, spreadRef, hoverRef, dragRef }: CarouselProps) {
     const targetX = 0.04 + state.pointer.y * -0.06 + spreadRef.current * 0.18
     ring.current.rotation.y = THREE.MathUtils.damp(ring.current.rotation.y, targetY, drag.active ? 16 : 4, delta)
     ring.current.rotation.x = THREE.MathUtils.damp(ring.current.rotation.x, targetX, 4, delta)
-  })
+    // drei's <Html> reads matrixWorld in its own frame callback (priority 0); three only refreshes it at
+    // render time, one frame later. Refresh the ring now so the DOM faces sit exactly on this frame's slabs.
+    ring.current.updateMatrixWorld(true)
+  }, -1)
 
   return (
     <group ref={ring} position={[0, 0.82, 0]}>
@@ -242,14 +251,14 @@ export default function HeroCardsScene({ active = true, theme = 'light', compact
   const palette = PALETTES[theme]
   const [dpr, setDpr] = useState(1.5)
   const light = theme === 'light'
-  const target = useMemo<[number, number, number]>(() => [0, 0.66, 0], [])
+  const target = useMemo<[number, number, number]>(() => [0, 0.66 * WORLD, 0], [])
 
   return (
     <Canvas
       className={styles.orbitCanvas}
       frameloop={active ? 'always' : 'never'}
       dpr={dpr}
-      camera={{ position: [0, 2.3, compact ? 8.6 : 10.4], fov: 30 }}
+      camera={{ position: [0, 2.3 * WORLD, (compact ? 8.6 : 10.4) * WORLD], fov: 30, near: 1, far: 60 * WORLD }}
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       style={{ background: 'transparent' }}
     >
@@ -258,11 +267,13 @@ export default function HeroCardsScene({ active = true, theme = 'light', compact
       <ambientLight intensity={light ? 1.1 : 0.6} />
       <directionalLight position={[3, 6, 4]} intensity={light ? 1.5 : 1.1} color={palette.keyLight} />
 
-      <SilkPlane color={palette.silk} lightMode={light} speed={2.2} scale={1.1} rotation={0.4} noiseIntensity={light ? 0.45 : 0.3} depth={9} />
+      <SilkPlane color={palette.silk} lightMode={light} speed={2.2} scale={1.1} rotation={0.4} noiseIntensity={light ? 0.45 : 0.3} depth={9 * WORLD} />
 
-      <Carousel palette={palette} spreadRef={spreadRef} hoverRef={hoverRef} dragRef={dragRef} />
+      <group scale={WORLD}>
+        <Carousel palette={palette} spreadRef={spreadRef} hoverRef={hoverRef} dragRef={dragRef} />
+      </group>
 
-      <ContactShadows position={[0, 0.82 - CARD_H / 2 - 0.22, 0]} opacity={palette.shadowOpacity} scale={12} blur={3.2} far={3} color={palette.shadow} />
+      <ContactShadows position={[0, (0.82 - CARD_H / 2 - 0.22) * WORLD, 0]} opacity={palette.shadowOpacity} scale={12 * WORLD} blur={3.2} far={3 * WORLD} color={palette.shadow} />
 
       <Environment resolution={128}>
         <Lightformer form="circle" intensity={light ? 1.2 : 1.6} color="#ffffff" position={[-3, 5, 4]} scale={3} />
