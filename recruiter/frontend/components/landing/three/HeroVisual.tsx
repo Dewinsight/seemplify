@@ -86,8 +86,9 @@ export default function HeroVisual() {
   return (
     <div
       ref={wrapRef}
+      data-scene-frame=""
       className="relative mx-auto aspect-square w-full max-w-[560px] overflow-hidden rounded-2xl border border-white/15 md:max-w-none"
-      style={{ background: 'radial-gradient(120% 85% at 28% 8%, #e9e1ff 0%, #f6f3ee 52%, #efece5 100%)' }}
+      style={{ background: 'radial-gradient(120% 85% at 28% 8%, #dccfff 0%, #f2eee7 52%, #e6e1d8 100%)' }}
       onPointerEnter={() => {
         hoverRef.current = true;
       }}
@@ -100,6 +101,7 @@ export default function HeroVisual() {
       </div>
 
       <motion.div
+        data-chip="dark"
         className={`${chip} right-3 top-3 md:right-4 md:top-4`}
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -113,6 +115,7 @@ export default function HeroVisual() {
       </motion.div>
 
       <motion.div
+        data-chip="dark"
         className={`${chip} bottom-4 right-3 hidden md:right-4 md:block`}
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -129,6 +132,7 @@ export default function HeroVisual() {
       </motion.div>
 
       <motion.div
+        data-chip="dark"
         className={`${chip} left-3 top-3 hidden md:left-4 md:top-4 lg:block`}
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}

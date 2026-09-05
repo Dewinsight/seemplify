@@ -327,6 +327,10 @@ export default function SchedulerScene({ active = true, compact = false }: Sched
         <RoundedBox args={[3.9, 0.1, 2.95]} radius={0.05} smoothness={4} position={[0.2, -0.05, 0]}>
           <meshStandardMaterial color={INK.surface} roughness={0.95} />
         </RoundedBox>
+        {/* A darker rim under the board so its edge reads on a light desk. */}
+        <RoundedBox args={[3.96, 0.05, 3.01]} radius={0.05} smoothness={4} position={[0.2, -0.11, 0]}>
+          <meshStandardMaterial color="#cfc8bc" roughness={0.95} />
+        </RoundedBox>
         {LANE_Z.map((z, i) => (
           <group key={z}>
             <mesh rotation-x={-Math.PI / 2} position={[LANE_X0 + LANE_LEN / 2, 0.004, z]}>
@@ -342,7 +346,7 @@ export default function SchedulerScene({ active = true, compact = false }: Sched
         <BusyBlocks clockRef={clockRef} />
         <Gate clockRef={clockRef} chipTextures={art.clocks.map((c) => c.texture)} labelTexture={art.label.texture} />
 
-        <ContactShadows position={[0, 0.008, 0]} opacity={0.3} scale={[5.6, 3.6]} blur={2.2} far={2.4} resolution={512} color="#2d2838" />
+        <ContactShadows position={[0, 0.008, 0]} opacity={0.44} scale={[5.6, 3.6]} blur={2.2} far={2.4} resolution={512} color="#2d2838" />
       </Rig>
 
       <Environment resolution={64}>

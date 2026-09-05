@@ -11,20 +11,20 @@
 */
 
 .landing-seemplify {
-  --marketing-canvas: #f1efe9;
-  --marketing-surface: #fffdfa;
-  --marketing-surface-soft: #f5f2ec;
-  --marketing-surface-sunken: #ebe7df;
+  --marketing-canvas: #efece5;
+  --marketing-surface: #ffffff;
+  --marketing-surface-soft: #f6f3ed;
+  --marketing-surface-sunken: #e6e1d8;
   --marketing-text: #191816;
-  --marketing-muted: #625e57;
-  --marketing-faint: #777168;
-  --marketing-line: rgba(49, 45, 57, 0.12);
-  --marketing-line-strong: rgba(49, 45, 57, 0.23);
-  --marketing-brand: #7047eb;
-  --marketing-brand-soft: #f3f0ff;
-  --marketing-positive: #00875f;
-  --marketing-warning: #ae6c00;
-  --marketing-shadow: 0 1px 2px rgba(23, 21, 18, 0.04), 0 14px 34px -24px rgba(23, 21, 18, 0.28);
+  --marketing-muted: #55514b;
+  --marketing-faint: #6d685f;
+  --marketing-line: rgba(49, 45, 57, 0.16);
+  --marketing-line-strong: rgba(49, 45, 57, 0.34);
+  --marketing-brand: #6a3fe6;
+  --marketing-brand-soft: #efe9ff;
+  --marketing-positive: #007a56;
+  --marketing-warning: #9f6200;
+  --marketing-shadow: 0 1px 2px rgba(23, 21, 18, 0.06), 0 18px 40px -22px rgba(23, 21, 18, 0.42);
   --marketing-font: var(--font-suite-sans), 'IBM Plex Sans', system-ui, sans-serif;
   --marketing-heading: var(--font-suite-display), 'Space Grotesk', var(--marketing-font);
   --marketing-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -462,4 +462,40 @@
 .landing-seemplify :focus-visible {
   outline: 2px solid var(--marketing-brand);
   outline-offset: 3px;
+}
+
+/* ---------- dark chips: the floating labels over the hero keep their dark-mode punch ---------- */
+
+.landing-seemplify [data-chip='dark'] {
+  background-color: var(--marketing-text);
+  border-color: transparent;
+  color: var(--marketing-canvas);
+  box-shadow: 0 1px 2px rgba(23, 21, 18, 0.12), 0 14px 32px -16px rgba(23, 21, 18, 0.6);
+}
+
+.landing-seemplify [data-chip='dark'] :is(.text-white, .text-slate-200, .text-slate-300, .text-slate-400, .text-gray-500) {
+  color: var(--marketing-canvas);
+}
+
+.landing-seemplify [data-chip='dark'] :is(.text-slate-400, .text-gray-500) {
+  color: color-mix(in srgb, var(--marketing-canvas) 72%, transparent);
+}
+
+.landing-seemplify [data-chip='dark'] :is(.text-cyan-300, .text-purple-300, .text-blue-300) {
+  color: #c4b3ff;
+}
+
+.landing-seemplify [data-chip='dark'] .text-emerald-300 {
+  color: #5fe0b4;
+}
+
+.landing-seemplify [data-chip='dark'] .bg-emerald-400 {
+  background-color: #5fe0b4;
+}
+
+/* ---------- 3D frames ---------- */
+
+.landing-seemplify [data-scene-frame] {
+  border-color: var(--marketing-line-strong);
+  box-shadow: var(--marketing-shadow), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
 }

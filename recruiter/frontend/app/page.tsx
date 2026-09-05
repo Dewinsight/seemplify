@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import AtsComparisonSection from '@/components/AtsComparisonSection';
-import PricingSection from '@/components/PricingSection';
 import WorkflowSection from '@/components/WorkflowSection';
 import GlassmorphicCard from '@/components/ui/glassmorphic-card';
 import ScrollReveal from '@/components/animations/ScrollReveal';
@@ -104,7 +103,6 @@ export default function LandingPage() {
               <li><ActiveLink href="#ats-comparison">Why {brand.name}</ActiveLink></li>
               <li><ActiveLink href="#workflow">Workflow</ActiveLink></li>
               <li><ActiveLink href="#interview-tech">Interview Tech</ActiveLink></li>
-              <li><ActiveLink href="#pricing">Pricing</ActiveLink></li>
             </ul>
           </nav>
           
@@ -224,15 +222,6 @@ export default function LandingPage() {
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         Interview Tech
-                      </a>
-                    </li>
-                    <li>
-                      <a 
-                        href="#pricing" 
-                        className="block py-3 text-lg text-slate-300 hover:text-white transition-colors border-b border-white/10"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                      >
-                        Pricing
                       </a>
                     </li>
                   </ul>
@@ -720,11 +709,6 @@ export default function LandingPage() {
         <WorkflowSection />
       </div>
 
-      {/* Pricing Section */}
-      <div id="pricing">
-        <PricingSection />
-      </div>
-      
       {/* Interview and Feedback Technology Section */}
       <section id="interview-tech" className="relative z-10 container mx-auto px-4 py-20">
         {/* Background decoration */}
@@ -1001,9 +985,6 @@ export default function LandingPage() {
             <ul className="space-y-3">
               <li>
                 <span className="text-slate-300">Features</span>
-              </li>
-              <li>
-                <span className="text-slate-300">Pricing</span>
               </li>
               <li>
                 <Link href="/public/jobs" className="text-slate-300 hover:text-white transition-colors">Browse Jobs</Link>

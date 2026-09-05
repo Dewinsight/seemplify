@@ -10,7 +10,7 @@ type Variant = 'light' | 'dark';
 
 // Light: the Seemplify cream, lilac and a breath of mint. Dark: the original deep violet.
 const COLORS: Record<Variant, string[]> = {
-  light: ['#f1efe9', '#e6ddff', '#d7ccf7', '#f6f3ee', '#dff1ea'],
+  light: ['#efece5', '#d9caff', '#c9b9f4', '#f4f0e9', '#cdece0'],
   dark: ['#050816', '#1e1b4b', '#312e81', '#4c1d95', '#0b1220'],
 };
 
@@ -36,7 +36,7 @@ export default function ShaderBackdrop({ variant = 'dark' }: { variant?: Variant
     <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
       <MeshGradient
         className="absolute inset-0"
-        style={{ width: '100%', height: '100%', opacity: light ? 0.55 : 1 }}
+        style={{ width: '100%', height: '100%', opacity: light ? 0.72 : 1 }}
         colors={COLORS[variant]}
         distortion={light ? 0.75 : 0.9}
         swirl={light ? 0.4 : 0.55}

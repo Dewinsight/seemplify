@@ -57,8 +57,9 @@ export default function SchedulerVisual({ className = '' }: { className?: string
   return (
     <div
       ref={wrapRef}
+      data-scene-frame=""
       className={`relative aspect-square w-full overflow-hidden rounded-2xl border border-white/15 ${className}`}
-      style={{ background: 'radial-gradient(120% 85% at 70% 6%, #e9e1ff 0%, #f6f3ee 52%, #efece5 100%)' }}
+      style={{ background: 'radial-gradient(120% 85% at 70% 6%, #dccfff 0%, #f2eee7 52%, #e6e1d8 100%)' }}
     >
       <div className="absolute inset-0" aria-hidden>
         {canRender ? <SchedulerScene active={inView} compact={compact} /> : <SchedulerPoster />}

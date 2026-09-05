@@ -393,7 +393,7 @@ export default function ShortlistScene({ active = true, compact = false, spreadR
         <Caption texture={art.inbox.texture} position={[-1.2, 0.02, 1.3]} width={0.85} />
         <Caption texture={art.shortlist.texture} position={[1.2, 0.02, 1.25]} width={1.0} />
         <JobCard clockRef={clockRef} texture={art.job.texture} />
-        <ContactShadows position={[0, -0.003, 0]} opacity={0.34} scale={9} blur={2.4} far={3.4} resolution={512} color="#2d2838" />
+        <ContactShadows position={[0, -0.003, 0]} opacity={0.5} scale={9} blur={2.4} far={3.4} resolution={512} color="#2d2838" />
       </Rig>
 
       <Environment resolution={64}>

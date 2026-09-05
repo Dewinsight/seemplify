@@ -10,17 +10,17 @@ import * as THREE from 'three';
 
 /** Seemplify tokens, mirrored from app/landing-brand.css. */
 export const INK = {
-  canvas: '#f1efe9',
-  surface: '#fffdfa',
-  sunken: '#ebe7df',
-  block: '#ddd8ce',
-  paperEdge: '#e9e4da',
-  line: 'rgba(49, 45, 57, 0.14)',
-  lineStrong: 'rgba(49, 45, 57, 0.26)',
+  canvas: '#efece5',
+  surface: '#ffffff',
+  sunken: '#e6e1d8',
+  block: '#d4cec3',
+  paperEdge: '#dcd6cb',
+  line: 'rgba(49, 45, 57, 0.16)',
+  lineStrong: 'rgba(49, 45, 57, 0.34)',
   text: '#191816',
-  muted: '#625e57',
-  faint: '#8a847a',
-  brand: '#7047eb',
+  muted: '#55514b',
+  faint: '#7a746b',
+  brand: '#6a3fe6',
   brandSoft: '#e6ddff',
   brandInk: '#4a2fb2',
   positive: '#00875f',
@@ -179,6 +179,10 @@ export function paintSheet(p: SheetProfile): Painter {
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = INK.brand;
     ctx.fillRect(0, 0, w, 14);
+    // A hairline edge so the sheet reads as paper against a light desk.
+    ctx.strokeStyle = INK.lineStrong;
+    ctx.lineWidth = 5;
+    ctx.strokeRect(2.5, 2.5, w - 5, h - 5);
 
     // Identity block.
     ctx.fillStyle = INK.brandSoft;
