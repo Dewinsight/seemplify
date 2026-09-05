@@ -52,6 +52,8 @@ export const BRANDS: Record<string, BrandConfig> = {
     footerText: '© 2026 Seemplify. All rights reserved.',
     loginHeading: 'Recruiter',
     loginSubheading: 'by Seemplify',
+    // Seemplify brand skin for the marketing landing — see app/landing-brand.css
+    landingRootClass: 'landing-seemplify min-h-screen overflow-x-hidden relative',
   },
   jetstone: {
     id: 'jetstone',
@@ -97,6 +99,7 @@ export const BRANDS: Record<string, BrandConfig> = {
     footerText: '© 2025 Producive. All rights reserved.',
     loginHeading: 'Producive',
     loginSubheading: 'Productivity Unleashed',
+    landingRootClass: 'landing-seemplify min-h-screen overflow-x-hidden relative',
   },
 };
 

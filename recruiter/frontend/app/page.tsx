@@ -1,5 +1,6 @@
 'use client';
 
+import './landing-brand.css';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -19,7 +20,19 @@ import PricingSection from '@/components/PricingSection';
 import WorkflowSection from '@/components/WorkflowSection';
 import GlassmorphicCard from '@/components/ui/glassmorphic-card';
 import ScrollReveal from '@/components/animations/ScrollReveal';
-import GradientMesh from '@/components/backgrounds/GradientMesh';
+import ShaderBackdrop from '@/components/landing/backdrop/ShaderBackdrop';
+import HeroVisual from '@/components/landing/three/HeroVisual';
+import TextReveal from '@/components/landing/motion/TextReveal';
+import ShimmerButton from '@/components/landing/motion/ShimmerButton';
+import Magnetic from '@/components/landing/motion/Magnetic';
+import SpotlightCard from '@/components/landing/motion/SpotlightCard';
+import BorderBeam from '@/components/landing/motion/BorderBeam';
+import SignalStats from '@/components/landing/sections/SignalStats';
+import CapabilityMarquee from '@/components/landing/sections/CapabilityMarquee';
+import GlobeSection from '@/components/landing/sections/GlobeSection';
+import {
+  BarChartIcon, BriefcaseIcon, CalendarIcon, ChartPieIcon, CpuIcon, ShieldCheckIcon, UsersIcon, ZapIcon,
+} from '@/components/landing/icons/AnimatedIcons';
 import FAQSection from '@/components/faq/FAQSection';
 import ScrollProgress from '@/components/ui/ScrollProgress';
 import BackToTop from '@/components/ui/BackToTop';
@@ -60,17 +73,16 @@ export default function LandingPage() {
     return <JetstonePortalPage />;
   }
 
-  const rootShellClass =
-    brand.landingRootClass ??
-    'min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white overflow-x-hidden relative';
+  // The Seemplify brand skin (app/landing-brand.css) re-skins every section below to the main site's system.
+  const rootShellClass = brand.landingRootClass ?? 'landing-seemplify min-h-screen overflow-x-hidden relative';
 
   return (
     <div className={rootShellClass}>
       {/* Scroll Progress Indicator */}
       <ScrollProgress />
       
-      {/* Enhanced Background Effects with Gradient Mesh */}
-      <GradientMesh />
+      {/* GPU mesh-gradient backdrop (Paper Shaders) */}
+      <ShaderBackdrop variant="light" />
       
       {/* Back to Top Button */}
       <BackToTop />
@@ -266,9 +278,13 @@ export default function LandingPage() {
             transition={{ duration: 0.8, ease: [0.21, 0.47, 0.32, 0.98] }}
           >
             <h2 className="text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black leading-[1.1] tracking-tight">
-              Transform Your
-              <span className={`block bg-clip-text text-transparent animate-gradient ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-green-700 via-amber-700 to-yellow-600' : 'bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400'}`}>
-                Hiring Process
+              <TextReveal text="Transform Your" />
+              <span className="block">
+                <TextReveal
+                  text="Hiring Process"
+                  delay={0.2}
+                  wordClassName="bg-clip-text text-transparent animate-gradient bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400"
+                />
               </span>
             </h2>
           </motion.div>
@@ -288,20 +304,22 @@ export default function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2, ease: [0.21, 0.47, 0.32, 0.98] }}
           >
-            <Button 
-              className={`text-white border-0 h-14 px-8 text-lg font-semibold shadow-2xl transition-all duration-300 ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-green-700 via-green-800 to-green-900 hover:from-green-800 hover:via-green-900 hover:to-green-950 shadow-green-500/50 hover:shadow-green-500/70' : 'bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 shadow-purple-500/50 hover:shadow-purple-500/70'}`}
-              onClick={() => router.push('/signup')}
-              onMouseEnter={() => setIsHovering(true)}
-              onMouseLeave={() => setIsHovering(false)}
-            >
-              <span>Get Started Free</span>
-              <motion.div
-                animate={{ x: isHovering ? 5 : 0 }}
-                transition={{ type: "spring", stiffness: 400 }}
+            <Magnetic>
+              <ShimmerButton
+                onClick={() => router.push('/signup')}
+                onMouseEnter={() => setIsHovering(true)}
+                onMouseLeave={() => setIsHovering(false)}
               >
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </motion.div>
-            </Button>
+                <span>Get Started Free</span>
+                <motion.span
+                  className="inline-flex"
+                  animate={{ x: isHovering ? 5 : 0 }}
+                  transition={{ type: "spring", stiffness: 400 }}
+                >
+                  <ArrowRight className="h-5 w-5" />
+                </motion.span>
+              </ShimmerButton>
+            </Magnetic>
             
             <Button 
               variant="outline" 
@@ -312,94 +330,62 @@ export default function LandingPage() {
             </Button>
           </motion.div>
         </div>
-        <motion.div 
-          className="md:w-1/2"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
+        <motion.div
+          className="w-full md:w-1/2"
+          // Translate, not scale: the 3D canvas measures its box during this animation.
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.3 }}
         >
           <div className="relative">
-            {/* Main dashboard image */}
-            <div className="relative z-10 rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
-              <Image 
-                src="https://images.unsplash.com/photo-1531545514256-b1400bc00f31?auto=format&fit=crop&q=80" 
-                alt={`HR professionals working with ${brand.name} platform`}
-                width={600}
-                height={400}
-                className="w-full object-cover rounded-2xl"
-                priority
-              />
-              
-              {/* Floating UI elements */}
-              <motion.div 
-                className="absolute top-5 right-5 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-4 rounded-xl shadow-lg border border-white/50"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.8, duration: 0.6 }}
-              >
-                <div className="flex items-center space-x-2">
-                  <ChartPie className="w-5 h-5 text-blue-600" />
-                  <span className="font-medium text-gray-800 dark:text-white">98% Match Rate</span>
-                </div>
-              </motion.div>
-              
-              <motion.div 
-                className="absolute bottom-5 left-5 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-4 rounded-xl shadow-lg border border-white/50"
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.0, duration: 0.6 }}
-              >
-                <div className="flex items-center space-x-3">
-                  <Award className="w-5 h-5 text-purple-600" />
-                  <div>
-                    <div className="text-xs text-gray-500">Top Talent</div>
-                    <div className="font-medium text-gray-800 dark:text-white">Identified in seconds</div>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-            
+            {/* 3D talent field (R3F) with live chips over it */}
+            <HeroVisual />
+
             {/* Feature cards */}
             <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
                 {
-                  icon: <Zap className="w-5 h-5" />,
+                  icon: <ZapIcon size={20} />,
                   title: "AI-Powered Matching",
                   description: "95% accuracy",
                   color: "from-blue-500 to-cyan-400"
                 },
                 {
-                  icon: <BarChart3 className="w-5 h-5" />,
+                  icon: <BarChartIcon size={20} />,
                   title: "Smart Analytics",
                   description: "Real-time insights",
                   color: "from-purple-500 to-pink-400"
                 },
                 {
-                  icon: <Users className="w-5 h-5" />,
+                  icon: <UsersIcon size={20} />,
                   title: "Team Collaboration",
                   description: "Seamless workflow",
                   color: "from-amber-500 to-orange-400"
                 }
               ].map((feature, index) => (
-                <motion.div 
-                  key={index} 
-                  className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 hover:bg-white/20 transition-all duration-300"
+                <motion.div
+                  key={index}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4 + (index * 0.2), duration: 0.6 }}
-                  whileHover={{ y: -5, transition: { duration: 0.2 } }}
                 >
-                  <div className={`flex-shrink-0 w-10 h-10 mb-3 bg-gradient-to-br ${feature.color} rounded-lg flex items-center justify-center text-white`}>
-                    {feature.icon}
-                  </div>
-                  <h3 className="text-white font-semibold text-base mb-1">{feature.title}</h3>
-                  <p className="text-slate-300 text-sm">{feature.description}</p>
+                  <SpotlightCard className="p-4 h-full">
+                    <div className={`flex-shrink-0 w-10 h-10 mb-3 bg-gradient-to-br ${feature.color} rounded-lg flex items-center justify-center text-white`}>
+                      {feature.icon}
+                    </div>
+                    <h3 className="text-white font-semibold text-base mb-1">{feature.title}</h3>
+                    <p className="text-slate-300 text-sm">{feature.description}</p>
+                  </SpotlightCard>
                 </motion.div>
               ))}
             </div>
           </div>
         </motion.div>
       </section>
+
+      {/* Results strip + capability marquee */}
+      <SignalStats />
+      <CapabilityMarquee />
 
       {/* Enhanced Feature Section with Glass Morphism */}
       <section id="features" className="relative z-10 container mx-auto px-4 py-24 md:py-32">
@@ -422,61 +408,69 @@ export default function LandingPage() {
           </div>
         </ScrollReveal>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
           {[
             {
-              icon: <Cpu className="w-6 h-6" />,
+              icon: <CpuIcon />,
               title: "AI Candidate Matching",
               description: "Advanced algorithms match candidates with 95% accuracy, reducing hiring time and improving quality of hires.",
               gradient: "from-blue-500 to-cyan-400",
+              span: "lg:col-span-2",
+              featured: true,
               delay: 0.1
             },
             {
-              icon: <Calendar className="w-6 h-6" />,
+              icon: <CalendarIcon />,
               title: "Automated Interviews",
               description: "Smart scheduling system integrates with calendar platforms for effortless interview coordination.",
               gradient: "from-green-500 to-emerald-400",
+              span: "",
+              featured: false,
               delay: 0.2
             },
             {
-              icon: <ChartPie className="w-6 h-6" />,
+              icon: <ChartPieIcon />,
               title: "Analytics Dashboard",
               description: "Gain actionable insights with comprehensive analytics and reporting to optimize recruitment strategy.",
               gradient: "from-purple-500 to-pink-400",
+              span: "",
+              featured: false,
               delay: 0.3
             },
             {
-              icon: <Users className="w-6 h-6" />,
+              icon: <UsersIcon />,
               title: "Team Collaboration",
               description: "Seamless collaboration with integrated feedback systems and transparent workflows throughout hiring.",
               gradient: "from-amber-500 to-orange-400",
+              span: "",
+              featured: false,
               delay: 0.4
             },
             {
-              icon: <Briefcase className="w-6 h-6" />,
+              icon: <BriefcaseIcon />,
               title: "HR Management",
               description: "Complete HR solutions including payroll automation, tax management, and retention tools in one platform.",
               gradient: "from-pink-500 to-rose-400",
+              span: "",
+              featured: false,
               delay: 0.5
             },
             {
-              icon: <Shield className="w-6 h-6" />,
+              icon: <ShieldCheckIcon />,
               title: "Secure Compliance",
               description: "Enterprise-grade security with built-in compliance tools to navigate regulations and protect data.",
               gradient: "from-indigo-500 to-blue-400",
+              span: "lg:col-span-2",
+              featured: true,
               delay: 0.6
             },
           ].map((feature, index) => (
-            <ScrollReveal key={index} delay={feature.delay}>
-              <GlassmorphicCard variant="interactive" className="p-8 h-full group">
+            <ScrollReveal key={index} delay={feature.delay} className={`${feature.span} h-full`}>
+              <SpotlightCard className="p-8 h-full">
                 <div className="flex items-start mb-5">
-                  <motion.div 
-                    className={`p-3 rounded-xl bg-gradient-to-br ${feature.gradient} mr-4 shadow-lg`}
-                    whileHover={{ rotate: [0, -10, 10, -5, 0], scale: 1.1 }}
-                    transition={{ duration: 0.5 }}
-                  >
+                  <div className={`p-3 rounded-xl bg-gradient-to-br ${feature.gradient} mr-4 shadow-lg text-white`}>
                     {feature.icon}
-                  </motion.div>
+                  </div>
                   <h3 className="text-2xl font-bold text-white group-hover:text-blue-300 transition-colors">
                     {feature.title}
                   </h3>
@@ -484,7 +478,7 @@ export default function LandingPage() {
                 <p className="text-slate-300 text-lg leading-relaxed">
                   {feature.description}
                 </p>
-              </GlassmorphicCard>
+              </SpotlightCard>
             </ScrollReveal>
           ))}
         </div>
@@ -505,9 +499,9 @@ export default function LandingPage() {
             viewport={{ once: true }}
             transition={{ duration: 0.7 }}
           >
-            <div className="relative z-10 rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
-              <Image 
-                src="https://images.unsplash.com/photo-1551836022-deb4988cc6c0?auto=format&fit=crop&q=80&w=800" 
+            <div className="relative z-10 rounded-2xl overflow-hidden border border-white/20 shadow-2xl" data-on-photo>
+              <Image
+                src="https://images.unsplash.com/photo-1551836022-deb4988cc6c0?auto=format&fit=crop&q=80&w=800"
                 alt="AI Matching Dashboard"
                 width={700}
                 height={500}
@@ -710,6 +704,9 @@ export default function LandingPage() {
         </div>
       </section>
       
+      {/* Time-zone globe (cobe) */}
+      <GlobeSection />
+
       {/* How It Works Section - Redesigned */}
       <HowItWorksSection />
       
@@ -763,7 +760,7 @@ export default function LandingPage() {
             viewport={{ once: true }}
             transition={{ duration: 0.7 }}
           >
-            <div className="relative z-[1] rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
+            <div className="relative z-[1] rounded-2xl overflow-hidden border border-white/20 shadow-2xl" data-on-photo>
               <Image 
                 src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=800" 
                 alt="Team conducting interview with AI assistance"
@@ -815,7 +812,6 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, scale: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.6 }}
-              style={{ boxShadow: '0 10px 30px -5px rgba(124, 58, 237, 0.3)' }}
             >
               <div className="flex items-start">
                 <div className="p-2 bg-purple-500/30 rounded-lg mr-3 backdrop-blur-md">
@@ -836,7 +832,6 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, scale: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.7 }}
-              style={{ boxShadow: '0 10px 30px -5px rgba(59, 130, 246, 0.3)' }}
             >
               <div className="flex items-start">
                 <div className="p-2 bg-blue-500/30 rounded-lg mr-3 backdrop-blur-md">
@@ -965,14 +960,11 @@ export default function LandingPage() {
                 </div>
               </div>
               
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
-                <Button 
-                  className={`text-white border-0 h-14 px-10 text-lg font-semibold shadow-2xl ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-green-700 via-green-800 to-green-900 hover:from-green-800 hover:via-green-900 hover:to-green-950 shadow-green-500/50 hover:shadow-green-500/70' : 'bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 shadow-purple-500/50 hover:shadow-purple-500/70'}`}
-                  onClick={() => router.push('/signup')}
-                >
-                  Start Free Trial <ArrowRight className="ml-2 w-5 h-5" />
-                </Button>
-              </motion.div>
+              <Magnetic>
+                <ShimmerButton className="h-14 px-10" onClick={() => router.push('/signup')}>
+                  Start Free Trial <ArrowRight className="w-5 h-5" />
+                </ShimmerButton>
+              </Magnetic>
             </div>
           </GlassmorphicCard>
         </ScrollReveal>

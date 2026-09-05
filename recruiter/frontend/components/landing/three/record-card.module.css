@@ -1,0 +1,182 @@
+/* Candidate record cards rendered as real DOM inside the 3D carousel.
+   Reads the --marketing-* tokens defined by .landing-seemplify. */
+
+.canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.recordCard {
+  box-sizing: border-box;
+  display: grid;
+  gap: 10px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 10px;
+  background: var(--marketing-surface);
+  color: var(--marketing-text);
+  font-family: var(--marketing-font);
+  padding: 12px 13px 11px;
+  letter-spacing: -0.01em;
+  user-select: none;
+  transition: box-shadow 260ms ease, border-color 260ms ease;
+}
+
+.recordCard[data-front='true'] {
+  border-color: color-mix(in srgb, var(--marketing-brand) 60%, var(--marketing-line-strong));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--marketing-brand) 18%, transparent),
+    0 24px 48px -28px color-mix(in srgb, var(--marketing-brand) 45%, transparent);
+  transform: scale(1.03);
+}
+
+.recordHead {
+  display: grid;
+  align-items: center;
+  gap: 9px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+}
+
+.recordAvatar {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--marketing-brand) 16%, var(--marketing-surface));
+  color: var(--marketing-brand);
+  font-family: var(--marketing-heading);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.recordWho {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.recordWho strong {
+  overflow: hidden;
+  font-family: var(--marketing-heading);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recordWho small {
+  overflow: hidden;
+  color: var(--marketing-muted);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recordStage {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-family: var(--marketing-heading);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--marketing-brand) 12%, var(--marketing-surface));
+  color: var(--marketing-brand);
+}
+
+.recordCard[data-tone='positive'] .recordStage {
+  background: color-mix(in srgb, var(--marketing-positive) 12%, var(--marketing-surface));
+  color: var(--marketing-positive);
+}
+
+.recordCard[data-tone='warning'] .recordStage {
+  background: color-mix(in srgb, var(--marketing-warning) 14%, var(--marketing-surface));
+  color: var(--marketing-warning);
+}
+
+.recordCard[data-tone='neutral'] .recordStage {
+  background: var(--marketing-surface-soft);
+  color: var(--marketing-muted);
+}
+
+.recordRows {
+  display: grid;
+  margin: 0;
+  gap: 5px;
+  border-top: 1px solid var(--marketing-line);
+  padding-top: 9px;
+}
+
+.recordRows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+}
+
+.recordRows dt {
+  color: var(--marketing-muted);
+}
+
+.recordRows dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.recordBar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--marketing-surface-sunken);
+}
+
+.recordBar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--marketing-brand), color-mix(in srgb, var(--marketing-brand) 55%, var(--marketing-positive)));
+}
+
+.recordFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--marketing-line);
+  padding-top: 8px;
+  font-size: 11px;
+}
+
+.recordStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.recordStatus i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--marketing-brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--marketing-brand) 20%, transparent);
+}
+
+.recordCard[data-tone='positive'] .recordStatus i {
+  background: var(--marketing-positive);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--marketing-positive) 20%, transparent);
+}
+
+.recordCard[data-tone='warning'] .recordStatus i {
+  background: var(--marketing-warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--marketing-warning) 20%, transparent);
+}
+
+.recordId {
+  color: var(--marketing-faint);
+  font-family: var(--marketing-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}

@@ -1,0 +1,465 @@
+/*
+  Seemplify brand skin for the Recruiter marketing landing (app/page.tsx).
+
+  The landing was built on a dark slate/neon palette. The main Seemplify site is
+  a warm editorial system: cream canvas, hairline grid, brand purple, Space
+  Grotesk headings on IBM Plex Sans. This sheet re-skins the existing markup to
+  that system without touching a word of content: it defines the same
+  --marketing-* tokens the main site uses and remaps the landing's utility
+  classes onto them. Everything is scoped to `.landing-seemplify`, so the rest
+  of the app is untouched.
+*/
+
+.landing-seemplify {
+  --marketing-canvas: #f1efe9;
+  --marketing-surface: #fffdfa;
+  --marketing-surface-soft: #f5f2ec;
+  --marketing-surface-sunken: #ebe7df;
+  --marketing-text: #191816;
+  --marketing-muted: #625e57;
+  --marketing-faint: #777168;
+  --marketing-line: rgba(49, 45, 57, 0.12);
+  --marketing-line-strong: rgba(49, 45, 57, 0.23);
+  --marketing-brand: #7047eb;
+  --marketing-brand-soft: #f3f0ff;
+  --marketing-positive: #00875f;
+  --marketing-warning: #ae6c00;
+  --marketing-shadow: 0 1px 2px rgba(23, 21, 18, 0.04), 0 14px 34px -24px rgba(23, 21, 18, 0.28);
+  --marketing-font: var(--font-suite-sans), 'IBM Plex Sans', system-ui, sans-serif;
+  --marketing-heading: var(--font-suite-display), 'Space Grotesk', var(--marketing-font);
+  --marketing-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  background: var(--marketing-canvas);
+  color: var(--marketing-text);
+  font-family: var(--marketing-font);
+  letter-spacing: -0.012em;
+}
+
+.dark .landing-seemplify {
+  --marketing-canvas: #0f0e13;
+  --marketing-surface: #18161f;
+  --marketing-surface-soft: #211e29;
+  --marketing-surface-sunken: #0b0a0d;
+  --marketing-text: #f7f5fa;
+  --marketing-muted: #bbb5c2;
+  --marketing-faint: #948e9a;
+  --marketing-line: rgba(49, 45, 57, 0.72);
+  --marketing-line-strong: #312d39;
+  --marketing-brand: #8b63ff;
+  --marketing-brand-soft: rgba(112, 72, 232, 0.16);
+  --marketing-positive: #2ed3a0;
+  --marketing-warning: #f3bd58;
+  --marketing-shadow: none;
+}
+
+/* ---------- typography ---------- */
+
+.landing-seemplify :is(h1, h2, h3, h4, h5) {
+  font-family: var(--marketing-heading);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  color: var(--marketing-text);
+}
+
+.landing-seemplify :is(h1, h2) {
+  line-height: 1.02;
+}
+
+.landing-seemplify :is(h3, h4) {
+  letter-spacing: -0.03em;
+}
+
+.landing-seemplify .font-heading {
+  font-family: var(--marketing-heading);
+}
+
+.landing-seemplify :is(h1, h2, h3).font-black,
+.landing-seemplify :is(h1, h2, h3).font-extrabold {
+  font-weight: 600;
+}
+
+.landing-seemplify ::selection {
+  background: color-mix(in srgb, var(--marketing-brand) 24%, transparent);
+}
+
+/* ---------- text colours ---------- */
+
+.landing-seemplify .text-white,
+.landing-seemplify .text-white\/90,
+.landing-seemplify .text-white\/80,
+.landing-seemplify .text-gray-800,
+.landing-seemplify .hover\:text-white:hover {
+  color: var(--marketing-text);
+}
+
+.landing-seemplify .text-slate-200,
+.landing-seemplify .text-slate-300,
+.landing-seemplify .text-white\/70,
+.landing-seemplify .text-white\/60 {
+  color: var(--marketing-muted);
+}
+
+.landing-seemplify .text-slate-400,
+.landing-seemplify .text-slate-500,
+.landing-seemplify .text-gray-500,
+.landing-seemplify .text-white\/40 {
+  color: var(--marketing-faint);
+}
+
+.landing-seemplify .text-blue-200,
+.landing-seemplify .text-blue-300,
+.landing-seemplify .text-blue-400,
+.landing-seemplify .text-blue-500,
+.landing-seemplify .text-blue-600,
+.landing-seemplify .text-purple-300,
+.landing-seemplify .text-purple-400,
+.landing-seemplify .text-purple-500,
+.landing-seemplify .text-purple-600,
+.landing-seemplify .text-indigo-600,
+.landing-seemplify .text-cyan-300,
+.landing-seemplify .text-cyan-600,
+.landing-seemplify .hover\:text-blue-300:hover,
+.landing-seemplify .group:hover .group-hover\:text-blue-300,
+.landing-seemplify .group:hover .group-hover\:text-green-300 {
+  color: var(--marketing-brand);
+}
+
+.landing-seemplify .text-green-300,
+.landing-seemplify .text-green-400,
+.landing-seemplify .text-green-500,
+.landing-seemplify .text-emerald-300,
+.landing-seemplify .text-emerald-400 {
+  color: var(--marketing-positive);
+}
+
+.landing-seemplify .text-amber-400,
+.landing-seemplify .text-amber-500,
+.landing-seemplify .text-yellow-300 {
+  color: var(--marketing-warning);
+}
+
+/* ---------- surfaces, borders, radii, shadows ---------- */
+
+.landing-seemplify .bg-white\/5,
+.landing-seemplify .bg-white\/10,
+.landing-seemplify .bg-white\/15,
+.landing-seemplify .bg-white\/20,
+.landing-seemplify .bg-white\/90,
+.landing-seemplify .bg-white\/\[0\.03\],
+.landing-seemplify .bg-white\/\[0\.04\],
+.landing-seemplify .bg-slate-900\/50,
+.landing-seemplify .bg-slate-900\/70,
+.landing-seemplify .bg-slate-900\/80,
+.landing-seemplify .bg-slate-800,
+.landing-seemplify .bg-slate-800\/50,
+.landing-seemplify .bg-slate-800\/90,
+.landing-seemplify .bg-slate-750,
+.landing-seemplify .bg-slate-700,
+.landing-seemplify .bg-slate-600\/70 {
+  background-color: var(--marketing-surface);
+}
+
+.landing-seemplify .hover\:bg-white\/10:hover,
+.landing-seemplify .hover\:bg-white\/20:hover,
+.landing-seemplify .hover\:bg-white\/90:hover {
+  background-color: var(--marketing-surface-soft);
+}
+
+.landing-seemplify .bg-gray-700\/50 {
+  background-color: var(--marketing-surface-sunken);
+}
+
+.landing-seemplify .border-white,
+.landing-seemplify .border-white\/10,
+.landing-seemplify .border-white\/15,
+.landing-seemplify .border-white\/20,
+.landing-seemplify .border-white\/50,
+.landing-seemplify .border-slate-600\/50,
+.landing-seemplify .border-slate-700,
+.landing-seemplify .border-slate-700\/50,
+.landing-seemplify .border-slate-800,
+.landing-seemplify .border-slate-900,
+.landing-seemplify .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--marketing-line-strong);
+}
+
+.landing-seemplify .border-slate-950 {
+  border-color: var(--marketing-canvas);
+}
+
+.landing-seemplify .hover\:border-white\/20:hover,
+.landing-seemplify .hover\:border-white\/25:hover,
+.landing-seemplify .hover\:border-white\/30:hover {
+  border-color: var(--marketing-text);
+}
+
+.landing-seemplify .rounded-3xl { border-radius: 14px; }
+.landing-seemplify .rounded-2xl { border-radius: 12px; }
+.landing-seemplify .rounded-xl { border-radius: 10px; }
+.landing-seemplify .rounded-lg { border-radius: 8px; }
+
+.landing-seemplify .shadow-lg,
+.landing-seemplify .shadow-xl,
+.landing-seemplify .shadow-2xl {
+  box-shadow: var(--marketing-shadow);
+}
+
+/* Solid accent fills: progress bars, dots, small markers. */
+.landing-seemplify .bg-blue-400,
+.landing-seemplify .bg-blue-500,
+.landing-seemplify .bg-blue-600,
+.landing-seemplify .bg-purple-400,
+.landing-seemplify .bg-purple-500,
+.landing-seemplify .bg-indigo-400,
+.landing-seemplify .bg-indigo-500,
+.landing-seemplify .bg-cyan-500 {
+  background-color: var(--marketing-brand);
+}
+
+.landing-seemplify .bg-green-400,
+.landing-seemplify .bg-green-500,
+.landing-seemplify .bg-green-600,
+.landing-seemplify .bg-emerald-400,
+.landing-seemplify .bg-emerald-600 {
+  background-color: var(--marketing-positive);
+}
+
+.landing-seemplify .bg-amber-500 {
+  background-color: var(--marketing-warning);
+}
+
+/* Translucent accent tints: badges, kickers, soft panels. */
+.landing-seemplify .bg-blue-500\/5,
+.landing-seemplify .bg-blue-500\/10,
+.landing-seemplify .bg-blue-500\/20,
+.landing-seemplify .bg-blue-500\/30,
+.landing-seemplify .bg-purple-500\/5,
+.landing-seemplify .bg-purple-500\/10,
+.landing-seemplify .bg-purple-500\/30,
+.landing-seemplify .bg-indigo-500\/30,
+.landing-seemplify .bg-indigo-500\/50,
+.landing-seemplify .bg-indigo-400\/30,
+.landing-seemplify .bg-cyan-500\/10 {
+  background-color: color-mix(in srgb, var(--marketing-brand) 12%, var(--marketing-surface));
+}
+
+.landing-seemplify .bg-green-500\/5,
+.landing-seemplify .bg-green-500\/10,
+.landing-seemplify .bg-green-500\/30,
+.landing-seemplify .bg-green-400\/20,
+.landing-seemplify .bg-green-400\/30,
+.landing-seemplify .bg-emerald-500\/5 {
+  background-color: color-mix(in srgb, var(--marketing-positive) 12%, var(--marketing-surface));
+}
+
+.landing-seemplify .bg-amber-500\/10 {
+  background-color: color-mix(in srgb, var(--marketing-warning) 12%, var(--marketing-surface));
+}
+
+.landing-seemplify .bg-red-500\/10 {
+  background-color: color-mix(in srgb, #c2410c 10%, var(--marketing-surface));
+}
+
+.landing-seemplify .border-blue-500,
+.landing-seemplify .border-blue-500\/20,
+.landing-seemplify .border-indigo-500\/30 {
+  border-color: color-mix(in srgb, var(--marketing-brand) 35%, var(--marketing-line-strong));
+}
+
+.landing-seemplify .border-green-500\/20,
+.landing-seemplify .border-green-500\/30,
+.landing-seemplify .border-green-400\/30 {
+  border-color: color-mix(in srgb, var(--marketing-positive) 35%, var(--marketing-line-strong));
+}
+
+/* The "Recruiter vs traditional ATS" mock-up: its deep-blue panels become brand-tinted paper. */
+.landing-seemplify :is(.bg-blue-900\/60, .bg-blue-900\/70, .bg-purple-900\/60, .bg-indigo-900\/60) {
+  background-color: color-mix(in srgb, var(--marketing-brand) 8%, var(--marketing-surface));
+}
+
+.landing-seemplify .bg-gradient-to-t[class*='from-blue-900'] {
+  background-image: linear-gradient(to top, color-mix(in srgb, var(--marketing-brand) 18%, var(--marketing-surface)) 0%, transparent 100%);
+}
+
+.landing-seemplify .bg-gradient-to-t[class*='from-blue-900'] :is(.text-white, .text-blue-200, .text-white\/70, h4, p, span) {
+  color: var(--marketing-text);
+}
+
+/* Blurred colour blobs were the dark theme's atmosphere; the cream canvas doesn't need them. */
+.landing-seemplify .blur-3xl.pointer-events-none {
+  display: none;
+}
+
+/* ---------- gradient text -> solid brand type ---------- */
+
+.landing-seemplify .text-transparent.bg-clip-text {
+  background-image: none !important;
+  color: var(--marketing-text);
+  -webkit-text-fill-color: currentColor;
+}
+
+.landing-seemplify .text-transparent.bg-clip-text:is(
+  [class*='from-blue-3'],
+  [class*='from-blue-4'],
+  [class*='from-blue-5'],
+  [class*='from-purple'],
+  [class*='from-cyan'],
+  [class*='from-indigo']
+) {
+  color: var(--marketing-brand);
+}
+
+/* ---------- gradient fills -> brand system ---------- */
+
+/* Icon tiles, number badges, floating panels. */
+.landing-seemplify [class*='bg-gradient-to-br'] {
+  background-image: none;
+  background-color: color-mix(in srgb, var(--marketing-brand) 12%, var(--marketing-surface));
+  color: var(--marketing-brand);
+}
+
+.landing-seemplify [class*='bg-gradient-to-br'].text-white,
+.landing-seemplify [class*='bg-gradient-to-br'] .text-white {
+  color: var(--marketing-brand);
+}
+
+.landing-seemplify [class*='bg-gradient-to-br']:is([class*='from-green'], [class*='from-emerald']) {
+  background-color: color-mix(in srgb, var(--marketing-positive) 12%, var(--marketing-surface));
+  color: var(--marketing-positive);
+}
+
+.landing-seemplify [class*='bg-gradient-to-br']:is([class*='from-green'], [class*='from-emerald']) .text-white {
+  color: var(--marketing-positive);
+}
+
+.landing-seemplify [class*='bg-gradient-to-br']:is([class*='from-amber'], [class*='from-orange']) {
+  background-color: color-mix(in srgb, var(--marketing-warning) 12%, var(--marketing-surface));
+  color: var(--marketing-warning);
+}
+
+.landing-seemplify [class*='bg-gradient-to-br']:is([class*='from-amber'], [class*='from-orange']) .text-white {
+  color: var(--marketing-warning);
+}
+
+/* Horizontal gradients: pills, lines, overlays. */
+.landing-seemplify [class*='bg-gradient-to-r'] {
+  background-image: none;
+}
+
+.landing-seemplify :is(span, div)[class*='bg-gradient-to-r'] {
+  background-color: color-mix(in srgb, var(--marketing-brand) 10%, var(--marketing-surface));
+}
+
+.landing-seemplify :is(.h-0\.5, .h-1, .h-1\.5)[class*='bg-gradient-to-r'] {
+  background-color: var(--marketing-brand);
+}
+
+.landing-seemplify .absolute.inset-0[class*='bg-gradient-to-r'] {
+  background-color: transparent;
+}
+
+/* Primary calls to action. */
+.landing-seemplify :is(button, a)[class*='bg-gradient-to-r'] {
+  background-color: var(--marketing-text);
+  color: var(--marketing-canvas);
+  border-radius: 7px;
+  box-shadow: none;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.landing-seemplify :is(button, a)[class*='bg-gradient-to-r']:hover {
+  background-color: color-mix(in srgb, var(--marketing-text) 88%, var(--marketing-canvas));
+}
+
+.landing-seemplify :is(button, a)[class*='bg-gradient-to-r'] :is(.text-white, span, svg) {
+  color: inherit;
+}
+
+.landing-seemplify :is(button, a)[class*='bg-gradient-to-r'] .bg-gradient-to-r {
+  background-color: transparent;
+}
+
+/* Secondary buttons (outline variant). */
+.landing-seemplify :is(button, a):is(.bg-white\/5, .bg-white\/10) {
+  background-color: var(--marketing-surface);
+  color: var(--marketing-text);
+  border-color: var(--marketing-line-strong);
+  border-radius: 7px;
+}
+
+.landing-seemplify :is(button, a):is(.bg-white\/5, .bg-white\/10):hover {
+  background-color: var(--marketing-surface);
+  border-color: var(--marketing-text);
+}
+
+/* ---------- header and menus ---------- */
+
+.landing-seemplify header.fixed {
+  background: color-mix(in srgb, var(--marketing-canvas) 94%, transparent);
+  border-bottom: 1px solid var(--marketing-line);
+  backdrop-filter: blur(12px);
+  box-shadow: none;
+}
+
+.landing-seemplify .bg-slate-900\/95 {
+  background-color: color-mix(in srgb, var(--marketing-canvas) 92%, transparent);
+}
+
+.landing-seemplify .bg-slate-900\/98 {
+  background-color: var(--marketing-surface);
+}
+
+/* ---------- content that sits on photographs stays light ---------- */
+
+.landing-seemplify [data-on-photo] :is(.text-white, h3, h4, strong) {
+  color: #f7f5fa;
+}
+
+.landing-seemplify [data-on-photo] :is(.text-slate-300, .text-slate-200, p, small) {
+  color: #d6d1de;
+}
+
+.landing-seemplify [data-on-photo] .bg-white\/90 :is(.text-white, .text-gray-800, span, div, strong) {
+  color: var(--marketing-text);
+}
+
+.landing-seemplify [data-on-photo] .bg-white\/90 .text-gray-500 {
+  color: var(--marketing-faint);
+}
+
+.landing-seemplify [data-on-photo] :is(.bg-white\/10, .bg-white\/20) {
+  background-color: rgba(24, 22, 31, 0.6);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.landing-seemplify [data-on-photo] :is(.bg-white\/10, .bg-white\/20) :is(h4, p, .text-white, .text-slate-300) {
+  color: #f7f5fa;
+}
+
+.landing-seemplify [data-on-photo] div[class*='bg-gradient-to-r'] {
+  background-color: var(--marketing-brand);
+}
+
+.landing-seemplify [data-on-photo] div[class*='bg-gradient-to-r'] :is(.text-white, span) {
+  color: #ffffff;
+}
+
+/* ---------- landing-specific structure ---------- */
+
+.landing-seemplify .backdrop-blur-xl,
+.landing-seemplify .backdrop-blur-md {
+  backdrop-filter: none;
+}
+
+.landing-seemplify footer {
+  border-top-color: var(--marketing-line);
+}
+
+.landing-seemplify a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.landing-seemplify :focus-visible {
+  outline: 2px solid var(--marketing-brand);
+  outline-offset: 3px;
+}
