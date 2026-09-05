@@ -5,7 +5,7 @@ import {
   ScanSearch,
   UserRoundCheck,
 } from 'lucide-react'
-import Image from 'next/image'
+import ThemedImage from '@/components/ThemedImage'
 import Link from 'next/link'
 import styles from './RecruiterWorkflowShowcase.module.css'
 
@@ -106,7 +106,7 @@ export default function RecruiterWorkflowShowcase() {
                   <strong>Recruiter</strong>
                   <span>{view.label}</span>
                 </div>
-                <Image
+                <ThemedImage
                   src={view.image}
                   alt={view.alt}
                   width={view.width}

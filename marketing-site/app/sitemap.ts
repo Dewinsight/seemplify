@@ -32,7 +32,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly',
       priority: 0.9,
     },
-    ...productPages.map((product) => ({
+    ...productPages.filter((product) => product.slug !== 'recruiter').map((product) => ({
       url: `${config.url}/products/${product.slug}`,
       lastModified: now,
       changeFrequency: 'weekly' as const,

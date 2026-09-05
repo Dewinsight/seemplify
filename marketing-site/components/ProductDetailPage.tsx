@@ -16,6 +16,8 @@ import Link from 'next/link'
 import type { ProductPageData, ProductVisualKind } from '@/app/products/product-data'
 import { productPages } from '@/app/products/product-data'
 import { absoluteUrl, idpUrl, siteConfig } from '@/app/site-config'
+
+const productHref = (slug: string) => (slug === 'recruiter' ? siteConfig.recruiterSiteUrl : `/products/${slug}`)
 import { BookDemoButton } from '@/components/BookDemoModal'
 import JsonLd from '@/components/JsonLd'
 import MarketingPageShell from '@/components/MarketingPageShell'
@@ -88,7 +90,7 @@ export default function ProductDetailPage({ product }: { product: ProductPageDat
             </ol>
           </nav>
 
-          <header className={styles.hero}>
+          <header className={`${styles.hero} marketing-product-hero`}>
             <div className={styles.heroCopy}>
               <div className={styles.productIdentity}>
                 <Icon aria-hidden="true" size={22} />
@@ -96,8 +98,8 @@ export default function ProductDetailPage({ product }: { product: ProductPageDat
                 {product.status ? <strong>{product.status}</strong> : null}
               </div>
               <h1>{product.name}</h1>
-              <p className={styles.heroStatement}>{product.title}</p>
-              <p className={styles.heroSummary}>{product.summary}</p>
+              <p className={`${styles.heroStatement} marketing-product-hero-statement`}>{product.title}</p>
+              <p className={`${styles.heroSummary} marketing-product-hero-summary`}>{product.summary}</p>
               <div className={styles.heroActions}>
                 <Link
                   href={idpUrl('/signup')}
@@ -200,8 +202,8 @@ export default function ProductDetailPage({ product }: { product: ProductPageDat
           <div className="marketing-container">
             <h2>Continue through the suite</h2>
             <div>
-              <Link href={`/products/${previous.slug}`} rel="prev"><ArrowLeft aria-hidden="true" size={17} /><span><small>Previous</small><strong>{previous.navigationName}</strong></span></Link>
-              <Link href={`/products/${next.slug}`} rel="next"><span><small>Next</small><strong>{next.navigationName}</strong></span><ArrowRight aria-hidden="true" size={17} /></Link>
+              <Link href={productHref(previous.slug)} rel="prev"><ArrowLeft aria-hidden="true" size={17} /><span><small>Previous</small><strong>{previous.navigationName}</strong></span></Link>
+              <Link href={productHref(next.slug)} rel="next"><span><small>Next</small><strong>{next.navigationName}</strong></span><ArrowRight aria-hidden="true" size={17} /></Link>
             </div>
           </div>
         </nav>

@@ -1,0 +1,71 @@
+.root {
+  --electric-light-color: oklch(from var(--electric-border-color) l c h);
+  position: relative;
+  display: grid;
+  min-width: 0;
+  border-radius: inherit;
+  overflow: visible;
+  isolation: isolate;
+}
+
+.canvasWrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.canvas {
+  display: block;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  border-radius: inherit;
+}
+
+.layers {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.glow1,
+.glow2,
+.backgroundGlow {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.glow1 {
+  border: 2px solid oklch(from var(--electric-border-color) l c h / 0.6);
+  filter: blur(1px);
+}
+
+.glow2 {
+  border: 2px solid var(--electric-light-color);
+  filter: blur(4px);
+}
+
+.backgroundGlow {
+  z-index: -1;
+  transform: scale(1.08);
+  filter: blur(32px);
+  opacity: 0.28;
+  background: linear-gradient(-30deg, var(--electric-light-color), transparent, var(--electric-border-color));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvasWrap {
+    display: none;
+  }
+}

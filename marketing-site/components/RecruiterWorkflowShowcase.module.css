@@ -159,7 +159,7 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--marketing-line-strong) 82%, #1a1720);
   border-radius: 8px;
-  background: #f3f1ec;
+  background: var(--marketing-surface-soft);
   box-shadow: 0 2px 8px rgba(24, 20, 32, .12);
 }
 
@@ -169,10 +169,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  border-bottom: 1px solid rgba(29, 26, 35, .13);
-  background: #fff;
+  border-bottom: 1px solid var(--marketing-line);
+  background: var(--marketing-surface);
   padding: 10px 14px;
-  color: #26222d;
+  color: var(--marketing-text);
   font-size: 12px;
 }
 
@@ -182,7 +182,7 @@
 }
 
 .captureBar span {
-  color: #6b6572;
+  color: var(--marketing-muted);
 }
 
 .capture img {

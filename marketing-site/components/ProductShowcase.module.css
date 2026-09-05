@@ -3,6 +3,103 @@
   border: 1px solid var(--marketing-line-strong);
   background: var(--marketing-surface-soft);
   padding: 18px;
+  overflow: visible;
+}
+
+.stage {
+  position: relative;
+  padding: 26px 22px 20px;
+  margin: -8px -4px 0;
+}
+
+.glow {
+  position: absolute;
+  inset: 6% 2% -4%;
+  z-index: 0;
+  border-radius: 24px;
+  filter: blur(28px);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.tilt {
+  position: relative;
+  z-index: 1;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.frameDots {
+  display: inline-flex;
+  gap: 5px;
+  margin-right: 4px;
+}
+
+.frameDots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--marketing-line-strong);
+}
+
+.sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.22) 46%, transparent 58%);
+  background-size: 260% 100%;
+  animation: showcase-sheen 7s ease-in-out infinite;
+  mix-blend-mode: soft-light;
+}
+
+@keyframes showcase-sheen {
+  0%, 55% { background-position: 120% 0; }
+  85%, 100% { background-position: -60% 0; }
+}
+
+.callout {
+  position: absolute;
+  z-index: 2;
+  max-width: 220px;
+  pointer-events: none;
+}
+
+.calloutInner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--marketing-surface) 96%, transparent);
+  color: var(--marketing-text);
+  font-family: var(--marketing-heading);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 8px 12px 8px 10px;
+  box-shadow: 0 1px 2px rgba(23, 21, 18, 0.06), 0 18px 34px -22px rgba(23, 21, 18, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.calloutInner svg {
+  flex: 0 0 auto;
+  color: var(--marketing-brand);
+}
+
+.calloutTopRight {
+  top: -18px;
+  right: -12px;
+}
+
+.calloutLeft {
+  top: 9%;
+  left: -28px;
+}
+
+.calloutBottomRight {
+  right: 10px;
+  bottom: -18px;
 }
 
 .showcase::before {
@@ -17,9 +114,12 @@
   position: relative;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--marketing-line-strong) 82%, #1a1720);
-  border-radius: 8px;
-  background: #f3f1ec;
-  box-shadow: 0 2px 8px rgba(24, 20, 32, .12);
+  border-radius: 10px;
+  background: var(--marketing-surface-soft);
+  box-shadow:
+    0 1px 2px rgba(24, 20, 32, 0.08),
+    0 24px 60px -28px rgba(24, 20, 32, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.35) inset;
 }
 
 .frameBar {
@@ -28,10 +128,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid rgba(29, 26, 35, .13);
-  background: #fff;
+  border-bottom: 1px solid var(--marketing-line);
+  background: var(--marketing-surface);
   padding: 10px 14px;
-  color: #26222d;
+  color: var(--marketing-text);
   font-size: 12px;
 }
 
@@ -41,16 +141,17 @@
 }
 
 .frameBar span {
-  color: #6b6572;
+  color: var(--marketing-muted);
   text-align: right;
 }
 
 .viewport {
+  position: relative;
   display: grid;
   aspect-ratio: var(--capture-ratio);
   place-items: center;
   overflow: hidden;
-  background: #f4f2ed;
+  background: var(--marketing-surface-soft);
 }
 
 .viewport img {
@@ -121,6 +222,15 @@
     padding: 10px;
   }
 
+  .stage {
+    padding: 14px 8px 12px;
+    margin: 0;
+  }
+
+  .callout {
+    display: none;
+  }
+
   .frameBar {
     min-height: 40px;
   }
@@ -139,5 +249,11 @@
 
   .process li:nth-child(n + 3) {
     border-top: 1px solid var(--marketing-line);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheen {
+    display: none;
   }
 }

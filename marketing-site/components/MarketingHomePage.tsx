@@ -21,14 +21,29 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { absoluteUrl, getSiteConfig, idpUrl } from '@/app/site-config'
+import { absoluteUrl, getSiteConfig, idpUrl, siteConfig } from '@/app/site-config'
 import { homeFaqs, primaryMarkets } from '@/app/seo-markets'
 import { BookDemoButton } from '@/components/BookDemoModal'
 import JsonLd from '@/components/JsonLd'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingHeader from '@/components/MarketingHeader'
-import { PageProgress, SuiteHandoffGraphic } from '@/components/MarketingMotion'
-import { DistributedWorkIllustration, PeopleJourneyStory } from '@/components/MarketingVisualStories'
+import { PageProgress, Reveal, SuiteHandoffGraphic } from '@/components/MarketingMotion'
+import AuroraLayer from '@/components/effects/AuroraLayer'
+import Parallax from '@/components/motion/Parallax'
+import ShinyText from '@/components/motion/ShinyText'
+import { PeopleJourneyStory } from '@/components/MarketingVisualStories'
+import MarketsGlobe from '@/components/globe/MarketsGlobe'
+import Magnetic from '@/components/motion/Magnetic'
+import ShimmerLink from '@/components/motion/ShimmerLink'
+import TextReveal from '@/components/motion/TextReveal'
+import ElectricBorder from '@/components/effects/ElectricBorder'
+import StarBorderLink from '@/components/effects/StarBorderLink'
+import CapabilityBand from '@/components/sections/CapabilityBand'
+import RingsBackdrop from '@/components/sections/RingsBackdrop'
+import landing from '@/components/LandingEffects.module.css'
+import SuiteCard from '@/components/sections/SuiteCard'
+import SuiteNumbers from '@/components/sections/SuiteNumbers'
+import HeroOrbit from '@/components/three/HeroOrbit'
 
 type SuiteApp = {
   name: string
@@ -222,16 +237,21 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
             <div className="marketing-people-hero__copy">
               <p className="marketing-section-kicker"><span aria-hidden="true" /> AI-powered people operations</p>
               <h1>
-                Run the work around your people in <span className="marketing-people-hero__connected">one connected platform.</span>
+                <TextReveal text="Run the work around your people in" />{' '}
+                <span className="marketing-people-hero__connected">
+                  <TextReveal text="one connected platform." delay={0.42} />
+                </span>
               </h1>
               <p className="marketing-people-hero__lead">
                 Hire, onboard, manage time and leave, support performance and prepare payroll - with shared identity,
                 clear approvals and AI inside the workflows that need it.
               </p>
               <div className="marketing-people-hero__actions">
-                <Link href={signupUrl} className="marketing-button marketing-button--primary" data-track-cta="hero-start-free-trial">
-                  Start your 7-day trial <ArrowRight aria-hidden="true" size={17} />
-                </Link>
+                <Magnetic>
+                  <ShimmerLink href={signupUrl} className="marketing-button marketing-button--primary" data-track-cta="hero-start-free-trial">
+                    Start your 7-day trial <ArrowRight aria-hidden="true" size={17} />
+                  </ShimmerLink>
+                </Magnetic>
                 <BookDemoButton className="marketing-button marketing-button--secondary" trackingLabel="hero-book-demo">
                   Book a demo
                 </BookDemoButton>
@@ -244,14 +264,17 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
             </div>
 
             <figure className="marketing-people-hero__media">
-              <Image
-                src="/images/seemplify-people-operations-hero.png"
-                alt="A diverse workplace team collaborating around a table and planning wall"
-                width={1536}
-                height={1024}
-                priority
-                sizes="(max-width: 920px) 100vw, 52vw"
-              />
+              {/* 3D identity orbit when the browser can run it; the photograph stays as SSR markup and fallback. */}
+              <HeroOrbit>
+                <Image
+                  src="/images/seemplify-people-operations-hero.png"
+                  alt="A diverse workplace team collaborating around a table and planning wall"
+                  width={1536}
+                  height={1024}
+                  priority
+                  sizes="(max-width: 920px) 100vw, 52vw"
+                />
+              </HeroOrbit>
               <div className="marketing-people-hero__media-label" aria-hidden="true">
                 <span>One shared identity</span>
                 <strong>Context stays with the person</strong>
@@ -272,38 +295,43 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
           </div>
         </section>
 
+        <SuiteNumbers marketCount={primaryMarkets.length} />
+        <CapabilityBand />
+
         <section id="modules" className="marketing-section marketing-suite-section">
           <div className="marketing-container">
-            <div className="marketing-heading-row">
+            <Reveal className="marketing-heading-row">
               <div>
                 <h2>One suite for the full people journey.</h2>
                 <p>Start with the workspaces you need. The identity, organisation and access layer stays consistent underneath.</p>
               </div>
               <Link href="#how-it-works" className="marketing-inline-link">See how the work connects <ArrowRight aria-hidden="true" size={16} /></Link>
-            </div>
+            </Reveal>
             <div className="marketing-suite-grid">
               {suiteApps.map((app) => {
                 const Icon = app.icon
                 return (
-                  <Link className="marketing-suite-card" href={`/products/${app.slug}`} key={app.name}>
-                    <div className="marketing-suite-card__topline">
-                      <Icon aria-hidden="true" size={20} />
-                      {app.status ? <span>{app.status}</span> : null}
-                    </div>
-                    <h3>{app.name}</h3>
-                    <p>{app.description}</p>
-                    <span className="marketing-suite-card__link">Explore {app.name} <ArrowRight aria-hidden="true" size={15} /></span>
-                  </Link>
+                  <SuiteCard
+                    key={app.name}
+                    href={app.slug === 'recruiter' ? siteConfig.recruiterSiteUrl : `/products/${app.slug}`}
+                    name={app.name}
+                    description={app.description}
+                    status={app.status}
+                    icon={<Icon aria-hidden="true" size={20} />}
+                  />
                 )
               })}
             </div>
           </div>
         </section>
 
-        <section id="ai" className="marketing-section marketing-ai-section">
+        <section id="ai" className={`marketing-section marketing-ai-section ${landing.aiSection}`}>
+          <AuroraLayer className={landing.auroraLayer} />
           <div className="marketing-container marketing-ai-section__layout">
             <div className="marketing-ai-section__copy">
-              <p className="marketing-section-kicker">AI where it earns its place</p>
+              <p className="marketing-section-kicker">
+                <ShinyText text="AI where it earns its place" shineColor="#f7f5fa" />
+              </p>
               <h2>Helpful automation, with the model choice left open.</h2>
               <p>
                 Seemplify is not tied to one model. Connect ChatGPT for supported activities or use your organisation's Local
@@ -329,7 +357,9 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
                 })}
               </div>
             </div>
-            <AiWorkflowGraphic />
+            <ElectricBorder color="#a88cff" speed={0.7} chaos={0.08} borderRadius={10}>
+              <AiWorkflowGraphic />
+            </ElectricBorder>
           </div>
 
           <div className="marketing-container marketing-ai-interview-highlight">
@@ -370,13 +400,15 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
         <section id="platform" className="marketing-section marketing-platform-story">
           <div className="marketing-container marketing-platform-story__layout">
             <div className="marketing-platform-story__image-wrap">
-              <Image
-                src="/images/seemplify-team-culture.png"
-                alt="Colleagues laughing and building something together during a workplace break"
-                width={1536}
-                height={1024}
-                sizes="(max-width: 920px) 100vw, 50vw"
-              />
+              <Parallax className={landing.parallaxFill} offset={56}>
+                <Image
+                  src="/images/seemplify-team-culture.png"
+                  alt="Colleagues laughing and building something together during a workplace break"
+                  width={1536}
+                  height={1024}
+                  sizes="(max-width: 920px) 100vw, 50vw"
+                />
+              </Parallax>
             </div>
             <div className="marketing-platform-story__copy">
               <p className="marketing-section-kicker">Built around people</p>
@@ -397,7 +429,7 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
 
         <section id="africa" className="marketing-section marketing-regions-section">
           <div className="marketing-container">
-            <div className="marketing-heading-row">
+            <Reveal className="marketing-heading-row">
               <div>
                 <h2>Built for teams operating across Africa and beyond.</h2>
                 <p>
@@ -406,9 +438,12 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
                 </p>
               </div>
               <Link href="/africa" className="marketing-inline-link">Review regional coverage <ArrowRight aria-hidden="true" size={16} /></Link>
-            </div>
+            </Reveal>
             <div className="marketing-regions-layout">
-              <DistributedWorkIllustration />
+              <MarketsGlobe
+                markets={primaryMarkets.map((market) => ({ country: market.country, cities: [...market.cities] }))}
+                caption="One organisation can include office, remote and field work while keeping country-specific payroll coverage explicit."
+              />
               <div className="marketing-regions-list">
                 {primaryMarkets.map((market) => (
                   <Link href={`/africa/${market.slug}`} key={market.slug}>
@@ -436,13 +471,14 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
           </div>
         </section>
 
-        <section id="cta" className="marketing-final-cta">
+        <section id="cta" className={`marketing-final-cta ${landing.ctaHost}`}>
+          <RingsBackdrop />
           <div className="marketing-container marketing-final-cta__inner">
             <div><h2>Make the next people workflow easier to run.</h2><p>Start a seven-day trial or show us the work you want to bring together.</p></div>
             <div>
-              <Link href={signupUrl} className="marketing-button marketing-button--primary" data-track-cta="footer-start-free-trial">
+              <StarBorderLink href={signupUrl} className="marketing-button marketing-button--primary" data-track-cta="footer-start-free-trial">
                 Start free trial <ArrowRight aria-hidden="true" size={17} />
-              </Link>
+              </StarBorderLink>
               <BookDemoButton className="marketing-button marketing-button--secondary" trackingLabel="footer-book-demo">Book a demo</BookDemoButton>
             </div>
           </div>

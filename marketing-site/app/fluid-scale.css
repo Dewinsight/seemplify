@@ -1,0 +1,166 @@
+/*
+  Fluid scale for laptop widths (1060–1440px).
+
+  The base stylesheet was tuned at 1440px; below that, fixed pixel sizes made
+  headings, spacing and cards look oversized for the viewport. These rules
+  scale the big things proportionally with the viewport so 1200px reads like a
+  smaller 1440px rather than a cramped one. Everything below 1060px is left to
+  the existing tablet/phone breakpoints.
+*/
+
+@media (max-width: 1440px) and (min-width: 1061px) {
+  .marketing-container {
+    padding-inline: clamp(22px, 2.2vw, 32px);
+  }
+
+  .marketing-site--people-first {
+    --marketing-home-section-space: clamp(72px, 7.2vw, 104px);
+  }
+
+  /* ---- hero ---- */
+
+  .marketing-people-hero__layout {
+    gap: clamp(32px, 4.6vw, 88px);
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  }
+
+  .marketing-people-hero__copy {
+    padding-block: clamp(20px, 2.4vw, 34px);
+  }
+
+  .marketing-people-hero h1 {
+    max-width: none;
+    font-size: clamp(44px, 5.28vw, 76px);
+  }
+
+  .marketing-section-kicker {
+    margin-bottom: clamp(12px, 1.25vw, 18px);
+    font-size: clamp(12.5px, 0.97vw, 14px);
+  }
+
+  .marketing-people-hero__lead {
+    margin-top: clamp(18px, 1.8vw, 26px);
+    font-size: clamp(15.5px, 1.39vw, 20px);
+  }
+
+  .marketing-people-hero__actions {
+    margin-top: clamp(20px, 2.1vw, 30px);
+  }
+
+  .marketing-people-hero__trust {
+    margin-top: clamp(22px, 2.2vw, 32px);
+    font-size: clamp(12px, 0.9vw, 13px);
+  }
+
+  .marketing-people-hero__media {
+    min-height: clamp(440px, 42.4vw, 610px);
+  }
+
+  .marketing-people-hero__handoff {
+    margin-top: clamp(26px, 2.6vw, 38px);
+    padding-block: clamp(20px, 1.95vw, 28px);
+  }
+
+  /* ---- section headings ---- */
+
+  .marketing-heading-row h2,
+  .marketing-ai-section h2,
+  .marketing-platform-story h2,
+  .marketing-faq-section h2,
+  .marketing-final-cta h2 {
+    font-size: clamp(34px, 3.9vw, 56px);
+  }
+
+  .marketing-heading-row p,
+  .marketing-ai-section__copy > p,
+  .marketing-platform-story__copy > p,
+  .marketing-faq-section__layout > div > p,
+  .marketing-final-cta p {
+    margin-top: clamp(12px, 1.25vw, 18px);
+    font-size: clamp(14.5px, 1.11vw, 16px);
+  }
+
+  /* ---- suite grid ---- */
+
+  .marketing-suite-card {
+    min-height: clamp(200px, 17.2vw, 248px);
+    padding: clamp(18px, 1.66vw, 24px);
+  }
+
+  .marketing-suite-card h3 {
+    margin-top: clamp(34px, 3.5vw, 50px);
+    font-size: clamp(17px, 1.39vw, 20px);
+  }
+
+  .marketing-suite-card p {
+    margin-top: clamp(9px, 0.83vw, 12px);
+    font-size: clamp(13px, 0.97vw, 14px);
+  }
+
+  /* ---- AI section ---- */
+
+  .marketing-ai-section__layout {
+    gap: clamp(40px, 6vw, 110px);
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  }
+
+  .marketing-ai-flow {
+    padding: clamp(18px, 1.66vw, 24px);
+  }
+
+  /* ---- platform story / regions ---- */
+
+  .marketing-platform-story__image-wrap {
+    min-height: clamp(380px, 34.7vw, 500px);
+  }
+
+  .marketing-regions-layout {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  }
+
+  /* ---- closing CTA ---- */
+
+  .marketing-final-cta {
+    padding-block: clamp(56px, 5.3vw, 76px);
+  }
+}
+
+/* Theme-paired images: one <img> per theme, toggled purely in CSS so there is no flash. */
+
+.marketing-theme-dark-only {
+  display: none !important;
+}
+
+[data-theme='dark'] .marketing-theme-light-only {
+  display: none !important;
+}
+
+[data-theme='dark'] .marketing-theme-dark-only {
+  display: block !important;
+}
+
+/* ---- product pages ---- */
+
+@media (max-width: 1440px) and (min-width: 1061px) {
+  .marketing-product-hero {
+    gap: clamp(36px, 5.5vw, 96px);
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    padding-block: clamp(44px, 6.5vw, 108px);
+  }
+
+  .marketing-product-hero h1 {
+    max-width: none;
+    margin-top: clamp(20px, 2vw, 30px);
+    font-size: clamp(48px, 5.97vw, 86px);
+  }
+
+  .marketing-product-hero-statement {
+    margin-top: clamp(18px, 1.8vw, 26px);
+    font-size: clamp(21px, 2.36vw, 34px);
+  }
+
+  .marketing-product-hero-summary {
+    margin-top: clamp(16px, 1.5vw, 22px);
+    font-size: clamp(14.5px, 1.11vw, 16px);
+  }
+}

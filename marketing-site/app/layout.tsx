@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
 import './globals.css'
+import './fluid-scale.css'
 import { Providers } from './providers'
 import { akwaIbomConfig, getSiteConfig } from './site-config'
 import { themeInitScript } from '@/lib/theme-sync'
+import AmbientField from '@/components/effects/AmbientField'
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
@@ -100,6 +102,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>
+        <AmbientField />
         <Providers>{children}</Providers>
       </body>
     </html>

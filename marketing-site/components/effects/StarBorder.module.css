@@ -1,0 +1,67 @@
+.host {
+  position: relative;
+  display: inline-block;
+  padding: 1px 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.bottom,
+.top {
+  position: absolute;
+  z-index: 0;
+  width: 300%;
+  height: 50%;
+  border-radius: 50%;
+  opacity: 0.75;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+.bottom {
+  right: -250%;
+  bottom: -12px;
+  animation-name: star-bottom;
+}
+
+.top {
+  top: -12px;
+  left: -250%;
+  animation-name: star-top;
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes star-bottom {
+  0% {
+    transform: translate(0%, 0%);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-100%, 0%);
+    opacity: 0;
+  }
+}
+
+@keyframes star-top {
+  0% {
+    transform: translate(0%, 0%);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(100%, 0%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bottom,
+  .top {
+    animation: none;
+    opacity: 0.35;
+  }
+}

@@ -1,0 +1,593 @@
+/* Shared styling for the motion / 3D layer of the marketing home page.
+   Everything reads the site's --marketing-* tokens so it follows the theme toggle. */
+
+/* ---------- hero orbit (3D) ---------- */
+
+.orbitFrame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.orbitShader,
+.orbitCanvas {
+  position: absolute;
+  inset: 0;
+}
+
+.orbitShader {
+  opacity: 0.9;
+}
+
+.orbitVignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle 36% at 50% 46%, color-mix(in srgb, var(--marketing-brand) 22%, transparent), transparent 70%),
+    radial-gradient(ellipse 75% 65% at 50% 45%, transparent 0%, color-mix(in srgb, var(--marketing-surface-sunken) 60%, transparent) 100%);
+}
+
+.orbitChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--marketing-surface) 94%, transparent);
+  color: var(--marketing-text);
+  font-family: var(--marketing-heading);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  padding: 6px 10px 6px 8px;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(23, 21, 18, 0.06), 0 10px 24px -18px rgba(23, 21, 18, 0.5);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 120ms linear;
+}
+
+.orbitChip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--chip-dot, var(--marketing-brand));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--chip-dot, var(--marketing-brand)) 22%, transparent);
+}
+
+.orbitPoster {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- hero record cards (DOM faces on 3D slabs) ---------- */
+
+.recordCard {
+  box-sizing: border-box;
+  display: grid;
+  gap: 10px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 10px;
+  background: var(--marketing-surface);
+  color: var(--marketing-text);
+  font-family: var(--marketing-font);
+  padding: 12px 13px 11px;
+  letter-spacing: -0.01em;
+  user-select: none;
+  transition: box-shadow 260ms ease, border-color 260ms ease;
+}
+
+.recordCard[data-front='true'] {
+  border-color: color-mix(in srgb, var(--marketing-brand) 60%, var(--marketing-line-strong));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--marketing-brand) 18%, transparent),
+    0 24px 48px -28px color-mix(in srgb, var(--marketing-brand) 45%, transparent);
+  transform: scale(1.03);
+}
+
+.recordBar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--marketing-surface-sunken);
+}
+
+.recordBar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--marketing-brand), color-mix(in srgb, var(--marketing-brand) 55%, var(--marketing-positive)));
+}
+
+.recordHead {
+  display: grid;
+  align-items: center;
+  gap: 9px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+}
+
+.recordAvatar {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--marketing-brand) 16%, var(--marketing-surface));
+  color: var(--marketing-brand);
+  font-family: var(--marketing-heading);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.recordWho {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.recordWho strong {
+  overflow: hidden;
+  font-family: var(--marketing-heading);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recordWho small {
+  overflow: hidden;
+  color: var(--marketing-muted);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recordWorkspace {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-family: var(--marketing-heading);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--marketing-brand) 12%, var(--marketing-surface));
+  color: var(--marketing-brand);
+}
+
+.recordCard[data-tone='positive'] .recordWorkspace {
+  background: color-mix(in srgb, var(--marketing-positive) 12%, var(--marketing-surface));
+  color: var(--marketing-positive);
+}
+
+.recordCard[data-tone='warning'] .recordWorkspace {
+  background: color-mix(in srgb, var(--marketing-warning) 14%, var(--marketing-surface));
+  color: var(--marketing-warning);
+}
+
+.recordCard[data-tone='neutral'] .recordWorkspace {
+  background: var(--marketing-surface-soft);
+  color: var(--marketing-muted);
+}
+
+.recordRows {
+  display: grid;
+  margin: 0;
+  gap: 5px;
+  border-top: 1px solid var(--marketing-line);
+  padding-top: 9px;
+}
+
+.recordRows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+}
+
+.recordRows dt {
+  color: var(--marketing-muted);
+}
+
+.recordRows dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.recordFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--marketing-line);
+  padding-top: 8px;
+  font-size: 11px;
+}
+
+.recordStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.recordStatus i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--marketing-brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--marketing-brand) 20%, transparent);
+}
+
+.recordCard[data-tone='positive'] .recordStatus i {
+  background: var(--marketing-positive);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--marketing-positive) 20%, transparent);
+}
+
+.recordCard[data-tone='warning'] .recordStatus i {
+  background: var(--marketing-warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--marketing-warning) 20%, transparent);
+}
+
+.recordId {
+  color: var(--marketing-faint);
+  font-family: var(--marketing-mono, ui-monospace, monospace);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- shimmer CTA ---------- */
+
+.shimmerHost {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmerSweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 34%;
+  transform: skewX(-14deg);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--marketing-canvas) 38%, transparent), transparent);
+  pointer-events: none;
+}
+
+.shimmerContent {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* ---------- numbers strip ---------- */
+
+.numbers {
+  border-bottom: 1px solid var(--marketing-line);
+  background: var(--marketing-surface);
+}
+
+.numbersGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-left: 1px solid var(--marketing-line-strong);
+}
+
+.numbersCell {
+  border-right: 1px solid var(--marketing-line-strong);
+  padding: 30px 26px 28px;
+}
+
+.numbersValue {
+  display: block;
+  font-family: var(--marketing-heading);
+  font-size: clamp(40px, 4.6vw, 62px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--marketing-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.numbersValue em {
+  font-style: normal;
+  color: var(--marketing-brand);
+}
+
+.numbersLabel {
+  display: block;
+  margin-top: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--marketing-text);
+}
+
+.numbersDetail {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--marketing-muted);
+}
+
+/* ---------- capability band (marquee) ---------- */
+
+.band {
+  border-bottom: 1px solid var(--marketing-line);
+  background: var(--marketing-canvas);
+  padding-block: 22px;
+}
+
+.bandKicker {
+  margin-bottom: 14px;
+  text-align: center;
+  color: var(--marketing-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.bandRows {
+  display: grid;
+  gap: 10px;
+}
+
+.marquee {
+  position: relative;
+  display: flex;
+  width: 100%;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+}
+
+.marqueeTrack {
+  display: flex;
+  width: max-content;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.marqueeCopy {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  padding-right: 10px;
+}
+
+/* ---------- section atmospheres ---------- */
+
+.aiSection {
+  position: relative;
+  overflow: hidden;
+}
+
+.aiSection > :global(.marketing-container) {
+  position: relative;
+  z-index: 1;
+}
+
+.auroraLayer {
+  position: absolute;
+  inset: 0 0 auto;
+  height: min(70%, 620px);
+  z-index: 0;
+  opacity: 0.55;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+}
+
+.auroraLayer canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.parallaxFill {
+  position: absolute;
+  top: -64px;
+  right: 0;
+  bottom: -64px;
+  left: 0;
+}
+
+.bandChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 999px;
+  background: var(--marketing-surface);
+  color: var(--marketing-text);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+.bandChip svg {
+  color: var(--marketing-brand);
+}
+
+/* ---------- suite cards ---------- */
+
+.suiteCard {
+  position: relative;
+  overflow: hidden;
+}
+
+.suiteSpotlight {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 400ms ease;
+  pointer-events: none;
+  background: radial-gradient(
+    380px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    color-mix(in srgb, var(--marketing-brand) 16%, transparent),
+    transparent 62%
+  );
+}
+
+.suiteCard:hover .suiteSpotlight {
+  opacity: 1;
+}
+
+.suiteContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.motionIcon {
+  display: inline-flex;
+  transform-origin: 50% 60%;
+}
+
+/* ---------- closing CTA rings ---------- */
+
+.ctaRings {
+  position: absolute;
+  top: -35%;
+  right: -6%;
+  bottom: -35%;
+  left: 38%;
+  z-index: 0;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 55% 60% at 50% 50%, #000 35%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 55% 60% at 50% 50%, #000 35%, transparent 75%);
+}
+
+.ctaBloom {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--marketing-brand) 18%, transparent) 0%, transparent 42%),
+    radial-gradient(circle at 50% 50%, transparent 43%, color-mix(in srgb, var(--marketing-brand) 22%, transparent) 44%, transparent 46%),
+    radial-gradient(circle at 50% 50%, transparent 55%, color-mix(in srgb, var(--marketing-positive) 16%, transparent) 56%, transparent 58%);
+}
+
+
+.ctaHost {
+  position: relative;
+  overflow: hidden;
+}
+
+.ctaHost > :global(.marketing-final-cta__inner) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- markets globe ---------- */
+
+.globeFigure {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--marketing-line-strong);
+  background: var(--marketing-surface-sunken);
+}
+
+.globeStage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1536 / 900;
+  padding: 24px;
+}
+
+.globeGlow {
+  position: absolute;
+  width: 62%;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--marketing-brand) 26%, transparent), transparent 70%);
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+.globeCanvas {
+  position: relative;
+  width: min(100%, 460px);
+  aspect-ratio: 1;
+  cursor: grab;
+  touch-action: none;
+  transition: opacity 900ms ease;
+}
+
+.globeLegend {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--marketing-surface) 92%, transparent);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--marketing-muted);
+  backdrop-filter: blur(6px);
+}
+
+.globeLegend strong {
+  font-family: var(--marketing-heading);
+  font-size: 13px;
+  color: var(--marketing-text);
+}
+
+.globeCaption {
+  display: grid;
+  align-items: start;
+  gap: 10px;
+  grid-template-columns: 19px 1fr;
+  border-top: 1px solid var(--marketing-line-strong);
+  background: var(--marketing-surface);
+  color: var(--marketing-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 14px 16px;
+}
+
+.globeCaption svg {
+  margin-top: 2px;
+  color: var(--marketing-brand);
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 960px) {
+  .numbersGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-top: 1px solid var(--marketing-line-strong);
+  }
+
+  .numbersCell {
+    border-bottom: 1px solid var(--marketing-line-strong);
+  }
+}
+
+@media (max-width: 560px) {
+  .numbersCell {
+    padding: 22px 18px 20px;
+  }
+
+  .globeLegend {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmerSweep {
+    display: none;
+  }
+}

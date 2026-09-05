@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { productPageBySlug, productPages } from '@/app/products/product-data'
 import { absoluteUrl, siteConfig } from '@/app/site-config'
 import ProductDetailPage from '@/components/ProductDetailPage'
@@ -8,8 +8,9 @@ type ProductRouteProps = {
   params: Promise<{ product: string }>
 }
 
+// Recruiter is served by its own site (siteConfig.recruiterSiteUrl); it is not pre-rendered here.
 export function generateStaticParams() {
-  return productPages.map((product) => ({ product: product.slug }))
+  return productPages.filter((product) => product.slug !== 'recruiter').map((product) => ({ product: product.slug }))
 }
 
 export async function generateMetadata({ params }: ProductRouteProps): Promise<Metadata> {
@@ -43,6 +44,7 @@ export async function generateMetadata({ params }: ProductRouteProps): Promise<M
 
 export default async function ProductPage({ params }: ProductRouteProps) {
   const { product: slug } = await params
+  if (slug === 'recruiter') redirect(siteConfig.recruiterSiteUrl)
   const product = productPageBySlug[slug]
   if (!product) notFound()
 

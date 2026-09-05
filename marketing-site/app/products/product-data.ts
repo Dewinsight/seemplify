@@ -1,3 +1,5 @@
+import { siteConfig } from '@/app/site-config'
+
 export type ProductVisualKind =
   | 'recruiter'
   | 'core-hr'
@@ -139,7 +141,7 @@ export const productPages: ProductPageData[] = [
       { title: 'Open the right workspaces', description: 'Use the same membership and role context across enabled applications.' },
     ],
     connections: [
-      { product: 'Recruiter', href: '/products/recruiter', description: 'Start an onboarding transition from a documented hiring outcome.' },
+      { product: 'Recruiter', href: siteConfig.recruiterSiteUrl, description: 'Start an onboarding transition from a documented hiring outcome.' },
       { product: 'Leave Management', href: '/products/leave', description: 'Use organisation and manager context when routing leave requests.' },
       { product: 'Time & Attendance', href: '/products/time-attendance', description: 'Use the same employee and team context for schedules and approvals.' },
     ],
@@ -317,7 +319,7 @@ export const productPages: ProductPageData[] = [
       { title: 'Close the loop', description: 'Assign recovery or improvement work and keep the action tied to the original evidence.' },
     ],
     connections: [
-      { product: 'Recruiter', href: '/products/recruiter', description: 'Collect candidate and hiring-manager feedback around the recruiting journey.' },
+      { product: 'Recruiter', href: siteConfig.recruiterSiteUrl, description: 'Collect candidate and hiring-manager feedback around the recruiting journey.' },
       { product: 'Core HR & onboarding', href: '/products/core-hr-onboarding', description: 'Run onboarding or exit listening programmes around a defined transition.' },
       { product: 'Performance', href: '/products/performance', description: 'Keep engagement evidence separate from formal ratings while informing people programmes.' },
     ],
