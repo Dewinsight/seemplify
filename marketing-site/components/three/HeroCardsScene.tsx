@@ -56,15 +56,14 @@ const RECORDS: RecordView[] = [
 interface Palette {
   silk: string
   slab: string
-  track: string
   shadow: string
   shadowOpacity: number
   keyLight: string
 }
 
 const PALETTES: Record<MarketingTheme, Palette> = {
-  light: { silk: '#d4c6f6', slab: '#ffffff', track: '#7047eb', shadow: '#312d39', shadowOpacity: 0.42, keyLight: '#ffffff' },
-  dark: { silk: '#3f3170', slab: '#221e2c', track: '#a98eff', shadow: '#000000', shadowOpacity: 0.34, keyLight: '#e6dfff' },
+  light: { silk: '#d4c6f6', slab: '#ffffff', shadow: '#312d39', shadowOpacity: 0.42, keyLight: '#ffffff' },
+  dark: { silk: '#3f3170', slab: '#221e2c', shadow: '#000000', shadowOpacity: 0.34, keyLight: '#e6dfff' },
 }
 
 interface RecordCardProps {
@@ -221,11 +220,6 @@ function Carousel({ palette, spreadRef, hoverRef, dragRef }: CarouselProps) {
           spreadRef={spreadRef}
         />
       ))}
-      {/* The track the record travels along. */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, -CARD_H / 2 - 0.2, 0]}>
-        <ringGeometry args={[RING_RADIUS - 0.012, RING_RADIUS + 0.012, 160]} />
-        <meshBasicMaterial color={palette.track} transparent opacity={0.28} depthWrite={false} />
-      </mesh>
     </group>
   )
 }
