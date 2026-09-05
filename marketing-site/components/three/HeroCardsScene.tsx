@@ -58,7 +58,7 @@ interface Palette {
 }
 
 const PALETTES: Record<MarketingTheme, Palette> = {
-  light: { silk: '#e2dafb', slab: '#fffdfa', track: '#7047eb', shadow: '#312d39', shadowOpacity: 0.3, keyLight: '#ffffff' },
+  light: { silk: '#d4c6f6', slab: '#ffffff', track: '#7047eb', shadow: '#312d39', shadowOpacity: 0.42, keyLight: '#ffffff' },
   dark: { silk: '#3f3170', slab: '#221e2c', track: '#a98eff', shadow: '#000000', shadowOpacity: 0.34, keyLight: '#e6dfff' },
 }
 
@@ -155,25 +155,47 @@ function RecordCard({ record, index, angle, palette, spreadRef }: RecordCardProp
   )
 }
 
+/** Pointer drag state shared with the frame: radians pending since the last frame, and the fling velocity. */
+export interface DragState {
+  active: boolean
+  pending: number
+  velocity: number
+}
+
 interface CarouselProps {
   palette: Palette
   spreadRef: MutableRefObject<number>
   hoverRef: MutableRefObject<boolean>
+  dragRef: MutableRefObject<DragState>
 }
 
-/** Slow carousel; the pointer nudges it, hovering slows it, scrolling spreads it. */
-function Carousel({ palette, spreadRef, hoverRef }: CarouselProps) {
+/** Slow carousel; the pointer nudges it, hovering slows it, scrolling spreads it, dragging spins it. */
+function Carousel({ palette, spreadRef, hoverRef, dragRef }: CarouselProps) {
   const ring = useRef<THREE.Group>(null)
   const drift = useRef(0)
   const speed = useRef(0.09)
 
   useFrame((state, delta) => {
     if (!ring.current) return
+    const drag = dragRef.current
     speed.current = THREE.MathUtils.damp(speed.current, hoverRef.current ? 0.025 : 0.09, 2.5, delta)
-    drift.current += delta * speed.current
+    if (drag.active) {
+      // Follow the finger: whatever moved since the last frame becomes rotation, and its rate is kept for the fling.
+      if (drag.pending !== 0) {
+        drift.current += drag.pending
+        drag.velocity = THREE.MathUtils.clamp(drag.pending / Math.max(delta, 1 / 120), -7, 7)
+        drag.pending = 0
+      } else {
+        drag.velocity = THREE.MathUtils.damp(drag.velocity, 0, 18, delta)
+      }
+    } else {
+      // Released: coast on the fling, then settle back into the slow drift.
+      drift.current += delta * (speed.current + drag.velocity)
+      drag.velocity = THREE.MathUtils.damp(drag.velocity, 0, 2.4, delta)
+    }
     const targetY = drift.current + state.pointer.x * 0.28
     const targetX = 0.04 + state.pointer.y * -0.06 + spreadRef.current * 0.18
-    ring.current.rotation.y = THREE.MathUtils.damp(ring.current.rotation.y, targetY, 4, delta)
+    ring.current.rotation.y = THREE.MathUtils.damp(ring.current.rotation.y, targetY, drag.active ? 16 : 4, delta)
     ring.current.rotation.x = THREE.MathUtils.damp(ring.current.rotation.x, targetX, 4, delta)
   })
 
@@ -206,6 +228,8 @@ interface HeroCardsSceneProps {
   spreadRef: MutableRefObject<number>
   /** True while the pointer is over the hero frame. */
   hoverRef: MutableRefObject<boolean>
+  /** Drag input from the frame (mouse or touch). */
+  dragRef: MutableRefObject<DragState>
 }
 
 function LookAt({ target }: { target: [number, number, number] }) {
@@ -214,7 +238,7 @@ function LookAt({ target }: { target: [number, number, number] }) {
   return null
 }
 
-export default function HeroCardsScene({ active = true, theme = 'light', compact = false, spreadRef, hoverRef }: HeroCardsSceneProps) {
+export default function HeroCardsScene({ active = true, theme = 'light', compact = false, spreadRef, hoverRef, dragRef }: HeroCardsSceneProps) {
   const palette = PALETTES[theme]
   const [dpr, setDpr] = useState(1.5)
   const light = theme === 'light'
@@ -236,7 +260,7 @@ export default function HeroCardsScene({ active = true, theme = 'light', compact
 
       <SilkPlane color={palette.silk} lightMode={light} speed={2.2} scale={1.1} rotation={0.4} noiseIntensity={light ? 0.45 : 0.3} depth={9} />
 
-      <Carousel palette={palette} spreadRef={spreadRef} hoverRef={hoverRef} />
+      <Carousel palette={palette} spreadRef={spreadRef} hoverRef={hoverRef} dragRef={dragRef} />
 
       <ContactShadows position={[0, 0.82 - CARD_H / 2 - 0.22, 0]} opacity={palette.shadowOpacity} scale={12} blur={3.2} far={3} color={palette.shadow} />
 

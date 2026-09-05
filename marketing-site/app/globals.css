@@ -6,28 +6,28 @@
 
 :root {
   color-scheme: light;
-  --marketing-canvas: #f1efe9;
-  --marketing-surface: #fffdfa;
-  --marketing-surface-soft: #f5f2ec;
-  --marketing-surface-sunken: #ebe7df;
+  --marketing-canvas: #efece5;
+  --marketing-surface: #ffffff;
+  --marketing-surface-soft: #f6f3ed;
+  --marketing-surface-sunken: #e6e1d8;
   --marketing-text: #191816;
-  --marketing-muted: #625e57;
-  --marketing-faint: #777168;
-  --marketing-line: rgba(49, 45, 57, 0.12);
-  --marketing-line-strong: rgba(49, 45, 57, 0.23);
-  --marketing-brand: #7047eb;
-  --marketing-brand-soft: #f3f0ff;
-  --marketing-positive: #00875f;
-  --marketing-warning: #ae6c00;
-  --marketing-shadow: 0 1px 2px rgba(23, 21, 18, 0.04), 0 14px 34px -24px rgba(23, 21, 18, 0.28);
+  --marketing-muted: #55514b;
+  --marketing-faint: #6d685f;
+  --marketing-line: rgba(49, 45, 57, 0.16);
+  --marketing-line-strong: rgba(49, 45, 57, 0.34);
+  --marketing-brand: #6a3fe6;
+  --marketing-brand-soft: #efe9ff;
+  --marketing-positive: #007a56;
+  --marketing-warning: #9f6200;
+  --marketing-shadow: 0 1px 2px rgba(23, 21, 18, 0.06), 0 18px 40px -22px rgba(23, 21, 18, 0.42);
   --marketing-font: 'IBM Plex Sans', system-ui, sans-serif;
   --marketing-heading: 'Space Grotesk', 'IBM Plex Sans', system-ui, sans-serif;
   --marketing-editorial: var(--marketing-heading);
 
   /* Keep the existing Tailwind RGB variables usable by the Akwa tenant. */
-  --background: 239 237 231;
+  --background: 239 236 229;
   --foreground: 23 21 18;
-  --card: 251 250 247;
+  --card: 255 255 255;
   --card-foreground: 23 21 18;
   --muted: 229 226 218;
   --muted-foreground: 89 84 75;

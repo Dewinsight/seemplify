@@ -33,13 +33,13 @@ type Palette = Pick<COBEOptions, 'dark' | 'diffuse' | 'mapBrightness' | 'baseCol
 const PALETTES: Record<MarketingTheme, Palette> = {
   light: {
     dark: 0,
-    diffuse: 0.9,
-    mapBrightness: 3.2,
-    mapBaseBrightness: 0.08,
-    baseColor: [0.96, 0.95, 0.92],
-    markerColor: [0.44, 0.28, 0.92],
-    glowColor: [0.9, 0.86, 0.98],
-    arcColor: [0.44, 0.28, 0.92],
+    diffuse: 1.15,
+    mapBrightness: 5,
+    mapBaseBrightness: 0.04,
+    baseColor: [0.9, 0.88, 0.84],
+    markerColor: [0.42, 0.25, 0.9],
+    glowColor: [0.78, 0.7, 0.99],
+    arcColor: [0.42, 0.25, 0.9],
   },
   dark: {
     dark: 1,

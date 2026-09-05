@@ -8,6 +8,14 @@
   inset: 0;
   overflow: hidden;
   border-radius: inherit;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.orbitFrame[data-dragging='true'] {
+  cursor: grabbing;
 }
 
 .orbitShader,

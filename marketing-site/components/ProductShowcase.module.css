@@ -106,19 +106,19 @@
   position: absolute;
   inset: 0 0 auto;
   height: 42%;
-  background: color-mix(in srgb, var(--marketing-brand) 8%, var(--marketing-surface));
+  background: color-mix(in srgb, var(--marketing-brand) 13%, var(--marketing-surface));
   content: '';
 }
 
 .frame {
   position: relative;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--marketing-line-strong) 82%, #1a1720);
+  border: 1px solid color-mix(in srgb, var(--marketing-line-strong) 70%, #1a1720);
   border-radius: 10px;
   background: var(--marketing-surface-soft);
   box-shadow:
     0 1px 2px rgba(24, 20, 32, 0.08),
-    0 24px 60px -28px rgba(24, 20, 32, 0.45),
+    0 28px 64px -26px rgba(24, 20, 32, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.35) inset;
 }
 

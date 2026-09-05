@@ -62,11 +62,11 @@ void main() {
   vec3 result = uColor * pattern - vec3(grain);
   if (uLightMode > 0.5) {
     float fold = smoothstep(0.28, 0.9, pattern);
-    float specular = smoothstep(0.72, 0.98, pattern);
-    vec3 shadowColor = uColor * 0.72;
-    vec3 bodyColor = min(uColor * 1.18, vec3(1.0));
+    float specular = smoothstep(0.8, 0.995, pattern);
+    vec3 shadowColor = uColor * 0.62;
+    vec3 bodyColor = min(uColor * 1.12, vec3(1.0));
     vec3 lightBase = mix(shadowColor, bodyColor, fold);
-    lightBase = mix(lightBase, vec3(1.0), specular * 0.92);
+    lightBase = mix(lightBase, vec3(1.0), specular * 0.42);
     float fineNoise = noise(gl_FragCoord.xy * 0.63 + vec2(17.0, 41.0));
     float grainSignal = (rnd + fineNoise - 1.0);
     float grainStrength = clamp(uNoiseIntensity * 0.038, 0.0, 0.16);
