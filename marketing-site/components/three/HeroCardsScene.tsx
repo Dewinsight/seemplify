@@ -123,7 +123,8 @@ function RecordCard({ record, index, angle, palette, spreadRef }: RecordCardProp
         transform
         distanceFactor={DISTANCE_FACTOR}
         position={[0, 0, CARD_T / 2 + 0.003]}
-        zIndexRange={[20, 0]}
+        // A wide range so each card's distance maps to its own z-index; the default 20 steps left them tied.
+        zIndexRange={[1000, 0]}
         style={{ pointerEvents: 'none' }}
       >
         <div ref={dom} className={styles.recordCard} data-tone={record.tone} style={{ width: DOM_WIDTH }}>
