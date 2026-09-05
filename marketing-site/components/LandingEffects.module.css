@@ -8,6 +8,8 @@
   inset: 0;
   overflow: hidden;
   border-radius: inherit;
+  /* A plain surface with a soft brand halo behind the cards; the scene itself draws no backdrop. */
+  background: radial-gradient(ellipse 72% 62% at 50% 44%, color-mix(in srgb, var(--marketing-brand) 14%, var(--marketing-surface-sunken)), var(--marketing-surface-sunken) 74%);
   cursor: grab;
   touch-action: pan-y;
   user-select: none;

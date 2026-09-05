@@ -5,14 +5,13 @@ import { useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { ContactShadows, Environment, Html, Lightformer, PerformanceMonitor, RoundedBox } from '@react-three/drei'
 import type { MarketingTheme } from '@/lib/useMarketingTheme'
-import SilkPlane from './SilkPlane'
 import styles from '../LandingEffects.module.css'
 
 /**
  * "One person. One record." — the same colleague's record card, as each of the
  * eight workspaces sees it, fanned on a slow carousel. The cards are real DOM
  * (drei <Html transform>) set in the site's own type and tokens, mounted on
- * thin paper-like slabs that cast soft contact shadows.
+ * thin paper-like slabs that cast soft contact shadows onto a plain surface.
  */
 
 const CARD_W = 2.3
@@ -57,7 +56,6 @@ const RECORDS: RecordView[] = [
 ]
 
 interface Palette {
-  silk: string
   slab: string
   shadow: string
   shadowOpacity: number
@@ -65,8 +63,8 @@ interface Palette {
 }
 
 const PALETTES: Record<MarketingTheme, Palette> = {
-  light: { silk: '#d4c6f6', slab: '#ffffff', shadow: '#312d39', shadowOpacity: 0.42, keyLight: '#ffffff' },
-  dark: { silk: '#3f3170', slab: '#221e2c', shadow: '#000000', shadowOpacity: 0.34, keyLight: '#e6dfff' },
+  light: { slab: '#ffffff', shadow: '#312d39', shadowOpacity: 0.42, keyLight: '#ffffff' },
+  dark: { slab: '#221e2c', shadow: '#000000', shadowOpacity: 0.34, keyLight: '#e6dfff' },
 }
 
 interface RecordCardProps {
@@ -264,8 +262,6 @@ export default function HeroCardsScene({ active = true, theme = 'light', compact
       <LookAt target={target} />
       <ambientLight intensity={light ? 1.1 : 0.6} />
       <directionalLight position={[3, 6, 4]} intensity={light ? 1.5 : 1.1} color={palette.keyLight} />
-
-      <SilkPlane color={palette.silk} lightMode={light} speed={light ? 2.2 : 1.5} scale={1.1} rotation={0.4} noiseIntensity={light ? 0.45 : 0.25} opacity={light ? 1 : 0.8} depth={9 * WORLD} />
 
       <group scale={WORLD}>
         <Carousel palette={palette} spreadRef={spreadRef} hoverRef={hoverRef} dragRef={dragRef} />
