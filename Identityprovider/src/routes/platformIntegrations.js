@@ -1,4 +1,5 @@
 import express from 'express'
+import { retiredAutomations } from '../middleware/retiredAutomations.js'
 import { createPlatformIntegrationServiceAuth, requirePlatformIntegrationService } from '../middleware/platformIntegrationAuth.js'
 import { getNylasRuntimeConfiguration } from '../services/nylasPlatformConfigurationService.js'
 import {
@@ -7,64 +8,14 @@ import {
   getStorageRuntimeConfiguration,
   STORAGE_SOLUTION_ACCESS
 } from '../services/mediaPlatformConfigurationService.js'
-import {
-  resolveWorkspaceAutomationAccess,
-  resolveWorkspaceAutomationTokenAccess,
-  resolveWorkspaceProtectedApproverAccess
-} from '../services/workspaceAutomationAccessService.js'
 
 const router = express.Router()
+router.all([
+  '/workspace/automation-access',
+  '/workspace/n8n-token-access',
+  '/workspace/protected-approver-access'
+], retiredAutomations)
 
-router.post('/workspace/automation-access', createPlatformIntegrationServiceAuth(['workspace'], { requireBodyHash: true }), async (req, res) => {
-  try {
-    res.setHeader('Cache-Control', 'no-store')
-    const identity = await resolveWorkspaceAutomationAccess(req.body || {})
-    return res.json({ allowed: true, identity })
-  } catch (error) {
-    const status = Number(error?.status) || 503
-    if (status >= 500) console.error('Failed to verify Workspace automation access:', error.message)
-    return res.status(status).json({
-      code: error?.code || 'IDENTITY_ACCESS_CHECK_FAILED',
-      error: status >= 500
-        ? 'Seemplify Identity could not verify Workspace automation access.'
-        : error.message
-    })
-  }
-})
-
-router.post('/workspace/n8n-token-access', createPlatformIntegrationServiceAuth(['workspace'], { requireBodyHash: true }), async (req, res) => {
-  try {
-    res.setHeader('Cache-Control', 'no-store')
-    const identity = await resolveWorkspaceAutomationTokenAccess(req.body || {})
-    return res.json({ allowed: true, identity })
-  } catch (error) {
-    const status = Number(error?.status) || 503
-    if (status >= 500) console.error('Failed to verify delegated n8n token access:', error.message)
-    return res.status(status).json({
-      code: error?.code || 'N8N_TOKEN_CHECK_FAILED',
-      error: status >= 500
-        ? 'Seemplify Identity could not verify this n8n token.'
-        : error.message
-    })
-  }
-})
-
-router.post('/workspace/protected-approver-access', createPlatformIntegrationServiceAuth(['workspace'], { requireBodyHash: true }), async (req, res) => {
-  try {
-    res.setHeader('Cache-Control', 'no-store')
-    const approver = await resolveWorkspaceProtectedApproverAccess(req.body || {})
-    return res.json({ allowed: true, approver })
-  } catch (error) {
-    const status = Number(error?.status) || 503
-    if (status >= 500) console.error('Failed to verify protected-action approver access:', error.message)
-    return res.status(status).json({
-      code: error?.code || 'N8N_APPROVER_ACCESS_CHECK_FAILED',
-      error: status >= 500
-        ? 'Seemplify Identity could not verify this protected-action approver.'
-        : error.message
-    })
-  }
-})
 
 router.get('/nylas', requirePlatformIntegrationService, async (_req, res) => {
   try {

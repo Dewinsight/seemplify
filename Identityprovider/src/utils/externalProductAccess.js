@@ -54,6 +54,9 @@ function permissionMatrix(claims) {
  */
 export function externalProductAccessDecision({ clientId, claims, env = process.env }) {
   const normalizedClientId = String(clientId || '').trim()
+  if (RETIRED_AUTOMATION_CLIENT_IDS.has(normalizedClientId)) {
+    return { applicable: true, allowed: false, appId: 'automation-hub', code: 'AUTOMATIONS_REMOVED' }
+  }
   const rule = EXTERNAL_PRODUCT_ENTRY_RULES[normalizedClientId]
   if (!rule) return { applicable: false, allowed: true }
   const requiredPermissions = Array.isArray(rule.permissions) ? rule.permissions : [rule.permission]
@@ -96,3 +99,4 @@ export function externalProductAccessDecision({ clientId, claims, env = process.
     code: allowed ? 'PRODUCT_ACCESS_GRANTED' : 'PRODUCT_PERMISSION_DENIED'
   }
 }
+import { RETIRED_AUTOMATION_CLIENT_IDS } from '../middleware/retiredAutomations.js'

@@ -341,29 +341,6 @@ export const SYSTEM_CAMPAIGN_TEMPLATES = [
     ]
   }),
   createMarketingTemplate({
-    name: 'Automations',
-    slug: 'product-automations',
-    description: 'Governed workflows across Seemplify and connected external tools.',
-    tags: ['automation', 'workflow', 'integrations', 'operations'],
-    eyebrow: 'Seemplify Automations',
-    title: 'Let routine work move itself—without giving up control.',
-    body: 'Connect triggers, decisions, approvals, notifications, and external tools in workflows your team can understand and govern.',
-    imageUrl: `${AUTH_ASSET_ROOT}/automations-governed-flow-gloss-v2.jpg`,
-    imageAlt: 'A governed automation from business trigger through decision branch, human approval, action, notification, and recovered exception',
-    storyTitle: 'Automate the routine. Make the judgement visible.',
-    storyBody: 'Every run follows a readable path: the trigger arrives, conditions route it, a person steps in where judgement matters, actions execute, and exceptions retain a safe recovery route.',
-    detailImageUrl: `${AUTH_ASSET_ROOT}/seemplify-platform-gloss.jpg`,
-    detailImageAlt: 'Seemplify products connected through one shared operating layer',
-    detailCaption: 'Automations can carry context across Seemplify instead of recreating brittle integrations between isolated tools.',
-    featureTitle: 'Automation designed for real operational accountability',
-    featureBody: 'Move work faster without hiding ownership, granting uncontrolled access, or turning failures into a detective exercise.',
-    featureItems: [
-      'Human approvals where judgement matters',
-      'Reliable triggers and actions across Seemplify',
-      'Clear run history, ownership, and recovery paths'
-    ]
-  }),
-  createMarketingTemplate({
     name: 'Experience Management',
     slug: 'product-experience-management',
     description: 'Research, listening, surveys, journeys, insights, and action.',

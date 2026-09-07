@@ -16,14 +16,14 @@ import {
 const router = express.Router()
 
 export const PRODUCT_ACCESS_SERVICES = Object.freeze([
-  'identity-provider', 'workspace', 'messaging', 'community', 'automation-hub',
+  'identity-provider', 'workspace', 'messaging', 'community',
   'recruiter', 'smarthr', 'leave-management', 'performance', 'performance-management',
   'payroll', 'payroll-management', 'time-attendance', 'lms', 'seemplify-learning',
   'approver', 'experience-management', 'openwebui', 'outline'
 ])
 
 const SERVICE_PRODUCT_ALIASES = Object.freeze({
-  workspace: ['messaging', 'community', 'automation-hub'],
+  workspace: ['messaging', 'community'],
   messaging: ['messaging', 'community'],
   recruiter: ['smarthr'],
   performance: ['performance-management'],

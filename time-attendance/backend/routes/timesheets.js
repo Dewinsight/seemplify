@@ -10,7 +10,6 @@ const { syncTimesheetExceptions } = require('../services/exceptionService');
 const { resolveCalculationPolicy } = require('../services/rulePackService');
 const { buildApprovalWorkflow } = require('../services/approvalConfigurationService');
 const { getTimesheetSubmissionError } = require('../services/timesheetSubmissionService');
-const { queueTimesheetEvent } = require('../services/automationEventService');
 const { canRecallTimesheet, resetTimesheetForRecall } = require('../services/timesheetRecallService');
 
 // Apply auth middleware
@@ -275,14 +274,6 @@ router.post('/:id/submit', async (req, res) => {
         }
 
         await timesheet.save();
-        try {
-            await queueTimesheetEvent(timesheet, 'time.timesheet_submitted.v1', userId);
-            if (timesheet.status === 'payroll_pending') {
-                await queueTimesheetEvent(timesheet, 'time.timesheet_approved.v1', 'system');
-            }
-        } catch (automationError) {
-            console.error('Failed to queue timesheet automation event:', automationError.message);
-        }
 
         // Notify assigned manager on submission (if policy allows and manager email is available)
         if (timesheet.status === 'submitted' && timesheet.assignedApprover?.userId) {

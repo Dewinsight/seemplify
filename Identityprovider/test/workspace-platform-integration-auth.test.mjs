@@ -6,17 +6,17 @@ import path from 'node:path'
 import test from 'node:test'
 
 import WebhookReadinessNonce from '../src/models/WebhookReadinessNonce.js'
-import router from '../src/routes/platformIntegrations.js'
 import {
   canonicalPlatformConfigurationRequest,
+  createPlatformIntegrationServiceAuth,
   deriveWorkspacePlatformIntegrationHmacKey,
   WORKSPACE_PLATFORM_INTEGRATION_HMAC_DERIVATION_VERSION,
   WORKSPACE_PLATFORM_INTEGRATION_HMAC_HKDF_SALT,
 } from '../src/middleware/platformIntegrationAuth.js'
 
-const routePath = '/api/internal/v1/platform-integrations/workspace/automation-access'
+const routePath = '/api/internal/v1/platform-integrations/test-workspace-contract'
 const protectedApproverRoutePath =
-  '/api/internal/v1/platform-integrations/workspace/protected-approver-access'
+  '/api/internal/v1/platform-integrations/test-workspace-body-contract'
 
 test('Workspace platform signing derivation matches the v1 cross-service contract vector', () => {
   assert.equal(
@@ -69,7 +69,7 @@ async function authenticate(middleware, request) {
   return { continued, statusCode, responseBody }
 }
 
-test('Workspace automation access accepts only the versioned protocol-derived key', async (t) => {
+test('shared Workspace service authentication accepts only the versioned protocol-derived key', async (t) => {
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'seemplify-workspace-hmac-'))
   const dedicatedFile = path.join(temporaryDirectory, 'workspace-hmac-secret')
   const genericFile = path.join(temporaryDirectory, 'experience-hmac-secret')
@@ -112,9 +112,7 @@ test('Workspace automation access accepts only the versioned protocol-derived ke
   delete process.env.MESSAGING_OIDC_CLIENT_SECRET
   process.env.IDP_WORKSPACE_PLATFORM_INTEGRATION_HMAC_DERIVATION_VERSION = WORKSPACE_PLATFORM_INTEGRATION_HMAC_DERIVATION_VERSION
 
-  const workspaceRoute = router.stack.find((layer) => layer.route?.path === '/workspace/automation-access')
-  assert.ok(workspaceRoute, 'Workspace automation access route must exist')
-  const authenticationMiddleware = workspaceRoute.route.stack[0].handle
+  const authenticationMiddleware = createPlatformIntegrationServiceAuth(['workspace'], { requireBodyHash: true })
 
   const genericOnly = await authenticate(
     authenticationMiddleware,
@@ -185,11 +183,7 @@ test('Workspace automation access accepts only the versioned protocol-derived ke
   assert.equal(fileOverrideSignature.continued, true)
   assert.equal(fileOverrideSignature.statusCode, 200)
 
-  const protectedApproverRoute = router.stack.find(
-    (layer) => layer.route?.path === '/workspace/protected-approver-access',
-  )
-  assert.ok(protectedApproverRoute, 'Protected approver access route must exist')
-  const protectedApproverAuthentication = protectedApproverRoute.route.stack[0].handle
+  const protectedApproverAuthentication = createPlatformIntegrationServiceAuth(['workspace'], { requireBodyHash: true })
   const protectedBody = {
     subject: 'identity-subject-1',
     organizationId: 'identity-org-1',

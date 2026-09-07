@@ -116,8 +116,6 @@ test('HR manager matches admin across products except explicit top-level control
     ['messaging', 'settings.manage'],
     ['community', 'articles.publish'],
     ['community', 'settings.manage'],
-    ['automation-hub', 'connections.manage'],
-    ['automation-hub', 'settings.manage'],
     ['experience-management', 'journeys.manage_roles'],
     ['approver', 'workflow.manage'],
     ['seemplify-learning', 'courses.manage']
@@ -277,7 +275,7 @@ test('product role edits replace only the calling product permission rows', () =
 test('product access service identity is bound to its hosted permission catalogues', () => {
   assert.equal(canServiceManageProduct('workspace', 'messaging'), true)
   assert.equal(canServiceManageProduct('workspace', 'community'), true)
-  assert.equal(canServiceManageProduct('workspace', 'automation-hub'), true)
+  assert.equal(canServiceManageProduct('workspace', 'automation-hub'), false)
   assert.equal(canServiceManageProduct('workspace', 'payroll-management'), false)
   assert.equal(canServiceManageProduct('payroll', 'payroll-management'), true)
   assert.equal(canServiceManageProduct('identity-provider', 'leave-management'), true)

@@ -9,8 +9,8 @@ const claims = (permissionsByApp) => ({
   }
 })
 
-test('Automation and first-party clients retain their existing authorization paths', () => {
-  for (const clientId of ['automation-hub', 'messaging', 'community', 'smarthr-backend']) {
+test('first-party clients retain their existing authorization paths', () => {
+  for (const clientId of ['messaging', 'community', 'smarthr-backend']) {
     assert.deepEqual(
       externalProductAccessDecision({ clientId, claims: claims({}) }),
       { applicable: false, allowed: true }

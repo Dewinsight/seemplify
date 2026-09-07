@@ -39,12 +39,6 @@ services:
       SEEMPLIFY_LEARNING_URL: https://learning.seemplifyai.com
       MESSAGING_URL: https://workspace.seemplifyai.com
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
-      N8N_HUB_ENABLED: "${N8N_HUB_ENABLED:-false}"
-      N8N_CANDIDATE_ACCESS_JSON: ${N8N_CANDIDATE_ACCESS_JSON:-}
-      N8N_CANDIDATE_RELEASE_SHA: ${N8N_CANDIDATE_RELEASE_SHA:-}
-      N8N_INTEGRATION_ENABLED: "${N8N_INTEGRATION_ENABLED:-false}"
-      AUTOMATIONS_URL: ${AUTOMATIONS_URL:-https://automations.seemplifyai.com}
-      WORKSPACE_AUTOMATIONS_URL: ${WORKSPACE_AUTOMATIONS_URL:-https://workspace.seemplifyai.com/automations?editor=standalone}
       COMMUNITY_PRODUCTION_ENABLED: "${COMMUNITY_PRODUCTION_ENABLED:-false}"
       COMMUNITY_URL: "${COMMUNITY_URL:-}"
       COMMUNITY_API_URL: "${COMMUNITY_API_URL:-}"
@@ -69,7 +63,6 @@ services:
       AZURE_SPEECH_LANGUAGE: ${AZURE_SPEECH_LANGUAGE:-en-US}
       AZURE_SPEECH_VOICE: ${AZURE_SPEECH_VOICE:-en-US-AvaNeural}
       MESSAGING_OIDC_CLIENT_SECRET: ${OIDC_MESSAGING_SECRET:?required}
-      N8N_WORKSPACE_NODE_OIDC_CLIENT_SECRET: ${OIDC_N8N_WORKSPACE_NODE_SECRET:-}
       COMMUNITY_OIDC_CLIENT_SECRET: "${OIDC_COMMUNITY_SECRET:-}"
       MESSAGING_IDP_SERVICE_SECRET: ${MESSAGING_IDP_SERVICE_SECRET:?required}
       RECRUITER_ADMIN_URL: https://app.seemplifyai.com
@@ -91,13 +84,10 @@ services:
       TIME_ATTENDANCE_WEBHOOK_URL: http://time-backend:5010/api/webhooks/idp
       MESSAGING_WEBHOOK_URL: http://workspace-backend:5009/api/webhooks/idp
       APPROVER_WEBHOOK_URL: http://approver:80/api/webhooks/idp
-      WORKSPACE_AUTOMATION_WEBHOOK_URL: https://api-workspace.seemplifyai.com/hooks/identity
-      WORKSPACE_AUTOMATION_HMAC_SECRET_FILE: /run/seemplify/workspace-automation-hmac-secret
       SHARED_AI_ADMIN_BASE_URL: http://recruiter-backend:5001
       AI_GATEWAY_ADMIN_ANALYTICS_SECRET: ${AI_GATEWAY_ADMIN_ANALYTICS_SECRET:?required}
     volumes:
       - /opt/seemplify/secrets/idp-clients.json:/run/seemplify/idp-clients.json:ro
-      - /opt/seemplify/secrets/workspace-automation/identity-hmac-secret:/run/seemplify/workspace-automation-hmac-secret:ro
       - /opt/seemplify/secrets/platform-integrations/credential-encryption-key:/run/seemplify/platform-integration-credential-key:ro
       - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-experience-hmac:ro
     healthcheck:
@@ -265,10 +255,6 @@ services:
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
       MAIL_FROM_NAME: Seemplify Leave
-      WORKSPACE_AUTOMATION_API_URL: https://api-workspace.seemplifyai.com
-      WORKSPACE_AUTOMATION_HMAC_SECRET_FILE: /run/seemplify/workspace-automation-hmac-secret
-    volumes:
-      - /opt/seemplify/secrets/workspace-automation/leave-hmac-secret:/run/seemplify/workspace-automation-hmac-secret:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -409,10 +395,6 @@ services:
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
       MAIL_FROM_NAME: Seemplify Payroll
-      WORKSPACE_AUTOMATION_API_URL: https://api-workspace.seemplifyai.com
-      WORKSPACE_AUTOMATION_HMAC_SECRET_FILE: /run/seemplify/workspace-automation-hmac-secret
-    volumes:
-      - /opt/seemplify/secrets/workspace-automation/payroll-hmac-secret:/run/seemplify/workspace-automation-hmac-secret:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5006/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -478,10 +460,6 @@ services:
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
       MAIL_FROM_NAME: Seemplify Time
-      WORKSPACE_AUTOMATION_API_URL: https://api-workspace.seemplifyai.com
-      WORKSPACE_AUTOMATION_HMAC_SECRET_FILE: /run/seemplify/workspace-automation-hmac-secret
-    volumes:
-      - /opt/seemplify/secrets/workspace-automation/time-hmac-secret:/run/seemplify/workspace-automation-hmac-secret:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5010/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s

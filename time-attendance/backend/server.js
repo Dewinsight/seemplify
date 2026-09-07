@@ -13,7 +13,6 @@ const { initializeOIDC } = require('./config/oidc');
 const { initializeEmailService } = require('./services/emailService');
 const { startBackgroundWorker } = require('./services/backgroundJobService');
 const { registerCoreJobHandlers } = require('./services/registerJobHandlers');
-const { startAutomationEventWorker } = require('./services/automationEventService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -116,7 +115,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/integrations/v1/performance', performanceIntegrationRoutes);
 app.use('/api/v1/exceptions', exceptionRoutes);
-app.use('/api/automation/actions', require('./routes/automation'));
+app.use('/api/automation/actions', (_req, res) => res.status(410).json({ code: 'AUTOMATIONS_REMOVED' }));
 
 // Error handling middleware
 app.use(errorHandler);
@@ -148,7 +147,6 @@ const startServer = async () => {
             console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
             
             startBackgroundWorker().catch(error => console.error('Failed to start background worker:', error));
-            startAutomationEventWorker();
         });
     } catch (error) {
         console.error('Failed to start server:', error);

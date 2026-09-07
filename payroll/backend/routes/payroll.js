@@ -15,7 +15,6 @@ const payrollRetractionService = require('../services/PayrollRetractionService')
 const payrollAnalyticsService = require('../services/PayrollAnalyticsService');
 const employerEntityService = require('../services/PayrollEmployerEntityService');
 const payrollCountryAutomationService = require('../services/PayrollCountryAutomationService');
-const { queuePayrollReadyEvent } = require('../services/automationEventService');
 const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 const { hash: hashPayrollTotals, runTotals: getPayrollRunTotals } = require('../services/PayrollCycleService');
 const payrollCycleService = require('../services/PayrollCycleService');
@@ -2179,8 +2178,6 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
     }
 
     if (run.status === 'pending_approval') {
-      try { await queuePayrollReadyEvent(run, adminId); }
-      catch (error) { console.error('Payroll is pending approval; Automation Hub outbox reconciliation will retry:', error.message); }
       return res.json({ success: true, run, idempotent: true });
     }
 
@@ -2206,8 +2203,6 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
       { status: 'pending_approval' }
     );
 
-    try { await queuePayrollReadyEvent(run, adminId); }
-    catch (error) { console.error('Payroll submitted; Automation Hub outbox reconciliation will retry:', error.message); }
 
     if (approvalPolicy.approvalRequired === false && approvalPolicy.automaticRelease !== false) {
       run.status = 'approved';

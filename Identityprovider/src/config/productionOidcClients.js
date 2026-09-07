@@ -12,29 +12,22 @@ export function materializeProductionOidcClients(clients = [], secrets = {}) {
   )
 
   return (Array.isArray(clients) ? clients : [])
+    .filter(client => !RETIRED_AUTOMATION_CLIENT_IDS.has(client?.client_id))
     .filter(client => (
       client?.token_endpoint_auth_method === 'none'
       || secretByClient.has(client?.client_id)
     ))
     .map(client => {
       const publicClient = client.token_endpoint_auth_method === 'none'
-      const productionBoundary = client.client_id === 'n8n-workspace-node'
-        ? {
-            redirect_uri_patterns: [
-              'https://automations.seemplifyai.com/rest/oauth2-credential/callback'
-            ],
-            allowed_origins: ['https://automations.seemplifyai.com']
-          }
-        : {}
       if (publicClient) {
         const publicDefinition = { ...client }
         delete publicDefinition.client_secret
-        return { ...publicDefinition, ...productionBoundary }
+        return publicDefinition
       }
       return {
         ...client,
-        ...productionBoundary,
         client_secret: secretByClient.get(client.client_id)
       }
     })
 }
+import { RETIRED_AUTOMATION_CLIENT_IDS } from '../middleware/retiredAutomations.js'

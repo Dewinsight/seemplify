@@ -53,7 +53,6 @@ const taxJurisdictionService = require('./services/TaxJurisdictionService');
 const payrollEmployerEntityService = require('./services/PayrollEmployerEntityService');
 const payrollSequenceMigrationService = require('./services/PayrollSequenceMigrationService');
 const { getPayrollLeaveSigningReadiness } = require('./services/PayrollLeaveRequestSigner');
-const { startAutomationEventWorker } = require('./services/automationEventService');
 
 // Import webhook routes and claims middleware
 const webhooksRouter = require('./routes/webhooks');
@@ -148,7 +147,7 @@ app.use('/api/payroll/tax', require('./routes/tax'));
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/presence', require('./routes/presenceReporter'));
 app.use('/api/integrations/v1/time-attendance', require('./routes/timeAttendanceIntegration'));
-app.use('/api/automation/actions', require('./routes/automation'));
+app.use('/api/automation/actions', (_req, res) => res.status(410).json({ code: 'AUTOMATIONS_REMOVED' }));
 
 // Health Check
 app.get('/health', (req, res) => {
@@ -269,7 +268,6 @@ async function startServer() {
       exchangeRateScheduler.initializeScheduler();
     }
     serviceReady = true;
-    startAutomationEventWorker();
 
     return app.listen(PORT, () => {
       console.log(`Payroll Service running on port ${PORT}`);

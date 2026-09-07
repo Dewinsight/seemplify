@@ -324,24 +324,6 @@ const developmentApps = [
     isBeta: true
   },
   {
-    appId: 'automation-hub',
-    name: 'Automations',
-    description: 'Build and run connected Workspace workflows with n8n',
-    icon: 'bolt',
-    color: '#5f6654',
-    url: process.env.WORKSPACE_AUTOMATIONS_URL || 'http://localhost:4200/automations?editor=standalone',
-    apiUrl: process.env.AUTOMATIONS_URL || 'http://localhost:5678',
-    clientId: 'messaging',
-    authType: 'direct',
-    isActive: environmentFlagEnabled(process.env.N8N_HUB_ENABLED) &&
-      environmentFlagEnabled(process.env.N8N_INTEGRATION_ENABLED),
-    isPublic: true,
-    category: 'productivity',
-    order: 8.05,
-    badge: 'Beta',
-    isBeta: true
-  },
-  {
     appId: 'community',
     name: 'Community',
     description: 'Public conversations, communities, articles, events, and connections',
@@ -534,23 +516,6 @@ const productionApps = [
     isPublic: true,
     category: 'productivity',
     order: 8,
-    badge: 'Beta',
-    isBeta: true
-  },
-  {
-    appId: 'automation-hub',
-    name: 'Automations',
-    description: 'Build and run connected Workspace workflows with n8n',
-    icon: 'bolt',
-    color: '#5f6654',
-    url: getWorkspaceAutomationLaunchUrl(process.env),
-    apiUrl: getN8nEditorUrl(process.env),
-    clientId: 'messaging',
-    authType: 'direct',
-    isActive: isN8nProductionReady(process.env),
-    isPublic: true,
-    category: 'productivity',
-    order: 8.05,
     badge: 'Beta',
     isBeta: true
   },

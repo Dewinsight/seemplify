@@ -66,9 +66,8 @@ jobs:
             test/recruiter-admin-sso-secret.test.mjs \
             test/profile-completion.test.mjs \
             test/workspace-automation-access.test.mjs \
-            test/n8n-candidate-access.test.mjs \
+            test/retired-automations.test.mjs \
             test/workspace-platform-integration-auth.test.mjs \
-            test/workspace-automations-boundary.test.mjs \
             tests/access-control.test.mjs \
             src/__tests__/account-profile-schema.test.mjs \
             src/__tests__/organization-access-control-routing.test.mjs \

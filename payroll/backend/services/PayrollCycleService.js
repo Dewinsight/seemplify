@@ -12,7 +12,6 @@ const organizationCurrencyService = require('./OrganizationCurrencyService');
 const currencyService = require('./CurrencyService');
 const payrollFinalizationService = require('./PayrollFinalizationService');
 const payrollRetractionService = require('./PayrollRetractionService');
-const { queuePayrollReadyEvent } = require('./automationEventService');
 
 function cycleError(message, statusCode = 400, code = 'PAYROLL_CYCLE_INVALID', details) {
   const error = new Error(message);
@@ -386,8 +385,6 @@ class PayrollCycleService {
       run.submittedTotalsHash = run.calculationTotalsHash || hash(runTotals(run));
       run.addApproval('submitted', actor.userId, actor.name, actor.role, comments);
       await run.save();
-      try { await queuePayrollReadyEvent(run, actor.userId); }
-      catch (error) { console.error('Cycle child submitted; Automation Hub outbox reconciliation will retry:', error.message); }
     }
     cycle.childRuns.forEach(child => { child.status = 'submitted'; });
     await cycle.save();

@@ -26,7 +26,6 @@ const WEBHOOK_ENDPOINTS = {
   recruiter: process.env.RECRUITER_WEBHOOK_URL || 'http://localhost:5001/api/webhooks/idp-lifecycle',
   messaging: process.env.MESSAGING_WEBHOOK_URL || 'http://localhost:3333/api/webhooks/idp',
   approver: process.env.APPROVER_WEBHOOK_URL || 'http://localhost:5000/api/webhooks/idp',
-  workspaceAutomation: process.env.WORKSPACE_AUTOMATION_WEBHOOK_URL || 'http://localhost:3333/hooks/identity',
 }
 
 const INSECURE_WEBHOOK_SECRET = 'your-webhook-secret-key'
@@ -39,11 +38,8 @@ const WEBHOOK_TARGET_SECRET_ENV = {
   recruiter: 'IDP_WEBHOOK_SECRET_RECRUITER',
   messaging: 'IDP_WEBHOOK_SECRET_MESSAGING',
   approver: 'IDP_WEBHOOK_SECRET_APPROVER',
-  workspaceAutomation: 'WORKSPACE_AUTOMATION_HMAC_SECRET'
 }
-const WEBHOOK_TARGET_SECRET_FILE_ENV = {
-  workspaceAutomation: 'WORKSPACE_AUTOMATION_HMAC_SECRET_FILE'
-}
+const WEBHOOK_TARGET_SECRET_FILE_ENV = {}
 
 export function resolveWebhookSecret(source = process.env) {
   const value = String(source.IDP_WEBHOOK_SECRET || '').trim()

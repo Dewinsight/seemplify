@@ -16,11 +16,16 @@ application IDs.
 | Transactional mail | `deploy-mail-service.yml` | `mail.compose.yml` |
 | TURN credentials API and Coturn | `deploy-coturn-hostinger.yml` | `coturn/docker-compose.yml` |
 
-## Staged, not production-enabled
+## Retired automation platform
 
-| Scope | Current verification | Compose definition |
-| --- | --- | --- |
-| Shared n8n Automation editor | Workspace `qa-n8n-workspace.yml` and manual `deploy-n8n-hostinger.yml`; protected dark QA is available, but public cutover is source-locked until tenant/session, event-delivery, and migration controls are implemented | Canonical manifest: Workspace `deploy/hostinger/automation-n8n.compose.yml`; this repository intentionally carries no duplicate compose |
+The n8n editor and legacy Automation Hub are retired. Identity no longer lists
+Automations or registers its OAuth clients, and former launch/integration paths
+return HTTP 410. The dedicated cross-product automation event workers are not
+started. Workspace membership webhooks, product approval logic, shared AI, and
+the independently deployed Nango connector service are unchanged.
+
+Do not redeploy the former automation stacks. Recovery backups may retain their
+data but are not active services or supported rollback targets.
 
 Each application workflow builds immutable images labeled with
 `org.opencontainers.image.revision`, deploys the exact tested commit, waits for

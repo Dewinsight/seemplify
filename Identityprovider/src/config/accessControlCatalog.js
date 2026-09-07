@@ -387,18 +387,6 @@ export const PRODUCT_PERMISSION_CATALOG = Object.freeze([
     permission('settings.manage', 'Manage Community settings', 'organization')
   ], { category: 'collaboration' }),
 
-  product('automation-hub', 'Automations', [
-    permission('automations.read', 'View automations', 'organization'),
-    permission('automations.create', 'Create automations', 'organization'),
-    permission('automations.edit', 'Edit automations', 'organization'),
-    permission('automations.delete', 'Delete automations', 'organization'),
-    permission('automations.run', 'Run automations', 'organization'),
-    permission('executions.read', 'View execution history', 'organization'),
-    permission('executions.manage', 'Manage executions', 'organization'),
-    permission('connections.read', 'View connections', 'organization', '', { sensitive: true }),
-    permission('connections.manage', 'Manage connections', 'organization', '', { sensitive: true }),
-    permission('settings.manage', 'Manage Automation settings', 'organization')
-  ], { category: 'automation' }),
 
   product('experience-management', 'Experience Management', [
     permission('users.read', 'View users', 'platform'),
@@ -501,7 +489,6 @@ export const MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS = Object.freeze({
     'posts.moderate', 'channels.manage', 'forums.moderate', 'events.manage',
     'reports.read', 'spaces.manage', 'members.manage', 'settings.manage'
   ],
-  'automation-hub': ['settings.manage'],
   'experience-management': ['audit.read', 'journeys.manage_roles'],
   approver: ['projects.override', 'scoring.manage', 'rules.manage', 'roles.manage', 'workflow.manage']
 })

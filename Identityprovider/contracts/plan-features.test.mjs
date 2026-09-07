@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getAllHubApps } from '../src/config/hubApps.js'
+import { getAllOrganizationManagedHubApps } from '../src/config/hubApps.js'
 import Plan from '../src/models/Plan.js'
 import {
   PLAN_FEATURES,
@@ -10,7 +10,7 @@ import {
 } from '../src/config/planFeatures.js'
 
 test('every registered hub app has a plan feature', () => {
-  const unmappedApps = getAllHubApps()
+  const unmappedApps = getAllOrganizationManagedHubApps()
     .filter(app => !getPlanFeatureKeyForApp(app.appId))
     .map(app => app.appId)
 
@@ -19,7 +19,7 @@ test('every registered hub app has a plan feature', () => {
 
 test('newly added hub apps have independent access controls', () => {
   assert.equal(getPlanFeatureKeyForApp('messaging'), 'workspace')
-  assert.equal(getPlanFeatureKeyForApp('automation-hub'), 'workspace')
+  assert.equal(getPlanFeatureKeyForApp('automation-hub'), undefined)
   assert.equal(getPlanFeatureKeyForApp('experience-management'), 'experienceManagement')
   assert.equal(getPlanFeatureKeyForApp('approver'), 'approver')
 })

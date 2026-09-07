@@ -111,7 +111,7 @@ import {
 } from './services/accessControlService.js'
 import { claimsCacheEnabled } from './utils/claimsCachePolicy.js'
 import { createWebhookReadinessVerifier } from './middleware/webhookReadinessAuth.js'
-import { createAutomationRequestVerifier } from './middleware/automationRequestAuth.js'
+import { retiredAutomations } from './middleware/retiredAutomations.js'
 import {
   createBrowserNotificationClientRouter,
   createInternalBrowserNotificationRouter
@@ -1295,7 +1295,9 @@ app.use((req, res, next) => {
 const verifyWebhookReadinessRequest = createWebhookReadinessVerifier({
   resolveSecret: resolveWebhookSecret
 })
-const verifyAutomationRequest = createAutomationRequestVerifier()
+// Retired before any legacy handler or authentication flow can run.
+app.all('/launch/automation-hub', retiredAutomations)
+app.use('/api/internal/automation', retiredAutomations)
 
 // Proves the running IdP loaded its current target-specific keys and every
 // deployed product receiver accepts them. No membership state is mutated.
@@ -1308,40 +1310,6 @@ app.post('/api/internal/webhook-readiness', verifyWebhookReadinessRequest, async
   }
 })
 
-// Runtime authorization for the shared Automation Hub. This endpoint never
-// performs the product action; it verifies the publisher's current Identity
-// membership, role, and application grants immediately before the Hub calls
-// the authoritative product adapter.
-app.post('/api/internal/automation/authorize', verifyAutomationRequest, async (req, res) => {
-  try {
-    const organizationId = String(req.body?.organizationId || '').trim()
-    const userId = String(req.body?.userId || '').trim()
-    const requiredRoles = Array.isArray(req.body?.requiredRoles) ? req.body.requiredRoles.map(String) : []
-    const requiredAppIds = Array.isArray(req.body?.requiredAppIds) ? req.body.requiredAppIds.map(String) : []
-    if (!organizationId || !userId || requiredRoles.length > 20 || requiredAppIds.length > 30) {
-      return res.status(400).json({ allowed: false, code: 'AUTOMATION_AUTHORIZATION_INPUT_INVALID' })
-    }
-    const [organization, account] = await Promise.all([
-      Organization.findById(organizationId).select('members.account members.status members.role members.appAccess updatedAt').lean(),
-      Account.findOne({ sub: userId }).select('_id sub').lean()
-    ])
-    if (!organization || !account) return res.status(404).json({ allowed: false, code: 'AUTOMATION_IDENTITY_NOT_FOUND' })
-    const member = organization.members.find(item => String(item.account) === String(account._id) && item.status === 'active')
-    if (!member) return res.status(403).json({ allowed: false, code: 'AUTOMATION_MEMBERSHIP_INACTIVE', reason: 'The workflow publisher is no longer an active organization member.' })
-    const normalizedRole = member.role === 'owner' || member.role === 'admin'
-      ? member.role
-      : member.role === 'hr_manager' ? 'manager' : 'member'
-    if (requiredRoles.length && !requiredRoles.includes(normalizedRole)) {
-      return res.status(403).json({ allowed: false, code: 'AUTOMATION_ROLE_DENIED', reason: 'The workflow publisher no longer has the required organization role.' })
-    }
-    const missingAppId = requiredAppIds.find(appId => !memberCanAccessApp(member.appAccess, appId))
-    if (missingAppId) return res.status(403).json({ allowed: false, code: 'AUTOMATION_APP_ACCESS_DENIED', reason: `Application access to ${missingAppId} has been removed.` })
-    return res.json({ allowed: true, organizationRevision: organization.updatedAt?.toISOString?.() || null, role: normalizedRole })
-  } catch (error) {
-    console.error('Automation runtime authorization failed:', error.message)
-    return res.status(503).json({ allowed: false, code: 'AUTOMATION_AUTHORIZATION_UNAVAILABLE' })
-  }
-})
 
 // Interaction routes MUST come BEFORE provider.callback()
 app.get('/interaction/:uid', async (req, res) => {
@@ -4803,71 +4771,6 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect(samlSsoUrl)
     }
 
-    // The default Identity launch keeps users inside a minimal Identity shell,
-    // while the exact external surface request opens the same Workspace-brokered
-    // n8n instance. Both paths reuse all membership and subscription checks above.
-    if (app.appId === 'automation-hub') {
-      const requestedSurface = resolveAutomationHubSurface(req.query)
-      const automationSurfaceUrls = getOrganizationScopedAutomationSurfaceUrls(app, currentOrgId)
-      if (!requestedSurface || !automationSurfaceUrls) {
-        await logAppLaunchActivity({
-          req,
-          account,
-          app,
-          status: 'blocked_invalid_launch_context',
-          details: {
-            organizationId: currentOrgId,
-            authType: 'direct'
-          }
-        })
-        setAutomationEditorResponseHeaders(res)
-        return res.status(400).render('automation-workspace', {
-          user: account,
-          organizationName: currentOrganization?.name || 'Current organization',
-          workspaceEmbedUrl: '',
-          externalLaunchPath: '',
-          errorMessage: 'The automation editor could not be opened safely. Return to the app launcher and open Automations again.'
-        })
-      }
-
-      if (requestedSurface === 'external') {
-        void logAppLaunchActivity({
-          req,
-          account,
-          app,
-          status: 'launched_direct',
-          details: {
-            redirectUrl: automationSurfaceUrls.externalUrl,
-            authType: 'direct',
-            launchDurationMs: Date.now() - launchStartTime
-          }
-        })
-        return res.redirect(automationSurfaceUrls.externalUrl)
-      }
-
-      setAutomationEditorResponseHeaders(res, [
-        automationSurfaceUrls.workspaceOrigin,
-        automationSurfaceUrls.workspaceApiOrigin
-      ])
-      void logAppLaunchActivity({
-        req,
-        account,
-        app,
-        status: 'launched_embedded',
-        details: {
-          redirectUrl: automationSurfaceUrls.embedUrl,
-          authType: 'direct',
-          launchDurationMs: Date.now() - launchStartTime
-        }
-      })
-      return res.render('automation-workspace', {
-        user: account,
-        organizationName: currentOrganization?.name || 'Current organization',
-        workspaceEmbedUrl: automationSurfaceUrls.embedUrl,
-        externalLaunchPath: '/launch/automation-hub?surface=external',
-        errorMessage: ''
-      })
-    }
 
     // Check if app uses direct link (no SSO)
     if (app.authType === 'direct') {
