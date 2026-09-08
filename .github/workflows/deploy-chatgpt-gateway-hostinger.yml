@@ -36,6 +36,7 @@ jobs:
         run: |
           node --test \
             tools/chatgpt-gateway/workspace-mcp.test.cjs \
+            tools/chatgpt-gateway/chatgpt-completion.test.cjs \
             tools/chatgpt-gateway/chatgpt-session-manager.test.cjs \
             tools/chatgpt-gateway/usage-metering-outbox.test.cjs \
             tools/chatgpt-gateway/usage-ledger.test.cjs \

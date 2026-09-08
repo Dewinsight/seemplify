@@ -50,6 +50,20 @@ const MAX_CONCURRENT_TURNS_PER_SUBJECT = Math.max(
 );
 const MODEL_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MODEL_CACHE_MS || 5 * 60_000));
 
+function finalAnswerText(items = []) {
+  const messages = new Map();
+  for (const item of items) {
+    if (item?.type !== 'agentMessage' || typeof item.text !== 'string' || !item.text.trim()
+      || (item.phase != null && item.phase !== 'final_answer')) continue;
+    messages.set(item.id || `unidentified-${messages.size}`, item);
+  }
+  const values = [...messages.values()];
+  const explicit = values.filter((item) => item.phase === 'final_answer');
+  // A completed item is the accumulated message, not another delta. Distinct
+  // final items are separate answer parts; repeated snapshots replace by id.
+  return (explicit.length ? explicit : values).map((item) => item.text.trim()).join('\n\n');
+}
+
 /** Per-user sessions stay off until a deployment opts in, so the existing
  * shared-account Codex path is unaffected by merely shipping this module. */
 function perUserSessionsEnabled(source = process.env) {
@@ -688,8 +702,10 @@ class CodexSubjectSession {
       approvalPolicy: 'never',
       permissions: PERMISSION_PROFILE,
       serviceName: 'seemplify_gateway',
+      ...(input.developerInstructions ? { developerInstructions: input.developerInstructions } : {}),
       ...(input.workspaceMcp ? { ephemeral: true } : {}),
       config: {
+        ...(['low', 'medium', 'high'].includes(input.outputVerbosity) ? { model_verbosity: input.outputVerbosity } : {}),
         ...(input.webSearchEnabled === true
           ? { web_search: 'live', tools: { web_search: { context_size: 'medium' } } }
           : { web_search: 'disabled' }),
@@ -699,7 +715,7 @@ class CodexSubjectSession {
     const threadId = String(threadResult?.thread?.id || '');
     if (!threadId) throw codexError('Codex could not create a thread.', 'CODEX_THREAD_FAILED');
     const threadProcess = this.process;
-    let finalText = '';
+    const agentMessages = new Map();
     const toolActions = new Map();
     const listener = (message) => {
       if (message.method !== 'item/completed') return;
@@ -711,7 +727,7 @@ class CodexSubjectSession {
       const action = input.workspaceMcp ? workspaceToolAction(item) : null;
       if (action && toolActions.size < 100) toolActions.set(action.id, action);
       if (item?.type === 'agentMessage' && typeof item.text === 'string' && item.phase !== 'commentary') {
-        finalText = item.text;
+        agentMessages.set(item.id || `unidentified-${agentMessages.size}`, item);
       }
     };
     this.listeners.add(listener);
@@ -728,7 +744,8 @@ class CodexSubjectSession {
       const turnId = String(started?.turn?.id || '');
       if (!turnId) throw codexError('Codex could not start a turn.', 'CODEX_TURN_FAILED');
       const completed = await this.waitForNotification(
-        (message) => message.method === 'turn/completed' && message.params?.turn?.id === turnId,
+        (message) => message.method === 'turn/completed' && message.params?.turn?.id === turnId
+          && String(message.params?.threadId || '') === threadId,
         Number(input.timeoutMs || 240_000)
       );
       const turn = completed.params?.turn;
@@ -741,11 +758,15 @@ class CodexSubjectSession {
         throw codexError(failure, 'CODEX_TURN_FAILED');
       }
       this.usageLimit = null;
+      // When supplied, the completed turn is the authoritative ordered snapshot:
+      // a listener may have received only one part, or an older version of it.
+      let finalText = finalAnswerText(turn?.items || []) || finalAnswerText(agentMessages.values());
       if (!finalText) {
         const read = await this.request('thread/read', { threadId, includeTurns: true }, 30_000);
         const turns = Array.isArray(read?.thread?.turns) ? read.thread.turns : [];
-        const items = Array.isArray(turns.at(-1)?.items) ? turns.at(-1).items : [];
-        finalText = String(items.filter((item) => item?.type === 'agentMessage').at(-1)?.text || '');
+        const matchingTurn = turns.find((item) => item?.id === turnId);
+        const items = Array.isArray(matchingTurn?.items) ? matchingTurn.items : [];
+        finalText = finalAnswerText(items);
       }
       return {
         content: finalText,
@@ -926,6 +947,7 @@ module.exports = {
   CodexSubjectSession,
   PERMISSION_PROFILE,
   extractRateLimits,
+  finalAnswerText,
   normalizeRateLimitWindow,
   usageLimitFromMessage,
   allowedSourceApps,

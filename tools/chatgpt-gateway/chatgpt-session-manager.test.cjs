@@ -72,6 +72,9 @@ test('Workspace native MCP turns isolate credentials and report only their own t
   assert.equal(observation.lastThreadStart.ephemeral, true);
   assert.equal(observation.lastThreadStart.permissions, 'seemplify-read-only');
   assert.equal(observation.lastThreadStart.config.web_search, 'disabled');
+  assert.equal(observation.lastThreadStart.config.model_verbosity, 'medium');
+  assert.match(observation.lastThreadStart.developerInstructions, /native seemplify_workspace MCP tools/);
+  assert.equal(JSON.parse(observation.lastTurnStart.input[0].text).currentRequest, 'How many tasks are in the Cernel board? Check again.');
   const mcp = observation.lastThreadStart.config.mcp_servers.seemplify_workspace;
   assert.equal(mcp.http_headers.Authorization, `Bearer ${grantToken}`);
   assert.equal(mcp.required, true);
@@ -88,6 +91,72 @@ test('Workspace native MCP turns isolate credentials and report only their own t
   assert.ok(!JSON.stringify(observation.lastTurnStart).includes(grantToken));
   await complete({ activity: 'recruiter.general', chatgptSubject: subject, messages: [{ role: 'user', content: 'hello' }] });
   assert.equal(marker(subject).lastThreadStart.config.mcp_servers, undefined, 'grants must not bleed into later turns on the same account');
+  assert.equal(marker(subject).lastThreadStart.developerInstructions, undefined, 'Workspace instructions must not bleed into later product turns');
+  assert.equal(marker(subject).lastThreadStart.config.model_verbosity, undefined, 'Workspace output preferences must not bleed into other activities');
+});
+
+test('final-answer recovery selects the current turn and excludes later commentary', async () => {
+  const subject = sessions.subjectKeyFor('recruiter', 'final-answer-fallback-user');
+  await connect(subject);
+  fs.writeFileSync(path.join(subjectsRoot, subject, 'read-final-fallback'), '1');
+  const result = await complete({
+    activity: 'messaging.chat', requestSource: 'messaging', chatgptSubject: subject,
+    messages: [{ role: 'user', content: 'Recover this final answer.' }],
+  });
+  assert.match(result.content, /fake completion/);
+  assert.doesNotMatch(result.content, /commentary|another turn/);
+});
+
+test('a completed turn with only commentary fails instead of presenting progress as the answer', async () => {
+  const subject = sessions.subjectKeyFor('recruiter', 'commentary-only-user');
+  await connect(subject);
+  fs.writeFileSync(path.join(subjectsRoot, subject, 'commentary-only'), '1');
+  await assert.rejects(complete({
+    activity: 'messaging.chat', requestSource: 'messaging', chatgptSubject: subject,
+    messages: [{ role: 'user', content: 'Give me the result.' }],
+  }), { code: 'CHATGPT_EMPTY_RESPONSE' });
+});
+
+test('distinct final answer items survive live and fallback paths without duplicate snapshots', async () => {
+  for (const fallback of [false, true]) {
+    const subject = sessions.subjectKeyFor('recruiter', `multiple-final-items-${fallback}`);
+    await connect(subject);
+    fs.writeFileSync(path.join(subjectsRoot, subject, 'multiple-final-items'), '1');
+    if (fallback) fs.writeFileSync(path.join(subjectsRoot, subject, 'read-final-fallback'), '1');
+    const result = await complete({
+      activity: 'messaging.chat', requestSource: 'messaging', chatgptSubject: subject,
+      messages: [{ role: 'user', content: 'Return the full answer.' }],
+    });
+    assert.match(result.content, /^First part with useful detail\.\n\nfake completion/);
+    assert.equal(result.content.split('First part with useful detail.').length - 1, 1);
+    assert.doesNotMatch(result.content, /commentary|another turn/);
+  }
+});
+
+test('final item extraction prefers explicit final phases and supports legacy replies', () => {
+  const message = (id, text, phase) => ({ id, text, phase, type: 'agentMessage' });
+  assert.equal(sessions.finalAnswerText([
+    message('legacy', 'Unphased preamble'),
+    message('one', 'Old snapshot', 'final_answer'),
+    message('one', 'Updated first part', 'final_answer'),
+    message('commentary', 'Progress', 'commentary'),
+    message('two', 'Second part', 'final_answer'),
+    message('unknown', 'Unrecognized phase', 'analysis'),
+  ]), 'Updated first part\n\nSecond part');
+  assert.equal(sessions.finalAnswerText([message('one', 'Legacy answer'), message('two', 'More detail', null)]), 'Legacy answer\n\nMore detail');
+  assert.equal(sessions.finalAnswerText([message('one', '  ', 'final_answer')]), '');
+});
+
+test('the completed turn snapshot replaces partial and stale final items from notifications', async () => {
+  const subject = sessions.subjectKeyFor('recruiter', 'authoritative-final-items-user');
+  await connect(subject);
+  fs.writeFileSync(path.join(subjectsRoot, subject, 'authoritative-final-items'), '1');
+  const result = await complete({
+    activity: 'messaging.chat', requestSource: 'messaging', chatgptSubject: subject,
+    messages: [{ role: 'user', content: 'Return every part of the answer.' }],
+  });
+  assert.match(result.content, /^Updated first part with full detail\.\n\nfake completion/);
+  assert.doesNotMatch(result.content, /First part with useful detail\./);
 });
 
 test('subject keys are namespaced per source application and never collide', () => {

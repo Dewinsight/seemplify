@@ -74,6 +74,7 @@ let pendingLogin = '';
 let threadSequence = 0;
 let turnSequence = 0;
 const threadConfigs = new Map();
+const threadReads = new Map();
 
 const modelCatalog = [
   {
@@ -228,25 +229,40 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
           }
         }
       });
-      send({
-        method: 'item/completed',
-        params: {
-          threadId,
-          turnId,
-          item: {
-            id: `fake-final-${messageSequence}`, type: 'agentMessage', phase: 'final_answer',
-            text: message.params?.outputSchema
-              ? JSON.stringify({ answer: 'fake structured completion' })
-              : `fake completion for ${echoTag}`
-          }
-        }
-      });
+      const finalItem = {
+        id: `fake-final-${messageSequence}`, type: 'agentMessage', phase: 'final_answer',
+        text: message.params?.outputSchema
+          ? JSON.stringify({ answer: 'fake structured completion' })
+          : `fake completion for ${echoTag}`
+      };
+      const fallback = crashMarker('read-final-fallback');
+      const commentaryOnly = crashMarker('commentary-only');
+      const authoritativeFinal = crashMarker('authoritative-final-items');
+      const finalItems = crashMarker('multiple-final-items') || authoritativeFinal ? [
+        { ...finalItem, id: `${finalItem.id}-first`, text: 'First part with useful detail.' }, finalItem
+      ] : [finalItem];
+      threadReads.set(threadId, { thread: { turns: [
+        { id: turnId, items: [
+          ...(commentaryOnly ? [] : finalItems),
+          { type: 'agentMessage', phase: 'commentary', text: 'later commentary is not the answer' }
+        ] },
+        { id: 'unrelated-turn', items: [{ type: 'agentMessage', phase: 'final_answer', text: 'another turn is not the answer' }] }
+      ] } });
+      if (!fallback && !commentaryOnly) {
+        // Repeated complete snapshots of the first item must not duplicate it.
+        const notifiedItems = authoritativeFinal ? finalItems.slice(0, 1) : [...finalItems.slice(0, 1), ...finalItems];
+        for (const item of notifiedItems) send({
+          method: 'item/completed', params: { threadId, turnId, item }
+        });
+      }
       send({
         method: 'turn/completed',
         params: {
           threadId,
           turn: {
-            id: turnId, status: 'completed', items: [], error: null,
+            id: turnId, status: 'completed',
+            items: authoritativeFinal ? finalItems.map((item, index) => index === 0 ? { ...item, text: 'Updated first part with full detail.' } : item) : [],
+            error: null,
             usage: { input_tokens: 11, output_tokens: 7, total_tokens: 18, cached_input_tokens: 3 }
           }
         }
@@ -257,7 +273,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     return;
   }
 
-  if (message.method === 'thread/read') return result(id, { thread: { turns: [] } });
+  if (message.method === 'thread/read') return result(id, threadReads.get(message.params?.threadId) || { thread: { turns: [] } });
   if (message.method === 'thread/delete') return result(id, {});
   if (message.method === 'thread/unsubscribe') return result(id, { status: 'unsubscribed' });
   send({ id, error: { code: -32601, message: `Unsupported fake method ${String(message.method)}` } });
