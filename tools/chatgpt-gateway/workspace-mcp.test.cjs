@@ -23,6 +23,7 @@ test('native MCP config discovers the trusted relay catalog without a duplicate 
   assert.equal(config.url, 'https://api-workspace.seemplifyai.com/api/internal/chat-mcp');
   assert.equal(config.http_headers.Authorization, `Bearer ${grant.grantToken}`);
   assert.equal(config.required, true);
+  assert.equal(config.tool_timeout_sec, 90);
   assert.equal(Object.hasOwn(config, 'enabled_tools'), false);
   assert.equal(Object.hasOwn(config, 'disabled_tools'), false);
   for (const url of ['http://attacker.test/mcp', 'https://user:password@host.test/mcp', 'https://host.test/mcp?token=x']) {
@@ -47,6 +48,9 @@ test('native MCP instructions require live record evidence without including gra
   const prompt = promptFor({ workspaceMcp: grant, messages: [{ role: 'user', content: 'Check board task totals again' }] });
   assert.match(prompt, /native seemplify_workspace MCP tools/);
   assert.match(prompt, /fetch live evidence before answering/);
+  assert.match(prompt, /actual Workspace MCP for user-requested reads and changes/);
+  assert.match(prompt, /Destructive calls require exact-call confirmation/);
+  assert.doesNotMatch(prompt, /Only read tools are available/);
   assert.match(prompt, /documented continuation fields/);
   assert.doesNotMatch(prompt, /Do not use tools|Return JSON with content and toolCalls/);
   assert.ok(!prompt.includes(grant.grantToken));

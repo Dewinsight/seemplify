@@ -42,10 +42,10 @@ function workspaceMcpConfig(grant, env = process.env) {
       enabled: true,
       required: true,
       // Workspace's grant-scoped relay discovers and authorizes its registered
-      // read tools. A second name list here would silently hide new safe tools.
+      // MCP tools. A second name list here would silently hide new server tools.
       default_tools_approval_mode: 'approve',
       startup_timeout_sec: 30,
-      tool_timeout_sec: 45
+      tool_timeout_sec: 90
     }
   };
 }
