@@ -59,6 +59,7 @@ jobs:
             test/auth-redirects.test.mjs \
             test/hub-pins.test.mjs \
             test/member-removal-webhook.test.mjs \
+            test/webhook-outbox.test.mjs \
             test/nylas-platform-configuration.test.mjs \
             test/media-platform-configuration.test.mjs \
             test/messaging-oidc-client.test.mjs \

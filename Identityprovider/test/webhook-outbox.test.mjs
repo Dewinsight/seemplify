@@ -1,5 +1,87 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { processWebhookOutboxRecord } from '../src/services/webhookService.js'
+
+for (const retiredStatus of ['pending', 'dead', 'delivered']) {
+  for (const event of ['organization.member.removed', 'team.member.added']) {
+    test(`${event}: ${retiredStatus} removed target is never sent or revived`, async () => {
+      const retired = {
+        name: 'workspaceAutomation', url: 'https://removed.example/hooks/identity',
+        status: retiredStatus, attempts: 400, nextAttemptAt: new Date(0), deliveredAt: null
+      }
+      const preserved = { name: 'messaging', status: 'delivered', attempts: 2, deliveredAt: new Date(0) }
+      const record = {
+        event, payload: { event }, deliveries: [retired, preserved], status: 'processing',
+        async save() { this.saved = (this.saved || 0) + 1 }
+      }
+      let calls = 0
+      await processWebhookOutboxRecord(record, {
+        fetchImpl: async () => { calls++; throw new Error('no delivery expected') }, now: () => new Date('2026-09-08T00:00:00Z')
+      })
+      assert.equal(calls, 0)
+      assert.equal(retired.status, retiredStatus === 'delivered' ? 'delivered' : 'dead')
+      assert.equal(retired.lastError, retiredStatus === 'delivered' ? undefined : 'AUTOMATIONS_REMOVED')
+      assert.equal(retired.deliveredAt, null)
+      assert.equal(retired.attempts, 400)
+      assert.equal(preserved.status, 'delivered')
+      assert.equal(preserved.attempts, 2)
+      assert.equal(record.attempts, 2)
+      assert.equal(record.status, 'delivered')
+      assert.equal(record.saved, 1)
+    })
+  }
+}
+
+test('retirement preserves pending and dead real consumers and their schedule', async () => {
+  const retryAt = new Date('2026-09-09T00:00:00Z')
+  const messaging = { name: 'messaging', status: 'pending', attempts: 3, nextAttemptAt: retryAt }
+  const leave = { name: 'leaveManagement', status: 'dead', attempts: 12 }
+  const record = {
+    event: 'team.member.added', payload: {}, status: 'processing',
+    deliveries: [{ name: 'workspaceAutomation', status: 'pending', attempts: 400 }, messaging, leave],
+    async save() {}
+  }
+  let calls = 0
+  await processWebhookOutboxRecord(record, {
+    fetchImpl: async () => { calls++; throw new Error('no due delivery expected') }, now: () => new Date('2026-09-08T00:00:00Z')
+  })
+  assert.equal(calls, 0)
+  assert.equal(messaging.status, 'pending')
+  assert.equal(messaging.nextAttemptAt, retryAt)
+  assert.equal(leave.status, 'dead')
+  assert.equal(record.status, 'pending')
+  assert.equal(record.nextAttemptAt.getTime(), retryAt.getTime())
+  assert.equal(record.attempts, 12)
+  assert.equal(record.lastError, '1 endpoint(s) exhausted retries')
+})
+
+test('authorization revival continues only for real consumers', async () => {
+  const later = new Date('2026-09-09T00:00:00Z')
+  const messaging = { name: 'messaging', status: 'dead', attempts: 14, nextAttemptAt: later, url: 'https://workspace.example/hook' }
+  const retired = { name: 'workspaceAutomation', status: 'dead', attempts: 400, url: 'https://removed.example/hook' }
+  const record = {
+    event: 'user.session.invalidate', payload: { event: 'user.session.invalidate' }, status: 'processing',
+    deliveries: [retired, messaging], async save() {}
+  }
+  const prior = process.env.IDP_WEBHOOK_SECRET
+  process.env.IDP_WEBHOOK_SECRET = 'retirement-test-only-key-at-least-32-chars'
+  const called = []
+  try {
+    await processWebhookOutboxRecord(record, {
+      fetchImpl: async url => { called.push(url); return new Response('{}', { status: 503 }) },
+      now: () => new Date('2026-09-08T00:00:00Z')
+    })
+  } finally {
+    if (prior === undefined) delete process.env.IDP_WEBHOOK_SECRET
+    else process.env.IDP_WEBHOOK_SECRET = prior
+  }
+  assert.deepEqual(called, ['https://workspace.example/hook'])
+  assert.equal(retired.status, 'dead')
+  assert.equal(retired.lastError, 'AUTOMATIONS_REMOVED')
+  assert.equal(messaging.status, 'pending')
+  assert.equal(record.status, 'pending')
+  assert.equal(record.expiresAt, null)
+})
 
 function acknowledged(init, status = 202) {
   const payload = JSON.parse(init.body)
@@ -84,7 +166,7 @@ test('durable webhook retries only failed consumers after partial fanout', async
     })
     const deliveredAfterFirstAttempt = record.deliveries.filter(item => item.status === 'delivered')
     const pendingAfterFirstAttempt = record.deliveries.filter(item => item.status === 'pending')
-    assert.equal(deliveredAfterFirstAttempt.length, 8)
+    assert.equal(deliveredAfterFirstAttempt.length, 7)
     assert.equal(pendingAfterFirstAttempt.length, 1)
 
     await service.processWebhookOutboxRecord(record, {

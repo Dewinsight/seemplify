@@ -142,7 +142,8 @@ test('normal Workspace lifecycle webhooks remain, retired webhook is absent', ()
   const webhooks = source('../src/services/webhookService.js')
   assert.match(webhooks, /messaging: process\.env\.MESSAGING_WEBHOOK_URL/)
   assert.match(webhooks, /messaging: 'IDP_WEBHOOK_SECRET_MESSAGING'/)
-  assert.doesNotMatch(webhooks, /workspaceAutomation|WORKSPACE_AUTOMATION_/)
+  assert.doesNotMatch(webhooks.slice(0, webhooks.indexOf('const INSECURE_WEBHOOK_SECRET')), /workspaceAutomation|WORKSPACE_AUTOMATION_/)
+  assert.doesNotMatch(webhooks, /WORKSPACE_AUTOMATION_/)
 })
 
 for (const product of ['leave-management', 'payroll', 'time-attendance']) {

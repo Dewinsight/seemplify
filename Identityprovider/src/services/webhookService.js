@@ -283,10 +283,20 @@ export async function processWebhookOutboxRecord(record, { fetchImpl = fetch, no
       nextAttemptAt: attemptTime
     }))
   }
+  // Keep historical retirement evidence without replaying a removed product.
+  // Only the remaining consumers determine retry and parent completion state.
+  const activeDeliveries = record.deliveries.filter(delivery => {
+    if (delivery.name !== 'workspaceAutomation') return true
+    if (delivery.status !== 'delivered') {
+      delivery.status = 'dead'
+      delivery.lastError = 'AUTOMATIONS_REMOVED'
+    }
+    return false
+  })
   if (guaranteedDelivery) {
     // Revocation/invalidation events are authorization state, not best-effort
     // notifications. Never abandon them after a temporary product outage.
-    for (const delivery of record.deliveries) {
+    for (const delivery of activeDeliveries) {
       if (delivery.status === 'dead') {
         delivery.status = 'pending'
         delivery.nextAttemptAt = attemptTime
@@ -295,7 +305,7 @@ export async function processWebhookOutboxRecord(record, { fetchImpl = fetch, no
     record.expiresAt = null
   }
 
-  const dueDeliveries = record.deliveries.filter(delivery => (
+  const dueDeliveries = activeDeliveries.filter(delivery => (
     delivery.status === 'pending' &&
     (!delivery.nextAttemptAt || new Date(delivery.nextAttemptAt).getTime() <= attemptTime.getTime())
   ))
@@ -319,9 +329,9 @@ export async function processWebhookOutboxRecord(record, { fetchImpl = fetch, no
     )
   }
 
-  const pending = record.deliveries.filter(delivery => delivery.status === 'pending')
-  const dead = record.deliveries.filter(delivery => delivery.status === 'dead')
-  record.attempts = Math.max(0, ...record.deliveries.map(delivery => Number(delivery.attempts || 0)))
+  const pending = activeDeliveries.filter(delivery => delivery.status === 'pending')
+  const dead = activeDeliveries.filter(delivery => delivery.status === 'dead')
+  record.attempts = Math.max(0, ...activeDeliveries.map(delivery => Number(delivery.attempts || 0)))
   record.leaseExpiresAt = null
   if (pending.length > 0) {
     record.status = 'pending'
