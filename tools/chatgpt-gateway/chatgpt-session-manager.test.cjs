@@ -59,6 +59,37 @@ async function connect(subjectKey) {
 
 beforeEach(async () => { await sessions.stopAllSessions(); });
 
+test('Workspace native MCP turns isolate credentials and report only their own tool evidence', async () => {
+  const subject = sessions.subjectKeyFor('recruiter', 'workspace-native-mcp-user');
+  await connect(subject);
+  const grantToken = 'g'.repeat(43);
+  const result = await complete({
+    activity: 'messaging.chat', requestSource: 'messaging', chatgptSubject: subject,
+    messages: [{ role: 'user', content: 'How many tasks are in the Cernel board? Check again.' }],
+    workspaceMcp: { grantToken }
+  });
+  const observation = marker(subject);
+  assert.equal(observation.lastThreadStart.ephemeral, true);
+  assert.equal(observation.lastThreadStart.permissions, 'seemplify-read-only');
+  assert.equal(observation.lastThreadStart.config.web_search, 'disabled');
+  const mcp = observation.lastThreadStart.config.mcp_servers.seemplify_workspace;
+  assert.equal(mcp.http_headers.Authorization, `Bearer ${grantToken}`);
+  assert.equal(mcp.required, true);
+  assert.equal(Object.hasOwn(mcp, 'enabled_tools'), false, 'new registered read tools must be discoverable without a gateway edit');
+  assert.equal(observation.lastTurnStart.outputSchema, undefined, 'native MCP must not use the JSON tool planner');
+  assert.deepEqual(result.workspaceMcp, { enabled: true, server: 'seemplify_workspace' });
+  assert.deepEqual(result.toolActions.map(({ tool, status }) => ({ tool, status })), [
+    { tool: 'boards_list', status: 'completed' }, { tool: 'issues_search', status: 'completed' },
+    { tool: 'workspace_metadata_inspect', status: 'completed' }
+  ]);
+  assert.ok(!JSON.stringify(result).includes(grantToken));
+  assert.ok(!JSON.stringify(result).includes('private task content'));
+  assert.ok(!JSON.stringify(result).includes('never expose arguments'));
+  assert.ok(!JSON.stringify(observation.lastTurnStart).includes(grantToken));
+  await complete({ activity: 'recruiter.general', chatgptSubject: subject, messages: [{ role: 'user', content: 'hello' }] });
+  assert.equal(marker(subject).lastThreadStart.config.mcp_servers, undefined, 'grants must not bleed into later turns on the same account');
+});
+
 test('subject keys are namespaced per source application and never collide', () => {
   const recruiter = sessions.subjectKeyFor('recruiter', 'user-1');
   const experience = sessions.subjectKeyFor('experience', 'user-1');

@@ -14,6 +14,7 @@ const { runWithAIRequestContext } = require('../services/aiRuntime/requestContex
 const codexAccountService = require('../services/aiRuntime/codexAccountService');
 const userAISettingsService = require('../services/aiRuntime/userAISettingsService');
 const { resolveSharedPrincipal } = require('../services/aiRuntime/sharedIdentityService');
+const { validateWorkspaceMcp } = require('../services/aiRuntime/workspaceMcp');
 
 const router = express.Router();
 const internalAuth = createInternalServiceAuth();
@@ -267,6 +268,7 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
   try {
     const activity = String(req.body?.activity || '');
     requireServiceActivity(req.internalService, activity);
+    const workspaceMcp = validateWorkspaceMcp(req.body?.workspaceMcp, { service: req.internalService, activity });
     const messages = validateMessages(req.body?.messages);
     const principal = ['performance-management', 'messaging', 'experience-management'].includes(req.internalService)
       ? await sharedPrincipal(req) : null;
@@ -316,6 +318,7 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
       max_tokens: Math.min(8000, Math.max(1, Number(req.body?.maxTokens || 500))),
       response_format: req.body?.responseFormat,
       webSearchEnabled: req.body?.webSearchEnabled === true,
+      ...(workspaceMcp ? { workspaceMcp } : {}),
       context
     };
     const result = await runWithAIRequestContext(context, () => (
@@ -353,7 +356,8 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
       usage: result.usage,
       data: result.data,
       schemaRepairAttempted: result.schemaRepairAttempted,
-      finishReason: result.finishReason
+      finishReason: result.finishReason,
+      ...(result.workspaceMcp ? { workspaceMcp: result.workspaceMcp, toolActions: result.toolActions || [] } : {})
     });
   } catch (error) {
     if (res.destroyed || res.writableEnded) return;

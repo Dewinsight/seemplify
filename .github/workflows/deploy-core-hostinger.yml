@@ -56,6 +56,9 @@ jobs:
             production-wiring.test.mjs \
             tests/workspace-oidc-session-policy.test.mjs \
             tests/session-invalidation-webhook.test.mjs \
+            tests/member-import.test.mjs \
+            tests/invitation-view-contract.test.mjs \
+            tests/campaign-sequence-and-design.test.mjs \
             test/auth-redirects.test.mjs \
             test/hub-pins.test.mjs \
             test/member-removal-webhook.test.mjs \

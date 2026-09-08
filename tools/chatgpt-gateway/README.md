@@ -38,6 +38,28 @@ compose file. Product-specific HMAC identities remain scoped to their named
 consumer, and `experience-management` remains deliberately excluded from the
 connected-ChatGPT gateway until an explicit migration changes that boundary.
 
+## Workspace chat MCP
+
+Signed `messaging.chat` completions may carry `workspaceMcp: { grantToken }`.
+Recruiter validates the consumer and activity before forwarding the grant. The
+Codex runtime connects natively to `seemplify_workspace` and discovers the tools
+exposed by Workspace's grant-scoped relay. Newly registered safe read tools are
+available on the next chat turn without editing gateway tool-name lists. The
+temporary grant remains outside the prompt and persisted thread history.
+`WORKSPACE_CHAT_MCP_URL` is an operator-only endpoint override, defaulting
+to `https://api-workspace.seemplifyai.com/api/internal/chat-mcp`. Production
+requires HTTPS. Development may point it at a loopback HTTP endpoint.
+
+Workspace owns the underlying user-session authorization, registered tool policy,
+call limits, and grant expiry/revocation. Its relay exposes only tools with
+authoritative registration metadata declaring `readOnlyHint: true`,
+`destructiveHint: false`, and `openWorldHint: false`. Unknown, write-capable, or
+open-world tools remain unavailable. The gateway does not accept a caller-supplied
+catalog or endpoint and never receives the original
+Workspace session token. Responses identify native MCP availability with
+`workspaceMcp: { enabled: true, server: "seemplify_workspace" }` and expose only
+tool names/statuses in `toolActions`; tool arguments/results stay out of telemetry.
+
 ## Telemetry API
 
 Authorized consumers can call these signed endpoints using the same HMAC envelope as completion requests:

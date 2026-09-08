@@ -14,6 +14,7 @@
     "test:auth-redirects": "node --test test/auth-redirects.test.mjs",
     "test:oidc-recovery": "node --test test/oidc-recovery-page.test.mjs",
     "test:hub-pins": "node --test test/hub-pins.test.mjs",
+    "test:member-import": "node --test tests/member-import.test.mjs tests/invitation-view-contract.test.mjs tests/campaign-sequence-and-design.test.mjs",
     "test:profile-completion": "node --test test/profile-completion.test.mjs src/__tests__/account-profile-schema.test.mjs",
     "test:profile-ui": "node tests/profile-personal-ui.playwright.mjs",
     "test:browser-notifications": "node --test test/browser-notification-relay.test.mjs",

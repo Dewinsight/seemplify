@@ -99,6 +99,7 @@ function completionInputFingerprint(input = {}, route = {}) {
   return stableHash(canonicalJson({
     messages: input.messages || [],
     tools: input.tools || null,
+    ...(input.workspaceMcp ? { workspaceMcp: true } : {}),
     toolChoice: input.toolChoice ?? input.tool_choice ?? null,
     jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema || null,
     schemaName: input.schemaName || input.response_format?.json_schema?.name || null,
@@ -356,6 +357,7 @@ class AIRuntimeService {
       schemaName: input.schemaName,
       schemaStrict: input.schemaStrict === true,
       webSearchEnabled: input.webSearchEnabled === true,
+      ...(input.workspaceMcp ? { workspaceMcp: input.workspaceMcp } : {}),
       frequencyPenalty: input.frequencyPenalty ?? input.frequency_penalty,
       presencePenalty: input.presencePenalty ?? input.presence_penalty
     };
@@ -489,6 +491,7 @@ class AIRuntimeService {
       requestId,
       content: String(data.content || '').trim(),
       toolCalls: data.toolCalls || [],
+      ...(data.workspaceMcp ? { workspaceMcp: data.workspaceMcp, toolActions: data.toolActions || [] } : {}),
       finishReason: raw.choices[0].finish_reason,
       model: data.model || CHATGPT_MODEL,
       modelSource: data.modelSource || null,

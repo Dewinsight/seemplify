@@ -35,8 +35,12 @@ jobs:
       - name: Verify gateway metering and Recruiter ingestion
         run: |
           node --test \
+            tools/chatgpt-gateway/workspace-mcp.test.cjs \
+            tools/chatgpt-gateway/chatgpt-session-manager.test.cjs \
             tools/chatgpt-gateway/usage-metering-outbox.test.cjs \
             tools/chatgpt-gateway/usage-ledger.test.cjs \
+            recruiter/backend/tests/workspaceMcp.test.js \
+            recruiter/backend/tests/aiRuntimeGatewayIntegration.test.js \
             recruiter/backend/tests/aiRuntimeChatgptProvider.test.js \
             recruiter/backend/tests/chatGptUsageReplay.test.js
 

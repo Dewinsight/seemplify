@@ -73,6 +73,7 @@ let connected = Boolean(authFile) && fs.existsSync(authFile);
 let pendingLogin = '';
 let threadSequence = 0;
 let turnSequence = 0;
+const threadConfigs = new Map();
 
 const modelCatalog = [
   {
@@ -173,6 +174,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     }
     updateMarker({ lastThreadStart: message.params });
     const threadId = `fake-thread-${++threadSequence}`;
+    threadConfigs.set(threadId, message.params);
     return result(id, { thread: { id: threadId, ephemeral: false } });
   }
 
@@ -201,6 +203,20 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     const echoed = String(message.params?.input?.[0]?.text || '');
     const echoTag = echoed.match(/request \d+/u)?.[0] || echoed.slice(0, 40);
     setTimeout(() => {
+      if (threadConfigs.get(threadId)?.config?.mcp_servers?.seemplify_workspace) {
+        const event = (eventThreadId, tool, suffix) => send({
+          method: 'item/completed', params: { threadId: eventThreadId, turnId, item: {
+            id: `mcp-${messageSequence}-${suffix}`, type: 'mcpToolCall', server: 'seemplify_workspace', tool,
+            status: 'completed', arguments: { private: 'never expose arguments' },
+            result: { content: [{ text: 'private task content' }] }
+          } }
+        });
+        event('unrelated-thread', 'boards_list', 'unrelated');
+        event(threadId, 'boards_list', 'boards');
+        event(threadId, 'issues_search', 'issues');
+        // Simulate a newly registered read tool, unknown to gateway code.
+        event(threadId, 'workspace_metadata_inspect', 'discovered');
+      }
       send({
         method: 'item/completed',
         params: {
@@ -243,5 +259,6 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 
   if (message.method === 'thread/read') return result(id, { thread: { turns: [] } });
   if (message.method === 'thread/delete') return result(id, {});
+  if (message.method === 'thread/unsubscribe') return result(id, { status: 'unsubscribed' });
   send({ id, error: { code: -32601, message: `Unsupported fake method ${String(message.method)}` } });
 });

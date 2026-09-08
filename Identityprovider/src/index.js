@@ -537,6 +537,7 @@ import organizationsRouter from './routes/organizations.js'
 import geographyRouter from './routes/geography.js'
 import invitationsRouter from './routes/invitations.js'
 import membersRouter from './routes/members.js'
+import memberImportsRouter from './routes/memberImports.js'
 import teamsRouter from './routes/teams.js'
 import notificationsRouter from './routes/notifications.js'
 import onboardingRouter from './routes/onboarding.js'
@@ -6249,6 +6250,7 @@ app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
+app.use('/api/organizations', memberImportsRouter) // Bulk member creation/deactivation uploads
 app.use('/api/organizations', notificationsRouter) // Notification routes for /api/organizations/:orgId/notifications
 app.use('/api', (req, res, next) => {
   const routeOrganizationId = req.path.match(/^\/organizations\/([^/]+)\//)?.[1] || null

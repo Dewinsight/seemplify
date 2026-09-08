@@ -290,3 +290,57 @@ test('AI Interview service cannot invoke another product activity', async () => 
     else process.env.AI_GATEWAY_ALLOWED_SERVICES = originalAllowed;
   }
 });
+
+test('signed Workspace chat delegates only a temporary MCP grant and returns native tool evidence', async () => {
+  const originalSecret = process.env.MESSAGING_AI_SHARED_SECRET;
+  const InternalServiceNonce = require('../models/InternalServiceNonce');
+  const identityService = require('../services/aiRuntime/sharedIdentityService');
+  const original = { init: InternalServiceNonce.init, create: InternalServiceNonce.create,
+    principal: identityService.resolveSharedPrincipal, complete: aiRuntimeService.complete };
+  const secret = 'workspace-mcp-proxy-test-secret';
+  process.env.MESSAGING_AI_SHARED_SECRET = secret;
+  InternalServiceNonce.init = async () => InternalServiceNonce;
+  InternalServiceNonce.create = async () => ({ acknowledged: true });
+  identityService.resolveSharedPrincipal = async () => ({
+    user: { _id: 'local-user', email: 'person@example.test' },
+    identity: { sub: 'idp-user', organizationId: 'org-1' }
+  });
+  let captured;
+  aiRuntimeService.complete = async (activity, input) => {
+    captured = { activity, input };
+    return { content: 'The board has 27 tasks.', workspaceMcp: { enabled: true, server: 'seemplify_workspace' },
+      toolActions: [{ id: 'call-1', server: 'seemplify_workspace', tool: 'issues_search', status: 'completed' }] };
+  };
+  const gateway = await startGateway();
+  const grantToken = 'test'.repeat(12);
+  async function post(workspaceMcp) {
+    const body = JSON.stringify({ activity: 'messaging.chat', messages: [{ role: 'user', content: 'Count the Cernel board tasks.' }],
+      identity: { sub: 'idp-user', email: 'person@example.test' }, context: { sourceApp: 'attacker' }, workspaceMcp });
+    const timestamp = String(Date.now());
+    const nonce = crypto.randomBytes(16).toString('hex');
+    return fetch(gateway.url, { method: 'POST', headers: {
+      'content-type': 'application/json', 'x-seemplify-service': 'messaging', 'x-seemplify-timestamp': timestamp,
+      'x-seemplify-signature-version': '2', 'x-seemplify-nonce': nonce,
+      'x-seemplify-signature': signV2({ body, secret, service: 'messaging', timestamp, nonce })
+    }, body });
+  }
+  try {
+    const response = await post({ grantToken });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.deepEqual(captured.input.workspaceMcp, { grantToken });
+    assert.equal(captured.input.context.sourceApp, 'messaging');
+    assert.deepEqual(result.workspaceMcp, { enabled: true, server: 'seemplify_workspace' });
+    assert.equal(result.toolActions[0].tool, 'issues_search');
+    assert.ok(!JSON.stringify(result).includes(grantToken));
+    assert.equal((await post({ grantToken, url: 'https://attacker.test/mcp' })).status, 400);
+  } finally {
+    await gateway.close();
+    InternalServiceNonce.init = original.init;
+    InternalServiceNonce.create = original.create;
+    identityService.resolveSharedPrincipal = original.principal;
+    aiRuntimeService.complete = original.complete;
+    if (originalSecret === undefined) delete process.env.MESSAGING_AI_SHARED_SECRET;
+    else process.env.MESSAGING_AI_SHARED_SECRET = originalSecret;
+  }
+});

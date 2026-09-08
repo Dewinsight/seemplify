@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
 const { allowedConsumerIds } = require('./consumer-registry.cjs');
+const { workspaceMcpConfig, workspaceToolAction } = require('./workspace-mcp.cjs');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.chatgpt-gateway');
@@ -659,6 +660,12 @@ class CodexSubjectSession {
   async turn(input) {
     await this.acquireTurnSlot();
     try { return await this.runTurn(input); }
+    catch (error) {
+      if (input.workspaceMcp?.grantToken && typeof error?.message === 'string') {
+        error.message = error.message.split(input.workspaceMcp.grantToken).join('[redacted]');
+      }
+      throw error;
+    }
     finally { this.releaseTurnSlot(); this.lastUsedAt = Date.now(); }
   }
 
@@ -681,14 +688,19 @@ class CodexSubjectSession {
       approvalPolicy: 'never',
       permissions: PERMISSION_PROFILE,
       serviceName: 'seemplify_gateway',
-      config: input.webSearchEnabled === true
-        ? { web_search: 'live', tools: { web_search: { context_size: 'medium' } } }
-        : { web_search: 'disabled' }
+      ...(input.workspaceMcp ? { ephemeral: true } : {}),
+      config: {
+        ...(input.webSearchEnabled === true
+          ? { web_search: 'live', tools: { web_search: { context_size: 'medium' } } }
+          : { web_search: 'disabled' }),
+        ...(input.workspaceMcp ? { mcp_servers: workspaceMcpConfig(input.workspaceMcp) } : {})
+      }
     }, 30_000);
     const threadId = String(threadResult?.thread?.id || '');
     if (!threadId) throw codexError('Codex could not create a thread.', 'CODEX_THREAD_FAILED');
     const threadProcess = this.process;
     let finalText = '';
+    const toolActions = new Map();
     const listener = (message) => {
       if (message.method !== 'item/completed') return;
       // Multiple threads may run on one app-server connection. Notifications
@@ -696,6 +708,8 @@ class CodexSubjectSession {
       // description overwrite this turn's final answer.
       if (String(message.params?.threadId || '') !== threadId) return;
       const item = message.params?.item;
+      const action = input.workspaceMcp ? workspaceToolAction(item) : null;
+      if (action && toolActions.size < 100) toolActions.set(action.id, action);
       if (item?.type === 'agentMessage' && typeof item.text === 'string' && item.phase !== 'commentary') {
         finalText = item.text;
       }
@@ -735,6 +749,7 @@ class CodexSubjectSession {
       }
       return {
         content: finalText,
+        ...(input.workspaceMcp ? { toolActions: [...toolActions.values()] } : {}),
         rawUsage: turn?.usage || null,
         // What was actually used, with the precedence source that won, so the
         // caller can record actual rather than intended configuration.
@@ -750,7 +765,8 @@ class CodexSubjectSession {
     } finally {
       this.listeners.delete(listener);
       if (this.process && this.process === threadProcess) {
-        await this.rawRequest('thread/delete', { threadId }, 30_000).catch(() => undefined);
+        // Ephemeral MCP threads never persist their credential-bearing config.
+        await this.rawRequest(input.workspaceMcp ? 'thread/unsubscribe' : 'thread/delete', { threadId }, 30_000).catch(() => undefined);
       }
     }
   }

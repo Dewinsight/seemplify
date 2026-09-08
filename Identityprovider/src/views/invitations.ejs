@@ -369,6 +369,141 @@
     .recipient-send-status.success {
       color: var(--success);
     }
+    .invite-source-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--input-bg);
+    }
+    .invite-source-tab {
+      flex: 1 1 0;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .invite-source-tab[aria-selected="true"] {
+      border-color: var(--line);
+      background: var(--panel-strong);
+      color: var(--text);
+    }
+    .import-file-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .import-file-row input[type="file"] {
+      flex: 1 1 240px;
+      min-width: 0;
+    }
+    .import-template-links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .import-panel {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .import-panel-title {
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--text);
+    }
+    .import-mapping-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .import-mapping-field label {
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+    .import-mapping-field select {
+      min-height: 40px;
+      padding: 9px 11px;
+      font-size: 13px;
+    }
+    .import-mapping-field .field-help {
+      margin-top: 4px;
+      font-size: 11px;
+    }
+    .import-preview-scroll {
+      margin-top: 12px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .import-preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .import-preview-table th,
+    .import-preview-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      white-space: nowrap;
+    }
+    .import-preview-table th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .import-preview-table tr:last-child td { border-bottom: none; }
+    .import-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .import-skipped {
+      margin: 12px 12px 0;
+      padding: 10px 12px;
+      border: 1px solid color-mix(in srgb, var(--error) 45%, var(--line));
+      border-radius: 9px;
+      background: color-mix(in srgb, var(--error) 7%, transparent);
+      font-size: 12px;
+    }
+    .import-skipped ul {
+      margin: 6px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .recipient-issue-list {
+      display: grid;
+      gap: 4px;
+      margin-bottom: 10px;
+      padding: 9px 10px;
+      border: 1px solid color-mix(in srgb, #f59e0b 45%, var(--line));
+      border-radius: 8px;
+      background: color-mix(in srgb, #f59e0b 8%, transparent);
+      color: var(--text);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .recipient-summary-name {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
     @media (max-width: 700px) {
       .recipient-input-help,
       .recipient-review-header {
@@ -397,6 +532,9 @@
       .recipient-create-area {
         padding: 0 10px 10px;
       }
+      .import-file-row,
+      .import-actions { flex-direction: column; align-items: stretch; }
+      .import-mapping-grid { grid-template-columns: 1fr; }
     }
   </style>
   <link rel="stylesheet" href="/css/main.css?v=4">
@@ -469,12 +607,47 @@
       </div>
       <form id="inviteForm" novalidate>
         <div class="form-group">
-          <label for="recipientSource">Recipient emails *</label>
-          <textarea id="recipientSource" name="recipientSource" required rows="4" placeholder="Paste emails, a copied message, a spreadsheet column, or any mixed text"></textarea>
-          <div class="recipient-input-help">
-            <div class="field-help">We’ll find email addresses anywhere in the text, remove duplicates, and keep their pasted order.</div>
-            <button type="button" class="btn btn-secondary btn-sm" id="reviewRecipientsBtn" onclick="reviewRecipientText()">Review emails</button>
+          <div class="invite-source-tabs" role="tablist" aria-label="How to add recipients">
+            <button type="button" class="invite-source-tab" role="tab" id="inviteSourceTabFile" aria-controls="inviteSourcePanelFile" aria-selected="true" data-invite-source="file">Upload CSV or Excel</button>
+            <button type="button" class="invite-source-tab" role="tab" id="inviteSourceTabText" aria-controls="inviteSourcePanelText" aria-selected="false" data-invite-source="text">Paste emails</button>
           </div>
+
+          <section id="inviteSourcePanelFile" role="tabpanel" aria-labelledby="inviteSourceTabFile" data-invite-source-panel="file">
+            <label for="importFile">Bulk user creation file</label>
+            <div class="import-file-row">
+              <input type="file" id="importFile" accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              <div class="import-template-links">
+                <a class="btn btn-secondary btn-sm" href="/api/organizations/<%= organization._id %>/member-imports/template?type=creation&amp;format=xlsx">Download Excel template</a>
+                <a class="btn btn-secondary btn-sm" href="/api/organizations/<%= organization._id %>/member-imports/template?type=creation&amp;format=csv">CSV</a>
+              </div>
+            </div>
+            <div class="field-help">Any column order works. After upload you confirm which column is which, then check every person before the invitations go out. Up to 50 people per upload, matching the hourly invitation limit.</div>
+
+            <div class="import-panel" id="importMappingPanel" hidden>
+              <div class="import-panel-title">Match your columns</div>
+              <div class="field-help" id="importMappingSummary"></div>
+              <div class="form-group" id="importSheetGroup" hidden style="margin-top: 10px;">
+                <label for="importSheet">Worksheet</label>
+                <select id="importSheet"></select>
+              </div>
+              <div class="import-mapping-grid" id="importMappingGrid"></div>
+              <div class="import-preview-scroll" id="importPreviewScroll"></div>
+              <div class="import-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="importResetBtn">Choose another file</button>
+                <button type="button" class="btn btn-primary btn-sm" id="importApplyBtn">Match rows</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="inviteSourcePanelText" role="tabpanel" aria-labelledby="inviteSourceTabText" data-invite-source-panel="text" hidden>
+            <label for="recipientSource">Recipient emails</label>
+            <textarea id="recipientSource" name="recipientSource" rows="4" placeholder="Paste emails, a copied message, a spreadsheet column, or any mixed text"></textarea>
+            <div class="recipient-input-help">
+              <div class="field-help">We’ll find email addresses anywhere in the text, remove duplicates, and keep their pasted order.</div>
+              <button type="button" class="btn btn-secondary btn-sm" id="reviewRecipientsBtn" onclick="reviewRecipientText()">Review emails</button>
+            </div>
+          </section>
+
           <div class="recipient-feedback" id="recipientFeedback" role="status" aria-live="polite"></div>
           <section class="recipient-review" id="recipientReview" aria-labelledby="recipientReviewTitle" hidden>
             <div class="recipient-review-header">
@@ -487,6 +660,7 @@
                 <button type="button" class="btn btn-secondary btn-sm" onclick="reviewRecipientText()">Extract again</button>
               </div>
             </div>
+            <div class="import-skipped" id="importSkipped" hidden></div>
             <div class="recipient-list" id="recipientList"></div>
             <div class="recipient-create-area">
               <% if (canManageDepartments) { %>
@@ -561,6 +735,8 @@
     let recipients = [];
     let nextRecipientId = 1;
     let reviewedRecipientSource = '';
+    let importState = null;
+    let importedFromFile = false;
     let isSendingInvitations = false;
     let inlineCreateRecipientId = null;
     let inviteDialogTrigger = null;
@@ -584,12 +760,13 @@
       const button = document.getElementById('sendInviteBtn');
       if (isSendingInvitations) return;
 
-      const isReviewed = recipients.length > 0 && document.getElementById('recipientSource').value === reviewedRecipientSource;
+      const isReviewed = recipients.length > 0 &&
+        (importedFromFile || document.getElementById('recipientSource').value === reviewedRecipientSource);
       const recipientsAreValid = isReviewed && validateRecipients(false);
       button.disabled = !recipientsAreValid;
       const incompleteCount = recipients.filter(recipient => !recipient.isValid).length;
       button.textContent = !isReviewed
-        ? 'Review emails to continue'
+        ? 'Add recipients to continue'
         : incompleteCount > 0
           ? `Complete ${incompleteCount} invitation${incompleteCount === 1 ? '' : 's'}`
           : `Send ${recipients.length} invitation${recipients.length === 1 ? '' : 's'}`;
@@ -646,7 +823,7 @@
         <details class="recipient-row" data-recipient-id="${recipient.id}"${recipient.expanded ? ' open' : ''}>
           <summary class="recipient-summary">
             <span class="recipient-index" aria-hidden="true">${index + 1}</span>
-            <span class="recipient-summary-email">${escapeHtml(recipient.email)}</span>
+            <span class="recipient-summary-email">${escapeHtml(recipient.email)}${recipient.fullName ? `<span class="recipient-summary-name"> · ${escapeHtml(recipient.fullName)}</span>` : ''}</span>
             <span class="recipient-summary-meta">
               <span class="recipient-summary-chip">${escapeHtml(roleLabels[recipient.role] || recipient.role)}</span>
               <span class="recipient-summary-chip${team ? '' : ' warning'}">${escapeHtml(teamLabel)}</span>
@@ -654,6 +831,7 @@
             <span class="recipient-chevron" aria-hidden="true">⌄</span>
           </summary>
           <div class="recipient-details">
+            ${(recipient.importIssues || []).length > 0 ? `<div class="recipient-issue-list" role="note">${recipient.importIssues.map(text => `<span>${escapeHtml(text)}</span>`).join('')}</div>` : ''}
             <div class="recipient-fields-grid">
               <div class="recipient-field full">
                 <label for="recipient-email-${recipient.id}">Email address *</label>
@@ -904,6 +1082,8 @@
 
     function reviewRecipientText() {
       const source = document.getElementById('recipientSource');
+      importedFromFile = false;
+      clearImportSkipped();
       const result = recipientParser.extractEmailAddresses(source.value);
       if (result.emails.length === 0) {
         recipients = [];
@@ -955,7 +1135,8 @@
       renderRecipientReview();
       if (recipients.length === 0) {
         reviewedRecipientSource = '';
-        setRecipientFeedback('All extracted addresses were removed. Paste or review the text again.', 'error');
+        importedFromFile = false;
+        setRecipientFeedback('Every recipient was removed. Upload a file or paste addresses to start again.', 'error');
       }
     }
 
@@ -983,7 +1164,7 @@
 
     function invalidateRecipientReview() {
       const source = document.getElementById('recipientSource');
-      if (recipients.length === 0 || source.value === reviewedRecipientSource) return;
+      if (importedFromFile || recipients.length === 0 || source.value === reviewedRecipientSource) return;
       recipients = [];
       reviewedRecipientSource = '';
       renderRecipientReview();
@@ -1022,7 +1203,7 @@
       document.body.style.overflow = 'hidden';
       document.getElementById('inviteModal').classList.add('active');
       closeInlineCreatePanels();
-      setTimeout(() => document.getElementById('recipientSource').focus(), 0);
+      setTimeout(() => document.getElementById('importFile').focus(), 0);
     }
 
     function hideInviteModal() {
@@ -1032,6 +1213,10 @@
       document.getElementById('inviteForm').reset();
       recipients = [];
       reviewedRecipientSource = '';
+      importedFromFile = false;
+      resetImportPanel();
+      clearImportSkipped();
+      switchInviteSource('file');
       setRecipientFeedback();
       renderRecipientReview();
       closeInlineCreatePanels();
@@ -1088,6 +1273,224 @@
         .sort((left, right) => left.name.localeCompare(right.name))
         .map(team => `<option value="${team.id}">${escapeHtml(team.name)}</option>`)
         .join('');
+    }
+
+
+    function switchInviteSource(mode) {
+      document.querySelectorAll('[data-invite-source]').forEach((tab) => {
+        tab.setAttribute('aria-selected', String(tab.dataset.inviteSource === mode));
+      });
+      document.querySelectorAll('[data-invite-source-panel]').forEach((panel) => {
+        panel.hidden = panel.dataset.inviteSourcePanel !== mode;
+      });
+    }
+
+    function clearImportSkipped() {
+      const skipped = document.getElementById('importSkipped');
+      skipped.hidden = true;
+      skipped.innerHTML = '';
+    }
+
+    function resetImportPanel() {
+      importState = null;
+      document.getElementById('importMappingPanel').hidden = true;
+      document.getElementById('importMappingGrid').innerHTML = '';
+      document.getElementById('importPreviewScroll').innerHTML = '';
+      document.getElementById('importSheetGroup').hidden = true;
+    }
+
+    function resetImport() {
+      document.getElementById('importFile').value = '';
+      resetImportPanel();
+      clearImportSkipped();
+      setRecipientFeedback();
+    }
+
+    async function loadImportPreview(file, sheetName = '') {
+      const body = new FormData();
+      body.append('file', file);
+      body.append('type', 'creation');
+      if (sheetName) body.append('sheetName', sheetName);
+
+      setRecipientFeedback(`Reading ${file.name}…`);
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/member-imports/preview`, { method: 'POST', body });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'That file could not be read.');
+
+        importState = {
+          file,
+          preview: data.preview,
+          fields: data.fields || [],
+          columnMap: { ...(data.preview.columnMap || {}) }
+        };
+        renderImportMapping();
+        const matched = Object.keys(importState.columnMap).length;
+        setRecipientFeedback(
+          `${data.preview.totalRows} row${data.preview.totalRows === 1 ? '' : 's'} found. ${matched} column${matched === 1 ? '' : 's'} matched automatically — confirm them below.`,
+          'success'
+        );
+      } catch (error) {
+        resetImportPanel();
+        setRecipientFeedback(error.message || 'That file could not be read.', 'error');
+      }
+    }
+
+    function renderImportMapping() {
+      const panel = document.getElementById('importMappingPanel');
+      if (!importState) {
+        panel.hidden = true;
+        return;
+      }
+
+      const { preview, fields, columnMap } = importState;
+      panel.hidden = false;
+
+      const sheetGroup = document.getElementById('importSheetGroup');
+      const sheetSelect = document.getElementById('importSheet');
+      if ((preview.sheetNames || []).length > 1) {
+        sheetGroup.hidden = false;
+        sheetSelect.innerHTML = preview.sheetNames.map((name) => (
+          `<option value="${escapeHtml(name)}"${name === preview.selectedSheetName ? ' selected' : ''}>${escapeHtml(name)}</option>`
+        )).join('');
+      } else {
+        sheetGroup.hidden = true;
+      }
+
+      document.getElementById('importMappingSummary').textContent =
+        `${preview.totalRows} row${preview.totalRows === 1 ? '' : 's'} in ${preview.sourceFileName || 'your file'}${preview.selectedSheetName ? ` · sheet “${preview.selectedSheetName}”` : ''}. Tell us which column holds each detail.`;
+
+      const columnOptions = (selected) => '<option value="">Not in this file</option>' + (preview.headers || []).map((header) => (
+        `<option value="${escapeHtml(header)}"${header === selected ? ' selected' : ''}>${escapeHtml(header)}</option>`
+      )).join('');
+
+      document.getElementById('importMappingGrid').innerHTML = fields.map((field) => `
+        <div class="import-mapping-field">
+          <label for="import-map-${field.key}">${escapeHtml(field.label)}${field.required ? ' *' : ''}</label>
+          <select id="import-map-${field.key}" data-import-field="${field.key}">${columnOptions(columnMap[field.key] || '')}</select>
+          <div class="field-help">${escapeHtml(field.description || '')}</div>
+        </div>`).join('');
+
+      const sampleRows = preview.sampleRows || [];
+      document.getElementById('importPreviewScroll').innerHTML = sampleRows.length === 0
+        ? ''
+        : `<table class="import-preview-table">
+            <thead><tr>${(preview.headers || []).map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>
+            <tbody>${sampleRows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+          </table>`;
+    }
+
+    function readImportColumnMap() {
+      const columnMap = {};
+      document.querySelectorAll('[data-import-field]').forEach((select) => {
+        if (select.value) columnMap[select.dataset.importField] = select.value;
+      });
+      return columnMap;
+    }
+
+    async function applyImportMapping() {
+      if (!importState) return;
+      const applyBtn = document.getElementById('importApplyBtn');
+      const columnMap = readImportColumnMap();
+
+      if (!columnMap.email) {
+        setRecipientFeedback('Match a column to the email address before continuing.', 'error');
+        document.getElementById('import-map-email')?.focus();
+        return;
+      }
+
+      importState.columnMap = columnMap;
+      const body = new FormData();
+      body.append('file', importState.file);
+      body.append('type', 'creation');
+      body.append('columnMap', JSON.stringify(columnMap));
+      if (importState.preview.selectedSheetName) body.append('sheetName', importState.preview.selectedSheetName);
+
+      try {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Matching…';
+        const response = await fetch(`/api/organizations/${orgId}/member-imports/rows`, { method: 'POST', body });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Those rows could not be matched.');
+        applyImportedRows(data);
+      } catch (error) {
+        setRecipientFeedback(error.message || 'Those rows could not be matched.', 'error');
+      } finally {
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Match rows';
+      }
+    }
+
+    function applyImportedRows(result) {
+      const rows = result.rows || [];
+      const importable = rows.filter((row) => row.status !== 'blocked');
+      const skipped = rows.filter((row) => row.status === 'blocked');
+
+      recipients = importable.map((row) => ({
+        id: nextRecipientId++,
+        email: row.email,
+        fullName: row.fullName || '',
+        role: canAssignRolesClient ? row.role : 'staff',
+        designation: row.designation || '',
+        employeeId: row.employeeId || '',
+        departmentId: row.departmentId || getDefaultDepartmentId(),
+        teamId: row.teamId || '',
+        appAccess: {
+          mode: canAssignAppsClient ? (row.appAccess?.mode || 'all') : 'selected',
+          appIds: [...(row.appAccess?.appIds || [])]
+        },
+        expanded: false,
+        isValid: false,
+        sendError: '',
+        importIssues: (row.issues || []).map((entry) => `Row ${row.rowNumber}: ${entry.message}`)
+      }));
+
+      renderImportSkipped(skipped);
+
+      if (recipients.length === 0) {
+        importedFromFile = false;
+        renderRecipientReview();
+        setRecipientFeedback('None of the rows in that file can be invited. Fix the reasons listed above and upload it again.', 'error');
+        return;
+      }
+
+      const firstToCheck = recipients.find((recipient) => recipient.importIssues.length > 0) || recipients[0];
+      firstToCheck.expanded = true;
+      importedFromFile = true;
+      reviewedRecipientSource = document.getElementById('recipientSource').value;
+      renderRecipientReview();
+
+      const notes = [`${recipients.length} ${recipients.length === 1 ? 'person is' : 'people are'} ready to check. Open each one to confirm their details before sending.`];
+      const needsAttention = recipients.filter((recipient) => recipient.importIssues.length > 0).length;
+      if (needsAttention > 0) {
+        notes.push(`${needsAttention} still ${needsAttention === 1 ? 'needs' : 'need'} a detail we could not match from the file.`);
+      }
+      if (skipped.length > 0) {
+        notes.push(`${skipped.length} row${skipped.length === 1 ? ' was' : 's were'} left out.`);
+      }
+      if (result.summary?.truncated > 0) {
+        notes.push(`Only the first ${result.summary.limit} rows were read; ${result.summary.truncated} more were not.`);
+      }
+      setRecipientFeedback(notes.join(' '), needsAttention > 0 || skipped.length > 0 ? '' : 'success');
+      document.getElementById('recipientReviewTitle').focus?.();
+    }
+
+    function renderImportSkipped(skipped = []) {
+      const container = document.getElementById('importSkipped');
+      if (skipped.length === 0) {
+        clearImportSkipped();
+        return;
+      }
+
+      container.hidden = false;
+      container.innerHTML = `
+        <strong>${skipped.length} row${skipped.length === 1 ? '' : 's'} could not be invited.</strong>
+        Correct them in your file and upload it again if these people should be invited.
+        <ul>${skipped.map((row) => {
+          const reasons = (row.issues || []).filter((entry) => entry.severity === 'error').map((entry) => entry.message).join(' ');
+          const label = row.email || row.employeeId || 'no identifier';
+          return `<li>Row ${row.rowNumber} · ${escapeHtml(label)} — ${escapeHtml(reasons)}</li>`;
+        }).join('')}</ul>`;
     }
 
     async function createDepartmentFromInvite() {
@@ -1215,7 +1618,7 @@
       e.preventDefault();
       const form = e.currentTarget;
       const source = document.getElementById('recipientSource');
-      if (recipients.length === 0 || source.value !== reviewedRecipientSource) {
+      if (recipients.length === 0 || (!importedFromFile && source.value !== reviewedRecipientSource)) {
         reviewRecipientText();
         return;
       }
@@ -1316,6 +1719,20 @@
     document.getElementById('inviteModal').addEventListener('click', (e) => {
       if (e.target.classList.contains('modal')) hideInviteModal();
     });
+    document.querySelectorAll('[data-invite-source]').forEach((tab) => {
+      tab.addEventListener('click', () => switchInviteSource(tab.dataset.inviteSource));
+    });
+    document.getElementById('importFile').addEventListener('change', (event) => {
+      resetImportPanel();
+      clearImportSkipped();
+      const file = event.target.files?.[0];
+      if (file) loadImportPreview(file);
+    });
+    document.getElementById('importSheet').addEventListener('change', (event) => {
+      if (importState) loadImportPreview(importState.file, event.target.value);
+    });
+    document.getElementById('importApplyBtn').addEventListener('click', applyImportMapping);
+    document.getElementById('importResetBtn').addEventListener('click', resetImport);
     document.getElementById('recipientSource').addEventListener('input', invalidateRecipientReview);
     document.getElementById('recipientSource').addEventListener('paste', () => {
       setTimeout(reviewRecipientText, 0);

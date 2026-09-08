@@ -209,6 +209,120 @@
       color: var(--muted);
       font-size: 13px;
     }
+    .deactivate-modal-content { width: min(880px, 100%); }
+    .deactivate-file-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .deactivate-file-row input[type="file"] { flex: 1 1 240px; min-width: 0; }
+    .deactivate-template-links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .deactivate-panel {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .deactivate-panel-title { font-size: 13px; font-weight: 650; color: var(--text); }
+    .deactivate-mapping-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .deactivate-mapping-field label { margin-bottom: 4px; font-size: 11px; }
+    .deactivate-mapping-field select { min-height: 40px; padding: 9px 11px; font-size: 13px; }
+    .deactivate-hint { margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .deactivate-preview-scroll {
+      margin-top: 12px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .deactivate-preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .deactivate-preview-table th,
+    .deactivate-preview-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      white-space: nowrap;
+    }
+    .deactivate-preview-table th { color: var(--muted); font-weight: 600; }
+    .deactivate-preview-table tr:last-child td { border-bottom: none; }
+    .deactivate-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .deactivate-feedback {
+      display: none;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .deactivate-feedback.active { display: block; }
+    .deactivate-feedback.error {
+      border-color: color-mix(in srgb, var(--error) 55%, var(--border));
+      background: color-mix(in srgb, var(--error) 9%, transparent);
+      color: var(--error);
+    }
+    .deactivate-feedback.success {
+      border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+      background: color-mix(in srgb, var(--success) 9%, transparent);
+      color: var(--text);
+    }
+    .deactivate-row-list {
+      display: grid;
+      gap: 8px;
+      max-height: 420px;
+      margin-top: 12px;
+      padding: 4px;
+      overflow-y: auto;
+    }
+    .deactivate-row {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--panel-strong, rgba(255, 255, 255, 0.03));
+    }
+    .deactivate-row.blocked { border-color: color-mix(in srgb, var(--error) 55%, var(--border)); }
+    .deactivate-row.attention { border-color: color-mix(in srgb, #f59e0b 55%, var(--border)); }
+    .deactivate-row input[type="checkbox"] { margin-top: 3px; }
+    .deactivate-row__name { font-size: 13px; font-weight: 650; color: var(--text); overflow-wrap: anywhere; }
+    .deactivate-row__meta { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .deactivate-row__issue { margin-top: 4px; font-size: 11px; line-height: 1.45; color: #f59e0b; }
+    .deactivate-row.blocked .deactivate-row__issue { color: var(--error); }
+    .deactivate-row__status { margin-top: 4px; min-height: 15px; font-size: 11px; color: var(--muted); }
+    .deactivate-row__status.error { color: var(--error); }
+    .deactivate-row__status.success { color: var(--success); }
+    .deactivate-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media (max-width: 700px) {
+      .deactivate-file-row,
+      .deactivate-actions { flex-direction: column; align-items: stretch; }
+      .deactivate-mapping-grid { grid-template-columns: 1fr; }
+    }
     .members-section .stats { margin-top: 0; }
     .members-section__heading {
       display: flex;
@@ -868,6 +982,11 @@
           <h2>Members & roles</h2>
           <p>Find people, manage organization roles, and control the profile and application access attached to each member.</p>
         </div>
+        <% if (canRemoveMembers) { %>
+          <div class="header-actions">
+            <button type="button" class="btn btn-secondary" onclick="showBulkDeactivateModal()">Bulk deactivate</button>
+          </div>
+        <% } %>
       </div>
 
     <div class="members-overview" aria-label="Member directory summary">
@@ -1302,6 +1421,62 @@
       </form>
     </div>
   </div>
+
+  <% if (canRemoveMembers) { %>
+  <div class="modal" id="bulkDeactivateModal">
+    <div class="modal-content deactivate-modal-content" role="dialog" aria-modal="true" aria-labelledby="bulkDeactivateTitle">
+      <div class="modal-header">
+        <h2 id="bulkDeactivateTitle">Bulk deactivate members</h2>
+        <button class="modal-close" type="button" aria-label="Close bulk deactivation" onclick="hideBulkDeactivateModal()">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label for="deactivateFile">Bulk user deactivation file</label>
+        <div class="deactivate-file-row">
+          <input type="file" id="deactivateFile" accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          <div class="deactivate-template-links">
+            <a class="btn btn-secondary btn-sm" href="/api/organizations/<%= organization._id %>/member-imports/template?type=deactivation&amp;format=xlsx">Download Excel template</a>
+            <a class="btn btn-secondary btn-sm" href="/api/organizations/<%= organization._id %>/member-imports/template?type=deactivation&amp;format=csv">CSV</a>
+          </div>
+        </div>
+        <div class="deactivate-hint">Deactivating revokes access and keeps the person's history. List them by email address or employee ID — you confirm every match before anything changes.</div>
+      </div>
+
+      <div class="deactivate-panel" id="deactivateMappingPanel" hidden>
+        <div class="deactivate-panel-title">Match your columns</div>
+        <div class="deactivate-hint" id="deactivateMappingSummary"></div>
+        <div class="form-group" id="deactivateSheetGroup" hidden style="margin-top: 10px;">
+          <label for="deactivateSheet">Worksheet</label>
+          <select id="deactivateSheet"></select>
+        </div>
+        <div class="deactivate-mapping-grid" id="deactivateMappingGrid"></div>
+        <div class="deactivate-preview-scroll" id="deactivatePreviewScroll"></div>
+        <div class="deactivate-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="deactivateResetBtn">Choose another file</button>
+          <button type="button" class="btn btn-primary btn-sm" id="deactivateMatchBtn">Match members</button>
+        </div>
+      </div>
+
+      <div class="deactivate-feedback" id="deactivateFeedback" role="status" aria-live="polite"></div>
+
+      <section id="deactivateReview" hidden aria-labelledby="deactivateReviewTitle">
+        <div class="deactivate-summary">
+          <div class="deactivate-panel-title" id="deactivateReviewTitle" tabindex="-1">Confirm each person</div>
+          <div>
+            <button type="button" class="btn btn-secondary btn-sm" id="deactivateSelectAllBtn">Select all matched</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="deactivateClearBtn">Clear selection</button>
+          </div>
+        </div>
+        <div class="deactivate-row-list" id="deactivateRowList"></div>
+      </section>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="hideBulkDeactivateModal()">Cancel</button>
+        <button type="button" class="btn btn-danger" id="deactivateConfirmBtn" disabled>Match a file to continue</button>
+      </div>
+    </div>
+  </div>
+  <% } %>
 
   <div class="modal" id="membersModal">
     <div class="modal-content team-members-dialog" role="dialog" aria-modal="true" aria-labelledby="membersModalTitle">
@@ -1808,6 +1983,340 @@
         return;
       }
       updateAppAccess(memberId, { mode: 'selected', appIds: selectedAppIds });
+    }
+
+
+    const canRemoveMembersClient = <%- JSON.stringify(Boolean(canRemoveMembers)) %>;
+    let deactivateImportState = null;
+    let deactivateRows = [];
+    let isDeactivating = false;
+    let bulkDeactivateTrigger = null;
+    let previousBulkDeactivateOverflow = '';
+
+    function setDeactivateFeedback(message = '', kind = '') {
+      const feedback = document.getElementById('deactivateFeedback');
+      if (!feedback) return;
+      feedback.textContent = message;
+      feedback.className = `deactivate-feedback${message ? ' active' : ''}${kind ? ` ${kind}` : ''}`;
+    }
+
+    function resetDeactivatePanel() {
+      deactivateImportState = null;
+      deactivateRows = [];
+      const panel = document.getElementById('deactivateMappingPanel');
+      if (!panel) return;
+      panel.hidden = true;
+      document.getElementById('deactivateMappingGrid').innerHTML = '';
+      document.getElementById('deactivatePreviewScroll').innerHTML = '';
+      document.getElementById('deactivateSheetGroup').hidden = true;
+      document.getElementById('deactivateReview').hidden = true;
+      document.getElementById('deactivateRowList').innerHTML = '';
+      updateDeactivateConfirmButton();
+    }
+
+    function showBulkDeactivateModal() {
+      if (!canRemoveMembersClient) return;
+      bulkDeactivateTrigger = document.activeElement;
+      previousBulkDeactivateOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      document.getElementById('bulkDeactivateModal').classList.add('active');
+      setTimeout(() => document.getElementById('deactivateFile').focus(), 0);
+    }
+
+    function hideBulkDeactivateModal() {
+      if (isDeactivating) return;
+      document.getElementById('bulkDeactivateModal').classList.remove('active');
+      document.body.style.overflow = previousBulkDeactivateOverflow;
+      document.getElementById('deactivateFile').value = '';
+      resetDeactivatePanel();
+      setDeactivateFeedback();
+      bulkDeactivateTrigger?.focus?.();
+    }
+
+    async function loadDeactivatePreview(file, sheetName = '') {
+      const body = new FormData();
+      body.append('file', file);
+      body.append('type', 'deactivation');
+      if (sheetName) body.append('sheetName', sheetName);
+
+      setDeactivateFeedback(`Reading ${file.name}…`);
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/member-imports/preview`, { method: 'POST', body });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'That file could not be read.');
+
+        deactivateImportState = {
+          file,
+          preview: data.preview,
+          fields: data.fields || [],
+          columnMap: { ...(data.preview.columnMap || {}) }
+        };
+        renderDeactivateMapping();
+        setDeactivateFeedback(
+          `${data.preview.totalRows} row${data.preview.totalRows === 1 ? '' : 's'} found. Confirm which column identifies each person, then match them.`,
+          'success'
+        );
+      } catch (error) {
+        resetDeactivatePanel();
+        setDeactivateFeedback(error.message || 'That file could not be read.', 'error');
+      }
+    }
+
+    function renderDeactivateMapping() {
+      const panel = document.getElementById('deactivateMappingPanel');
+      if (!deactivateImportState) {
+        panel.hidden = true;
+        return;
+      }
+
+      const { preview, fields, columnMap } = deactivateImportState;
+      panel.hidden = false;
+
+      const sheetGroup = document.getElementById('deactivateSheetGroup');
+      const sheetSelect = document.getElementById('deactivateSheet');
+      if ((preview.sheetNames || []).length > 1) {
+        sheetGroup.hidden = false;
+        sheetSelect.innerHTML = preview.sheetNames.map((name) => (
+          `<option value="${escapeHtml(name)}"${name === preview.selectedSheetName ? ' selected' : ''}>${escapeHtml(name)}</option>`
+        )).join('');
+      } else {
+        sheetGroup.hidden = true;
+      }
+
+      document.getElementById('deactivateMappingSummary').textContent =
+        `${preview.totalRows} row${preview.totalRows === 1 ? '' : 's'} in ${preview.sourceFileName || 'your file'}${preview.selectedSheetName ? ` · sheet “${preview.selectedSheetName}”` : ''}. Email address or employee ID is required.`;
+
+      const columnOptions = (selected) => '<option value="">Not in this file</option>' + (preview.headers || []).map((header) => (
+        `<option value="${escapeHtml(header)}"${header === selected ? ' selected' : ''}>${escapeHtml(header)}</option>`
+      )).join('');
+
+      document.getElementById('deactivateMappingGrid').innerHTML = fields.map((field) => `
+        <div class="deactivate-mapping-field">
+          <label for="deactivate-map-${field.key}">${escapeHtml(field.label)}</label>
+          <select id="deactivate-map-${field.key}" data-deactivate-field="${field.key}">${columnOptions(columnMap[field.key] || '')}</select>
+          <div class="deactivate-hint">${escapeHtml(field.description || '')}</div>
+        </div>`).join('');
+
+      const sampleRows = preview.sampleRows || [];
+      document.getElementById('deactivatePreviewScroll').innerHTML = sampleRows.length === 0
+        ? ''
+        : `<table class="deactivate-preview-table">
+            <thead><tr>${(preview.headers || []).map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>
+            <tbody>${sampleRows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+          </table>`;
+    }
+
+    async function matchDeactivateRows() {
+      if (!deactivateImportState) return;
+      const matchBtn = document.getElementById('deactivateMatchBtn');
+      const columnMap = {};
+      document.querySelectorAll('[data-deactivate-field]').forEach((select) => {
+        if (select.value) columnMap[select.dataset.deactivateField] = select.value;
+      });
+
+      if (!columnMap.email && !columnMap.employeeId) {
+        setDeactivateFeedback('Match a column to the email address or the employee ID before continuing.', 'error');
+        document.getElementById('deactivate-map-email')?.focus();
+        return;
+      }
+
+      deactivateImportState.columnMap = columnMap;
+      const body = new FormData();
+      body.append('file', deactivateImportState.file);
+      body.append('type', 'deactivation');
+      body.append('columnMap', JSON.stringify(columnMap));
+      if (deactivateImportState.preview.selectedSheetName) {
+        body.append('sheetName', deactivateImportState.preview.selectedSheetName);
+      }
+
+      try {
+        matchBtn.disabled = true;
+        matchBtn.textContent = 'Matching…';
+        const response = await fetch(`/api/organizations/${orgId}/member-imports/rows`, { method: 'POST', body });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Those rows could not be matched.');
+
+        deactivateRows = (data.rows || []).map((row, index) => ({
+          ...row,
+          key: `deactivate-${index}`,
+          selected: row.selected === true,
+          statusMessage: '',
+          statusKind: ''
+        }));
+        renderDeactivateRows();
+
+        const matched = deactivateRows.filter((row) => row.memberId).length;
+        const unmatched = deactivateRows.length - matched;
+        const notes = [`${matched} of ${deactivateRows.length} row${deactivateRows.length === 1 ? '' : 's'} matched an active member.`];
+        if (unmatched > 0) notes.push(`${unmatched} could not be matched and cannot be deactivated.`);
+        notes.push('Tick every person you want to deactivate.');
+        if (data.summary?.truncated > 0) {
+          notes.push(`Only the first ${data.summary.limit} rows were read; ${data.summary.truncated} more were not.`);
+        }
+        setDeactivateFeedback(notes.join(' '), unmatched > 0 ? '' : 'success');
+        document.getElementById('deactivateReviewTitle').focus?.();
+      } catch (error) {
+        setDeactivateFeedback(error.message || 'Those rows could not be matched.', 'error');
+      } finally {
+        matchBtn.disabled = false;
+        matchBtn.textContent = 'Match members';
+      }
+    }
+
+    function deactivateRowMarkup(row) {
+      const issues = row.issues || [];
+      const blocked = !row.memberId;
+      const rowClass = blocked ? 'blocked' : (issues.length > 0 ? 'attention' : '');
+      const title = row.memberName || row.email || row.employeeId || 'Unmatched row';
+      const meta = [
+        row.memberEmail || row.email,
+        row.employeeId ? `ID ${row.employeeId}` : '',
+        row.memberRole ? row.memberRole.replace('_', ' ') : '',
+        row.memberDepartmentName,
+        (row.memberTeamNames || []).join(', '),
+        row.reason ? `Reason: ${row.reason}` : ''
+      ].filter(Boolean).join(' · ');
+
+      return `
+        <div class="deactivate-row ${rowClass}" data-deactivate-key="${row.key}">
+          <input type="checkbox" data-deactivate-toggle aria-label="Deactivate ${escapeHtml(title)}"${row.selected ? ' checked' : ''}${blocked ? ' disabled' : ''}>
+          <div>
+            <div class="deactivate-row__name">Row ${row.rowNumber} · ${escapeHtml(title)}</div>
+            <div class="deactivate-row__meta">${escapeHtml(meta)}</div>
+            ${issues.map((issue) => `<div class="deactivate-row__issue">${escapeHtml(issue.message)}</div>`).join('')}
+            <div class="deactivate-row__status${row.statusKind ? ` ${row.statusKind}` : ''}" data-deactivate-status>${escapeHtml(row.statusMessage || '')}</div>
+          </div>
+        </div>`;
+    }
+
+    function renderDeactivateRows() {
+      const review = document.getElementById('deactivateReview');
+      const list = document.getElementById('deactivateRowList');
+      review.hidden = deactivateRows.length === 0;
+      list.innerHTML = deactivateRows.map(deactivateRowMarkup).join('');
+
+      list.querySelectorAll('[data-deactivate-toggle]').forEach((checkbox) => {
+        checkbox.addEventListener('change', (event) => {
+          const key = event.target.closest('[data-deactivate-key]')?.dataset.deactivateKey;
+          const row = deactivateRows.find((entry) => entry.key === key);
+          if (row) row.selected = event.target.checked;
+          updateDeactivateConfirmButton();
+        });
+      });
+
+      updateDeactivateConfirmButton();
+    }
+
+    function updateDeactivateConfirmButton() {
+      const button = document.getElementById('deactivateConfirmBtn');
+      if (!button || isDeactivating) return;
+      const selected = deactivateRows.filter((row) => row.selected && row.memberId).length;
+      button.disabled = selected === 0;
+      button.textContent = deactivateRows.length === 0
+        ? 'Match a file to continue'
+        : selected === 0
+          ? 'Select who to deactivate'
+          : `Deactivate ${selected} member${selected === 1 ? '' : 's'}`;
+    }
+
+    function setDeactivateRowStatus(key, message, kind = '') {
+      const row = deactivateRows.find((entry) => entry.key === key);
+      if (row) {
+        row.statusMessage = message;
+        row.statusKind = kind;
+      }
+      const status = document.querySelector(`[data-deactivate-key="${key}"] [data-deactivate-status]`);
+      if (!status) return;
+      status.textContent = message;
+      status.className = `deactivate-row__status${kind ? ` ${kind}` : ''}`;
+    }
+
+    async function runBulkDeactivation() {
+      const batch = deactivateRows.filter((row) => row.selected && row.memberId);
+      if (batch.length === 0) return;
+
+      const names = batch.slice(0, 5).map((row) => row.memberName || row.memberEmail || row.email).join(', ');
+      const confirmMessage = `Deactivate ${batch.length} member${batch.length === 1 ? '' : 's'}?\n\n${names}${batch.length > 5 ? `, and ${batch.length - 5} more` : ''}\n\nThey lose access to this organization immediately.`;
+      if (!confirm(confirmMessage)) return;
+
+      const button = document.getElementById('deactivateConfirmBtn');
+      isDeactivating = true;
+      button.disabled = true;
+
+      let deactivatedCount = 0;
+      const failures = [];
+
+      for (let index = 0; index < batch.length; index += 1) {
+        const row = batch[index];
+        button.textContent = `Deactivating ${index + 1} of ${batch.length}…`;
+        setDeactivateRowStatus(row.key, 'Deactivating…');
+        try {
+          const response = await fetch(`/api/organizations/${orgId}/members/${row.memberId}`, { method: 'DELETE' });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const message = data.error || 'This member could not be deactivated.';
+            failures.push(row);
+            setDeactivateRowStatus(row.key, message, 'error');
+            continue;
+          }
+          deactivatedCount += 1;
+          row.selected = false;
+          setDeactivateRowStatus(row.key, 'Deactivated', 'success');
+        } catch (error) {
+          failures.push(row);
+          setDeactivateRowStatus(row.key, 'Network error. Check your connection and try again.', 'error');
+        }
+      }
+
+      isDeactivating = false;
+
+      if (failures.length === 0) {
+        button.textContent = `${deactivatedCount} member${deactivatedCount === 1 ? '' : 's'} deactivated`;
+        setDeactivateFeedback(`${deactivatedCount} member${deactivatedCount === 1 ? '' : 's'} deactivated.`, 'success');
+        window.location.reload();
+        return;
+      }
+
+      setDeactivateFeedback(
+        `${deactivatedCount} member${deactivatedCount === 1 ? '' : 's'} deactivated. ${failures.length} still need${failures.length === 1 ? 's' : ''} attention — see the reason on each row.`,
+        'error'
+      );
+      updateDeactivateConfirmButton();
+    }
+
+    if (canRemoveMembersClient) {
+      document.getElementById('deactivateFile').addEventListener('change', (event) => {
+        resetDeactivatePanel();
+        setDeactivateFeedback();
+        const file = event.target.files?.[0];
+        if (file) loadDeactivatePreview(file);
+      });
+      document.getElementById('deactivateSheet').addEventListener('change', (event) => {
+        if (deactivateImportState) loadDeactivatePreview(deactivateImportState.file, event.target.value);
+      });
+      document.getElementById('deactivateMatchBtn').addEventListener('click', matchDeactivateRows);
+      document.getElementById('deactivateResetBtn').addEventListener('click', () => {
+        document.getElementById('deactivateFile').value = '';
+        resetDeactivatePanel();
+        setDeactivateFeedback();
+      });
+      document.getElementById('deactivateSelectAllBtn').addEventListener('click', () => {
+        deactivateRows.forEach((row) => { row.selected = Boolean(row.memberId); });
+        renderDeactivateRows();
+      });
+      document.getElementById('deactivateClearBtn').addEventListener('click', () => {
+        deactivateRows.forEach((row) => { row.selected = false; });
+        renderDeactivateRows();
+      });
+      document.getElementById('deactivateConfirmBtn').addEventListener('click', runBulkDeactivation);
+      document.getElementById('bulkDeactivateModal').addEventListener('click', (event) => {
+        if (event.target.classList.contains('modal')) hideBulkDeactivateModal();
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (!document.getElementById('bulkDeactivateModal').classList.contains('active')) return;
+        hideBulkDeactivateModal();
+      });
     }
 
     async function removeMember(memberId, email) {

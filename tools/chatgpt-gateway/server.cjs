@@ -7,6 +7,7 @@ const path = require('node:path');
 const { URL } = require('node:url');
 const { complete } = require('./chatgpt-completion.cjs');
 const sessions = require('./chatgpt-session-manager.cjs');
+const { validateWorkspaceMcp } = require('./workspace-mcp.cjs');
 const { BoundedFixedWindowRateLimiter } = require('./rate-limit.cjs');
 const { ActivityQueueScheduler } = require('./request-queue.cjs');
 const { ChatGptExecutionReceiptStore, canonicalRequestFingerprint } = require('./execution-receipt-store.cjs');
@@ -323,6 +324,8 @@ async function handleCompletion(request, response, requestPath, raw, cvOnly) {
   try { input = parseJson(raw); } catch (error) { return sendJson(response, error.status, { code: error.code, message: error.message }); }
   if (!/^[a-z][a-z0-9_.-]{1,99}$/i.test(String(input.activity || ''))) return sendJson(response, 400, { code: 'ACTIVITY_INVALID' });
   if (!Array.isArray(input.messages) || !input.messages.length) return sendJson(response, 400, { code: 'AI_REQUEST_INVALID' });
+  try { input.workspaceMcp = validateWorkspaceMcp(input); }
+  catch (error) { return sendJson(response, error.status, { code: error.code, message: error.message }); }
   if (!String(input.codexSubjectId || input.chatgptSubjectId || '').trim()) {
     return sendJson(response, 409, { code: 'CHATGPT_CONNECTION_REQUIRED', message: 'Connect ChatGPT before using AI features.' });
   }
@@ -361,6 +364,7 @@ async function handleCompletion(request, response, requestPath, raw, cvOnly) {
       reasoningEffortSource: result.reasoningEffortSource,
       degraded: result.degraded || undefined, gatewayExecutionId: metering?.executionId,
       content: result.content, data: result.data, toolCalls: result.toolCalls,
+      ...(result.workspaceMcp ? { workspaceMcp: result.workspaceMcp, toolActions: result.toolActions || [] } : {}),
       finishReason: result.finishReason, usage: result.usage, usageReported: result.usageReported,
       usageSource: 'chatgpt-connect', metrics: { ...result.metrics, queueWaitMs: permit.waitMs }
     };

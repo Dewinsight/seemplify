@@ -127,10 +127,11 @@ test('recipient sequence exits fail closed for complaints and respect configured
 test('the system library covers the platform and every template has visual, trial, and compliance content', () => {
   const templates = getSystemCampaignTemplates()
   const slugs = new Set(templates.map((template) => template.slug))
-  assert.ok(templates.length >= 17)
-  for (const expected of ['welcome-to-seemplify', 'product-core-hr', 'product-payroll', 'product-recruiter', 'product-leave-management', 'product-time-attendance', 'product-performance', 'product-learning', 'product-automations', 'product-workspace', 'product-experience-management', 'product-approver', 'product-ai-knowledge', 'product-community']) {
+  assert.equal(slugs.size, templates.length, 'system template slugs must be unique')
+  for (const expected of ['welcome-to-seemplify', 'product-core-hr', 'product-payroll', 'product-recruiter', 'product-leave-management', 'product-time-attendance', 'product-performance', 'product-learning', 'product-workspace', 'product-experience-management', 'product-approver', 'product-ai-knowledge', 'product-community', 'nurture-sequence', 'demo-invite', 'newsletter-update']) {
     assert.equal(slugs.has(expected), true, `missing ${expected}`)
   }
+  assert.equal(slugs.has('product-automations'), false, 'the retired Automations product must not be promoted')
 
   templates.forEach((template) => {
     assert.equal(template.designMode, 'visual')
@@ -150,7 +151,11 @@ test('the system library covers the platform and every template has visual, tria
   const productTemplates = templates.filter((template) => template.slug.startsWith('product-'))
   const productHeroUrls = productTemplates.map((template) => template.design.blocks.find((block) => block.type === 'hero')?.imageUrl)
   assert.equal(new Set(productHeroUrls).size, productTemplates.length, 'each product should have distinctive hero art')
-  assert.ok(productHeroUrls.filter((url) => /-v2\.jpg$/.test(url || '')).length >= 11)
+  for (const template of productTemplates) {
+    if (['product-core-hr', 'product-payroll'].includes(template.slug)) continue
+    const heroUrl = template.design.blocks.find((block) => block.type === 'hero')?.imageUrl
+    assert.match(heroUrl || '', /-v2\.jpg$/, `${template.slug} must keep its refreshed hero art`)
+  }
 })
 
 test('visual campaigns render responsive email tables, generated imagery, preheader, and accessible motion', () => {
