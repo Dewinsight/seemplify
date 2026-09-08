@@ -14,6 +14,15 @@ function getModel(name) {
   return mongoose.models[`oidc_${name}`] || mongoose.model(`oidc_${name}`, itemSchema)
 }
 
+function providerPayload(result) {
+  if (!result) return undefined
+  // oidc-provider checks payload.consumed for authorization-code and refresh
+  // replay. Keep existing consumedAt records effective as well as new writes.
+  return result.consumedAt
+    ? { ...result.payload, consumed: Math.floor(new Date(result.consumedAt).getTime() / 1000) }
+    : result.payload
+}
+
 export class MongoAdapter {
   constructor(name) {
     this.name = name
@@ -27,20 +36,17 @@ export class MongoAdapter {
 
   async find(id) {
     const result = await this.Model.findById(id).lean()
-    if (!result) return undefined
-    return result.payload
+    return providerPayload(result)
   }
 
   async findByUserCode(userCode) {
     const result = await this.Model.findOne({ userCode }).lean()
-    if (!result) return undefined
-    return result.payload
+    return providerPayload(result)
   }
 
   async findByUid(uid) {
     const result = await this.Model.findOne({ uid }).lean()
-    if (!result) return undefined
-    return result.payload
+    return providerPayload(result)
   }
 
   async destroy(id) {

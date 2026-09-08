@@ -14,6 +14,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 import mongoose from 'mongoose'
 import WebhookOutbox from '../models/WebhookOutbox.js'
+import { Account } from '../models/Account.js'
 
 // Registered webhook endpoints for each backend
 const WEBHOOK_ENDPOINTS = {
@@ -569,9 +570,12 @@ export async function notifyManagerChanged(teamId, oldManagerId, newManagerId, o
  * Force session invalidation for a user across all backends
  */
 export async function forceUserLogout(userId, reason = 'admin_action') {
+  const account = await Account.findById(userId).select('sub').lean()
+  if (!account?.sub) throw new Error('The Identity subject is required to invalidate product sessions')
   console.log(`📤 [WEBHOOK] user.session.invalidate: user=${userId}, reason=${reason}`)
   return sendWebhook('user.session.invalidate', {
     userId,
+    idpSubject: String(account.sub),
     reason,
     action: 'force_logout',
   })

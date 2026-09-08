@@ -5,6 +5,7 @@ import session from 'express-session'
 import { Provider } from 'oidc-provider'
 import mongoose from 'mongoose'
 import { MongoAdapter } from './adapter/mongoAdapter.js'
+import { workspaceOidcAccountSessionAllowed, workspaceOidcSessionPolicy } from './config/workspaceOidcSessionPolicy.js'
 import { Account } from './models/Account.js'
 import { Organization } from './models/Organization.js'
 import { OrganizationInvite } from './models/OrganizationInvite.js'
@@ -917,6 +918,7 @@ try {
 }
 
 const config = {
+  ...workspaceOidcSessionPolicy,
   adapter: MongoAdapter,
   proxy: true, // Enable proxy support behind Hostinger Traefik
   clients: configuredOidcClients.map(client => ({
@@ -1030,7 +1032,7 @@ const config = {
       'product_permissions', 'platform_roles', 'platform_permissions'
     ]
   },
-  findAccount: async (ctx, id) => {
+  findAccount: async (ctx, id, token) => {
     const findAccountStart = Date.now()
     // Use lean() for read-only query - significantly faster
     const acc = await Account.findOne({ sub: id })
@@ -1038,7 +1040,7 @@ const config = {
       .populate('currentOrganization', 'name')
       .lean()
     console.log(`⏱️ [PERF] findAccount query: ${Date.now() - findAccountStart}ms`)
-    if (!acc) return undefined
+    if (!acc || !workspaceOidcAccountSessionAllowed(ctx, acc, token)) return undefined
     const claims = await getCachedClaims(acc)
     const externalProductAccess = externalProductAccessDecision({
       clientId: ctx.oidc?.client?.clientId,

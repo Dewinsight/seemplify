@@ -54,6 +54,8 @@ jobs:
         run: |
           node --test \
             production-wiring.test.mjs \
+            tests/workspace-oidc-session-policy.test.mjs \
+            tests/session-invalidation-webhook.test.mjs \
             test/auth-redirects.test.mjs \
             test/hub-pins.test.mjs \
             test/member-removal-webhook.test.mjs \
