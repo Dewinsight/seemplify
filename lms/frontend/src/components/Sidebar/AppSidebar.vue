@@ -204,6 +204,7 @@ import LMSLogo from '@/components/Icons/LMSLogo.vue'
 import { useRouter } from 'vue-router'
 import {
 	ref,
+	computed,
 	onMounted,
 	inject,
 	watch,
@@ -245,12 +246,28 @@ const { userResource } = usersStore()
 let sidebarStore = useSidebar()
 const socket = inject('$socket')
 const unreadCount = ref(0)
-const sidebarLinks = ref(null)
 const showPageModal = ref(false)
 const isModerator = ref(false)
 const isInstructor = ref(false)
 const pageToEdit = ref(null)
 const { sidebarSettings, activeTab, isSettingsOpen, programs } = useSettings()
+// Derive navigation from cached resources too: layouts remount on resize.
+const sidebarLinks = computed(() =>
+	getSidebarLinks().map((group) => ({
+		...group,
+		items: group.items
+			.filter((item) => {
+				const key = item.label.toLowerCase().split(' ').join('_')
+				const enabled = sidebarSettings.data?.[key]
+				return enabled == null || Boolean(parseInt(enabled))
+			})
+			.map((item) =>
+				item.label === 'Notifications'
+					? { ...item, count: unreadCount.value || 0 }
+					: item
+			),
+	}))
+)
 const settingsStore = useSettings()
 const showOnboarding = ref(false)
 const showIntermediateModal = ref(false)
@@ -266,31 +283,13 @@ const iconProps = {
 }
 
 onMounted(() => {
+	sidebarSettings.reload()
 	setUpOnboarding()
 	addKeyboardShortcut()
 	socket.on('publish_lms_notifications', (data) => {
 		unreadNotifications.reload()
 	})
 })
-
-const setSidebarLinks = () => {
-	sidebarSettings.reload(
-		{},
-		{
-			onSuccess(data) {
-				Object.keys(data).forEach((key) => {
-					if (!parseInt(data[key])) {
-						sidebarLinks.value.forEach((link) => {
-							link.items = link.items.filter(
-								(item) => item.label.toLowerCase().split(' ').join('_') !== key
-							)
-						})
-					}
-				})
-			},
-		}
-	)
-}
 
 const addKeyboardShortcut = () => {
 	window.addEventListener('keydown', (e) => {
@@ -323,20 +322,9 @@ const unreadNotifications = createResource({
 	},
 	onSuccess(data) {
 		unreadCount.value = data
-		updateUnreadCount()
 	},
 	auto: user ? true : false,
 })
-
-const updateUnreadCount = () => {
-	sidebarLinks.value?.forEach((link) => {
-		link.items.forEach((item) => {
-			if (item.label === 'Notifications') {
-				item.count = unreadCount.value || 0
-			}
-		})
-	})
-}
 
 const openPageModal = (link) => {
 	showPageModal.value = true
@@ -582,17 +570,19 @@ const setUpOnboarding = () => {
 	}
 }
 
-watch(userResource, async () => {
-	await userResource.promise
-	if (userResource.data) {
-		isModerator.value = userResource.data.is_moderator
-		isInstructor.value = userResource.data.is_instructor
-		await programs.reload()
-		setUpOnboarding()
-	}
-	sidebarLinks.value = getSidebarLinks()
-	setSidebarLinks()
-})
+watch(
+	() => userResource.data,
+	(data) => {
+		isModerator.value = Boolean(data?.is_moderator)
+		isInstructor.value = Boolean(data?.is_instructor)
+		if (data) {
+			// Programme loading must not block the rest of the navigation.
+			programs.reload().catch(() => {})
+			setUpOnboarding()
+		}
+	},
+	{ immediate: true }
+)
 
 const redirectToWebsite = () => {
 	window.open('https://frappe.io/learning', '_blank')
