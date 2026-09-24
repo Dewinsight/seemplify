@@ -20,7 +20,7 @@ def get_context(context):
     context.no_cache = 1
     context.show_sidebar = False
     context.no_breadcrumbs = True
-    context.has_oauth = False
+    context.has_oauth = bool(frappe.conf.get("seemplify_oidc_only"))
     context.signup_enabled = not is_signup_disabled()
     context.login_with_email_link = frappe.db.get_single_value(
         "System Settings", "login_with_email_link", cache=True

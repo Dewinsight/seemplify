@@ -35,6 +35,7 @@ docker run --rm \
   -e OIDC_PAYROLL_SECRET \
   -e OIDC_TIME_SECRET \
   -e OIDC_LEARNING_SECRET \
+  -e OIDC_LMS_SECRET \
   -e OIDC_MESSAGING_SECRET \
   -e OIDC_COMMUNITY_SECRET \
   -e OIDC_APPROVER_SECRET \
@@ -54,6 +55,7 @@ docker run --rm \
       "payroll-management": process.env.OIDC_PAYROLL_SECRET,
       "time-attendance": process.env.OIDC_TIME_SECRET,
       "seemplify-learning": process.env.OIDC_LEARNING_SECRET,
+      lms: process.env.OIDC_LMS_SECRET,
       messaging: process.env.OIDC_MESSAGING_SECRET,
       community: process.env.OIDC_COMMUNITY_SECRET,
       approver: process.env.OIDC_APPROVER_SECRET,

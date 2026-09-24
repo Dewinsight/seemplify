@@ -1,0 +1,85 @@
+name: seemplify-lms
+x-app: &app
+  image: ${LMS_IMAGE:?required}
+  restart: unless-stopped
+  volumes:
+    - lms-sites:/home/frappe/frappe-bench/sites
+    - lms-logs:/home/frappe/frappe-bench/logs
+  networks: [lms]
+services:
+  db:
+    image: mariadb:10.11
+    restart: unless-stopped
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci]
+    environment:
+      MARIADB_ROOT_PASSWORD: ${LMS_DB_ROOT_PASSWORD:?required}
+    volumes: [lms-db:/var/lib/mysql]
+    networks: [lms]
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 10s
+      retries: 20
+  redis-cache:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    networks: [lms]
+  redis-queue:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    volumes: [lms-redis:/data]
+    networks: [lms]
+  backend:
+    <<: *app
+    depends_on:
+      db: {condition: service_healthy}
+      redis-cache: {condition: service_started}
+      redis-queue: {condition: service_started}
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS -H 'Host: lms.seemplifyai.com' http://localhost:8000/api/method/ping >/dev/null"]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+  websocket:
+    <<: *app
+    command: [node, /home/frappe/frappe-bench/apps/frappe/socketio.js]
+  worker:
+    <<: *app
+    command: [bench, worker, --queue, short,default,long]
+  scheduler:
+    <<: *app
+    command: [bench, schedule]
+  frontend:
+    <<: *app
+    command: [nginx-entrypoint.sh]
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: lms.seemplifyai.com
+      UPSTREAM_REAL_IP_ADDRESS: 0.0.0.0/0
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: 'on'
+      PROXY_READ_TIMEOUT: '120'
+      CLIENT_MAX_BODY_SIZE: 50m
+    networks: [lms, dokploy-network]
+    ports: ['127.0.0.1:18080:8080']
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.seemplify-lms.rule=Host(`lms.seemplifyai.com`)
+      - traefik.http.routers.seemplify-lms.entrypoints=web
+      - traefik.http.routers.seemplify-lms.service=seemplify-lms
+      - traefik.http.routers.seemplify-lms-secure.rule=Host(`lms.seemplifyai.com`)
+      - traefik.http.routers.seemplify-lms-secure.entrypoints=websecure
+      - traefik.http.routers.seemplify-lms-secure.tls=true
+      - traefik.http.routers.seemplify-lms-secure.tls.certresolver=letsencrypt
+      - traefik.http.routers.seemplify-lms-secure.service=seemplify-lms
+      - traefik.http.services.seemplify-lms.loadbalancer.server.port=8080
+volumes:
+  lms-db:
+  lms-sites:
+  lms-logs:
+  lms-redis:
+networks:
+  lms:
+  dokploy-network:
+    external: true

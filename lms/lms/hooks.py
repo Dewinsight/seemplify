@@ -274,3 +274,6 @@ add_to_apps_screen = [
 ]
 
 sqlite_search = ["lms.sqlite.LearningSearch"]
+
+# Production restoration: all interactive authentication is owned by Seemplify Identity.
+before_request = ["lms.lms.production_auth.block_local_auth"]

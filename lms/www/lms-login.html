@@ -502,6 +502,10 @@
 						<p class="card-description">Sign in to start with Primary, JSS, or Senior Secondary learning.</p>
 					</div>
 
+                    {% if has_oauth %}
+                    <a class="email-login-btn" style="display:flex;justify-content:center;text-decoration:none" href="/api/method/lms.lms.production_auth.start">Sign in with Seemplify</a>
+                    <p class="security-notice">Use your Seemplify account to continue learning.</p>
+                    {% else %}
 					<form id="emailLoginForm" class="email-login-form" novalidate>
 						<div id="loginFormFields">
 							<div class="form-group">
@@ -543,6 +547,7 @@
 						{% endif %}
 						<div id="loginError" class="login-error"></div>
 					</form>
+                    {% endif %}
 				</div>
 
 				<div class="security-notice">Access is limited to authorized Stanbic IBTC STEM learners and reviewers.</div>
@@ -550,6 +555,7 @@
 		</section>
 	</main>
 
+	{% if not has_oauth %}
 	<script>
 	(function() {
 		const loginWithEmailLink = {{ 'true' if login_with_email_link else 'false' }};
@@ -869,5 +875,6 @@
 		{% endif %}
 	})();
 	</script>
+	{% endif %}
 </body>
 </html>

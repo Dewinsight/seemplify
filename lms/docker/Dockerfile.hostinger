@@ -1,0 +1,10 @@
+FROM seemplify/frappe-base:v15.121.1
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends libcairo2 libffi-dev gcc && rm -rf /var/lib/apt/lists/*
+COPY --chown=frappe:frappe . /opt/lms
+USER frappe
+RUN cd /opt/lms && git init && git config user.email build@seemplifyai.com && git config user.name Build && git add . && git commit -qm source \
+    && cd /home/frappe/frappe-bench && bench get-app --skip-assets /opt/lms \
+    && bench build --app lms \
+    && cp -a sites/assets/. assets/
+WORKDIR /home/frappe/frappe-bench
