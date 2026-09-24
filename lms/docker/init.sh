@@ -14,9 +14,11 @@ MYSQL_ROOT_PASSWORD_VALUE="${MYSQL_ROOT_PASSWORD:-123}"
 DEVELOPER_MODE_VALUE="${LMS_DEVELOPER_MODE:-0}"
 APP_SOURCE_PATH="${LMS_APP_SOURCE_PATH:-/lms-app}"
 
-export PATH="/home/frappe/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="/home/frappe/.pyenv/shims:/home/frappe/.pyenv/bin:/home/frappe/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 for node_dir in \
+  /home/frappe/.nvm/versions/node/v24*/bin \
+  /home/frappe/.nvm/versions/node/*/bin \
   /home/frappe/.nvm/versions/node/v24.12.0/bin \
   /home/frappe/.nvm/versions/node/v22.17.0/bin \
   /home/frappe/.nvm/versions/node/v20.19.0/bin \
@@ -31,6 +33,11 @@ done
 echo "Using site: ${SITE_NAME}"
 echo "Using host: ${PUBLIC_HOST}"
 echo "Using app source: ${APP_SOURCE_PATH}"
+
+if [ -d frappe-bench ]; then
+  echo "Removing incomplete bench initialization..."
+  rm -rf frappe-bench
+fi
 
 bench init --skip-redis-config-generation frappe-bench
 
@@ -48,7 +55,23 @@ sed -i '/watch/d' ./Procfile
 sed -i '/socketio/d' ./Procfile
 
 # Use local LMS app source mounted in the container.
-bench get-app "${APP_SOURCE_PATH}"
+APP_DEST="${PWD}/apps/lms"
+mkdir -p "${APP_DEST}"
+for part in lms www docker scripts frontend; do
+  if [ -d "${APP_SOURCE_PATH}/${part}" ]; then
+    rm -rf "${APP_DEST:?}/${part}"
+    cp -a "${APP_SOURCE_PATH}/${part}" "${APP_DEST}/"
+  fi
+done
+
+for file in README.md MANIFEST.in license.txt setup.py pyproject.toml package.json yarn.lock; do
+  if [ -f "${APP_SOURCE_PATH}/${file}" ]; then
+    cp -f "${APP_SOURCE_PATH}/${file}" "${APP_DEST}/"
+  fi
+done
+
+./env/bin/pip install -e "${APP_DEST}"
+printf "frappe\nlms\n" > sites/apps.txt
 
 bench new-site "${SITE_NAME}" \
   --force \
@@ -92,8 +115,8 @@ if [ -f /workspace/setup-brevo-email.sh ]; then
   bash /workspace/setup-brevo-email.sh /workspace-idp-env "${SITE_NAME}" || true
 fi
 
-bench --site "${SITE_NAME}" clear-cache
-bench --site "${SITE_NAME}" clear-website-cache
+bash /workspace/post-deploy-sync.sh "${SITE_NAME}" "${APP_SOURCE_PATH}" || true
 bench use "${SITE_NAME}"
+touch "sites/${SITE_NAME}/.lms_initialized"
 
 bench start

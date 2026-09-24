@@ -1,6 +1,6 @@
 from . import __version__ as app_version
 
-app_name = "frappe_lms"
+app_name = "lms"
 app_title = "Frappe LMS"
 app_publisher = "Frappe"
 app_description = "Frappe LMS App"
