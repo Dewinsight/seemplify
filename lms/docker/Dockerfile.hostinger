@@ -1,4 +1,4 @@
-FROM seemplify/frappe-base:v15.121.1
+FROM seemplify/frappe-base:backup-e703fe9
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends libcairo2 libffi-dev gcc && rm -rf /var/lib/apt/lists/*
 COPY --chown=frappe:frappe . /opt/lms

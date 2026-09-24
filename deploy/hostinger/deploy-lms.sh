@@ -9,15 +9,16 @@ set -a
 . "$secrets"
 set +a
 export LMS_IMAGE="seemplify/lms:hostinger-$RELEASE_SHA"
-if ! docker image inspect seemplify/frappe-base:v15.121.1 >/dev/null 2>&1; then
+if ! docker image inspect seemplify/frappe-base:backup-e703fe9 >/dev/null 2>&1; then
   context="/opt/seemplify/build/lms-recovery/frappe_docker"
   if [ ! -d "$context/.git" ]; then
     git clone https://github.com/frappe/frappe_docker.git "$context"
   fi
   git -C "$context" checkout 3d0a0e53d8ab03903f6c3f125976a37d7a0f9875
-  docker build --build-arg PYTHON_VERSION=3.11 --build-arg NODE_VERSION=22 \
-    --build-arg FRAPPE_BRANCH=v15.121.1 --build-arg INSTALL_CHROMIUM=false \
-    -f "$context/images/custom/Containerfile" -t seemplify/frappe-base:v15.121.1 "$context"
+  python3 "$release_root/deploy/hostinger/prepare-lms-base.py" "$context"
+  docker build --build-arg PYTHON_VERSION=3.14 --build-arg NODE_VERSION=24 \
+    --build-arg FRAPPE_PATH=file:///tmp/frappe-source --build-arg FRAPPE_BRANCH=lms-restoration --build-arg INSTALL_CHROMIUM=false \
+    -f "$context/Containerfile.lms" -t seemplify/frappe-base:backup-e703fe9 "$context"
 fi
 docker build --label "org.opencontainers.image.revision=$RELEASE_SHA" \
   -f "$release_root/lms/docker/Dockerfile.hostinger" -t "$LMS_IMAGE" "$release_root/lms"
@@ -33,8 +34,11 @@ if ! "${compose[@]}" run --rm --no-deps backend test -f sites/lms.seemplifyai.co
     --db-name lms_stem --db-password "$LMS_DB_PASSWORD" \
     --db-root-password "$LMS_DB_ROOT_PASSWORD" --admin-password "$LMS_ADMIN_PASSWORD" \
     --mariadb-user-host-login-scope '%'
+fi
+if ! "${compose[@]}" run --rm --no-deps backend test -f sites/lms.seemplifyai.com/.historical-restore-complete; then
   "${compose[@]}" run --rm --no-deps -v "$release_root/lms/docker/lms-prod-restore.sql:/tmp/lms-restore.sql:ro" backend \
     bench --site lms.seemplifyai.com restore /tmp/lms-restore.sql --force --db-root-password "$LMS_DB_ROOT_PASSWORD"
+  "${compose[@]}" run --rm --no-deps backend touch sites/lms.seemplifyai.com/.historical-restore-complete
 fi
 "${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com set-config host_name https://lms.seemplifyai.com
 "${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com set-config developer_mode 0

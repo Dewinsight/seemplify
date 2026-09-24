@@ -27,7 +27,7 @@ class ProductionAuthContract(unittest.TestCase):
         self.assertLess(callback.index("compare_digest"), callback.index("get_info_via_oauth"))
         self.assertLess(callback.index("permitted_role(claims)"), callback.index("login_oauth_user"))
         self.assertIn('claims.get("email_verified") is not True', callback)
-        self.assertIn('frappe_oauth_login:{state}', callback)
+        self.assertIn('frappe.cache.delete_value(state_key(state))', callback)
 
     def test_login_page_uses_identity_in_production(self):
         for path in ("www/lms-login.html", "lms/www/lms-login.html"):
