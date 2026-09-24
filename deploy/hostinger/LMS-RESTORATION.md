@@ -31,18 +31,15 @@ Root-only `/opt/seemplify/secrets/lms.env` contains the database and OIDC
 credentials. The encrypted sibling access vault and AES-256 archive retain
 recovery copies. The site encryption key must also be retained in that vault.
 
-Login uses Seemplify Identity. Password and email-link login are disabled on
-the LMS. Existing Frappe user records are matched by verified IdP email, and
-their production LMS role is replaced with the role derived from the IdP's
-authoritative LMS permission matrix. Accounts with no LMS permission are denied.
-Historical local password hashes are not accepted for production login.
+At the owner's explicit request on 24 September 2026, this LMS uses standalone
+Frappe email/password login. This is an exception to the general shared Identity
+rule: local LMS users and roles control this deployment. Seemplify OAuth entry
+points and role synchronization are disabled by `lms_standalone_auth=1`.
+Existing local password hashes are preserved. Public signup remains disabled;
+administrators provision learner accounts. SMTP remains disabled pending separate
+configuration, so password-reset email is not yet available.
 
 ## Deployment
-
-Run `prepare-lms-secrets.py` once under the production deployment lock to
-provision the new credentials and Identity client; then restart the Identity
-container to load that client. Subsequent core releases materialize it from
-`OIDC_LMS_SECRET` in `core-apps.env`.
 
 `deploy-lms.sh` builds an immutable image labeled with the tested main SHA,
 initializes the site only when absent, imports the historical SQL only until

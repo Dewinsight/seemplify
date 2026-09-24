@@ -14,7 +14,7 @@ jobs:
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4
-      - name: Test Identity contracts
+      - name: Test authentication contracts
         run: python3 -m unittest discover -s lms/tests -v
       - name: Configure SSH
         env:
@@ -40,8 +40,8 @@ jobs:
           tar -xzf "/opt/seemplify/build/lms-release-$RELEASE_SHA.tgz" -C "$release_root"
           bash "$release_root/deploy/hostinger/deploy-lms.sh"
           REMOTE
-      - name: Verify public LMS and Identity login start
+      - name: Verify public LMS and standalone login
         run: |
           curl -fsS https://lms.seemplifyai.com/api/method/ping
-          curl -fsS https://lms.seemplifyai.com/lms-login | grep -q 'Sign in with Seemplify'
-          curl -sS -D - -o /dev/null https://lms.seemplifyai.com/api/method/lms.lms.production_auth.start | grep -qi 'location: https://auth.seemplifyai.com/auth'
+          curl -fsS https://lms.seemplifyai.com/lms-login | grep -q 'id="password"'
+          test "$(curl -sS -o /dev/null -w '%{http_code}' https://lms.seemplifyai.com/api/method/lms.lms.production_auth.start)" = 401

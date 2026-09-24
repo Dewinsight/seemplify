@@ -81,7 +81,36 @@ class ProductionAuthContract(unittest.TestCase):
         self.assertIn('claims.get("email_verified") is not True', callback)
         self.assertIn('frappe.cache.getdel(frappe.cache.make_key(state_key(state)))', callback)
 
-    def test_login_page_uses_identity_in_production(self):
+    def test_standalone_allows_password_login_and_rejects_sso(self):
+        tree = ast.parse((ROOT / "lms/lms/production_auth.py").read_text())
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "block_local_auth")
+        def reject(message, kind):
+            raise kind(message)
+        framework = SimpleNamespace(
+            conf={"lms_standalone_auth": 1, "seemplify_oidc_only": 0},
+            form_dict={}, request=SimpleNamespace(path="/api/method/login"),
+            throw=reject, AuthenticationError=ValueError,
+        )
+        scope = {"frappe": framework}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "guard", "exec"), scope)
+        scope["block_local_auth"]()
+        for path in ("lms.lms.production_auth.start", "lms.lms.production_auth.callback", "frappe.integrations.oauth2_logins.custom"):
+            framework.request.path = "/api/method/" + path
+            with self.assertRaises(ValueError):
+                scope["block_local_auth"]()
+
+    def test_standalone_login_preserves_local_roles(self):
+        tree = ast.parse((ROOT / "lms/lms/user.py").read_text())
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "on_login")
+        framework = SimpleNamespace(conf={"lms_standalone_auth": 1}, local=SimpleNamespace(response={}))
+        role_sync = Mock()
+        scope = {"frappe": framework, "process_oauth_lms_role": role_sync}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "login", "exec"), scope)
+        scope["on_login"](Mock())
+        role_sync.assert_not_called()
+        self.assertEqual(framework.local.response["redirect_to"], "/lms")
+
+    def test_login_page_supports_both_configured_modes(self):
         for path in ("www/lms-login.html", "lms/www/lms-login.html"):
             source = (ROOT / path).read_text()
             self.assertIn("{% if has_oauth %}", source)

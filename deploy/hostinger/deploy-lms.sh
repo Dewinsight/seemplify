@@ -42,10 +42,11 @@ if ! "${compose[@]}" run --rm --no-deps backend test -f sites/lms.seemplifyai.co
 fi
 "${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com set-config host_name https://lms.seemplifyai.com
 "${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com set-config developer_mode 0
-"${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com set-config seemplify_oidc_only 1
+"${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com set-config seemplify_oidc_only 0
+"${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com set-config lms_standalone_auth 1
 "${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com set-config mute_emails 1
 "${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com migrate
-"${compose[@]}" run --rm --no-deps -e OIDC_LMS_SECRET backend bench --site lms.seemplifyai.com execute lms.lms.configure_hostinger.configure
+"${compose[@]}" run --rm --no-deps backend bench --site lms.seemplifyai.com execute lms.lms.configure_hostinger.configure
 "${compose[@]}" up -d
 for attempt in $(seq 1 36); do
   if curl -fsS -H 'Host: lms.seemplifyai.com' http://127.0.0.1:18080/api/method/ping >/dev/null; then break; fi

@@ -47,6 +47,9 @@ def reset_password(user):
 	if not user or not str(user).strip():
 		frappe.throw(_("Please enter your email"))
 
+	if frappe.conf.get("mute_emails"):
+		frappe.throw(_("Password-reset email is not configured. Please contact your LMS administrator."))
+
 	# Resolve user by email or username
 	user_str = str(user).strip().lower()
 	user_name = frappe.db.get_value("User", {"email": user_str}, "name")
@@ -154,7 +157,8 @@ def on_login(login_manager):
 	frappe.local.response["redirect_to"] = "/lms"
 	
 	# Check if this was an OAuth login and process LMS role
-	process_oauth_lms_role(login_manager)
+	if not frappe.conf.get("lms_standalone_auth"):
+		process_oauth_lms_role(login_manager)
 
 
 def process_oauth_lms_role(login_manager):

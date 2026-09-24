@@ -80,6 +80,11 @@ def exchange_claims(code, verifier):
 
 
 def block_local_auth():
+    cmd = frappe.form_dict.get("cmd") or frappe.request.path.removeprefix("/api/method/")
+    if frappe.conf.get("lms_standalone_auth"):
+        if cmd.startswith(("lms.lms.production_auth.", "frappe.integrations.oauth2_logins.")):
+            frappe.throw("Please use your LMS email and password.", frappe.AuthenticationError)
+        return
     if not frappe.conf.get("seemplify_oidc_only"):
         return
     cmd = frappe.form_dict.get("cmd") or frappe.request.path.removeprefix("/api/method/")
