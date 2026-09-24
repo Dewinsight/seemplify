@@ -2,3 +2,6 @@ experience-management/backend/migrations/postgres/*.sql text eol=lf
 platform/email/**/*.sh text eol=lf
 platform/email/relay/entrypoint.sh text eol=lf
 coturn/*.sh text eol=lf
+deploy/hostinger/*.sh text eol=lf
+lms/docker/*.sh text eol=lf
+lms/docker/Dockerfile* text eol=lf
