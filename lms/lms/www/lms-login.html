@@ -397,12 +397,15 @@
 			}
 
 			.stanbic-hero {
-				min-height: 45vh;
+				display: none;
 			}
 
 			.login-section {
-				min-height: auto;
+				min-height: 100svh;
+				padding: 2rem 1.5rem;
 			}
+			.form-group input { font-size: 1rem; min-height: 3rem; }
+			.form-links .link-option, .signup-link { display: inline-flex; align-items: center; min-height: 2.75rem; }
 		}
 
 		@media (max-width: 640px) {
@@ -411,23 +414,23 @@
 			}
 
 			.mobile-brand {
-				display: block;
+				display: none;
 				margin-left: 0;
 				margin-right: auto;
 			}
 
 			.login-section {
 				display: block;
-				min-height: 100vh;
+				min-height: 100svh;
 				align-items: flex-start;
-				padding: 1.25rem 0.75rem;
+				padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
 				overflow-x: hidden;
 			}
 
 			.login-container {
 				width: 100%;
-				max-width: 22.25rem;
-				margin-left: 0;
+				max-width: 28rem;
+				margin-left: auto;
 				margin-right: auto;
 				overflow-x: hidden;
 			}
@@ -435,7 +438,7 @@
 			.login-card {
 				width: 100%;
 				max-width: 100%;
-				padding: 1.15rem;
+				padding: 1.25rem;
 				box-shadow: none;
 			}
 
@@ -454,8 +457,8 @@
 			.card-title {
 				max-width: 100%;
 				display: block;
-				font-size: 1rem;
-				line-height: 1.16;
+				font-size: clamp(1.25rem, 5vw, 1.6rem);
+				line-height: 1.3;
 				white-space: normal;
 				word-break: break-word;
 				overflow-wrap: anywhere;
@@ -463,7 +466,7 @@
 
 			.card-description {
 				max-width: 100%;
-				font-size: 0.84rem;
+				font-size: 1rem;
 				overflow-wrap: break-word;
 			}
 
@@ -477,6 +480,9 @@
 				padding: 0 0.25rem;
 				overflow-wrap: anywhere;
 			}
+		}
+		@media (max-height: 560px) and (max-width: 980px) {
+			.login-section { align-items: flex-start; padding-top: 1rem; padding-bottom: 1rem; }
 		}
 	</style>
 </head>
