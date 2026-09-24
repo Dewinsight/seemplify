@@ -289,6 +289,26 @@
 			box-shadow: 0 0 0 3px rgba(0, 63, 158, 0.14);
 		}
 
+		#passwordGroup { position: relative; }
+		#passwordGroup input { padding-right: 4.5rem; }
+		.password-toggle {
+			position: absolute;
+			right: 0.25rem;
+			top: 50%;
+			transform: translateY(-50%);
+			min-width: 3.75rem;
+			min-height: 2.75rem;
+			border: 0;
+			border-radius: 0.25rem;
+			background: transparent;
+			color: var(--stanbic-blue);
+			font: inherit;
+			font-size: 0.85rem;
+			font-weight: 700;
+			cursor: pointer;
+		}
+		.password-toggle:focus-visible { outline: 2px solid var(--stanbic-blue); }
+
 		.form-links {
 			display: flex;
 			align-items: center;
@@ -513,6 +533,7 @@
 							</div>
 							<div class="form-group" id="passwordGroup">
 								<input type="password" id="password" name="pwd" placeholder="Password" autocomplete="current-password">
+								<button type="button" class="password-toggle" id="togglePassword" aria-label="Show password" aria-controls="password">Show</button>
 							</div>
 							<div class="form-links">
 								{% if login_with_email_link %}
@@ -615,6 +636,14 @@
 
 			return fallback;
 		}
+
+		document.getElementById('togglePassword')?.addEventListener('click', function () {
+			const input = document.getElementById('password');
+			const show = input.type === 'password';
+			input.type = show ? 'text' : 'password';
+			this.textContent = show ? 'Hide' : 'Show';
+			this.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+		});
 
 		function setMessageState(errorDiv, message, success) {
 			if (success) {
