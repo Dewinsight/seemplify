@@ -168,6 +168,7 @@ override_whitelisted_methods = {
 
 # Add all simple route rules here
 website_route_rules = [
+	{"from_route": "/update-password", "to_route": "lms-reset-password"},
 	{"from_route": "/lms-login", "to_route": "lms-login"},
 	{"from_route": "/lms/<path:app_path>", "to_route": "lms"},
 	{
