@@ -27,10 +27,10 @@ def configure():
         "provider_name": "Seemplify", "social_login_provider": "Custom",
         "enable_social_login": 1, "client_id": "lms", "client_secret": secret,
         "base_url": "https://auth.seemplifyai.com", "custom_base_url": 1,
-        "authorize_url": "/oidc/auth", "access_token_url": "/oidc/token",
+        "authorize_url": "/auth", "access_token_url": "/token",
         "redirect_url": "/api/method/lms.lms.production_auth.callback",
-        "api_endpoint": "https://auth.seemplifyai.com/oidc/me",
-        "auth_url_data": json.dumps({"response_type": "code", "scope": "openid email profile organization"}),
+        "api_endpoint": "https://auth.seemplifyai.com/me",
+        "auth_url_data": json.dumps({"response_type": "code", "scope": "openid email profile"}),
         "user_id_property": "sub", "sign_ups": "Allow",
     })
     doc.save(ignore_permissions=True)

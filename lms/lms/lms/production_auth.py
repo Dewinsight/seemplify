@@ -1,11 +1,15 @@
 """Seemplify Identity login for the restored, production Frappe LMS."""
 import hmac
 import hashlib
-from urllib.parse import parse_qs, urlparse
+import base64
+import json
+import secrets
+from urllib.parse import parse_qs, urlparse, urlencode
+
+import requests
 
 import frappe
-from frappe.utils.oauth import get_info_via_oauth, get_oauth2_authorize_url, login_oauth_user, update_oauth_user
-from frappe.integrations.oauth2_logins import decoder_compat
+from frappe.utils.oauth import get_oauth_keys, get_oauth2_authorize_url, login_oauth_user, update_oauth_user
 from lms.lms.seemplify_oauth import extract_idp_lms_permissions, get_frappe_role_for_permissions
 
 
@@ -20,9 +24,12 @@ def permitted_role(claims):
 def start():
     url = get_oauth2_authorize_url("seemplify", "/lms/programs")
     state = parse_qs(urlparse(url).query)["state"][0]
-    frappe.cache.set_value(state_key(state), True, expires_in_sec=600)
+    verifier = secrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    frappe.cache.set(frappe.cache.make_key(state_key(state)), json.dumps({"verifier": verifier}), ex=600)
+    url += "&" + urlencode({"code_challenge": challenge, "code_challenge_method": "S256"})
     frappe.local.cookie_manager.set_cookie(
-        "lms_oidc_state", state, secure=True, httponly=True, samesite="Lax", max_age=600
+        "lms_oidc_state", hashlib.sha256(state.encode()).hexdigest(), secure=True, httponly=True, samesite="Lax", max_age=600
     )
     frappe.local.response.update(type="redirect", location=url)
 
@@ -30,14 +37,14 @@ def start():
 @frappe.whitelist(allow_guest=True)
 def callback(code=None, state=None):
     cookie = frappe.request.cookies.get("lms_oidc_state", "")
-    if not code or not state or not cookie or not hmac.compare_digest(cookie, state):
+    if not code or not state or not cookie or not hmac.compare_digest(cookie, hashlib.sha256(state.encode()).hexdigest()):
         frappe.throw("Your sign-in expired. Please sign in again.", frappe.AuthenticationError)
     # Reject expired/replayed flows before contacting the provider.
-    if not frappe.cache.get_value(state_key(state)):
+    transaction = frappe.cache.getdel(frappe.cache.make_key(state_key(state)))
+    if not transaction:
         frappe.throw("Your sign-in expired. Please sign in again.", frappe.AuthenticationError)
-    frappe.cache.delete_value(state_key(state))
     frappe.local.cookie_manager.delete_cookie("lms_oidc_state")
-    claims = get_info_via_oauth("seemplify", code, decoder_compat)
+    claims = exchange_claims(code, json.loads(transaction)["verifier"])
     if not claims.get("email") or claims.get("email_verified") is not True or not permitted_role(claims):
         frappe.throw("Your Seemplify account needs LMS access. Contact your organisation administrator.", frappe.PermissionError)
     frappe.local.oauth_userinfo = claims
@@ -55,6 +62,21 @@ def callback(code=None, state=None):
 
 def state_key(state):
     return "lms_oidc_state:" + hashlib.sha256(state.encode()).hexdigest()
+
+
+def exchange_claims(code, verifier):
+    credentials = get_oauth_keys("seemplify")
+    token = requests.post("https://auth.seemplifyai.com/token", data={
+        **credentials, "code": code, "code_verifier": verifier,
+        "grant_type": "authorization_code",
+        "redirect_uri": "https://lms.seemplifyai.com/api/method/lms.lms.production_auth.callback",
+    }, timeout=20)
+    token.raise_for_status()
+    info = requests.get("https://auth.seemplifyai.com/me", headers={
+        "Authorization": "Bearer " + token.json()["access_token"],
+    }, timeout=20)
+    info.raise_for_status()
+    return info.json()
 
 
 def block_local_auth():

@@ -14,6 +14,7 @@ application IDs.
 | Shared ChatGPT gateway | `deploy-chatgpt-gateway-hostinger.yml` | `core-apps.compose.yml`, `extended-apps.compose.yml` |
 | Shared connector runtime (Nango) | `deploy-connectors-hostinger.yml` | `automation-nango.compose.yml` |
 | Transactional mail | `deploy-mail-service.yml` | `mail.compose.yml` |
+| Stanbic Frappe LMS | `deploy-lms-hostinger.yml` | `lms.compose.yml` |
 | TURN credentials API and Coturn | `deploy-coturn-hostinger.yml` | `coturn/docker-compose.yml` |
 
 ## Retired automation platform
@@ -33,6 +34,10 @@ health, verifies the running revision, and performs public smoke checks. Shared
 connector infrastructure uses its pinned upstream image and records the exact
 Seemplify release in the container label `com.seemplify.release`.
 
-`digilog-recruiter`, `auto-mailer`, Rocket.Chat, Zulip, and the former LMS
-deployment are not active Hostinger production applications. Their executable
+`digilog-recruiter`, `auto-mailer`, Rocket.Chat, and Zulip
+are not active Hostinger production applications. Their executable
 legacy deployment workflows are deliberately absent.
+
+The restored Frappe LMS uses `lms.seemplifyai.com`. It is separate from
+Seemplify Learning and has its own MariaDB, Redis, site files, workers and
+scheduler. See `LMS-RESTORATION.md` for recovery and verification boundaries.
