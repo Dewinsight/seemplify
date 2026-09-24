@@ -2,6 +2,9 @@
 
 Canonical URL: https://lms.seemplifyai.com
 
+Identity's existing LMS hub tile points here through `SIMPLE_LMS_URL`; the
+separate Seemplify Learning tile retains its own URL.
+
 This is the original Frappe LMS, separate from `learning.seemplifyai.com`.
 It runs as the `seemplify-lms` Compose project on Hostinger, routed through the
 existing Dokploy Traefik. Production deployment is owned by the main-branch

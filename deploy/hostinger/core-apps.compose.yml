@@ -37,6 +37,7 @@ services:
       ATTENDANCE_HUB_SECRET: ${TIME_INTERNAL_SECRET:?required}
       PRESENCE_REPORTER_SERVICE_SECRET: ${TIME_INTERNAL_SECRET:?required}
       SEEMPLIFY_LEARNING_URL: https://learning.seemplifyai.com
+      SIMPLE_LMS_URL: https://lms.seemplifyai.com
       MESSAGING_URL: https://workspace.seemplifyai.com
       MESSAGING_API_URL: https://api-workspace.seemplifyai.com
       COMMUNITY_PRODUCTION_ENABLED: "${COMMUNITY_PRODUCTION_ENABLED:-false}"
