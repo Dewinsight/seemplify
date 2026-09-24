@@ -22,7 +22,7 @@ def configure():
     frappe.db.sql("UPDATE `tabEmail Account` SET enable_outgoing=0, enable_incoming=0")
     frappe.db.sql("UPDATE `tabEmail Queue` SET status='Not Sent' WHERE status='Sending'")
     frappe.db.set_single_value("System Settings", "mute_emails", 1)
-    doc = frappe.get_doc("Social Login Key", "seemplify") if frappe.db.exists("Social Login Key", "seemplify") else frappe.new_doc("Social Login Key")
+    doc = frappe.get_doc("Social Login Key", "Seemplify") if frappe.db.exists("Social Login Key", "Seemplify") else frappe.new_doc("Social Login Key")
     doc.update({
         "provider_name": "Seemplify", "social_login_provider": "Custom",
         "enable_social_login": 1, "client_id": "lms", "client_secret": secret,

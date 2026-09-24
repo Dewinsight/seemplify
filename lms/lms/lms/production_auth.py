@@ -22,7 +22,7 @@ def permitted_role(claims):
 
 @frappe.whitelist(allow_guest=True)
 def start():
-    url = get_oauth2_authorize_url("seemplify", "/lms/programs")
+    url = get_oauth2_authorize_url("Seemplify", "/lms/programs")
     state = parse_qs(urlparse(url).query)["state"][0]
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -49,7 +49,7 @@ def callback(code=None, state=None):
         frappe.throw("Your Seemplify account needs LMS access. Contact your organisation administrator.", frappe.PermissionError)
     frappe.local.oauth_userinfo = claims
     email = claims["email"].lower()
-    if update_oauth_user(email, claims, "seemplify") is False:
+    if update_oauth_user(email, claims, "Seemplify") is False:
         return
     # Historical database roles must not independently grant production access.
     user = frappe.get_doc("User", email)
@@ -57,7 +57,7 @@ def callback(code=None, state=None):
     user.set("roles", [{"role": role}])
     user.user_type = "Website User" if role == "LMS Student" else "System User"
     user.save(ignore_permissions=True)
-    login_oauth_user(claims, provider="seemplify", state=state)
+    login_oauth_user(claims, provider="Seemplify", state=state)
 
 
 def state_key(state):
@@ -65,7 +65,7 @@ def state_key(state):
 
 
 def exchange_claims(code, verifier):
-    credentials = get_oauth_keys("seemplify")
+    credentials = get_oauth_keys("Seemplify")
     token = requests.post("https://auth.seemplifyai.com/token", data={
         **credentials, "code": code, "code_verifier": verifier,
         "grant_type": "authorization_code",
