@@ -151,6 +151,7 @@ fixtures = ["Custom Field", "Function", "Industry", "LMS Category"]
 # ------------------------------
 #
 override_whitelisted_methods = {
+	"frappe.core.doctype.user.user.reset_password": "lms.lms.user.reset_password",
 	# "frappe.desk.search.get_names_for_mentions": "lms.lms.utils.get_names_for_mentions",
 }
 #

@@ -50,3 +50,7 @@ activity. Persistent data resides in the `seemplify-lms_lms-*` Docker volumes.
 For recovery, back up the site database and public/private files together with
 the site encryption key. Do not delete the volumes or rerun a historical import
 against a site with new student activity.
+
+Password-reset delivery is configured through the shared Seemplify mail API
+with a dedicated send-only credential in the root-only LMS environment file.
+Historical Frappe queues stay muted. See `platform/email/docs/INTEGRATION.md`.

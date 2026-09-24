@@ -30,6 +30,8 @@ services:
     networks: [lms]
   backend:
     <<: *app
+    environment:
+      LMS_MAIL_API_TOKEN: ${LMS_MAIL_API_TOKEN:?required}
     depends_on:
       db: {condition: service_healthy}
       redis-cache: {condition: service_started}

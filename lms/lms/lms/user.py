@@ -3,6 +3,7 @@ from frappe import _
 from frappe.model.naming import append_number_if_name_exists
 from frappe.utils import escape_html, random_string, validate_email_address
 from frappe.website.utils import cleanup_page_name, is_signup_disabled
+from frappe.rate_limiter import rate_limit
 import requests
 
 from lms.lms.utils import get_country_code
@@ -39,6 +40,7 @@ def after_insert(doc, method):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(limit=5, seconds=900)
 def reset_password(user):
 	"""
 	Send password reset email to user. Wraps Frappe's reset_password for custom login page.
@@ -47,7 +49,8 @@ def reset_password(user):
 	if not user or not str(user).strip():
 		frappe.throw(_("Please enter your email"))
 
-	if frappe.conf.get("mute_emails"):
+	from lms.lms.mail_service import configured, send_password_reset
+	if not configured():
 		frappe.throw(_("Password-reset email is not configured. Please contact your LMS administrator."))
 
 	# Resolve user by email or username
@@ -67,7 +70,10 @@ def reset_password(user):
 		frappe.throw(_("User is disabled"))
 
 	user_doc.validate_reset_password()
-	user_doc._reset_password(send_email=True)
+	# Frappe owns token generation, hashing, expiry and one-time redemption.
+	# The shared mail API handles delivery independently of the muted legacy queue.
+	link = user_doc.reset_password(send_email=False)
+	send_password_reset(user_doc.email, link)
 	return True
 
 

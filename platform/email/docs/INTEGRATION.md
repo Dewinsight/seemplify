@@ -137,3 +137,13 @@ built on the Mail API without exposing Postal or MariaDB:
 Put the dashboard behind Seemplify Identity/OIDC. Its backend holds a `read`
 key; only a restricted administrative backend receives `admin`. Do not ship an
 API bearer to the browser or query Postal's MariaDB directly.
+
+## LMS password resets
+
+The standalone Frappe LMS uses `lms.lms.mail_service` and a dedicated `send`-only
+`LMS_MAIL_API_TOKEN` from `/opt/seemplify/secrets/lms.env`. Both the branded
+reset endpoint and the native Frappe reset API use this integration. Frappe
+continues to own reset-token hashing, expiry, validation and redemption.
+Imported SMTP accounts and the historical email queue remain muted; this
+integration sends only newly requested password-reset messages through the
+shared API. The endpoint is limited to five requests per IP per 15 minutes.
