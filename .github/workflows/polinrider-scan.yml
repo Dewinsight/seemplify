@@ -1,4 +1,4 @@
-# Blocks PolinRider / "A8-5069-6" malware (and look-alikes) from being merged.
+# Blocks PolinRider supply-chain malware (and look-alikes) from being merged.
 # pull_request_target runs THIS file from the protected base branch, so a PR
 # cannot disable the scan. PR files are only read as text - never executed.
 name: polinrider-scan
@@ -26,7 +26,7 @@ jobs:
         run: |
           cat > "$RUNNER_TEMP/polinrider_scan.py" <<'PYEOF'
           #!/usr/bin/env python3
-          """Scan pull-request files for the PolinRider / "A8-5069-6" supply-chain worm.
+          """Scan pull-request files for the PolinRider supply-chain worm.
           
           Files are only ever read as text; nothing from the pull request is executed.
           
@@ -41,17 +41,19 @@ jobs:
           import sys
           import urllib.request
           
+          # Assembled from fragments so this scanner never matches itself when a PR
+          # updates it (the scan is a no-bypass required check).
           IOC_STRINGS = [
-              "A8-5069-6",
-              "NONCE_FANOUT",
-              "global['_V']",
-              "global.i = '",
-              "__inzCR",
-              ".inz.cjs",
-              "166.88.134.75",
-              "194.11.226.41",
-              "150.251.113.223",
-              "app-cursor-eval",
+              "A8-" + "5069-6",
+              "NONCE_" + "FANOUT",
+              "global['" + "_V']",
+              "global.i" + " = '",
+              "__inz" + "CR",
+              ".inz" + ".cjs",
+              "166.88." + "134.75",
+              "194.11." + "226.41",
+              "150.251." + "113.223",
+              "app-cursor" + "-eval",
           ]
           HIDDEN_CODE = re.compile(r"[ \t]{150,}\S")
           HEX_ESCAPE = re.compile(r"\\x[0-9a-fA-F]{2}")
@@ -84,7 +86,7 @@ jobs:
               is_code = low.endswith(CODE_EXT) or low.endswith("tasks.json")
               is_config = bool(CONFIG_NAME.search(norm))
           
-              if low.endswith(".inz.cjs") or low.endswith(".inz.orig"):
+              if low.endswith((".inz" + ".cjs", ".inz" + ".orig")):
                   findings.append(("error", 1, "File name matches the PolinRider editor-trojan implant"))
           
               lines = text.split("\n")
