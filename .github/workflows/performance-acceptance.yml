@@ -22,7 +22,7 @@ jobs:
           node-version: '22'
       - run: npm ci --ignore-scripts
         working-directory: Identityprovider
-      - run: npm ci --ignore-scripts
+      - run: npm install --ignore-scripts --no-package-lock
         working-directory: performance/backend
       - run: npm test
         working-directory: performance/backend
