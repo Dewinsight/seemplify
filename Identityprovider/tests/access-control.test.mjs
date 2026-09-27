@@ -13,6 +13,7 @@ import {
 } from '../src/config/accessControlCatalog.js'
 import {
   mergeDefaultRoles,
+  migratePerformanceDefaultRoles,
   replaceProductPermissionRows,
   resolveOrganizationAuthorization,
   sanitizePermissionRows
@@ -60,9 +61,19 @@ test('permission catalogue and built-in roles contain only unique known tokens',
   }
 })
 
-test('every ordinary organization role receives every non-administrative permission across all products', () => {
+test('ordinary roles retain other products and use an explicit Performance self-service baseline', () => {
   for (const sourceRole of ['staff', 'recruiter', 'interviewer']) {
     for (const product of PRODUCT_PERMISSION_CATALOG) {
+      if (product.appId === 'performance-management') {
+        const permissions = getDefaultRolePermissions(sourceRole, product.appId)
+        for (const token of ['okr:decide:all', 'okr:edit:all', 'goal:assign:all', 'analytics:view:organization', 'review_cycle:create']) {
+          assert.ok(!permissions.includes(token), `${sourceRole} must not inherit ${token}`)
+        }
+        for (const token of ['goal:create:self', 'okr:checkin:own', 'review:self_assess', 'recognition:create']) {
+          assert.ok(permissions.includes(token), `${sourceRole} must retain ${token}`)
+        }
+        continue
+      }
       const expected = product.permissions
         .filter((permission) => permission.delegable !== false)
         .map((permission) => permission.id)
@@ -132,8 +143,8 @@ test('HR manager matches admin across products except explicit top-level control
   ]) assert.ok(!getDefaultRolePermissions('hr_manager', appId).includes(permissionId), `HR manager received protected ${appId}:${permissionId}`)
 })
 
-test('schema version three refreshes locked role baselines without replacing custom roles', () => {
-  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 3)
+test('legacy explicit refresh helper still preserves custom roles', () => {
+  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 4)
   const customRole = {
     key: 'project_coordinator', name: 'Project Coordinator', locked: false,
     sourceOrganizationRoles: [], sourceTeamRoles: [],
@@ -152,6 +163,70 @@ test('schema version three refreshes locked role baselines without replacing cus
     row.appId === 'messaging' && row.permissions.includes('messages.read')
   )))
   assert.deepEqual(preservedCustom.grants, customRole.grants)
+})
+
+test('Performance migration removes inherited excess without resetting other products or explicit delegations', () => {
+  const appId = 'performance-management'
+  const legacyTokens = PRODUCT_PERMISSION_CATALOG.find((entry) => entry.appId === appId).permissions
+    .map((entry) => entry.id)
+    .filter((token) => !['review_cycle:create:team', 'review_cycle:manage:team', ...MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS[appId]].includes(token))
+  const stale = DEFAULT_ACCESS_ROLES.filter((role) => ['employee', 'line_manager'].includes(role.key)).map((role) => ({
+    ...role,
+    grants: [
+      { appId: 'messaging', permissions: ['messages.read'] },
+      { appId, permissions: [...legacyTokens, 'review_cycle:create'] }
+    ],
+    denies: [{ appId, permissions: ['okr:checkin:own'] }]
+  }))
+  const custom = { key: 'delegate', name: 'Delegate', grants: [{ appId, permissions: ['okr:decide:all'] }], denies: [] }
+  const migrated = migratePerformanceDefaultRoles([...stale, custom])
+  for (const key of ['employee', 'line_manager']) {
+    const role = migrated.find((item) => item.key === key)
+    assert.deepEqual(role.grants.filter((row) => row.appId !== appId), [{ appId: 'messaging', permissions: ['messages.read'] }])
+    assert.deepEqual(role.denies, stale[0].denies)
+    const tokens = role.grants.find((row) => row.appId === appId).permissions
+    assert.ok(!tokens.includes('okr:decide:all'))
+    assert.ok(!tokens.includes('analytics:view:organization'))
+    assert.ok(tokens.includes('review_cycle:create'), 'explicit non-default delegation is preserved')
+    assert.equal(tokens.includes('review_cycle:create:team'), key === 'line_manager')
+  }
+  assert.deepEqual(migrated.find((role) => role.key === 'delegate').grants, custom.grants)
+  assert.deepEqual(migratePerformanceDefaultRoles(migrated), migrated, 'migration is idempotent')
+})
+
+test('Performance matrices enforce manager scope, HR authority and explicit deny precedence', async () => {
+  const appId = 'performance-management'
+  for (const role of ['staff', 'recruiter', 'interviewer', 'line_manager', 'team_lead', 'hr_manager', 'admin', 'owner']) {
+    const teamRole = ['line_manager', 'team_lead'].includes(role)
+    const member = { account: 'person', status: 'active', role: teamRole ? 'staff' : role, appAccess: { mode: 'all' } }
+    const account = { _id: 'person', teams: teamRole ? [{ organization: 'org', role }] : [] }
+    const organization = { _id: 'org', members: [member], accessControl: { roleOverrides: [] } }
+    const matrix = await resolveOrganizationAuthorization({ account, organization, policy })
+    const tokens = matrix.permissionsByApp[appId]
+    const hr = ['hr_manager', 'admin', 'owner'].includes(role)
+    assert.equal(tokens.includes('okr:decide:all'), hr, role)
+    assert.equal(tokens.includes('analytics:view:organization'), hr, role)
+    assert.equal(tokens.includes('review_cycle:create'), hr, role)
+    assert.equal(tokens.includes('review_cycle:create:team'), hr || teamRole, role)
+    assert.equal(tokens.includes('okr:decide:direct_reports'), hr || teamRole, role)
+    member.accessControl = { grants: [{ appId, permissions: ['okr:decide:all'] }], denies: [{ appId, permissions: ['okr:decide:all', 'review_cycle:create:team'] }] }
+    const denied = await resolveOrganizationAuthorization({ account, organization, policy })
+    assert.ok(!denied.permissionsByApp[appId].includes('okr:decide:all'))
+    assert.ok(!denied.permissionsByApp[appId].includes('review_cycle:create:team'))
+  }
+})
+
+test('organization Performance delegation survives policy migration and member denies still win', async () => {
+  const appId = 'performance-management'
+  const member = { account: 'person', status: 'active', role: 'staff', appAccess: { mode: 'all' } }
+  const organization = { _id: 'org', members: [member], accessControl: { roleOverrides: [{
+    roleKey: 'employee', grants: [{ appId, permissions: ['okr:decide:all'] }], denies: []
+  }] } }
+  const migratedPolicy = { revision: 8, roles: migratePerformanceDefaultRoles(DEFAULT_ACCESS_ROLES) }
+  const resolve = () => resolveOrganizationAuthorization({ account: { _id: 'person' }, organization, policy: migratedPolicy })
+  assert.ok((await resolve()).permissionsByApp[appId].includes('okr:decide:all'))
+  member.accessControl = { denies: [{ appId, permissions: ['okr:decide:all'] }] }
+  assert.ok(!(await resolve()).permissionsByApp[appId].includes('okr:decide:all'))
 })
 
 test('every organization-managed Hub product has an IdP permission matrix', () => {

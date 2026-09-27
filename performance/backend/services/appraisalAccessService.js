@@ -189,7 +189,8 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
     return scope;
   }
 
-  const orgUsers = await User.find({
+  const liveRoster = await require('./identityRosterService').getIdentityRoster(req, organizationId);
+  const orgUsers = liveRoster || await User.find({
     $or: [
       { currentOrganizationId: organizationId },
       { 'idpTeams.organizationId': organizationId }
@@ -241,7 +242,7 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
     const userTeams = (userDoc.idpTeams || []).filter(
       (team) => normalizeId(team.organizationId) === organizationId
     );
-    if (userTeams.length === 0) return;
+    if (userTeams.length === 0 && !isHrPlus) return;
 
     const isInScope = isHrPlus || userTeams.some((team) => {
       const teamId = normalizeId(team.id);

@@ -1,0 +1,49 @@
+name: Performance acceptance
+on:
+  pull_request:
+    paths:
+      - 'performance/**'
+      - 'Identityprovider/**'
+      - '.github/workflows/performance-acceptance.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: test
+      DISABLE_BACKGROUND_WORKERS: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+        working-directory: Identityprovider
+      - run: npm ci --ignore-scripts
+        working-directory: performance/backend
+      - run: npm test
+        working-directory: performance/backend
+      - run: node --test tests/access-control.test.mjs test/auth-redirects.test.mjs test/oidc-recovery-page.test.mjs
+        working-directory: Identityprovider
+      - run: npm ci --ignore-scripts
+        working-directory: performance/frontend
+      - run: npx playwright install --with-deps chrome
+        working-directory: performance/frontend
+      - run: npx tsc --noEmit --incremental false
+        working-directory: performance/frontend
+      - run: npm run build
+        working-directory: performance/frontend
+        env:
+          NODE_ENV: production
+      - run: npm run test:e2e
+        working-directory: performance/frontend
+        env:
+          NODE_ENV: development
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: performance-browser-failures
+          path: performance/frontend/test-results/

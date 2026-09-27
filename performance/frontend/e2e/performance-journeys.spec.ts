@@ -738,6 +738,7 @@ async function installMockApi(page: Page, state: MockApiState) {
           okrScore: 3.5,
           competencyScore: 3,
           compositeScore: hasCustomRating ? 3.7 : 3.2,
+          suggestedRating: hasCustomRating ? 3.7 : 3.2,
           ratingLabel: hasCustomRating ? 'Exceeds Expectations' : 'Meets Expectations',
           breakdown: {
             okrWeight: hasCustomRating ? 32 : 40,
@@ -1407,7 +1408,49 @@ test('keeps analytics and the cycle builder usable on a narrow mobile viewport',
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Review design', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const continueButton = page.getByRole('button', { name: 'Continue', exact: true });
+  await expect(continueButton).toBeVisible();
+  expect((await continueButton.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  const section = page.getByRole('button', { name: /Goals and outcomes.*questions/ });
+  await expect(section).toHaveAttribute('aria-expanded', 'false');
+  await section.click();
+  await expect(page.getByLabel('Section title').first()).toBeVisible();
+  await section.click();
   await page.screenshot({ path: testInfo.outputPath('cycle-builder-mobile.png'), fullPage: true });
+});
+
+test('manager acting as employee can acknowledge but cannot edit their own finalized discussion', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  Object.assign(state.appraisals[0], {
+    status: 'completed', employee: { userId: currentUser.id, email: currentUser.email, name: currentUser.name },
+    manager: { userId: 'another-manager' }, discussion: { employeeAcknowledged: false },
+    viewerCapabilities: { isEmployee: true, canManage: false },
+  });
+  await installMockApi(page, state);
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/discussion');
+  await expect(page.getByRole('button', { name: 'Acknowledge Final Outcome' })).toBeVisible();
+  await expect(page.getByLabel('Agreed Strengths')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Complete Discussion' })).toHaveCount(0);
+});
+
+test('final review explains evidence overrides and requires a substantive reason without AI', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  state.hrAdminMode = true;
+  Object.assign(state.appraisals[0], {
+    status: 'final_review_pending', employee: { userId: 'member-1', name: 'Jordan' },
+    manager: { userId: 'another-manager' }, managerReview: { overallManagerRating: 4 },
+    cycleId: { settings: { enableAiAssist: false } },
+    viewerCapabilities: { isEmployee: false, canManage: true },
+  });
+  await installMockApi(page, state);
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/final-review');
+  await expect(page.getByText('Calculated evidence rating: 3.2/5')).toBeVisible();
+  const complete = page.getByRole('button', { name: 'Complete Appraisal' });
+  await expect(complete).toBeDisabled();
+  await page.getByLabel('Justification (required when overriding evidence rating)').fill('Reviewed role evidence and discussed delivery impact.');
+  await expect(complete).toBeEnabled();
 });
 
 test('renders frozen cycle questions in the manual employee appraisal and autosaves the response', async ({ page }) => {
@@ -1439,7 +1482,7 @@ test('renders frozen cycle questions in the manual employee appraisal and autosa
 
   await page.goto('/appraisals/507f1f77bcf86cd799439011/self-assessment');
   await expect(page.getByRole('heading', { name: 'Cycle-specific questions' })).toBeVisible();
-  await page.getByPlaceholder('Enter your response').fill('I applied discovery interviewing to improve the launch decision.');
+  await page.getByRole('textbox', { name: 'How did you apply your most important learning?', exact: false }).fill('I applied discovery interviewing to improve the launch decision.');
   await expect.poll(() => state.customResponseBodies.length, { timeout: 5000 }).toBeGreaterThan(0);
   const saved = state.customResponseBodies.at(-1) as { respondentRole: string; responses: Array<Record<string, unknown>> };
   expect(saved.respondentRole).toBe('employee');
@@ -1497,6 +1540,14 @@ test('opens an unread Action Centre notification at its goal deep link', async (
   await expect(page).toHaveURL(/\/okrs\?goal=future-goal-1$/);
   await expect(page.getByText('Build launch readiness')).toBeVisible();
   expect(state.readNotificationIds).toContain('notification-1');
+});
+
+test('new one-on-one route opens scheduling without a preselected employee', async ({ page }) => {
+  const state = createState();
+  await installMockApi(page, state);
+  await page.goto('/one-on-ones/new');
+  await expect(page).toHaveURL(/\/one-on-ones\?compose=true$/);
+  await expect(page.getByRole('dialog')).toBeVisible();
 });
 
 test('lists check-ins and creates then submits a fortnightly update', async ({ page }) => {

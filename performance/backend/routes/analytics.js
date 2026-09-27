@@ -4,15 +4,15 @@ const GoalCheckIn = require('../models/GoalCheckIn');
 const Appraisal = require('../models/Appraisal');
 const Feedback = require('../models/Feedback');
 const AppraisalCycle = require('../models/AppraisalCycle');
-const { requireAuth, requireManager } = require('../middleware/rbac');
+const { requireAuth, requireAnyPermission, hasPermission } = require('../middleware/rbac');
+const requireReportAnalytics = requireAnyPermission('analytics:view:team', 'analytics:view:direct_reports', 'analytics:view:organization');
 const {
   getActorId,
   requireOrganization
 } = require('../services/tenantPolicy');
 const {
   getDirectReportIds,
-  getManagedTeamIds,
-  getUserTeamIds
+  getManagedTeamIds
 } = require('../services/goalPermissionService');
 
 const router = express.Router();
@@ -20,24 +20,22 @@ const ANALYTICS_PRIVACY_THRESHOLD = 5;
 
 router.use(requireAuth, requireOrganization);
 
-function isHr(req) {
-  return req.userRole === 'hr_admin';
+function hasOrganizationAnalytics(req) {
+  return hasPermission(req.userRole, 'analytics:view:organization', req.session?.user);
 }
 
 function allowedEmployeeIds(req) {
-  if (isHr(req)) return null;
+  if (hasOrganizationAnalytics(req)) return null;
   return Array.from(new Set([
     getActorId(req),
-    ...getDirectReportIds(req)
+    ...(hasPermission(req.userRole, 'analytics:view:direct_reports', req.session?.user) ||
+        hasPermission(req.userRole, 'analytics:view:team', req.session?.user) ? getDirectReportIds(req) : [])
   ].filter(Boolean).map(String)));
 }
 
 function canViewTeam(req, teamId) {
-  if (isHr(req)) return true;
-  const allowedTeams = new Set([
-    ...getManagedTeamIds(req),
-    ...getUserTeamIds(req)
-  ].map(String));
+  if (hasOrganizationAnalytics(req)) return true;
+  const allowedTeams = new Set(getManagedTeamIds(req).map(String));
   return allowedTeams.has(String(teamId));
 }
 
@@ -98,7 +96,7 @@ function performanceScopeQuery(req) {
 
 // Canonical performance intelligence for HR and managers. Every metric comes
 // from Appraisal/AppraisalCycle snapshots; no legacy review records are read.
-router.get('/performance', requireManager, async (req, res) => {
+router.get('/performance', requireReportAnalytics, async (req, res) => {
   try {
     const scopeQuery = performanceScopeQuery(req);
     const query = { ...scopeQuery };
@@ -254,7 +252,7 @@ router.get('/performance', requireManager, async (req, res) => {
     return res.json({
       success: true,
       data: {
-        scope: { organization: isHr(req), teamId: teamId || null, department: department || null },
+        scope: { organization: hasOrganizationAnalytics(req), teamId: teamId || null, department: department || null },
         filters: {
           cycles: cycles.map((cycle) => ({ id: String(cycle._id), name: cycle.name, periodStart: cycle.periodStart, periodEnd: cycle.periodEnd, status: cycle.status })),
           teams: groupRows((item) => item.employee?.teamId, (item) => item.employee?.teamName, scopeAppraisals).map(({ id, name }) => ({ id, name })),
@@ -293,7 +291,7 @@ router.get('/performance', requireManager, async (req, res) => {
 });
 
 // Canonical team analytics. Ratings are suppressed below the minimum cohort.
-router.get('/team/:teamId', async (req, res) => {
+router.get('/team/:teamId', requireReportAnalytics, async (req, res) => {
   try {
     const teamId = String(req.params.teamId || '').trim();
     if (!teamId || !canViewTeam(req, teamId)) {
@@ -397,9 +395,8 @@ router.get('/team/:teamId', async (req, res) => {
   }
 });
 
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', requireAnyPermission('analytics:view:own', 'analytics:view:team', 'analytics:view:direct_reports', 'analytics:view:organization'), async (req, res) => {
   try {
-    const actorId = getActorId(req);
     const employeeIds = allowedEmployeeIds(req) || [];
     const goalQuery = { organizationId: req.organizationId };
     const appraisalQuery = {
@@ -412,12 +409,9 @@ router.get('/dashboard', async (req, res) => {
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
     };
 
-    if (!isHr(req)) {
+    if (!hasOrganizationAnalytics(req)) {
       goalQuery.ownerId = { $in: employeeIds };
-      appraisalQuery.$or = [
-        { 'employee.userId': { $in: employeeIds } },
-        { 'manager.userId': actorId }
-      ];
+      appraisalQuery['employee.userId'] = { $in: employeeIds };
       feedbackQuery.receiverId = { $in: employeeIds };
     }
 

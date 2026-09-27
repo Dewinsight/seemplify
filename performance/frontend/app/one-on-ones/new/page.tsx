@@ -9,6 +9,7 @@ export default function NewOneOnOneRedirect() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    params.set('compose', 'true');
     router.replace(`/one-on-ones?${params.toString()}`);
   }, [router]);
 

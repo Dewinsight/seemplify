@@ -208,6 +208,33 @@ export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false } 
   return roles
 }
 
+// Version 4 retires inherited cross-person Performance grants only. Never use
+// refreshLocked here: it overwrites unrelated product customizations and denies.
+// Organization/member overrides and custom roles are explicit delegation, not
+// stored defaults, and intentionally remain untouched.
+export function migratePerformanceDefaultRoles(existingRoles = []) {
+  const appId = 'performance-management'
+  const newTokens = new Set(['review_cycle:create:team', 'review_cycle:manage:team'])
+  const oldAdminOnly = new Set(['goal_period:manage', 'review_cycle:create', 'review_cycle:manage', 'admin:settings', 'admin:reports'])
+  const organizationWideRoles = new Set(['organization_owner', 'organization_admin', 'hr_manager'])
+  return mergeDefaultRoles(existingRoles).map((role) => {
+    const defaults = DEFAULT_ACCESS_ROLES.find((candidate) => candidate.key === role.key)
+    if (!defaults) return role
+    const oldBaseline = new Set(getKnownPermissionIds(appId).filter((token) => (
+      !newTokens.has(token) && (organizationWideRoles.has(role.key) || !oldAdminOnly.has(token))
+    )))
+    const nextBaseline = new Set(productPermissionIds(defaults.grants, appId))
+    const stored = productPermissionIds(role.grants, appId)
+    // A wildcard is an explicit global delegation, never a generated default.
+    if (stored.includes('*')) return role
+    const migrated = stored.filter((token) => !oldBaseline.has(token) || nextBaseline.has(token))
+    for (const token of nextBaseline) {
+      if (!oldBaseline.has(token) && !migrated.includes(token)) migrated.push(token)
+    }
+    return { ...role, grants: replaceProductPermissionRows(role.grants, appId, migrated) }
+  })
+}
+
 export async function getOrCreateGlobalAccessPolicy() {
   let policy = await AccessControlPolicy.findOne({ key: 'global' })
   if (!policy) {
@@ -224,16 +251,33 @@ export async function getOrCreateGlobalAccessPolicy() {
     }
   }
 
-  const schemaUpgrade = policy.schemaVersion !== ACCESS_CONTROL_SCHEMA_VERSION
-  const mergedRoles = mergeDefaultRoles(policy.roles, { refreshLocked: schemaUpgrade })
-  if (mergedRoles.length !== policy.roles.length || schemaUpgrade) {
-    policy.roles = mergedRoles
-    policy.schemaVersion = ACCESS_CONTROL_SCHEMA_VERSION
-    policy.revision += 1
-    await policy.save()
-    if (schemaUpgrade) await bumpAccountAuthorizationRevisions()
-  }
-  return policy
+  const needsUpgrade = (candidate) => Number(candidate.schemaVersion || 0) < ACCESS_CONTROL_SCHEMA_VERSION
+  if (!needsUpgrade(policy) && mergeDefaultRoles(policy.roles).length === policy.roles.length) return policy
+
+  // Replica-set transaction makes policy replacement and claim-cache invalidation
+  // atomic. Concurrent IdP instances retry on write conflict and re-read the
+  // version, so only the winner increments revisions. Failure rolls back both.
+  await AccessControlPolicy.db.transaction(async (session) => {
+    const current = await AccessControlPolicy.findOne({ key: 'global' }).session(session)
+    const schemaUpgrade = needsUpgrade(current)
+    const roles = schemaUpgrade ? migratePerformanceDefaultRoles(current.roles) : mergeDefaultRoles(current.roles)
+    if (!schemaUpgrade && roles.length === current.roles.length) return
+    const updated = await AccessControlPolicy.updateOne(
+      { _id: current._id, revision: current.revision, schemaVersion: current.schemaVersion },
+      {
+        $set: { roles, schemaVersion: Math.max(current.schemaVersion, ACCESS_CONTROL_SCHEMA_VERSION), updatedAt: new Date() },
+        $inc: { revision: 1, __v: 1 }
+      },
+      { session }
+    )
+    if (updated.matchedCount !== 1) {
+      const error = new Error('The global permission policy changed during migration; retry with the latest policy.')
+      error.code = 'POLICY_VERSION_CONFLICT'
+      throw error
+    }
+    await bumpAccountAuthorizationRevisions(null, session)
+  })
+  return AccessControlPolicy.findOne({ key: 'global' })
 }
 
 function findCanonicalMember(organization, accountId) {
@@ -375,14 +419,14 @@ export function authorizationHasPermission(authorization, appId, permissionId) {
   return (authorization?.permissionsByApp?.[appId] || []).includes(permissionId)
 }
 
-async function bumpAccountAuthorizationRevisions(accountIds = null) {
+async function bumpAccountAuthorizationRevisions(accountIds = null, session = null) {
   const filter = accountIds
     ? { _id: { $in: uniqueStrings(accountIds) } }
     : {}
   await Account.updateMany(filter, {
     $inc: { authorizationRevision: 1 },
     $set: { updatedAt: new Date() }
-  })
+  }, session ? { session } : {})
 }
 
 async function audit({ scope, organization = null, actor, action, targetType, targetKey, summary, revision, metadata = {} }) {
