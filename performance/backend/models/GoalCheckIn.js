@@ -63,7 +63,8 @@ const GoalCheckInSchema = new mongoose.Schema({
 GoalCheckInSchema.index({ organizationId: 1, goalId: 1, sequence: 1 }, { unique: true });
 GoalCheckInSchema.index(
   { organizationId: 1, goalId: 1, idempotencyKey: 1 },
-  { unique: true, sparse: true }
+  { name: 'goal_checkin_key_unique', unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: 'string', $gt: '' } } }
 );
 
 // Check-ins are evidence records. Mutations and deletions must be represented by

@@ -6,7 +6,7 @@
  * responsible for resource-level checks such as "is this a direct report?".
  */
 
-export const ACCESS_CONTROL_SCHEMA_VERSION = 3
+export const ACCESS_CONTROL_SCHEMA_VERSION = 4
 
 const permission = (id, label, scope, description = '', options = {}) => ({
   id,
@@ -121,6 +121,8 @@ export const PRODUCT_PERMISSION_CATALOG = Object.freeze([
     permission('review_cycle:view', 'View review cycles', 'organization'),
     permission('review_cycle:create', 'Create review cycles', 'organization'),
     permission('review_cycle:manage', 'Manage review cycles', 'organization'),
+    permission('review_cycle:create:team', 'Create assigned-team review cycles', 'team'),
+    permission('review_cycle:manage:team', 'Manage assigned-team review cycles', 'team'),
     permission('feedback:view:received', 'View received feedback', 'self'),
     permission('feedback:view:sent', 'View sent feedback', 'self'),
     permission('feedback:send', 'Send feedback', 'self'),
@@ -493,9 +495,21 @@ export const MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS = Object.freeze({
   approver: ['projects.override', 'scoring.manage', 'rules.manage', 'roles.manage', 'workflow.manage']
 })
 
-const memberGrants = PRODUCT_PERMISSION_CATALOG.map((entry) => allExcept(
-  entry.appId,
-  MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS[entry.appId] || []
+// Performance is deliberately opt-in: new cross-person capabilities must never
+// silently reach ordinary employees. Other products retain their existing policy.
+export const PERFORMANCE_SELF_SERVICE_PERMISSIONS = Object.freeze([
+  'okr:view:own', 'okr:create:own', 'okr:edit:own', 'okr:submit:own',
+  'okr:acknowledge:own', 'okr:request_change:own', 'okr:checkin:own', 'okr:align',
+  'okr:view:organization', 'goal:create:self', 'goal_period:view',
+  'review:view:own', 'review:self_assess', 'review_cycle:view',
+  'feedback:view:received', 'feedback:view:sent', 'feedback:send', 'feedback:request',
+  'support_plan:view:own', 'recognition:create', 'analytics:view:own', 'team:view:own'
+])
+
+const memberGrants = PRODUCT_PERMISSION_CATALOG.map((entry) => (
+  entry.appId === 'performance-management'
+    ? grant(entry.appId, [...PERFORMANCE_SELF_SERVICE_PERMISSIONS])
+    : allExcept(entry.appId, MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS[entry.appId] || [])
 ))
 
 const managerGrants = [
@@ -505,6 +519,7 @@ const managerGrants = [
     'okr:view:team', 'okr:create:team', 'okr:view:direct_reports', 'okr:review:direct_reports',
     'okr:checkin:direct_reports', 'okr:assign:direct_reports', 'okr:decide:direct_reports', 'okr:bulk_assign',
     'goal:assign:direct_reports', 'review:view:direct_reports', 'review:conduct:direct_reports',
+    'review_cycle:create:team', 'review_cycle:manage:team',
     'feedback:view:direct_reports', 'support_plan:manage:direct_reports', 'project_feedback:request',
     'manager_practice:view:team', 'talent_review:view:team', 'talent_review:manage:team',
     'analytics:view:team', 'analytics:view:direct_reports', 'team:view:members', 'user:view:direct_reports'

@@ -11,7 +11,12 @@ const Appraisal = require('../models/Appraisal');
 const AppraisalDocument = require('../models/AppraisalDocument');
 const OKR = require('../models/OKR');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
-const { requireAuth, requireHRAdmin, requireManager } = require('../middleware/rbac');
+const { requireAuth, requireHRAdmin, requireManager, requireAnyPermission, hasPermission } = require('../middleware/rbac');
+const requireCycleCreate = (req, res, next) => requireAnyPermission('review_cycle:create', 'review_cycle:create:team')(req, res, next);
+const requireCycleManage = (req, res, next) => requireAnyPermission('review_cycle:manage', 'review_cycle:manage:team')(req, res, next);
+const hasOrganizationCyclePermission = (req, action) => hasPermission(
+  req.userRole, `review_cycle:${action}`, req.session?.user
+);
 const documentExtractionService = require('../services/documentExtractionService');
 const appraisalAIService = require('../services/appraisalAIService');
 const aiGatewayService = require('../services/aiGatewayService');
@@ -30,7 +35,6 @@ const { fetchAttendanceContext } = require('../services/attendanceContextService
 const { buildGoalSnapshots } = require('../services/appraisalGoalSnapshotService');
 const { createStorageService } = require('../services/storageService');
 const {
-  canAppraiseEmployee,
   canManageAppraisal,
   isAppraisalManagerRole,
   resolveAppraisalAccessScope
@@ -226,28 +230,45 @@ async function canViewAppraisalCycle(req, cycle) {
   }));
 }
 
+async function cycleTeamIds(req) {
+  const scope = await resolveAppraisalAccessScope(req);
+  // An HR role whose organization grant was explicitly denied must not regain
+  // organization scope through the role-based roster projection.
+  return (scope.isHrPlus ? scope.managedRootTeamIds : scope.accessibleTeamIds || []).map(String);
+}
+
+async function canUseCycleScope(req, scope, action) {
+  if (hasOrganizationCyclePermission(req, action)) return true;
+  if (!hasPermission(req.userRole, `review_cycle:${action}:team`, req.session?.user)) return false;
+  if (scope?.type !== 'team' || !Array.isArray(scope.targetIds) || scope.targetIds.length === 0) return false;
+  const teamIds = new Set(await cycleTeamIds(req));
+  return scope.targetIds.every((id) => teamIds.has(String(id)));
+}
+
+async function canLaunchCycleEmployee(req, employee, action = 'manage') {
+  if (hasOrganizationCyclePermission(req, action)) return true;
+  const scope = await resolveAppraisalAccessScope(req);
+  if (!scope.isHrPlus) {
+    // The requested subject is authoritative; an in-scope email must not be
+    // usable as an alias for an out-of-scope subject supplied in the same body.
+    return (scope.directReportIds || []).map(String).includes(String(employee.userId));
+  }
+  const teamIds = new Set(await cycleTeamIds(req));
+  return (scope.directReports || []).some((report) => (
+    String(report.userId) === String(employee.userId) &&
+    (report.teamIds || [report.teamId]).some((id) => teamIds.has(String(id)))
+  ));
+}
+
 async function canManageAppraisalCycle(req, cycle) {
   const organizationId = resolveOrganizationId(req);
   if (!organizationId || !cycle || String(cycle.organizationId) !== String(organizationId)) return false;
-  if (req.userRole === 'hr_admin') return true;
-  if (!isAppraisalManagerRole(req.userRole)) return false;
-
-  const requester = getRequesterIdentity(req);
-  if (requester.userIds.includes(String(cycle.createdBy?.userId || ''))) return true;
-  if (cycle.scope?.type === 'organization') return true;
-
-  const scope = await resolveAppraisalAccessScope(req);
-  const accessibleTeamIds = new Set((scope.accessibleTeamIds || []).map(String));
-  const targetIds = (cycle.scope?.targetIds || []).map(String);
-  if (targetIds.some((targetId) => accessibleTeamIds.has(targetId))) return true;
-
-  const managerFilters = buildManagerIdentityFilters(requester);
-  if (managerFilters.length === 0) return false;
-  return Boolean(await Appraisal.exists({
-    organizationId: String(organizationId),
-    cycleId: cycle._id,
-    $or: managerFilters
-  }));
+  if (hasOrganizationCyclePermission(req, 'manage')) return true;
+  if (!hasPermission(req.userRole, 'review_cycle:manage:team', req.session?.user)) return false;
+  // Managers may launch only their own reports into an organization cycle;
+  // updates to the organization-wide definition require organization permission.
+  if (cycle.scope?.type === 'organization') return (await cycleTeamIds(req)).length > 0;
+  return canUseCycleScope(req, cycle.scope, 'manage');
 }
 
 function toPlainObject(value, fallback = {}) {
@@ -1620,7 +1641,7 @@ router.get('/cycles', requireAuth, async (req, res) => {
 });
 
 // Create new cycle (HR Admin or Manager)
-router.post('/cycles', requireAuth, requireManager, async (req, res) => {
+router.post('/cycles', requireAuth, requireCycleCreate, async (req, res) => {
   try {
     const orgId = resolveOrganizationId(req);
     const userId = req.session?.user?.id || req.session?.user?.sub;
@@ -1648,28 +1669,16 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
       return res.status(400).json({ success: false, error: configurationErrors[0], errors: configurationErrors });
     }
 
-    // SCOPE VALIDATION
-    // If not HR Admin, enforce team scope
-    if (isAppraisalManagerRole(userRole) && userRole !== 'hr_admin') {
-      if (!requestedScope || requestedScope.type !== 'team') {
-        return res.status(403).json({
-          success: false,
-          error: 'Managers can only create appraisal cycles for their teams'
-        });
-      }
-
-      // Verify managed teams (including hierarchy descendants)
-      const accessScope = await resolveAppraisalAccessScope(req);
-      const managedTeamIds = accessScope.accessibleTeamIds || [];
-
-      const targetIds = requestedScope.targetIds || [];
-      const invalidTargets = targetIds.filter(id => !managedTeamIds.includes(id));
-
-      if (invalidTargets.length > 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'You can only create cycles for teams you manage'
-        });
+    // Permission and resource scope are separate checks. No effective role can
+    // skip this check, including employees with explicitly delegated team grants.
+    if (!(await canUseCycleScope(req, requestedScope, 'create'))) {
+      return res.status(403).json({ success: false, error: 'You can only create cycles for teams you manage' });
+    }
+    if (shouldLaunchImmediately) {
+      for (const employee of normalizedEmployees) {
+        if (!(await canLaunchCycleEmployee(req, employee, 'create'))) {
+          return res.status(403).json({ success: false, error: 'Employee is outside your appraisal scope' });
+        }
       }
     }
 
@@ -1751,7 +1760,7 @@ router.get('/cycles/:cycleId', requireAuth, async (req, res) => {
 });
 
 // Update cycle (HR Admin or Owner Manager)
-router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => {
+router.put('/cycles/:cycleId', requireAuth, requireCycleManage, async (req, res) => {
   try {
     const { name, description, periodStart, periodEnd, phases, okrWeight, settings, cycleType, scope, workflowDefinition, sourceTemplate } = req.body;
 
@@ -1761,16 +1770,10 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
       return res.status(404).json({ success: false, error: 'Cycle not found' });
     }
 
-    // Permission Check
-    const requesterIds = getRequesterIdentity(req).userIds;
-    const isOwner = requesterIds.includes(String(cycle.createdBy?.userId || ''));
-    if (req.userRole !== 'hr_admin' && !isOwner) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
-    }
-
-    // If Manager, prevent changing scope to organization
-    if (req.userRole !== 'hr_admin' && isAppraisalManagerRole(req.userRole) && scope && scope.type === 'organization') {
-      return res.status(403).json({ success: false, error: 'Managers cannot set organization scope' });
+    // Ownership alone is not authority after a team transfer or permission deny.
+    if (!(await canUseCycleScope(req, cycle.scope, 'manage')) ||
+        (scope && !(await canUseCycleScope(req, scope, 'manage')))) {
+      return res.status(403).json({ success: false, error: 'Access denied to cycle scope' });
     }
 
     if (cycle.status === 'completed' || cycle.status === 'cancelled') {
@@ -1829,26 +1832,8 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
       cycle.workflowDefinition = design;
     }
 
-    // Update Scope
-    if (scope) {
-      // Validate again if manager
-      if (req.userRole !== 'hr_admin' && isAppraisalManagerRole(req.userRole)) {
-        if (scope.type !== 'team') {
-          return res.status(403).json({ success: false, error: 'Managers can only set team scope' });
-        }
-        const accessScope = await resolveAppraisalAccessScope(req);
-        const managedTeamIds = accessScope.accessibleTeamIds || [];
-        const targetIds = scope.targetIds || [];
-        const invalidTargets = targetIds.filter(id => !managedTeamIds.includes(id));
-        if (invalidTargets.length > 0) {
-          return res.status(403).json({
-            success: false,
-            error: 'You can only set cycle scope for teams in your hierarchy'
-          });
-        }
-      }
-      cycle.scope = scope;
-    }
+    // Scope was authorized before applying any updates.
+    if (scope) cycle.scope = scope;
 
     // Update settings
     if (settings) {
@@ -1896,7 +1881,7 @@ router.patch('/cycles/:cycleId/phase', requireAuth, requireHRAdmin, async (req, 
  * HR Admin launches a cycle - creates appraisals for specified employees
  * This is the starting point of the appraisal flow!
  */
-router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, res) => {
+router.post('/cycles/:cycleId/launch', requireAuth, requireCycleManage, async (req, res) => {
   try {
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: resolveOrganizationId(req) });
     if (!cycle) {
@@ -1908,18 +1893,15 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
 
     const employees = normalizeLaunchEmployees(req.body?.employees);
 
-    // Permission check for non-HR appraisers (line managers and team leads).
-    if (req.userRole !== 'hr_admin' && isAppraisalManagerRole(req.userRole)) {
+    // Check every team-scoped caller, irrespective of their displayed role.
+    if (!hasOrganizationCyclePermission(req, 'manage')) {
       if (employees.length === 0) {
         return res.status(400).json({ error: 'Employee list required' });
       }
 
       const inaccessibleEmployees = [];
       for (const employee of employees) {
-        const canAppraise = await canAppraiseEmployee(req, {
-          targetUserId: employee.userId,
-          targetEmail: employee.email
-        });
+        const canAppraise = await canLaunchCycleEmployee(req, employee);
         if (!canAppraise) {
           inaccessibleEmployees.push(employee);
         }
@@ -1974,7 +1956,7 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
  * POST /api/appraisals/cycles/:cycleId/launch-for-team
  * Manager can launch appraisals for their direct reports in an active cycle
  */
-router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, async (req, res) => {
+router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireCycleManage, async (req, res) => {
   try {
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: resolveOrganizationId(req) });
     if (!cycle) {
@@ -1999,16 +1981,20 @@ router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, asy
       return res.status(400).json({ success: false, error: 'Employee list required' });
     }
 
+    // Reject the entire unauthorized request before creating any appraisals.
+    for (const employee of employees) {
+      if (!(await canLaunchCycleEmployee(req, employee))) {
+        return res.status(403).json({ success: false, error: 'Employee is outside your appraisal scope' });
+      }
+    }
+
     const createdAppraisals = [];
     const errors = [];
 
     for (const emp of employees) {
       try {
         // Enforce hierarchy-aware appraisal scope
-        const canAppraise = await canAppraiseEmployee(req, {
-          targetUserId: emp.userId,
-          targetEmail: emp.email
-        });
+        const canAppraise = await canLaunchCycleEmployee(req, emp);
         if (!canAppraise) {
           throw new Error('Access denied: employee is outside your appraisal scope');
         }
@@ -3020,7 +3006,10 @@ router.get('/:appraisalId', requireAuth, async (req, res) => {
 
     res.json({
       success: true,
-      data: appraisal,
+      data: { ...appraisal.toObject(), viewerCapabilities: {
+        isEmployee,
+        canManage: !isEmployee && hasManagerAccess && hasPermission(req.userRole, 'review:conduct:direct_reports', req.session.user)
+      } },
       okrs,
       accessLevel: isHR ? 'hr' : hasManagerAccess ? 'manager' : 'employee'
     });

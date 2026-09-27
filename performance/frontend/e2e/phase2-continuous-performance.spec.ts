@@ -44,7 +44,11 @@ async function install(page: Page, state: Phase2State) {
     if (method === 'GET' && path === '/user/context') return fulfill(data({ user: currentUser, role, organization: { id: 'org-1', name: 'Acme Ltd' }, teams, currentTeam: teams[0] || null, managerData: state.mode === 'manager' ? { directReportCount: 1 } : null, stats: {}, features: { canonicalAppraisals: true, goalPeriods: true, notifications: true, continuousPerformance: true, performanceSupportPlans: true, recognition: true, projectFeedback: true, managerPracticeInsights: true, continuousCoachingAi: true } }));
     if (method === 'GET' && path === '/user/current-team') return fulfill(data({ currentTeam: teams[0] || null, availableTeams: teams }));
     if (method === 'GET' && path === '/user/my-team-members') return fulfill(data({ isManager: state.mode !== 'employee', teams, directReports: state.mode === 'employee' ? [] : [employee], totalDirectReports: state.mode === 'employee' ? 0 : 1 }));
-    if (method === 'GET' && path === '/user/search') return fulfill(data(String(url.searchParams.get('q') || '').toLowerCase().includes('priya') ? [crossFunctionalColleague] : [employee]));
+    if (method === 'GET' && path === '/user/search') {
+      const person = String(url.searchParams.get('q') || '').toLowerCase().includes('priya') ? crossFunctionalColleague : employee;
+      // Match the real search contract: it supplies id, not userId.
+      return fulfill(data([{ id: person.id, name: person.name, email: person.email, teamId: person.teamId, teamName: person.teamName }]));
+    }
     if (method === 'GET' && path === '/dashboard/summary') return fulfill({ okrProgress: 50, pendingReviews: 0, recentFeedback: 0 });
     if (method === 'GET' && path === '/appraisals/notifications/manager') return fulfill(data({ notifications: [] }));
     if (method === 'GET' && path === '/notifications/count') return fulfill(data({ unread: 0, actionable: 0 }));
@@ -103,7 +107,7 @@ test('employee acknowledges a reviewed plan and records a progress check-in', as
 test('recognition search, audience selection, send, and acknowledgement are usable', async ({ page }) => {
   const state = stateFor('employee'); await install(page, state); await page.goto('/recognition'); await page.getByRole('button', { name: 'Recognize a colleague' }).click(); const dialog = page.getByRole('dialog', { name: 'Recognize a colleague' });
   await dialog.getByLabel('Search organization').fill('Jordan'); await dialog.getByRole('button', { name: /Jordan Lee/ }).click(); await dialog.getByLabel('Recognition message').fill('You surfaced the delivery dependency early and kept the customer launch on track.'); await dialog.getByLabel('Company value (optional)').fill('Ownership'); await muiSelect(dialog, 'Audience').click(); await page.getByRole('option', { name: 'Recipient only' }).click(); await dialog.getByRole('button', { name: 'Send recognition' }).click();
-  await expect(page.getByText(/Recognition sent/)).toBeVisible(); expect(state.posted[0]).toMatchObject({ path: '/recognition', body: { visibility: 'private', companyValue: 'Ownership' } });
+  await expect(page.getByText(/Recognition sent/)).toBeVisible(); expect(state.posted[0]).toMatchObject({ path: '/recognition', body: { visibility: 'private', companyValue: 'Ownership', recipient: { userId: 'employee-1' } } });
 });
 
 test('project lead creates membership and requests feedback between verified participants', async ({ page }) => {

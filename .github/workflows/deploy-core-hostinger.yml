@@ -152,6 +152,10 @@ jobs:
         with:
           node-version: '22'
       - run: ${{ matrix.install_command }}
+      - name: Install Identity contracts for Performance
+        if: matrix.name == 'Performance'
+        working-directory: Identityprovider
+        run: npm ci --ignore-scripts
       - run: ${{ matrix.test_command }}
 
   workforce-frontend-qa:

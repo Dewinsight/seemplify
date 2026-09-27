@@ -1,0 +1,34 @@
+const mongoose = require('mongoose');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const OKR = require('../models/OKR');
+const GoalCheckIn = require('../models/GoalCheckIn');
+const { migrateGoalIdempotencyIndexes } = require('../scripts/migrateGoalIdempotencyIndexes');
+let mongo;
+beforeAll(async () => { mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri()); await Promise.all([OKR.init(), GoalCheckIn.init()]); });
+afterAll(async () => { await mongoose.disconnect(); await mongo.stop(); });
+test('real partial unique indexes allow multiple unkeyed goals and check-ins but reject duplicate keys', async () => {
+  const goal = { organizationId: 'a', ownerId: 'staff', type: 'individual', title: 'Goal', period: 'QA' };
+  const a = await OKR.create(goal);
+  await OKR.create(goal);
+  await OKR.create({ ...goal, assignment: { idempotencyKey: 'same' } });
+  await expect(OKR.create({ ...goal, assignment: { idempotencyKey: 'same' } })).rejects.toMatchObject({ code: 11000 });
+  await OKR.create({ ...goal, organizationId: 'b', assignment: { idempotencyKey: 'same' } });
+  const checkIn = { organizationId: 'a', goalId: a._id, ownerId: 'staff', checkedInBy: { userId: 'staff' } };
+  await GoalCheckIn.create({ ...checkIn, sequence: 1 });
+  await GoalCheckIn.create({ ...checkIn, sequence: 2 });
+  await GoalCheckIn.create({ ...checkIn, sequence: 3, idempotencyKey: 'replay' });
+  await expect(GoalCheckIn.create({ ...checkIn, sequence: 4, idempotencyKey: 'replay' })).rejects.toMatchObject({ code: 11000 });
+});
+test('migration dry run preserves legacy constraint and apply replaces it idempotently', async () => {
+  const db = mongoose.connection.useDb('legacy_index_test').db;
+  const collection = db.collection('okrs');
+  await collection.createIndex({ organizationId: 1, 'assignment.idempotencyKey': 1 }, { unique: true, sparse: true });
+  await collection.insertOne({ organizationId: 'a' });
+  await migrateGoalIdempotencyIndexes(db);
+  expect((await collection.indexes()).some(i => i.sparse)).toBe(true);
+  await migrateGoalIdempotencyIndexes(db, { apply: true });
+  await collection.insertOne({ organizationId: 'a' });
+  await migrateGoalIdempotencyIndexes(db, { apply: true });
+  expect((await collection.indexes()).some(i => i.sparse)).toBe(false);
+  expect(await collection.countDocuments()).toBe(2);
+});

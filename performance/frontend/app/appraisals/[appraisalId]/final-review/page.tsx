@@ -48,6 +48,16 @@ export default function FinalReviewPage() {
     const [aiSuggestion, setAiSuggestion] = useState<AIRatingSuggestion | null>(null);
     const [aiSuggestionError, setAiSuggestionError] = useState('');
 
+    const [evidenceScore, setEvidenceScore] = useState<number | null>(null);
+    const [scoreError, setScoreError] = useState('');
+    useEffect(() => {
+      let active = true;
+      api.get(`/appraisals/${appraisalId}/scoring`).then(response => {
+        const score = response.data?.data?.suggestedRating;
+        if (active) setEvidenceScore(typeof score === 'number' ? score : null);
+      }).catch(() => { if (active) setScoreError('Evidence score could not be loaded. Refresh before finalizing.'); });
+      return () => { active = false; };
+    }, [appraisalId]);
     const [finalRating, setFinalRating] = useState<number>(3);
     const [finalRatingTouched, setFinalRatingTouched] = useState(false);
     const [justification, setJustification] = useState('');
@@ -73,7 +83,9 @@ export default function FinalReviewPage() {
             (managerEmail && requesterEmail && managerEmail === requesterEmail)
         );
     }, [appraisal, user]);
-    const hasManagerAccess = isAssignedManager || (!!isManager && !isHRAdmin);
+    const isEmployee = appraisal?.viewerCapabilities?.isEmployee ?? Boolean(user?.id && String(appraisal?.employee?.userId) === String(user.id));
+    const hasManagerAccess = appraisal?.viewerCapabilities?.canManage ?? (!isEmployee && (isAssignedManager || isHRAdmin));
+    const overridingEvidence = evidenceScore !== null && Math.abs(Math.round(finalRating * 10) / 10 - evidenceScore) >= 0.05;
 
     const selfRating = appraisal?.selfAssessment?.overallSelfRating;
     const managerRating = appraisal?.managerReview?.overallManagerRating;
@@ -147,11 +159,11 @@ export default function FinalReviewPage() {
                     <Alert severity="error">Appraisal not found</Alert>
                 )}
 
-                {!isLoading && appraisal && !(hasManagerAccess || isHRAdmin) && (
+                {!isLoading && appraisal && !hasManagerAccess && (
                     <Alert severity="error">Only an authorized appraiser can access final review.</Alert>
                 )}
 
-                {!isLoading && appraisal && (hasManagerAccess || isHRAdmin) && (
+                {!isLoading && appraisal && hasManagerAccess && (
                     <>
                         {needsCalibration && (
                             <Alert severity="warning" sx={{ mb: 3 }}>
@@ -282,16 +294,20 @@ export default function FinalReviewPage() {
                                 size="large"
                             />
                             <Chip label={`${finalRating}/5`} color={finalRating >= 4 ? 'success' : finalRating >= 3 ? 'info' : 'warning'} />
-                            {aiSuggestion?.suggestedRating && finalRating !== aiSuggestion.suggestedRating && (
-                                <Chip color="warning" label="Override AI" />
+                            {overridingEvidence && (
+                                <Chip color="warning" label="Override evidence rating" />
                             )}
                         </Box>
 
+                        {scoreError && <Alert severity="error">{scoreError}</Alert>}
+                        {evidenceScore !== null && <Typography>Calculated evidence rating: {evidenceScore}/5</Typography>}
                         <TextField
                             fullWidth
                             multiline
                             minRows={3}
-                            label="Justification (required if overriding AI suggestion)"
+                            label="Justification (required when overriding evidence rating)"
+                            helperText={overridingEvidence ? 'At least 10 characters explaining the difference from the calculated evidence rating.' : 'Explain the final outcome.'}
+                            error={overridingEvidence && justification.length > 0 && justification.trim().length < 10}
                             value={justification}
                             onChange={(e) => setJustification(e.target.value)}
                             sx={{ mb: 3 }}
@@ -302,7 +318,7 @@ export default function FinalReviewPage() {
                                 variant="contained"
                                 color="success"
                                 startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : <CheckCircle />}
-                                disabled={!canFinalize || submitting || (aiSuggestion?.suggestedRating && finalRating !== aiSuggestion.suggestedRating && !justification.trim())}
+                                disabled={!canFinalize || !hasManagerAccess || submitting || !!scoreError || (overridingEvidence && justification.trim().length < 10)}
                                 onClick={async () => {
                                     setSubmitError(null);
                                     setSubmitting(true);
