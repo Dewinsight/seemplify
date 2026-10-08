@@ -70,6 +70,7 @@ jobs:
             test/organization-transaction.test.mjs \
             test/internal-membership-service-auth.test.mjs \
             test/recruiter-admin-sso-secret.test.mjs \
+            test/learning-admin-sso.test.mjs \
             test/profile-completion.test.mjs \
             test/workspace-automation-access.test.mjs \
             test/retired-automations.test.mjs \
@@ -118,7 +119,7 @@ jobs:
           cache: npm
           cache-dependency-path: seemplify-learning/package-lock.json
       - run: npm ci --ignore-scripts
-      - run: node --test test/platform-configuration-client.test.js
+      - run: node --test test/platform-configuration-client.test.js test/idp-admin-sso.test.js
 
   workforce-backend-qa:
     name: Test ${{ matrix.name }} backend
