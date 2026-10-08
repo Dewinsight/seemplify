@@ -22,6 +22,7 @@ jobs:
       - name: Verify administrator handoff contracts
         run: |
           node --test Identityprovider/test/learning-admin-sso.test.mjs Identityprovider/test/recruiter-admin-sso-secret.test.mjs Identityprovider/test/auth-redirects.test.mjs seemplify-learning/test/idp-admin-sso.test.js seemplify-learning/test/access-profile.test.js
+          node --test seemplify-learning/test/learning-ui.test.js seemplify-learning/test/dark-theme-contract.test.js
           bash -n deploy/hostinger/deploy-admin-handoffs.sh
       - name: Configure SSH
         env:

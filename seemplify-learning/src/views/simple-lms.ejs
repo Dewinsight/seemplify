@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -951,8 +951,9 @@
   </style>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
-<body class="public-site lmsv-workspace-page">
+<body class="learning-app public-site lmsv-workspace-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView: viewMode === 'settings' ? 'settings' : 'workspace' }) %>
   <% const tab = (mode) => `/simple-lms?view=${mode}` %>
   <% const learningName = brandLearningName || 'Seemplify Learning' %>
@@ -981,7 +982,7 @@
     admin: { label: 'Administration', title: 'Learning administration', description: 'Manage the platform catalogue, access, and learning operations.' }
   })[viewMode] || { label: 'Learning workspace', title: learningName, description: 'Manage learning and development in one place.' } %>
 
-  <main class="shell">
+  <main id="main-content" class="shell">
     <header class="workspace-header">
       <div class="workspace-heading">
         <p class="workspace-label"><%= workspaceCopy.label %></p>

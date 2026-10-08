@@ -1,0 +1,24 @@
+<a class="ui-skip" href="#main-content">Skip to content</a>
+<button class="ui-backdrop" type="button" data-ui-backdrop hidden aria-label="Close navigation"></button>
+<aside class="ui-admin-side" id="admin-navigation" data-ui-drawer aria-label="Learning administration">
+  <a href="/admin" class="ui-brand ui-admin-brand">
+    <img src="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>" alt="">
+    <span><strong><%= brandLearningName || 'Seemplify Learning' %></strong><small>Platform administration</small></span>
+  </a>
+  <button class="ui-button ui-button-ghost ui-button-icon ui-drawer-close" type="button" data-ui-close aria-label="Close navigation"><%- include('./ui-icon', { icon: 'close' }) %></button>
+  <div class="ui-admin-back"><a href="/simple-lms" class="ui-button ui-button-ghost"><%- include('./ui-icon', { icon: 'arrow' }) %>Back to learning</a></div>
+  <nav class="ui-admin-nav" aria-label="Admin sections">
+    <% navItems.forEach((item) => { %>
+      <a href="<%= sectionPath(item.key) %>" <% if (currentSection === item.key) { %>aria-current="page"<% } %>>
+        <%- include('./ui-icon', { icon: ({ 'super-users': 'shield', 'audit-log': 'audit', creators: 'users' })[item.key] || item.key }) %>
+        <span><%= item.label %></span>
+        <% if (item.key === 'approvals' && approvalCourses.length > 0) { %><span class="ui-nav-count"><%= approvalCourses.length %></span><% } %>
+      </a>
+    <% }) %>
+  </nav>
+  <div class="ui-admin-account">
+    <strong><%= user?.profile?.name || user?.email || 'Admin' %></strong>
+    <small><%= user?.email || '' %></small>
+    <a href="/logout" class="ui-button ui-button-ghost"><%- include('./ui-icon', { icon: 'logout' }) %>Sign out</a>
+  </div>
+</aside>

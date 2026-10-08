@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 
 <head>
   <meta charset="UTF-8">
@@ -16,9 +16,10 @@
   <script src="/js/theme.js?v=3"></script>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
 
-<body class="public-site">
+<body class="learning-app public-site">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
   <%
     const currencyOptions = Array.isArray(supportedCurrencies) && supportedCurrencies.length > 0
@@ -31,7 +32,7 @@
       : (currencyCodes[0] || 'NGN')
   %>
 
-    <main class="lmsv-shell">
+    <main id="main-content" class="lmsv-shell">
       <% if (error) { %>
         <div class="alert alert-error">
           <%= error %>

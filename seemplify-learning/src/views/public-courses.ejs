@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -385,8 +385,9 @@
   </style>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
-<body class="public-site public-courses-page">
+<body class="learning-app public-site public-courses-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
   <%
@@ -456,7 +457,7 @@
     const uniqueCategories = categories.length
   %>
 
-  <main class="lmsv-shell">
+  <main id="main-content" class="lmsv-shell">
     <!-- Hero Section -->
     <section class="lmsv-catalog-hero">
       <div class="lmsv-catalog-hero-inner">

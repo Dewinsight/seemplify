@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1308,6 +1308,7 @@
   </style>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
 <%
   const isAdminStudio = studioContext === 'admin'
@@ -1408,21 +1409,19 @@
   const editableCourseReviews = Array.isArray(editingCourseReviews) ? editingCourseReviews : []
   const editableCourseReviewStats = editingCourseReviewStats || { total: 0, visible: 0, hidden: 0, withComments: 0, withReplies: 0 }
 %>
-<body class="public-site lmsv-course-studio-page <%= isAdminStudio ? 'studio-admin' : 'studio-creator' %>">
-  <% if (!isAdminStudio) { %>
-    <%- include('./partials/nav', { user, activePage, activeLmsView: 'workspace' }) %>
-  <% } %>
+<body class="learning-app public-site lmsv-course-studio-page <%= isAdminStudio ? 'studio-admin' : 'studio-creator' %>">
+  <%- include('./partials/nav', { user, activePage, activeLmsView: 'workspace' }) %>
 
-  <main class="studio-shell">
+  <main id="main-content" class="studio-shell">
     <aside class="studio-rail">
       <header class="rail-head">
         <p class="rail-kicker"><%= isAdminStudio ? 'Platform Control' : (isOrganizationStudio ? 'Organisation Learning' : 'Creator Workspace') %></p>
-        <h1><%= isAdminStudio ? 'Admin Studio' : 'Course Studio' %></h1>
+        <h2><%= isAdminStudio ? 'Admin studio' : 'Course studio' %></h2>
         <p><%= isAdminStudio
-          ? 'System-level course authoring and lifecycle management.'
+          ? 'Create and publish Learning courses.'
           : (isOrganizationStudio
               ? `Create and manage courses for ${organizationStudioName}. Internal courses stay within the organisation; public submissions go through Seemplify review.`
-              : 'Create and manage your own courses with a dedicated studio workflow.') %></p>
+              : 'Create, publish, and improve your courses.') %></p>
       </header>
 
       <nav class="rail-links">
@@ -1444,12 +1443,6 @@
         <% } %>
       </nav>
 
-      <div class="rail-pills">
-        <article class="rail-pill"><small>Total</small><strong><%= courses.length %></strong></article>
-        <article class="rail-pill"><small>Published</small><strong><%= publishedCourseCount %></strong></article>
-        <article class="rail-pill"><small>System</small><strong><%= systemCourseCount %></strong></article>
-        <article class="rail-pill"><small>Creator</small><strong><%= creatorCourseCount %></strong></article>
-      </div>
     </aside>
 
     <section class="studio-main">
@@ -1457,41 +1450,13 @@
       <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
       <% if (info) { %><div class="alert alert-info"><%= info %></div><% } %>
 
-      <section class="studio-card">
-        <div class="hero-head">
-          <div>
-            <h2><%= isAdminStudio ? 'Admin Course Studio' : 'Creator Course Studio' %></h2>
-            <p><%= isAdminStudio
-              ? 'Create new system courses here, then moderate the wider course library without exposing owner-only editing on creator-owned content.'
-              : 'This studio is separate from the LMS browsing pages. Create new courses here, then manage the courses you own from a cleaner library view.' %></p>
-          </div>
-          <div class="hero-actions">
-            <a class="btn btn-secondary btn-sm" href="<%= studioCreatePath %>">Create New Course</a>
-            <a class="btn btn-secondary btn-sm" href="<%= studioOverviewPath %>">Open Course Library</a>
-            <% if (showEditSection) { %>
-              <a class="btn btn-primary btn-sm" href="<%= buildStudioEditPath(editingCourse._id) %>">Editing: <%= editingCourse.title %></a>
-            <% } %>
-          </div>
-        </div>
-        <div class="hero-metrics">
-          <article class="hero-metric"><small>Draft Courses</small><strong><%= draftCourseCount %></strong></article>
-          <article class="hero-metric"><small>Pending Review</small><strong><%= pendingCourseCount %></strong></article>
-          <article class="hero-metric"><small>Owner Editable</small><strong><%= ownerEditableCount %></strong></article>
-          <article class="hero-metric"><small>Moderation Only</small><strong><%= moderationOnlyCount %></strong></article>
-        </div>
-        <div class="studio-lane-grid">
-          <a class="studio-lane-card" href="<%= studioCreatePath %>">
-            <small>Creation Flow</small>
-            <strong>Create a new course</strong>
-            <span>Open the guided wizard, upload the lesson media, and structure the curriculum without the management list getting in the way.</span>
-          </a>
-          <a class="studio-lane-card" href="<%= studioOverviewPath %>">
-            <small>Course Library</small>
-            <strong>View and manage existing courses</strong>
-            <span>Review ownership, see lifecycle status quickly, and only edit or duplicate courses that belong to you.</span>
-          </a>
-        </div>
-      </section>
+      <header class="ui-page-heading">
+        <div><h1><%= currentStudioMode === 'create' ? 'Create course' : (currentStudioMode === 'edit' ? 'Edit course' : 'Course studio') %></h1><p><%= currentStudioMode === 'create' ? 'Build your course step by step, then save it as a draft or submit it for publishing.' : 'Manage your courses, update lessons, and follow publishing progress.' %></p></div>
+        <div class="ui-page-actions"><a class="ui-button ui-button-outline" href="<%= studioOverviewPath %>">Course library</a><% if (currentStudioMode !== 'create') { %><a class="ui-button ui-button-primary" href="<%= studioCreatePath %>">Create course</a><% } %></div>
+      </header>
+      <% if (currentStudioMode === 'overview') { %>
+        <%- include('./partials/ui-summary', { items: [{ label: 'Courses', value: courses.length }, { label: 'Published', value: publishedCourseCount }, { label: 'Drafts', value: draftCourseCount }, { label: 'Awaiting review', value: pendingCourseCount }] }) %>
+      <% } %>
 
         <% if (showEditSection) { %>
           <section class="studio-card" id="edit-course">

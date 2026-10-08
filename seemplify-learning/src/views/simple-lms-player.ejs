@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -524,19 +524,20 @@
   </style>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
-<body class="public-site lmsv-player-page">
+<body class="learning-app public-site lmsv-player-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
-  <main class="player-shell">
+  <main id="main-content" class="player-shell">
     <% const reviewSummary = courseReviewSummary || course.reviewSummary || { ratingAverage: 0, ratingAverageLabel: '0.0', ratingCount: 0, commentCount: 0, hasRatings: false, roundedStarCount: 0 } %>
     <% const visibleCourseReviews = Array.isArray(recentCourseReviews) ? recentCourseReviews : [] %>
     <% const currentPlayerPath = `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(currentLesson.lessonKey)}` %>
     <% const courseReviewAction = `/simple-lms/courses/${course._id}/reviews` %>
     <section class="player-head">
       <h1 class="player-title"><%= course.title %></h1>
-      <p class="player-subtitle">Lesson player for focused learning. Work through the curriculum on the right and track completion in real-time.</p>
-      <label for="player-curriculum-toggle" class="btn btn-secondary btn-sm player-curriculum-toggle">Open Curriculum</label>
+      <p class="player-subtitle">Continue your course and keep track of completed lessons.</p>
+      <button type="button" class="btn btn-secondary btn-sm player-curriculum-toggle" data-curriculum-open aria-controls="course-curriculum" aria-expanded="false">Open curriculum</button>
       <div class="player-pill-row">
         <span class="player-pill"><%= course.levelLabel %></span>
         <span class="player-pill"><%= progress.completedCount %>/<%= progress.lessonCount %> lessons completed</span>
@@ -552,7 +553,7 @@
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
     <input type="checkbox" id="player-curriculum-toggle" class="player-curriculum-checkbox">
-    <label for="player-curriculum-toggle" class="player-curriculum-overlay" aria-label="Close curriculum"></label>
+    <button type="button" class="player-curriculum-overlay" data-curriculum-close hidden aria-label="Close curriculum"></button>
 
     <section class="player-layout">
       <div class="player-main">
@@ -730,13 +731,13 @@
 
       </div>
 
-      <aside class="player-side">
+      <aside class="player-side" id="course-curriculum" aria-label="Course curriculum">
         <article class="player-card">
-          <label for="player-curriculum-toggle" class="player-side-close" aria-label="Close curriculum">
+          <button type="button" class="player-side-close" data-curriculum-close aria-label="Close curriculum">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
-          </label>
+          </button>
           <div class="player-headline">
             <h2 style="margin:0;font-size:22px;letter-spacing:-0.02em;">Curriculum</h2>
             <p class="soft-note">Select any lesson to navigate. Completed lessons are flagged.</p>

@@ -1,0 +1,40 @@
+<%- include('./ui-summary', { items: [
+  { label: 'Published courses', value: stats?.publishedCourseCount || 0, note: `${courseMetrics.draft} drafts in the catalogue` },
+  { label: 'Learners', value: stats?.learnerCount || 0, note: `${stats?.completionCount || 0} course completions` },
+  { label: 'Revenue', value: paymentStats.revenueDisplay, note: 'Successful course payments' },
+  { label: 'Partner organisations', value: partnerOrgRows.length, note: `${activePartnerOrgCount} active organisations` }
+] }) %>
+<div class="ui-overview-grid">
+  <div class="ui-stack">
+    <section class="ui-panel" aria-labelledby="review-heading">
+      <header class="ui-panel-heading"><div><h2 id="review-heading">Course review</h2><p>Submissions waiting for a publishing decision.</p></div><a href="/admin/approvals">View queue<% if (approvalCourses.length > 0) { %> (<%= approvalCourses.length %>)<% } %></a></header>
+      <% if (approvalCourses.length === 0) { %>
+        <div class="ui-empty"><%- include('./ui-icon', { icon: 'approvals' }) %><h3>No courses waiting for review</h3><p>New submissions will appear here when creators send a course for approval.</p><a href="/admin/courses" class="ui-button ui-button-outline">Manage courses</a></div>
+      <% } else { %>
+        <% approvalCourses.slice(0, 5).forEach((course) => { %>
+          <div class="ui-list-row"><div><strong><%= course.title %></strong><small><%= course.authorName || course.creatorName || 'Course creator' %> · <%= dateText(course.submittedAt || course.updatedAt) %></small></div><a href="<%= buildAdminCourseRecordPath(course._id, '/admin/approvals') %>" class="ui-button ui-button-outline">Review</a></div>
+        <% }) %>
+      <% } %>
+      <% if (approvalDecisionCounts.changes_requested > 0) { %><footer class="ui-panel-footer"><%= approvalDecisionCounts.changes_requested %> submissions have requested changes.</footer><% } %>
+    </section>
+    <section class="ui-panel" aria-labelledby="catalogue-heading">
+      <header class="ui-panel-heading"><div><h2 id="catalogue-heading">Course catalogue</h2><p>Content available across Learning.</p></div><a href="/admin/courses">Manage catalogue</a></header>
+      <table><thead><tr><th scope="col">Status</th><th scope="col" style="text-align:right">Courses</th></tr></thead><tbody>
+        <% [{ label: 'Published', value: courseMetrics.published }, { label: 'Draft', value: courseMetrics.draft }, { label: 'Awaiting review', value: courseMetrics.pending }, { label: 'Archived', value: courseMetrics.archived }].forEach((item) => { %><tr><td><%= item.label %></td><td style="text-align:right;font-variant-numeric:tabular-nums"><%= item.value %></td></tr><% }) %>
+      </tbody></table>
+      <footer class="ui-panel-footer"><a href="/admin/creators">Manage creators</a><a href="/" target="_blank" rel="noreferrer">View public catalogue ↗</a></footer>
+    </section>
+  </div>
+  <div class="ui-stack">
+    <section class="ui-panel" aria-labelledby="payments-heading">
+      <header class="ui-panel-heading"><div><h2 id="payments-heading">Payments & payouts</h2><p>Transactions and available balances.</p></div></header>
+      <dl class="ui-definition"><div><dt>Pending payments</dt><dd><%= paymentStats.pendingCount || 0 %></dd></div><div><dt>Creator payouts</dt><dd><%= paymentStats.creatorPayoutDisplay %></dd></div><div><dt>Partner wallets</dt><dd><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></dd></div><div><dt>Agent payout requests</dt><dd><%= pendingAgentPayoutCount %></dd></div></dl>
+      <footer class="ui-panel-footer"><a href="/admin/payments">Review payments</a><a href="/admin/partners?partnerView=cash">Partner payouts</a></footer>
+    </section>
+    <section class="ui-panel" aria-labelledby="people-heading">
+      <header class="ui-panel-heading"><div><h2 id="people-heading">People & access</h2><p>Platform access and partner requests.</p></div></header>
+      <dl class="ui-definition"><div><dt>Platform admins</dt><dd><%= platformAdminAccountCount %></dd></div><div><dt>Partner requests</dt><dd><%= pendingPartnerRequestCount %></dd></div><div><dt>Linked agents</dt><dd><%= totalPartnerAgents %></dd></div></dl>
+      <footer class="ui-panel-footer"><a href="/admin/users">Manage people</a><a href="/admin/partners?partnerView=onboarding">Review requests</a></footer>
+    </section>
+  </div>
+</div>

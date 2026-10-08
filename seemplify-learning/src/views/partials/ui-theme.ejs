@@ -1,0 +1,8 @@
+<div class="theme-dropdown ui-theme">
+  <button type="button" class="theme-toggle ui-button ui-button-icon ui-button-ghost" onclick="window.ThemeManager.toggleDropdown(event)" aria-label="Choose appearance"><%- include('./ui-icon', { icon: 'moon' }) %></button>
+  <div class="theme-menu">
+    <% ['system', 'light', 'dark'].forEach((theme) => { %>
+      <button type="button" class="theme-option" data-value="<%= theme %>" onclick="window.ThemeManager.setTheme('<%= theme %>')"><%= theme.charAt(0).toUpperCase() + theme.slice(1) %></button>
+    <% }) %>
+  </div>
+</div>
