@@ -7,6 +7,7 @@ import mongoose from 'mongoose'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import authRouter from './routes/auth.js'
+import idpAdminSsoRouter from './routes/idpAdminSso.js'
 import setupRouter from './routes/setup.js'
 import { simpleLmsRouter, simpleLmsAdminRouter, simpleLmsApiRouter, simpleLmsReportsApiRouter } from './routes/simpleLms.js'
 import partnerRouter from './routes/partner.js'
@@ -796,6 +797,7 @@ app.get('/subscription', requireAuth, (req, res) => {
   })
 })
 
+app.use(idpAdminSsoRouter)
 app.use(authRouter)
 app.use('/setup', setupRouter)
 app.use('/simple-lms', simpleLmsRouter)

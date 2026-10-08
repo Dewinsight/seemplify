@@ -1,0 +1,45 @@
+name: Deploy Admin Handoffs to Hostinger
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hostinger-core-production
+  cancel-in-progress: false
+jobs:
+  test-and-deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install focused contract dependencies
+        run: |
+          npm ci --ignore-scripts --prefix Identityprovider
+          npm ci --ignore-scripts --prefix seemplify-learning
+      - name: Verify administrator handoff contracts
+        run: |
+          node --test Identityprovider/test/learning-admin-sso.test.mjs Identityprovider/test/recruiter-admin-sso-secret.test.mjs Identityprovider/test/auth-redirects.test.mjs seemplify-learning/test/idp-admin-sso.test.js seemplify-learning/test/access-profile.test.js
+          bash -n deploy/hostinger/deploy-admin-handoffs.sh
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Package tested main release
+        run: git archive --format=tar.gz -o admin-handoffs.tgz "$GITHUB_SHA" Identityprovider seemplify-learning
+      - name: Publish and verify exact release
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_upload_with_lock admin-handoffs.tgz "$SSH_USER@$SSH_HOST" "/opt/seemplify/build/admin-handoffs-$GITHUB_SHA.tgz"
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' flock --exclusive --wait 1800 /var/lock/seemplify-production-deploy.lock bash -s" < deploy/hostinger/deploy-admin-handoffs.sh

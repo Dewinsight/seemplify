@@ -147,6 +147,19 @@ const upsertIdpAccount = async ({ identity, emailVerified = true }) => {
   return account
 }
 
+export async function provisionIdpLearningAdmin(claims) {
+  if (claims.isSuperAdmin !== true && claims.isSystemAdmin !== true) {
+    throw new Error('Seemplify administrator access is required.')
+  }
+  const account = await upsertIdpAccount({ identity: claims, emailVerified: true })
+  account.isSuperAdmin = claims.isSuperAdmin === true
+  account.isSystemAdmin = true
+  account.learningRole = claims.isSuperAdmin === true ? 'super_admin' : 'admin'
+  account.authentication.passwordEnabled = false
+  await account.save()
+  return account
+}
+
 const upsertOrganizationMembership = async ({
   account,
   organization,

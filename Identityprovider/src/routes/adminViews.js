@@ -14,6 +14,7 @@ import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import DemoRequest from '../models/DemoRequest.js'
 import { buildRecruiterAdminLaunchUrl } from '../services/recruiterAdminSsoService.js'
 import { buildExperienceAdminLaunchUrl } from '../services/experienceAdminSsoService.js'
+import { buildLearningAdminLaunchUrl } from '../services/learningAdminSsoService.js'
 import { getWorkforceOperationsAnalytics } from '../services/adminAnalyticsService.js'
 import { emailService } from '../services/emailService.js'
 import { getSharedAIGatewayAdminDashboard } from '../services/sharedAIGatewayAdminService.js'
@@ -492,11 +493,12 @@ router.get('/subscriptions', async (req, res) => {
 
 /**
  * GET /admin/simple-lms
- * Legacy IDP Simple LMS route. Redirect to external Seemplify Learning app.
+ * Launch Learning administration with the current IdP administrator identity.
  */
 router.get('/simple-lms', async (req, res) => {
   try {
-    res.redirect(SIMPLE_LMS_EXTERNAL_WORKSPACE_URL)
+    res.set('Cache-Control', 'no-store').set('Referrer-Policy', 'no-referrer')
+    res.redirect(await buildLearningAdminLaunchUrl(req.user))
   } catch (error) {
     console.error('Error redirecting to external Simple LMS workspace:', error)
     res.status(500).render('error', {
@@ -513,6 +515,7 @@ router.get('/simple-lms', async (req, res) => {
 router.get('/recruiter-admin', async (req, res) => {
   try {
     const launchUrl = await buildRecruiterAdminLaunchUrl(req.user)
+    res.set('Cache-Control', 'no-store').set('Referrer-Policy', 'no-referrer')
     res.redirect(launchUrl)
   } catch (error) {
     console.error('Error launching recruiter admin:', error)
@@ -722,6 +725,7 @@ router.post('/integrations/media-ai/:integration/remove', requireSuperAdmin, aud
  */
 router.get('/experience-admin', async (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store').set('Referrer-Policy', 'no-referrer')
     res.redirect(await buildExperienceAdminLaunchUrl(req.user))
   } catch (error) {
     console.error('Error launching Experience admin:', error)

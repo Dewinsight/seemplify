@@ -83,3 +83,5 @@ cv/
 
 # Operational credential archives belong in the sibling access workspace.
 access.rar
+# Local agent checkouts are not repository submodules.
+.codex-worktrees/
