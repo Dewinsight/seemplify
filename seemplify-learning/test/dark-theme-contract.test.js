@@ -36,18 +36,18 @@ test('learner overview keeps navigation compact and puts course work first', asy
 test('public home uses theme-safe actions and balanced course rows', async () => {
   const [home, brand] = await Promise.all([
     readView('public-home.ejs'),
-    readFile(new URL('../src/public/css/seemplify-brand.css', import.meta.url), 'utf8')
+    readFile(new URL('../src/public/css/experience-ui.css', import.meta.url), 'utf8')
   ])
 
-  assert.match(home, /class="btn btn-secondary">My learning<\/a>/)
-  assert.match(home, /class="btn btn-secondary">Creator guide<\/a>/)
+  assert.match(home, /class="ui-button ui-button-outline">Open my learning<\/a>/)
+  assert.match(home, /href="\/teach" class="ui-button ui-button-ghost"/)
   assert.match(home, /class="lmsv-course-meta"/)
   assert.doesNotMatch(home, /color:\s*#0f172a/)
   assert.doesNotMatch(home, /style="[^"]*(?:border|background|color)/)
 
-  assert.match(brand, /body\.public-home-page \.lmsv-course-grid-4\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/)
-  assert.match(brand, /body\.public-home-page \.lmsv-persona-body \.btn-secondary\s*\{[\s\S]*color:\s*var\(--seem-text\)/)
-  assert.match(brand, /\.lmsv-persona-body\s*\{[^}]*grid-template-rows:/)
+  assert.match(brand, /\.lmsv-course-grid-4\s*\{[^}]*grid-template-columns:\s*repeat\(3/)
+  assert.match(brand, /\.ui-button-outline[^}]*color:\s*var\(--ui-foreground\)/)
+  assert.match(brand, /\[data-theme="dark"\]\s*\{[^}]*--ui-foreground:/)
 })
 
 test('signed-in utility pages use shared canvas and surface tokens', async () => {

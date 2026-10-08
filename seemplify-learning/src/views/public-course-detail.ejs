@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,8 +11,9 @@
   <script src="/js/theme.js?v=3"></script>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
-<body class="public-site">
+<body class="learning-app public-site">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
   <% const takePath = `/simple-lms/take/${course._id}` %>
@@ -71,7 +72,7 @@
     }
   %>
 
-  <main class="lmsv-shell">
+  <main id="main-content" class="lmsv-shell">
     <section class="lmsv-surface-card" style="padding:10px 16px;">
       <a href="<%= backHref %>" class="btn btn-secondary btn-sm" style="width:fit-content;"><%= backLabel %></a>
     </section>

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -424,8 +424,9 @@
   </style>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
-<body>
+<body class="learning-app">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
 
   <% const section = activeSection || 'overview' %>
@@ -492,7 +493,7 @@
     }
   } %>
 
-  <main class="agent-shell">
+  <main id="main-content" class="agent-shell">
     <aside class="agent-side">
       <div class="agent-side-header">
         <p class="agent-side-kicker">Sales Agent Console</p>
@@ -537,7 +538,7 @@
             </div>
             <div>
               <h1>Agent Dashboard</h1>
-              <p>Monitor your attributed sales, commission flow, payout readiness, and live referral catalog from the same purple workspace system as the rest of the platform.</p>
+              <p>Review your course referrals, attributed sales, and commission payments.</p>
             </div>
 
             <div class="stats-grid">

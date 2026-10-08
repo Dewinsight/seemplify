@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2873,22 +2873,23 @@
   </style>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
-<body class="admin-page">
+<body class="learning-app admin-page">
 <%
   const sectionPath = (section) => section === 'overview' ? '/admin' : `/admin/${section}`
   const navItems = [
     { key: 'overview', label: 'Overview' },
-    { key: 'courses', label: 'Course Management' },
-    { key: 'approvals', label: 'Approval Queue' },
+    { key: 'courses', label: 'Courses' },
+    { key: 'approvals', label: 'Course review' },
     { key: 'partners', label: 'Partners' },
-    { key: 'super-users', label: 'Platform Admins' },
-    { key: 'audit-log', label: 'Audit Log' },
+    { key: 'super-users', label: 'Platform admins' },
+    { key: 'audit-log', label: 'Audit log' },
     { key: 'creators', label: 'Creators' },
-    { key: 'users', label: 'Users & Roles' },
+    { key: 'users', label: 'Users & roles' },
     { key: 'commission', label: 'Commissions' },
     { key: 'payments', label: 'Payments' },
-    { key: 'settings', label: 'Platform Settings' },
+    { key: 'settings', label: 'Settings' },
     { key: 'analytics', label: 'Analytics' }
   ]
   const navGroups = [
@@ -2899,17 +2900,17 @@
     { title: 'Control', keys: ['settings', 'analytics'] }
   ]
   const sectionLabel = {
-    overview: 'Admin Overview',
-    courses: 'Course Management',
-    approvals: 'Course Approval Queue',
-    partners: 'Partner Operations',
+    overview: 'Platform overview',
+    courses: 'Courses',
+    approvals: 'Course review',
+    partners: 'Partners',
     'super-users': 'Platform Admins',
-    'audit-log': 'Admin Activity Log',
-    creators: 'Creator Management',
+    'audit-log': 'Audit log',
+    creators: 'Creators',
     users: 'Users & Roles',
-    commission: 'Commission Management',
-    payments: 'Payment Monitoring',
-    settings: 'Platform Settings',
+    commission: 'Commissions',
+    payments: 'Payments',
+    settings: 'Settings',
     analytics: 'Analytics'
   }
   const currentSection = navItems.some((item) => item.key === adminSection) ? adminSection : 'overview'
@@ -3270,243 +3271,36 @@
   const topCreatorRevenueMax = Math.max(0, ...(Array.isArray(analytics?.topCreatorsByRevenue) ? analytics.topCreatorsByRevenue.map((item) => toNumber(item.revenueMinor)) : [0]))
 %>
   <div class="layout">
-    <aside class="side">
-      <div class="side-head">
-        <p class="side-kicker"><%= brandLearningName || 'Seemplify Learning' %></p>
-        <h1>Admin Console</h1>
-        <p>Control courses, creators, approvals, and payouts from one admin rail.</p>
-      </div>
-      <div class="side-profile">
-        <p class="side-profile-label">Signed In</p>
-        <strong><%= user?.profile?.name || user?.email || 'Admin' %></strong>
-        <span><%= user?.email || '' %></span>
-        <span class="side-role"><%= roleLabel %></span>
-      </div>
-      <nav>
-        <% navGroups.forEach((group) => { %>
-          <section class="side-nav-group">
-            <p class="side-nav-group-title"><%= group.title %></p>
-            <% group.keys.forEach((key) => { %>
-              <% const item = navItemByKey.get(key) %>
-              <% if (item) { %>
-                <a href="<%= sectionPath(item.key) %>" class="<%= currentSection === item.key ? 'active' : '' %>">
-                  <span class="label"><%= item.label %></span>
-                  <span class="meta"><%= navMeta[item.key] || '' %></span>
-                </a>
-              <% } %>
-            <% }) %>
-          </section>
-        <% }) %>
-      </nav>
-      <div class="actions">
-        <a class="btn btn-primary btn-sm" href="/admin/courses/new">Create Course</a>
-        <a class="btn btn-secondary btn-sm" href="/simple-lms">Workspace</a>
-        <a class="btn btn-secondary btn-sm" href="/logout">Sign Out</a>
-      </div>
-    </aside>
-
-    <main class="main">
-      <section class="card page-header">
-        <div class="page-header-grid">
-          <div class="page-header-copy">
-            <div>
-              <h2><%= sectionLabel[currentSection] || 'Admin' %></h2>
-              <p class="mini">Dedicated admin pages for approvals, partner operations, payouts, and platform control.</p>
-            </div>
-            <div class="page-header-pulse">
-              <article class="pulse-card">
-                <span>Approval Queue</span>
-                <strong><%= pendingOnly.length %></strong>
-              </article>
-              <article class="pulse-card">
-                <span>Partner Requests</span>
-                <strong><%= pendingPartnerRequestCount %></strong>
-              </article>
-              <article class="pulse-card">
-                <span>Agent Payout Queue</span>
-                <strong><%= (agentPayoutRows || []).length %></strong>
-              </article>
-              <article class="pulse-card">
-                <span>Live Courses</span>
-                <strong><%= stats?.publishedCourseCount || 0 %></strong>
-              </article>
-            </div>
+    <%- include('./partials/admin-navigation', { navItems, sectionPath, currentSection, approvalCourses }) %>
+    <div class="ui-admin-frame">
+      <header class="ui-admin-topbar">
+        <button type="button" class="ui-button ui-button-ghost ui-button-icon ui-mobile-trigger" data-ui-menu aria-controls="admin-navigation" aria-expanded="false" aria-label="Open navigation"><%- include('./partials/ui-icon', { icon: 'menu' }) %></button>
+        <strong>Learning administration</strong>
+        <div class="ui-admin-access"><%- include('./partials/ui-icon', { icon: 'shield' }) %><span><%= roleLabel === 'super admin' ? 'Platform-wide access' : 'Administrator access' %></span></div>
+        <%- include('./partials/ui-theme') %>
+      </header>
+      <main id="main-content" class="main">
+        <header class="ui-page-heading">
+          <div><h1><%= currentSection === 'overview' ? 'Platform overview' : sectionLabel[currentSection] %></h1>
+            <p><%= ({ overview: 'Review publishing activity, payments, and access across Learning.', courses: 'Find, publish, and manage courses in the catalogue.', approvals: 'Review course submissions and send publishing decisions.', partners: 'Manage partner organisations, requests, and payouts.', 'super-users': 'Manage the people with platform administration access.', 'audit-log': 'Review recent platform administration activity.', creators: 'View creators and their course catalogues.', users: 'Manage learner access and platform roles.', commission: 'Set commission rates and review account or course overrides.', payments: 'Review course payments, settlements, and payout requests.', settings: 'Manage publishing policies, payments, and platform preferences.', analytics: 'Track learning activity, enrolment, and course revenue.' })[currentSection] %></p>
           </div>
-          <div class="page-header-actions">
-            <a class="btn btn-secondary btn-sm" href="<%= websiteHref %>" target="_blank" rel="noreferrer">Visit Website</a>
-            <a class="btn btn-secondary btn-sm" href="/simple-lms">Open Workspace</a>
-            <a class="btn btn-primary btn-sm" href="/admin/courses/new">Create Course</a>
-          </div>
-        </div>
-        <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
-        <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
-        <% if (info) { %><div class="alert alert-info"><%= info %></div><% } %>
-      </section>
+          <div class="ui-page-actions"><a class="ui-button ui-button-outline" href="/" target="_blank" rel="noreferrer">View website ↗</a><a class="ui-button ui-button-primary" href="/admin/courses/new"><%- include('./partials/ui-icon', { icon: 'plus' }) %>Create course</a></div>
+        </header>
+        <% if (error) { %><div class="alert alert-error" role="alert"><%= error %></div><% } %>
+        <% if (success) { %><div class="alert alert-success" role="status"><%= success %></div><% } %>
+        <% if (info) { %><div class="alert alert-info" role="status"><%= info %></div><% } %>
 
       <% if (currentSection === 'overview') { %>
-        <section class="admin-overview-dashboard">
-          
-          <!-- 1. The Zenith Strip (North Star Metrics) -->
-          <div class="overview-zenith-strip" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 32px;">
-            <article style="background: linear-gradient(135deg, #1e1b4b, #312e81); border-radius: 12px; padding: 24px; color: white; box-shadow: 0 4px 12px rgba(49, 46, 129, 0.2);">
-              <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Total Revenue</span>
-              <strong style="display: block; font-size: 28px; font-weight: 700; line-height: 1;"><%= paymentStats.revenueDisplay %></strong>
-            </article>
-            <article style="background: linear-gradient(135deg, #4c1d95, #6d28d9); border-radius: 12px; padding: 24px; color: white; box-shadow: 0 4px 12px rgba(109, 40, 217, 0.2);">
-              <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Live Courses</span>
-              <strong style="display: block; font-size: 28px; font-weight: 700; line-height: 1;"><%= stats?.publishedCourseCount || 0 %></strong>
-            </article>
-            <article style="background: linear-gradient(135deg, #5b21b6, #7c3aed); border-radius: 12px; padding: 24px; color: white; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);">
-              <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Total Learners</span>
-              <strong style="display: block; font-size: 28px; font-weight: 700; line-height: 1;"><%= stats.learnerCount %></strong>
-            </article>
-            <article style="background: linear-gradient(135deg, #6b21a8, #9333ea); border-radius: 12px; padding: 24px; color: white; box-shadow: 0 4px 12px rgba(147, 51, 234, 0.2);">
-              <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Partner Network</span>
-              <strong style="display: block; font-size: 28px; font-weight: 700; line-height: 1;"><%= partnerOrgRows.length %> Orgs</strong>
-            </article>
-          </div>
-
-          <!-- 2. The Operations Grid -->
-          <div class="overview-ops-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 32px;">
-            
-            <!-- Publishing Column -->
-            <div class="ops-column" style="background: #fff; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column;">
-              <div style="margin-bottom: 24px;">
-                <h3 style="margin: 0 0 4px 0; font-size: 18px; color: #1e293b;">Publishing Ops</h3>
-                <p class="mini" style="margin: 0; color: #64748b;">Manage course submissions and creator catalogs.</p>
-              </div>
-              <div style="display: flex; flex-direction: column; gap: 16px; flex-grow: 1;">
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Pending Review Queue</span>
-                  <span class="pill" style="<%= pendingOnly.length > 0 ? 'background: #fee2e2; color: #b91c1c;' : '' %>"><strong><%= pendingOnly.length %></strong> pending</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Changes Requested</span>
-                  <span class="pill"><strong><%= approvalDecisionCounts.changes_requested %></strong> returned</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Partner Drafts</span>
-                  <span class="pill"><strong><%= partnerDraftCourseCount %></strong> drafts</span>
-                </div>
-              </div>
-              <div style="margin-top: 24px;">
-                <a class="btn btn-primary" href="/admin/approvals" style="width: 100%; justify-content: center; padding: 10px;">Clear Review Queue</a>
-              </div>
-            </div>
-
-            <!-- Financial Column -->
-            <div class="ops-column" style="background: #fff; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column;">
-              <div style="margin-bottom: 24px;">
-                <h3 style="margin: 0 0 4px 0; font-size: 18px; color: #1e293b;">Financial Ops</h3>
-                <p class="mini" style="margin: 0; color: #64748b;">Track payouts, commissions, and revenue flows.</p>
-              </div>
-              <div style="display: flex; flex-direction: column; gap: 16px; flex-grow: 1;">
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Pending Transactions</span>
-                  <span class="pill" style="<%= paymentStats.pendingCount > 0 ? 'background: #fef08a; color: #854d0e;' : '' %>"><strong><%= paymentStats.pendingCount %></strong> unprocessed</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Creator Payouts</span>
-                  <span class="pill"><strong><%= paymentStats.creatorPayoutDisplay %></strong></span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Partner Wallets</span>
-                  <span class="pill"><strong><%= moneyText(partnerAvailableWalletMinor, 'NGN') %></strong></span>
-                </div>
-              </div>
-              <div style="margin-top: 24px;">
-                <a class="btn btn-secondary" href="/admin/payments" style="width: 100%; justify-content: center; padding: 10px;">Review Payments</a>
-              </div>
-            </div>
-
-            <!-- Network Column -->
-            <div class="ops-column" style="background: #fff; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column;">
-              <div style="margin-bottom: 24px;">
-                <h3 style="margin: 0 0 4px 0; font-size: 18px; color: #1e293b;">Network Ops</h3>
-                <p class="mini" style="margin: 0; color: #64748b;">Manage partner organizations, agents, and access.</p>
-              </div>
-              <div style="display: flex; flex-direction: column; gap: 16px; flex-grow: 1;">
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Pending Role Requests</span>
-                  <span class="pill" style="<%= pendingPartnerRequestCount > 0 ? 'background: #e0e7ff; color: #3730a3;' : '' %>"><strong><%= pendingPartnerRequestCount %></strong> waiting</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Active Agents</span>
-                  <span class="pill"><strong><%= totalPartnerAgents %></strong> linked</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(148,163,184,0.1);">
-                  <span style="font-size: 14px; font-weight: 500; color: #334155;">Admins & Super Admins</span>
-                  <span class="pill"><strong><%= roleBreakdown.super_admin + roleBreakdown.admin %></strong> personnel</span>
-                </div>
-              </div>
-              <div style="margin-top: 24px;">
-                <a class="btn btn-secondary" href="/admin/partners" style="width: 100%; justify-content: center; padding: 10px;">Manage Directory</a>
-              </div>
-            </div>
-            
-          </div>
-
-          <!-- 3. Minimal Footer Nav -->
-          <div class="overview-footer-nav" style="display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; padding-top: 24px; border-top: 1px solid rgba(148,163,184,0.2);">
-            <a href="/admin/courses" style="font-size: 13px; font-weight: 600; color: #64748b; text-decoration: none; transition: color 0.15s ease;">Manage Courses</a>
-            <a href="/admin/creators" style="font-size: 13px; font-weight: 600; color: #64748b; text-decoration: none; transition: color 0.15s ease;">Manage Creators</a>
-            <a href="/admin/users" style="font-size: 13px; font-weight: 600; color: #64748b; text-decoration: none; transition: color 0.15s ease;">User Roles</a>
-            <a href="/admin/analytics" style="font-size: 13px; font-weight: 600; color: #64748b; text-decoration: none; transition: color 0.15s ease;">Platform Analytics</a>
-            <a href="<%= websiteHref %>" target="_blank" rel="noreferrer" style="font-size: 13px; font-weight: 600; color: #4f46e5; text-decoration: none; display: flex; align-items: center; gap: 4px;">Visit Public Site ↗</a>
-          </div>
-          
-        </section>
+        <%- include('./partials/admin-overview', { courseMetrics, partnerOrgRows, activePartnerOrgCount, approvalCourses, dateText, buildAdminCourseRecordPath, approvalDecisionCounts, moneyText, partnerAvailableWalletMinor, pendingAgentPayoutCount, platformAdminAccountCount, pendingPartnerRequestCount, totalPartnerAgents }) %>
       <% } %>
 
       <% if (currentSection === 'courses') { %>
+        <%- include('./partials/ui-summary', { items: [{ label: 'Courses', value: courseMetrics.total }, { label: 'Published', value: courseMetrics.published }, { label: 'Drafts', value: courseMetrics.draft }, { label: 'Awaiting review', value: courseMetrics.pending }] }) %>
         <section class="card course-management-shell">
-          <div class="head">
-            <div><h2>Course Management</h2><p class="mini">Use the library to find a course, then open one record to moderate it. Owner-only editing stays separate from platform moderation.</p></div>
-            <div class="actions course-page-actions">
-              <a class="btn btn-secondary btn-sm" href="/admin/courses">Manage Courses</a>
-              <a class="btn btn-primary btn-sm" href="/admin/courses/new">Create New Course</a>
-            </div>
-          </div>
-          <div class="course-mode-grid">
-            <a class="course-mode-card <%= showCreateCoursePanel ? '' : 'active' %>" href="/admin/courses">
-              <small>Library View</small>
-              <strong>Manage course library</strong>
-              <span>Browse preview cards, filter by creator or status, and open a dedicated record for moderation.</span>
-            </a>
-            <a class="course-mode-card <%= showCreateCoursePanel ? 'active' : '' %>" href="/admin/courses/new">
-              <small>Creation Flow</small>
-              <strong>Create a new system course</strong>
-              <span>Open a separate authoring page for new system content instead of dropping the form into the library page.</span>
-            </a>
-          </div>
-
-          <div class="course-overview-grid">
-            <article class="course-overview-card">
-              <small>Total</small>
-              <strong><%= courseMetrics.total %></strong>
-              <span>Courses in the current filtered library.</span>
-            </article>
-            <article class="course-overview-card">
-              <small>Owner Editable</small>
-              <strong><%= courseMetrics.ownerEditable %></strong>
-              <span>Courses this account can edit or duplicate.</span>
-            </article>
-            <article class="course-overview-card">
-              <small>Moderation Only</small>
-              <strong><%= courseMetrics.moderationOnly %></strong>
-              <span>Courses that stay owner-locked but can still be moderated.</span>
-            </article>
-            <article class="course-overview-card">
-              <small>Pending Review</small>
-              <strong><%= courseMetrics.pending %></strong>
-              <span>Submissions still waiting for a publishing decision.</span>
-            </article>
-          </div>
-
           <div class="course-filter-shell">
-            <p class="mini">Filters apply to the course library only. Editing and duplication remain owner-only even when the course appears in the admin view.</p>
+            <h2 class="ui-section-title">Course library</h2>
             <form method="get" action="/admin/courses" class="course-filter-grid">
-              <select class="input" name="creatorId">
+              <select class="input" name="creatorId" aria-label="Filter by creator">
                 <option value="">All creators</option>
                 <% (creatorAdminRows || []).forEach((creator) => { %>
                   <option value="<%= creator.creatorId %>" <%= selectedCreatorId === String(creator.creatorId) ? 'selected' : '' %>>
@@ -3514,30 +3308,30 @@
                   </option>
                 <% }) %>
               </select>
-              <select class="input" name="courseStatus">
+              <select class="input" name="courseStatus" aria-label="Filter by status">
                 <option value="all" <%= courseStatusFilter === 'all' ? 'selected' : '' %>>all statuses</option>
                 <option value="draft" <%= courseStatusFilter === 'draft' ? 'selected' : '' %>>draft</option>
                 <option value="pending_public_review" <%= courseStatusFilter === 'pending_public_review' ? 'selected' : '' %>>pending review</option>
                 <option value="published" <%= courseStatusFilter === 'published' ? 'selected' : '' %>>published</option>
                 <option value="archived" <%= courseStatusFilter === 'archived' ? 'selected' : '' %>>archived</option>
               </select>
-              <select class="input" name="courseVisibility">
+              <select class="input" name="courseVisibility" aria-label="Filter by visibility">
                 <option value="all" <%= courseVisibilityFilter === 'all' ? 'selected' : '' %>>all visibility</option>
                 <option value="organization_private" <%= courseVisibilityFilter === 'organization_private' ? 'selected' : '' %>>private</option>
                 <option value="organization_public" <%= courseVisibilityFilter === 'organization_public' ? 'selected' : '' %>>public</option>
                 <option value="system_public" <%= courseVisibilityFilter === 'system_public' ? 'selected' : '' %>>marketplace</option>
               </select>
-              <select class="input" name="courseType">
+              <select class="input" name="courseType" aria-label="Filter by course type">
                 <option value="all" <%= courseTypeFilter === 'all' ? 'selected' : '' %>>all types</option>
                 <option value="system" <%= courseTypeFilter === 'system' ? 'selected' : '' %>>system</option>
                 <option value="creator" <%= courseTypeFilter === 'creator' ? 'selected' : '' %>>creator</option>
               </select>
-              <select class="input" name="coursePayment">
+              <select class="input" name="coursePayment" aria-label="Filter by pricing">
                 <option value="all" <%= coursePaymentFilter === 'all' ? 'selected' : '' %>>all pricing</option>
                 <option value="free" <%= coursePaymentFilter === 'free' ? 'selected' : '' %>>free</option>
                 <option value="paid" <%= coursePaymentFilter === 'paid' ? 'selected' : '' %>>paid</option>
               </select>
-              <input class="input" type="text" name="courseSearch" value="<%= courseSearchFilter %>" placeholder="Search title, summary, creator...">
+              <input class="input" type="search" name="courseSearch" aria-label="Search courses" value="<%= courseSearchFilter %>" placeholder="Search courses">
               <button class="btn btn-primary btn-sm" type="submit">Apply Filter</button>
               <% if (hasActiveCourseFilters) { %>
                 <a class="btn btn-secondary btn-sm" href="/admin/courses">Clear</a>
@@ -4163,41 +3957,8 @@
 
       <% if (currentSection === 'approvals') { %>
         <section class="card approval-shell">
-          <div class="approval-hero">
-            <div class="approval-hero-top">
-              <div>
-                <p class="eyebrow">Course Review</p>
-                <h3>Review submissions with explicit decisions instead of a generic draft bounce.</h3>
-                <p class="mini">Approvals publish immediately. Change requests and denials both capture creator-facing feedback, drop the course back to draft, and send email notifications through the platform mailer.</p>
-              </div>
-              <div class="actions">
-                <a class="btn btn-secondary btn-sm" href="/admin/courses">Open Course Management</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/analytics">View Analytics</a>
-              </div>
-            </div>
-            <div class="approval-summary-grid">
-              <article class="approval-summary-card">
-                <span>Pending submissions</span>
-                <strong><%= approvalCourses.length %></strong>
-                <p>Courses waiting for a publish decision.</p>
-              </article>
-              <article class="approval-summary-card">
-                <span>Approved recently</span>
-                <strong><%= approvalDecisionCounts.approved %></strong>
-                <p>Courses that cleared review and went live.</p>
-              </article>
-              <article class="approval-summary-card">
-                <span>Changes requested</span>
-                <strong><%= approvalDecisionCounts.changes_requested %></strong>
-                <p>Courses sent back for creator updates.</p>
-              </article>
-              <article class="approval-summary-card">
-                <span>Denied</span>
-                <strong><%= approvalDecisionCounts.denied %></strong>
-                <p>Submissions blocked with an explicit review reason.</p>
-              </article>
-            </div>
-          </div>
+          <%- include('./partials/ui-summary', { items: [{ label: 'Awaiting review', value: approvalCourses.length }, { label: 'Approved recently', value: approvalDecisionCounts.approved }, { label: 'Changes requested', value: approvalDecisionCounts.changes_requested }, { label: 'Denied', value: approvalDecisionCounts.denied }] }) %>
+          <p class="mini">Approval publishes a course immediately. Request changes or deny a submission with feedback for its creator.</p>
 
           <nav class="partner-subnav" style="margin-bottom: 24px; display: flex; gap: 24px; border-bottom: 2px solid rgba(148,163,184,0.1); padding-bottom: 12px;" aria-label="Approval lanes">
             <button class="partner-subnav-link active" onclick="switchApprovalTab('pending')" id="tab-btn-pending" style="background:none; border:none; font-size: 15px; font-weight: 600; cursor:pointer; padding: 0 0 8px 0;">Pending queue (<%= approvalCourses.length %>)</button>
@@ -4208,10 +3969,10 @@
             function switchApprovalTab(tabId) {
               document.getElementById('approval-tab-pending').style.display = tabId === 'pending' ? 'block' : 'none';
               document.getElementById('approval-tab-recent').style.display = tabId === 'recent' ? 'block' : 'none';
-              
+
               const btnPending = document.getElementById('tab-btn-pending');
               const btnRecent = document.getElementById('tab-btn-recent');
-              
+
               if (tabId === 'pending') {
                 btnPending.classList.add('active');
                 btnPending.style.color = '';
@@ -5366,7 +5127,7 @@
       <% } %>
 
       <% if (currentSection === 'audit-log') { %>
-        <% 
+        <%
           const adminActorAuditCount = (auditLogEntries || []).filter((entry) => entry.performedByRole === 'admin').length
           const superAdminActorAuditCount = (auditLogEntries || []).filter((entry) => entry.performedByRole === 'super_admin').length
           const inviteAuditCount = (auditLogEntries || []).filter((entry) => String(entry.action || '').startsWith('admin.invite')).length
@@ -5494,7 +5255,7 @@
           </div>
 
           <form method="get" action="/admin/creators" class="form-grid creator-filter-grid">
-            <select class="input" name="creatorId">
+            <select class="input" name="creatorId" aria-label="Filter by creator">
               <option value="">All creators</option>
               <% (creatorAdminRows || []).forEach((creator) => { %>
                 <option value="<%= creator.creatorId %>" <%= selectedCreatorId === String(creator.creatorId) ? 'selected' : '' %>>
@@ -5807,32 +5568,10 @@
 
       <% if (currentSection === 'users') { %>
         <section class="card">
-          <div class="head"><div><h2>Users & Roles</h2><p class="mini">Manage base LMS roles and additive platform-admin access. Partner and channel-partner memberships stay inside Partner Operations.</p></div></div>
-          <div class="role-summary-grid">
-            <article class="role-summary-card">
-              <div>
-                <h3>Role distribution</h3>
-                <p class="mini">This page is limited to learner, creator, admin, and super admin access. Partner org roles are managed separately so org context is never lost.</p>
-              </div>
-              <div class="role-stat-strip">
-                <div class="role-summary-metric"><span>Managed accounts</span><strong><%= managedAccountRows.length %></strong></div>
-                <div class="role-summary-metric"><span>Platform admins</span><strong><%= platformAdminAccountCount %></strong></div>
-                <div class="role-summary-metric"><span>Partner-linked users</span><strong><%= partnerManagedAccountCount %></strong></div>
-                <div class="role-summary-metric"><span>Creators</span><strong><%= (creatorAdminRows || []).length %></strong></div>
-              </div>
-            </article>
-            <article class="role-summary-card">
-              <div>
-                <h3>How this page works</h3>
-                <p class="mini">Changing admin access here does not erase partner membership. Use Partner Operations for partner super-user promotion and org membership changes.</p>
-              </div>
-              <div class="actions">
-                <a class="btn btn-secondary btn-sm" href="/admin/partners">Open Partner Operations</a>
-                <a class="btn btn-secondary btn-sm" href="/admin/super-users">Manage Platform Admins</a>
-              </div>
-            </article>
-          </div>
+
+          <%- include('./partials/ui-summary', { items: [{ label: 'Accounts', value: managedAccountRows.length }, { label: 'Platform admins', value: platformAdminAccountCount }, { label: 'Partner members', value: partnerManagedAccountCount }, { label: 'Creators', value: (creatorAdminRows || []).length }] }) %>
           <div class="role-directory">
+            <% if (managedAccountRows.length === 0) { %><div class="ui-empty"><h3>No accounts to display</h3><p>Learners and platform administrators will appear here once they have access to Learning.</p></div><% } %>
             <% managedAccountRows.forEach((account) => { %>
               <form method="post" action="/simple-lms/accounts/<%= account._id %>/role" class="role-account-card">
                 <div class="role-account-head">
@@ -5844,8 +5583,8 @@
                     <span class="pill">base: <%= String(account.roleSelectValue || 'learner').replace(/_/g, ' ') %></span>
                     <% if (account.platformRole) { %><span class="pill"><%= String(account.platformRole).replace(/_/g, ' ') %></span><% } %>
                     <% if (account.partnerDashboardRole) { %><span class="pill"><%= String(account.partnerDashboardRole).replace(/_/g, ' ') %></span><% } %>
-                    <% if (account.isSuperAdmin) { %><span class="pill">super flag</span><% } %>
-                    <% if (account.isSystemAdmin && !account.isSuperAdmin) { %><span class="pill">admin flag</span><% } %>
+
+
                   </div>
                 </div>
                 <% if (account.partnerOrganizationName) { %>
@@ -5867,7 +5606,7 @@
                   </label>
                 </div>
                 <div class="role-account-foot">
-                  <span class="mini">Partner and channel-partner roles are handled in Partner Operations. This action only changes base LMS role or platform-admin access.</span>
+                  <span class="mini">Partner membership is managed separately.</span>
                   <input type="hidden" name="returnTo" value="<%= adminReturnToPath %>">
                   <button class="btn btn-primary btn-sm" type="submit">Save Role</button>
                 </div>
@@ -6336,6 +6075,7 @@
         </section>
     <% } %>
   </main>
+    </div>
   </div>
   <script>
     function initAdminBehaviors() {
@@ -6401,18 +6141,18 @@
     document.addEventListener('click', async (e) => {
       const link = e.target.closest('a');
       if (!link) return;
-      
+
       // Standard click validation
       if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-      
+
       const url = new URL(link.href, window.location.origin);
-      
+
       // Only internal admin routes
       if (url.origin !== window.location.origin || !url.pathname.startsWith('/admin')) return;
       if (link.target === '_blank' || link.hasAttribute('download')) return;
 
       e.preventDefault();
-      
+
       if (url.href === window.location.href) return;
 
       // Loading state (Top Progress Bar & Layout Fade)
@@ -6423,7 +6163,7 @@
         loader.style.cssText = 'position:fixed; top:0; left:0; height:3px; background:#a855f7; z-index:9999; width:0; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s; opacity:0; pointer-events:none; box-shadow: 0 0 12px rgba(168, 85, 247, 0.8);';
         document.body.appendChild(loader);
       }
-      
+
       loader.style.opacity = '1';
       loader.style.width = '20%';
 
@@ -6449,7 +6189,7 @@
 
         const html = await res.text();
         const doc = new DOMParser().parseFromString(html, 'text/html');
-        
+
         clearInterval(progressInterval);
         loader.style.width = '100%';
 
@@ -6463,10 +6203,10 @@
           layout.innerHTML = newLayout.innerHTML;
           layout.style.opacity = '1';
           layout.style.pointerEvents = 'auto';
-          
+
           // Re-mount JS behaviors
           initAdminBehaviors();
-          
+
           window.scrollTo(0, 0);
         } else {
           window.location.href = url.href;

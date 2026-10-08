@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,22 +11,15 @@
   <script src="/js/theme.js?v=3"></script>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260812-2">
+  <%- include('./partials/experience-ui-head') %>
 </head>
-<body class="public-site public-home-page">
+<body class="learning-app public-site public-home-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView: '', brandKey, brandLearningName, teachBrand }) %>
 
   <%
     const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
     const highlightCourses = Array.isArray(featuredCourses) ? featuredCourses.slice(0, 6) : []
     const leadCourse = highlightCourses[0] || null
-    const heroGraphicImage = '/images/aiin-learning-hero-graphic-new.png?v=20260318'
-    const showPartnerHeroImage = typeof partnerMode !== 'undefined' && partnerMode === true
-    let learnerImage = '/images/aiin-learner-collab.jpg'
-    let creatorImage = '/images/aiin-creator-collab.jpg'
-    if (!showPartnerHeroImage) {
-      learnerImage = 'https://images.unsplash.com/photo-1513258496099-48168024aec0?auto=format&fit=crop&w=1300&q=80'
-      creatorImage = 'https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=1300&q=80'
-    }
     const fallbackCourseVisuals = [
       'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1200&q=80',
       'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=1200&q=80',
@@ -57,35 +50,20 @@
     }
   %>
 
-  <section class="lmsv-home-hero-band">
-    <div class="lmsv-home-hero-copy-shell">
-      <div class="lmsv-home-hero-copy">
-        <p class="lmsv-home-hero-kicker"><%= brandLearningName || 'Seemplify Learning' %></p>
-        <h1 class="lmsv-home-hero-title">Build practical skills. <span>Keep growing.</span></h1>
-        <p class="lmsv-home-hero-description">
-          Learn at your own pace, develop the skills your work needs, and keep every course and credential in one connected workspace.
-        </p>
-        <div class="lmsv-home-hero-actions">
-          <a href="/courses" class="lmsv-home-hero-btn lmsv-home-hero-btn-primary">Explore courses <span aria-hidden="true">&rarr;</span></a>
-          <a href="/teach" class="lmsv-home-hero-btn lmsv-home-hero-btn-secondary">Create a course</a>
-        </div>
-        <ul class="lmsv-home-hero-points" aria-label="Learning platform highlights">
-          <li>Self-paced learning</li>
-          <li>Practical course paths</li>
-          <li>Connected progress</li>
-        </ul>
-      </div>
+  <section class="ui-home-intro" aria-labelledby="learning-title">
+    <div>
+      <h1 id="learning-title">Make room for your next skill.</h1>
+      <p>Practical courses for work and life. Find a topic, learn at your own pace, and keep your progress in one place.</p>
+      <form class="ui-home-search" action="/courses" method="get"><label class="sr-only" for="home-course-search">Search courses</label><input id="home-course-search" type="search" name="q" placeholder="What would you like to learn?"><button class="ui-button ui-button-primary" type="submit"><%- include('./partials/ui-icon', { icon: 'search' }) %>Find courses</button></form>
+      <div class="ui-home-topics"><a href="/courses">Browse all courses →</a><% if (user) { %><a href="/simple-lms">Continue my learning →</a><% } %></div>
     </div>
-    <figure class="lmsv-home-hero-image-panel">
-      <img src="<%= heroGraphicImage %>" alt="Learners working together" class="lmsv-home-hero-image">
-      <figcaption>
-        <span>Learning that moves with your work</span>
-        <strong>One place for courses, progress, and credentials.</strong>
-      </figcaption>
-    </figure>
+    <aside class="ui-home-aside" aria-label="Get started with Learning">
+      <section><h2>Your learning, in one place</h2><p>Pick up a lesson, follow a course path, and see what you have completed.</p><a href="<%= user ? '/simple-lms' : '/login' %>" class="ui-button ui-button-outline">Open my learning</a></section>
+      <section><h2>Have something to teach?</h2><p>Turn your expertise into courses with lessons, quizzes, and a clear publishing workflow.</p><a href="/teach" class="ui-button ui-button-ghost">Explore the creator guide →</a></section>
+    </aside>
   </section>
 
-<main class="lmsv-shell">
+<main id="main-content" class="lmsv-shell">
   <section class="lmsv-learning-summary" aria-label="Learning catalogue summary">
     <p><strong><%= totalCourses %></strong> published courses</p>
     <p><strong><%= totalLessons %></strong> practical lessons</p>
@@ -97,59 +75,17 @@
     <% } %>
   </section>
 
-    <section class="lmsv-section lmsv-journey-section">
-      <header class="lmsv-section-head lmsv-journey-head">
-        <h2>Built for every learning journey</h2>
-      </header>
-
-      <div class="lmsv-persona-grid">
-        <article class="lmsv-persona-card">
-          <div class="lmsv-persona-media">
-            <img src="<%= learnerImage %>" alt="Learner collaborating on a laptop">
-          </div>
-          <div class="lmsv-persona-body">
-            <p class="lmsv-persona-label">For learners</p>
-            <h3>Find a course path and start at your own pace.</h3>
-            <p>Browse courses publicly, compare details, and enroll only when you are ready.</p>
-            <div class="lmsv-actions">
-              <a href="/courses" class="btn btn-primary">Browse courses</a>
-              <% if (!user) { %>
-                <a href="<%= learnRegisterHref %>" class="btn btn-secondary">My learning</a>
-              <% } else { %>
-                <a href="/simple-lms?view=my-learning" class="btn btn-secondary">My learning</a>
-              <% } %>
-            </div>
-          </div>
-        </article>
-
-        <article class="lmsv-persona-card">
-          <div class="lmsv-persona-media">
-            <img src="<%= creatorImage %>" alt="Course creators planning content together">
-          </div>
-          <div class="lmsv-persona-body">
-            <p class="lmsv-persona-label">For creators</p>
-            <h3>Publish polished courses and grow your audience.</h3>
-            <p>Build chapters, lessons, and quizzes with guided onboarding from day one.</p>
-            <div class="lmsv-actions">
-              <a href="<%= teachCtaHref %>" class="btn btn-primary">Teach on <%= teachBrand %></a>
-              <a href="/teach" class="btn btn-secondary">Creator guide</a>
-            </div>
-          </div>
-        </article>
-      </div>
-    </section>
-
     <section class="lmsv-section lmsv-catalog-strip">
       <header class="lmsv-section-head">
         <div>
           <h2>Available courses</h2>
-          <p>Explore our curated selection of high-impact learning paths.</p>
+          <p>Find a course to start your next learning goal.</p>
         </div>
         <span class="lmsv-course-count"><%= `${highlightCourses.length} courses` %></span>
       </header>
 
       <% if (!highlightCourses || highlightCourses.length === 0) { %>
-        <div class="empty-state">No public courses are available yet.</div>
+        <div class="ui-panel"><div class="ui-empty"><h3>The catalogue is getting started</h3><p>Published courses will appear here. You can explore the catalogue or learn how to create a course.</p><a href="/courses" class="ui-button ui-button-outline">Explore catalogue</a></div></div>
       <% } else { %>
         <div class="lmsv-course-grid-4">
           <% highlightCourses.forEach((course, index) => { %>

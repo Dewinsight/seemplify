@@ -1,0 +1,66 @@
+// Synthetic data for render and visual acceptance; no production accounts.
+export const sampleCourse = {
+  _id: '507f1f77bcf86cd799439011', slug: 'practical-project-management',
+  title: 'Practical project management', previewSummary: 'Plan projects, manage priorities, and keep your team moving.',
+  summaryText: 'Plan projects, manage priorities, and keep your team moving.', summary: 'Plan projects, manage priorities, and keep your team moving.',
+  category: 'Leadership', level: 'beginner', levelLabel: 'Beginner', lessonCount: 8,
+  estimatedDurationMinutes: 120, displayPrice: 'Free', authorName: 'Alex Morgan',
+  author: { profile: { name: 'Alex Morgan' }, email: 'creator@example.test' },
+  status: 'published', visibility: 'public', visibilityDisplay: 'Public',
+  banner: { url: '/images/teach-hero-main.svg' }, displayBannerUrl: '/images/teach-hero-main.svg',
+  updatedAt: '2026-10-08T09:00:00Z', submittedAt: '2026-10-08T08:00:00Z',
+  canEdit: true, canStart: false, canEnroll: true, canAddToCart: false,
+  pricingMode: 'free', pricing: { amount: 0, currency: 'NGN' }, chapters: [],
+  enrollmentCount: 12, completionCount: 3, lessonDurationMinutes: 120,
+  learningOutcomes: ['Plan a practical project', 'Track the work that matters'],
+  requirements: [], tags: [], chaptersDisplay: []
+}
+
+export function learningUiFixture(overrides = {}) {
+  const data = {
+    title: 'Seemplify Learning — UI preview', brandKey: 'seemplify', brandLearningName: 'Seemplify Learning',
+    brandName: 'Seemplify', teachBrand: 'Seemplify', activePage: 'admin', activeLmsView: '', role: 'super_admin',
+    user: { _id: '507f1f77bcf86cd799439012', email: 'admin@example.test', profile: { name: 'Alex Morgan' }, learningRole: 'super_admin', isSuperAdmin: true, payoutProfile: {} },
+    accessProfile: { platformRole: 'super_admin' }, adminSection: 'overview', adminReturnTo: '/admin',
+    error: '', success: '', info: '', supportedCurrencies: [{ code: 'NGN', name: 'Nigerian Naira', symbol: '₦' }], defaultCurrencyCode: 'NGN',
+    platformSettings: {}, paymentGatewaySettings: { providers: {} }, canManagePaymentGateways: false, credentialsEncryptionConfigured: true,
+    commissionSettings: { globalRatePercent: 15, accountOverrides: [], courseOverrides: [] },
+    paymentStats: { revenueDisplay: 'NGN 24,500.00', creatorPayoutDisplay: 'NGN 0.00', pendingCount: 2 },
+    stats: { publishedCourseCount: 1, publishedProgramCount: 0, learnerCount: 24, creatorCount: 3, completionCount: 8, myEnrollmentCount: 0, myPaidCourseCount: 0, cartItemCount: 0 },
+    roleBreakdown: { super_admin: 1, admin: 1 }, analytics: { lookbackDays: 30, topCoursesByEnrollments: [], topCoursesByRevenue: [], topCreatorsByRevenue: [], enrollmentTrend: { current: 0 }, completionTrend: { current: 0 }, paymentTrend: { currentCount: 0, grossDisplay: 'NGN 0.00' } },
+    adminCourseFilters: {}, adminCreatorFilters: {}, adminPaymentFilters: {}, adminPartnerFocus: {}, adminPartnerView: 'overview',
+    focusedAdminCourse: null, focusedAdminCourseReviewStats: {}, reportFilters: {}, dailySalesReport: { rows: [], summary: {} }, commissionReport: { rows: [], summary: {} }, churnMetrics: {},
+    viewMode: 'overview', canCreateCourses: true, canManagePlatform: true,
+    filters: {}, creatorSettings: {}, creatorStats: {}, creatorWalletSummary: {}, workspaceStats: {}, cartSummary: { itemCount: 0, totalDisplay: 'Free' }, payoutProfile: {},
+    editingCourse: null, editingProgram: null, editingCourseReviewStats: {}, organizationLearningContext: null,
+    studioContext: 'admin', studioMode: 'create', courseStudioReturnTo: '/admin/courses',
+    settingsTab: 'profile', creatorSection: 'overview', partnerApplicationState: {},
+    learnRegisterHref: '/register?intent=learn', teachCtaHref: '/teach',
+    totalCourses: 1, totalLessons: 8, totalDurationHours: 2, totalCourseCount: 1,
+    course: sampleCourse, courseReviewSummary: null, enrollment: null,
+    canStartNow: true, isEnrolled: true, requiresPayment: false, canAddToCart: false, alreadyInCart: false,
+    teachLabel: 'Teach on Seemplify', canOpenWorkspace: true, registerHref: '/register', loginHref: '/login', getStartedHref: '/teach/get-started', browseHref: '/courses',
+    chapters: [], chapterSections: [], lessons: [], progress: { progressPercent: 25, completedCount: 2, totalCount: 8, lessonCount: 8 },
+    currentLesson: { chapterOrder: 1, lessonOrder: 1, title: 'Plan your project', chapterTitle: 'Getting started', lessonKey: '1.1', key: '1.1', durationMinutes: 10, content: 'Start by defining a clear goal for your project.', resources: [], quizQuestions: [] },
+    completedSet: new Set(), lessonMedia: null, autoplayRequested: false, previousLesson: null, nextLesson: null, latestAttempt: null,
+    courseCommentsEnabled: false, canSubmitCourseReview: false, existingCourseReview: null,
+    activeSection: 'overview', availableSections: ['overview','courses','agents','commissions','withdrawals','settings'],
+    organization: { name: 'Example Learning Partner', partnerType: 'partner', partnerSettings: { payoutProfile: {} } },
+    dashboardData: { metrics: {}, topAgents: [] }, canRecommendAgentPayout: true,
+    formatCurrencyAmount: (value, currency = 'NGN') => `${currency} ${(Number(value || 0) / 100).toFixed(2)}`,
+    totals: {}, attributions: [], agent: {}, agentProfile: {}, referralCode: 'EXAMPLE',
+    paymentStatuses: ['pending', 'success', 'failed'], paymentCurrencies: ['NGN'],
+    levels: ['beginner', 'intermediate', 'advanced', 'mixed'], sortOptions: [],
+  }
+  for (const name of [
+    'adminCourses','managedCourses','pendingReviewCourses','approvalQueueCourses','recentCourseReviewDecisions',
+    'visibleCreatorAdminRows','creatorAdminRows','partnerOrganizations','roleApprovalRequests','adminAccounts',
+    'auditLogEntries','agentPayoutRows','partnerWithdrawalRequests','superUserAccounts','adminInviteRows',
+    'focusedAdminCourseReviews','adminPayments','adminWithdrawalRequests','assignableAccounts',
+    'myEnrollments','myPrograms','catalogPrograms','managedPrograms','recommendedPrograms','stanbicProgramCards',
+    'cartCourses','myPayments','myCreatorSales','creatorWithdrawalRequests','creatorCourseInsights',
+    'editingCourseReviews','studioCourses','continueLearningCards','recommendedLearningCards',
+    'categories','courses','featuredCourses','catalogCourses','recommendedCourses','recentCourseReviews','relatedCourses',
+  ]) data[name] = []
+  return { ...data, ...overrides }
+}

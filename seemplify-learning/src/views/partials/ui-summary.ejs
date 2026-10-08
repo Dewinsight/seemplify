@@ -1,0 +1,5 @@
+<dl class="ui-summary">
+  <% items.forEach((item) => { %>
+    <div><dt><%= item.label %></dt><dd><%= item.value %></dd><% if (item.note) { %><p><%= item.note %></p><% } %></div>
+  <% }) %>
+</dl>

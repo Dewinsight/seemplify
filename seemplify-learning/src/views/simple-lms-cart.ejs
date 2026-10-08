@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-learning-ui>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -207,11 +207,12 @@
   </style>
   <link rel="icon" type="image/svg+xml" href="<%= typeof brandKey === 'string' && brandKey === 'aiin' ? '/images/aiin_logo.png' : '/images/seemplify-favicon.svg' %>">
   <link rel="stylesheet" href="/css/seemplify-brand.css?v=20260811-1">
+  <%- include('./partials/experience-ui-head') %>
 </head>
-<body class="public-site lmsv-cart-page">
+<body class="learning-app public-site lmsv-cart-page">
   <%- include('./partials/nav', { user, activePage, activeLmsView: 'workspace' }) %>
 
-  <main class="cart-shell">
+  <main id="main-content" class="cart-shell">
     <% const availableProviderCount = Array.isArray(paymentCheckout?.availableProviders) ? paymentCheckout.availableProviders.length : 0 %>
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
