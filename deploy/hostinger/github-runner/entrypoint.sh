@@ -28,7 +28,8 @@ if [[ $registration_ready != true ]]; then
     --replace
   )
 
-  if [[ -n "${RUNNER_GROUP:-}" ]]; then
+  # Runner groups apply only to organization registrations.
+if [[ -n "${RUNNER_GROUP:-}" && ${RUNNER_URL#https://github.com/} != */* ]]; then
     config_args+=(--runnergroup "$RUNNER_GROUP")
   fi
 

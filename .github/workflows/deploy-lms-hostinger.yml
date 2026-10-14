@@ -9,6 +9,7 @@ permissions:
 concurrency:
   group: hostinger-lms-production
   cancel-in-progress: false
+  queue: max
 jobs:
   deploy:
     runs-on: dewinsight-kvm8

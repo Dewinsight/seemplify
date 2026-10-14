@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    - dewinsight-kvm8
+    - dewinsight-kvm8-seemplify
+    - dewinsight-kvm8-workspace
+    - dewinsight-kvm8-control
+    - dewinsight-kvm2-crm

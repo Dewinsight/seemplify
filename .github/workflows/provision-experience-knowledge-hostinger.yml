@@ -9,6 +9,7 @@ permissions:
 concurrency:
   group: hostinger-production-deployments
   cancel-in-progress: false
+  queue: max
 
 jobs:
   provision-arangodb:

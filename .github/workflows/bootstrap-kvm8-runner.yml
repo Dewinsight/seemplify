@@ -9,6 +9,7 @@ permissions:
 concurrency:
   group: bootstrap-kvm8-github-runners
   cancel-in-progress: false
+  queue: max
 
 jobs:
   install:
@@ -79,7 +80,7 @@ jobs:
           printf 'cpus=%s memory_kib=%s opt_available_kib=%s\n' \
             "$cpu_count" "$memory_kib" "$available_kib"
           if (( cpu_count < 8 || memory_kib < 24000000 || available_kib < 40000000 )); then
-            printf 'KVM8 lacks the required capacity for two isolated build workers.\n' >&2
+            printf 'KVM8 lacks the required capacity for three isolated build workers.\n' >&2
             exit 1
           fi
           free -h
@@ -88,6 +89,7 @@ jobs:
 
           for container in \
             github-actions-runner-seemplify-worker-1 \
+            github-actions-runner-seemplify-worker-2-1 \
             github-actions-runner-workspace-worker-1 \
             github-actions-runner-control-1; do
             if docker inspect "$container" >/dev/null 2>&1 \
@@ -116,6 +118,12 @@ jobs:
                 test -s /runner/.credentials \
               && docker compose -f compose.yml exec -T seemplify-worker \
                 test -s /runner/.credentials_rsaparams \
+              && docker compose -f compose.yml exec -T seemplify-worker-2 \
+                test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T seemplify-worker-2 \
+                test -s /runner/.credentials \
+              && docker compose -f compose.yml exec -T seemplify-worker-2 \
+                test -s /runner/.credentials_rsaparams \
               && docker compose -f compose.yml exec -T workspace-worker \
                 test -s /runner/.runner \
               && docker compose -f compose.yml exec -T workspace-worker \
@@ -140,18 +148,24 @@ jobs:
 
           # Remove the short-lived token from both disk and the recreated
           # container definitions once the persistent runner state exists.
-          : > .env
+          sed -i '/^RUNNER_TOKEN=/d; /^SEEMPLIFY_RUNNER_TOKEN=/d' .env
           chmod 600 .env
           docker compose --env-file .env -f compose.yml up -d --no-build --force-recreate \
             < /dev/null
 
           for attempt in $(seq 1 30); do
-            if [[ $(docker compose -f compose.yml ps --status running --services | wc -l) -eq 3 ]] \
+            if [[ $(docker compose -f compose.yml ps --status running --services | wc -l) -eq 4 ]] \
               && docker compose -f compose.yml exec -T seemplify-worker \
                 test -s /runner/.runner \
               && docker compose -f compose.yml exec -T seemplify-worker \
                 test -s /runner/.credentials \
               && docker compose -f compose.yml exec -T seemplify-worker \
+                test -s /runner/.credentials_rsaparams \
+              && docker compose -f compose.yml exec -T seemplify-worker-2 \
+                test -s /runner/.runner \
+              && docker compose -f compose.yml exec -T seemplify-worker-2 \
+                test -s /runner/.credentials \
+              && docker compose -f compose.yml exec -T seemplify-worker-2 \
                 test -s /runner/.credentials_rsaparams \
               && docker compose -f compose.yml exec -T workspace-worker \
                 test -s /runner/.runner \
@@ -179,7 +193,7 @@ jobs:
             local container=$1 expected_runner_name=$2 legacy_id current_id
             if ! docker inspect "$container" >/dev/null 2>&1; then return; fi
             legacy_id=$(docker inspect --format '{{.Id}}' "$container")
-            for service in seemplify-worker workspace-worker control; do
+            for service in seemplify-worker seemplify-worker-2 workspace-worker control; do
               current_id=$(docker compose -f compose.yml ps -q "$service")
               if [[ -n $current_id && $legacy_id == "$current_id" ]]; then
                 printf 'Refusing to retire a current runner container: %s\n' "$container" >&2
