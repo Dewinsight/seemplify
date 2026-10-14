@@ -261,7 +261,7 @@ class Driver:
         for file in files:
             if file.get('status') == 'removed':
                 continue
-                content = read_with_retry(lambda: polinrider_scanner.read_blob(route['repo'], file['sha'], self.token))
+            content = read_with_retry(lambda: polinrider_scanner.read_blob(route['repo'], file['sha'], self.token))
             if content is not None:
                 findings.extend(polinrider_scanner.scan_text(file['filename'], content))
         errors = sum(finding[0] == 'error' for finding in findings)
