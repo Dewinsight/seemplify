@@ -11,8 +11,8 @@
   "timeout_seconds": 5400,
   "routes": [
     {"name": "crm-frontend-dev", "repo": "Dewinsight/Xplorer-crm", "ref": "development", "workflow": ".github/workflows/deploy-kvm2.yml"},
-    {"name": "crm-backend-dev", "repo": "Dewinsight/Xplorer-Full-backend", "ref": "develop", "workflow": ".github/workflows/deploy-kvm2.yml"},
+    {"name": "crm-backend-dev", "repo": "Dewinsight/Xplorer-Full-backend", "ref": "develop", "workflow": ".github/workflows/deploy-kvm2.yml", "deployment_env_file": "/opt/xplorer/env/backend-dev.env"},
     {"name": "crm-frontend-staging", "repo": "Dewinsight/Xplorer-crm", "ref": "staging", "workflow": ".github/workflows/deploy-kvm2.yml"},
-    {"name": "crm-backend-staging", "repo": "Dewinsight/Xplorer-Full-backend", "ref": "staging", "workflow": ".github/workflows/deploy-kvm2.yml"}
+    {"name": "crm-backend-staging", "repo": "Dewinsight/Xplorer-Full-backend", "ref": "staging", "workflow": ".github/workflows/deploy-kvm2.yml", "deployment_env_file": "/opt/xplorer/env/backend-staging.env"}
   ]
 }

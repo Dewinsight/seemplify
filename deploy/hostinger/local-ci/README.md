@@ -25,9 +25,17 @@ the existing immutable release and migration checks must remain idempotent.
 
 The coordinator alone reads its root-only GitHub credential. It is never passed
 to test containers. The existing deployment SSH credential is provided to trusted
-deployment jobs as before. Runtime credentials live in
+deployment jobs as before. Backend routes also read only the four allowlisted
+Cloudinary settings from their existing root-only lane environment file so the
+unchanged missing-only settings gate receives a complete account. Secret values
+are written to a temporary mode-0600 file outside the checkout, masked by act,
+and removed after the job. Other application and database secrets are excluded.
+Runtime CI credentials live in
 `/opt/seemplify/secrets/hostinger-ci`, with encrypted recovery entries in the
 sibling access vault. Repository variables and caches are read at execution.
+Only Git source creation uses the normal 022 umask so non-root application
+images can read packaged files. Credentials, job artifacts and their enclosing
+directories retain the coordinator's restrictive 077 umask.
 `HOSTINGER_CI_DRIVER=local` selects the local queue; the Actions deployment job
 must have the matching driver guard before this variable is enabled. Set it to
 `actions` only after stopping/draining the local service when switching back.

@@ -45,6 +45,26 @@ def read_with_retry(operation):
         time.sleep(attempt + 1)
 
 
+def lane_cloud_settings(filename):
+    path = Path(filename)
+    if os.name != 'nt' and path.stat().st_mode & 0o077:
+        raise ValueError('Deployment settings must be root-only')
+    allowed = {'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET', 'CLOUDINARY_URL'}
+    values = {}
+    for line in path.read_text().splitlines():
+        key, separator, value = line.partition('=')
+        if separator and key in allowed and value.strip():
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            if value:
+                values[key] = value
+    required = {'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'}
+    if not required.issubset(values):
+        raise ValueError('Complete existing lane media settings are required')
+    return values
+
+
 class Queue:
     def __init__(self, directory):
         self.root = Path(directory)
@@ -170,9 +190,9 @@ class Driver:
             with self.queue.connect() as db:
                 db.execute('UPDATE cursors SET sha=? WHERE route=?', (head, route['name']))
 
-    def command(self, argv, log, cwd=None, env=None, timeout=None):
+    def command(self, argv, log, cwd=None, env=None, timeout=None, umask=-1):
         process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
+                                   start_new_session=True, umask=umask)
         try:
             code = process.wait(timeout=timeout or self.config['timeout_seconds'])
             if code:
@@ -212,7 +232,7 @@ class Driver:
                 for container in containers:
                     subprocess.run(['docker', 'rm', '-f', container], stdout=log, stderr=log, check=False)
                 subprocess.run(['rm', '-rf', '--', str(root / 'source')], stdout=log, stderr=log, check=False)
-                for filename in ('variables.env', 'event.json', 'workflow.yml'):
+                for filename in ('variables.env', 'event.json', 'workflow.yml', 'secrets.env'):
                     (root / filename).unlink(missing_ok=True)
                 self.queue.finish(job['id'], success)
                 try:
@@ -258,9 +278,9 @@ class Driver:
                    GIT_CONFIG_VALUE_0='AUTHORIZATION: basic ' + base64.b64encode(('x-access-token:' + self.token).encode()).decode(),
                    GIT_TERMINAL_PROMPT='0')
         self.command(['git', 'clone', '--quiet', '--depth', '1', '--branch', route['ref'],
-                      'https://github.com/' + route['repo'] + '.git', str(source)], log, env=env)
+                      'https://github.com/' + route['repo'] + '.git', str(source)], log, env=env, umask=0o022)
         self.command(['git', 'fetch', '--quiet', '--depth', '1', 'origin', job['sha']], log, cwd=source, env=env)
-        self.command(['git', 'checkout', '--quiet', '--detach', job['sha']], log, cwd=source)
+        self.command(['git', 'checkout', '--quiet', '--detach', job['sha']], log, cwd=source, umask=0o022)
         actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip()
         if actual != job['sha']:
             raise ValueError('Checkout revision mismatch')
@@ -298,12 +318,21 @@ class Driver:
                 raise
         values = {v['name']: v['value'] for v in variables}
         values['HOSTINGER_CI_DRIVER'] = 'actions'
+        secrets_file = self.config['secrets_file']
+        if route.get('deployment_env_file'):
+            settings = lane_cloud_settings(route['deployment_env_file'])
+            values['CLOUDINARY_CLOUD_NAME'] = settings.pop('CLOUDINARY_CLOUD_NAME')
+            local_secrets = root / 'secrets.env'
+            local_secrets.write_text(Path(secrets_file).read_text().rstrip() + '\n' +
+                ''.join(key + '=' + json.dumps(value) + '\n' for key, value in settings.items()))
+            local_secrets.chmod(0o600)
+            secrets_file = str(local_secrets)
         (root / 'variables.env').write_text('\n'.join(k + '=' + json.dumps(v) for k, v in values.items()) + '\n')
         options = f"--cpus={self.config['job_cpus']} --memory={self.config['job_memory']} --memory-swap={self.config['job_memory']} --pids-limit=2048 --label={label} --volume=hostinger-ci-npm-cache:/root/.npm"
         self.command([self.config['act'], 'push', '-W', str(adapted), '-e', str(root / 'event.json'),
             '-P', 'self-hosted=' + self.config['image'], '-P', 'dewinsight-kvm2-crm=' + self.config['image'],
             '--pull=false', '--network', 'bridge', '--concurrent-jobs', '1', '--container-daemon-socket', '-',
-            '--container-options', options, '--secret-file', self.config['secrets_file'],
+            '--container-options', options, '--secret-file', secrets_file,
             '--var-file', str(root / 'variables.env'), '--no-cache-server', '--action-offline-mode',
             '--action-cache-path', str(self.queue.root / 'action-cache' / route['name']),
             '--env', 'GITHUB_RUN_ID=' + str(job['id']), '--env', 'GITHUB_RUN_ATTEMPT=' + str(job['attempt']),
