@@ -1,0 +1,18 @@
+{
+  "state_dir": "/var/lib/hostinger-ci",
+  "token_file": "/opt/seemplify/secrets/hostinger-ci/github-token",
+  "secrets_file": "/opt/seemplify/secrets/hostinger-ci/act-secrets.env",
+  "act": "/opt/hostinger-ci/bin/act",
+  "image": "dewinsight/hostinger-ci:1",
+  "workers": 2,
+  "job_cpus": 1.5,
+  "job_memory": "4g",
+  "poll_seconds": 30,
+  "timeout_seconds": 5400,
+  "routes": [
+    {"name": "crm-frontend-dev", "repo": "Dewinsight/Xplorer-crm", "ref": "development", "workflow": ".github/workflows/deploy-kvm2.yml"},
+    {"name": "crm-backend-dev", "repo": "Dewinsight/Xplorer-Full-backend", "ref": "develop", "workflow": ".github/workflows/deploy-kvm2.yml"},
+    {"name": "crm-frontend-staging", "repo": "Dewinsight/Xplorer-crm", "ref": "staging", "workflow": ".github/workflows/deploy-kvm2.yml"},
+    {"name": "crm-backend-staging", "repo": "Dewinsight/Xplorer-Full-backend", "ref": "staging", "workflow": ".github/workflows/deploy-kvm2.yml"}
+  ]
+}
