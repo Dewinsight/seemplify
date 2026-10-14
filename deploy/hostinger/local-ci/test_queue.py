@@ -1,8 +1,9 @@
 import importlib.util
-import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
+import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
 spec = importlib.util.spec_from_file_location('hostinger_queue', Path(__file__).with_name('runner_queue.py'))
@@ -83,6 +84,28 @@ class QueueTests(unittest.TestCase):
         row = self.queue.rows()[0]
         self.assertEqual(row['state'], 'success')
         self.assertEqual(row['status_sent'], 0)
+
+    @patch.object(module.time, 'sleep')
+    def test_transient_read_retries_without_losing_result(self, sleep):
+        read = Mock(side_effect=[ConnectionResetError(), TimeoutError(), {'sha': 'a' * 40}])
+        self.assertEqual(module.read_with_retry(read), {'sha': 'a' * 40})
+        self.assertEqual(read.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2])
+
+    @patch.object(module.time, 'sleep')
+    def test_read_retry_is_bounded(self, sleep):
+        read = Mock(side_effect=ConnectionResetError())
+        with self.assertRaises(ConnectionResetError):
+            module.read_with_retry(read)
+        self.assertEqual(read.call_count, 3)
+
+    @patch.object(module.time, 'sleep')
+    def test_authorization_failure_is_not_retried(self, sleep):
+        read = Mock(side_effect=urllib.error.HTTPError('https://api.github.com', 403, 'Forbidden', {}, None))
+        with self.assertRaises(urllib.error.HTTPError):
+            module.read_with_retry(read)
+        self.assertEqual(read.call_count, 1)
+        sleep.assert_not_called()
 
 
 if __name__ == '__main__':

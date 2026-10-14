@@ -29,6 +29,22 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def read_with_retry(operation):
+    """Retry only bounded, read-only network operations before execution."""
+    for attempt in range(3):
+        try:
+            return operation()
+        except urllib.error.HTTPError as error:
+            if error.code != 429 and error.code < 500:
+                raise
+            if attempt == 2:
+                raise
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
+            if attempt == 2:
+                raise
+        time.sleep(attempt + 1)
+
+
 class Queue:
     def __init__(self, directory):
         self.root = Path(directory)
@@ -111,8 +127,10 @@ class Driver:
             data=json.dumps(payload).encode() if payload is not None else None,
             headers={'Authorization': 'Bearer ' + self.token, 'Accept': 'application/vnd.github+json',
                      'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json'})
-        with urllib.request.build_opener(NoRedirect()).open(request, timeout=45) as response:
-            return json.load(response)
+        def read():
+            with urllib.request.build_opener(NoRedirect()).open(request, timeout=45) as response:
+                return json.load(response)
+        return read_with_retry(read) if payload is None else read()
 
     def status(self, job, state):
         route = self.routes[job['route']]
@@ -223,7 +241,7 @@ class Driver:
         for file in files:
             if file.get('status') == 'removed':
                 continue
-            content = polinrider_scanner.read_blob(route['repo'], file['sha'], self.token)
+                content = read_with_retry(lambda: polinrider_scanner.read_blob(route['repo'], file['sha'], self.token))
             if content is not None:
                 findings.extend(polinrider_scanner.scan_text(file['filename'], content))
         errors = sum(finding[0] == 'error' for finding in findings)
@@ -284,7 +302,7 @@ class Driver:
         options = f"--cpus={self.config['job_cpus']} --memory={self.config['job_memory']} --memory-swap={self.config['job_memory']} --pids-limit=2048 --label={label} --volume=hostinger-ci-npm-cache:/root/.npm"
         self.command([self.config['act'], 'push', '-W', str(adapted), '-e', str(root / 'event.json'),
             '-P', 'self-hosted=' + self.config['image'], '-P', 'dewinsight-kvm2-crm=' + self.config['image'],
-            '--pull=false', '--concurrent-jobs', '1', '--container-daemon-socket', '-',
+            '--pull=false', '--network', 'bridge', '--concurrent-jobs', '1', '--container-daemon-socket', '-',
             '--container-options', options, '--secret-file', self.config['secrets_file'],
             '--var-file', str(root / 'variables.env'), '--no-cache-server', '--action-offline-mode',
             '--action-cache-path', str(self.queue.root / 'action-cache' / route['name']),
