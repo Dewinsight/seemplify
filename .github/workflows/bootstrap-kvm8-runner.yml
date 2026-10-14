@@ -70,7 +70,11 @@ jobs:
           target=/opt/seemplify/github-actions-runner
           install -d -m 750 "$target"
           tar -xzf /tmp/kvm8-github-runner.tgz -C "$target"
-          install -m 600 /tmp/kvm8-github-runner.env "$target/.env"
+          touch "$target/.env"
+          sed '/^RUNNER_TOKEN=/d; /^SEEMPLIFY_RUNNER_TOKEN=/d' "$target/.env" > "$target/.env.next"
+          cat /tmp/kvm8-github-runner.env >> "$target/.env.next"
+          chmod 600 "$target/.env.next"
+          mv "$target/.env.next" "$target/.env"
           rm -f /tmp/kvm8-github-runner.tgz /tmp/kvm8-github-runner.env
 
           printf 'KVM8 capacity before runner install:\n'

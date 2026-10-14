@@ -78,3 +78,8 @@ after all registration files are durable and recreate token-free.
 Both stacks set `RUNNER_MANUALLY_TRAP_SIG=1`, so the runner wrapper forwards
 shutdown signals and closes the GitHub session before container replacement.
 Never replace a container with an active `Runner.Worker` process.
+
+For re-registration of the repository-scoped second Seemplify worker, set a
+fresh short-lived `SEEMPLIFY_RUNNER_REGISTRATION_TOKEN` secret and choose
+`seemplify-worker-2`. The repair workflow keeps `.env` routing and selects the
+repository token; organization workers continue to use the organization token.

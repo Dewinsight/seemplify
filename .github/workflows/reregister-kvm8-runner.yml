@@ -38,10 +38,17 @@ jobs:
 
       - name: Upload short-lived registration token
         env:
-          RUNNER_TOKEN: ${{ secrets.KVM8_RUNNER_REGISTRATION_TOKEN }}
+          ORG_RUNNER_TOKEN: ${{ secrets.KVM8_RUNNER_REGISTRATION_TOKEN }}
+          REPOSITORY_RUNNER_TOKEN: ${{ secrets.SEEMPLIFY_RUNNER_REGISTRATION_TOKEN }}
+          RUNNER_SERVICE: ${{ inputs.runner }}
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
           SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
         run: |
+          if [[ "$RUNNER_SERVICE" == seemplify-worker-2 ]]; then
+            RUNNER_TOKEN="$REPOSITORY_RUNNER_TOKEN"
+          else
+            RUNNER_TOKEN="$ORG_RUNNER_TOKEN"
+          fi
           test -n "$RUNNER_TOKEN"
           umask 077
           printf 'RUNNER_TOKEN=%s\n' "$RUNNER_TOKEN" > /tmp/kvm8-runner-repair.env
@@ -110,11 +117,11 @@ jobs:
           fi
 
           docker compose -f compose.yml stop --timeout 45 "$service" < /dev/null
-          docker compose --env-file .repair.env -f compose.yml run --rm --no-deps \
+          docker compose --env-file .env --env-file .repair.env -f compose.yml run --rm --no-deps \
             --entrypoint bash "$service" -lc \
             'rm -f -- /runner/.runner /runner/.credentials /runner/.credentials_rsaparams; /opt/runner-hooks/cleanup-workspace.sh' \
             < /dev/null
-          docker compose --env-file .repair.env -f compose.yml up -d --no-deps --force-recreate "$service" \
+          docker compose --env-file .env --env-file .repair.env -f compose.yml up -d --no-deps --force-recreate "$service" \
             < /dev/null
 
           for attempt in $(seq 1 60); do
@@ -134,7 +141,7 @@ jobs:
           docker compose -f compose.yml stop --timeout 45 "$service" < /dev/null
           : > .repair.env
           chmod 600 .repair.env
-          docker compose --env-file .repair.env -f compose.yml up -d --no-deps --force-recreate "$service" \
+          docker compose --env-file .env --env-file .repair.env -f compose.yml up -d --no-deps --force-recreate "$service" \
             < /dev/null
           for attempt in $(seq 1 60); do
             if [[ $(docker inspect --format '{{.State.Running}}' "$container") == true ]] \
