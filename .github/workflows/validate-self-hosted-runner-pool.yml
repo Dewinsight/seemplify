@@ -6,6 +6,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: self-hosted-pool-validation-queue
+  cancel-in-progress: false
+  queue: max
+
 jobs:
   seemplify:
     name: Validate Seemplify worker
