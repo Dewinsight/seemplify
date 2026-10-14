@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 import tempfile
+import types
 import unittest
 from unittest.mock import Mock, patch
 import urllib.error
@@ -141,6 +142,37 @@ class QueueTests(unittest.TestCase):
         path.chmod(0o600)
         with self.assertRaises(ValueError):
             module.lane_cloud_settings(path)
+
+    def test_changed_blob_is_scanned_before_any_checkout(self):
+        driver = module.Driver.__new__(module.Driver)
+        driver.token = 'test-only-token'
+        driver.routes = {'frontend': {'repo': 'Dewinsight/Xplorer-crm', 'ref': 'development'}}
+        driver.api = Mock(side_effect=[{'files': [{'filename': 'source.js', 'sha': 'b' * 40}]}, {}])
+        driver.command = Mock(side_effect=RuntimeError('stop before checkout'))
+        scanner = types.SimpleNamespace(check_commits=Mock(return_value=[]),
+            read_blob=Mock(return_value='verified source'), scan_text=Mock(return_value=[]))
+        job = {'id': 1, 'route': 'frontend', 'sha': 'a' * 40}
+        with patch.dict(sys.modules, polinrider_scanner=scanner):
+            with (Path(self.directory.name) / 'scan.log').open('w') as log:
+                with self.assertRaisesRegex(RuntimeError, 'stop before checkout'):
+                    driver.deploy(job, Path(self.directory.name), log)
+        scanner.read_blob.assert_called_once_with('Dewinsight/Xplorer-crm', 'b' * 40, 'test-only-token')
+        scanner.scan_text.assert_called_once_with('source.js', 'verified source')
+        self.assertEqual(driver.api.call_args_list[-1].args[1]['state'], 'success')
+
+    def test_rejected_scan_never_reaches_checkout(self):
+        driver = module.Driver.__new__(module.Driver)
+        driver.token = 'test-only-token'
+        driver.routes = {'frontend': {'repo': 'Dewinsight/Xplorer-crm', 'ref': 'development'}}
+        driver.api = Mock(side_effect=[{'files': [{'filename': 'source.js', 'sha': 'b' * 40}]}, {}])
+        driver.command = Mock()
+        scanner = types.SimpleNamespace(check_commits=Mock(return_value=[]),
+            read_blob=Mock(return_value='rejected source'), scan_text=Mock(return_value=[('error', 'rejected')]))
+        with patch.dict(sys.modules, polinrider_scanner=scanner):
+            with (Path(self.directory.name) / 'scan.log').open('w') as log:
+                with self.assertRaisesRegex(ValueError, 'scan rejected'):
+                    driver.deploy({'id': 1, 'route': 'frontend', 'sha': 'a' * 40}, Path(self.directory.name), log)
+        driver.command.assert_not_called()
 
 
 if __name__ == '__main__':
