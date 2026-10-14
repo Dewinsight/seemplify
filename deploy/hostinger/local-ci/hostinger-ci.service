@@ -1,0 +1,25 @@
+[Unit]
+Description=Hostinger durable GitHub CI queue
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hostinger-ci
+ExecStart=/usr/bin/python3 /opt/hostinger-ci/runner_queue.py --config /etc/hostinger-ci/config.json serve
+Restart=on-failure
+RestartSec=10
+KillMode=control-group
+TimeoutStopSec=60
+UMask=0077
+CPUQuota=50%
+MemoryMax=768M
+TasksMax=4096
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
