@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -106,6 +108,39 @@ class QueueTests(unittest.TestCase):
             module.read_with_retry(read)
         self.assertEqual(read.call_count, 1)
         sleep.assert_not_called()
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX file permissions are enforced on the Linux host')
+    def test_source_modes_do_not_weaken_private_job_artifacts(self):
+        driver = module.Driver.__new__(module.Driver)
+        driver.config = {'timeout_seconds': 5}
+        root = Path(self.directory.name)
+        root.chmod(0o700)
+        previous = os.umask(0o077)
+        try:
+            with (root / 'log').open('w') as log:
+                command = [sys.executable, '-c', 'from pathlib import Path; import sys; Path(sys.argv[1]).write_text("test")']
+                driver.command(command + [str(root / 'secret')], log)
+                driver.command(command + [str(root / 'source')], log, umask=0o022)
+        finally:
+            os.umask(previous)
+        self.assertEqual((root / 'secret').stat().st_mode & 0o777, 0o600)
+        self.assertEqual((root / 'source').stat().st_mode & 0o777, 0o644)
+        self.assertEqual(root.stat().st_mode & 0o777, 0o700)
+
+    def test_lane_settings_copy_only_existing_media_credentials(self):
+        path = Path(self.directory.name) / 'lane.env'
+        path.write_text('CLOUDINARY_CLOUD_NAME="example"\nCLOUDINARY_API_KEY=test-key\n'
+                        'CLOUDINARY_API_SECRET=test-secret\nDATABASE_PASSWORD=must-not-copy\n')
+        path.chmod(0o600)
+        self.assertEqual(module.lane_cloud_settings(path), {'CLOUDINARY_CLOUD_NAME': 'example',
+                         'CLOUDINARY_API_KEY': 'test-key', 'CLOUDINARY_API_SECRET': 'test-secret'})
+
+    def test_incomplete_media_credentials_block_execution(self):
+        path = Path(self.directory.name) / 'lane.env'
+        path.write_text('CLOUDINARY_CLOUD_NAME=example\n')
+        path.chmod(0o600)
+        with self.assertRaises(ValueError):
+            module.lane_cloud_settings(path)
 
 
 if __name__ == '__main__':
