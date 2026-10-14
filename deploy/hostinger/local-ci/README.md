@@ -15,7 +15,7 @@ workflow adapter disables remote cache inputs and the Actions-driver condition,
 and delegates workflow concurrency to the durable host queue.
 
 Two jobs can execute concurrently. Each job container is capped at 1.5 vCPU and
-4 GiB RAM with no swap or host Docker socket. Jobs in the same lane serialize;
+4 GiB RAM with bridged networking, no swap or host Docker socket. Jobs in the same lane serialize;
 the existing shared host deployment lock also serializes builds, migrations and
 service mutations across lanes. The queue retains pending revisions and does
 not cancel an active release when a newer commit arrives. A restart recovers
@@ -53,6 +53,9 @@ identities are ignored; a failed job can be explicitly retried. Status delivery
 retries independently of deployment so a temporary GitHub API failure does not
 rerun a successful release. `verification.json` records the actual live container
 revision and health; a skipped workflow or mismatching revision cannot pass.
+Transient read-only GitHub requests receive at most three attempts. Authorization
+and scan failures still block execution; deployment commands are never retried
+by this network policy.
 
 For a read-only queue test, enqueue three probes with distinct nonces:
 
