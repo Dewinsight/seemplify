@@ -37,6 +37,7 @@ test('dedicates independent constrained runners to Seemplify, Workspace, and dep
   assert.deepEqual(Object.keys(compose.services).sort(), [
     'control',
     'seemplify-worker',
+    'seemplify-worker-2',
     'workspace-worker',
   ]);
 
@@ -54,9 +55,9 @@ test('dedicates independent constrained runners to Seemplify, Workspace, and dep
   assert.equal(control.environment.RUNNER_NAME, 'kvm8-deploy-controller');
   assert.equal(control.environment.RUNNER_LABELS, 'dewinsight-kvm8-control');
 
-  for (const worker of [seemplify, workspace]) {
-    assert.equal(worker.cpus, 3);
-    assert.equal(worker.mem_limit, String(6 * 1024 ** 3));
+  for (const worker of [seemplify, workspace, compose.services['seemplify-worker-2']]) {
+    assert.equal(worker.cpus, 2);
+    assert.equal(worker.mem_limit, String(4 * 1024 ** 3));
     assert.equal(worker.memswap_limit, worker.mem_limit);
     assert.equal(worker.pids_limit, 2048);
     assert.equal(worker.volumes.length, 1);
@@ -64,6 +65,32 @@ test('dedicates independent constrained runners to Seemplify, Workspace, and dep
   }
   assert.equal(control.cpus, 0.5);
   assert.equal(control.mem_limit, String(1024 ** 3));
+  assert.equal(compose.services['seemplify-worker-2'].environment.RUNNER_NAME, 'kvm8-seemplify-worker-2');
+  assert.equal(Object.values(compose.services).reduce((sum, service) => sum + service.cpus, 0), 6.5);
+  for (const service of Object.values(compose.services)) {
+    assert.ok(!service.privileged);
+    assert.ok(service.volumes.every(volume => volume.target === '/runner'));
+    assert.equal(service.restart, 'unless-stopped');
+    assert.equal(service.environment.RUNNER_MANUALLY_TRAP_SIG, '1');
+    assert.equal(service.deploy?.restart_policy, undefined, 'Swarm restart policy must not override the Compose policy');
+  }
+});
+
+test('KVM2 keeps two bounded slots and persistent isolated state', () => {
+  const result = spawnSync('docker', ['compose', '-f', resolve(runnerDirectory, 'kvm2.compose.yml'), 'config', '--format', 'json'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const services = Object.values(JSON.parse(result.stdout).services);
+  assert.equal(services.length, 2);
+  assert.equal(services.reduce((sum, service) => sum + service.cpus, 0), 3);
+  for (const service of services) {
+    assert.equal(service.mem_limit, String(4 * 1024 ** 3));
+    assert.equal(service.memswap_limit, service.mem_limit);
+    assert.equal(service.environment.RUNNER_MANUALLY_TRAP_SIG, '1');
+    assert.equal(service.volumes.length, 1);
+    assert.equal(service.volumes[0].target, '/runner');
+    assert.equal(service.restart, 'unless-stopped');
+    assert.equal(service.deploy?.restart_policy, undefined);
+  }
 });
 
 test('bootstrap fails before mutation on insufficient capacity and verifies every runner', () => {
@@ -81,10 +108,10 @@ test('bootstrap fails before mutation on insufficient capacity and verifies ever
   assert.match(bootstrap, /exec -T workspace-worker[\s\\]+test -s \/runner\/\.runner/);
   assert.match(bootstrap, /test -s \/runner\/\.credentials/);
   assert.match(bootstrap, /test -s \/runner\/\.credentials_rsaparams/);
-  assert.match(bootstrap, /: > \.env/);
+  assert.ok(bootstrap.includes("sed -i '/^RUNNER_TOKEN=/d; /^SEEMPLIFY_RUNNER_TOKEN=/d' .env"));
   assert.ok(
     bootstrap.lastIndexOf('test -s /runner/.runner')
-      > bootstrap.indexOf(': > .env'),
+      > bootstrap.indexOf("sed -i '/^RUNNER_TOKEN=/d"),
     'the tokenless restart must be verified after the registration token is removed',
   );
   assert.match(
@@ -121,13 +148,25 @@ test('entrypoint repairs partial registration without accepting incomplete crede
 });
 
 test('live pool validation targets each isolated label and exact cgroup ceiling', () => {
-  assert.match(validation, /runs-on: dewinsight-kvm8-seemplify/);
+  assert.match(validation, /runs-on: \[self-hosted, dewinsight-kvm8-seemplify\]/);
   assert.match(validation, /runs-on: dewinsight-kvm8-workspace/);
   assert.match(validation, /runs-on: dewinsight-kvm8-control/);
-  assert.equal((validation.match(/300000 100000/g) || []).length, 2);
-  assert.equal((validation.match(/6442450944/g) || []).length, 2);
+  assert.equal((validation.match(/200000 100000/g) || []).length, 2);
+  assert.equal((validation.match(/4294967296/g) || []).length, 2);
   assert.match(validation, /50000 100000/);
   assert.match(validation, /1073741824/);
+  assert.match(validation, /slot: \[1, 2, 3\]/);
+  assert.match(validation, /sleep 45/);
+});
+
+test('trusted core jobs run on KVM8 and deployments retain their queue', () => {
+  const core = readFileSync(resolve(repositoryRoot, '.github/workflows/deploy-core-hostinger.yml'), 'utf8');
+  assert.doesNotMatch(core, /runs-on: ubuntu-latest/);
+  assert.match(core, /max-parallel: 2/);
+  assert.match(core, /cancel-in-progress: false\s+queue: max/);
+  assert.match(core, /flock --exclusive --wait 1800/);
+  const queue = readFileSync(resolve(repositoryRoot, '.github/workflows/validate-runner-queue.yml'), 'utf8');
+  assert.match(queue, /cancel-in-progress: false\s+queue: max/);
 });
 
 test('runner inspection is read-only and covers current and legacy containers', () => {

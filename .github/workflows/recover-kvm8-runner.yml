@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - seemplify-worker
+          - seemplify-worker-2
           - workspace-worker
           - control
 
@@ -45,6 +46,10 @@ jobs:
             seemplify-worker)
               container=github-actions-runner-seemplify-worker-1
               expected_name=kvm8-seemplify-worker
+              ;;
+            seemplify-worker-2)
+              container=github-actions-runner-seemplify-worker-2-1
+              expected_name=kvm8-seemplify-worker-2
               ;;
             workspace-worker)
               container=github-actions-runner-workspace-worker-1

@@ -37,6 +37,7 @@ jobs:
 
           runner_containers=(
             github-actions-runner-seemplify-worker-1
+            github-actions-runner-seemplify-worker-2-1
             github-actions-runner-workspace-worker-1
             github-actions-runner-control-1
             github-runner-worker-1

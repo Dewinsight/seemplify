@@ -6,12 +6,16 @@ permissions:
 concurrency:
   group: hostinger-core-production
   cancel-in-progress: false
+  queue: max
 jobs:
   test-and-deploy:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, dewinsight-kvm8-seemplify]
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

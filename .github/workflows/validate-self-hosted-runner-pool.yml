@@ -6,18 +6,31 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: self-hosted-pool-validation-queue
+  cancel-in-progress: false
+  queue: max
+
 jobs:
   seemplify:
     name: Validate Seemplify worker
-    runs-on: dewinsight-kvm8-seemplify
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        slot: [1, 2, 3]
+    runs-on: [self-hosted, dewinsight-kvm8-seemplify]
     timeout-minutes: 5
     steps:
       - name: Verify isolated resource ceiling
         run: |
           set -euo pipefail
-          test "$(cat /sys/fs/cgroup/cpu.max)" = '300000 100000'
-          test "$(cat /sys/fs/cgroup/memory.max)" = '6442450944'
-          test "${RUNNER_NAME:-}" = kvm8-seemplify-worker
+          test "$(cat /sys/fs/cgroup/cpu.max)" = '200000 100000'
+          test "$(cat /sys/fs/cgroup/memory.max)" = '4294967296'
+          [[ "$RUNNER_NAME" == kvm8-seemplify-worker || "$RUNNER_NAME" == kvm8-seemplify-worker-2 ]]
+          printf 'runner=%s started=%s\n' "$RUNNER_NAME" "$(date -u +%FT%TZ)"
+          sleep 45
+          printf 'runner=%s completed=%s\n' "$RUNNER_NAME" "$(date -u +%FT%TZ)"
 
   workspace:
     name: Validate Workspace worker
@@ -27,8 +40,8 @@ jobs:
       - name: Verify isolated resource ceiling
         run: |
           set -euo pipefail
-          test "$(cat /sys/fs/cgroup/cpu.max)" = '300000 100000'
-          test "$(cat /sys/fs/cgroup/memory.max)" = '6442450944'
+          test "$(cat /sys/fs/cgroup/cpu.max)" = '200000 100000'
+          test "$(cat /sys/fs/cgroup/memory.max)" = '4294967296'
           test "${RUNNER_NAME:-}" = kvm8-workspace-worker
 
   control:

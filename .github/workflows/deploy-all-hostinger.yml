@@ -16,6 +16,7 @@ permissions:
 concurrency:
   group: hostinger-deploy-all-orchestrator
   cancel-in-progress: false
+  queue: max
 
 jobs:
   deploy-all:

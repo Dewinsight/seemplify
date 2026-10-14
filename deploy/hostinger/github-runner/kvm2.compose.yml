@@ -1,0 +1,56 @@
+services:
+  crm-runner:
+    build:
+      context: .
+    image: dewinsight/crm-actions-runner:2.336.0
+    restart: unless-stopped
+    environment:
+      RUNNER_URL: https://github.com/Dewinsight
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_NAME: kvm2-crm-worker
+      RUNNER_LABELS: dewinsight-kvm2-crm
+      RUNNER_GROUP: ${RUNNER_GROUP:-kvm2-crm}
+      RUNNER_MANUALLY_TRAP_SIG: '1'
+    volumes:
+    - runner-state:/runner
+    cpus: 1.5
+    cpu_shares: 192
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 1024
+    oom_score_adj: 500
+    stop_grace_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 4G
+          pids: 1024
+  crm-runner-2:
+    image: dewinsight/crm-actions-runner:2.336.0
+    restart: unless-stopped
+    environment:
+      RUNNER_URL: https://github.com/Dewinsight/Xplorer-crm
+      RUNNER_TOKEN: ${FRONTEND_RUNNER_TOKEN:-}
+      RUNNER_NAME: kvm2-crm-frontend-worker
+      RUNNER_LABELS: dewinsight-kvm2-crm
+      RUNNER_GROUP: ''
+      RUNNER_MANUALLY_TRAP_SIG: '1'
+    volumes:
+    - frontend-runner-state:/runner
+    cpus: 1.5
+    cpu_shares: 192
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 1024
+    oom_score_adj: 500
+    stop_grace_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 4G
+          pids: 1024
+volumes:
+  runner-state: null
+  frontend-runner-state: null
