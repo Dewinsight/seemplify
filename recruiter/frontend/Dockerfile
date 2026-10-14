@@ -21,10 +21,10 @@ ENV NEXT_PUBLIC_THEME_SYSTEM_ENABLED=$NEXT_PUBLIC_THEME_SYSTEM_ENABLED
 ENV NEXT_PUBLIC_DEFAULT_THEME=$NEXT_PUBLIC_DEFAULT_THEME
 
 # Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml ./
 
 # Install dependencies
-RUN npm install
+RUN corepack enable && corepack pnpm install --frozen-lockfile
 
 # Copy source code (excluding .env files via .dockerignore)
 COPY . .

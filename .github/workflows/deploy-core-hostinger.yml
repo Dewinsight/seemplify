@@ -179,7 +179,7 @@ jobs:
         include:
           - name: Recruiter
             directory: recruiter/frontend
-            install_command: npm install --ignore-scripts --no-package-lock
+            install_command: corepack pnpm install --frozen-lockfile --ignore-scripts
           - name: Candidate Portal
             directory: recruiter/candidates
             install_command: npm install --ignore-scripts --no-package-lock
