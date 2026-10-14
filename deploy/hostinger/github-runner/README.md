@@ -9,11 +9,11 @@ Docker socket or any Seemplify production directory:
   retained so existing Seemplify workflows remain compatible.
 - `dewinsight-kvm8-workspace`: the dedicated Workspace build/deployment worker,
   capped at 2 vCPU and 4 GB RAM. Workspace jobs use only this label.
-- `dewinsight-kvm8-control`: the low-resource orchestrator used only by the
-  `Deploy All Seemplify Apps` workflow. Keeping it separate prevents the
+- `dewinsight-kvm8-control`: the low-resource worker for API-only malware scans
+  and the `Deploy All Seemplify Apps` orchestrator. Keeping it separate prevents the
   orchestrator from occupying either build worker while it waits for deployments.
 
-CRM remains isolated on its existing KVM2 runner with the
+CRM remains isolated on its KVM2 runner pool with the
 `dewinsight-kvm2-crm` label. KVM8 has two concurrent Seemplify slots, one isolated Workspace slot, and one
 orchestration slot. The aggregate KVM8 ceiling is 6.5 vCPU and 13 GiB RAM.
 
@@ -26,7 +26,7 @@ listener processes remain. No CPU or memory reservation is configured.
 1. Create the organization runner group `kvm8-shared` and grant it access only
    to `Xplorer-crm`, `Xplorer-Full-backend`, `seemplify`, and `experienments2`.
 2. Create a short-lived organization registration token.
-3. On KVM8, copy this directory to `/opt/github-actions-runner`, create a
+3. On KVM8, copy this directory to `/opt/seemplify/github-actions-runner`, create a
    root-readable `.env` containing `RUNNER_TOKEN=...`, and run:
 
    ```bash
@@ -63,7 +63,7 @@ The second Seemplify worker can be registered at repository scope by setting
 the registration token after registration; retain the non-secret URL and group
 settings in `.env`. Existing organization workers retain their durable identity.
 
-## KVM2 pool
+## Native KVM2 Actions pool
 
 `kvm2.compose.yml` is the persistent stack installed at
 `/opt/xplorer/github-runner/compose.yml` (Compose project `github-runner`).
@@ -74,6 +74,13 @@ run together. Backend jobs have one dedicated organization slot. Each slot
 is capped at 1.5 vCPU and 4 GiB, with no swap or host Docker socket.
 A one-time repository registration uses `FRONTEND_RUNNER_TOKEN`; remove it
 after all registration files are durable and recreate token-free.
+
+While GitHub billing blocks private-repository Actions dispatch, CRM uses the
+[independent Hostinger queue](../local-ci/README.md). Its two slots can run
+frontend and backend lanes concurrently, including two backend lanes. The
+repository variable `HOSTINGER_CI_DRIVER=local` prevents duplicate Actions
+deployments after billing recovers. This queue reports commit statuses to GitHub
+and retains full logs privately on the host.
 
 Both stacks set `RUNNER_MANUALLY_TRAP_SIG=1`, so the runner wrapper forwards
 shutdown signals and closes the GitHub session before container replacement.
