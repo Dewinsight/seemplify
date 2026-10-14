@@ -10,6 +10,7 @@ services:
       RUNNER_NAME: kvm8-seemplify-worker
       RUNNER_LABELS: dewinsight-kvm8,dewinsight-kvm8-seemplify
       RUNNER_GROUP: ${RUNNER_GROUP:-kvm8-shared}
+      RUNNER_MANUALLY_TRAP_SIG: '1'
     volumes:
     - seemplify-worker-state:/runner
     cpus: 2.0
@@ -25,9 +26,6 @@ services:
           cpus: '2.0'
           memory: 4G
           pids: 2048
-      restart_policy:
-        condition: any
-        delay: 5s
   workspace-worker:
     build:
       context: .
@@ -39,6 +37,7 @@ services:
       RUNNER_NAME: kvm8-workspace-worker
       RUNNER_LABELS: dewinsight-kvm8-workspace
       RUNNER_GROUP: ${RUNNER_GROUP:-kvm8-shared}
+      RUNNER_MANUALLY_TRAP_SIG: '1'
     volumes:
     - workspace-worker-state:/runner
     cpus: 2.0
@@ -54,9 +53,6 @@ services:
           cpus: '2.0'
           memory: 4G
           pids: 2048
-      restart_policy:
-        condition: any
-        delay: 5s
   control:
     build:
       context: .
@@ -68,6 +64,7 @@ services:
       RUNNER_NAME: kvm8-deploy-controller
       RUNNER_LABELS: dewinsight-kvm8-control
       RUNNER_GROUP: ${RUNNER_GROUP:-kvm8-shared}
+      RUNNER_MANUALLY_TRAP_SIG: '1'
     volumes:
     - control-state:/runner
     cpus: 0.5
@@ -83,9 +80,6 @@ services:
           cpus: '0.5'
           memory: 1G
           pids: 512
-      restart_policy:
-        condition: any
-        delay: 5s
   seemplify-worker-2:
     build:
       context: .
@@ -97,6 +91,7 @@ services:
       RUNNER_NAME: kvm8-seemplify-worker-2
       RUNNER_LABELS: dewinsight-kvm8,dewinsight-kvm8-seemplify
       RUNNER_GROUP: ${SEEMPLIFY_RUNNER_GROUP-kvm8-shared}
+      RUNNER_MANUALLY_TRAP_SIG: '1'
     volumes:
     - seemplify-worker-2-state:/runner
     cpus: 2.0
@@ -112,9 +107,6 @@ services:
           cpus: '2.0'
           memory: 4G
           pids: 2048
-      restart_policy:
-        condition: any
-        delay: 5s
 volumes:
   seemplify-worker-state: null
   workspace-worker-state: null

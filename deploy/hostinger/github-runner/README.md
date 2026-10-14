@@ -62,3 +62,19 @@ The second Seemplify worker can be registered at repository scope by setting
 `SEEMPLIFY_RUNNER_GROUP=` and a short-lived `SEEMPLIFY_RUNNER_TOKEN`. Remove only
 the registration token after registration; retain the non-secret URL and group
 settings in `.env`. Existing organization workers retain their durable identity.
+
+## KVM2 pool
+
+`kvm2.compose.yml` is the persistent stack installed at
+`/opt/xplorer/github-runner/compose.yml` (Compose project `github-runner`).
+The organization worker `kvm2-crm-worker` remains available to both CRM
+repositories; the repository worker `kvm2-crm-frontend-worker` adds a second
+frontend slot. Frontend and backend QA can overlap, and two frontend jobs can
+run together. Backend jobs have one dedicated organization slot. Each slot
+is capped at 1.5 vCPU and 4 GiB, with no swap or host Docker socket.
+A one-time repository registration uses `FRONTEND_RUNNER_TOKEN`; remove it
+after all registration files are durable and recreate token-free.
+
+Both stacks set `RUNNER_MANUALLY_TRAP_SIG=1`, so the runner wrapper forwards
+shutdown signals and closes the GitHub session before container replacement.
+Never replace a container with an active `Runner.Worker` process.

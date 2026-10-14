@@ -71,6 +71,25 @@ test('dedicates independent constrained runners to Seemplify, Workspace, and dep
     assert.ok(!service.privileged);
     assert.ok(service.volumes.every(volume => volume.target === '/runner'));
     assert.equal(service.restart, 'unless-stopped');
+    assert.equal(service.environment.RUNNER_MANUALLY_TRAP_SIG, '1');
+    assert.equal(service.deploy?.restart_policy, undefined, 'Swarm restart policy must not override the Compose policy');
+  }
+});
+
+test('KVM2 keeps two bounded slots and persistent isolated state', () => {
+  const result = spawnSync('docker', ['compose', '-f', resolve(runnerDirectory, 'kvm2.compose.yml'), 'config', '--format', 'json'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const services = Object.values(JSON.parse(result.stdout).services);
+  assert.equal(services.length, 2);
+  assert.equal(services.reduce((sum, service) => sum + service.cpus, 0), 3);
+  for (const service of services) {
+    assert.equal(service.mem_limit, String(4 * 1024 ** 3));
+    assert.equal(service.memswap_limit, service.mem_limit);
+    assert.equal(service.environment.RUNNER_MANUALLY_TRAP_SIG, '1');
+    assert.equal(service.volumes.length, 1);
+    assert.equal(service.volumes[0].target, '/runner');
+    assert.equal(service.restart, 'unless-stopped');
+    assert.equal(service.deploy?.restart_policy, undefined);
   }
 });
 
