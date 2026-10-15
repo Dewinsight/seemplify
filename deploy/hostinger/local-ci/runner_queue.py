@@ -214,6 +214,9 @@ class Driver:
         success = False
         with (root / 'job.log').open('a') as log:
             try:
+                # act cannot pull this private local image if host cleanup removed it.
+                # The trusted host helper rebuilds it and pins it with an isolated keeper.
+                self.command([str(Path(__file__).with_name('ensure-image.sh'))], log)
                 self.status(job, 'pending')
                 if job['kind'] == 'probe':
                     self.command(['docker', 'run', '--rm', '--label', label, '--cpus', str(self.config['job_cpus']),

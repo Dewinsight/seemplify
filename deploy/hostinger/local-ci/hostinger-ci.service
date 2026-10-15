@@ -8,6 +8,7 @@ Requires=docker.service
 Type=simple
 User=root
 WorkingDirectory=/opt/hostinger-ci
+ExecStartPre=/opt/hostinger-ci/ensure-image.sh
 ExecStart=/usr/bin/python3 /opt/hostinger-ci/runner_queue.py --config /etc/hostinger-ci/config.json serve
 Restart=on-failure
 RestartSec=10

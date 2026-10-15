@@ -88,6 +88,22 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(row['state'], 'success')
         self.assertEqual(row['status_sent'], 0)
 
+    @patch.object(module.subprocess, 'run')
+    def test_image_guard_failure_blocks_execution_and_records_failure(self, run):
+        run.return_value.stdout = ''
+        driver = module.Driver.__new__(module.Driver)
+        driver.queue = self.queue
+        driver.command = Mock(side_effect=RuntimeError('image unavailable'))
+        driver.status = Mock()
+        driver.deploy = Mock()
+        self.queue.enqueue('frontend', 'a' * 40)
+        driver.work(self.queue.claim())
+        driver.deploy.assert_not_called()
+        self.assertEqual(driver.command.call_args.args[0],
+                         [str(Path(module.__file__).with_name('ensure-image.sh'))])
+        self.assertEqual(self.queue.rows()[0]['state'], 'failure')
+        self.assertEqual(driver.status.call_args.args[1], 'failure')
+
     @patch.object(module.time, 'sleep')
     def test_transient_read_retries_without_losing_result(self, sleep):
         read = Mock(side_effect=[ConnectionResetError(), TimeoutError(), {'sha': 'a' * 40}])

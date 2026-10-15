@@ -23,6 +23,14 @@ unfinished leases after removing only containers carrying their exact job label.
 Deployments are therefore retried at least once after an interrupted service;
 the existing immutable release and migration checks must remain idempotent.
 
+The execution image is built locally rather than published in a registry.
+`ensure-image.sh` checks it before service startup and every job, rebuilds a
+missing image from the trusted installed Dockerfile, and keeps a small isolated
+container running so ordinary Docker image/system pruning cannot remove it.
+The keeper has no network, credentials or host mounts and uses a read-only root
+filesystem. Install this helper and the Dockerfile alongside `runner_queue.py`;
+the existing native runner retains the base image needed for a local rebuild.
+
 The coordinator alone reads its root-only GitHub credential. It is never passed
 to test containers. The existing deployment SSH credential is provided to trusted
 deployment jobs as before. Backend routes also read only the four allowlisted
