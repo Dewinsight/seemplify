@@ -113,3 +113,9 @@ backend branches receive this volume. Jest retains responsibility for cache
 invalidation; no test results are cached or skipped and workflow test commands
 remain unchanged. This avoids discarding compiled test dependencies after each
 ephemeral job. The volume contains test tooling artifacts, not CI credentials.
+Backend execution uses a fresh checkout copied to a stable private path per
+route under `state_dir/workspaces`. This keeps Jest's project-root cache key
+stable across jobs; pending jobs in that route remain serialized. Source
+symlinks are preserved, stale generated files are removed, and both workspaces
+and the original per-job checkout are cleaned after execution. Credentials and
+adapted workflows stay in the separate private job directory.

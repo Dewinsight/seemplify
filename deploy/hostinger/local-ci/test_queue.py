@@ -94,6 +94,7 @@ class QueueTests(unittest.TestCase):
         driver = module.Driver.__new__(module.Driver)
         driver.queue = self.queue
         driver.command = Mock(side_effect=RuntimeError('image unavailable'))
+        driver.routes = {'frontend': {'repo': 'Dewinsight/Xplorer-crm'}}
         driver.status = Mock()
         driver.deploy = Mock()
         self.queue.enqueue('frontend', 'a' * 40)
@@ -189,6 +190,51 @@ class QueueTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'scan rejected'):
                     driver.deploy({'id': 1, 'route': 'frontend', 'sha': 'a' * 40}, Path(self.directory.name), log)
         driver.command.assert_not_called()
+
+
+class WorkspaceTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.driver = object.__new__(module.Driver)
+        self.driver.queue = module.Queue(self.directory.name)
+
+    def test_reuses_stable_path_with_fresh_source_and_separate_routes(self):
+        source = Path(self.directory.name) / 'source'
+        source.mkdir()
+        (source / 'file.ts').write_text('first revision')
+        first = self.driver.prepare_workspace('backend-dev', source)
+        (first / 'generated.js').write_text('discard stale output')
+        other = self.driver.prepare_workspace('backend-staging', source)
+        (source / 'file.ts').write_text('second revision')
+        second = self.driver.prepare_workspace('backend-dev', source)
+        self.assertEqual(first, second)
+        self.assertEqual((second / 'file.ts').read_text(), 'second revision')
+        self.assertFalse((second / 'generated.js').exists())
+        self.assertEqual((other / 'file.ts').read_text(), 'first revision')
+        self.assertEqual((source / 'file.ts').read_text(), 'second revision')
+
+    def test_invalid_route_cannot_delete_outside_the_workspace_base(self):
+        outside = Path(self.directory.name) / 'unrelated'
+        outside.mkdir()
+        for name in ['../unrelated', '/unrelated', 'backend/../../unrelated']:
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.driver.workspace_path(name)
+        self.assertTrue(outside.exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux host enforces symlink behavior')
+    def test_preserves_source_symlink_and_rejects_workspace_symlink(self):
+        source = Path(self.directory.name) / 'source'
+        source.mkdir()
+        outside = Path(self.directory.name) / 'outside'
+        outside.mkdir()
+        (source / 'link').symlink_to(outside, target_is_directory=True)
+        workspace = self.driver.prepare_workspace('backend-dev', source)
+        self.assertTrue((workspace / 'link').is_symlink())
+        (workspace.parent / 'backend-staging').symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            self.driver.prepare_workspace('backend-staging', source)
+        self.assertTrue(outside.exists())
 
 
 class CapacityTests(unittest.TestCase):

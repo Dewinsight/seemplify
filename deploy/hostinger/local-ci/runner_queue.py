@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import sqlite3
 import subprocess
 import threading
@@ -214,6 +215,26 @@ class Driver:
                     os.killpg(process.pid, signal.SIGKILL)
             raise
 
+    def workspace_path(self, name):
+        if not re.fullmatch(r'[a-z0-9-]+', name):
+            raise ValueError('Invalid workspace route')
+        base = self.queue.root / 'workspaces'
+        if base.is_symlink():
+            raise ValueError('Workspace base cannot be a symlink')
+        base.mkdir(mode=0o700, exist_ok=True)
+        workspace = base / name
+        if workspace.is_symlink() or workspace.resolve().parent != base.resolve():
+            raise ValueError('Workspace must remain inside its private base')
+        return workspace
+
+    def prepare_workspace(self, name, source):
+        workspace = self.workspace_path(name)
+        if workspace.exists():
+            shutil.rmtree(workspace)
+        # Preserve Git symlinks rather than reading their host-side targets.
+        shutil.copytree(source, workspace, symlinks=True)
+        return workspace
+
     def work(self, job):
         root = self.queue.root / 'jobs' / str(job['id'])
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -244,6 +265,11 @@ class Driver:
                 for container in containers:
                     subprocess.run(['docker', 'rm', '-f', container], stdout=log, stderr=log, check=False)
                 subprocess.run(['rm', '-rf', '--', str(root / 'source')], stdout=log, stderr=log, check=False)
+                if self.routes[job['route']]['repo'] == 'Dewinsight/Xplorer-Full-backend':
+                    with contextlib.suppress(OSError, ValueError):
+                        workspace = self.workspace_path(job['route'])
+                        if workspace.exists():
+                            shutil.rmtree(workspace)
                 for filename in ('variables.env', 'event.json', 'workflow.yml', 'secrets.env'):
                     (root / filename).unlink(missing_ok=True)
                 self.queue.finish(job['id'], success)
@@ -296,6 +322,10 @@ class Driver:
         actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip()
         if actual != job['sha']:
             raise ValueError('Checkout revision mismatch')
+        if route['repo'] == 'Dewinsight/Xplorer-Full-backend':
+            # Jest hashes the project root. A per-job path defeats its shared cache.
+            # Per-route queue serialization prevents concurrent workspace reuse.
+            source = self.prepare_workspace(route['name'], source)
         workflow = source / route['workflow']
         # Preserve tests and deploy steps, but use the host's persistent npm cache.
         class WorkflowLoader(yaml.SafeLoader):
