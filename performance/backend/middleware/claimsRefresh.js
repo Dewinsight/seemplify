@@ -48,15 +48,24 @@ async function claimsRefreshMiddleware(req, res, next) {
     return next()
   }
 
-  if (req.session.claimsNeedRefresh) {
+  const organizations = req.session.user.organizations || []
+  const outdatedPolicy = organizations.some(org => org.authorization?.schemaVersion && org.authorization.schemaVersion < 4)
+  if (req.session.claimsNeedRefresh || outdatedPolicy) {
     try {
       console.log(`🔄 Refreshing claims for ${req.session.user.email} (triggered by webhook)`)
 
       const client = await getOidcClient()
       const accessToken = req.session.user.accessToken || req.session.accessToken
 
+      if (!accessToken && outdatedPolicy) return res.status(401).json({ success: false, code: 'CLAIMS_REFRESH_REQUIRED', error: 'Sign in again to refresh access permissions' })
       if (accessToken) {
         const freshUserinfo = await client.userinfo(accessToken)
+        // During a rolling deploy an old IdP may still issue the retired matrix.
+        // Do not authorize a request with those privileges after refresh either.
+        if (outdatedPolicy && (freshUserinfo.organizations || []).some(org =>
+          org.authorization?.schemaVersion && org.authorization.schemaVersion < 4)) {
+          return res.status(401).json({ success: false, code: 'CLAIMS_REFRESH_REQUIRED', error: 'Access policy is updating. Sign in again shortly.' })
+        }
 
         req.session.user = sanitizePerformancePrincipal({
           ...req.session.user,
@@ -76,6 +85,7 @@ async function claimsRefreshMiddleware(req, res, next) {
       }
     } catch (error) {
       console.error(`⚠️ Failed to refresh claims:`, error.message)
+      if (outdatedPolicy) return res.status(401).json({ success: false, code: 'CLAIMS_REFRESH_REQUIRED', error: 'Sign in again to refresh access permissions' })
     }
   }
 

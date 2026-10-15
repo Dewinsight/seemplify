@@ -122,6 +122,8 @@ const PERMISSIONS = {
   'review_cycle:view': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'review_cycle:create': ['hr_admin'],
   'review_cycle:manage': ['hr_admin'],
+  'review_cycle:create:team': ['team_lead', 'line_manager', 'hr_admin'],
+  'review_cycle:manage:team': ['team_lead', 'line_manager', 'hr_admin'],
 
   // Feedback Permissions
   'feedback:view:received': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
@@ -639,8 +641,7 @@ const requireManager = (req, res, next) => {
 
   const centralPermissions = claimedPermissions(req.session.user);
   const allowed = centralPermissions
-    ? ['review:conduct:direct_reports', 'analytics:view:team', 'analytics:view:organization']
-      .some((permission) => centralPermissions.has(permission))
+    ? centralPermissions.has('review:conduct:direct_reports')
     : role === 'line_manager' || role === 'team_lead' || role === 'hr_admin';
 
   if (!allowed) {

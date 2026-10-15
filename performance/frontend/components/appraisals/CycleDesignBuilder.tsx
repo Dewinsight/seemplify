@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
 import {
   Alert,
+  useMediaQuery,
   Box,
   Button,
   Checkbox,
@@ -188,6 +189,8 @@ interface Props {
 }
 
 export default function CycleDesignBuilder({ design, sourceTemplate, onChange, onTemplateChange, canSaveTemplate, readOnly = false }: Props) {
+  const phone = useMediaQuery('(max-width:600px)');
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [templates, setTemplates] = useState<CycleTemplateSummary[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
   const [templateError, setTemplateError] = useState('');
@@ -282,7 +285,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
       {templateError && <Alert severity="warning">{templateError}</Alert>}
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
-        <FormControl size="small" sx={{ minWidth: 300 }} disabled={loadingTemplates || readOnly}>
+        <FormControl size="small" sx={{ minWidth: { xs: 0, md: 300 }, width: { xs: '100%', md: 'auto' } }} disabled={loadingTemplates || readOnly}>
           <InputLabel id="cycle-template-label">Starting template</InputLabel>
           <Select labelId="cycle-template-label" id="cycle-template" value={templates.some((template) => template.id === sourceTemplate?.id) ? sourceTemplate?.id : ''} label="Starting template" onChange={(event) => applyTemplate(event.target.value)}>
             {templates.map((template) => (
@@ -333,7 +336,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
           />
         </Stack>
         {designErrors.length > 0 && (
-          <Alert severity="warning" sx={{ mb: 1.5 }}>
+          <Alert severity="warning" sx={{ mb: 1.5 }} action={phone ? <Button onClick={() => setExpandedSections(Object.fromEntries(design.sections.map(section => [section.id, true])))}>Review fields</Button> : undefined}>
             <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
               {designErrors.slice(0, 4).map((error) => <Typography component="li" variant="body2" key={error}>{error}</Typography>)}
             </Stack>
@@ -344,7 +347,11 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
           {design.sections.map((section, sectionIndex) => {
             const protectedSection = ['goals', 'competencies'].includes(section.type);
             return (
-              <Box key={section.id} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2 }}>
+              <Box key={section.id} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, '& button': { minHeight: 44, minWidth: 44 } }}>
+                {phone && <Button fullWidth aria-expanded={!!expandedSections[section.id]} onClick={() => setExpandedSections(current => ({ ...current, [section.id]: !current[section.id] }))} sx={{ justifyContent: 'space-between', textAlign: 'left', mb: 1 }}>
+                  {section.title || 'Untitled section'} · {section.questions.length} questions {expandedSections[section.id] ? '−' : '+'}
+                </Button>}
+                <Box hidden={phone && !expandedSections[section.id]}>
                 <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} mb={2}>
                   <Stack direction="row" alignItems="center" spacing={0.5}>
                     <IconButton size="small" aria-label={`Move ${section.title} up`} disabled={readOnly || sectionIndex === 0} onClick={() => moveSection(sectionIndex, -1)}><ArrowUpward fontSize="small" /></IconButton>
@@ -418,6 +425,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
                     </Button>
                   </Box>
                 )}
+                </Box>
               </Box>
             );
           })}

@@ -60,7 +60,7 @@ export default function RecognitionPage() {
     if (!recipient || !message.trim()) { setError('Choose a colleague and write a specific recognition message.'); return; }
     setWorking(true); setError('');
     try {
-      await api.post('/recognition', { recipient, message, companyValue, visibility, contextType: 'general' });
+      await api.post('/recognition', { recipient: { ...recipient, userId: recipient.id }, message, companyValue, visibility, contextType: 'general' });
       setOpen(false); setRecipient(null); setQuery(''); setMessage(''); setCompanyValue(''); setNotice('Recognition sent. It is visible according to the audience you selected.'); await load();
     } catch (requestError) { setError(errorText(requestError, 'Could not send recognition.')); }
     finally { setWorking(false); }
@@ -78,10 +78,10 @@ export default function RecognitionPage() {
         <Button variant="contained" startIcon={<Add />} onClick={() => setOpen(true)}>Recognize a colleague</Button>
       </Stack>
       <Alert severity="info" sx={{ mb: 2 }}>Recognition supports culture and coaching. It is never converted into an appraisal score or employee ranking.</Alert>
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+      {error && !open && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {notice && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice('')}>{notice}</Alert>}
       <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-        <Tabs value={view} onChange={(_, value) => setView(value)} aria-label="Recognition views" sx={{ px: 1.5, borderBottom: 1, borderColor: 'divider' }}><Tab value="feed" label="Organization feed" /><Tab value="received" label="Received" /><Tab value="sent" label="Sent" /></Tabs>
+        <Tabs value={view} onChange={(_, value) => setView(value)} aria-label="Recognition views" variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ px: 1.5, borderBottom: 1, borderColor: 'divider' }}><Tab value="feed" label="Organization feed" /><Tab value="received" label="Received" /><Tab value="sent" label="Sent" /></Tabs>
         {loading ? <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress size={28} /></Box> : items.length === 0 ? <Box sx={{ p: 4 }}><Typography fontWeight={600}>No recognition here yet</Typography><Typography color="text.secondary" mt={0.5}>Specific, timely appreciation helps people understand which contributions matter.</Typography></Box> : items.map((item, index) => (
           <Box key={item._id} id={`recognition-${item._id}`} sx={{ p: 2.5, borderTop: index ? 1 : 0, borderColor: 'divider' }}>
             <Stack direction="row" spacing={2} alignItems="flex-start"><Avatar sx={{ width: 38, height: 38, bgcolor: 'primary.main', fontSize: 14 }}>{initials(item.recipient.name)}</Avatar><Box flex={1} minWidth={0}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1}><Box><Typography fontWeight={650}>{item.sender.name || item.sender.email || 'A colleague'} recognized {item.recipient.name || item.recipient.email || 'a colleague'}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.createdAt).toLocaleDateString()} · {item.visibility === 'public' ? 'Organization' : item.visibility === 'team' ? item.recipient.teamName || 'Team' : 'Private'}</Typography></Box><Stack direction="row" spacing={0.75}>{item.companyValue && <Chip size="small" label={item.companyValue} color="primary" variant="outlined" />}{item.acknowledgedAt && <Chip size="small" label="Acknowledged" icon={<Check />} />}</Stack></Stack><Typography mt={1.5} sx={{ whiteSpace: 'pre-wrap' }}>{item.message}</Typography>{view === 'received' && !item.acknowledgedAt && <Button size="small" sx={{ mt: 1 }} startIcon={<Check />} onClick={() => void acknowledge(item)}>Acknowledge</Button>}</Box></Stack>
@@ -91,6 +91,7 @@ export default function RecognitionPage() {
 
       <Dialog open={open} onClose={() => !working && setOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Recognize a colleague</DialogTitle><DialogContent dividers><Stack spacing={2}>
+          {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
           {!recipient ? <><TextField autoFocus label="Search organization" value={query} onChange={event => setQuery(event.target.value)} InputProps={{ startAdornment: <Search fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }} helperText="Search by name or email. Results are limited to your active organization." />{searching && <CircularProgress size={22} />}{query.length >= 2 && !searching && <Paper variant="outlined">{(users as Person[]).length ? (users as Person[]).map(person => <Button key={person.id} fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.25 }} onClick={() => setRecipient(person)}>{person.name}{person.title ? ` · ${person.title}` : ''}</Button>) : <Typography color="text.secondary" sx={{ p: 2 }}>No colleagues found.</Typography>}</Paper>}</> : <Paper variant="outlined" sx={{ p: 2 }}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography fontWeight={650}>{recipient.name}</Typography><Typography variant="body2" color="text.secondary">{recipient.email}</Typography></Box><Button onClick={() => setRecipient(null)}>Change</Button></Stack></Paper>}
           <TextField label="Recognition message" required multiline minRows={4} value={message} onChange={event => setMessage(event.target.value)} helperText="Name the contribution and explain its impact." />
           <TextField label="Company value (optional)" value={companyValue} onChange={event => setCompanyValue(event.target.value)} />

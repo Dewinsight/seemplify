@@ -54,6 +54,7 @@ export function useUserContext() {
 
     // Feature flags
     features: data?.features || {},
+    capabilities: data?.capabilities,
 
     // SWR state
     isLoading,

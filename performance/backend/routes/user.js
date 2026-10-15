@@ -8,7 +8,8 @@ const DevelopmentPlan = require('../models/DevelopmentPlan');
 const OneOnOne = require('../models/OneOnOne');
 const {
   requireAuth,
-  getCurrentTeam
+  getCurrentTeam,
+  hasPermission
 } = require('../middleware/rbac');
 const { verifySubscriptionAccess } = require('../services/idpSubscriptionService');
 const {
@@ -212,6 +213,12 @@ router.get('/context', requireAuth, async (req, res) => {
           title: dbUser?.profile?.title
         },
 
+        capabilities: {
+          createOrganizationCycle: hasPermission(role, 'review_cycle:create', sessionUser),
+          createTeamCycle: hasPermission(role, 'review_cycle:create:team', sessionUser),
+          manageOrganizationCycle: hasPermission(role, 'review_cycle:manage', sessionUser),
+          manageTeamCycle: hasPermission(role, 'review_cycle:manage:team', sessionUser)
+        },
         // Role and permissions
         role: {
           name: role,
@@ -495,7 +502,7 @@ router.get('/all-employees', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching all employees:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch employees' });
+    res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Failed to fetch employees', code: error.code });
   }
 });
 
@@ -512,7 +519,16 @@ router.get('/search', requireAuth, async (req, res) => {
     }
     if (!currentOrgId) return res.status(403).json({ success: false, error: 'Select an organization before searching for colleagues' });
 
-    // Search by email or display name
+    const roster = await require('../services/identityRosterService').getIdentityRoster(req, String(currentOrgId));
+    if (roster) {
+      const needle = String(q).toLowerCase();
+      const data = roster.filter(u => `${u.email} ${u.profile.displayName}`.toLowerCase().includes(needle))
+        .slice(0, Math.min(25, Math.max(1, parseInt(limit, 10) || 10)))
+        .map(u => ({ id: u.idpSub, email: u.email, name: u.profile.displayName, title: u.profile.title,
+          teamId: u.idpTeams[0]?.id, teamName: u.idpTeams[0]?.name }));
+      return res.json({ success: true, data });
+    }
+    // Search by email or display name in isolated service tests.
     const users = await User.find({
       $and: [
         { $or: [{ 'idpTeams.organizationId': currentOrgId }, { organizationMemberships: { $elemMatch: { organization: currentOrgId, isActive: true } } }] },
@@ -540,7 +556,7 @@ router.get('/search', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error searching users:', error);
-    res.status(500).json({ success: false, error: 'Failed to search users' });
+    res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Failed to search users', code: error.code });
   }
 });
 
@@ -1005,7 +1021,7 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching employees for appraisal:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch employees' });
+    res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Failed to fetch employees', code: error.code });
   }
 });
 

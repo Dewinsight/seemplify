@@ -203,7 +203,8 @@ OKRSchema.index({ organizationId: 1, 'teamHierarchy.teamId': 1 });
 OKRSchema.index({ organizationId: 1, 'alignment.parentOKRId': 1 });
 OKRSchema.index(
   { organizationId: 1, 'assignment.idempotencyKey': 1 },
-  { unique: true, sparse: true }
+  { name: 'goal_assignment_key_unique', unique: true,
+    partialFilterExpression: { 'assignment.idempotencyKey': { $type: 'string', $gt: '' } } }
 );
 
 OKRSchema.methods.captureVersion = function captureVersion(reason, actor = {}, changes = {}) {

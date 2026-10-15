@@ -4,7 +4,7 @@ const OKR = require('../models/OKR');
 const GoalPeriod = require('../models/GoalPeriod');
 const GoalCheckIn = require('../models/GoalCheckIn');
 const GoalChangeRequest = require('../models/GoalChangeRequest');
-const { requireAuth, requirePermission } = require('../middleware/rbac');
+const { requireAuth, requirePermission, requireAnyPermission } = require('../middleware/rbac');
 const {
   buildGoalVisibilityQuery,
   canAcknowledgeGoal,
@@ -1503,10 +1503,10 @@ async function decideGoal(req, res, forcedDecision) {
   }
 }
 
-router.post('/:id/decision', requirePermission('okr:decide:direct_reports'), (req, res) => decideGoal(req, res));
+router.post('/:id/decision', requireAnyPermission('okr:decide:direct_reports', 'okr:decide:all'), (req, res) => decideGoal(req, res));
 
 // Backwards-compatible manager approval endpoint.
-router.patch('/:id/approve', requirePermission('okr:decide:direct_reports'), (req, res) => decideGoal(req, res, 'approve'));
+router.patch('/:id/approve', requireAnyPermission('okr:decide:direct_reports', 'okr:decide:all'), (req, res) => decideGoal(req, res, 'approve'));
 
 router.post('/:id/acknowledge', requirePermission('okr:acknowledge:own'), async (req, res) => {
   try {

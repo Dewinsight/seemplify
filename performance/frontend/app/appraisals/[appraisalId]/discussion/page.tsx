@@ -17,7 +17,7 @@ export default function DiscussionPage() {
     const params = useParams();
     const router = useRouter();
     const appraisalId = params.appraisalId as string;
-    const { user, isManager } = useUserContext();
+    const { user, isManager, isHRAdmin } = useUserContext();
     const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
 
     const [saving, setSaving] = useState(false);
@@ -48,7 +48,7 @@ export default function DiscussionPage() {
                 nextSteps: d.notes?.nextSteps || ''
             });
             setMeetingDetails({
-                scheduledDate: d.scheduledDate ? new Date(d.scheduledDate).toISOString().slice(0, 16) : '',
+                scheduledDate: d.scheduledDate ? new Date(new Date(d.scheduledDate).getTime() - new Date(d.scheduledDate).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
                 location: d.location || '',
                 meetingLink: d.meetingLink || ''
             });
@@ -79,6 +79,7 @@ export default function DiscussionPage() {
                     agreedImprovements: notes.agreedImprovements.split('\n').filter(s => s.trim())
                 },
                 ...meetingDetails,
+                scheduledDate: meetingDetails.scheduledDate ? new Date(meetingDetails.scheduledDate).toISOString() : undefined,
                 markCompleted
             };
 
@@ -103,12 +104,16 @@ export default function DiscussionPage() {
     if (isLoading) return <CircularProgress />;
     if (!appraisal) return <Alert severity="error">Appraisal not found</Alert>;
 
-    const readOnly = appraisal.status === 'completed' || appraisal.status === 'employee_acknowledged';
+    const actorIds = [user?.id, user?.sub, user?.userId].filter(Boolean).map(String);
+    const matches = (person: any) => actorIds.includes(String(person?.userId)) || Boolean(user?.email && person?.email && user.email.toLowerCase() === person.email.toLowerCase());
+    const isEmployee = appraisal.viewerCapabilities?.isEmployee ?? matches(appraisal.employee);
+    const canManage = appraisal.viewerCapabilities?.canManage ?? (!isEmployee && (isHRAdmin || (isManager && matches(appraisal.manager))));
+    const readOnly = !canManage || !['manager_review_submitted', 'discussion_scheduled', 'discussion_completed'].includes(appraisal.status);
 
     return (
         <Box>
             {/* Header */}
-            <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, '& button': { minHeight: 44 } }}>
                 <Box>
                     <Button startIcon={<ArrowBack />} onClick={() => router.push(`/appraisals/${appraisalId}`)} sx={{ mb: 1 }}>
                         Back to Appraisal
@@ -118,7 +123,7 @@ export default function DiscussionPage() {
                         {appraisal.employee.name} • {appraisal.cycleId?.name}
                     </Typography>
                 </Box>
-                {!readOnly && isManager && (
+                {!readOnly && canManage && (
                     <Box sx={{ display: 'flex', gap: 2 }}>
                         <Button
                             variant="outlined"
@@ -139,7 +144,7 @@ export default function DiscussionPage() {
                         </Button>
                     </Box>
                 )}
-                {!isManager && ['discussion_completed', 'completed'].includes(appraisal.status) && !appraisal.discussion?.employeeAcknowledged && (
+                {isEmployee && appraisal.status === 'completed' && !appraisal.discussion?.employeeAcknowledged && (
                     <Button
                         variant="contained"
                         color="success"
@@ -167,7 +172,7 @@ export default function DiscussionPage() {
                             InputLabelProps={{ shrink: true }}
                             value={meetingDetails.scheduledDate}
                             onChange={(e) => setMeetingDetails(prev => ({ ...prev, scheduledDate: e.target.value }))}
-                            disabled={readOnly || !isManager}
+                            disabled={readOnly}
                         />
                     </Grid>
                     <Grid size={{ xs: 12, md: 4 }}>
@@ -177,7 +182,7 @@ export default function DiscussionPage() {
                             placeholder="e.g. Conference Room A or Zoom"
                             value={meetingDetails.location}
                             onChange={(e) => setMeetingDetails(prev => ({ ...prev, location: e.target.value }))}
-                            disabled={readOnly || !isManager}
+                            disabled={readOnly}
                             InputProps={{ startAdornment: <LocationOn color="action" sx={{ mr: 1 }} /> }}
                         />
                     </Grid>
@@ -188,7 +193,7 @@ export default function DiscussionPage() {
                             placeholder="https://zoom.us/..."
                             value={meetingDetails.meetingLink}
                             onChange={(e) => setMeetingDetails(prev => ({ ...prev, meetingLink: e.target.value }))}
-                            disabled={readOnly || !isManager}
+                            disabled={readOnly}
                             InputProps={{ startAdornment: <LinkIcon color="action" sx={{ mr: 1 }} /> }}
                         />
                     </Grid>
@@ -216,7 +221,7 @@ export default function DiscussionPage() {
                                 label="Agreed Strengths"
                                 value={notes.agreedStrengths}
                                 onChange={(e) => setNotes(prev => ({ ...prev, agreedStrengths: e.target.value }))}
-                                disabled={readOnly || !isManager}
+                                disabled={readOnly}
                                 placeholder="List the key strengths agreed upon..."
                             />
                         </Grid>
@@ -228,7 +233,7 @@ export default function DiscussionPage() {
                                 label="Agreed Improvements"
                                 value={notes.agreedImprovements}
                                 onChange={(e) => setNotes(prev => ({ ...prev, agreedImprovements: e.target.value }))}
-                                disabled={readOnly || !isManager}
+                                disabled={readOnly}
                                 placeholder="List the areas for improvement..."
                             />
                         </Grid>
@@ -240,7 +245,7 @@ export default function DiscussionPage() {
                                 label="Development Plan for Next Period"
                                 value={notes.developmentPlan}
                                 onChange={(e) => setNotes(prev => ({ ...prev, developmentPlan: e.target.value }))}
-                                disabled={readOnly || !isManager}
+                                disabled={readOnly}
                                 helperText="Provide detailed actions for development."
                             />
                         </Grid>
@@ -252,7 +257,7 @@ export default function DiscussionPage() {
                                 label="Career Aspirations Discussion"
                                 value={notes.careerAspirations}
                                 onChange={(e) => setNotes(prev => ({ ...prev, careerAspirations: e.target.value }))}
-                                disabled={readOnly || !isManager}
+                                disabled={readOnly}
                             />
                         </Grid>
                         <Grid size={{ xs: 12, md: 6 }}>
@@ -263,7 +268,7 @@ export default function DiscussionPage() {
                                 label="Support Needed from Manager"
                                 value={notes.supportNeeded}
                                 onChange={(e) => setNotes(prev => ({ ...prev, supportNeeded: e.target.value }))}
-                                disabled={readOnly || !isManager}
+                                disabled={readOnly}
                             />
                         </Grid>
                     </Grid>

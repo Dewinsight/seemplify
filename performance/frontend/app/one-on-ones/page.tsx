@@ -46,6 +46,8 @@ export default function OneOnOnesPage() {
     setWithUserId(params.get('with') || '');
     if (employeeId) {
       setNewMeeting((current) => ({ ...current, employeeId }));
+    }
+    if (employeeId || params.get('compose') === 'true') {
       setDialogOpen(true);
     }
   }, []);

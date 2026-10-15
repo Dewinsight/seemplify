@@ -185,7 +185,10 @@ function matchesEmployeeSearch(employee: AssignableEmployee, query: string) {
 export default function EditAppraisalCyclePage() {
     const router = useRouter();
     const params = useParams();
-    const { isHRAdmin } = useUserContext();
+    const { isHRAdmin, isManager, capabilities } = useUserContext();
+    const canCreate = capabilities ? capabilities.createOrganizationCycle || capabilities.createTeamCycle : isManager || isHRAdmin;
+    const canManage = capabilities ? capabilities.manageOrganizationCycle || capabilities.manageTeamCycle : isManager || isHRAdmin;
+    const organizationCycleAccess = capabilities ? capabilities.createOrganizationCycle : isHRAdmin;
     const { managedTeams } = useDirectReports();
     const cycleId = (params.id as string) || 'new';
     const isNewCycle = cycleId === 'new';
@@ -198,6 +201,8 @@ export default function EditAppraisalCyclePage() {
 
     const [assignableEmployees, setAssignableEmployees] = useState<AssignableEmployee[]>([]);
     const [loadingEmployees, setLoadingEmployees] = useState(false);
+    const [rosterError, setRosterError] = useState('');
+    const [rosterAttempt, setRosterAttempt] = useState(0);
     const [employeeSearch, setEmployeeSearch] = useState('');
     const [participantView, setParticipantView] = useState<'byManager' | 'list'>('byManager');
     const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
@@ -267,23 +272,16 @@ export default function EditAppraisalCyclePage() {
 
         const fetchAssignableEmployees = async () => {
             setLoadingEmployees(true);
+            setRosterError('');
             try {
                 const response = await api.get('/user/employees-for-appraisal');
                 const employeeList = response.data?.data?.employees || [];
                 if (!isMounted) return;
                 setAssignableEmployees(Array.isArray(employeeList) ? employeeList : []);
-            } catch (primaryError) {
-                console.error('Failed to fetch assignable users', primaryError);
-                try {
-                    const fallbackResponse = await api.get('/user/all-employees');
-                    const fallbackEmployees = fallbackResponse.data?.data || [];
-                    if (!isMounted) return;
-                    setAssignableEmployees(Array.isArray(fallbackEmployees) ? fallbackEmployees : []);
-                } catch (fallbackError: any) {
-                    if (!isMounted) return;
-                    console.error('Failed to fetch fallback assignable users', fallbackError);
-                    setSaveError(fallbackError.response?.data?.error || 'Failed to load employees for this cycle.');
-                }
+            } catch (primaryError: any) {
+                if (!isMounted) return;
+                setAssignableEmployees([]);
+                setRosterError(primaryError.response?.data?.error || 'Employee directory could not be refreshed. Retry before choosing participants.');
             } finally {
                 if (isMounted) {
                     setLoadingEmployees(false);
@@ -296,7 +294,7 @@ export default function EditAppraisalCyclePage() {
         return () => {
             isMounted = false;
         };
-    }, [isNewCycle]);
+    }, [isNewCycle, rosterAttempt]);
 
     const eligibleEmployees = useMemo(
         () => assignableEmployees.filter((employee) => employee.isSelectableForAppraisal !== false),
@@ -366,6 +364,10 @@ export default function EditAppraisalCyclePage() {
 
     const handleSave = async () => {
         setSaveError('');
+        if (isNewCycle ? !canCreate : !canManage) {
+            setSaveError('You do not have permission to change this cycle.');
+            return;
+        }
 
         if (!formData.name.trim()) {
             setSaveError('Cycle name is required.');
@@ -396,7 +398,7 @@ export default function EditAppraisalCyclePage() {
         setSaving(true);
         try {
             if (isNewCycle) {
-                const scope = buildScopeFromEmployees(isHRAdmin, selectedParticipants);
+                const scope = buildScopeFromEmployees(organizationCycleAccess, selectedParticipants);
                 await api.post('/appraisals/cycles', {
                     ...formData,
                     scope,
@@ -522,7 +524,7 @@ export default function EditAppraisalCyclePage() {
                         </Typography>
                     </Box>
                 </Box>
-                <Stack direction="row" spacing={1}>
+                <Stack direction="row" spacing={1} sx={{ display: { xs: 'none', sm: 'flex' }, '& button': { minHeight: 44 } }}>
                     {isNewCycle && setupStep > 0 && (
                         <Button variant="outlined" onClick={() => setSetupStep((current) => current - 1)} disabled={saving}>
                             Previous
@@ -559,8 +561,9 @@ export default function EditAppraisalCyclePage() {
                 </Box>
             )}
 
+            {rosterError && <Alert severity="error" sx={{ mb: 3 }} action={<Button onClick={() => setRosterAttempt(n => n + 1)}>Retry directory</Button>}>{rosterError}</Alert>}
             {saveError && (
-                <Alert severity="error" sx={{ mb: 3 }}>
+                <Alert tabIndex={-1} ref={(node: HTMLDivElement | null) => { node?.focus(); }} severity="error" sx={{ mb: 3 }}>
                     {saveError}
                 </Alert>
             )}
@@ -1081,6 +1084,12 @@ export default function EditAppraisalCyclePage() {
                     </Card>
                 </Grid>}
             </Grid>
+            <Stack direction="row" spacing={1} sx={{ display: { xs: 'flex', sm: 'none' }, position: 'sticky', bottom: 0, zIndex: 10, bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider', p: 1.5, pb: 'calc(12px + env(safe-area-inset-bottom))', mt: 2, '& button': { minHeight: 44, flex: 1 } }}>
+              {isNewCycle && setupStep > 0 && <Button variant="outlined" disabled={saving} onClick={() => setSetupStep(step => step - 1)}>Previous</Button>}
+              <Button variant="contained" onClick={handlePrimaryAction} disabled={saving || loadingEmployees || !!rosterError}>
+                {saving ? 'Saving…' : !isNewCycle ? 'Save Changes' : setupStep === 3 ? 'Launch Review Cycle' : 'Continue'}
+              </Button>
+            </Stack>
         </Box>
     );
 }

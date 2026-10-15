@@ -147,6 +147,7 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
   const renderQuestion = (section: CycleSection, question: CycleQuestion) => {
     const key = responseKey(section.id, question.id);
     const value = values[key];
+    const promptId = `prompt-${section.id}-${question.id}`;
     if (question.responseType === 'rating') {
       const minimum = question.ratingMin || 1;
       const maximum = question.ratingMax || 5;
@@ -155,8 +156,8 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
         <FormControl fullWidth size="small">
           <InputLabel id={labelId}>Rating</InputLabel>
           <Select
-            labelId={labelId}
-            id={`rating-${section.id}-${question.id}`}
+            labelId={`${promptId} ${labelId}`}
+            id={`response-${section.id}-${question.id}`}
             value={typeof value === 'number' ? value : ''}
             label="Rating"
             disabled={readOnly}
@@ -169,7 +170,7 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
       );
     }
     if (question.responseType === 'boolean') {
-      return <FormControlLabel control={<Checkbox checked={value === true} disabled={readOnly} onChange={(event) => updateValue(section.id, question.id, event.target.checked)} />} label="Yes" />;
+      return <FormControlLabel control={<Checkbox id={`response-${section.id}-${question.id}`} slotProps={{ input: { 'aria-labelledby': promptId } }} checked={value === true} disabled={readOnly} onChange={(event) => updateValue(section.id, question.id, event.target.checked)} />} label="Yes" />;
     }
     if (['single_select', 'multi_select'].includes(question.responseType)) {
       const multiple = question.responseType === 'multi_select';
@@ -178,8 +179,8 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
         <FormControl fullWidth size="small">
           <InputLabel id={labelId}>Answer</InputLabel>
           <Select
-            labelId={labelId}
-            id={`answer-${section.id}-${question.id}`}
+            labelId={`${promptId} ${labelId}`}
+            id={`response-${section.id}-${question.id}`}
             multiple={multiple}
             value={multiple ? (Array.isArray(value) ? value : []) : (value || '')}
             label="Answer"
@@ -193,6 +194,8 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
     }
     return (
       <TextField
+        id={`response-${section.id}-${question.id}`}
+        slotProps={{ htmlInput: { 'aria-labelledby': promptId } }}
         fullWidth
         size="small"
         type={question.responseType === 'number' ? 'number' : 'text'}
@@ -235,7 +238,7 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
             <Stack spacing={2} sx={{ mt: 2 }}>
               {section.questions.map((question) => (
                 <Box key={question.id}>
-                  <Typography component="label" variant="body2" fontWeight={600} display="block" mb={0.75}>
+                  <Typography component="label" id={`prompt-${section.id}-${question.id}`} htmlFor={`response-${section.id}-${question.id}`} variant="body2" fontWeight={600} display="block" mb={0.75}>
                     {question.prompt}{section.required && question.required ? ' *' : ''}
                   </Typography>
                   {question.helpText && <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>{question.helpText}</Typography>}
