@@ -97,6 +97,14 @@ archive_volume_if_present() {
   archive_volume "${volume}" "${output_name}"
 }
 
+archive_consistent_volume() {
+  local volume="$1"
+  local output_name="$2"
+  pause_volume_writers "${volume}"
+  archive_volume "${volume}" "${output_name}"
+  resume_paused_containers
+}
+
 require_container seemplify-shared-mongodb-1
 require_container seemplify-shared-experience-postgres-1
 require_container seemplify-mail-mariadb-1
@@ -114,6 +122,56 @@ docker exec seemplify-shared-experience-postgres-1 sh -lc \
 docker exec seemplify-mail-mariadb-1 sh -lc \
   'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" exec mariadb-dump --user=root --all-databases --single-transaction --routines --events --triggers' \
   | gzip -9 >"${DESTINATION}/mail-mariadb.sql.gz"
+
+# Connectors and LMS are independent databases, not part of the Experience
+# or Postal dump. Include both when those optional stacks are deployed.
+if [[ "$(docker inspect --format '{{.State.Status}}' seemplify-connectors-nango-db-1 2>/dev/null || true)" == running ]]; then
+  docker exec seemplify-connectors-nango-db-1 sh -lc \
+    'exec pg_dumpall --username "$POSTGRES_USER"' \
+    | gzip -9 >"${DESTINATION}/nango-postgres.sql.gz"
+fi
+if [[ "$(docker inspect --format '{{.State.Status}}' seemplify-lms-db-1 2>/dev/null || true)" == running ]]; then
+  docker exec seemplify-lms-db-1 sh -lc \
+    'MYSQL_PWD="${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}" exec mariadb-dump --user=root --all-databases --single-transaction --routines --events --triggers' \
+    | gzip -9 >"${DESTINATION}/lms-mariadb.sql.gz"
+  archive_consistent_volume seemplify-lms_lms-sites lms-sites.tar.gz
+fi
+if docker volume inspect milo-web-s0mht6_milo_codex_accounts >/dev/null 2>&1; then
+  archive_consistent_volume milo-web-s0mht6_milo_codex_accounts milo-codex-accounts.tar.gz
+fi
+if [[ -d /opt/milo/models ]]; then
+  # Model weights are large and usually immutable. Retain each snapshot's
+  # archive while sharing its inode when a content manifest is unchanged.
+  python3 - "${DESTINATION}" "${BACKUP_ROOT}/latest" <<'PY'
+import hashlib, json, os, pathlib, stat, subprocess, sys
+destination = pathlib.Path(sys.argv[1])
+previous = pathlib.Path(sys.argv[2]).resolve()
+root = pathlib.Path('/opt/milo/models')
+manifest = []
+for path in sorted(root.rglob('*')):
+    details = path.lstat()
+    item = {'path': str(path.relative_to(root)), 'mode': stat.S_IMODE(details.st_mode),
+            'uid': details.st_uid, 'gid': details.st_gid}
+    if path.is_symlink():
+        item['link'] = os.readlink(path)
+    elif path.is_file():
+        item['size'] = details.st_size
+        with path.open('rb') as stream:
+            item['sha256'] = hashlib.file_digest(stream, 'sha256').hexdigest()
+    manifest.append(item)
+manifest_file = destination / 'milo-models.manifest.json'
+manifest_file.write_text(json.dumps(manifest, sort_keys=True))
+prior_manifest = previous / manifest_file.name
+prior_archive = previous / 'milo-models.tar.gz'
+archive = destination / prior_archive.name
+if (previous.parent == destination.parent and previous != destination
+        and prior_manifest.is_file() and prior_archive.is_file()
+        and prior_manifest.read_bytes() == manifest_file.read_bytes()):
+    os.link(prior_archive, archive)
+else:
+    subprocess.run(['tar', '-C', '/opt/milo', '-czf', str(archive), 'models'], check=True)
+PY
+fi
 
 # n8n is staged independently from the core stack, so its backup is
 # conditional. When present, use a native PostgreSQL dump and preserve its home
@@ -164,13 +222,13 @@ docker cp seemplify-shared-redis-1:/data/dump.rdb "${DESTINATION}/shared-redis.r
 archive_volume seemplify-shared_qdrant_data qdrant-data.tar.gz
 archive_volume seemplify-shared_weaviate_data weaviate-data.tar.gz
 archive_volume seemplify-shared_arangodb_data arangodb-data.tar.gz
-archive_volume seemplify-extended_chatgpt_gateway_data chatgpt-gateway-data.tar.gz
-archive_volume seemplify-extended_experience_runtime experience-runtime.tar.gz
+archive_consistent_volume seemplify-extended_chatgpt_gateway_data chatgpt-gateway-data.tar.gz
+archive_consistent_volume seemplify-extended_experience_runtime experience-runtime.tar.gz
 archive_volume seemplify-extended_knowledge_runtime_state knowledge-runtime-state.tar.gz
 archive_volume seemplify-extended_knowledge_runtime_data knowledge-runtime-data.tar.gz
 archive_volume seemplify-workspace_workspace_uploads workspace-uploads.tar.gz
 archive_volume seemplify-mail_postal_config postal-config.tar.gz
-archive_volume seemplify-mail_mail_api_data mail-api-data.tar.gz
+archive_consistent_volume seemplify-mail_mail_api_data mail-api-data.tar.gz
 archive_volume dokploy dokploy-data.tar.gz
 
 {
