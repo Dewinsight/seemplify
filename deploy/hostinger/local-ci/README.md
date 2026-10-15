@@ -15,7 +15,7 @@ workflow adapter disables remote cache inputs and the Actions-driver condition,
 and delegates workflow concurrency to the durable host queue.
 
 The current KVM2 has 2 vCPU and 8 GiB RAM. One heavy job executes at a time;
-additional accepted revisions remain queued. Each job container is capped at 1 vCPU and
+additional accepted revisions remain queued. Each job container is capped at 1.5 vCPU and
 3500 MiB RAM with bridged networking, no swap or host Docker socket. Jobs in the same lane serialize;
 the existing shared host deployment lock also serializes builds, migrations and
 service mutations across lanes. The queue retains pending revisions and does
@@ -106,3 +106,10 @@ New Dokploy must have 1536 MiB memory and NODE_OPTIONS heap1024 MiB; Traefik
 must join both bridge and dokploy-network. Root-only runtime recovery, updated
 database connection handover, pinned SSH host key and TLS CA are encrypted in
 the sibling access vault/archive. Never restore an old database over live writes.
+
+Backend jobs also persist Jest's dependency/transform cache in the named
+`hostinger-ci-jest-cache` volume at `/tmp/jest_0`. Only allowlisted canonical
+backend branches receive this volume. Jest retains responsibility for cache
+invalidation; no test results are cached or skipped and workflow test commands
+remain unchanged. This avoids discarding compiled test dependencies after each
+ephemeral job. The volume contains test tooling artifacts, not CI credentials.

@@ -5,7 +5,7 @@
   "act": "/opt/hostinger-ci/bin/act",
   "image": "dewinsight/hostinger-ci:1",
   "workers": 1,
-  "job_cpus": 1.0,
+  "job_cpus": 1.5,
   "job_memory": "3500m",
   "poll_seconds": 30,
   "timeout_seconds": 10800,
