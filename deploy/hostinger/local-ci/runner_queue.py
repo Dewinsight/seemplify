@@ -20,6 +20,13 @@ import urllib.request
 SHA = re.compile(r'[0-9a-f]{40}\Z')
 
 
+def memory_limit_bytes(value):
+    match = re.fullmatch(r'([1-9][0-9]*)([kmgt]?)b?', str(value), re.I)
+    if not match:
+        raise ValueError('Invalid configured memory limit')
+    return int(match[1]) * 1024 ** ('kmgt'.index(match[2].lower()) + 1 if match[2] else 0)
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         raise ValueError('GitHub API redirects are not allowed')
@@ -221,8 +228,10 @@ class Driver:
                 if job['kind'] == 'probe':
                     self.command(['docker', 'run', '--rm', '--label', label, '--cpus', str(self.config['job_cpus']),
                         '--memory', self.config['job_memory'], '--memory-swap', self.config['job_memory'],
+                        '--env', 'EXPECTED_CPU=' + str(round(float(self.config['job_cpus']) * 100000)) + ' 100000',
+                        '--env', 'EXPECTED_MEMORY=' + str(memory_limit_bytes(self.config['job_memory'])),
                         '--pids-limit', '2048', '--network', 'none', '--entrypoint', 'python3', self.config['image'],
-                        '-c', 'import json,pathlib,time; p=pathlib.Path; cpu=p("/sys/fs/cgroup/cpu.max").read_text().strip();memory=p("/sys/fs/cgroup/memory.max").read_text().strip();assert cpu=="150000 100000";assert memory=="4294967296";assert p("/sys/fs/cgroup/memory.swap.max").read_text().strip()=="0";assert not p("/var/run/docker.sock").exists();print(json.dumps({"started":time.time(),"cpu":cpu,"memory":memory}),flush=True);time.sleep(12);print("Probe passed",flush=True)'], log)
+                        '-c', 'import json,pathlib,time,os; p=pathlib.Path; cpu=p("/sys/fs/cgroup/cpu.max").read_text().strip();memory=p("/sys/fs/cgroup/memory.max").read_text().strip();assert cpu==os.environ["EXPECTED_CPU"];assert memory==os.environ["EXPECTED_MEMORY"];assert p("/sys/fs/cgroup/memory.swap.max").read_text().strip()=="0";assert not p("/var/run/docker.sock").exists();print(json.dumps({"started":time.time(),"cpu":cpu,"memory":memory}),flush=True);time.sleep(12);print("Probe passed",flush=True)'], log)
                 else:
                     self.deploy(job, root, log)
                 success = True
@@ -354,6 +363,14 @@ class Driver:
         (root / 'verification.json').write_text(json.dumps({'sha': revision, 'health': health,
             'container': container[0], 'image': details['Config']['Image']}, indent=2))
 
+    def capacity_available(self):
+        # Keep accepted pushes durable while application load needs the RAM.
+        available = next(int(line.split()[1]) * 1024 for line in
+            Path('/proc/meminfo').read_text().splitlines()
+            if line.startswith('MemAvailable:'))
+        reserve = int(self.config.get('minimum_free_memory_after_job_mb', 512)) * 1024 ** 2
+        return available >= memory_limit_bytes(self.config['job_memory']) + reserve
+
     def serve(self):
         # No second coordinator can recover leases while another owns the database.
         import fcntl
@@ -398,6 +415,8 @@ class Driver:
                         except Exception:
                             pass
                 while len(futures) < self.config['workers']:
+                    if not self.capacity_available():
+                        break
                     job = self.queue.claim()
                     if job is None:
                         break
