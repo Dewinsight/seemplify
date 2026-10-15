@@ -8,6 +8,19 @@ an independent controller capped at 0.5 vCPU and 1 GiB. Their aggregate ceiling
 is 2.5 vCPU and 5 GiB; additional builds queue. Host deployment commands also
 serialize through `/var/lock/seemplify-production-deploy.lock`.
 
+Run `bash deploy/hostinger/bootstrap-kvm4-builder.sh` as root on the host before
+enabling deployments. It provisions `seemplify-production`, a BuildKit worker
+with 1.5 CPU, 3 GiB RAM, no swap and one build step at a time. Cache garbage
+collection targets 12 GB usage and 25 GB of free host space; active builds can
+temporarily exceed those disk targets. The SSH server supplies
+`BUILDX_BUILDER` to deployment sessions, so existing `docker build` commands
+use this worker and load their images into the host engine. The bootstrap
+verifies the worker limits before enabling that environment setting.
+
+These build limits are separate from runner limits. Application containers
+keep their existing service limits, and Dokploy-initiated builds need their
+own capacity check.
+
 Start this profile with `docker compose --env-file .env -f kvm4.compose.yml up -d`.
 Do not start the four-worker `compose.yml` profile on KVM4. Retain the existing
 `seemplify-worker-state` and `control-state` volumes and registration identities.
