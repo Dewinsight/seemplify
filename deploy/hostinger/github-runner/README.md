@@ -10,8 +10,9 @@ serialize through `/var/lock/seemplify-production-deploy.lock`.
 
 Run `bash deploy/hostinger/bootstrap-kvm4-builder.sh` as root on the host before
 enabling deployments. It provisions `seemplify-production`, a BuildKit worker
-with 1.5 CPU, 3 GiB RAM, no swap and one build step at a time. Its cache stays
-within 12 GB and reserves 25 GB of free host space. The SSH server supplies
+with 1.5 CPU, 3 GiB RAM, no swap and one build step at a time. Cache garbage
+collection targets 12 GB usage and 25 GB of free host space; active builds can
+temporarily exceed those disk targets. The SSH server supplies
 `BUILDX_BUILDER` to deployment sessions, so existing `docker build` commands
 use this worker and load their images into the host engine. The bootstrap
 verifies the worker limits before enabling that environment setting.
