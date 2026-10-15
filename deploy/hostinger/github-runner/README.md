@@ -1,4 +1,28 @@
-# Dedicated KVM8 GitHub Actions runners
+# Hostinger GitHub Actions runners
+
+## KVM4 production profile
+
+`kvm4.compose.yml` runs the migrated production pool on 4 vCPU and 16 GiB:
+one shared Seemplify/Workspace build worker capped at 2 vCPU and 4 GiB, plus
+an independent controller capped at 0.5 vCPU and 1 GiB. Their aggregate ceiling
+is 2.5 vCPU and 5 GiB; additional builds queue. Host deployment commands also
+serialize through `/var/lock/seemplify-production-deploy.lock`.
+
+Start this profile with `docker compose --env-file .env -f kvm4.compose.yml up -d`.
+Do not start the four-worker `compose.yml` profile on KVM4. Retain the existing
+`seemplify-worker-state` and `control-state` volumes and registration identities.
+On the existing shared organization worker, add `dewinsight-kvm8-workspace` and
+`dewinsight-kvm4-build`; add `dewinsight-kvm4-control` to the controller.
+Repository permissions and runner group access remain unchanged. Stop the old
+Workspace and second Seemplify worker before validating the reduced pool.
+
+The `kvm8` names remain compatibility aliases for existing workflows; they do
+not identify the current physical host. Run `validate-kvm4-runner-pool.yml` to
+verify three queued build probes, Workspace routing and concurrent control.
+The historical four-worker profile and its validation remain available for
+hosts meeting the original KVM8 capacity requirements.
+
+## KVM8 profile
 
 This stack provides four isolated runners without mounting the host
 Docker socket or any Seemplify production directory:

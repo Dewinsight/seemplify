@@ -1,0 +1,57 @@
+name: Validate KVM4 Runner Pool
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kvm4-runner-pool-validation
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  build:
+    name: Queued build probe
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        slot: [1, 2, 3]
+    runs-on: [self-hosted, dewinsight-kvm4-build]
+    timeout-minutes: 5
+    steps:
+      - name: Verify bounded shared build slot
+        run: |
+          set -euo pipefail
+          test "$(cat /sys/fs/cgroup/cpu.max)" = '200000 100000'
+          test "$(cat /sys/fs/cgroup/memory.max)" = '4294967296'
+          test "${RUNNER_NAME:-}" = kvm8-seemplify-worker
+          printf 'slot=${{ matrix.slot }} runner=%s started=%s\n' "$RUNNER_NAME" "$(date -u +%FT%TZ)"
+          sleep 30
+          printf 'slot=${{ matrix.slot }} runner=%s completed=%s\n' "$RUNNER_NAME" "$(date -u +%FT%TZ)"
+  workspace:
+    name: Workspace routing probe
+    runs-on: [self-hosted, dewinsight-kvm8-workspace]
+    timeout-minutes: 5
+    steps:
+      - name: Verify Workspace uses the shared build slot
+        run: |
+          set -euo pipefail
+          test "${RUNNER_NAME:-}" = kvm8-seemplify-worker
+          test "$(cat /sys/fs/cgroup/memory.max)" = '4294967296'
+  control:
+    name: Concurrent deployment controller
+    runs-on: [self-hosted, dewinsight-kvm4-control]
+    timeout-minutes: 5
+    steps:
+      - name: Verify independent bounded controller
+        run: |
+          set -euo pipefail
+          test "${RUNNER_NAME:-}" = kvm8-deploy-controller
+          test "$(cat /sys/fs/cgroup/cpu.max)" = '50000 100000'
+          test "$(cat /sys/fs/cgroup/memory.max)" = '1073741824'
+          printf 'controller started=%s\n' "$(date -u +%FT%TZ)"
+          sleep 30
+          printf 'controller completed=%s\n' "$(date -u +%FT%TZ)"

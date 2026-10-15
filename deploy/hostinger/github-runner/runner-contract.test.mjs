@@ -76,6 +76,30 @@ test('dedicates independent constrained runners to Seemplify, Workspace, and dep
   }
 });
 
+test('KVM4 queues both products on one build slot while control remains independent', () => {
+  const result = spawnSync('docker', ['compose', '-f', resolve(runnerDirectory, 'kvm4.compose.yml'), 'config', '--format', 'json'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const profile = JSON.parse(result.stdout);
+  assert.deepEqual(Object.keys(profile.services).sort(), ['control', 'seemplify-worker']);
+  const services = Object.values(profile.services);
+  assert.equal(services.reduce((sum, service) => sum + service.cpus, 0), 2.5);
+  assert.equal(services.reduce((sum, service) => sum + Number(service.mem_limit), 0), 5 * 1024 ** 3);
+  const worker = profile.services['seemplify-worker'];
+  assert.equal(worker.environment.RUNNER_NAME, 'kvm8-seemplify-worker');
+  for (const label of ['dewinsight-kvm8-seemplify', 'dewinsight-kvm8-workspace', 'dewinsight-kvm4-build']) {
+    assert.ok(worker.environment.RUNNER_LABELS.split(',').includes(label));
+  }
+  for (const service of services) {
+    assert.equal(service.memswap_limit, service.mem_limit);
+    assert.ok(!service.privileged);
+    assert.equal(service.volumes.length, 1);
+    assert.equal(service.volumes[0].target, '/runner');
+    assert.equal(service.environment.RUNNER_MANUALLY_TRAP_SIG, '1');
+  }
+  assert.equal(profile.volumes['seemplify-worker-state'].name, 'github-actions-runner_seemplify-worker-state');
+  assert.equal(profile.volumes['control-state'].name, 'github-actions-runner_control-state');
+});
+
 test('KVM2 keeps two bounded slots and persistent isolated state', () => {
   const result = spawnSync('docker', ['compose', '-f', resolve(runnerDirectory, 'kvm2.compose.yml'), 'config', '--format', 'json'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
