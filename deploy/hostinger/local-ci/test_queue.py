@@ -191,5 +191,23 @@ class QueueTests(unittest.TestCase):
         driver.command.assert_not_called()
 
 
+class CapacityTests(unittest.TestCase):
+    def test_memory_limits_accept_configured_units_and_reject_invalid_values(self):
+        self.assertEqual(module.memory_limit_bytes('3500m'), 3500 * 1024 ** 2)
+        self.assertEqual(module.memory_limit_bytes('4g'), 4 * 1024 ** 3)
+        self.assertEqual(module.memory_limit_bytes('512MB'), 512 * 1024 ** 2)
+        for value in ['0', '-1g', 'not-memory', '1g extra']:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                module.memory_limit_bytes(value)
+
+    def test_application_pressure_leaves_memory_for_queued_jobs(self):
+        driver = object.__new__(module.Driver)
+        driver.config = {'job_memory': '3500m', 'minimum_free_memory_after_job_mb': 512}
+        for available_mib, expected in [(5012, True), (4012, True), (4011, False), (3000, False)]:
+            meminfo = f'MemTotal: 8388608 kB\nMemAvailable: {available_mib * 1024} kB\n'
+            with self.subTest(available_mib=available_mib), patch.object(module.Path, 'read_text', return_value=meminfo):
+                self.assertEqual(driver.capacity_available(), expected)
+
+
 if __name__ == '__main__':
     unittest.main()

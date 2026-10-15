@@ -1,7 +1,7 @@
 # Hostinger CI without GitHub Actions dispatch
 
 The KVM2 service polls canonical GitHub branches, records each first-parent
-revision in a SQLite WAL queue, and uses two constrained containers to execute
+revision in a SQLite WAL queue, and uses constrained containers to execute
 the existing deployment workflows through pinned `act` 0.2.89. GitHub Actions
 billing or dispatch availability does not control this queue. Seemplify's public
 repository continues to use its working KVM8 Actions pool.
@@ -14,14 +14,20 @@ at the exact queued SHA. Without modifying that checked-out tree, the local
 workflow adapter disables remote cache inputs and the Actions-driver condition,
 and delegates workflow concurrency to the durable host queue.
 
-Two jobs can execute concurrently. Each job container is capped at 1.5 vCPU and
-4 GiB RAM with bridged networking, no swap or host Docker socket. Jobs in the same lane serialize;
+The current KVM2 has 2 vCPU and 8 GiB RAM. One heavy job executes at a time;
+additional accepted revisions remain queued. Each job container is capped at 1 vCPU and
+3500 MiB RAM with bridged networking, no swap or host Docker socket. Jobs in the same lane serialize;
 the existing shared host deployment lock also serializes builds, migrations and
 service mutations across lanes. The queue retains pending revisions and does
 not cancel an active release when a newer commit arrives. A restart recovers
 unfinished leases after removing only containers carrying their exact job label.
 Deployments are therefore retried at least once after an interrupted service;
 the existing immutable release and migration checks must remain idempotent.
+The coordinator admits a job only when MemAvailable covers its configured memory
+limit plus 512 MiB of headroom. It keeps polling and retaining pushes while waiting.
+The independent BuildKit builder uses 1 CPU / 3 GiB, no swap, max-parallelism=1
+and disk GC limits; builds and migrations share the deployment lock.
+Native lightweight scanner agents are capped separately at .5 CPU / 512 MiB each.
 
 The execution image is built locally rather than published in a registry.
 `ensure-image.sh` checks it before service startup and every job, rebuilds a
@@ -81,8 +87,22 @@ python3 /opt/hostinger-ci/runner_queue.py enqueue --route crm-frontend-dev --kin
 python3 /opt/hostinger-ci/runner_queue.py enqueue --route crm-frontend-dev --kind probe --nonce 3
 ```
 
-Inspect job start/end times: two should overlap, the third should wait, and all
-must finish successfully. Probe containers assert CPU, memory, swap and socket
+With the production one-worker configuration, inspect that probes serialize
+and all finish successfully. For an isolated acceptance test with two workers,
+two should overlap and the third should wait; do not raise production workers
+without checking host headroom. Probe containers assert their configured CPU, memory, swap and socket
 isolation. On credential rotation, update the root-only file and encrypted vault,
 rebuild and verify the AES-256 archive, then restart the coordinator. Revoking the
 existing GitHub OAuth credential also revokes this service's API connection.
+
+## Current CRM host and recovery
+
+CRM moved on 2026-10-15 to Hostinger KVM2 2065023 / 89.116.229.22.
+Canonical URLs use dev-crm.cernel.ng, staging-crm.cernel.ng and their
+dev-crm-api / staging-crm-api counterparts. Historical scripts called the old
+1903452 / 191.215.40.99 host kvm2; it is retained KVM4 rollback storage and
+legacy proxy only, with its coordinator/runners/application databases stopped.
+New Dokploy must have 1536 MiB memory and NODE_OPTIONS heap1024 MiB; Traefik
+must join both bridge and dokploy-network. Root-only runtime recovery, updated
+database connection handover, pinned SSH host key and TLS CA are encrypted in
+the sibling access vault/archive. Never restore an old database over live writes.
