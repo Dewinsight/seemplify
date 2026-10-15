@@ -106,3 +106,10 @@ New Dokploy must have 1536 MiB memory and NODE_OPTIONS heap1024 MiB; Traefik
 must join both bridge and dokploy-network. Root-only runtime recovery, updated
 database connection handover, pinned SSH host key and TLS CA are encrypted in
 the sibling access vault/archive. Never restore an old database over live writes.
+
+Backend jobs also persist Jest's dependency/transform cache in the named
+`hostinger-ci-jest-cache` volume at `/tmp/jest_0`. Only allowlisted canonical
+backend branches receive this volume. Jest retains responsibility for cache
+invalidation; no test results are cached or skipped and workflow test commands
+remain unchanged. This avoids discarding compiled test dependencies after each
+ephemeral job. The volume contains test tooling artifacts, not CI credentials.

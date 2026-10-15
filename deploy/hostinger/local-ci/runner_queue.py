@@ -341,6 +341,8 @@ class Driver:
             secrets_file = str(local_secrets)
         (root / 'variables.env').write_text('\n'.join(k + '=' + json.dumps(v) for k, v in values.items()) + '\n')
         options = f"--cpus={self.config['job_cpus']} --memory={self.config['job_memory']} --memory-swap={self.config['job_memory']} --pids-limit=2048 --label={label} --volume=hostinger-ci-npm-cache:/root/.npm"
+        if route['repo'] == 'Dewinsight/Xplorer-Full-backend':
+            options += ' --volume=hostinger-ci-jest-cache:/tmp/jest_0'
         self.command([self.config['act'], 'push', '-W', str(adapted), '-e', str(root / 'event.json'),
             '-P', 'self-hosted=' + self.config['image'], '-P', 'dewinsight-kvm2-crm=' + self.config['image'],
             '--pull=false', '--network', 'bridge', '--concurrent-jobs', '1', '--container-daemon-socket', '-',
