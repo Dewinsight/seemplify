@@ -1,0 +1,21 @@
+name: github-actions-runner
+
+# Retain durable registration identities and routing aliases during the move.
+# One shared build slot queues Seemplify and Workspace work on the 16 GiB host.
+services:
+  seemplify-worker:
+    extends:
+      file: compose.yml
+      service: seemplify-worker
+    environment:
+      RUNNER_LABELS: dewinsight-kvm8,dewinsight-kvm8-seemplify,dewinsight-kvm8-workspace,dewinsight-kvm4-build
+  control:
+    extends:
+      file: compose.yml
+      service: control
+    environment:
+      RUNNER_LABELS: dewinsight-kvm8-control,dewinsight-kvm4-control
+
+volumes:
+  seemplify-worker-state:
+  control-state:
