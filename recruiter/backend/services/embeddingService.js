@@ -1,6 +1,6 @@
 const axios = require('axios');
 const crypto = require('node:crypto');
-const { generateNomicEmbedding } = require('./nomicEmbeddingClient');
+const { generateNomicEmbedding, embeddingSourceHash } = require('./nomicEmbeddingClient');
 const rankingService = require('./rankingService');
 const { requireEmbeddingRuntimeConfig } = require('../config/embeddingRuntimeConfig');
 const {
@@ -781,7 +781,7 @@ class EmbeddingService {
         vectorStore: 'weaviate',
       });
 
-      metadata.embeddingSourceHash = crypto.createHash('sha256').update(embeddingText).digest('hex');
+      metadata.embeddingSourceHash = requireEmbeddingRuntimeConfig().provider === 'nomic-node' ? embeddingSourceHash(embeddingText) : crypto.createHash('sha256').update(embeddingText).digest('hex');
       // Store in vector database
       await this.storeEmbedding(candidate._id.toString(), embedding, metadata, this.candidateIndexName);
       
@@ -1089,7 +1089,7 @@ class EmbeddingService {
         salaryCurrency: job.salary?.currency || 'USD'
       };
 
-      metadata.embeddingSourceHash = crypto.createHash('sha256').update(embeddingText).digest('hex');
+      metadata.embeddingSourceHash = requireEmbeddingRuntimeConfig().provider === 'nomic-node' ? embeddingSourceHash(embeddingText) : crypto.createHash('sha256').update(embeddingText).digest('hex');
       await this.storeEmbedding(job._id.toString(), embedding, metadata, this.jobIndexName);
       
       console.log(`Successfully created embedding for job: ${job._id}`);
