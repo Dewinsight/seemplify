@@ -420,5 +420,73 @@ class CleanupTests(unittest.TestCase):
                 self.queue.remove_payload(invalid, apply=True)
 
 
+class ImageRetentionTests(unittest.TestCase):
+    def images(self):
+        return [{'Id': str(i), 'RepoTags': ['xplorer-crm-dev:' + format(i, '012x')],
+                 'Created': '2020-01-' + str(i + 1).zfill(2) + 'T00:00:00Z'} for i in range(9)]
+
+    def test_keeps_three_latest_and_all_container_service_rollback_images(self):
+        images = self.images()
+        refs = [images[1]['RepoTags'][0] + '@sha256:example', images[2]['RepoTags'][0]]
+        selected = module.obsolete_release_images(images, {'0'}, refs)
+        self.assertEqual([row['Id'] for row in selected], ['3', '4', '5'])
+
+    def test_shared_foreign_tag_and_untagged_images_are_excluded(self):
+        images = self.images()
+        images[0]['RepoTags'].append('unrelated-app:stable')
+        images[1]['RepoTags'] = None
+        self.assertEqual([r['Id'] for r in module.obsolete_release_images(images, set(), [])], ['2', '3', '4', '5'])
+
+    def test_retention_is_per_application_and_protects_digests_and_ids(self):
+        images = self.images()
+        images[0]['RepoDigests'] = ['xplorer-crm-dev@sha256:retained']
+        backend = [{'Id': 'b' + str(i), 'RepoTags': ['xplorer-backend-staging:' + format(i, '012x')],
+                    'Created': '2020-02-' + str(i + 1).zfill(2) + 'T00:00:00Z'} for i in range(4)]
+        selected = module.obsolete_release_images(images + backend, set(), ['xplorer-crm-dev@sha256:retained', '1'])
+        self.assertEqual([row['Id'] for row in selected], ['2', '3', '4', '5', 'b0'])
+
+    def test_new_images_remain_available_for_a_day(self):
+        images = self.images()
+        images[0]['Created'] = module.now()
+        selected = module.obsolete_release_images(images, set(), [])
+        self.assertNotIn('0', [row['Id'] for row in selected])
+
+    def test_disabled_policy_does_not_call_docker(self):
+        driver = object.__new__(module.Driver)
+        driver.config = {}
+        with patch.object(module.subprocess, 'check_output') as docker:
+            self.assertEqual(driver.cleanup_images(apply=True), {'enabled': False})
+        docker.assert_not_called()
+
+    @unittest.skipIf(os.name == 'nt', 'Linux deployment lock contract')
+    def test_image_removal_uses_only_selected_tags_and_never_force(self):
+        import json
+        import fcntl
+        driver = object.__new__(module.Driver)
+        driver.config = {'cleanup_release_images': True}
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryFile() as lock:
+            driver.queue = module.Queue(directory)
+            images = self.images()
+            services = [{'Spec': {'TaskTemplate': {'ContainerSpec': {'Image': images[1]['RepoTags'][0]}}},
+                         'PreviousSpec': {'TaskTemplate': {'ContainerSpec': {'Image': images[2]['RepoTags'][0]}}}}]
+            replies = [' '.join(str(i) for i in range(9)), json.dumps(images), 'container',
+                       json.dumps([{'Image': '0'}]), 'service', json.dumps(services)]
+            with patch.object(module.os, 'open', return_value=lock.fileno()), patch.object(module.os, 'fdopen', return_value=contextlib.nullcontext(lock)), patch.object(fcntl, 'flock'), patch.object(module.subprocess, 'check_output', side_effect=replies), patch.object(module.subprocess, 'run') as remove:
+                report = driver.cleanup_images(apply=True)
+            self.assertEqual(report['removed_images'], 3)
+            self.assertEqual([call.args[0] for call in remove.call_args_list],
+                             [['docker', 'image', 'rm'] + images[i]['RepoTags'] for i in (3, 4, 5)])
+            self.assertTrue((driver.queue.root / 'image-cleanup-report.json').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux deployment lock contract')
+    def test_busy_deployment_lock_skips_docker_cleanup(self):
+        import fcntl
+        driver = object.__new__(module.Driver)
+        driver.config = {'cleanup_release_images': True}
+        with tempfile.TemporaryFile() as lock, patch.object(module.os, 'open', return_value=lock.fileno()), patch.object(module.os, 'fdopen', return_value=contextlib.nullcontext(lock)), patch.object(fcntl, 'flock', side_effect=BlockingIOError), patch.object(module.subprocess, 'check_output') as docker:
+            self.assertEqual(driver.cleanup_images(apply=True), {'skipped': 'deployment_active'})
+        docker.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
