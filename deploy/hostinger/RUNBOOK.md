@@ -67,11 +67,14 @@ Use the two-runner `github-runner/kvm4.compose.yml` profile and the bounded
 `seemplify-production` BuildKit worker. The older `kvm8` runner names and labels
 remain routing aliases. They do not identify the physical host.
 
-The former KVM8 at `179.198.192.126` retains recovery archives and a verified
-HTTPS forwarding edge for cached DNS. Its application containers are stopped
-with automatic restarts disabled and both Swarm services scaled to zero.
-Do not start its old applications or cancel it while the SMTP dependency below
-and recovery archive retention remain outstanding.
+The former KVM8 at `179.198.192.126` has no production role. All its containers
+are stopped with automatic restarts disabled and both Swarm services scaled to
+zero. Its cached-DNS forwarding edge and temporary SMTP transport are retired.
+The five original migration recovery archives are retained on KVM4 under
+`/opt/seemplify-migration/kvm4-20261015` and their SHA-256 checksums match the
+source originals. Do not restart the old applications. Before deleting or
+allowing the old VPS subscription to expire, retain and verify an encrypted
+off-host copy of the current KVM4 backup as well.
 
 ## Deployed applications
 
@@ -350,10 +353,13 @@ The restore check uses temporary containers and tmpfs storage. It verifies
 checksums, restores every database, counts restored structures, validates the
 Redis RDB, and removes its temporary containers on exit.
 
-Local backups do not protect against loss of the VPS. Configure a Cloudflare R2
-destination when credentials are issued; no usable off-host
-backup credential was present in the repository or access folder at migration
-time.
+Local backups do not protect against loss of the VPS. Before retiring an old
+host, copy the current restore-tested backup to the private access workspace in
+an AES-256 encrypted archive, verify every member against `SHA256SUMS`, and
+verify the archive by decrypting and reading every member. Keep that data backup
+outside Git; the encrypted access handover contains its checksum and location.
+This one-time offline copy does not configure recurring off-host backups.
+Configure a Cloudflare R2 destination when its credentials are issued.
 
 The current Cloudflare token is DNS-only and receives HTTP `403` from the R2
 bucket API. To finish R2, activate R2 without changing DNS, create a dedicated
@@ -369,21 +375,23 @@ Inbound company mail remains on Google Workspace. Outbound product email uses:
 `Mail API -> Postal -> Postfix relay -> smtp-relay.gmail.com:587`
 
 The Google relay uses source-IP authorization, not a stored Google password.
-Its allowlist still authorizes `179.198.192.126`. Pending the Google Workspace
-administrator's verification and approval of `191.215.40.99`, KVM4 uses a
-pinned SSH tunnel through the old approved IPv4 address. The tunnel binds only
-to the mail Docker network gateway and preserves Google's TLS hostname
-verification. `seemplify-mail-egress-bridge.service` runs on KVM4 and
-`seemplify-mail-ipv4-transport.service` runs on KVM8. The restricted forwarding
-key expires on 16 November 2026. Monitor these units and finish the allowlist
-change before that date. `MAIL_API_SEND_ENABLED=true` remains active.
-The mail deployment workflow applies `mail-egress.compose.yml` while the bridge
-unit is enabled, and refuses deployment if that required bridge is inactive.
+The `Seemplify authenticated transactional relay` rule authorizes only KVM4's
+`191.215.40.99`, with IP authentication and TLS encryption required. The old
+`179.198.192.126` authorization was removed on 16 October 2026 after direct
+delivery from KVM4 reached Gmail Inbox with SPF, DKIM and DMARC passing.
+`MAIL_API_SEND_ENABLED=true` remains active.
 
-After approving the new IP, verify a direct SMTP envelope without sending
-DATA, disable the bridge unit and remove the temporary `smtp-relay.gmail.com` ExtraHosts overrides from
-Postfix and Mail API, and verify mail readiness again before retiring the
-tunnel. Preserve the old route until direct verification succeeds.
+Postfix and Mail API resolve `smtp-relay.gmail.com` directly. They must not have
+the temporary `172.31.250.1` ExtraHosts override. Both bridge service units and
+the dedicated forwarding credential have been removed. KVM8 is not required
+for product email. The mail workflow uses the canonical Compose file without
+the legacy `mail-egress.compose.yml` override when the bridge unit is absent.
+
+For a future server-IP change, authorize the new IP first, verify a direct
+SMTP envelope with TLS and without sending DATA, then recreate Postfix and
+Mail API without a tunnel override. Verify an approved delivery test and its
+authentication results before revoking the old IP. Do not enable broad IP
+ranges or turn off TLS to complete a migration.
 
 Enabled sender domains are `seemplifyai.com` and `aiinnigeria.com`. Postal's
 SPF, DKIM and aligned return-path checks pass for both, and controlled messages
