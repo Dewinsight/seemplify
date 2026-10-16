@@ -114,6 +114,31 @@ for archive in "${LATEST_BACKUP}"/*.gz; do
 done
 echo "checksums and compressed archives ok"
 
+python3 - "${LATEST_BACKUP}" <<'PY'
+from pathlib import Path, PurePosixPath
+import sqlite3
+import sys
+import tarfile
+backup = Path(sys.argv[1])
+archive = backup / 'production-configuration.tar.gz'
+if archive.is_file():
+    with tarfile.open(archive) as stream:
+        names = set()
+        for member in stream:
+            path = PurePosixPath(member.name)
+            assert not path.is_absolute() and '..' not in path.parts
+            names.add(member.name)
+        assert 'opt/seemplify/secrets/shared-infrastructure.env' in names
+    print('production configuration archive validation ok')
+queue = backup / 'hostinger-ci-queue.sqlite3'
+if queue.is_file():
+    database = sqlite3.connect('file:' + str(queue) + '?mode=ro', uri=True)
+    assert database.execute('pragma integrity_check').fetchone()[0] == 'ok'
+    assert database.execute("select count(*) from sqlite_master where name='jobs'").fetchone()[0] == 1
+    database.close()
+    print('deployment queue snapshot validation ok')
+PY
+
 MONGO_PASSWORD="$(openssl rand -hex 24)"
 docker run -d --rm \
     --cpus 1 --memory 1536m --memory-swap 1536m \
