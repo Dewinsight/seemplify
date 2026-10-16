@@ -132,6 +132,61 @@ class Queue:
         with self.connect() as db:
             return [dict(row) for row in db.execute('SELECT * FROM jobs ORDER BY id')]
 
+    def job_directory(self, job_id):
+        if not isinstance(job_id, int) or job_id < 1:
+            raise ValueError('Invalid cleanup job identity')
+        base = self.root / 'jobs'
+        directory = base / str(job_id)
+        if base.is_symlink() or directory.is_symlink() or directory.resolve().parent != base.resolve():
+            raise ValueError('Cleanup must stay inside the private jobs directory')
+        return directory
+
+    def remove_payload(self, job_id, apply=False):
+        directory = self.job_directory(job_id)
+        removed = 0
+        for name in ('source', 'variables.env', 'event.json', 'workflow.yml', 'secrets.env'):
+            path = directory / name
+            if not path.exists() and not path.is_symlink():
+                continue
+            if apply:
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+            removed += 1
+        return removed
+
+    def cleanup(self, apply=False, retention_days=30, keep_latest=20):
+        """Reclaim terminal job payloads/logs; preserve the ledger and release proofs."""
+        if retention_days < 1 or keep_latest < 1:
+            raise ValueError('Cleanup must retain recent job history')
+        report = {'checked_at': now(), 'applied': apply, 'payloads': 0, 'logs': 0, 'errors': []}
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=retention_days)
+        with self.connect() as db:
+            # Serializes against claim/retry while deleting only terminal job files.
+            db.execute('BEGIN IMMEDIATE')
+            jobs = list(db.execute("SELECT * FROM jobs WHERE state IN ('success','failure','skipped') ORDER BY id DESC"))
+            for index, job in enumerate(jobs):
+                try:
+                    report['payloads'] += self.remove_payload(job['id'], apply=apply)
+                    log = self.job_directory(job['id']) / 'job.log'
+                    finished = datetime.datetime.fromisoformat(job['finished']) if job['finished'] else None
+                    if (index >= keep_latest and job['status_sent'] and finished is not None
+                            and finished < cutoff and (log.exists() or log.is_symlink())):
+                        if apply:
+                            log.unlink()
+                        report['logs'] += 1
+                except (OSError, ValueError, TypeError) as error:
+                    # Never print exception text, paths, payloads or credential values.
+                    report['errors'].append({'job': job['id'], 'type': type(error).__name__})
+        if apply:
+            target = self.root / 'cleanup-report.json'
+            if target.is_symlink():
+                raise ValueError('Cleanup report cannot be a symlink')
+            target.write_text(json.dumps(report, indent=2) + '\n')
+            target.chmod(0o600)
+        return report
+
     def undelivered(self):
         with self.connect() as db:
             return [dict(row) for row in db.execute("SELECT * FROM jobs WHERE state IN ('queued','success','failure') AND status_sent=0 ORDER BY id LIMIT 100")]
@@ -434,13 +489,12 @@ class Driver:
                 for container in containers:
                     subprocess.run(['docker', 'rm', '-f', container], check=True,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                source = self.queue.root / 'jobs' / str(job['id']) / 'source'
-                if source.exists():
-                    shutil.rmtree(source)
+                self.queue.remove_payload(job['id'], apply=True)
         with self.queue.connect() as db:
             db.execute("UPDATE jobs SET state='queued',started=NULL,status_sent=0 WHERE state='running'")
         futures = {}
         next_poll = 0
+        next_cleanup = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.config['workers']) as executor:
             while not self.stop.is_set():
                 for future, job in list(futures.items()):
@@ -449,6 +503,13 @@ class Driver:
                             self.queue.finish(job['id'], False)
                             print('worker_failed=' + type(future.exception()).__name__, flush=True)
                         del futures[future]
+                        next_cleanup = 0
+                if time.monotonic() >= next_cleanup:
+                    try:
+                        print('cleanup=' + json.dumps(self.queue.cleanup(apply=True)), flush=True)
+                    except Exception as error:
+                        print('cleanup_failed=' + type(error).__name__, flush=True)
+                    next_cleanup = time.monotonic() + 3600
                 if time.monotonic() >= next_poll:
                     try:
                         self.poll()
@@ -475,7 +536,8 @@ class Driver:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='/etc/hostinger-ci/config.json')
-    parser.add_argument('command', choices=['serve', 'status', 'enqueue', 'retry'])
+    parser.add_argument('command', choices=['serve', 'status', 'enqueue', 'retry', 'cleanup'])
+    parser.add_argument('--apply', action='store_true', help='Apply cleanup; otherwise report only')
     parser.add_argument('--route')
     parser.add_argument('--sha')
     parser.add_argument('--kind', choices=['deploy', 'probe'], default='deploy')
@@ -488,6 +550,11 @@ def main():
         driver.serve()
     elif args.command == 'status':
         print(json.dumps(driver.queue.rows(), indent=2))
+    elif args.command == 'cleanup':
+        report = driver.queue.cleanup(apply=args.apply)
+        print(json.dumps(report, indent=2))
+        if report['errors']:
+            raise SystemExit(1)
     elif args.command == 'retry':
         with driver.queue.connect() as db:
             changed = db.execute("UPDATE jobs SET state='queued',started=NULL,finished=NULL,status_sent=0 WHERE id=? AND state='failure'", (args.job,)).rowcount

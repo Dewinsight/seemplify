@@ -317,5 +317,108 @@ class CapacityTests(unittest.TestCase):
                     self.assertEqual(driver.capacity_available(), expected)
 
 
+class CleanupTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.queue = module.Queue(self.directory.name)
+
+    def job(self, state='success', finished='2020-01-01T00:00:00+00:00', sent=1):
+        job_id = self.queue.enqueue('frontend', 'a' * 40, nonce=str(len(self.queue.rows())))
+        with self.queue.connect() as db:
+            db.execute('UPDATE jobs SET state=?,finished=?,status_sent=? WHERE id=?', (state, finished, sent, job_id))
+        root = self.queue.job_directory(job_id)
+        root.mkdir(parents=True)
+        (root / 'source').mkdir()
+        (root / 'source' / 'build-output').write_text('disposable')
+        for name in ('job.log', 'secrets.env', 'event.json', 'workflow.yml', 'variables.env', 'verification.json'):
+            (root / name).write_text('test-only')
+        return root
+
+    def test_dry_run_preserves_files_and_proofs(self):
+        root = self.job()
+        report = self.queue.cleanup()
+        self.assertEqual(report['payloads'], 5)
+        self.assertFalse(report['errors'])
+        self.assertTrue((root / 'source' / 'build-output').exists())
+        self.assertTrue((root / 'secrets.env').exists())
+        self.assertFalse((self.queue.root / 'cleanup-report.json').exists())
+
+    def test_reclaims_terminal_payloads_but_preserves_queued_and_running(self):
+        terminal = [self.job(state) for state in ('success', 'failure', 'skipped')]
+        active = [self.job(state) for state in ('queued', 'running')]
+        report = self.queue.cleanup(apply=True)
+        self.assertEqual(report['payloads'], 15)
+        self.assertFalse(report['errors'])
+        for root in terminal:
+            self.assertFalse((root / 'source').exists())
+            self.assertFalse((root / 'secrets.env').exists())
+            self.assertTrue((root / 'job.log').exists())
+            self.assertTrue((root / 'verification.json').exists())
+        for root in active:
+            self.assertTrue((root / 'source').exists())
+            self.assertTrue((root / 'secrets.env').exists())
+        self.assertEqual(len(self.queue.rows()), 5)
+
+    def test_log_retention_keeps_latest_twenty_recent_and_undelivered(self):
+        old = self.job()
+        undelivered = self.job(sent=0)
+        recent = self.job(finished=module.now())
+        latest = [self.job() for _ in range(20)]
+        report = self.queue.cleanup(apply=True)
+        self.assertEqual(report['logs'], 1)
+        self.assertFalse((old / 'job.log').exists())
+        self.assertTrue((old / 'verification.json').exists())
+        for root in [undelivered, recent] + latest:
+            self.assertTrue((root / 'job.log').exists())
+        self.assertEqual(self.queue.cleanup(apply=True)['logs'], 0)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux symlink contract')
+    def test_job_symlink_cannot_delete_outside_files(self):
+        root = self.job()
+        outside = Path(self.directory.name) / 'outside'
+        root.rename(outside)
+        root.symlink_to(outside, target_is_directory=True)
+        report = self.queue.cleanup(apply=True)
+        self.assertEqual(report['errors'], [{'job': 1, 'type': 'ValueError'}])
+        self.assertTrue((outside / 'secrets.env').exists())
+        self.assertTrue((outside / 'source' / 'build-output').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Linux symlink contract')
+    def test_payload_symlink_is_unlinked_without_following_target(self):
+        root = self.job()
+        module.shutil.rmtree(root / 'source')
+        outside = Path(self.directory.name) / 'outside'
+        outside.mkdir()
+        (outside / 'keep').write_text('protected')
+        (root / 'source').symlink_to(outside, target_is_directory=True)
+        self.assertFalse(self.queue.cleanup(apply=True)['errors'])
+        self.assertFalse((root / 'source').is_symlink())
+        self.assertTrue((outside / 'keep').exists())
+
+    def test_failure_is_reported_without_stopping_other_job_cleanup(self):
+        first = self.job()
+        second = self.job()
+        remove = self.queue.remove_payload
+        def fail_one(job_id, apply=False):
+            if job_id == 2:
+                raise PermissionError('credential-bearing message must never be logged')
+            return remove(job_id, apply=apply)
+        with patch.object(self.queue, 'remove_payload', side_effect=fail_one):
+            report = self.queue.cleanup(apply=True)
+        self.assertEqual(report['errors'], [{'job': 2, 'type': 'PermissionError'}])
+        self.assertFalse((first / 'source').exists())
+        self.assertTrue((second / 'source').exists())
+
+    def test_recovery_payload_removal_preserves_job_log_and_proof(self):
+        root = self.job('running')
+        self.assertEqual(self.queue.remove_payload(1, apply=True), 5)
+        self.assertTrue((root / 'job.log').exists())
+        self.assertTrue((root / 'verification.json').exists())
+        for invalid in (0, -1, '../escape'):
+            with self.assertRaises(ValueError):
+                self.queue.remove_payload(invalid, apply=True)
+
+
 if __name__ == '__main__':
     unittest.main()
