@@ -7,7 +7,7 @@ const { createKnowledgeServer } = require('../../../tools/local-knowledge/server
 const { createKnowledgeRuntime } = require('../../../tools/local-knowledge/runtime.cjs');
 const { CONFIG } = require('../../../tools/local-knowledge/config.cjs');
 const { signRequest } = require('../../../tools/local-knowledge/auth.cjs');
-const { generateNomicEmbedding } = require('../services/nomicEmbeddingClient');
+const { generateNomicEmbedding, splitEmbeddingText, embeddingSourceHash } = require('../services/nomicEmbeddingClient');
 const { NOMIC_PROFILE, getEmbeddingRuntimeConfig } = require('../config/embeddingRuntimeConfig');
 
 async function fixture(run) {
@@ -68,4 +68,30 @@ test('Nomic configuration never silently falls back to available Azure credentia
 test('a saturated shared worker returns retryable HTTP backpressure without uploading documents', () => fixture(async ({ config, runtime }) => {
   runtime.embeddings = async () => { throw Object.assign(new Error('The bounded embedding queue is full.'), { code: 'GTE_QUEUE_FULL', retryable: true }); };
   await assert.rejects(generateNomicEmbedding('synthetic query', { config, purpose: 'query' }), error => error.status === 429 && error.retryable === true);
+}));
+
+
+test('long CVs preserve the input budget in bounded model batches and produce one normalized vector', () => fixture(async ({ config, calls }) => {
+  const text = 'Relevant candidate experience and skills. '.repeat(800);
+  const output = await generateNomicEmbedding(text, { config });
+  const texts = calls.flatMap(call => call.texts);
+  assert.equal(texts.join(''), text.slice(0, 24000));
+  assert.ok(texts.every(text => text.length <= 1024));
+  assert.ok(calls.every(call => call.texts.length <= 8));
+  assert.ok(calls.length >= 3);
+  assert.equal(output.length, 768); assert.ok(Math.abs(Math.hypot(...output) - 1) < 0.00001);
+}));
+
+test('unbroken and non-English input cannot bypass the chunk limit; old vector hashes cannot resume', () => {
+  for (const input of ['a'.repeat(24000), '候選人工作經驗'.repeat(4000)]) {
+    const chunks = splitEmbeddingText(input); assert.equal(chunks.join(''), input.slice(0,24000));
+    assert.ok(chunks.every(chunk => chunk.length <= 1024));
+  }
+  const old = require('node:crypto').createHash('sha256').update('same CV').digest('hex');
+  assert.notEqual(embeddingSourceHash('same CV'), old);
+});
+
+test('the signed pure embedding endpoint rejects an unchunked long CV before inference', () => fixture(async ({ runtime, calls }) => {
+  await assert.rejects(runtime.embeddings({ source: 'recruiter', texts: ['x'.repeat(1025)], purpose: 'document' }), { code: 'INVALID_REQUEST' });
+  assert.equal(calls.length, 0);
 }));

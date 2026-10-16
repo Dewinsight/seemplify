@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { embeddingSourceHash, NOMIC_PREPROCESSING_VERSION } = require('./nomicEmbeddingClient');
 const { NOMIC_PROFILE } = require('../config/embeddingRuntimeConfig');
 const ELIGIBLE_CANDIDATES = { publicApplicationCommitState: { $nin: ['provisional', 'committing'] }, deletionState: { $ne: 'tombstoned' } };
 const MAX_RECORDS = 10000;
@@ -30,7 +31,7 @@ async function migrateNomicIndex({ db, service, store, config }) {
     { collection: 'jobs', filter: {}, className: config.jobClass, idField: 'jobId', text: row => service.createJobEmbeddingText(row), write: row => service.createJobEmbedding(row) },
   ];
   const flagUpdates = [];
-  const proof = { provider: NOMIC_PROFILE, candidates: 0, jobs: 0, written: 0, unchanged: 0, removedOrphans: 0, originalsRetained: true };
+  const proof = { provider: NOMIC_PROFILE, preprocessingVersion: NOMIC_PREPROCESSING_VERSION, candidates: 0, jobs: 0, written: 0, unchanged: 0, removedOrphans: 0, originalsRetained: true };
   for (const plan of plans) {
     const readSource = async () => {
       const rows = await db.collection(plan.collection).find(plan.filter).sort({ _id: 1 }).limit(MAX_RECORDS + 1).toArray();
@@ -39,7 +40,7 @@ async function migrateNomicIndex({ db, service, store, config }) {
         if (!row.organization || !/^[a-f0-9]{24}$/i.test(String(row._id))) throw new Error('Canonical Recruiter record has no valid tenant or identity.');
         const text = plan.text(row);
         if (!text.trim()) throw new Error('Canonical Recruiter record has no embedding text.');
-        return { row, id: String(row._id), tenant: String(row.organization), hash: sourceHash(text) };
+        return { row, id: String(row._id), tenant: String(row.organization), hash: embeddingSourceHash(text) };
       });
     };
     const signature = rows => sourceHash(JSON.stringify(rows.map(item => [item.id, item.tenant, item.hash])));

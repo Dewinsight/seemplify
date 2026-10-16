@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { NOMIC_PREPROCESSING_VERSION } = require('./nomicEmbeddingClient');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
 const { getAIRequestContext } = require('./aiRuntime/requestContext');
 const { getEmbeddingRuntimeConfig } = require('../config/embeddingRuntimeConfig');
@@ -68,7 +69,7 @@ function vectorMatchingIdentity(job) {
   return {
     provider: 'weaviate',
     model: getEmbeddingRuntimeConfig().model,
-    routeVersion: `quick-rerank-v4:${getEmbeddingRuntimeConfig().vectorIndexVersion || 'azure-legacy'}`,
+    routeVersion: `quick-rerank-v4:${getEmbeddingRuntimeConfig().vectorIndexVersion || 'azure-legacy'}:${getEmbeddingRuntimeConfig().vectorIndexVersion ? NOMIC_PREPROCESSING_VERSION : 'none'}`,
     promptVersion: 'full-profile-evidence-v4',
     inputFingerprint: matchingJobFingerprint(job)
   };

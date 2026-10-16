@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { migrateNomicIndex, sourceHash, ELIGIBLE_CANDIDATES } = require('../services/nomicIndexMigration');
+const { embeddingSourceHash } = require('../services/nomicEmbeddingClient');
 const { NOMIC_PROFILE } = require('../config/embeddingRuntimeConfig');
 const config = { ...NOMIC_PROFILE, candidateClass: 'RecruiterCandidateNomicV1', jobClass: 'RecruiterJobNomicV1' };
 function fixture({ changedSource = false, wrongDimension = false } = {}) {
@@ -11,7 +12,7 @@ function fixture({ changedSource = false, wrongDimension = false } = {}) {
   const db = { collection: name => ({ updateMany: async (filter, update) => { assert.ok(filter._id.$in.length); assert.equal(update.$set.isEmbedded, true); return { modifiedCount: 0 }; }, find: filter => { capturedFilter = name === 'candidates' ? filter : capturedFilter; const cursor = { sort: () => cursor, limit: () => cursor, toArray: async () => { reads++; return rows[name].map(row => ({ ...row, text: changedSource && reads > 1 ? 'changed input' : row.text })); } }; return cursor; } }) };
   function builder(kind) { let className; const chain = { withClassName: value => { className = value; return chain; }, withLimit: () => chain, withVector: () => chain, withFields: () => chain, do: async () => kind === 'aggregate' ? { data: { Aggregate: { [className]: [{ meta: { count: objects.get(className).length } }] } } } : { objects: objects.get(className) } }; return chain; }
   const store = { client: { schema: { getter: () => ({ do: async () => ({ classes: schemas }) }), classCreator: () => ({ withClass: schema => ({ do: async () => schemas.push(schema) }) }) }, data: { getter: () => builder('get'), deleter: () => { throw new Error('No original object may be deleted'); } }, graphql: { aggregate: () => builder('aggregate') } } };
-  const write = (row, className, idField) => { const item = { id: row._id, properties: { [idField]: row._id, organizationId: row.organization, embeddingSourceHash: sourceHash(row.text), embeddingProfile: config.vectorIndexVersion }, vector: Array(wrongDimension ? 3072 : 768).fill(0) }; const list = objects.get(className); const index = list.findIndex(item => item.properties[idField] === row._id); if (index < 0) list.push(item); else list[index] = item; };
+  const write = (row, className, idField) => { const item = { id: row._id, properties: { [idField]: row._id, organizationId: row.organization, embeddingSourceHash: embeddingSourceHash(row.text), embeddingProfile: config.vectorIndexVersion }, vector: Array(wrongDimension ? 3072 : 768).fill(0) }; const list = objects.get(className); const index = list.findIndex(item => item.properties[idField] === row._id); if (index < 0) list.push(item); else list[index] = item; };
   const service = { generateEmbedding: async () => Array(768).fill(0), createCandidateEmbeddingText: row => row.text, createJobEmbeddingText: row => row.text, createCandidateEmbedding: async row => write(row, config.candidateClass, 'candidateId'), createJobEmbedding: async row => write(row, config.jobClass, 'jobId') };
   return { db, service, store, config, schemas, filter: () => capturedFilter };
 }
