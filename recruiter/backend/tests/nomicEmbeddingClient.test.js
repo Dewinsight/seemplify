@@ -63,3 +63,9 @@ test('Nomic configuration never silently falls back to available Azure credentia
   assert.equal(config.configured, false); assert.equal(config.model, NOMIC_PROFILE.model);
   assert.equal(config.candidateClass, 'RecruiterCandidateNomicV1'); assert.equal(config.jobClass, 'RecruiterJobNomicV1');
 });
+
+
+test('a saturated shared worker returns retryable HTTP backpressure without uploading documents', () => fixture(async ({ config, runtime }) => {
+  runtime.embeddings = async () => { throw Object.assign(new Error('The bounded embedding queue is full.'), { code: 'GTE_QUEUE_FULL', retryable: true }); };
+  await assert.rejects(generateNomicEmbedding('synthetic query', { config, purpose: 'query' }), error => error.status === 429 && error.retryable === true);
+}));

@@ -38,3 +38,17 @@ test('the production Arango provisioner preserves database grants when updating 
   assert.match(update, /--request PATCH --data "\$payload"/);
   assert.doesNotMatch(update, /--request PUT/);
 });
+
+
+test('both deployment owners preflight, back up and migrate Recruiter with detached stdin before recreation', () => {
+  const helper = fs.readFileSync(path.join(__dirname, 'migrate-recruiter-nomic.sh'), 'utf8');
+  assert.equal((helper.match(/run --interactive=false/g) || []).length, 2);
+  assert.ok(helper.indexOf('deployment readiness probe') < helper.indexOf('stop recruiter-backend'));
+  assert.ok(helper.indexOf('seemplify-backup') < helper.indexOf('stop recruiter-backend'));
+  assert.match(helper, /trap rollback ERR/);
+  for (const file of ['deploy-core-hostinger.yml', 'deploy-experience-hostinger.yml', 'deploy-chatgpt-gateway-hostinger.yml']) {
+    const source = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows', file), 'utf8');
+    const migrate = source.indexOf('          /opt/seemplify/deploy/hostinger/migrate-recruiter-nomic.sh');
+    assert.ok(migrate > 0 && migrate < source.indexOf('up -d --no-deps --force-recreate recruiter-backend'));
+  }
+});

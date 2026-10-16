@@ -91,7 +91,7 @@ function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRunti
       process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), level: 'info', path: requestPath, durationMs: Date.now() - started, ok: true })}\n`);
       return sendJson(response, 200, result);
     } catch (error) {
-      const status = Number(error.status) || 500;
+      const status = Number(error.status) || ({ GTE_QUEUE_FULL: 429, GTE_CIRCUIT_OPEN: 503, GTE_NOT_READY: 503, GTE_REQUEST_TIMEOUT: 504 }[error.code]) || 500;
       process.stderr.write(`${JSON.stringify({ at: new Date().toISOString(), level: status >= 500 ? 'error' : 'warn', path: requestPath, durationMs: Date.now() - started, code: error.code || 'KNOWLEDGE_RUNTIME_ERROR', message: String(error.message || error).slice(0, 500) })}\n`);
       return sendJson(response, status, { code: error.code || 'KNOWLEDGE_RUNTIME_ERROR', message: error.message || 'Knowledge runtime request failed.', retryable: error.retryable === true });
     }

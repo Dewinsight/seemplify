@@ -37,3 +37,12 @@ It indexes a synthetic document in a reserved temporary tenant, verifies eight
 concurrent retrievals, scan and physical deletion, then proves that its temporary
 database is absent. Graph extraction is stubbed for that synthetic fixture, so
 the check makes no external AI generation request.
+
+
+## Recruiter embeddings
+
+Recruiter uses the same pinned CPU model through `POST /v1/embeddings` on the private Docker network. A distinct root-managed `recruiter-embedding-hmac` credential authorizes only pure embedding requests, with HMAC timestamp/nonce/replay checks. It cannot access Experience data or administration. Requests share the existing worker, 32-slot bounded queue, query priority and 1.5 CPU / 2 GiB cap. No new public inference endpoint or second model process is created.
+
+`RecruiterCandidateNomicV1` and `RecruiterJobNomicV1` isolate 768-dimensional Nomic vectors from the retained 3072-dimensional `Candidate` and `Job` classes. Candidate privacy erasure removes both profiles. Matching cache identity includes the vector profile. Free-text queries use `search_query`; indexed profiles and stored job comparisons use `search_document`.
+
+The core, Experience and ChatGPT gateway deployment owners preflight the model, back up before the first cutover, stop Recruiter and its workers, and run a bounded resumable MongoDB-to-Weaviate migration. Tombstoned and provisional candidate records are excluded. Tenant IDs, source fingerprints, counts, model profile and every vector dimension must agree before the new application starts. A failed migration restarts the previous container. A completed proof lives at `/opt/seemplify/recruiter-nomic-index-proof.json`; detailed logs remain root-only. Weaviate snapshots are paused consistently and opened in an isolated restore target.

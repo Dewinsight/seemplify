@@ -12,6 +12,7 @@ DOKPLOY_CONTAINER="seemplify-restore-smoke-dokploy-${RUN_ID}"
 MARIADB_CONTAINER="seemplify-restore-smoke-mariadb-${RUN_ID}"
 LMS_CONTAINER="seemplify-restore-smoke-lms-${RUN_ID}"
 NANGO_CONTAINER="seemplify-restore-smoke-nango-${RUN_ID}"
+WEAVIATE_CONTAINER="seemplify-restore-smoke-weaviate-${RUN_ID}"
 ARANGO_CONTAINER="seemplify-restore-smoke-arango-${RUN_ID}"
 
 case "${LATEST_BACKUP}" in
@@ -38,6 +39,7 @@ cleanup() {
   cleanup_container "${LMS_CONTAINER}"
   cleanup_container "${NANGO_CONTAINER}"
   cleanup_container "${ARANGO_CONTAINER}"
+  cleanup_container "${WEAVIATE_CONTAINER}"
 }
 trap cleanup EXIT
 trap 'echo "Restore smoke failed at line ${LINENO}" >&2' ERR
@@ -253,5 +255,39 @@ docker exec "${ARANGO_CONTAINER}" arangosh --server.authentication false \
     print("arangodb restore ok tenants="+tenants+" legacy_chunks="+chunks+" nomic_chunks="+nomic);
   '
 cleanup_container "${ARANGO_CONTAINER}"
+
+# Recover the Weaviate snapshot using the exact current immutable image. This
+# target has no network and no published port; anonymous access is local only.
+weaviate_image=$(docker inspect --format '{{.Image}}' seemplify-shared-weaviate-1)
+docker run -d --rm --name "${WEAVIATE_CONTAINER}" --network none \
+  --cpus 1 --memory 1536m --memory-swap 1536m \
+  --tmpfs /var/lib/weaviate:rw,nosuid,nodev,size=1g \
+  --volume "${LATEST_BACKUP}/weaviate-data.tar.gz:/backup.tar.gz:ro" \
+  --env AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true --env AUTHORIZATION_ADMINLIST_ENABLED=false \
+  --env PERSISTENCE_DATA_PATH=/var/lib/weaviate --env DEFAULT_VECTORIZER_MODULE=none \
+  --env CLUSTER_HOSTNAME=seemplify-weaviate-1 --env CLUSTER_ADVERTISE_ADDR=127.0.0.1 \
+  --env RAFT_BOOTSTRAP_EXPECT=1 --env RAFT_ENABLE_ONE_NODE_RECOVERY=true --env DISABLE_TELEMETRY=true \
+  --entrypoint /bin/sh "$weaviate_image" \
+  -ec 'tar -xzf /backup.tar.gz -C /var/lib/weaviate; exec /bin/weaviate --host 127.0.0.1 --port 8080 --scheme http' >/dev/null
+wait_for_container_command "${WEAVIATE_CONTAINER}" wget -T 3 -t 1 -qO- http://127.0.0.1:8080/v1/.well-known/ready
+schema=$(docker exec "${WEAVIATE_CONTAINER}" wget -T 3 -t 1 -qO- http://127.0.0.1:8080/v1/schema)
+python3 - "$WEAVIATE_CONTAINER" "$schema" <<'PY'
+import json,sys,subprocess
+container=sys.argv[1];schema=json.loads(sys.argv[2]);counts={}
+for item in schema['classes']:
+ name=item['class']
+ if not name.isalnum():raise ValueError('Invalid restored class')
+ query=json.dumps({'query':'{Aggregate{'+name+'{meta{count}}}}'})
+ response=json.loads(subprocess.check_output(['docker','exec',container,'wget','-qO-','--header=Content-Type: application/json','--post-data='+query,'http://127.0.0.1:8080/v1/graphql']))
+ assert not response.get('errors')
+ counts[name]=response['data']['Aggregate'][name][0]['meta']['count']
+ objects=json.loads(subprocess.check_output(['docker','exec',container,'wget','-qO-','http://127.0.0.1:8080/v1/objects?class='+name+'&limit=10000&include=vector']))['objects']
+ assert len(objects)==counts[name]
+ if name.startswith('Recruiter') and name.endswith('NomicV1'):
+  assert all(len(obj['vector'])==768 and obj['properties']['embeddingProfile']=='nomic-embed-text-v1.5-q8-v1' for obj in objects)
+assert 'Candidate' in counts and 'Job' in counts
+print('weaviate restore ok '+json.dumps(counts,sort_keys=True))
+PY
+cleanup_container "${WEAVIATE_CONTAINER}"
 
 echo "All backup restore smoke tests passed"

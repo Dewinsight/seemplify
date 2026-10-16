@@ -11,6 +11,8 @@ on:
       - 'Identityprovider/**'
       - 'recruiter/backend/config/embeddingRuntimeConfig.js'
       - 'recruiter/backend/services/nomicEmbeddingClient.js'
+      - 'recruiter/backend/services/nomicIndexMigration.js'
+      - 'deploy/hostinger/migrate-recruiter-nomic.sh'
       - 'recruiter/backend/services/embeddingService.js'
       - 'recruiter/backend/services/weaviateService.js'
       - 'recruiter/backend/scripts/migrateNomicEmbeddings.js'
@@ -69,7 +71,7 @@ jobs:
         run: bash -n deploy/hostinger/ensure-browser-notification-secrets.sh
       - name: Test shared gateway authentication
         working-directory: recruiter/backend
-        run: node --test tests/internalServiceAuth.test.js tests/embeddingRuntimeConfig.test.js tests/nomicEmbeddingClient.test.js
+        run: node --test tests/internalServiceAuth.test.js tests/embeddingRuntimeConfig.test.js tests/nomicEmbeddingClient.test.js tests/nomicIndexMigration.test.js tests/nomicWeaviateProfile.test.js
       - name: Test AI Interview platform configuration
         working-directory: ai-interview/backend
         run: |
@@ -112,6 +114,7 @@ jobs:
             experience-management Identityprovider recruiter/backend ai-interview marketing-site \
             tools/local-knowledge \
             deploy/hostinger/core-apps.compose.yml \
+            deploy/hostinger/migrate-recruiter-nomic.sh \
             deploy/hostinger/extended-apps.compose.yml \
             deploy/hostinger/ensure-browser-notification-secrets.sh \
             deploy/hostinger/generate-idp-clients.sh \
@@ -239,8 +242,6 @@ jobs:
             docker logs --tail 120 "$container" >&2 || true
             return 1
           }
-          "${core[@]}" up -d --no-deps --force-recreate recruiter-backend
-          wait_healthy seemplify-core-recruiter-backend-1
           "${extended[@]}" up -d --no-deps --force-recreate knowledge-docling
           wait_healthy seemplify-extended-knowledge-docling-1
           "${extended[@]}" up -d --no-deps --force-recreate knowledge-runtime
@@ -251,6 +252,10 @@ jobs:
             rm -f /tmp/knowledge-status.json
           '
           docker exec seemplify-extended-knowledge-runtime-1 node nomic-runtime-smoke.cjs --live
+          install -m 755 "$release_root/deploy/hostinger/migrate-recruiter-nomic.sh" /opt/seemplify/deploy/hostinger/migrate-recruiter-nomic.sh
+          /opt/seemplify/deploy/hostinger/migrate-recruiter-nomic.sh
+          "${core[@]}" up -d --no-deps --force-recreate recruiter-backend
+          wait_healthy seemplify-core-recruiter-backend-1
           # Back up before the first provider cutover. Retain every original
           # vector and profile; switch PostgreSQL only after parallel retrieval
           # succeeds. Stop the old worker so its schema/profile snapshot cannot
