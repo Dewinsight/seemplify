@@ -125,3 +125,33 @@ stable across jobs; pending jobs in that route remain serialized. Source
 symlinks are preserved, stale generated files are removed, and both workspaces
 and the original per-job checkout are cleaned after execution. Credentials and
 adapted workflows stay in the separate private job directory.
+
+## Automatic job storage cleanup
+
+Normal job finalizers remove labelled execution containers, source checkouts and
+transient event/workflow/credential files on success or failure. Recovery now
+removes those same transient files before retrying an interrupted job. The
+coordinator additionally sweeps terminal jobs on startup, after a worker exits,
+and hourly while idle. Queued/running jobs are excluded, and the database write
+lock prevents cleanup racing a claim or retry. Only explicitly named files
+inside numeric private job directories may be removed; symlinked job roots are
+rejected. This sweep does not touch Docker images, volumes, application data,
+shared action/tool caches, backups or deployment proofs.
+
+Private `job.log` files expire after 30 days, except for the latest 20 terminal
+jobs and jobs whose GitHub status has not yet been delivered. The SQLite ledger
+and `verification.json` remain available. Failures are reported by job ID and
+exception type without printing file contents or credential-bearing messages.
+The root-only `cleanup-report.json` records each sweep's result. Existing
+host BuildKit garbage collection separately bounds reusable build caches.
+
+Inspect or apply the identical policy manually:
+
+```sh
+python3 /opt/hostinger-ci/runner_queue.py cleanup
+python3 /opt/hostinger-ci/runner_queue.py cleanup --apply
+```
+
+The report-only command does not delete files. Monitor `cleanup_failed=` and
+nonempty `errors` in coordinator output; a cleanup failure never converts a
+failed deployment into a passing result.
