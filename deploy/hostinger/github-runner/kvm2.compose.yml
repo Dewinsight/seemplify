@@ -13,19 +13,19 @@ services:
       RUNNER_MANUALLY_TRAP_SIG: '1'
     volumes:
     - runner-state:/runner
-    cpus: 1.5
+    cpus: 0.5
     cpu_shares: 192
-    mem_limit: 4g
-    memswap_limit: 4g
-    pids_limit: 1024
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 256
     oom_score_adj: 500
     stop_grace_period: 45s
     deploy:
       resources:
         limits:
-          cpus: '1.5'
-          memory: 4G
-          pids: 1024
+          cpus: '0.5'
+          memory: 512M
+          pids: 256
   crm-runner-2:
     image: dewinsight/crm-actions-runner:2.336.0
     restart: unless-stopped
@@ -38,19 +38,19 @@ services:
       RUNNER_MANUALLY_TRAP_SIG: '1'
     volumes:
     - frontend-runner-state:/runner
-    cpus: 1.5
+    cpus: 0.5
     cpu_shares: 192
-    mem_limit: 4g
-    memswap_limit: 4g
-    pids_limit: 1024
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 256
     oom_score_adj: 500
     stop_grace_period: 45s
     deploy:
       resources:
         limits:
-          cpus: '1.5'
-          memory: 4G
-          pids: 1024
+          cpus: '0.5'
+          memory: 512M
+          pids: 256
 volumes:
   runner-state: null
   frontend-runner-state: null

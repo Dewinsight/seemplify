@@ -105,10 +105,12 @@ test('KVM2 keeps two bounded slots and persistent isolated state', () => {
   assert.equal(result.status, 0, result.stderr);
   const services = Object.values(JSON.parse(result.stdout).services);
   assert.equal(services.length, 2);
-  assert.equal(services.reduce((sum, service) => sum + service.cpus, 0), 3);
+  assert.equal(services.reduce((sum, service) => sum + service.cpus, 0), 1);
   for (const service of services) {
-    assert.equal(service.mem_limit, String(4 * 1024 ** 3));
+    assert.equal(service.cpus, 0.5);
+    assert.equal(service.mem_limit, String(512 * 1024 ** 2));
     assert.equal(service.memswap_limit, service.mem_limit);
+    assert.equal(service.pids_limit, 256);
     assert.equal(service.environment.RUNNER_MANUALLY_TRAP_SIG, '1');
     assert.equal(service.volumes.length, 1);
     assert.equal(service.volumes[0].target, '/runner');
