@@ -29,6 +29,7 @@ async function migrateNomicIndex({ db, service, store, config }) {
     { collection: 'candidates', filter: ELIGIBLE_CANDIDATES, className: config.candidateClass, idField: 'candidateId', text: row => service.createCandidateEmbeddingText(row), write: row => service.createCandidateEmbedding(row) },
     { collection: 'jobs', filter: {}, className: config.jobClass, idField: 'jobId', text: row => service.createJobEmbeddingText(row), write: row => service.createJobEmbedding(row) },
   ];
+  const flagUpdates = [];
   const proof = { provider: NOMIC_PROFILE, candidates: 0, jobs: 0, written: 0, unchanged: 0, removedOrphans: 0, originalsRetained: true };
   for (const plan of plans) {
     const readSource = async () => {
@@ -61,8 +62,16 @@ async function migrateNomicIndex({ db, service, store, config }) {
     const verified = (await store.client.data.getter().withClassName(plan.className).withLimit(MAX_RECORDS).withVector().do()).objects || [];
     const verifiedById = new Map(verified.map(item => [item.properties[plan.idField], item]));
     if (verified.length !== after.length || after.some(row => !valid(verifiedById.get(row.id), row))) throw new Error('Nomic index verification failed; refusing cutover.');
+    flagUpdates.push({ collection: plan.collection, filter: plan.filter, ids: after.map(item => item.row._id) });
     proof[plan.collection] = after.length;
     proof[`${plan.collection}SourceFingerprint`] = signature(after);
+  }
+  // Update only operational readiness flags after every collection verifies.
+  // Existing profile fields and historical creation dates remain untouched.
+  proof.embeddingFlagsUpdated = 0;
+  for (const plan of flagUpdates) {
+    const result = await db.collection(plan.collection).updateMany({ ...plan.filter, _id: { $in: plan.ids }, isEmbedded: { $ne: true } }, { $set: { isEmbedded: true, embeddingCreatedAt: new Date() } });
+    proof.embeddingFlagsUpdated += result.modifiedCount || 0;
   }
   return proof;
 }
