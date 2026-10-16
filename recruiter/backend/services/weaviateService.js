@@ -273,7 +273,7 @@ class WeaviateService {
       jobId: jobId, // Keep original MongoDB ID for reference
       organizationId: metadata.organizationId || '',
       title: metadata.title || '',
-      department: metadata.department || '',
+      department: String(metadata.department || ''),
       location: metadata.location || '',
       type: metadata.type || metadata.jobType || '',
       level: metadata.level || '',
@@ -511,6 +511,7 @@ class WeaviateService {
       let batcher = this.client.batch.objectsBatcher();
       
       for (const candidate of candidates) {
+        this.validateVector(candidate.vector);
         batcher = batcher.withObject({
           class: this.candidateClass,
           id: candidate.id,

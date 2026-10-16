@@ -16,6 +16,9 @@ on:
       - 'payroll/frontend/**'
       - 'time-attendance/**'
       - 'deploy/hostinger/core-apps.compose.yml'
+      - 'deploy/hostinger/migrate-recruiter-nomic.sh'
+      - 'deploy/hostinger/backup-hostinger.sh'
+      - 'deploy/hostinger/restore-smoke-hostinger.sh'
       - 'deploy/hostinger/generate-idp-clients.sh'
       - 'deploy/hostinger/github-actions-ssh-retry.sh'
       - 'deploy/hostinger/smoke-hostinger.sh'
@@ -112,7 +115,7 @@ jobs:
             tests/aiRuntimeGatewayIntegration.test.js \
             tests/codexAccountService.test.js \
             tests/idpAdminSsoService.test.js
-          node --test tests/platformConfigurationClient.test.js
+          node --test tests/platformConfigurationClient.test.js tests/embeddingRuntimeConfig.test.js tests/nomicEmbeddingClient.test.js tests/nomicIndexMigration.test.js tests/nomicWeaviateProfile.test.js
 
   learning-qa:
     name: Test Learning platform configuration
@@ -250,6 +253,9 @@ jobs:
             payroll \
             time-attendance \
             deploy/hostinger/core-apps.compose.yml \
+            deploy/hostinger/migrate-recruiter-nomic.sh \
+            deploy/hostinger/backup-hostinger.sh \
+            deploy/hostinger/restore-smoke-hostinger.sh \
             deploy/hostinger/generate-idp-clients.sh \
             deploy/hostinger/smoke-hostinger.sh
 
@@ -386,6 +392,12 @@ jobs:
             fi
           }
 
+          install -m 755 "$release_root/deploy/hostinger/migrate-recruiter-nomic.sh" /opt/seemplify/deploy/hostinger/migrate-recruiter-nomic.sh
+          install -m 755 "$release_root/deploy/hostinger/backup-hostinger.sh" /usr/local/sbin/seemplify-backup
+          install -m 755 "$release_root/deploy/hostinger/restore-smoke-hostinger.sh" /usr/local/sbin/seemplify-restore-smoke
+          install -m 755 "$release_root/deploy/hostinger/backup-hostinger.sh" /opt/seemplify/deploy/hostinger/backup-hostinger.sh
+          install -m 755 "$release_root/deploy/hostinger/restore-smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/restore-smoke-hostinger.sh
+          /opt/seemplify/deploy/hostinger/migrate-recruiter-nomic.sh
           "${compose[@]}" up -d --no-deps --force-recreate recruiter-backend
           wait_healthy seemplify-core-recruiter-backend-1
           docker exec seemplify-core-recruiter-backend-1 npm run seed:catalog
