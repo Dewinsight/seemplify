@@ -1,6 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const store = require('../services/weaviateService');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { createRequire } = require('node:module');
+const filename = path.join(__dirname, '../services/weaviateService.js');
+const localRequire = createRequire(filename);
+const subject = { exports: {} };
+// Exercise the real store with its HTTP transport replaced. No live database
+// or installed third-party client is needed by deployment contract jobs.
+vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { module: subject, process, console,
+  require: name => name === 'weaviate-ts-client' ? { default: { client: () => ({}) } } : localRequire(name) }, { filename });
+const store = subject.exports;
 
 test('Nomic candidate and job operations use independent classes and reject Azure dimensions', async () => {
   const old = process.env.RECRUITER_EMBEDDING_PROVIDER;
