@@ -1,6 +1,10 @@
 # Hostinger production deployment
 
-Target: `179.198.192.126` (`srv1907030`)
+Target: Hostinger KVM4 `191.215.40.99` (`srv1903452`, VPS ID `1903452`).
+
+Migration follow-up: approve this IP in Google Workspace's SMTP relay allowlist
+and verify direct SMTP before retiring the temporary KVM8 mail egress tunnel.
+Retain KVM8 recovery archives until another verified off-host copy is secured.
 
 ## Completed
 
