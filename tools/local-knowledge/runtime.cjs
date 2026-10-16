@@ -3,15 +3,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { monitorEventLoopDelay } = require('node:perf_hooks');
 const { AQL } = require('./aql.cjs');
+const { NOMIC_AQL, NOMIC_COLLECTION } = require('./nomic-aql.cjs');
 const { CONFIG } = require('./config.cjs');
 const { assertId, assertStagedSource, tenantDatabaseName } = require('./auth.cjs');
 const { EmbeddingMigrationController } = require('./migration-controller.cjs');
 
 
 const COLLECTIONS = Object.freeze([
-  ['documents', 2], ['chunks', 2], ['experience_chunks_gte_v1', 2], ['entities', 2], ['claims', 2], ['relations', 3], ['operation_receipts', 2],
+  ['documents', 2], ['chunks', 2], [NOMIC_COLLECTION, 2], ['experience_chunks_gte_v1', 2], ['entities', 2], ['claims', 2], ['relations', 3], ['operation_receipts', 2],
 ]);
 const INDEXES = Object.freeze([
+  [NOMIC_COLLECTION, ['spaceId', 'knowledgeBaseId', 'indexVersion', 'activeUntil']],
   ['documents', ['spaceId', 'knowledgeBaseId', 'documentId', 'indexVersion']],
   ['chunks', ['spaceId', 'knowledgeBaseId', 'indexVersion', 'activeUntil']],
   ['experience_chunks_gte_v1', ['spaceId', 'knowledgeBaseId', 'indexVersion', 'activeUntil']],
@@ -88,6 +90,12 @@ function safeMetadata(value) {
 
 function embeddingProfiles(config = CONFIG) {
   return Object.freeze({
+    'nomic-node': Object.freeze({
+      provider: 'nomic-node', model: config.models.nomicEmbedding?.id || 'nomic-ai/nomic-embed-text-v1.5',
+      revision: config.models.nomicEmbedding?.revision || 'e9b6763023c676ca8431644204f50c2b100d9aab',
+      dtype: 'q8', dimensions: 768, vectorIndexVersion: 'nomic-embed-text-v1.5-q8-v1',
+      collection: NOMIC_COLLECTION, vectorIndexName: 'experience_chunks_nomic_v1_vector',
+    }),
     'azure-openai': Object.freeze({
       provider: 'azure-openai', model: config.models.azureEmbedding.id, revision: config.models.azureEmbedding.revision,
       dtype: config.models.azureEmbedding.dtype, dimensions: config.models.azureEmbedding.dimension,
@@ -526,6 +534,13 @@ async function ensureTenantDatabase({ provisioner, app, appUser, appPassword, sp
       body: { type: 'inverted', name: GTE_SEARCH_INDEX_NAME, fields: [{ name: 'text', analyzer: ANALYZER_NAME }], includeAllFields: false },
     });
   }
+  const nomicIndexes = await app.request(database, `/_api/index?collection=${NOMIC_COLLECTION}`);
+  if (!(nomicIndexes.indexes || []).some((index) => index.name === 'experience_chunks_nomic_v1_text_inverted')) {
+    await app.request(database, `/_api/index?collection=${NOMIC_COLLECTION}`, {
+      method: 'POST', body: { type: 'inverted', name: 'experience_chunks_nomic_v1_text_inverted',
+        fields: [{ name: 'text', analyzer: ANALYZER_NAME }], includeAllFields: false },
+    });
+  }
   const views = await app.request(database, '/_api/view');
   if (!(views.result || []).some((view) => view.name === SEARCH_VIEW_NAME)) {
     await app.request(database, '/_api/view', {
@@ -533,6 +548,7 @@ async function ensureTenantDatabase({ provisioner, app, appUser, appPassword, sp
       body: { name: SEARCH_VIEW_NAME, type: 'search-alias', indexes: [
         { collection: 'chunks', index: SEARCH_INDEX_NAME },
         { collection: GTE_COLLECTION_NAME, index: GTE_SEARCH_INDEX_NAME },
+        { collection: NOMIC_COLLECTION, index: 'experience_chunks_nomic_v1_text_inverted' },
       ] },
     });
   } else {
@@ -540,6 +556,7 @@ async function ensureTenantDatabase({ provisioner, app, appUser, appPassword, sp
       method: 'PUT', body: { indexes: [
         { collection: 'chunks', index: SEARCH_INDEX_NAME },
         { collection: GTE_COLLECTION_NAME, index: GTE_SEARCH_INDEX_NAME },
+        { collection: NOMIC_COLLECTION, index: 'experience_chunks_nomic_v1_text_inverted' },
       ] },
     });
   }
@@ -1015,14 +1032,16 @@ async function purgeKnowledgeEvidence(app, database, variables) {
   await app.query(database, AQL.purgeClaims, variables);
   await app.query(database, AQL.purgeChunks, variables);
   await app.query(database, AQL.purgeGteChunks, variables);
+  await app.query(database, NOMIC_AQL.purgeGteChunks, variables);
   await app.query(database, AQL.purgeDocuments, variables);
   await app.query(database, AQL.pruneEntityMentions, variables);
   await app.query(database, AQL.removeUnsupportedEntities, variables);
   await app.query(database, AQL.purgeIndexReceipts, variables);
   const [remaining = {}] = await app.query(database, AQL.purgeTargetCounts, variables);
   const [gteRemaining = 0] = await app.query(database, AQL.purgeGteTargetCount, variables);
+  const [nomicRemaining = 0] = await app.query(database, NOMIC_AQL.purgeGteTargetCount, variables);
   const remainingCounts = normalizePurgeCounts(remaining);
-  if (Object.values(remainingCounts).some((count) => count !== 0) || Number(gteRemaining || 0) !== 0) {
+  if (Object.values(remainingCounts).some((count) => count !== 0) || Number(gteRemaining || 0) !== 0 || Number(nomicRemaining || 0) !== 0) {
     throw runtimeError('Physical knowledge purge verification failed.', { code: 'KNOWLEDGE_PURGE_INCOMPLETE', status: 503, retryable: true });
   }
   return {
@@ -1038,7 +1057,7 @@ function createKnowledgeRuntime(options = {}) {
   const appPassword = secret('arango-app');
   const provisionerPassword = secret('arango-provisioner');
   const gatewaySecret = secret('chatgpt-gateway');
-  const embeddingApiKey = secret('tei-api');
+  const embeddingApiKey = config.embeddingMigration?.provider === 'nomic-node' ? '' : secret('tei-api');
   const doclingApiKey = secret('docling-api');
   const baseUrl = config.services?.arango || `http://${config.host}:${config.ports.arango}`;
   const app = options.appClient || new ArangoClient({ baseUrl, username: config.database.appUser, password: appPassword, fetchImpl });
@@ -1074,10 +1093,13 @@ function createKnowledgeRuntime(options = {}) {
   if (typeof eventLoopDelay.enable === 'function') eventLoopDelay.enable();
   let gteClient = options.gteClient || null;
   let gteStartPromise = null;
+  let nomicClient = options.nomicClient || null;
+  let nomicStartPromise = null;
   const shadowDiagnostics = [];
   const shadowTasks = new Set();
   let shadowActive = 0;
   const providerMetrics = {
+    'nomic-node': { embeddings: 0, texts: 0, failures: 0, totalMs: 0 },
     'azure-openai': { embeddings: 0, texts: 0, failures: 0, totalMs: 0 },
     'qwen-tei': { embeddings: 0, texts: 0, failures: 0, totalMs: 0 },
     'gte-node': { embeddings: 0, texts: 0, failures: 0, totalMs: 0 },
@@ -1100,6 +1122,20 @@ function createKnowledgeRuntime(options = {}) {
     return gteClient;
   }
 
+  async function ensureNomicClient() {
+    if (!nomicClient) {
+      const { createGteEmbeddingClient } = require('./gte-embedding-client.cjs');
+      const { EMBEDDING_PROFILES } = require('./embedding-profiles.cjs');
+      nomicClient = createGteEmbeddingClient({ profile: EMBEDDING_PROFILES['nomic-node'],
+        cacheDir: migrationConfig.cacheDir || path.join(config.paths.models, 'transformers'),
+        maxLogicalConcurrency: migrationConfig.concurrency || 2, maxQueueDepth: migrationConfig.queueDepth || 32,
+        maxBatchTexts: 8, maxTextsPerRequest: 8, requestTimeoutMs: migrationConfig.timeoutMs || 120_000 });
+    }
+    if (!nomicStartPromise) nomicStartPromise = Promise.resolve(nomicClient.start()).catch((error) => { nomicStartPromise = null; throw error; });
+    await nomicStartPromise;
+    return nomicClient;
+  }
+
   async function embedForProfile(profile, texts, { priority = 'live-index', requestId = crypto.randomUUID() } = {}) {
     const started = Date.now();
     const metrics = providerMetrics[profile.provider];
@@ -1107,6 +1143,14 @@ function createKnowledgeRuntime(options = {}) {
       let vectors;
       if (options.embedByProfile) {
         vectors = await options.embedByProfile(profile, texts, { priority, requestId });
+      } else if (profile.provider === 'nomic-node') {
+        const client = await ensureNomicClient();
+        vectors = [];
+        for (let offset = 0; offset < texts.length; offset += 8) {
+          const result = await client.embed(texts.slice(offset, offset + 8), { priority,
+            requestId: `${requestId}:${offset}`, timeoutMs: migrationConfig.timeoutMs || 120_000 });
+          vectors.push(...result.vectors);
+        }
       } else if (profile.provider === 'qwen-tei' || profile.provider === 'azure-openai') {
         vectors = await (options.embedTexts || embedTexts)(texts, { config, fetchImpl, apiKey: embeddingApiKey });
       } else {
@@ -1193,6 +1237,7 @@ function createKnowledgeRuntime(options = {}) {
       await app.query(database, AQL.closeDocumentRevision, closeVariables);
       await app.query(database, AQL.closeChunkRevision, closeVariables);
       await app.query(database, AQL.closeGteChunkRevision, closeVariables);
+      await app.query(database, NOMIC_AQL.closeGteChunkRevision, closeVariables);
       await app.query(database, AQL.closeClaimRevision, closeVariables);
       await app.query(database, AQL.closeRelationRevision, closeVariables);
       await app.query(database, AQL.pruneEntityMentions, { spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, now });
@@ -1201,7 +1246,7 @@ function createKnowledgeRuntime(options = {}) {
       const primaryProfile = targets.find((profile) => profile.provider !== 'gte-node');
       if (primaryProfile && vectorsByProvider.has(primaryProfile.provider)) {
         const records = baseRecords.map((record, index) => ({ ...record, embedding: vectorsByProvider.get(primaryProfile.provider)[index], embeddingProvider: primaryProfile.provider, embeddingModel: primaryProfile.model, embeddingRevision: primaryProfile.revision, embeddingDtype: primaryProfile.dtype, embeddingDimensions: primaryProfile.dimensions, vectorIndexVersion: primaryProfile.vectorIndexVersion }));
-        await app.query(database, AQL.upsertChunks, { chunks: records });
+        await app.query(database, primaryProfile.provider === 'nomic-node' ? NOMIC_AQL.upsertGteChunks : AQL.upsertChunks, { chunks: records });
       }
       if (vectorsByProvider.has('gte-node')) {
         const gteProfile = embeddingProfiles(config)['gte-node'];
@@ -1215,7 +1260,7 @@ function createKnowledgeRuntime(options = {}) {
       const [counts = {}] = await app.query(database, AQL.collectionCounts);
       const vectorIndexes = {};
       if (primaryProfile && vectorsByProvider.has(primaryProfile.provider)) {
-        vectorIndexes.primary = await ensureVectorIndex(app, database, primaryProfile.dimensions, Number(counts.chunks || 0), { collection: primaryProfile.collection, indexName: primaryProfile.vectorIndexName });
+        vectorIndexes.primary = await ensureVectorIndex(app, database, primaryProfile.dimensions, Number(primaryProfile.provider === 'nomic-node' ? (await app.query(database, NOMIC_AQL.gteCollectionCount))[0] : counts.chunks || 0), { collection: primaryProfile.collection, indexName: primaryProfile.vectorIndexName });
         indexStates.set(`${database}:${primaryProfile.provider}`, vectorIndexes.primary);
       }
       if (vectorsByProvider.has('gte-node')) {
@@ -1473,13 +1518,13 @@ function createKnowledgeRuntime(options = {}) {
         const measure = recordTimings ? timed : async (_name, work) => work();
         const [queryVector] = await measure(`${timingPrefix}embedding`, () => embedForProfile(profile, [input.query], { priority, requestId }));
         const gte = profile.provider === 'gte-node';
-        const eligibleQuery = gte ? AQL.eligibleGteChunkCount : AQL.eligibleChunkCount;
+        const eligibleQuery = profile.provider === 'nomic-node' ? NOMIC_AQL.eligibleGteChunkCount : gte ? AQL.eligibleGteChunkCount : AQL.eligibleChunkCount;
         const [eligibleCount = 0] = await measure(`${timingPrefix}eligibility`, () => app.query(database, eligibleQuery, { ...common, vectorIndexVersion: profile.vectorIndexVersion }));
         const vectorIndex = await ensureVectorIndex(app, database, profile.dimensions, Number(eligibleCount), { collection: profile.collection, indexName: profile.vectorIndexName });
         indexStates.set(`${database}:${profile.provider}`, vectorIndex);
         let vectorMode = vectorIndex.ready ? 'ann' : 'exact';
-        const annQuery = gte ? AQL.annGteVectorChunks : AQL.annVectorChunks;
-        const exactQuery = gte ? AQL.exactGteVectorChunks : AQL.exactVectorChunks;
+        const annQuery = profile.provider === 'nomic-node' ? NOMIC_AQL.annGteVectorChunks : gte ? AQL.annGteVectorChunks : AQL.annVectorChunks;
+        const exactQuery = profile.provider === 'nomic-node' ? NOMIC_AQL.exactGteVectorChunks : gte ? AQL.exactGteVectorChunks : AQL.exactVectorChunks;
         let vectorItems;
         try {
           vectorItems = await measure(`${timingPrefix}vector`, () => app.query(database, vectorIndex.ready ? annQuery : exactQuery, {
@@ -1490,7 +1535,7 @@ function createKnowledgeRuntime(options = {}) {
           vectorMode = 'exact-fallback';
           vectorItems = await measure(`${timingPrefix}vectorFallback`, () => app.query(database, exactQuery, { ...common, vectorIndexVersion: profile.vectorIndexVersion, queryVector }));
         }
-        return { profile, eligibleCount: Number(eligibleCount), vectorIndex, vectorMode, vectorItems };
+        return { profile, queryVector, eligibleCount: Number(eligibleCount), vectorIndex, vectorMode, vectorItems };
       };
 
       let vectorResult;
@@ -1516,7 +1561,7 @@ function createKnowledgeRuntime(options = {}) {
           const traversalQuery = input.graphDepth === 2 ? AQL.graphNeighbors2 : AQL.graphNeighbors1;
           const neighbors = await timed('graphTraversal', () => app.query(database, traversalQuery, { ...common, seedKeys, minConfidence: 0.55, breadth: 80 }));
           graphKeys = [...new Set([...seedKeys, ...neighbors])].slice(0, 100);
-          const graphQuery = servedProfile.provider === 'gte-node' ? AQL.graphGteChunks : AQL.graphChunks;
+          const graphQuery = servedProfile.provider === 'nomic-node' ? NOMIC_AQL.graphGteChunks : servedProfile.provider === 'gte-node' ? AQL.graphGteChunks : AQL.graphChunks;
           graphItems = await timed('graphEvidence', () => app.query(database, graphQuery, { ...common, entityKeys: graphKeys, vectorIndexVersion: servedProfile.vectorIndexVersion }));
         }
       }
@@ -1525,7 +1570,20 @@ function createKnowledgeRuntime(options = {}) {
         { name: 'lexical', weight: 0.30, items: lexicalItems },
         { name: 'graph', weight: 0.25, items: graphItems },
       ]).slice(0, 80);
-      const reranked = await timed('reranker', () => (options.rerank || rerank)(input.query, fused.map((item) => item.candidate), { config, fetchImpl, apiKey: embeddingApiKey }));
+      const localRerank = async (query, candidates) => {
+        if (!candidates.length) return [];
+        // Reuse the pinned stored vectors and this request's query vector. The
+        // cosine reranker must not re-embed up to 80 documents on every query.
+        const rows = await app.query(database, NOMIC_AQL.candidateVectors, { ...common,
+          keys: candidates.map((c) => c._key), vectorIndexVersion: servedProfile.vectorIndexVersion });
+        const vectors = new Map(rows.map((row) => [row.key, row.embedding]));
+        if (candidates.some((c) => !Array.isArray(vectors.get(c._key)) || vectors.get(c._key).length !== 768)) {
+          throw runtimeError('Nomic evidence changed during retrieval.', { code: 'EMBEDDING_EVIDENCE_CHANGED', status: 503, retryable: true });
+        }
+        return candidates.map((candidate) => ({ candidate, score: cosine(vectorResult.queryVector, vectors.get(candidate._key)) }))
+          .sort((a, b) => b.score - a.score);
+      };
+      const reranked = await timed('reranker', () => (options.rerank || (servedProfile.provider === 'nomic-node' ? localRerank : rerank))(input.query, fused.map((item) => item.candidate), { config, fetchImpl, apiKey: embeddingApiKey }));
       const fusedByKey = new Map(fused.map((item) => [item.candidate._key, item]));
       const ranked = reranked.map((item) => {
         const fusion = fusedByKey.get(item.candidate._key);
@@ -1612,7 +1670,7 @@ function createKnowledgeRuntime(options = {}) {
     const input = validateScanInput(rawInput);
     return queue.schedule('retrieve', input.requestId, async () => {
       const database = await tenant(input.spaceId);
-      const chunks = await app.query(database, AQL.scanDocumentChunks, input);
+      const chunks = await app.query(database, migrationConfig.provider === 'nomic-node' ? AQL.scanDocumentChunks.replaceAll('IN chunks', 'IN '+NOMIC_COLLECTION) : AQL.scanDocumentChunks, input);
       const items = chunks.map((chunk) => ({
         sourceRef: `${chunk.knowledgeBaseId}:${chunk.documentId}:${chunk._key}`,
         knowledgeBaseId: chunk.knowledgeBaseId,
@@ -1696,10 +1754,10 @@ function createKnowledgeRuntime(options = {}) {
       ['docling', `${config.services?.docling || `http://${config.host}:${config.ports.docling}`}/health`, { authorization: `Bearer ${doclingApiKey}`, 'x-api-key': doclingApiKey }],
       ['chatgpt', `${config.services?.chatgpt || `http://${config.host}:11435`}/health`, {}],
     ];
-    if (!config.services?.azureEmbedding && (migrationConfig.qwenRollbackRetained !== false || migrationConfig.provider === 'qwen-tei' || migrationConfig.dualWrite === true)) {
+    if (migrationConfig.provider !== 'nomic-node' && !config.services?.azureEmbedding && (migrationConfig.qwenRollbackRetained !== false || migrationConfig.provider === 'qwen-tei' || migrationConfig.dualWrite === true)) {
       checks.push(['embedding', `http://${config.host}:${config.ports.embedding}/health`, { authorization: `Bearer ${embeddingApiKey}` }]);
     }
-    if (!config.services?.azureEmbedding) checks.push(['reranker', `http://${config.host}:${config.ports.reranker}/health`, { authorization: `Bearer ${embeddingApiKey}` }]);
+    if (migrationConfig.provider !== 'nomic-node' && !config.services?.azureEmbedding) checks.push(['reranker', `http://${config.host}:${config.ports.reranker}/health`, { authorization: `Bearer ${embeddingApiKey}` }]);
     await Promise.all(checks.map(async ([name, url, headers]) => {
       const started = Date.now();
       try {
@@ -1707,7 +1765,7 @@ function createKnowledgeRuntime(options = {}) {
         services[name] = { healthy: response.ok, statusCode: response.status, latencyMs: Date.now() - started };
       } catch (error) { services[name] = { healthy: false, statusCode: null, latencyMs: Date.now() - started, error: error.message }; }
     }));
-    if (config.services?.azureEmbedding) {
+    if (migrationConfig.provider !== 'nomic-node' && config.services?.azureEmbedding) {
       const started = Date.now();
       try {
         await embedTexts(['knowledge runtime health probe'], { config, fetchImpl, apiKey: embeddingApiKey });
@@ -1719,6 +1777,13 @@ function createKnowledgeRuntime(options = {}) {
         services.embedding = health;
         services.reranker = { ...health };
       }
+    }
+    if (migrationConfig.provider === 'nomic-node') {
+      const local = nomicClient?.status?.();
+      const health = { healthy: local?.ready === true, statusCode: local?.ready === true ? 200 : 503,
+        provider: 'nomic-node', local: true, state: local?.state || 'stopped' };
+      services.embedding = health;
+      services.reranker = { ...health, mode: 'cosine' };
     }
     const gteRequired = migrationConfig.provider === 'gte-node' || migrationConfig.dualWrite === true
       || Number(migrationConfig.shadowPercent || 0) > 0 || Number(migrationConfig.rolloutPercent || 0) > 0;
@@ -1750,6 +1815,7 @@ function createKnowledgeRuntime(options = {}) {
       services,
       queue: queue.snapshot(),
       gte: gteStatus,
+      nomic: nomicClient?.status?.() || null,
       migration: { ...migration.status(), dualWrite: migrationConfig.dualWrite === true, shadowDiagnostics: { active: shadowActive, retained: shadowDiagnostics.length, failures: shadowDiagnostics.filter((item) => item.failed).length, dropped: shadowDiagnostics.filter((item) => item.dropped).length, recent: shadowDiagnostics.slice(-20) } },
       providers: Object.fromEntries(Object.entries(providerMetrics).map(([provider, metrics]) => [provider, { ...metrics, averageEmbeddingMs: metrics.embeddings ? metrics.totalMs / metrics.embeddings : 0 }])),
       resources: { memory: { rssBytes: memory.rss, heapUsedBytes: memory.heapUsed, heapTotalBytes: memory.heapTotal, externalBytes: memory.external }, cpuPercent: ((cpu.user + cpu.system) / elapsedMicros) * 100, eventLoop },
@@ -1765,6 +1831,7 @@ function createKnowledgeRuntime(options = {}) {
   }
 
   async function start() {
+    if (migrationConfig.provider === 'nomic-node') await ensureNomicClient();
     const needed = migrationConfig.provider === 'gte-node' || migrationConfig.dualWrite === true
       || Number(migrationConfig.shadowPercent || 0) > 0 || Number(migrationConfig.rolloutPercent || 0) > 0;
     if (needed) await ensureGteClient();
@@ -1782,6 +1849,7 @@ function createKnowledgeRuntime(options = {}) {
       });
       drained = drained && shadowDrain === true;
     }
+    if (nomicClient) await nomicClient.close({ drainTimeoutMs: force ? 0 : timeoutMs });
     if (gteClient) {
       const result = await gteClient.close({ drainTimeoutMs: force ? 0 : timeoutMs });
       drained = drained && result.drained !== false;
@@ -1790,7 +1858,18 @@ function createKnowledgeRuntime(options = {}) {
     return { closed: true, drained };
   }
 
-  return { index, backfill, retrieve, scan, remove, graph, status, migrationControl, start, close, cleanupTestTenant, queue, tenantDatabaseName: (spaceId) => tenantDatabaseName(spaceId, config.database.prefix) };
+  async function migrateNomic(input) {
+    if (migrationConfig.provider !== 'nomic-node') throw runtimeError('Local Nomic is not configured.', { status: 409 });
+    const { migrateNomicCorpus, validateMigration } = require('./nomic-migration.cjs');
+    const snapshot = validateMigration(input);
+    return queue.schedule('backfill', `nomic:${snapshot.knowledgeBaseId}`, async () => {
+      const database = await tenant(snapshot.spaceId);
+      return migrateNomicCorpus(input, { app, database, profile: embeddingProfiles(config)['nomic-node'],
+        embed: (texts) => embedForProfile(embeddingProfiles(config)['nomic-node'], texts, { priority: 'backfill' }) });
+    });
+  }
+
+  return { index, backfill, migrateNomic, retrieve, scan, remove, graph, status, migrationControl, start, close, cleanupTestTenant, queue, tenantDatabaseName: (spaceId) => tenantDatabaseName(spaceId, config.database.prefix) };
 }
 
 module.exports = {

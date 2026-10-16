@@ -337,20 +337,24 @@ test('refuses an incompatible rollback after a PostgreSQL runtime upgrade starts
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 34,
-    maximumRuntimeSchemaVersion: 34,
+    minimumRuntimeSchemaVersion: 35,
+    maximumRuntimeSchemaVersion: 35,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });
-test('deploys the current PostgreSQL runtime and preserves retry inputs until smoke passes', () => {
+test('deploys local Nomic only after backup and a verified parallel corpus cutover', () => {
   const repository = path.resolve(source, '..', '..', '..');
   const compose = fs.readFileSync(path.join(repository, 'deploy', 'hostinger', 'extended-apps.compose.yml'), 'utf8');
   const workflow = fs.readFileSync(path.join(repository, '.github', 'workflows', 'deploy-experience-hostinger.yml'), 'utf8');
-  assert.match(compose, /POSTGRES_RUNTIME_SCHEMA_VERSION: "34"/);
-  const installCredential = workflow.indexOf('install -o root -g root -m 0640 "/tmp/azure-openai-embedding-$RELEASE_SHA"');
-  const smoke = workflow.indexOf('/usr/local/sbin/seemplify-smoke', installCredential);
-  const removeCredential = workflow.indexOf('rm -f "/tmp/azure-openai-embedding-$RELEASE_SHA"', installCredential);
-  assert.ok(installCredential >= 0 && smoke > installCredential && removeCredential > smoke);
+  assert.match(compose, /POSTGRES_RUNTIME_SCHEMA_VERSION: "35"/);
+  assert.match(compose, /EXPERIENCE_EMBEDDING_PROVIDER: nomic-node/);
+  assert.doesNotMatch(compose, /AZURE_OPENAI_EMBEDDING_URL/);
+  assert.doesNotMatch(workflow, /secrets\.AZURE_OPENAI_EMBEDDING_API_KEY/);
+  const backup = workflow.indexOf('/usr/local/sbin/seemplify-backup');
+  const stop = workflow.indexOf('stop experience', backup);
+  const migrate = workflow.indexOf('SEEMPLIFY_NOMIC_MIGRATION_ONLY=1', stop);
+  const start = workflow.indexOf('up -d --no-deps --force-recreate experience', migrate);
+  assert.ok(backup >= 0 && stop > backup && migrate > stop && start > migrate);
 });
 test('grants PostgreSQL runtime privileges from the exact active release', () => {
   const manage = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'manage.ps1'), 'utf8');

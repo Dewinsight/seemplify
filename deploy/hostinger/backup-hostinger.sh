@@ -220,11 +220,12 @@ docker exec seemplify-shared-redis-1 sh -lc \
 docker cp seemplify-shared-redis-1:/data/dump.rdb "${DESTINATION}/shared-redis.rdb"
 
 archive_volume seemplify-shared_weaviate_data weaviate-data.tar.gz
-archive_volume seemplify-shared_arangodb_data arangodb-data.tar.gz
+archive_consistent_volume seemplify-shared_arangodb_data arangodb-data.tar.gz
 archive_consistent_volume seemplify-extended_chatgpt_gateway_data chatgpt-gateway-data.tar.gz
 archive_consistent_volume seemplify-extended_experience_runtime experience-runtime.tar.gz
 archive_volume seemplify-extended_knowledge_runtime_state knowledge-runtime-state.tar.gz
 archive_volume seemplify-extended_knowledge_runtime_data knowledge-runtime-data.tar.gz
+archive_volume_if_present seemplify-nomic-model-cache nomic-model-cache.tar.gz
 archive_volume seemplify-workspace_workspace_uploads workspace-uploads.tar.gz
 archive_volume seemplify-mail_postal_config postal-config.tar.gz
 archive_consistent_volume seemplify-mail_mail_api_data mail-api-data.tar.gz

@@ -6,7 +6,9 @@ ENV NODE_ENV=production \
     SEEMPLIFY_KNOWLEDGE_DATA_ROOT=/data
 
 WORKDIR /app
-COPY local-knowledge/*.cjs ./
+COPY local-knowledge/package.json local-knowledge/package-lock.json ./
+RUN ONNXRUNTIME_NODE_INSTALL=skip npm ci --omit=dev && npm cache clean --force
+COPY local-knowledge/*.cjs local-knowledge/*.mjs ./
 
 RUN mkdir -p /runtime /data /app/runtime/knowledge \
   && chown -R node:node /runtime /data /app/runtime

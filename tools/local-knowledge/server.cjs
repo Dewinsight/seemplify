@@ -46,6 +46,7 @@ function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRunti
   const handlers = Object.freeze({
     '/v1/index': (input) => runtime.index(input),
     '/v1/backfill': (input) => runtime.backfill(input),
+    '/v1/migrate-nomic': (input) => runtime.migrateNomic(input),
     '/v1/retrieve': (input) => runtime.retrieve(input),
     '/v1/scan': (input) => runtime.scan(input),
     '/v1/delete': (input) => runtime.remove(input),

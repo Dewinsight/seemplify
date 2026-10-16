@@ -58,7 +58,7 @@ services:
       POSTGRES_PASSWORD: ${EXPERIENCE_POSTGRES_APP_PASSWORD:?required}
       POSTGRES_SSL: disable
       POSTGRES_SCHEMA_VERSION: "1"
-      POSTGRES_RUNTIME_SCHEMA_VERSION: "34"
+      POSTGRES_RUNTIME_SCHEMA_VERSION: "35"
       ADMIN_EMAIL: michael.egbo@dewinsight.com
       SESSION_SECRET: ${EXPERIENCE_SESSION_SECRET:?required}
       ESIGN_ENCRYPTION_KEY: ${EXPERIENCE_ESIGN_KEY:?required}
@@ -74,12 +74,14 @@ services:
       KNOWLEDGE_STORAGE_DIR: /app/runtime/knowledge
       KNOWLEDGE_RUNTIME_BASE_URL: http://knowledge-runtime:11540
       KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: /run/seemplify/knowledge-runtime-hmac
-      EXPERIENCE_EMBEDDING_PROVIDER: azure-openai
-      EXPERIENCE_EMBEDDING_MODEL: text-embedding-3-large
-      EXPERIENCE_EMBEDDING_MODEL_REVISION: f0706db2d8dd64a5f9385fd9ab1713b9083eb881
-      EXPERIENCE_EMBEDDING_DTYPE: float32
-      EXPERIENCE_EMBEDDING_DIMENSIONS: "3072"
-      EXPERIENCE_VECTOR_INDEX_VERSION: azure-text-embedding-3-large-v1
+      EXPERIENCE_EMBEDDING_PROVIDER: nomic-node
+      EXPERIENCE_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v1.5
+      EXPERIENCE_EMBEDDING_MODEL_REVISION: e9b6763023c676ca8431644204f50c2b100d9aab
+      EXPERIENCE_EMBEDDING_DTYPE: q8
+      EXPERIENCE_EMBEDDING_DIMENSIONS: "768"
+      EXPERIENCE_VECTOR_INDEX_VERSION: nomic-embed-text-v1.5-q8-v1
+      EXPERIENCE_EMBEDDING_CONCURRENCY: "2"
+      EXPERIENCE_EMBEDDING_QUEUE_DEPTH: "32"
       EXPERIENCE_EMBEDDING_DUAL_WRITE: "false"
       EXPERIENCE_QWEN_ROLLBACK_RETAINED: "false"
     volumes:
@@ -107,6 +109,9 @@ services:
 
   knowledge-runtime:
     <<: *defaults
+    cpus: 1.5
+    mem_limit: 2g
+    memswap_limit: 2g
     image: ${KNOWLEDGE_RUNTIME_IMAGE:-seemplify/knowledge-runtime:hostinger}
     group_add:
       - "0"
@@ -119,24 +124,25 @@ services:
       ARANGO_URL: http://arangodb:8529
       DOCLING_URL: http://knowledge-docling:5001
       CHATGPT_GATEWAY_URL: http://chatgpt-gateway:11435
-      AZURE_OPENAI_EMBEDDING_URL: https://pubgegbo-3625-resource.cognitiveservices.azure.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2023-05-15
-      EXPERIENCE_EMBEDDING_PROVIDER: azure-openai
-      EXPERIENCE_EMBEDDING_MODEL: text-embedding-3-large
-      EXPERIENCE_EMBEDDING_MODEL_REVISION: f0706db2d8dd64a5f9385fd9ab1713b9083eb881
-      EXPERIENCE_EMBEDDING_DTYPE: float32
-      EXPERIENCE_EMBEDDING_DIMENSIONS: "3072"
-      EXPERIENCE_VECTOR_INDEX_VERSION: azure-text-embedding-3-large-v1
+      EXPERIENCE_EMBEDDING_PROVIDER: nomic-node
+      EXPERIENCE_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v1.5
+      EXPERIENCE_EMBEDDING_MODEL_REVISION: e9b6763023c676ca8431644204f50c2b100d9aab
+      EXPERIENCE_EMBEDDING_DTYPE: q8
+      EXPERIENCE_EMBEDDING_DIMENSIONS: "768"
+      EXPERIENCE_VECTOR_INDEX_VERSION: nomic-embed-text-v1.5-q8-v1
+      EXPERIENCE_EMBEDDING_CONCURRENCY: "2"
+      EXPERIENCE_EMBEDDING_QUEUE_DEPTH: "32"
       EXPERIENCE_EMBEDDING_DUAL_WRITE: "false"
       EXPERIENCE_QWEN_ROLLBACK_RETAINED: "false"
     volumes:
       - experience_runtime:/app/runtime:ro
       - knowledge_runtime_state:/runtime
       - knowledge_runtime_data:/data
+      - knowledge_nomic_models:/data/models/transformers
       - /opt/seemplify/secrets/knowledge/knowledge-runtime-hmac:/runtime/service-secret:ro
       - /opt/seemplify/secrets/knowledge/arango-app:/run/seemplify/knowledge-secrets/arango-app:ro
       - /opt/seemplify/secrets/knowledge/arango-provisioner:/run/seemplify/knowledge-secrets/arango-provisioner:ro
       - /opt/seemplify/secrets/knowledge/chatgpt-gateway:/run/seemplify/knowledge-secrets/chatgpt-gateway:ro
-      - /opt/seemplify/secrets/knowledge/azure-openai-embedding:/run/seemplify/knowledge-secrets/tei-api:ro
       - /opt/seemplify/secrets/knowledge/docling-api:/run/seemplify/knowledge-secrets/docling-api:ro
 
   knowledge-docling:
@@ -267,6 +273,9 @@ volumes:
   experience_runtime:
   knowledge_runtime_state:
   knowledge_runtime_data:
+  knowledge_nomic_models:
+    external: true
+    name: seemplify-nomic-model-cache
 
 networks:
   dokploy-network:

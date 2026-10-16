@@ -11,6 +11,14 @@ let profile = null;
 let cacheDir = null;
 let loading = null;
 let closed = false;
+let layerNorm = null;
+
+async function extractVectors(texts) {
+  let output = await extractor(texts, { pooling: profile.pooling,
+    normalize: profile.id !== 'nomic-node' && profile.normalize });
+  if (profile.id === 'nomic-node') output = layerNorm(output, [profile.dimension]).normalize(2, -1);
+  return typeof output?.tolist === 'function' ? output.tolist() : output;
+}
 
 function serializeError(error, fatal = false) {
   return {
@@ -28,23 +36,21 @@ async function initialize(input) {
   loading = (async () => {
     const started = performance.now();
     profile = validateEmbeddingProfile(input?.profile || EMBEDDING_PROFILES['gte-node']);
-    if (profile.id !== 'gte-node') throw new Error('The GTE worker only accepts the pinned gte-node profile.');
+    if (!['gte-node', 'nomic-node'].includes(profile.id)) throw new Error('The CPU worker only accepts pinned GTE or Nomic profiles.');
     cacheDir = String(input?.cacheDir || '').trim();
     if (!cacheDir) throw new Error('A persistent GTE model cache directory is required.');
     fs.mkdirSync(cacheDir, { recursive: true });
     const transformers = await import('@huggingface/transformers');
+    layerNorm = transformers.layer_norm;
     transformers.env.cacheDir = cacheDir;
     transformers.env.allowRemoteModels = true;
     extractor = await transformers.pipeline('feature-extraction', profile.modelId, {
       revision: profile.revision,
       dtype: profile.dtype,
       device: 'cpu',
+      session_options: { intraOpNumThreads: 2, interOpNumThreads: 1 },
     });
-    const warmup = await extractor(['Seemplify embedding readiness probe.'], {
-      pooling: profile.pooling,
-      normalize: profile.normalize,
-    });
-    const warmupVectors = typeof warmup?.tolist === 'function' ? warmup.tolist() : warmup;
+    const warmupVectors = await extractVectors([profile.id === 'nomic-node' ? 'search_document: Seemplify embedding readiness probe.' : 'Seemplify embedding readiness probe.']);
     validateEmbeddingVectors(warmupVectors, { expectedCount: 1, dimension: profile.dimension, normalized: true });
     return { alreadyLoaded: false, loadMs: Math.round(performance.now() - started) };
   })();
@@ -58,8 +64,7 @@ async function embed(input) {
     throw Object.assign(new Error('Embedding input must contain non-empty strings.'), { code: 'GTE_INPUT_INVALID' });
   }
   const started = performance.now();
-  const output = await extractor(texts, { pooling: profile.pooling, normalize: profile.normalize });
-  const vectors = typeof output?.tolist === 'function' ? output.tolist() : output;
+  const vectors = await extractVectors(texts);
   validateEmbeddingVectors(vectors, { expectedCount: texts.length, dimension: profile.dimension, normalized: true });
   return { vectors, inferenceMs: Math.round(performance.now() - started) };
 }

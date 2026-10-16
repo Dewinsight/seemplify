@@ -101,7 +101,7 @@ function boundedNumber(value: unknown, fallback: number, minimum: number, maximu
   return Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? parsed : fallback));
 }
 
-export type KnowledgeEmbeddingProvider = 'azure-openai' | 'qwen-tei' | 'gte-node';
+export type KnowledgeEmbeddingProvider = 'azure-openai' | 'qwen-tei' | 'gte-node' | 'nomic-node';
 
 export interface KnowledgeEmbeddingProfile {
   provider: KnowledgeEmbeddingProvider;
@@ -128,6 +128,14 @@ export const gteKnowledgeEmbeddingProfile: Readonly<KnowledgeEmbeddingProfile> =
   dtype: 'q8',
   dimensions: 768,
   vectorIndexVersion: 'gte-modernbert-v1'
+});
+
+export const nomicKnowledgeEmbeddingProfile: Readonly<KnowledgeEmbeddingProfile> = Object.freeze({
+  provider: 'nomic-node', model: 'nomic-ai/nomic-embed-text-v1.5', revision: 'e9b6763023c676ca8431644204f50c2b100d9aab',
+  dtype: 'q8', dimensions: 768, vectorIndexVersion: 'nomic-embed-text-v1.5-q8-v1'
+});
+export const nomicKnowledgeRerankerProfile = Object.freeze({
+  model: 'nomic-embed-text-v1.5-cosine-reranker', revision: nomicKnowledgeEmbeddingProfile.revision
 });
 
 export const azureKnowledgeEmbeddingProfile: Readonly<KnowledgeEmbeddingProfile> = Object.freeze({
@@ -184,11 +192,11 @@ export function resolveKnowledgeEmbeddingConfiguration(environment: NodeJS.Proce
   const providerValue = forceQwen
     ? 'qwen-tei'
     : String(environment.EXPERIENCE_EMBEDDING_PROVIDER || 'gte-node').trim().toLowerCase();
-  if (providerValue !== 'azure-openai' && providerValue !== 'qwen-tei' && providerValue !== 'gte-node') {
-    throw new Error('EXPERIENCE_EMBEDDING_PROVIDER must be azure-openai, qwen-tei, or gte-node.');
+  if (providerValue !== 'azure-openai' && providerValue !== 'qwen-tei' && providerValue !== 'gte-node' && providerValue !== 'nomic-node') {
+    throw new Error('EXPERIENCE_EMBEDDING_PROVIDER must be azure-openai, qwen-tei, or gte-node (or nomic-node).');
   }
   const provider = providerValue as KnowledgeEmbeddingProvider;
-  const defaults = provider === 'azure-openai' ? azureKnowledgeEmbeddingProfile
+  const defaults = provider === 'nomic-node' ? nomicKnowledgeEmbeddingProfile : provider === 'azure-openai' ? azureKnowledgeEmbeddingProfile
     : provider === 'gte-node' ? gteKnowledgeEmbeddingProfile : qwenKnowledgeEmbeddingProfile;
   const model = forceQwen ? qwenKnowledgeEmbeddingProfile.model : configuredToken(
     environment.EXPERIENCE_EMBEDDING_MODEL
@@ -252,6 +260,11 @@ export function resolveKnowledgeEmbeddingConfiguration(environment: NodeJS.Proce
   }
   if (provider === 'gte-node' && !qwenRollbackRetained && dualWrite) {
     throw new Error('gte-node cannot dual-write to Qwen after the Qwen rollback profile has been retired.');
+  }
+  if (provider === 'nomic-node' && (model !== nomicKnowledgeEmbeddingProfile.model
+      || revision !== nomicKnowledgeEmbeddingProfile.revision || dtype !== 'q8' || dimensions !== 768
+      || vectorIndexVersion !== nomicKnowledgeEmbeddingProfile.vectorIndexVersion || dualWrite || qwenRollbackRetained)) {
+    throw new Error('nomic-node requires its pinned q8 profile, separate index, and no cross-model dual-write.');
   }
   if (provider === 'azure-openai' && dualWrite) {
     throw new Error('azure-openai cannot dual-write into a different embedding space.');

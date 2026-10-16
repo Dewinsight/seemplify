@@ -59,6 +59,10 @@ const CONFIG = Object.freeze({
       normalize: true,
       vectorIndexVersion: 'gte-modernbert-v1',
     }),
+    nomicEmbedding: Object.freeze({
+      id: 'nomic-ai/nomic-embed-text-v1.5', revision: 'e9b6763023c676ca8431644204f50c2b100d9aab', dtype: 'q8',
+      dimension: 768, vectorIndexVersion: 'nomic-embed-text-v1.5-q8-v1',
+    }),
     azureEmbedding: Object.freeze({
       id: 'text-embedding-3-large',
       revision: 'f0706db2d8dd64a5f9385fd9ab1713b9083eb881',
@@ -67,8 +71,8 @@ const CONFIG = Object.freeze({
       vectorIndexVersion: 'azure-text-embedding-3-large-v1',
     }),
     reranker: Object.freeze({
-      id: 'text-embedding-3-large-cosine-reranker',
-      revision: 'f0706db2d8dd64a5f9385fd9ab1713b9083eb881',
+      id: EMBEDDING_ENVIRONMENT.provider === 'nomic-node' ? 'nomic-embed-text-v1.5-cosine-reranker' : 'text-embedding-3-large-cosine-reranker',
+      revision: EMBEDDING_ENVIRONMENT.provider === 'nomic-node' ? 'e9b6763023c676ca8431644204f50c2b100d9aab' : 'f0706db2d8dd64a5f9385fd9ab1713b9083eb881',
     }),
   }),
   supportedMimeTypes: Object.freeze([

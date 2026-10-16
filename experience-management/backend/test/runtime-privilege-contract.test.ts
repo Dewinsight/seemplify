@@ -171,15 +171,22 @@ test('the runtime contracts stay pinned to the shipped compatibility window', ()
     fs.readFileSync(path.join(migrationRoot, 'runtime-compatibility.json'), 'utf8')) as {
       minimumRuntimeSchemaVersion: number; maximumRuntimeSchemaVersion: number;
     };
-  // Runtime 34 persists the IdP permission matrix beside each mirrored space membership.
-  assert.equal(compatibility.maximumRuntimeSchemaVersion, 34);
-  assert.equal(compatibility.minimumRuntimeSchemaVersion, 34);
-  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 34/u);
+  // Runtime 35 adds the independent Nomic embedding profile without new tables.
+  assert.equal(compatibility.maximumRuntimeSchemaVersion, 35);
+  assert.equal(compatibility.minimumRuntimeSchemaVersion, 35);
+  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 35/u);
   const beyondWindow = fs.readdirSync(migrationRoot)
     .map((name) => /^(\d{4})_.*\.sql$/u.exec(name))
     .filter((match): match is RegExpExecArray => match !== null)
-    .filter((match) => Number(match[1]!) > 34)
+    .filter((match) => Number(match[1]!) > 35)
     .map((match) => match[0]);
   assert.deepEqual(beyondWindow, [],
-    'a migration past runtime-34 must be registered before it can ship');
+    'a migration past runtime-35 must be registered before it can ship');
+});
+
+test('runtime-35 adds Nomic without repointing completed corpora or deleting historical profiles', () => {
+  const migration = fs.readFileSync(path.join(migrationRoot, '0035_local_nomic_embeddings.sql'), 'utf8');
+  assert.match(migration, /nomic-embed-text-v1\.5-q8-v1/);
+  assert.match(migration, /ON CONFLICT\(vector_index_version\) DO NOTHING/);
+  assert.doesNotMatch(migration, /UPDATE knowledge_bases|DELETE FROM knowledge_|TRUNCATE/i);
 });
