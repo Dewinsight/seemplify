@@ -1790,7 +1790,25 @@ function createKnowledgeRuntime(options = {}) {
     const gteStatus = gteClient?.status?.() || { state: 'stopped', ready: false, accepting: false, queue: { waiting: 0, capacity: migrationConfig.queueDepth || config.limits.queueDepth, oldestWaitMs: 0, byPriority: { query: 0, 'live-index': 0, backfill: 0 } }, metrics: null };
     services.gteEmbedding = { healthy: gteStatus.ready === true || !gteRequired, required: gteRequired, ready: gteStatus.ready === true, state: gteStatus.state };
     let tenantDatabases = null;
-    try { tenantDatabases = ((await provisioner.request('_system', '/_api/database/user')).result || []).filter((name) => name.startsWith(config.database.prefix)).length; } catch {}
+    try {
+      const tenants = ((await provisioner.request('_system', '/_api/database/user')).result || [])
+        .filter((name) => name.startsWith(config.database.prefix));
+      tenantDatabases = tenants.length;
+      // Provisioner access alone does not prove the application's data account
+      // can query its databases. Check it without reading customer documents,
+      // with at most four concurrent probes and fail on the first bad batch.
+      for (let offset = 0; offset < tenants.length; offset += 4) {
+        await Promise.all(tenants.slice(offset, offset + 4).map(async (database) => {
+          const result = await app.request(database, '/_api/cursor', {
+            method: 'POST', body: { query: 'RETURN 1' }, timeoutMs: 3_000 });
+          if (result.result?.[0] !== 1) throw new Error('Data account probe failed.');
+        }));
+      }
+      services.arangoApp = { healthy: true, tenantDatabases };
+    } catch {
+      services.arangoApp = { healthy: false, tenantDatabases,
+        error: 'The knowledge data account cannot query its tenant storage.' };
+    }
     const vectorIndexes = [...indexStates.values()];
     const ready = Object.values(services).every((service) => service.healthy);
     const checkedAt = Date.now();

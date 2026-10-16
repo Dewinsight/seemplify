@@ -285,7 +285,7 @@ test('status exposes a consistent ready and healthy contract', async () => {
   const status = await runtime.status();
   assert.equal(status.ready, true);
   assert.equal(status.healthy, true);
-  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'chatgpt', 'docling', 'embedding', 'gteEmbedding', 'reranker']);
+  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'arangoApp', 'chatgpt', 'docling', 'embedding', 'gteEmbedding', 'reranker']);
 });
 
 test('Azure embeddings use the API key header, pinned dimensions, stable batching, and response order', async () => {

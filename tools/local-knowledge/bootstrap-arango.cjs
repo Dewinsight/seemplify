@@ -19,11 +19,13 @@ async function request(requestPath, { method = 'GET', body } = {}) {
   return payload;
 }
 
-async function upsertUser(username, password) {
+async function upsertUser(username, password, requestImpl = request) {
   const encoded = encodeURIComponent(username);
-  const current = await request(`/_api/user/${encoded}`).catch((error) => (/not found/i.test(error.message) ? null : Promise.reject(error)));
-  if (current) return request(`/_api/user/${encoded}`, { method: 'PUT', body: { passwd: password, active: true, extra: { owner: 'seemplify-local-knowledge' } } });
-  return request('/_api/user', { method: 'POST', body: { user: username, passwd: password, active: true, extra: { owner: 'seemplify-local-knowledge' } } });
+  const current = await requestImpl(`/_api/user/${encoded}`).catch((error) => (/not found/i.test(error.message) ? null : Promise.reject(error)));
+  // PUT replaces the user and clears database grants. PATCH preserves the
+  // tenant permissions when provisioning is repeated after a deployment.
+  if (current) return requestImpl(`/_api/user/${encoded}`, { method: 'PATCH', body: { passwd: password, active: true, extra: { owner: 'seemplify-local-knowledge' } } });
+  return requestImpl('/_api/user', { method: 'POST', body: { user: username, passwd: password, active: true, extra: { owner: 'seemplify-local-knowledge' } } });
 }
 
 async function bootstrap() {
@@ -46,4 +48,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { bootstrap };
+module.exports = { bootstrap, upsertUser };

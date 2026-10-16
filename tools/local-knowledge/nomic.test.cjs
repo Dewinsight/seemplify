@@ -6,7 +6,7 @@ const { createGteEmbeddingClient } = require('./gte-embedding-client.cjs');
 const { NOMIC_AQL, NOMIC_COLLECTION } = require('./nomic-aql.cjs');
 const { EmbeddingMigrationController } = require('./migration-controller.cjs');
 const { migrateNomicCorpus, sourceQuery } = require('./nomic-migration.cjs');
-const { embeddingProfiles } = require('./runtime.cjs');
+const { embeddingProfiles, createKnowledgeRuntime } = require('./runtime.cjs');
 const { CONFIG } = require('./config.cjs');
 
 test('Nomic uses a pinned independent embedding space and refuses mixed dimensions', () => {
@@ -84,4 +84,27 @@ test('parallel migration preserves original vectors and refuses incomplete or ch
   await assert.rejects(migrateNomicCorpus({ ...input, documents: [{ ...input.documents[0], chunkCount: 2 }] }, options), /coverage/);
   await assert.rejects(migrateNomicCorpus({ ...input, documents: [{ ...input.documents[0], sha256: 'b'.repeat(64) }] }, options), /checksum/);
   assert.equal(writes, oldWrites);
+});
+
+test('readiness rejects a healthy provisioner when the data account lost tenant access', async () => {
+  let allowed = false;
+  const runtime = createKnowledgeRuntime({ config: { ...CONFIG,
+    paths: { ...CONFIG.paths, migrationState: null },
+    embeddingMigration: { ...CONFIG.embeddingMigration, provider: 'nomic-node', qwenRollbackRetained: false,
+      dualWrite: false, rolloutPercent: 0, shadowPercent: 0 } },
+    secrets: { 'arango-app': 'synthetic', 'arango-provisioner': 'synthetic',
+      'chatgpt-gateway': 'synthetic', 'docling-api': 'synthetic' },
+    nomicClient: { status: () => ({ ready: true, state: 'ready' }), close: async () => ({ drained: true }) },
+    provisionerClient: { authorization: 'synthetic', request: async () => ({ result: ['exp_test'] }) },
+    appClient: { request: async () => { if (!allowed) throw new Error('not authorized'); return { result: [1] }; } },
+    fetchImpl: async () => ({ ok: true, status: 200 }),
+  });
+  try {
+    const failed = await runtime.status();
+    assert.equal(failed.services.arango.healthy, true);
+    assert.equal(failed.services.arangoApp.healthy, false);
+    assert.equal(failed.ready, false);
+    allowed = true;
+    assert.equal((await runtime.status()).ready, true);
+  } finally { await runtime.close(); }
 });
