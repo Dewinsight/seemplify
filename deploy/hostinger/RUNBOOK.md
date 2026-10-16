@@ -1,5 +1,35 @@
 # Seemplify Hostinger production runbook
 
+## Automatic delivery after the KVM4 migration
+
+All Seemplify component push workflows deploy canonical `main` to KVM4
+`191.215.40.99` through pinned SSH and the shared production deployment lock.
+The complete-release workflow starts a host-side coordinator, then releases the
+only controller runner so child workflows can use it. Track the
+`hostinger-ci/seemplify-all` GitHub commit status for completion of all nine
+components, including Stanbic Frappe LMS. Its launcher success means queued;
+the combined status is the complete release result. Request evidence is under
+`/opt/seemplify/deploy-all/<GitHub run ID>` on KVM4.
+
+Workspace (`Dewinsight/experienments2`) uses its durable KVM4 GitHub polling
+queue while private Actions cannot start. `HOSTINGER_CI_DRIVER=local` selects
+that driver and prevents duplicate native deployment jobs. It runs the existing
+QA/deployment workflow and checks the exact public release; it does not deploy
+untested source. Unit `hostinger-ci.service`, configuration `/etc/hostinger-ci`,
+and state/private logs `/var/lib/hostinger-ci` remain on KVM4. A fresh
+`HOSTINGER_CI_REQUEST` repository variable requests the current main again.
+
+Milo (`michaelegbo/milo`) keeps its GitHub QA and managed Dokploy deployment.
+Its restricted SSH key can request only a canonical Milo deployment. The
+root-owned helper preserves existing Dokploy environment values, updates the
+revision, uses the local API and verifies all three services plus public release
+metadata. Model/account volumes stay attached. GitHub never receives the
+Dokploy API credential. CRM remains on KVM2 `89.116.229.22` with its independent
+four-lane durable GitHub deployment queue.
+
+Daily backups now include root-only host deployment settings and a consistent
+SQLite snapshot of the Workspace queue alongside existing application data.
+
 ## Production target
 
 - VPS: Hostinger KVM4, ID `1903452`, `191.215.40.99` (`srv1903452`)

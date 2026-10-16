@@ -4,13 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Seemplify branch or commit to deploy
+        description: Canonical Seemplify branch (main)
         required: true
         default: main
         type: string
 
 permissions:
-  actions: write
   contents: read
 
 concurrency:
@@ -20,18 +19,38 @@ concurrency:
 
 jobs:
   deploy-all:
-    name: Dispatch production workflows sequentially
-    runs-on: dewinsight-kvm8-control
-    timeout-minutes: 240
+    name: Queue complete release on KVM4
+    runs-on: [self-hosted, dewinsight-kvm4-control]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy every Seemplify component sequentially
-        shell: pwsh
+      - name: Configure pinned KVM4 SSH
         env:
-          GH_TOKEN: ${{ github.token }}
+          DEPLOY_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
         run: |
-          ./deploy/hostinger/Deploy-All.ps1 -SeemplifyRef '${{ inputs.ref }}' -SkipWorkspace
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+      - name: Start durable complete-release coordinator
+        env:
+          DEPLOY_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          DEPLOY_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$REQUESTED_REF" = main
+          test "$DEPLOY_HOST" = 191.215.40.99
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" 'test "$(hostname)" = srv1903452 && install -d -m 750 /opt/seemplify/deploy/hostinger'
+          scp deploy/hostinger/github-orchestrator.py "$DEPLOY_USER@$DEPLOY_HOST:/opt/seemplify/deploy/hostinger/github-orchestrator.py"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+            "systemd-run --unit=seemplify-deploy-all-$GITHUB_RUN_ID --property=UMask=0077 /usr/bin/python3 /opt/seemplify/deploy/hostinger/github-orchestrator.py '$GITHUB_SHA' '$GITHUB_RUN_ID'"
+          echo 'Release queued. Track the hostinger-ci/seemplify-all commit status for the complete result.'
       - name: Explain Workspace boundary
         run: |
-          echo 'Workspace is a private separate repository and cannot be dispatched by this public repository token.'
+          echo 'Workspace deploys from its private repository through its KVM4 durable queue.'
+          echo 'Milo deploys from its own repository through restricted KVM4 SSH and Dokploy.'
           echo 'Run deploy/hostinger/Deploy-All.ps1 with an authenticated GitHub CLI to include Workspace.'

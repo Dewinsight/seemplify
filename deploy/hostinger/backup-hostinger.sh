@@ -230,6 +230,33 @@ archive_volume seemplify-mail_postal_config postal-config.tar.gz
 archive_consistent_volume seemplify-mail_mail_api_data mail-api-data.tar.gz
 archive_volume dokploy dokploy-data.tar.gz
 
+# Keep host deployment settings recoverable in the root-only backup directory.
+python3 - "${DESTINATION}" <<'PY'
+from pathlib import Path
+import sqlite3
+import subprocess
+import sys
+destination = Path(sys.argv[1])
+paths = ['opt/seemplify/secrets', 'opt/seemplify/deploy/hostinger',
+         'etc/dokploy/traefik', 'etc/seemplify', 'etc/hostinger-ci',
+         'opt/hostinger-ci', 'etc/systemd/system/hostinger-ci.service',
+         'etc/systemd/system/seemplify-mail-egress-bridge.service',
+         'etc/ssh/sshd_config.d', 'root/.ssh/authorized_keys',
+         'usr/local/sbin/milo-github-deploy.py']
+paths = [name for name in paths if Path('/' + name).exists()]
+subprocess.run(['tar', '--acls', '--xattrs', '--numeric-owner',
+                '--exclude=__pycache__', '-C', '/', '-czf',
+                str(destination / 'production-configuration.tar.gz')] + paths, check=True)
+queue = Path('/var/lib/hostinger-ci/queue.sqlite3')
+if queue.is_file():
+    source = sqlite3.connect('file:' + str(queue) + '?mode=ro', uri=True)
+    target = sqlite3.connect(destination / 'hostinger-ci-queue.sqlite3')
+    source.backup(target)
+    assert target.execute('pragma integrity_check').fetchone()[0] == 'ok'
+    target.close()
+    source.close()
+PY
+
 {
   printf 'created_utc=%s\n' "$(date -u +%FT%TZ)"
   printf 'hostname=%s\n' "$(hostname --fqdn 2>/dev/null || hostname)"
