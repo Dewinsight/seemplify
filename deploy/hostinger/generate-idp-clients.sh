@@ -4,6 +4,7 @@ set -euo pipefail
 apps_env=${1:-/opt/seemplify/secrets/core-apps.env}
 source_clients=${2:-/opt/seemplify/source/Identityprovider/clients.json}
 output_clients=${3:-/opt/seemplify/secrets/idp-clients.json}
+identity_provider_image=${IDENTITY_PROVIDER_IMAGE:-}
 
 set -a
 # shellcheck disable=SC1090
@@ -26,7 +27,9 @@ output_dir=$(dirname "$output_clients")
 output_name=$(basename "$output_clients")
 install -d -m 700 "$output_dir"
 
-identity_provider_image=${IDENTITY_PROVIDER_IMAGE:-seemplify/identity-provider:hostinger}
+# A release caller supplies its exact tested image. The protected environment
+# may retain a migration/default image pin and must not override that request.
+identity_provider_image=${identity_provider_image:-${IDENTITY_PROVIDER_IMAGE:-seemplify/identity-provider:hostinger}}
 
 docker run --rm \
   -e OIDC_RECRUITER_SECRET \
