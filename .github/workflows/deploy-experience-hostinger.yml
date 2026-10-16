@@ -302,6 +302,6 @@ jobs:
           status_file=$(mktemp /tmp/seemplify-nomic-status.XXXXXX)
           trap 'rm -f "$status_file"' EXIT
           docker exec seemplify-extended-knowledge-runtime-1 node client.cjs status >"$status_file"
-          node -e 'const s=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));if(!s.ready||s.activeEmbeddingProvider!=="nomic-node")process.exit(1)' "$status_file"
+            python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if s.get("ready") and s.get("activeEmbeddingProvider")=="nomic-node" else 1)' "$status_file"
           /usr/local/sbin/seemplify-smoke
           VERIFY
