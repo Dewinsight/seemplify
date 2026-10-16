@@ -5,3 +5,5 @@ self-hosted-runner:
     - dewinsight-kvm8-workspace
     - dewinsight-kvm8-control
     - dewinsight-kvm2-crm
+    - dewinsight-kvm4-build
+    - dewinsight-kvm4-control

@@ -1,0 +1,50 @@
+name: Hostinger Runner Contracts
+
+on:
+  push:
+    branches: [main]
+    paths: ['deploy/hostinger/local-ci/**', 'deploy/hostinger/github-runner/**', 'deploy/hostinger/tests/test_ci_slot.py', '.github/workflows/hostinger-runner-ci.yml']
+  pull_request:
+    paths: ['deploy/hostinger/local-ci/**', 'deploy/hostinger/github-runner/**', 'deploy/hostinger/tests/test_ci_slot.py', '.github/workflows/hostinger-runner-ci.yml']
+  workflow_dispatch:
+    inputs:
+      experience_backend:
+        description: Run the complete Experience backend suite on the current main revision
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'dewinsight-kvm4-control' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python3 -m unittest discover -s deploy/hostinger/local-ci -p test_queue.py
+      - run: python3 -m unittest discover -s deploy/hostinger/tests -p test_ci_slot.py
+      - run: python3 deploy/hostinger/github-runner/scanner-contract.test.py
+      - run: node --test deploy/hostinger/github-runner/runner-contract.test.mjs
+  experience-backend:
+    if: github.event_name == 'workflow_dispatch' && inputs.experience_backend && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, dewinsight-kvm4-build]
+    timeout-minutes: 60
+    env:
+      NODE_OPTIONS: --max-old-space-size=3072
+    defaults:
+      run:
+        working-directory: experience-management
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: experience-management/package-lock.json
+      - run: npm ci
+      - run: npm run build:sdk
+      - run: npm run test --workspace backend
