@@ -233,6 +233,7 @@ archive_volume dokploy dokploy-data.tar.gz
 # Keep host deployment settings recoverable in the root-only backup directory.
 python3 - "${DESTINATION}" <<'PY'
 from pathlib import Path
+import json
 import sqlite3
 import subprocess
 import sys
@@ -245,6 +246,16 @@ paths = ['opt/seemplify/secrets', 'opt/seemplify/deploy/hostinger',
          'etc/ssh/sshd_config.d', 'root/.ssh/authorized_keys',
          'usr/local/sbin/milo-github-deploy.py']
 paths = [name for name in paths if Path('/' + name).exists()]
+for volume in ['github-actions-runner_seemplify-worker-state',
+               'github-actions-runner_control-state']:
+    result = subprocess.run(['docker', 'volume', 'inspect', volume], capture_output=True, text=True)
+    if result.returncode:
+        continue
+    mount = Path(json.loads(result.stdout)[0]['Mountpoint'])
+    for name in ['.runner', '.credentials', '.credentials_rsaparams', 'hooks']:
+        item = mount / name
+        if item.exists():
+            paths.append(str(item.relative_to('/')))
 subprocess.run(['tar', '--acls', '--xattrs', '--numeric-owner',
                 '--exclude=__pycache__', '-C', '/', '-czf',
                 str(destination / 'production-configuration.tar.gz')] + paths, check=True)
