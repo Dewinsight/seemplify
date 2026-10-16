@@ -17,9 +17,11 @@ temporarily exceed those disk targets. The SSH server supplies
 use this worker and load their images into the host engine. The bootstrap
 verifies the worker limits before enabling that environment setting.
 
+After restoring Dokploy, run `bash deploy/hostinger/bootstrap-kvm4-dokploy-builder.sh`.
+It selects the same bounded worker for Dokploy's Docker and Compose builds
+through its existing Docker socket. Registry credentials remain separate.
 These build limits are separate from runner limits. Application containers
-keep their existing service limits, and Dokploy-initiated builds need their
-own capacity check.
+keep their existing service limits.
 
 Start this profile with `docker compose --env-file .env -f kvm4.compose.yml up -d`.
 Do not start the four-worker `compose.yml` profile on KVM4. Retain the existing
