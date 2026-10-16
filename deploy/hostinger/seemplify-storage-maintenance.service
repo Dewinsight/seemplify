@@ -1,0 +1,19 @@
+[Unit]
+Description=Preserve Seemplify deployment disk headroom
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/seemplify/deploy/hostinger/storage-maintenance.py --apply
+Environment=DOCKER_HOST=unix:///var/run/docker.sock
+Environment=DOCKER_CONFIG=/var/lib/seemplify-storage-maintenance/docker
+StateDirectory=seemplify-storage-maintenance
+StateDirectoryMode=0700
+UMask=0077
+Nice=15
+IOWeight=10
+CPUQuota=50%
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true

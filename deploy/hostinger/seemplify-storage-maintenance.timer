@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Seemplify deployment disk headroom
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=5min
+AccuracySec=30s
+Unit=seemplify-storage-maintenance.service
+
+[Install]
+WantedBy=timers.target
