@@ -155,3 +155,15 @@ python3 /opt/hostinger-ci/runner_queue.py cleanup --apply
 The report-only command does not delete files. Monitor `cleanup_failed=` and
 nonempty `errors` in coordinator output; a cleanup failure never converts a
 failed deployment into a passing result.
+
+KVM2 can additionally enable `cleanup_release_images=true`. The same sweep then
+holds `/var/lock/xplorer-kvm2-deploy.lock`, shared by both CRM deployment scripts,
+and removes only unused `xplorer-crm-dev`, `xplorer-crm-staging`,
+`xplorer-backend-dev` and `xplorer-backend-staging` SHA-tagged releases. It keeps
+three recent image versions per application, every image younger than 24 hours,
+all images referenced by any container, and current/previous Swarm service
+images. Foreign tags and untagged images are excluded. Docker removal never
+uses force; no containers or volumes are removed by this image policy.
+`image-cleanup-report.json` records its result. A busy deployment lock skips
+image reclamation until the next sweep. Missing Docker/Swarm metadata blocks
+reclamation rather than guessing which releases are unused.

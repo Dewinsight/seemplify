@@ -19,6 +19,35 @@ import urllib.parse
 import urllib.request
 
 SHA = re.compile(r'[0-9a-f]{40}\Z')
+CRM_IMAGE = re.compile(r'(xplorer-(?:crm|backend)-(?:dev|staging)):[a-f0-9]{12,40}\Z')
+
+
+def obsolete_release_images(images, used, service_images, keep=3, minimum_age_hours=24):
+    """Select only old CRM releases; protect all container/service/rollback refs."""
+    protected = set(used)
+    references = {ref.split('@', 1)[0] for ref in service_images}
+    groups = {}
+    for image in images:
+        tags = image.get('RepoTags') or []
+        if (image['Id'] in service_images or any(tag in references for tag in tags)
+                or set(image.get('RepoDigests') or []).intersection(service_images)):
+            protected.add(image['Id'])
+        for tag in tags:
+            match = CRM_IMAGE.fullmatch(tag)
+            if match:
+                groups.setdefault(match[1], {})[image['Id']] = image
+    for group in groups.values():
+        protected.update(row['Id'] for row in sorted(group.values(), key=lambda row: row['Created'], reverse=True)[:keep])
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=minimum_age_hours)
+    selected = []
+    for image in images:
+        tags = image.get('RepoTags') or []
+        if not tags or image['Id'] in protected or not all(CRM_IMAGE.fullmatch(tag) for tag in tags):
+            continue
+        created = datetime.datetime.fromisoformat(image['Created'].replace('Z', '+00:00'))
+        if created < cutoff:
+            selected.append(image)
+    return selected
 
 
 def memory_limit_bytes(value):
@@ -202,6 +231,48 @@ class Driver:
         self.token = Path(config['token_file']).read_text().strip()
         self.stop = threading.Event()
         self.api_lock = threading.Lock()
+
+    def cleanup_images(self, apply=False):
+        if not self.config.get('cleanup_release_images', False):
+            return {'enabled': False}
+        import fcntl
+        # Both canonical CRM deploy scripts hold exactly this host lock.
+        fd = os.open('/var/lock/xplorer-kvm2-deploy.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {'skipped': 'deployment_active'}
+            def inspect(kind, ids):
+                return json.loads(subprocess.check_output(['docker', kind, 'inspect'] + ids, text=True)) if ids else []
+            ids = list(dict.fromkeys(subprocess.check_output(['docker', 'image', 'ls', '-q', '--no-trunc'], text=True).split()))
+            images = inspect('image', ids)
+            ids = subprocess.check_output(['docker', 'ps', '-aq'], text=True).split()
+            containers = json.loads(subprocess.check_output(['docker', 'inspect'] + ids, text=True)) if ids else []
+            ids = subprocess.check_output(['docker', 'service', 'ls', '-q'], text=True).split()
+            services = inspect('service', ids)
+            references = []
+            for service in services:
+                for spec in ('Spec', 'PreviousSpec'):
+                    ref = service.get(spec, {}).get('TaskTemplate', {}).get('ContainerSpec', {}).get('Image')
+                    if ref:
+                        references.append(ref)
+            selected = obsolete_release_images(images, {row['Image'] for row in containers}, references)
+            report = {'checked_at': now(), 'applied': apply, 'eligible_images': len(selected), 'removed_images': 0, 'errors': []}
+            if apply:
+                for image in selected:
+                    try:
+                        # No force flag: Docker refuses to delete an image taken by a new container.
+                        subprocess.run(['docker', 'image', 'rm'] + image['RepoTags'], check=True, capture_output=True)
+                        report['removed_images'] += 1
+                    except subprocess.CalledProcessError:
+                        report['errors'].append({'type': 'CalledProcessError'})
+                path = self.queue.root / 'image-cleanup-report.json'
+                if path.is_symlink():
+                    raise ValueError('Image cleanup report cannot be a symlink')
+                path.write_text(json.dumps(report, indent=2) + '\n')
+                path.chmod(0o600)
+            return report
 
     def api(self, path, payload=None):
         if not path.startswith('/repos/') or '\\' in path or '..' in path:
@@ -507,6 +578,7 @@ class Driver:
                 if time.monotonic() >= next_cleanup:
                     try:
                         print('cleanup=' + json.dumps(self.queue.cleanup(apply=True)), flush=True)
+                        print('image_cleanup=' + json.dumps(self.cleanup_images(apply=True)), flush=True)
                     except Exception as error:
                         print('cleanup_failed=' + type(error).__name__, flush=True)
                     next_cleanup = time.monotonic() + 3600
@@ -552,8 +624,9 @@ def main():
         print(json.dumps(driver.queue.rows(), indent=2))
     elif args.command == 'cleanup':
         report = driver.queue.cleanup(apply=args.apply)
+        report['release_images'] = driver.cleanup_images(apply=args.apply)
         print(json.dumps(report, indent=2))
-        if report['errors']:
+        if report['errors'] or report['release_images'].get('errors'):
             raise SystemExit(1)
     elif args.command == 'retry':
         with driver.queue.connect() as db:
