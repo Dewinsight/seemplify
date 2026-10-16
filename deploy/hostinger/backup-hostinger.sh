@@ -219,7 +219,6 @@ docker exec seemplify-shared-redis-1 sh -lc \
   'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" SAVE >/dev/null'
 docker cp seemplify-shared-redis-1:/data/dump.rdb "${DESTINATION}/shared-redis.rdb"
 
-archive_volume seemplify-shared_qdrant_data qdrant-data.tar.gz
 archive_volume seemplify-shared_weaviate_data weaviate-data.tar.gz
 archive_volume seemplify-shared_arangodb_data arangodb-data.tar.gz
 archive_consistent_volume seemplify-extended_chatgpt_gateway_data chatgpt-gateway-data.tar.gz

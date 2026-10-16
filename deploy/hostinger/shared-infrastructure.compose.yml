@@ -64,7 +64,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.seemplify-weaviate.rule=Host(`weaviate.179-198-192-126.sslip.io`)
+      - traefik.http.routers.seemplify-weaviate.rule=Host(`weaviate.191-215-40-99.sslip.io`)
       - traefik.http.routers.seemplify-weaviate.entrypoints=websecure
       - traefik.http.routers.seemplify-weaviate.tls=true
       - traefik.http.routers.seemplify-weaviate.tls.certresolver=letsencrypt
@@ -96,28 +96,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
-    networks:
-      - dokploy-network
-
-  qdrant:
-    image: qdrant/qdrant:v1.18.3-unprivileged
-    restart: unless-stopped
-    environment:
-      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
-      QDRANT__TELEMETRY_DISABLED: "true"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333;
-          printf "GET /healthz HTTP/1.1\r\nHost: localhost\r\napi-key: %s\r\nConnection: close\r\n\r\n" "$$QDRANT__SERVICE__API_KEY" >&3;
-          grep -q "200 OK" <&3'
-      interval: 15s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
     networks:
       - dokploy-network
 
@@ -176,7 +154,6 @@ volumes:
   mongodb_config:
   redis_data:
   weaviate_data:
-  qdrant_data:
   arangodb_data:
   experience_postgres_data:
 

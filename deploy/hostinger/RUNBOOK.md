@@ -54,7 +54,7 @@ and recovery archive retention remain outstanding.
 | ChatGPT/Codex gateway | internal persistent service | Extended apps |
 
 The deployed data services are MongoDB 8, Redis 7, PostgreSQL 17,
-MariaDB 10.11, Weaviate and Qdrant. MongoDB has a `65536`
+MariaDB 10.11 and Weaviate. MongoDB has a `65536`
 open-file limit so bulk index restore does not exhaust descriptors.
 
 The intentionally excluded products are diGiLog Recruiter, Auto-Mailer,
@@ -198,7 +198,7 @@ The production acceptance pass verified:
   working embedded attendance status and controls;
 - all public API health routes, all configured OIDC start routes, the AI Interview
   feature flag, Google-relayed mail control and Postal, ChatGPT/Codex gateway,
-  MongoDB, Redis, PostgreSQL, MariaDB, Weaviate and Qdrant dependencies;
+  MongoDB, Redis, PostgreSQL, MariaDB and Weaviate dependencies;
 - authenticated external UDP TURN allocation; and
 - the local backup timer, an empty Postfix queue and zero failed systemd units.
 
@@ -276,7 +276,7 @@ readlink -f /var/backups/seemplify/latest
 ```
 
 The backup includes native dumps of MongoDB, Experience PostgreSQL,
-Dokploy PostgreSQL and MariaDB; a Redis RDB; and archives of Qdrant,
+Dokploy PostgreSQL and MariaDB; a Redis RDB; and archives of
 Weaviate, Postal, Mail API, Experience runtime, Dokploy and gateway
 state, including the Workspace uploads volume. If the separately staged n8n
 containers exist, it also writes a native n8n PostgreSQL dump and archives the
@@ -395,7 +395,16 @@ were removed, it is no longer an IdP client or hub application, and production
 automation must not recreate it. A final checksum-verified backup is stored in
 `/var/backups/seemplify/20260817T142511Z`; its named Docker volumes remain on
 the VPS temporarily for recoverability and must not be reattached without an
-explicit restore decision.
+explicit restore decision. The inactive named volumes were removed during the
+16 October 2026 cleanup after verifying their migration archive coverage.
+
+Qdrant was retired on 16 October 2026 after verifying zero collections, no
+application configuration clients and no application-code references. Its
+production service, volume definition and mandatory backup dependency were
+removed. Current vector search uses Weaviate; Experience knowledge services
+use ArangoDB and Docling. Keep these active dependencies and the separate
+Nango connectors. The `qdrant/` directory is a local development example,
+not a production service.
 
 Do not add a Brevo fallback or rotate aliases to evade quotas. See
 `platform/email/docs/INTEGRATION.md` and `platform/email/docs/OPERATIONS.md` for
