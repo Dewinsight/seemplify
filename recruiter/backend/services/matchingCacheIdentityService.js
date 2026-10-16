@@ -68,7 +68,7 @@ function vectorMatchingIdentity(job) {
   return {
     provider: 'weaviate',
     model: getEmbeddingRuntimeConfig().model,
-    routeVersion: 'quick-rerank-v4',
+    routeVersion: `quick-rerank-v4:${getEmbeddingRuntimeConfig().vectorIndexVersion || 'azure-legacy'}`,
     promptVersion: 'full-profile-evidence-v4',
     inputFingerprint: matchingJobFingerprint(job)
   };

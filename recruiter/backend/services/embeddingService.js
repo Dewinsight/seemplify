@@ -1,4 +1,6 @@
 const axios = require('axios');
+const crypto = require('node:crypto');
+const { generateNomicEmbedding } = require('./nomicEmbeddingClient');
 const rankingService = require('./rankingService');
 const { requireEmbeddingRuntimeConfig } = require('../config/embeddingRuntimeConfig');
 const {
@@ -461,7 +463,7 @@ class EmbeddingService {
     const result = parts.filter(part => part && part.trim()).join('\n');
     
     console.log(`📝 Enhanced embedding text created for candidate (${result.length} characters):`, 
-      result.substring(0, 200) + '...');
+      { characters: result.length });
     
     return result;
   }
@@ -469,9 +471,10 @@ class EmbeddingService {
   /**
    * Generate embedding using Azure OpenAI with built-in retry
    */
-  async generateEmbedding(text) {
+  async generateEmbedding(text, { purpose = 'document' } = {}) {
     const RetryHelper = require('../utils/retryHelper');
     const embeddingConfig = requireEmbeddingRuntimeConfig();
+    if (embeddingConfig.provider === 'nomic-node') return generateNomicEmbedding(text, { purpose, config: embeddingConfig });
     // Azure rejects inputs above the model's 8,192-token ceiling. A character
     // cap leaves ample room for non-ASCII and token-dense CV content while
     // retaining the structured, highest-value fields at the start.
@@ -778,6 +781,7 @@ class EmbeddingService {
         vectorStore: 'weaviate',
       });
 
+      metadata.embeddingSourceHash = crypto.createHash('sha256').update(embeddingText).digest('hex');
       // Store in vector database
       await this.storeEmbedding(candidate._id.toString(), embedding, metadata, this.candidateIndexName);
       
@@ -913,7 +917,7 @@ class EmbeddingService {
         }
       }
       if (!queryEmbedding) {
-        queryEmbedding = await this.generateEmbedding(queryText);
+        queryEmbedding = await this.generateEmbedding(queryText, { purpose: 'query' });
       }
 
       console.log(`🔀 Searching candidates via Weaviate (topK=${topK})...`);
@@ -1085,6 +1089,7 @@ class EmbeddingService {
         salaryCurrency: job.salary?.currency || 'USD'
       };
 
+      metadata.embeddingSourceHash = crypto.createHash('sha256').update(embeddingText).digest('hex');
       await this.storeEmbedding(job._id.toString(), embedding, metadata, this.jobIndexName);
       
       console.log(`Successfully created embedding for job: ${job._id}`);

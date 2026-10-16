@@ -1887,7 +1887,16 @@ function createKnowledgeRuntime(options = {}) {
     });
   }
 
-  return { index, backfill, migrateNomic, retrieve, scan, remove, graph, status, migrationControl, start, close, cleanupTestTenant, queue, tenantDatabaseName: (spaceId) => tenantDatabaseName(spaceId, config.database.prefix) };
+  async function embeddings(input) {
+    if (input?.source !== 'recruiter' || !['document', 'query'].includes(input?.purpose) || !Array.isArray(input?.texts) || input.texts.length < 1 || input.texts.length > 8 || input.texts.some(text => typeof text !== 'string' || !text.trim() || text.length > 24000)) {
+      throw runtimeError('Invalid embedding request.', { code: 'INVALID_REQUEST', status: 400 });
+    }
+    const profile = embeddingProfiles(config)['nomic-node'];
+    const vectors = await embedForProfile(profile, input.texts, { priority: input.purpose === 'query' ? 'query' : 'live-index' });
+    return { profile: embeddingProfileContract(profile), vectors };
+  }
+
+  return { embeddings, index, backfill, migrateNomic, retrieve, scan, remove, graph, status, migrationControl, start, close, cleanupTestTenant, queue, tenantDatabaseName: (spaceId) => tenantDatabaseName(spaceId, config.database.prefix) };
 }
 
 module.exports = {
