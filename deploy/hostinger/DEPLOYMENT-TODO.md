@@ -2,9 +2,11 @@
 
 Target: Hostinger KVM4 `191.215.40.99` (`srv1903452`, VPS ID `1903452`).
 
-Migration follow-up: approve this IP in Google Workspace's SMTP relay allowlist
-and verify direct SMTP before retiring the temporary KVM8 mail egress tunnel.
-Retain KVM8 recovery archives until another verified off-host copy is secured.
+KVM4 sends product email directly through Google Workspace. The temporary KVM8
+SMTP tunnel, forwarding credential and old relay-IP authorization are retired.
+The five original migration recovery archives are checksum-verified on KVM4.
+Retain a verified encrypted off-host copy of the current KVM4 backup before
+deleting or allowing the old KVM8 subscription to expire.
 
 ## Completed
 
@@ -29,7 +31,9 @@ Retain KVM8 recovery archives until another verified off-host copy is secured.
 - [x] Run public HTTPS, OIDC and authenticated external TURN smoke tests.
 - [x] Write the production operations and recovery runbook.
 - [x] Complete Dokploy administrator registration, create its API key and close direct port `3000`.
-- [x] Authorize the Hostinger IP in Google Workspace and remove the retired relay IP.
+- [x] Authorize KVM4 `191.215.40.99` in Google Workspace and remove KVM8 `179.198.192.126` from the relay rule.
+- [x] Remove both temporary SMTP bridge units and revoke their dedicated SSH credential.
+- [x] Verify direct KVM4 delivery to Gmail Inbox with TLS 1.3, SPF, DKIM and DMARC passing.
 - [x] Enable outbound Mail API sending and verify Google `250 2.0.0` delivery.
 - [x] Configure and verify Postal/SPF/DKIM/return-path sending for `seemplifyai.com` and `aiinnigeria.com`.
 - [x] Remove retired Brevo DNS authentication records from accessible zones.
