@@ -53,6 +53,8 @@ jobs:
       - name: Test production knowledge runtime contracts
         working-directory: tools/local-knowledge
         run: node --test embedding-profiles.test.cjs nomic.test.cjs runtime.test.cjs server.test.cjs gte-embedding-client.test.cjs
+      - name: Test SSH deployment stdin contract
+        run: node --test deploy/hostinger/experience-deployment-contract.test.cjs
       - name: Test IdP Hub contracts
         working-directory: Identityprovider
         run: |
@@ -255,7 +257,7 @@ jobs:
             /usr/local/sbin/seemplify-backup
           fi
           "${extended[@]}" stop experience
-          "${extended[@]}" run --rm --no-deps -e SEEMPLIFY_NOMIC_MIGRATION_ONLY=1 experience
+          "${extended[@]}" run --interactive=false --rm --no-deps -e SEEMPLIFY_NOMIC_MIGRATION_ONLY=1 experience
           "${extended[@]}" up -d --no-deps --force-recreate experience
           wait_healthy seemplify-extended-experience-1
           "${extended[@]}" up -d --no-deps --force-recreate ai-interview-backend
@@ -280,3 +282,26 @@ jobs:
           /usr/local/sbin/seemplify-smoke
           rm -f "$archive"
           REMOTE
+      - name: Verify live Experience independently
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          source deploy/hostinger/github-actions-ssh-retry.sh
+          hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$GITHUB_SHA' bash -s" <<'VERIFY'
+          set -euo pipefail
+          umask 077
+          for name in seemplify-extended-experience-1 seemplify-extended-knowledge-runtime-1 \
+            seemplify-extended-ai-interview-backend-1 seemplify-extended-ai-interview-frontend-1 \
+            seemplify-extended-marketing-1 seemplify-core-identity-provider-1 seemplify-core-recruiter-backend-1; do
+            test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$name")" = "$RELEASE_SHA"
+            test "$(docker inspect --format '{{.State.Running}}' "$name")" = true
+            state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$name")
+            [[ "$state" == healthy || "$state" == running ]]
+          done
+          status_file=$(mktemp /tmp/seemplify-nomic-status.XXXXXX)
+          trap 'rm -f "$status_file"' EXIT
+          docker exec seemplify-extended-knowledge-runtime-1 node client.cjs status >"$status_file"
+          node -e 'const s=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));if(!s.ready||s.activeEmbeddingProvider!=="nomic-node")process.exit(1)' "$status_file"
+          /usr/local/sbin/seemplify-smoke
+          VERIFY
