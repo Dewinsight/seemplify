@@ -14,7 +14,8 @@ Retain KVM8 recovery archives until another verified off-host copy is secured.
 - [x] Clone the Seemplify source and build the new AI Interview images.
 - [x] Refactor the central mail relay to support Google Workspace IP relay.
 - [x] Exclude diGiLog Recruiter, Auto-Mailer, Rocket.Chat, Zulip, Mailcow and Brevo.
-- [x] Provision and health-check MongoDB, Redis, Weaviate, Qdrant and PostgreSQL.
+- [x] Provision and health-check MongoDB, Redis, Weaviate and PostgreSQL.
+- [x] Retire unused, empty production Qdrant and remove its deployment/backup dependencies.
 - [x] Deploy Identity, Recruiter, Candidate Portal, Leave, Performance, Payroll and Time.
 - [x] Deploy Approver, Learning, Marketing, Experience Management and AI Interview.
 - [x] Deploy Coturn with a direct, DNS-only TURN record.

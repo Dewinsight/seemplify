@@ -28,7 +28,7 @@ jobs:
             -e 's#/opt/seemplify/secrets/mongodb-keyfile#/tmp/mongodb-keyfile#g' \
             deploy/hostinger/shared-infrastructure.compose.yml >/tmp/shared-infrastructure.compose.yml
           MONGO_ROOT_PASSWORD=validation REDIS_PASSWORD=validation WEAVIATE_API_KEY=validation \
-            QDRANT_API_KEY=validation EXPERIENCE_POSTGRES_OWNER_PASSWORD=validation \
+            EXPERIENCE_POSTGRES_OWNER_PASSWORD=validation \
             docker compose -f /tmp/shared-infrastructure.compose.yml config --quiet
       - name: Configure SSH
         env:
