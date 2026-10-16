@@ -2,11 +2,13 @@
 """Release all Seemplify components without occupying their runner controller."""
 from pathlib import Path
 import datetime
+import http.client
 import json
 import re
 import sys
 import time
 import urllib.request
+import urllib.error
 
 WORKFLOWS = [
     'provision-experience-knowledge-hostinger.yml', 'deploy-core-hostinger.yml',
@@ -36,9 +38,19 @@ class Release:
             headers={'Authorization': 'Bearer ' + self.token, 'Accept': 'application/vnd.github+json',
                      'Content-Type': 'application/json'},
             data=json.dumps(body).encode() if body is not None else None)
-        with urllib.request.urlopen(request, timeout=45) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else None
+        repeatable = body is None or path.startswith('statuses/')
+        for attempt in range(5):
+            try:
+                with urllib.request.urlopen(request, timeout=45) as response:
+                    raw = response.read()
+                    return json.loads(raw) if raw else None
+            except urllib.error.HTTPError as error:
+                if not repeatable or error.code not in (429, 500, 502, 503, 504) or attempt == 4:
+                    raise
+            except (http.client.RemoteDisconnected, urllib.error.URLError, TimeoutError):
+                if not repeatable or attempt == 4:
+                    raise
+            time.sleep(3 * 2 ** attempt)
 
     def status(self, state, description):
         self.api('statuses/' + self.revision, {'state': state,

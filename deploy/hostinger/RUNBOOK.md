@@ -35,6 +35,13 @@ four-lane durable GitHub deployment queue.
 
 Daily backups now include root-only host deployment settings and a consistent
 SQLite snapshot of the Workspace queue alongside existing application data.
+The Stanbic image uses a pinned Frappe OCI build context under
+`/opt/seemplify/build/lms-base-e703fe9`; its base builds inside the same bounded
+BuildKit instance. A host-local image tag is not sufficient for that builder.
+The existing site's restore-completion marker is required before automatic
+redeployment; an unmarked existing site is refused instead of overwritten by
+historical SQL. Complete-release API reads retry transient disconnects, while
+ambiguous workflow dispatches are never automatically replayed.
 
 ## Production target
 
