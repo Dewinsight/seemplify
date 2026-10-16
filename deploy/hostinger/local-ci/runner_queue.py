@@ -134,7 +134,7 @@ class Queue:
 
     def undelivered(self):
         with self.connect() as db:
-            return [dict(row) for row in db.execute("SELECT * FROM jobs WHERE state IN ('success','failure') AND status_sent=0 ORDER BY id LIMIT 100")]
+            return [dict(row) for row in db.execute("SELECT * FROM jobs WHERE state IN ('queued','success','failure') AND status_sent=0 ORDER BY id LIMIT 100")]
 
 
 class Driver:
@@ -165,38 +165,50 @@ class Driver:
         self.api(f"/repos/{route['repo']}/statuses/{job['sha']}", {
             'context': 'hostinger-ci/' + (route['name'] if job['kind'] == 'deploy' else 'runner-health'),
             'state': state,
-            'description': f"Hostinger job {job['id']}: {state}; private logs retained on the host"})
+            'description': f"Hostinger job {job['id']}: {'queued; waiting for capacity' if job.get('state') == 'queued' else state}; private logs on VPS"})
 
     def poll(self):
+        failures = []
         for route in self.routes.values():
-            variables = self.api(f"/repos/{route['repo']}/actions/variables")['variables']
-            driver = next((v['value'] for v in variables if v['name'] == 'HOSTINGER_CI_DRIVER'), 'actions')
-            head = self.api(f"/repos/{route['repo']}/git/ref/heads/{route['ref']}")['object']['sha']
+            try:
+                self.poll_route(route)
+            except Exception as error:
+                # A broken lane must not starve healthy repositories or branches.
+                # Avoid printing API errors that can contain credential-bearing URLs.
+                print('poll_route_failed=' + route['name'] + ':' + type(error).__name__, flush=True)
+                failures.append(error)
+        if failures:
+            raise failures[0]
+
+    def poll_route(self, route):
+        variables = self.api(f"/repos/{route['repo']}/actions/variables")['variables']
+        driver = next((v['value'] for v in variables if v['name'] == 'HOSTINGER_CI_DRIVER'), 'actions')
+        head = self.api(f"/repos/{route['repo']}/git/ref/heads/{route['ref']}")['object']['sha']
+        with self.queue.connect() as db:
+            cursor = db.execute('SELECT sha FROM cursors WHERE route=?', (route['name'],)).fetchone()
+        if driver != 'local' or cursor is None:
             with self.queue.connect() as db:
-                cursor = db.execute('SELECT sha FROM cursors WHERE route=?', (route['name'],)).fetchone()
-            if driver != 'local' or cursor is None:
-                with self.queue.connect() as db:
-                    db.execute('INSERT OR REPLACE INTO cursors VALUES(?,?)', (route['name'], head))
-                continue
-            if cursor[0] == head:
-                continue
-            revisions, current = [], head
-            for _ in range(100):
-                if current == cursor[0]:
-                    break
-                revisions.append(current)
-                commit = self.api(f"/repos/{route['repo']}/git/commits/{current}")
-                if not commit['parents']:
-                    raise ValueError('Canonical branch ancestry changed')
-                current = commit['parents'][0]['sha']
-            else:
-                raise ValueError('Canonical backlog exceeds 100 revisions; operator review required')
-            if current != cursor[0]:
-                raise ValueError('Canonical branch no longer contains its durable cursor')
-            for revision in reversed(revisions):
-                self.queue.enqueue(route['name'], revision)
-            with self.queue.connect() as db:
-                db.execute('UPDATE cursors SET sha=? WHERE route=?', (head, route['name']))
+                db.execute('INSERT OR REPLACE INTO cursors VALUES(?,?)', (route['name'], head))
+            return
+        if cursor[0] == head:
+            return
+        revisions, current = [], head
+        for _ in range(100):
+            if current == cursor[0]:
+                break
+            revisions.append(current)
+            commit = self.api(f"/repos/{route['repo']}/git/commits/{current}")
+            if not commit['parents']:
+                raise ValueError('Canonical branch ancestry changed')
+            current = commit['parents'][0]['sha']
+        else:
+            raise ValueError('Canonical backlog exceeds 100 revisions; operator review required')
+        if current != cursor[0]:
+            raise ValueError('Canonical branch no longer contains its durable cursor')
+        for revision in reversed(revisions):
+            self.queue.enqueue(route['name'], revision)
+        with self.queue.connect() as db:
+            db.execute('UPDATE cursors SET sha=? WHERE route=?', (head, route['name']))
 
     def command(self, argv, log, cwd=None, env=None, timeout=None, umask=-1):
         process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
@@ -395,13 +407,17 @@ class Driver:
         (root / 'verification.json').write_text(json.dumps({'sha': revision, 'health': health,
             'container': container[0], 'image': details['Config']['Image']}, indent=2))
 
-    def capacity_available(self):
+    def capacity_available(self, active_jobs=0):
         # Keep accepted pushes durable while application load needs the RAM.
         available = next(int(line.split()[1]) * 1024 for line in
             Path('/proc/meminfo').read_text().splitlines()
             if line.startswith('MemAvailable:'))
         reserve = int(self.config.get('minimum_free_memory_after_job_mb', 512)) * 1024 ** 2
-        return available >= memory_limit_bytes(self.config['job_memory']) + reserve
+        # Reserve the full ceiling for admitted workers before Docker allocates
+        # their RAM. This is conservative once a worker has allocated memory.
+        required = (active_jobs + 1) * memory_limit_bytes(self.config['job_memory']) + reserve
+        disk_floor = int(self.config.get('minimum_free_disk_mb', 8192)) * 1024 ** 2
+        return available >= required and shutil.disk_usage(self.queue.root).free >= disk_floor
 
     def serve(self):
         # No second coordinator can recover leases while another owns the database.
@@ -422,7 +438,7 @@ class Driver:
                 if source.exists():
                     shutil.rmtree(source)
         with self.queue.connect() as db:
-            db.execute("UPDATE jobs SET state='queued',started=NULL WHERE state='running'")
+            db.execute("UPDATE jobs SET state='queued',started=NULL,status_sent=0 WHERE state='running'")
         futures = {}
         next_poll = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.config['workers']) as executor:
@@ -441,13 +457,13 @@ class Driver:
                     next_poll = time.monotonic() + self.config.get('poll_seconds', 30)
                     for job in self.queue.undelivered():
                         try:
-                            self.status(job, job['state'])
+                            self.status(job, 'pending' if job['state'] == 'queued' else job['state'])
                             with self.queue.connect() as db:
                                 db.execute('UPDATE jobs SET status_sent=1 WHERE id=?', (job['id'],))
                         except Exception:
                             pass
                 while len(futures) < self.config['workers']:
-                    if not self.capacity_available():
+                    if not self.capacity_available(len(futures)):
                         break
                     job = self.queue.claim()
                     if job is None:

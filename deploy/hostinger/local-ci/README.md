@@ -4,7 +4,8 @@ The KVM2 service polls canonical GitHub branches, records each first-parent
 revision in a SQLite WAL queue, and uses constrained containers to execute
 the existing deployment workflows through pinned `act` 0.2.89. GitHub Actions
 billing or dispatch availability does not control this queue. Seemplify's public
-repository continues to use its working KVM8 Actions pool.
+repository uses its native Actions pool on KVM4. Workspace has its own local
+coordinator on KVM4; it shares the native worker's compute lease.
 
 Only these CRM lanes execute code: frontend `development`/`staging`, and backend
 `develop`/`staging`. Pull-request code is never executed by this service. Before
@@ -24,7 +25,12 @@ unfinished leases after removing only containers carrying their exact job label.
 Deployments are therefore retried at least once after an interrupted service;
 the existing immutable release and migration checks must remain idempotent.
 The coordinator admits a job only when MemAvailable covers its configured memory
-limit plus 512 MiB of headroom. It keeps polling and retaining pushes while waiting.
+limit plus 512 MiB of headroom and at least 8 GiB of free disk space. When multiple
+workers are configured, admission reserves their full memory ceilings before
+Docker allocates memory. It keeps polling and retaining pushes while waiting.
+Queued commits receive durable `pending` statuses before execution, so their
+waiting state is visible in GitHub. Failed status delivery is retried. An API
+failure for one lane leaves its cursor unchanged and does not stop other lanes.
 The independent BuildKit builder uses 1 CPU / 3 GiB, no swap, max-parallelism=1
 and disk GC limits; builds and migrations share the deployment lock.
 Native lightweight scanner agents are capped separately at .5 CPU / 512 MiB each.

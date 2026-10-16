@@ -37,5 +37,6 @@
       "deployment_env_file": "/opt/xplorer/env/backend-staging.env"
     }
   ],
-  "minimum_free_memory_after_job_mb": 512
+  "minimum_free_memory_after_job_mb": 512,
+  "minimum_free_disk_mb": 8192
 }

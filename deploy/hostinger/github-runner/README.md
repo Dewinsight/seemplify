@@ -84,8 +84,9 @@ to trusted push or manual-dispatch events.
 
 ## Queue and capacity verification
 
-Trusted core QA uses the two Seemplify workers, with each matrix limited to two
-concurrent jobs. Deployment concurrency groups use `queue: max` and
+KVM4 trusted core QA and Workspace share one compute slot; the controller can
+run concurrently. The legacy KVM8 profile has two Seemplify workers.
+Deployment concurrency groups use `queue: max` and
 `cancel-in-progress: false` to retain up to 100 waiting runs. Host-side deployment
 locks continue to serialize production changes across repositories. Runner CPU
 and RAM ceilings apply to container jobs; remote Docker builds execute on the
@@ -110,13 +111,15 @@ The organization worker `kvm2-crm-worker` remains available to both CRM
 repositories; the repository worker `kvm2-crm-frontend-worker` adds a second
 frontend slot. Frontend and backend QA can overlap, and two frontend jobs can
 run together. Backend jobs have one dedicated organization slot. Each slot
-is capped at 1.5 vCPU and 4 GiB, with no swap or host Docker socket.
+currently runs API-only security scans at 0.5 vCPU and 512 MiB, with no swap or
+host Docker socket. The historical Compose profile below retains larger limits
+and must not be used to replace the live configuration on the 8 GiB host.
 A one-time repository registration uses `FRONTEND_RUNNER_TOKEN`; remove it
 after all registration files are durable and recreate token-free.
 
 While GitHub billing blocks private-repository Actions dispatch, CRM uses the
-[independent Hostinger queue](../local-ci/README.md). Its two slots can run
-frontend and backend lanes concurrently, including two backend lanes. The
+[independent Hostinger queue](../local-ci/README.md). Its single heavy slot
+serializes frontend and backend deployments while lightweight scans can overlap. The
 repository variable `HOSTINGER_CI_DRIVER=local` prevents duplicate Actions
 deployments after billing recovers. This queue reports commit statuses to GitHub
 and retains full logs privately on the host.

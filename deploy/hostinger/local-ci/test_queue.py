@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import os
 import sys
 from pathlib import Path
@@ -79,6 +81,48 @@ class QueueTests(unittest.TestCase):
         driver.poll()
         driver.poll()
         self.assertEqual([row['sha'] for row in driver.queue.rows()], ['b' * 40, 'c' * 40])
+
+    def test_one_failed_lane_does_not_starve_other_routes_or_move_its_cursor(self):
+        token = Path(self.directory.name) / 'token'
+        token.write_text('test-only-token')
+        routes = [{'name': name, 'repo': 'Dewinsight/' + name, 'ref': 'main'}
+                  for name in ['broken', 'healthy']]
+        driver = module.Driver({'state_dir': self.directory.name, 'token_file': str(token), 'routes': routes})
+        with driver.queue.connect() as db:
+            db.executemany('INSERT INTO cursors VALUES(?,?)', [(r['name'], 'a' * 40) for r in routes])
+        def api(path):
+            if '/broken/' in path:
+                raise urllib.error.URLError('private-api-error-must-not-be-logged')
+            if path.endswith('/variables'):
+                return {'variables': [{'name': 'HOSTINGER_CI_DRIVER', 'value': 'local'}]}
+            if '/git/ref/' in path:
+                return {'object': {'sha': 'b' * 40}}
+            return {'parents': [{'sha': 'a' * 40}]}
+        driver.api = api
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaises(urllib.error.URLError):
+            driver.poll()
+        self.assertEqual([(r['route'], r['sha']) for r in driver.queue.rows()], [('healthy', 'b' * 40)])
+        with driver.queue.connect() as db:
+            self.assertEqual(db.execute('SELECT sha FROM cursors WHERE route="broken"').fetchone()[0], 'a' * 40)
+        self.assertIn('poll_route_failed=broken:URLError', output.getvalue())
+        self.assertNotIn('private-api-error', output.getvalue())
+
+    def test_queued_status_delivery_survives_restart_without_claiming_execution(self):
+        job = self.queue.enqueue('frontend', 'a' * 40)
+        recreated = module.Queue(self.directory.name)
+        self.assertEqual([row['id'] for row in recreated.undelivered()], [job])
+        driver = module.Driver.__new__(module.Driver)
+        driver.routes = {'frontend': {'name': 'frontend', 'repo': 'Dewinsight/Xplorer-crm'}}
+        driver.api = Mock()
+        driver.status(recreated.undelivered()[0], 'pending')
+        payload = driver.api.call_args.args[1]
+        self.assertEqual(payload['state'], 'pending')
+        self.assertIn('queued; waiting for capacity', payload['description'])
+        recreated.claim()
+        self.assertEqual(recreated.undelivered(), [])
+        recreated.finish(job, True)
+        self.assertEqual(recreated.undelivered()[0]['state'], 'success')
 
     def test_failed_status_remains_durable_for_delivery_retry(self):
         job = self.queue.enqueue('frontend', 'a' * 40)
@@ -249,10 +293,28 @@ class CapacityTests(unittest.TestCase):
     def test_application_pressure_leaves_memory_for_queued_jobs(self):
         driver = object.__new__(module.Driver)
         driver.config = {'job_memory': '3500m', 'minimum_free_memory_after_job_mb': 512}
+        driver.queue = Mock(root=Path('.'))
         for available_mib, expected in [(5012, True), (4012, True), (4011, False), (3000, False)]:
             meminfo = f'MemTotal: 8388608 kB\nMemAvailable: {available_mib * 1024} kB\n'
-            with self.subTest(available_mib=available_mib), patch.object(module.Path, 'read_text', return_value=meminfo):
+            with self.subTest(available_mib=available_mib), patch.object(module.Path, 'read_text', return_value=meminfo), patch.object(module.shutil, 'disk_usage', return_value=Mock(free=16 * 1024 ** 3)):
                 self.assertEqual(driver.capacity_available(), expected)
+
+    def test_reserves_admitted_memory_before_docker_has_allocated_it(self):
+        driver = object.__new__(module.Driver)
+        driver.config = {'job_memory': '3500m', 'minimum_free_memory_after_job_mb': 512}
+        driver.queue = Mock(root=Path('.'))
+        with patch.object(module.Path, 'read_text', return_value='MemAvailable: 8192000 kB'), patch.object(module.shutil, 'disk_usage', return_value=Mock(free=16 * 1024 ** 3)):
+            self.assertTrue(driver.capacity_available(active_jobs=1))
+            self.assertFalse(driver.capacity_available(active_jobs=2))
+
+    def test_low_disk_space_retains_jobs_without_starting_them(self):
+        driver = object.__new__(module.Driver)
+        driver.config = {'job_memory': '3500m', 'minimum_free_disk_mb': 8192}
+        driver.queue = Mock(root=Path('.'))
+        with patch.object(module.Path, 'read_text', return_value='MemAvailable: 8192000 kB'):
+            for free_mb, expected in [(8191, False), (8192, True)]:
+                with self.subTest(free_mb=free_mb), patch.object(module.shutil, 'disk_usage', return_value=Mock(free=free_mb * 1024 ** 2)):
+                    self.assertEqual(driver.capacity_available(), expected)
 
 
 if __name__ == '__main__':
