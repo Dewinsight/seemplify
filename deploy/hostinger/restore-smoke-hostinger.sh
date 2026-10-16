@@ -265,11 +265,12 @@ docker run -d --rm --name "${WEAVIATE_CONTAINER}" --network none \
   --volume "${LATEST_BACKUP}/weaviate-data.tar.gz:/backup.tar.gz:ro" \
   --env AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true --env AUTHORIZATION_ADMINLIST_ENABLED=false \
   --env PERSISTENCE_DATA_PATH=/var/lib/weaviate --env DEFAULT_VECTORIZER_MODULE=none \
-  --env CLUSTER_HOSTNAME=seemplify-weaviate-1 --env DISABLE_TELEMETRY=true \
+  --env CLUSTER_HOSTNAME=seemplify-weaviate-1 --env CLUSTER_ADVERTISE_ADDR=127.0.0.1 \
+  --env RAFT_BOOTSTRAP_EXPECT=1 --env RAFT_ENABLE_ONE_NODE_RECOVERY=true --env DISABLE_TELEMETRY=true \
   --entrypoint /bin/sh "$weaviate_image" \
   -ec 'tar -xzf /backup.tar.gz -C /var/lib/weaviate; exec /bin/weaviate --host 127.0.0.1 --port 8080 --scheme http' >/dev/null
-wait_for_container_command "${WEAVIATE_CONTAINER}" wget -qO- http://127.0.0.1:8080/v1/.well-known/ready
-schema=$(docker exec "${WEAVIATE_CONTAINER}" wget -qO- http://127.0.0.1:8080/v1/schema)
+wait_for_container_command "${WEAVIATE_CONTAINER}" wget -T 3 -t 1 -qO- http://127.0.0.1:8080/v1/.well-known/ready
+schema=$(docker exec "${WEAVIATE_CONTAINER}" wget -T 3 -t 1 -qO- http://127.0.0.1:8080/v1/schema)
 python3 - "$WEAVIATE_CONTAINER" "$schema" <<'PY'
 import json,sys,subprocess
 container=sys.argv[1];schema=json.loads(sys.argv[2]);counts={}
