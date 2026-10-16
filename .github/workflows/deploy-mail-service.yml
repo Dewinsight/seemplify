@@ -6,6 +6,7 @@ on:
     paths:
       - 'platform/email/**'
       - 'deploy/hostinger/mail.compose.yml'
+      - 'deploy/hostinger/mail-egress.compose.yml'
       - 'deploy/hostinger/github-actions-ssh-retry.sh'
       - 'deploy/hostinger/smoke-hostinger.sh'
       - '.github/workflows/deploy-mail-service.yml'
@@ -58,6 +59,7 @@ jobs:
           tar -czf mail-release.tgz \
             platform/email \
             deploy/hostinger/mail.compose.yml \
+            deploy/hostinger/mail-egress.compose.yml \
             deploy/hostinger/smoke-hostinger.sh
 
       - name: Upload release
@@ -95,6 +97,8 @@ jobs:
           cp -a "$release_root/platform/email/." /opt/seemplify/source/platform/email/
           install -m 644 "$release_root/deploy/hostinger/mail.compose.yml" \
             /opt/seemplify/deploy/hostinger/mail.compose.yml
+          install -m 644 "$release_root/deploy/hostinger/mail-egress.compose.yml" \
+            /opt/seemplify/deploy/hostinger/mail-egress.compose.yml
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" \
             /usr/local/sbin/seemplify-smoke
 
@@ -104,6 +108,10 @@ jobs:
             --env-file /opt/seemplify/secrets/shared-infrastructure.env \
             --env-file /opt/seemplify/secrets/mail.env \
             -f /opt/seemplify/deploy/hostinger/mail.compose.yml)
+          if systemctl is-enabled --quiet seemplify-mail-egress-bridge.service; then
+            systemctl is-active --quiet seemplify-mail-egress-bridge.service
+            compose+=(-f /opt/seemplify/deploy/hostinger/mail-egress.compose.yml)
+          fi
           "${compose[@]}" config --quiet
           "${compose[@]}" up -d --no-deps --force-recreate postfix-relay mail-api
 

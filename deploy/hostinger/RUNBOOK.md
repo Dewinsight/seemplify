@@ -5,7 +5,8 @@
 All Seemplify component push workflows deploy canonical `main` to KVM4
 `191.215.40.99` through pinned SSH and the shared production deployment lock.
 The complete-release workflow starts a host-side coordinator, then releases the
-only controller runner so child workflows can use it. Track the
+only controller runner for scans and other control work while component
+workflows use the build runner. Track the
 `hostinger-ci/seemplify-all` GitHub commit status for completion of all nine
 components, including Stanbic Frappe LMS. Its launcher success means queued;
 the combined status is the complete release result. Request evidence is under
@@ -18,6 +19,11 @@ QA/deployment workflow and checks the exact public release; it does not deploy
 untested source. Unit `hostinger-ci.service`, configuration `/etc/hostinger-ci`,
 and state/private logs `/var/lib/hostinger-ci` remain on KVM4. A fresh
 `HOSTINGER_CI_REQUEST` repository variable requests the current main again.
+The native build runner and Workspace queue share one filesystem lease. Native
+leases follow the actual runner worker process; local leases retain a recovery
+marker until orphan job containers are removed after a coordinator crash.
+The controller remains independent. Keep both drivers on the same lock inode
+and keep the local queue at one worker when replacing runner volumes.
 
 Milo (`michaelegbo/milo`) keeps its GitHub QA and managed Dokploy deployment.
 Its restricted SSH key can request only a canonical Milo deployment. The
@@ -364,9 +370,11 @@ verification. `seemplify-mail-egress-bridge.service` runs on KVM4 and
 `seemplify-mail-ipv4-transport.service` runs on KVM8. The restricted forwarding
 key expires on 16 November 2026. Monitor these units and finish the allowlist
 change before that date. `MAIL_API_SEND_ENABLED=true` remains active.
+The mail deployment workflow applies `mail-egress.compose.yml` while the bridge
+unit is enabled, and refuses deployment if that required bridge is inactive.
 
 After approving the new IP, verify a direct SMTP envelope without sending
-DATA, remove the temporary `smtp-relay.gmail.com` ExtraHosts overrides from
+DATA, disable the bridge unit and remove the temporary `smtp-relay.gmail.com` ExtraHosts overrides from
 Postfix and Mail API, and verify mail readiness again before retiring the
 tunnel. Preserve the old route until direct verification succeeds.
 

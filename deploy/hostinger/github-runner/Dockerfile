@@ -47,6 +47,7 @@ RUN useradd --create-home --uid 1001 --shell /bin/bash runner \
 
 COPY --chown=runner:runner entrypoint.sh /usr/local/bin/runner-entrypoint
 COPY --chown=runner:runner cleanup-workspace.sh /opt/runner-hooks/cleanup-workspace.sh
+COPY --chown=runner:runner ci-slot.py ci-slot-started.sh /opt/runner-hooks/
 
 RUN chmod 0755 /usr/local/bin/runner-entrypoint /opt/runner-hooks/cleanup-workspace.sh
 

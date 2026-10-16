@@ -1,0 +1,9 @@
+# Apply only while the approved legacy SMTP egress bridge is enabled.
+# Keeping the canonical hostname retains upstream TLS identity verification.
+services:
+  postfix-relay:
+    extra_hosts:
+      - "smtp-relay.gmail.com:172.31.250.1"
+  mail-api:
+    extra_hosts:
+      - "smtp-relay.gmail.com:172.31.250.1"

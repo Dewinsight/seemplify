@@ -3,6 +3,12 @@ set -euo pipefail
 
 cd /runner
 
+if [[ -f /opt/runner-hooks/ci-slot.py ]]; then
+  mkdir -p /runner/hooks
+  install -m 0755 /opt/runner-hooks/ci-slot.py /opt/runner-hooks/ci-slot-started.sh /runner/hooks/
+  touch /runner/.seemplify-build.lock
+fi
+
 registration_ready=true
 for registration_file in .runner .credentials .credentials_rsaparams; do
   if [[ ! -s $registration_file ]]; then registration_ready=false; fi

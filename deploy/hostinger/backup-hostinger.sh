@@ -238,6 +238,7 @@ import subprocess
 import sys
 destination = Path(sys.argv[1])
 paths = ['opt/seemplify/secrets', 'opt/seemplify/deploy/hostinger',
+         'opt/seemplify/github-actions-runner',
          'etc/dokploy/traefik', 'etc/seemplify', 'etc/hostinger-ci',
          'opt/hostinger-ci', 'etc/systemd/system/hostinger-ci.service',
          'etc/systemd/system/seemplify-mail-egress-bridge.service',
