@@ -38,12 +38,16 @@ function createRateLimiter({ limit, now = Date.now }) {
   };
 }
 
-function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRuntime({ config }), serviceSecret, now = Date.now, replayFilename = path.join(config.paths.runtime, 'replay-nonces.json') } = {}) {
+function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRuntime({ config }), serviceSecret, recruiterEmbeddingSecret, now = Date.now, replayFilename = path.join(config.paths.runtime, 'replay-nonces.json') } = {}) {
   const secret = serviceSecret || fs.readFileSync(path.join(config.paths.runtime, 'service-secret'), 'utf8').trim();
   if (!secret) throw new Error('Knowledge runtime HMAC secret is unavailable.');
+  const embeddingSecretFile = process.env.RECRUITER_EMBEDDING_HMAC_SECRET_FILE;
+  const embeddingSecret = recruiterEmbeddingSecret || (embeddingSecretFile ? fs.readFileSync(embeddingSecretFile, 'utf8').trim() : '');
+  if (embeddingSecret && embeddingSecret.length < 32) throw new Error('Recruiter embedding credential is too short.');
   const replayGuard = createReplayGuard({ ttlMs: config.limits.nonceTtlMs, now, filename: replayFilename });
   const withinRateLimit = createRateLimiter({ limit: config.limits.requestsPerMinute, now });
   const handlers = Object.freeze({
+    '/v1/embeddings': (input) => runtime.embeddings(input),
     '/v1/index': (input) => runtime.index(input),
     '/v1/backfill': (input) => runtime.backfill(input),
     '/v1/migrate-nomic': (input) => runtime.migrateNomic(input),
@@ -77,7 +81,9 @@ function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRunti
         throw runtimeError('Content-Type must be application/json.', { code: 'INVALID_CONTENT_TYPE', status: 415 });
       }
       const rawBody = await readBody(request, config.limits.requestBytes);
-      const verification = verifyRequest({ headers: request.headers, method: request.method, requestPath, rawBody, secret, replayGuard, now, clockSkewMs: config.limits.clockSkewMs });
+      const embeddingClient = request.headers['x-seemplify-client'] === 'recruiter-embeddings';
+      if ((embeddingClient && requestPath !== '/v1/embeddings') || (!embeddingClient && requestPath === '/v1/embeddings') || (embeddingClient && !embeddingSecret)) throw runtimeError('Service scope is not allowed.', { code: 'FORBIDDEN', status: 403 });
+      const verification = verifyRequest({ headers: request.headers, method: request.method, requestPath, rawBody, secret: embeddingClient ? embeddingSecret : secret, replayGuard, now, clockSkewMs: config.limits.clockSkewMs });
       if (!verification.ok) throw runtimeError('Request authentication failed.', { code: verification.code, status: 401 });
       let input;
       try { input = JSON.parse(rawBody || '{}'); } catch { throw runtimeError('Request body is not valid JSON.', { code: 'INVALID_JSON', status: 400 }); }

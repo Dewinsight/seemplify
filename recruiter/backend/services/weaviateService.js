@@ -1,4 +1,5 @@
 const weaviate = require('weaviate-ts-client');
+const { getEmbeddingRuntimeConfig } = require('../config/embeddingRuntimeConfig');
 const { mongoIdToUuid } = require('../utils/uuidHelper');
 
 class WeaviateService {
@@ -24,6 +25,13 @@ class WeaviateService {
     }
   }
   
+  get candidateClass() { return getEmbeddingRuntimeConfig().candidateClass || 'Candidate'; }
+  get jobClass() { return getEmbeddingRuntimeConfig().jobClass || 'Job'; }
+  validateVector(vector) {
+    const config = getEmbeddingRuntimeConfig();
+    if (config.provider === 'nomic-node' && (!Array.isArray(vector) || vector.length !== config.dimensions || vector.some(value => !Number.isFinite(value)))) throw new Error('Embedding vector does not match the active Nomic profile.');
+  }
+
   /**
    * Convert MongoDB ID to UUID for Weaviate
    */
@@ -35,6 +43,7 @@ class WeaviateService {
    * Store candidate embedding in Weaviate (with upsert support)
    */
   async storeCandidateEmbedding(candidateId, embedding, metadata) {
+    this.validateVector(embedding);
     if (!this.client) throw new Error('Weaviate client not initialized');
     
     const uuid = this._toUuid(candidateId);
@@ -63,14 +72,15 @@ class WeaviateService {
         : (Array.isArray(metadata.strengths) ? metadata.strengths : []),
       updatedAt: new Date().toISOString(),
       isActive: true,
-      fullMetadata: JSON.stringify(metadata), // NO SIZE LIMIT!
+      fullMetadata: JSON.stringify(metadata),
+      ...(getEmbeddingRuntimeConfig().provider === 'nomic-node' ? { embeddingProfile: getEmbeddingRuntimeConfig().vectorIndexVersion, embeddingSourceHash: metadata.embeddingSourceHash || '' } : {}), // NO SIZE LIMIT!
     };
     
     try {
       // Try to create first
       await this.client.data
         .creator()
-        .withClassName('Candidate')
+        .withClassName(this.candidateClass)
         .withId(uuid)
         .withVector(embedding)
         .withProperties({
@@ -88,13 +98,13 @@ class WeaviateService {
           // Delete and recreate (Weaviate doesn't support true upsert with vector update)
           await this.client.data
             .deleter()
-            .withClassName('Candidate')
+            .withClassName(this.candidateClass)
             .withId(uuid)
             .do();
           
           await this.client.data
             .creator()
-            .withClassName('Candidate')
+            .withClassName(this.candidateClass)
             .withId(uuid)
             .withVector(embedding)
             .withProperties({
@@ -124,7 +134,7 @@ class WeaviateService {
     try {
       let query = this.client.graphql
         .get()
-        .withClassName('Candidate')
+        .withClassName(this.candidateClass)
         .withNearVector({ vector: queryEmbedding })
         .withLimit(topK)
         .withFields('candidateId organizationId firstName lastName email position skills totalYearsExperience aiSummary strengths location _additional { distance certainty }');
@@ -140,7 +150,7 @@ class WeaviateService {
 
       const result = await query.do();
       
-      const candidates = result.data?.Get?.Candidate || [];
+      const candidates = result.data?.Get?.[this.candidateClass] || [];
       console.log(`🔍 Found ${candidates.length} candidates in Weaviate ${organizationId ? `for org ${organizationId}` : 'globally'}`);
       
       return candidates;
@@ -160,7 +170,7 @@ class WeaviateService {
     try {
       const result = await this.client.data
         .getterById()
-        .withClassName('Job')
+        .withClassName(this.jobClass)
         .withId(this._toUuid(jobId))
         .withVector()
         .do();
@@ -180,7 +190,7 @@ class WeaviateService {
     try {
       let query = this.client.graphql
         .get()
-        .withClassName('Candidate')
+        .withClassName(this.candidateClass)
         .withHybrid({
           query: queryText,
           vector: queryEmbedding,
@@ -199,7 +209,7 @@ class WeaviateService {
 
       const result = await query.do();
       
-      const candidates = result.data?.Get?.Candidate || [];
+      const candidates = result.data?.Get?.[this.candidateClass] || [];
       console.log(`🔍 Hybrid search found ${candidates.length} candidates`);
       
       return candidates;
@@ -219,7 +229,7 @@ class WeaviateService {
       const uuid = this._toUuid(candidateId);
       const result = await this.client.data
         .getterById()
-        .withClassName('Candidate')
+        .withClassName(this.candidateClass)
         .withId(uuid)
         .do();
       
@@ -237,34 +247,25 @@ class WeaviateService {
    * Delete candidate from Weaviate
    */
   async deleteCandidate(candidateId) {
+    return this.deleteFromAllProfiles(candidateId, ['Candidate', 'RecruiterCandidateNomicV1']);
+  }
+
+  async deleteFromAllProfiles(entityId, classes) {
     if (!this.client) throw new Error('Weaviate client not initialized');
-    
-    try {
-      const uuid = this._toUuid(candidateId);
-      
-      await this.client.data
-        .deleter()
-        .withClassName('Candidate')
-        .withId(uuid)
-        .do();
-      
-      console.log(`✅ Deleted candidate ${candidateId} from Weaviate`);
-      return true;
-    } catch (error) {
-      // Don't throw if not found - just log
-      if (error.message && error.message.includes('not found')) {
-        console.log(`ℹ️ Candidate ${candidateId} not found in Weaviate (already deleted)`);
-        return true;
-      }
-      console.error(`❌ Error deleting candidate from Weaviate: ${error.message}`);
-      throw error;
+    const schema = await this.client.schema.getter().do();
+    const present = new Set(schema.classes.map(item => item.class));
+    for (const className of classes.filter(name => present.has(name))) {
+      try { await this.client.data.deleter().withClassName(className).withId(this._toUuid(entityId)).do(); }
+      catch (error) { if (!/not found|404/i.test(error.message || '')) throw error; }
     }
+    return true;
   }
 
   /**
    * Store job embedding in Weaviate (with upsert support)
    */
   async storeJobEmbedding(jobId, embedding, metadata) {
+    this.validateVector(embedding);
     if (!this.client) throw new Error('Weaviate client not initialized');
     
     const uuid = this._toUuid(jobId);
@@ -290,13 +291,14 @@ class WeaviateService {
       isActive: true,
       status: metadata.status || 'active',
       fullMetadata: JSON.stringify(metadata),
+      ...(getEmbeddingRuntimeConfig().provider === 'nomic-node' ? { embeddingProfile: getEmbeddingRuntimeConfig().vectorIndexVersion, embeddingSourceHash: metadata.embeddingSourceHash || '' } : {}),
     };
     
     try {
       // Try to create first
       await this.client.data
         .creator()
-        .withClassName('Job')
+        .withClassName(this.jobClass)
         .withId(uuid)
         .withVector(embedding)
         .withProperties({
@@ -314,13 +316,13 @@ class WeaviateService {
           // Delete and recreate (Weaviate doesn't support true upsert with vector update)
           await this.client.data
             .deleter()
-            .withClassName('Job')
+            .withClassName(this.jobClass)
             .withId(uuid)
             .do();
           
           await this.client.data
             .creator()
-            .withClassName('Job')
+            .withClassName(this.jobClass)
             .withId(uuid)
             .withVector(embedding)
             .withProperties({
@@ -350,7 +352,7 @@ class WeaviateService {
     try {
       let query = this.client.graphql
         .get()
-        .withClassName('Job')
+        .withClassName(this.jobClass)
         .withNearVector({ vector: queryEmbedding })
         .withLimit(topK)
         .withFields('jobId organizationId title department location requiredSkills _additional { distance certainty }');
@@ -365,7 +367,7 @@ class WeaviateService {
 
       const result = await query.do();
       
-      const jobs = result.data?.Get?.Job || [];
+      const jobs = result.data?.Get?.[this.jobClass] || [];
       console.log(`🔍 Found ${jobs.length} jobs in Weaviate`);
       
       return jobs;
@@ -385,7 +387,7 @@ class WeaviateService {
       const uuid = this._toUuid(jobId);
       const result = await this.client.data
         .getterById()
-        .withClassName('Job')
+        .withClassName(this.jobClass)
         .withId(uuid)
         .do();
       
@@ -402,23 +404,7 @@ class WeaviateService {
    * Delete job from Weaviate
    */
   async deleteJob(jobId) {
-    if (!this.client) throw new Error('Weaviate client not initialized');
-    
-    try {
-      const uuid = this._toUuid(jobId);
-      
-      await this.client.data
-        .deleter()
-        .withClassName('Job')
-        .withId(uuid)
-        .do();
-      
-      console.log(`✅ Deleted job ${jobId} from Weaviate`);
-      return true;
-    } catch (error) {
-      console.error(`❌ Error deleting job from Weaviate: ${error.message}`);
-      throw error;
-    }
+    return this.deleteFromAllProfiles(jobId, ['Job', 'RecruiterJobNomicV1']);
   }
 
   /**
@@ -430,19 +416,19 @@ class WeaviateService {
     try {
       const candidateStats = await this.client.graphql
         .aggregate()
-        .withClassName('Candidate')
+        .withClassName(this.candidateClass)
         .withFields('meta { count }')
         .do();
 
       const jobStats = await this.client.graphql
         .aggregate()
-        .withClassName('Job')
+        .withClassName(this.jobClass)
         .withFields('meta { count }')
         .do();
 
       return {
-        candidates: candidateStats.data?.Aggregate?.Candidate?.[0]?.meta?.count || 0,
-        jobs: jobStats.data?.Aggregate?.Job?.[0]?.meta?.count || 0,
+        candidates: candidateStats.data?.Aggregate?.[this.candidateClass]?.[0]?.meta?.count || 0,
+        jobs: jobStats.data?.Aggregate?.[this.jobClass]?.[0]?.meta?.count || 0,
       };
     } catch (error) {
       console.error('Error getting Weaviate stats:', error.message);
@@ -467,7 +453,7 @@ class WeaviateService {
         try {
           const result = await this.client.data
             .getterById()
-            .withClassName('Candidate')
+            .withClassName(this.candidateClass)
             .withId(uuid)
             .withVector()
             .do();
@@ -526,7 +512,7 @@ class WeaviateService {
       
       for (const candidate of candidates) {
         batcher = batcher.withObject({
-          class: 'Candidate',
+          class: this.candidateClass,
           id: candidate.id,
           vector: candidate.vector,
           properties: candidate.properties,

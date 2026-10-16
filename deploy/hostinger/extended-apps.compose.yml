@@ -116,6 +116,7 @@ services:
     group_add:
       - "0"
     environment:
+      RECRUITER_EMBEDDING_HMAC_SECRET_FILE: /run/seemplify/recruiter-embedding-hmac
       KNOWLEDGE_RUNTIME_HOST: 0.0.0.0
       SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR: /runtime
       SEEMPLIFY_KNOWLEDGE_DATA_ROOT: /data
@@ -135,6 +136,7 @@ services:
       EXPERIENCE_EMBEDDING_DUAL_WRITE: "false"
       EXPERIENCE_QWEN_ROLLBACK_RETAINED: "false"
     volumes:
+      - /opt/seemplify/secrets/knowledge/recruiter-embedding-hmac:/run/seemplify/recruiter-embedding-hmac:ro
       - experience_runtime:/app/runtime:ro
       - knowledge_runtime_state:/runtime
       - knowledge_runtime_data:/data
