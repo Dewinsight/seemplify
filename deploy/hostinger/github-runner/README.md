@@ -109,11 +109,11 @@ settings in `.env`. Existing organization workers retain their durable identity.
 `/opt/xplorer/github-runner/compose.yml` (Compose project `github-runner`).
 The organization worker `kvm2-crm-worker` remains available to both CRM
 repositories; the repository worker `kvm2-crm-frontend-worker` adds a second
-frontend slot. Frontend and backend QA can overlap, and two frontend jobs can
-run together. Backend jobs have one dedicated organization slot. Each slot
-currently runs API-only security scans at 0.5 vCPU and 512 MiB, with no swap or
-host Docker socket. The historical Compose profile below retains larger limits
-and must not be used to replace the live configuration on the 8 GiB host.
+frontend scanner slot. Two API-only scans can overlap. Each slot is capped at
+0.5 vCPU, 512 MiB and 256 processes, with no swap or host Docker socket. The
+tracked profile matches the live 2-vCPU / 8-GiB host. Full QA and deployment
+execute in the separate bounded local queue; these scanner slots must not be
+used for memory-intensive builds.
 A one-time repository registration uses `FRONTEND_RUNNER_TOKEN`; remove it
 after all registration files are durable and recreate token-free.
 
