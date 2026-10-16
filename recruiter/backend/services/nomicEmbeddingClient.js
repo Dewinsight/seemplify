@@ -14,7 +14,7 @@ async function generateNomicEmbedding(text, { purpose = 'document', fetchImpl = 
   const signature = crypto.createHmac('sha256', secret).update(`${timestamp}\n${nonce}\nPOST\n${endpoint.pathname}\n${body}`).digest('base64url');
   const response = await fetchImpl(endpoint, { method: 'POST', signal: AbortSignal.timeout(125000),
     headers: { 'content-type': 'application/json', 'x-seemplify-client': 'recruiter-embeddings', 'x-seemplify-timestamp': timestamp, 'x-seemplify-nonce': nonce, 'x-seemplify-signature': signature }, body });
-  if (!response.ok) throw new Error(`Local Nomic embedding request failed (HTTP ${response.status}).`);
+  if (!response.ok) throw Object.assign(new Error(`Local Nomic embedding request failed (HTTP ${response.status}).`), { status: response.status, retryable: [429, 503, 504].includes(response.status) });
   const result = await response.json();
   for (const key of Object.keys(NOMIC_PROFILE)) {
     if (result.profile?.[key] !== NOMIC_PROFILE[key]) throw new Error('Nomic embedding profile mismatch.');
