@@ -9,6 +9,11 @@ function deepFreeze(value) {
 }
 
 const EMBEDDING_PROFILES = deepFreeze({
+  'nomic-node': {
+    id: 'nomic-node', provider: 'nomic-node', modelId: 'nomic-ai/nomic-embed-text-v1.5',
+    revision: 'e9b6763023c676ca8431644204f50c2b100d9aab', dtype: 'q8', dimension: 768,
+    pooling: 'mean', normalize: true, vectorIndexVersion: 'nomic-embed-text-v1.5-q8-v1', execution: 'cpu-worker',
+  },
   'azure-openai': {
     id: 'azure-openai',
     provider: 'azure-openai',

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  azureKnowledgeEmbeddingProfile, config, gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
+  nomicKnowledgeEmbeddingProfile, azureKnowledgeEmbeddingProfile, config, gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
   type KnowledgeEmbeddingProfile
 } from './config.js';
 import { db } from './database.js';
@@ -488,7 +488,7 @@ if (db.provider === 'sqlite') db.exec(`
 
   CREATE TABLE IF NOT EXISTS knowledge_embedding_profiles (
     vector_index_version TEXT PRIMARY KEY,
-    provider TEXT NOT NULL CHECK(provider IN ('azure-openai','qwen-tei','gte-node')),
+    provider TEXT NOT NULL CHECK(provider IN ('azure-openai','qwen-tei','gte-node','nomic-node')),
     model TEXT NOT NULL,
     revision TEXT NOT NULL,
     dtype TEXT NOT NULL,
@@ -826,7 +826,7 @@ function embeddingProfileFromRow(row: any): KnowledgeEmbeddingProfile {
   if (!isKnowledgeEmbeddingProfile(profile)) {
     throw new Error(`Knowledge embedding profile ${String(row.vector_index_version || 'unknown')} is corrupt.`);
   }
-  const pinned = profile.provider === 'azure-openai' ? azureKnowledgeEmbeddingProfile
+  const pinned = profile.provider === 'nomic-node' ? nomicKnowledgeEmbeddingProfile : profile.provider === 'azure-openai' ? azureKnowledgeEmbeddingProfile
     : profile.provider === 'gte-node' ? gteKnowledgeEmbeddingProfile : qwenKnowledgeEmbeddingProfile;
   if (JSON.stringify(profile) !== JSON.stringify(pinned)) {
     throw new Error(`Knowledge embedding profile ${profile.vectorIndexVersion} is not the pinned registry identity.`);
@@ -1056,7 +1056,7 @@ function knowledgeJobIntent(values: Record<string, unknown>) {
 function isKnowledgeEmbeddingProfile(value: unknown): value is KnowledgeEmbeddingProfile {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  return (item.provider === 'azure-openai' || item.provider === 'qwen-tei' || item.provider === 'gte-node')
+  return (item.provider === 'nomic-node' || item.provider === 'azure-openai' || item.provider === 'qwen-tei' || item.provider === 'gte-node')
     && typeof item.model === 'string' && Boolean(item.model.trim())
     && typeof item.revision === 'string' && /^[a-f0-9]{40}$/u.test(item.revision)
     && typeof item.dtype === 'string' && Boolean(item.dtype.trim())

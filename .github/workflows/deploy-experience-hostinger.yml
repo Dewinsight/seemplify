@@ -46,9 +46,12 @@ jobs:
           npm ci
           npm run build
           npx tsx --test backend/test/idp-provisioning.test.ts
+          (cd backend && npx tsx --test --test-name-pattern='pins local Nomic|keeps pinned|accepts the pinned Azure|accepts only the pinned|rejects mixed|runtime schema 3' test/knowledge-embedding-config.test.ts)
+          node --test scripts/knowledge-runtime-request.test.mjs
+          (cd frontend && node --test --test-name-pattern='deploys local Nomic|refuses an incompatible rollback' test/smoke.test.mjs)
       - name: Test production knowledge runtime contracts
         working-directory: tools/local-knowledge
-        run: node --test embedding-profiles.test.cjs runtime.test.cjs server.test.cjs
+        run: node --test embedding-profiles.test.cjs nomic.test.cjs runtime.test.cjs server.test.cjs gte-embedding-client.test.cjs
       - name: Test IdP Hub contracts
         working-directory: Identityprovider
         run: |
@@ -104,6 +107,8 @@ jobs:
             deploy/hostinger/extended-apps.compose.yml \
             deploy/hostinger/ensure-browser-notification-secrets.sh \
             deploy/hostinger/generate-idp-clients.sh \
+            deploy/hostinger/backup-hostinger.sh \
+            deploy/hostinger/restore-smoke-hostinger.sh \
             deploy/hostinger/smoke-hostinger.sh
       - name: Upload release
         env:
@@ -112,18 +117,6 @@ jobs:
         run: |
           source deploy/hostinger/github-actions-ssh-retry.sh
           hostinger_upload_with_lock experience-release.tgz "$SSH_USER@$SSH_HOST" "/opt/seemplify/build/experience-release-${GITHUB_SHA}.tgz"
-      - name: Upload Azure embedding credential
-        env:
-          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
-          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
-          AZURE_OPENAI_EMBEDDING_API_KEY: ${{ secrets.AZURE_OPENAI_EMBEDDING_API_KEY }}
-        run: |
-          umask 077
-          test -n "$AZURE_OPENAI_EMBEDDING_API_KEY"
-          printf '%s' "$AZURE_OPENAI_EMBEDDING_API_KEY" >/tmp/azure-openai-embedding
-          source deploy/hostinger/github-actions-ssh-retry.sh
-          hostinger_upload_with_lock /tmp/azure-openai-embedding "$SSH_USER@$SSH_HOST" "/tmp/azure-openai-embedding-${GITHUB_SHA}"
-          rm -f /tmp/azure-openai-embedding
       - name: Build and deploy immutable release
         env:
           SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
@@ -175,6 +168,10 @@ jobs:
           install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /usr/local/sbin/seemplify-smoke
+          install -m 755 "$release_root/deploy/hostinger/backup-hostinger.sh" /usr/local/sbin/seemplify-backup
+          install -m 755 "$release_root/deploy/hostinger/restore-smoke-hostinger.sh" /usr/local/sbin/seemplify-restore-smoke
+          install -m 755 "$release_root/deploy/hostinger/backup-hostinger.sh" /opt/seemplify/deploy/hostinger/backup-hostinger.sh
+          install -m 755 "$release_root/deploy/hostinger/restore-smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/restore-smoke-hostinger.sh
           IDENTITY_PROVIDER_IMAGE="$identity_image" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
           IDENTITY_PROVIDER_IMAGE="$identity_image" /opt/seemplify/deploy/hostinger/ensure-browser-notification-secrets.sh
 
@@ -182,8 +179,6 @@ jobs:
           test -s /opt/seemplify/secrets/platform-integrations/experience-hmac-secret
           knowledge_secret_dir=/opt/seemplify/secrets/knowledge
           install -d -o root -g root -m 0700 "$knowledge_secret_dir"
-          install -o root -g root -m 0640 "/tmp/azure-openai-embedding-$RELEASE_SHA" \
-            "$knowledge_secret_dir/azure-openai-embedding"
           for name in knowledge-runtime-hmac docling-api; do
             target="$knowledge_secret_dir/$name"
             if [[ ! -s "$target" ]]; then
@@ -217,6 +212,9 @@ jobs:
           core=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/core-apps.compose.yml)
           extended=(docker compose --env-file /opt/seemplify/secrets/shared-infrastructure.env --env-file /opt/seemplify/secrets/core-apps.env -f /opt/seemplify/deploy/hostinger/extended-apps.compose.yml)
           docker volume create seemplify-extended_experience_runtime >/dev/null
+          docker volume create seemplify-nomic-model-cache >/dev/null
+          docker run --rm --user 0:0 --entrypoint sh -v seemplify-nomic-model-cache:/cache \
+            "$knowledge_image" -c 'chown 1000:1000 /cache'
           docker run --rm --user 0:0 --entrypoint sh \
             -v /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/source-hmac:ro \
             -v seemplify-extended_experience_runtime:/target \
@@ -224,7 +222,7 @@ jobs:
             -c 'install -o 1000 -g 1000 -m 0400 /source-hmac /target/platform-integration-experience-hmac'
           wait_healthy() {
             local container="$1"
-            for _ in $(seq 1 60); do
+            for _ in $(seq 1 300); do
               state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
               [[ "$state" == healthy || "$state" == running ]] && return 0
               [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && break
@@ -244,6 +242,18 @@ jobs:
             node -e "const s=require(\"/tmp/knowledge-status.json\"); process.exit(s.ready && s.services?.arango?.healthy && s.services?.embedding?.healthy && s.services?.docling?.healthy && s.services?.chatgpt?.healthy ? 0 : 1)"
             rm -f /tmp/knowledge-status.json
           '
+          # Back up before the first provider cutover. Retain every original
+          # vector and profile; switch PostgreSQL only after parallel retrieval
+          # succeeds. Stop the old worker so its schema/profile snapshot cannot
+          # race the migration, then start the exact new release.
+          pg_container=$(docker ps -q --filter label=com.docker.compose.service=experience-postgres)
+          test -n "$pg_container"
+          legacy_bases=$(docker exec "$pg_container" sh -c 'psql -U "$POSTGRES_USER" -d seemplify_experience -Atc "SELECT count(*) FROM knowledge_bases WHERE embedding_provider<> '\''nomic-node'\'' AND status NOT IN ('\''deleted'\'','\''deleting'\'');"')
+          if [[ "$legacy_bases" != 0 ]]; then
+            /usr/local/sbin/seemplify-backup
+          fi
+          "${extended[@]}" stop experience
+          "${extended[@]}" run --rm --no-deps -e SEEMPLIFY_NOMIC_MIGRATION_ONLY=1 experience
           "${extended[@]}" up -d --no-deps --force-recreate experience
           wait_healthy seemplify-extended-experience-1
           "${extended[@]}" up -d --no-deps --force-recreate ai-interview-backend
@@ -266,6 +276,5 @@ jobs:
             [[ "$revision" == "$RELEASE_SHA" ]]
           done
           /usr/local/sbin/seemplify-smoke
-          rm -f "/tmp/azure-openai-embedding-$RELEASE_SHA"
           rm -f "$archive"
           REMOTE

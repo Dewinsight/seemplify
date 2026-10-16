@@ -12,6 +12,7 @@ DOKPLOY_CONTAINER="seemplify-restore-smoke-dokploy-${RUN_ID}"
 MARIADB_CONTAINER="seemplify-restore-smoke-mariadb-${RUN_ID}"
 LMS_CONTAINER="seemplify-restore-smoke-lms-${RUN_ID}"
 NANGO_CONTAINER="seemplify-restore-smoke-nango-${RUN_ID}"
+ARANGO_CONTAINER="seemplify-restore-smoke-arango-${RUN_ID}"
 
 case "${LATEST_BACKUP}" in
   /var/backups/seemplify/20??????T??????Z) ;;
@@ -36,6 +37,7 @@ cleanup() {
   cleanup_container "${MARIADB_CONTAINER}"
   cleanup_container "${LMS_CONTAINER}"
   cleanup_container "${NANGO_CONTAINER}"
+  cleanup_container "${ARANGO_CONTAINER}"
 }
 trap cleanup EXIT
 trap 'echo "Restore smoke failed at line ${LINENO}" >&2' ERR
@@ -224,5 +226,32 @@ docker run --rm \
   redis:7.4.10-alpine3.21 \
   redis-check-rdb /backup/shared-redis.rdb >/dev/null
 echo "redis rdb validation ok"
+
+# Restore the paused RocksDB snapshot with the exact production Arango version.
+# Authentication is disabled only inside this temporary network-isolated target.
+docker run -d --rm --name "${ARANGO_CONTAINER}" --network none \
+  --cpus 1 --memory 1536m --memory-swap 1536m \
+  --tmpfs /var/lib/arangodb3:rw,nosuid,nodev,size=1g \
+  --volume "${LATEST_BACKUP}/arangodb-data.tar.gz:/backup.tar.gz:ro" \
+  --entrypoint /bin/sh \
+  arangodb@sha256:bf5eabc0fb3a16a13d0d4de00cddfbf2209e3d25630e5331832efb206519ff8f \
+  -ec 'tar -xzf /backup.tar.gz -C /var/lib/arangodb3; exec arangod --server.authentication false --vector-index --rocksdb.block-cache-size 67108864 --cache.size 67108864' >/dev/null
+wait_for_container_command "${ARANGO_CONTAINER}" arangosh --server.authentication false \
+  --javascript.execute-string 'require("@arangodb").db._databases()' \
+  || { echo "ArangoDB snapshot did not become ready" >&2; exit 1; }
+docker exec "${ARANGO_CONTAINER}" arangosh --server.authentication false \
+  --javascript.execute-string '
+    const db=require("@arangodb").db; let tenants=0,chunks=0,nomic=0;
+    for(const name of db._databases().filter(n=>n.startsWith("exp_"))){
+      db._useDatabase(name);tenants++;
+      if(db._collection("chunks")) chunks+=db._collection("chunks").count();
+      if(db._collection("experience_chunks_nomic_v1")){
+        nomic+=db._collection("experience_chunks_nomic_v1").count();
+        if(db._query("FOR c IN experience_chunks_nomic_v1 FILTER c.embeddingDimensions != 768 OR LENGTH(c.embedding) != 768 RETURN 1").toArray().length) throw Error("Invalid Nomic vectors in restored snapshot");
+      }
+    }
+    print("arangodb restore ok tenants="+tenants+" legacy_chunks="+chunks+" nomic_chunks="+nomic);
+  '
+cleanup_container "${ARANGO_CONTAINER}"
 
 echo "All backup restore smoke tests passed"

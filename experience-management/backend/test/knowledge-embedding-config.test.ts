@@ -3,9 +3,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
-  azureKnowledgeEmbeddingProfile, gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
+  azureKnowledgeEmbeddingProfile, gteKnowledgeEmbeddingProfile, nomicKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
   resolveKnowledgeEmbeddingConfiguration
 } from '../src/config.js';
+
+test('pins local Nomic independently and rejects cross-model or dimension overrides', () => {
+  assert.deepEqual(resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_PROVIDER: 'nomic-node' }).profile,
+    nomicKnowledgeEmbeddingProfile);
+  assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_PROVIDER: 'nomic-node',
+    EXPERIENCE_EMBEDDING_DIMENSIONS: '3072' }), /nomic-node requires/);
+  assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_PROVIDER: 'nomic-node',
+    EXPERIENCE_EMBEDDING_DUAL_WRITE: 'true' }), /nomic-node requires/);
+});
 
 test('keeps pinned CPU-based GTE as the local default', () => {
   const resolved = resolveKnowledgeEmbeddingConfiguration({});
@@ -98,8 +107,8 @@ test('runtime schema 3 migration is additive and carries durable rollout state',
   ]) assert.match(migration, new RegExp(contract, 'u'));
   assert.match(migration, /ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS/u);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 34,
-    maximumRuntimeSchemaVersion: 34,
+    minimumRuntimeSchemaVersion: 35,
+    maximumRuntimeSchemaVersion: 35,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });

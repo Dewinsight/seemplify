@@ -123,15 +123,15 @@ function errorFromWorker(payload = {}) {
 
 function createGteEmbeddingClient(options = {}) {
   const profile = validateEmbeddingProfile(options.profile || EMBEDDING_PROFILES['gte-node']);
-  if (profile.id !== 'gte-node') {
-    throw clientError('createGteEmbeddingClient only accepts the pinned gte-node profile.', {
+  if (!['gte-node', 'nomic-node'].includes(profile.id)) {
+    throw clientError('The CPU embedding client only accepts pinned GTE or Nomic profiles.', {
       code: 'GTE_CONFIGURATION_INVALID',
     });
   }
   const environment = options.environment || process.env;
   const environmentConfig = embeddingConfigurationFromEnv({
     ...environment,
-    EXPERIENCE_EMBEDDING_PROVIDER: 'gte-node',
+    EXPERIENCE_EMBEDDING_PROVIDER: profile.provider,
     EXPERIENCE_EMBEDDING_MODEL: profile.modelId,
     EXPERIENCE_EMBEDDING_MODEL_REVISION: profile.revision,
     EXPERIENCE_EMBEDDING_DTYPE: profile.dtype,
@@ -519,7 +519,9 @@ function createGteEmbeddingClient(options = {}) {
     return new Promise((resolve, reject) => {
       const job = {
         requestId: normalizedRequestId,
-        texts: normalizedTexts,
+        texts: profile.id === 'nomic-node'
+          ? normalizedTexts.map((text) => `${priorityValue.name === 'query' ? 'search_query' : 'search_document'}: ${text}`)
+          : normalizedTexts,
         priority: priorityValue.name,
         priorityRank: priorityValue.rank,
         sequence: sequence += 1,

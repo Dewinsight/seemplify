@@ -53,4 +53,7 @@ export KNOWLEDGE_STORAGE_DIR="$runtime_dir/knowledge"
 export ESIGN_STORAGE_DIR="$runtime_dir/esign"
 
 node scripts/dokploy-runtime-migrate.mjs
+if [ "${SEEMPLIFY_NOMIC_MIGRATION_ONLY:-0}" = "1" ]; then
+  exec node scripts/migrate-nomic-knowledge.mjs
+fi
 exec node backend/dist/server.js
