@@ -53,9 +53,10 @@ test('Nomic vector, graph and deletion queries cannot touch the original vector 
   for (const name of ['upsertGteChunks', 'closeGteChunkRevision', 'eligibleGteChunkCount',
     'exactGteVectorChunks', 'annGteVectorChunks', 'graphGteChunks', 'purgeGteChunks', 'purgeGteTargetCount']) {
     assert.ok(NOMIC_AQL[name].includes(NOMIC_COLLECTION), name);
-    assert.doesNotMatch(NOMIC_AQL[name], /\bexperience_chunks_gte_v1\b|\bIN chunks\b|\bINTO chunks\b/);
+    assert.doesNotMatch(NOMIC_AQL[name], /\bexperience_chunks_gte_v1\b|\bIN chunks\b|\bINTO chunks\b|'gte-node'/);
   }
   assert.match(NOMIC_AQL.exactGteVectorChunks, /vectorIndexVersion == @vectorIndexVersion/);
+  assert.match(NOMIC_AQL.exactGteVectorChunks, /embeddingProvider == 'nomic-node'/);
 });
 
 test('parallel migration preserves original vectors and refuses incomplete or changed source snapshots', async () => {

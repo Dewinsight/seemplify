@@ -31,3 +31,9 @@ Run focused contracts with `node --test nomic.test.cjs` in this directory. Run
 `node nomic-live-smoke.cjs --live` explicitly to load the real model and verify
 eight concurrent semantic searches. The first model load needs download access;
 subsequent starts use the persistent pinned cache.
+
+Deployment also runs `nomic-runtime-smoke.cjs --live` inside the bounded runtime.
+It indexes a synthetic document in a reserved temporary tenant, verifies eight
+concurrent retrievals, scan and physical deletion, then proves that its temporary
+database is absent. Graph extraction is stubbed for that synthetic fixture, so
+the check makes no external AI generation request.

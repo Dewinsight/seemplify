@@ -1535,7 +1535,7 @@ function createKnowledgeRuntime(options = {}) {
           vectorMode = 'exact-fallback';
           vectorItems = await measure(`${timingPrefix}vectorFallback`, () => app.query(database, exactQuery, { ...common, vectorIndexVersion: profile.vectorIndexVersion, queryVector }));
         }
-        return { profile, eligibleCount: Number(eligibleCount), vectorIndex, vectorMode, vectorItems };
+        return { profile, queryVector, eligibleCount: Number(eligibleCount), vectorIndex, vectorMode, vectorItems };
       };
 
       let vectorResult;
@@ -1572,9 +1572,16 @@ function createKnowledgeRuntime(options = {}) {
       ]).slice(0, 80);
       const localRerank = async (query, candidates) => {
         if (!candidates.length) return [];
-        const [q] = await embedForProfile(servedProfile, [query], { priority: 'query' });
-        const docs = await embedForProfile(servedProfile, candidates.map((c) => c.text), { priority: 'live-index' });
-        return candidates.map((candidate, i) => ({ candidate, score: cosine(q, docs[i]) })).sort((a, b) => b.score - a.score);
+        // Reuse the pinned stored vectors and this request's query vector. The
+        // cosine reranker must not re-embed up to 80 documents on every query.
+        const rows = await app.query(database, NOMIC_AQL.candidateVectors, { ...common,
+          keys: candidates.map((c) => c._key), vectorIndexVersion: servedProfile.vectorIndexVersion });
+        const vectors = new Map(rows.map((row) => [row.key, row.embedding]));
+        if (candidates.some((c) => !Array.isArray(vectors.get(c._key)) || vectors.get(c._key).length !== 768)) {
+          throw runtimeError('Nomic evidence changed during retrieval.', { code: 'EMBEDDING_EVIDENCE_CHANGED', status: 503, retryable: true });
+        }
+        return candidates.map((candidate) => ({ candidate, score: cosine(vectorResult.queryVector, vectors.get(candidate._key)) }))
+          .sort((a, b) => b.score - a.score);
       };
       const reranked = await timed('reranker', () => (options.rerank || (servedProfile.provider === 'nomic-node' ? localRerank : rerank))(input.query, fused.map((item) => item.candidate), { config, fetchImpl, apiKey: embeddingApiKey }));
       const fusedByKey = new Map(fused.map((item) => [item.candidate._key, item]));

@@ -47,6 +47,7 @@ jobs:
           npm run build
           npx tsx --test backend/test/idp-provisioning.test.ts
           (cd backend && npx tsx --test --test-name-pattern='pins local Nomic|keeps pinned|accepts the pinned Azure|accepts only the pinned|rejects mixed|runtime schema 3' test/knowledge-embedding-config.test.ts)
+          (cd backend && npx tsx --test test/runtime-privilege-contract.test.ts)
           node --test scripts/knowledge-runtime-request.test.mjs
           (cd frontend && node --test --test-name-pattern='deploys local Nomic|refuses an incompatible rollback' test/smoke.test.mjs)
       - name: Test production knowledge runtime contracts
@@ -242,6 +243,7 @@ jobs:
             node -e "const s=require(\"/tmp/knowledge-status.json\"); process.exit(s.ready && s.services?.arango?.healthy && s.services?.embedding?.healthy && s.services?.docling?.healthy && s.services?.chatgpt?.healthy ? 0 : 1)"
             rm -f /tmp/knowledge-status.json
           '
+          docker exec seemplify-extended-knowledge-runtime-1 node nomic-runtime-smoke.cjs --live
           # Back up before the first provider cutover. Retain every original
           # vector and profile; switch PostgreSQL only after parallel retrieval
           # succeeds. Stop the old worker so its schema/profile snapshot cannot
