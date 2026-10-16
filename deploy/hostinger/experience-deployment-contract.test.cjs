@@ -26,8 +26,9 @@ test('a separate SSH step verifies current running images and real Nomic readine
   assert.match(verify, /hostinger_ssh_stdin/);
   assert.match(verify, /\.State\.Running/);
   assert.match(verify, /org\.opencontainers\.image\.revision/);
-  assert.match(verify, /s\.ready/);
-  assert.match(verify, /s\.activeEmbeddingProvider/);
+  assert.match(verify, /s\.get\("ready"\)/);
+  assert.match(verify, /s\.get\("activeEmbeddingProvider"\)/);
+  assert.doesNotMatch(verify, /^\s+node /m);
   assert.match(verify, /seemplify-smoke/);
 });
 
