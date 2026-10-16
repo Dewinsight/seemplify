@@ -9,6 +9,7 @@ on:
       - 'recruiter/backend/services/aiRuntime/**'
       - 'recruiter/backend/routes/internalAI.js'
       - 'deploy/hostinger/extended-apps.compose.yml'
+      - 'deploy/hostinger/migrate-recruiter-nomic.sh'
       - 'deploy/hostinger/github-actions-ssh-retry.sh'
       - 'deploy/hostinger/smoke-hostinger.sh'
       - '.github/workflows/deploy-chatgpt-gateway-hostinger.yml'
@@ -45,6 +46,7 @@ jobs:
             recruiter/backend/tests/aiRuntimeGatewayIntegration.test.js \
             recruiter/backend/tests/aiRuntimeChatgptProvider.test.js \
             recruiter/backend/tests/chatGptUsageReplay.test.js
+          node --test recruiter/backend/tests/embeddingRuntimeConfig.test.js recruiter/backend/tests/nomicEmbeddingClient.test.js recruiter/backend/tests/nomicIndexMigration.test.js recruiter/backend/tests/nomicWeaviateProfile.test.js
 
   deploy:
     needs: qa
@@ -69,6 +71,10 @@ jobs:
             tools/chatgpt-gateway \
             recruiter/backend \
             deploy/hostinger/extended-apps.compose.yml \
+            deploy/hostinger/core-apps.compose.yml \
+            deploy/hostinger/migrate-recruiter-nomic.sh \
+            deploy/hostinger/backup-hostinger.sh \
+            deploy/hostinger/restore-smoke-hostinger.sh \
             deploy/hostinger/smoke-hostinger.sh
       - name: Upload release
         env:
@@ -143,6 +149,11 @@ jobs:
             return 1
           }
 
+          install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
+          install -m 755 "$release_root/deploy/hostinger/backup-hostinger.sh" /usr/local/sbin/seemplify-backup
+          install -m 755 "$release_root/deploy/hostinger/restore-smoke-hostinger.sh" /usr/local/sbin/seemplify-restore-smoke
+          install -m 755 "$release_root/deploy/hostinger/migrate-recruiter-nomic.sh" /opt/seemplify/deploy/hostinger/migrate-recruiter-nomic.sh
+          /opt/seemplify/deploy/hostinger/migrate-recruiter-nomic.sh
           "${core[@]}" up -d --no-deps --force-recreate recruiter-backend
           wait_healthy seemplify-core-recruiter-backend-1
           "${extended[@]}" up -d --no-deps --force-recreate chatgpt-gateway

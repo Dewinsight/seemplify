@@ -46,7 +46,7 @@ test('both deployment owners preflight, back up and migrate Recruiter with detac
   assert.ok(helper.indexOf('deployment readiness probe') < helper.indexOf('stop recruiter-backend'));
   assert.ok(helper.indexOf('seemplify-backup') < helper.indexOf('stop recruiter-backend'));
   assert.match(helper, /trap rollback ERR/);
-  for (const file of ['deploy-core-hostinger.yml', 'deploy-experience-hostinger.yml']) {
+  for (const file of ['deploy-core-hostinger.yml', 'deploy-experience-hostinger.yml', 'deploy-chatgpt-gateway-hostinger.yml']) {
     const source = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows', file), 'utf8');
     const migrate = source.indexOf('          /opt/seemplify/deploy/hostinger/migrate-recruiter-nomic.sh');
     assert.ok(migrate > 0 && migrate < source.indexOf('up -d --no-deps --force-recreate recruiter-backend'));
