@@ -24,6 +24,11 @@ class Release:
         self.token = Path('/opt/seemplify/secrets/github-deploy-token').read_text().strip()
         self.root = Path('/opt/seemplify/deploy-all') / request_id
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        boundary = self.root / 'eligible-since.txt'
+        if not boundary.exists():
+            boundary.write_text((datetime.datetime.now(datetime.timezone.utc) -
+                datetime.timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%SZ'))
+        self.eligible_since = boundary.read_text().strip()
         self.runs = []
 
     def api(self, path, body=None):
@@ -46,9 +51,18 @@ class Release:
     def run_workflow(self, workflow):
         self.require_main()
         since = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        result = self.api('actions/workflows/' + workflow + '/dispatches',
-                          {'ref': 'main'})
-        run_id = result.get('workflow_run_id') if isinstance(result, dict) else None
+        # A main push may already have started this exact component release.
+        # Reuse only recent trusted runs belonging to this request window.
+        candidates = self.api('actions/workflows/' + workflow + '/runs?per_page=30')['workflow_runs']
+        candidates = [r for r in candidates if r['head_sha'] == self.revision
+            and r['head_branch'] == 'main' and r['event'] in ('push', 'workflow_dispatch')
+            and r['created_at'] >= self.eligible_since
+            and r['status'] in ('queued', 'in_progress', 'completed')
+            and r.get('conclusion') in (None, 'success')]
+        run_id = max((r['id'] for r in candidates), default=None)
+        if run_id is None:
+            result = self.api('actions/workflows/' + workflow + '/dispatches', {'ref': 'main'})
+            run_id = result.get('workflow_run_id') if isinstance(result, dict) else None
         deadline = time.monotonic() + 4 * 3600
         while time.monotonic() < deadline:
             if run_id is None:

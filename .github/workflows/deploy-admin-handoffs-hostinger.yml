@@ -11,7 +11,7 @@ jobs:
   test-and-deploy:
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, dewinsight-kvm8-seemplify]
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:

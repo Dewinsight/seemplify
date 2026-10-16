@@ -35,11 +35,11 @@ concurrency:
   queue: max
 
 jobs:
-  # Trusted main jobs share two constrained KVM8 build workers.
+  # Trusted main jobs queue on the shared, bounded KVM4 compute slot.
   identity-qa:
     name: Test Identity Provider
     runs-on: [self-hosted, dewinsight-kvm8-seemplify]
-    timeout-minutes: 45
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: Identityprovider
@@ -53,6 +53,9 @@ jobs:
           cache: npm
           cache-dependency-path: Identityprovider/package-lock.json
       - run: npm ci --ignore-scripts
+      - name: Verify production orchestration and exact IdP image contracts
+        working-directory: .
+        run: python3 -m unittest discover -s deploy/hostinger/tests -v
       - name: Verify identity, admin analytics, and organization switching
         run: |
           node --test \
@@ -89,7 +92,7 @@ jobs:
   recruiter-qa:
     name: Test Recruiter gateway
     runs-on: [self-hosted, dewinsight-kvm8-seemplify]
-    timeout-minutes: 45
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: recruiter/backend
@@ -114,7 +117,7 @@ jobs:
   learning-qa:
     name: Test Learning platform configuration
     runs-on: [self-hosted, dewinsight-kvm8-seemplify]
-    timeout-minutes: 45
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: seemplify-learning
@@ -133,7 +136,7 @@ jobs:
   workforce-backend-qa:
     name: Test ${{ matrix.name }} backend
     runs-on: [self-hosted, dewinsight-kvm8-seemplify]
-    timeout-minutes: 45
+    timeout-minutes: 120
     strategy:
       max-parallel: 2
       fail-fast: false
@@ -171,7 +174,7 @@ jobs:
   workforce-frontend-qa:
     name: Build ${{ matrix.name }} frontend
     runs-on: [self-hosted, dewinsight-kvm8-seemplify]
-    timeout-minutes: 45
+    timeout-minutes: 120
     strategy:
       max-parallel: 2
       fail-fast: false

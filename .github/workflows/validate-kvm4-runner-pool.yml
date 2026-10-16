@@ -20,7 +20,7 @@ jobs:
       matrix:
         slot: [1, 2, 3]
     runs-on: [self-hosted, dewinsight-kvm4-build]
-    timeout-minutes: 5
+    timeout-minutes: 90
     steps:
       - name: Verify bounded shared build slot
         run: |
@@ -34,7 +34,7 @@ jobs:
   workspace:
     name: Workspace routing probe
     runs-on: [self-hosted, dewinsight-kvm8-workspace]
-    timeout-minutes: 5
+    timeout-minutes: 90
     steps:
       - name: Verify Workspace uses the shared build slot
         run: |

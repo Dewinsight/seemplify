@@ -8,6 +8,7 @@ services:
       file: compose.yml
       service: seemplify-worker
     environment:
+      ACTIONS_RUNNER_HOOK_JOB_STARTED: /runner/hooks/ci-slot-started.sh
       RUNNER_LABELS: dewinsight-kvm8,dewinsight-kvm8-seemplify,dewinsight-kvm8-workspace,dewinsight-kvm4-build
   control:
     extends:

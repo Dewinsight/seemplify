@@ -14,9 +14,9 @@ jobs:
   sdk-runtime-matrix:
     name: SDK runtime (Node ${{ matrix.node }})
     # Pull requests in this public repository stay on an isolated GitHub-hosted
-    # runner; trusted main-branch verification uses the shared KVM8 worker.
+    # runner; trusted main-branch verification uses the shared KVM4 worker.
     runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'dewinsight-kvm8' }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 20 || 120 }}
     strategy:
       fail-fast: false
       matrix:
@@ -41,7 +41,7 @@ jobs:
 
   verify:
     runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'dewinsight-kvm8' }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 120 }}
     defaults:
       run:
         working-directory: experience-management
