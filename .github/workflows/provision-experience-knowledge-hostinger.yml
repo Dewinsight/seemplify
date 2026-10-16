@@ -16,6 +16,9 @@ jobs:
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Validate shared infrastructure compose
         run: |
           node --test tools/local-knowledge/bootstrap-arango.test.cjs
