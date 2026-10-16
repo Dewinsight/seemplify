@@ -9,23 +9,18 @@ set -a
 . "$secrets"
 set +a
 export LMS_IMAGE="seemplify/lms:hostinger-$RELEASE_SHA"
-if ! docker image inspect seemplify/frappe-base:backup-e703fe9 >/dev/null 2>&1; then
-  context="/opt/seemplify/build/lms-recovery/frappe_docker"
-  if [ ! -d "$context/.git" ]; then
-    git clone https://github.com/frappe/frappe_docker.git "$context"
-  fi
-  git -C "$context" checkout 3d0a0e53d8ab03903f6c3f125976a37d7a0f9875
-  python3 "$release_root/deploy/hostinger/prepare-lms-base.py" "$context"
-  docker build --build-arg PYTHON_VERSION=3.14 --build-arg NODE_VERSION=24 \
-    --build-arg FRAPPE_PATH=file:///tmp/frappe-source --build-arg FRAPPE_BRANCH=lms-restoration --build-arg INSTALL_CHROMIUM=false \
-    -f "$context/Containerfile.lms" -t seemplify/frappe-base:backup-e703fe9 "$context"
-fi
+bash "$release_root/deploy/hostinger/prepare-lms-base.sh" "$release_root"
+base_layout=/opt/seemplify/build/lms-base-e703fe9
+base_digest=$(python3 -c 'import json;print(json.load(open("/opt/seemplify/build/lms-base-e703fe9/index.json"))["manifests"][0]["digest"])')
 docker build --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+  --build-context "frappe-base=oci-layout://$base_layout@$base_digest" \
   -f "$release_root/lms/docker/Dockerfile.hostinger" -t "$LMS_IMAGE" "$release_root/lms"
 install -m 644 "$release_root/deploy/hostinger/lms.compose.yml" /opt/seemplify/deploy/hostinger/lms.compose.yml
 compose=(docker compose --env-file "$secrets" -f /opt/seemplify/deploy/hostinger/lms.compose.yml)
 "${compose[@]}" up -d db redis-cache redis-queue
+created_site=false
 if ! "${compose[@]}" run --rm --no-deps backend test -f sites/lms.seemplifyai.com/site_config.json; then
+  created_site=true
   "${compose[@]}" run --rm --no-deps backend bench set-config -g db_host db
   "${compose[@]}" run --rm --no-deps backend bench set-config -g redis_cache redis://redis-cache:6379
   "${compose[@]}" run --rm --no-deps backend bench set-config -g redis_queue redis://redis-queue:6379
@@ -36,6 +31,10 @@ if ! "${compose[@]}" run --rm --no-deps backend test -f sites/lms.seemplifyai.co
     --mariadb-user-host-login-scope '%'
 fi
 if ! "${compose[@]}" run --rm --no-deps backend test -f sites/lms.seemplifyai.com/.historical-restore-complete; then
+  if [[ "$created_site" != true ]]; then
+    echo 'Refusing historical SQL restore over an existing LMS site without its completion marker' >&2
+    exit 1
+  fi
   "${compose[@]}" run --rm --no-deps -v "$release_root/lms/docker/lms-prod-restore.sql:/tmp/lms-restore.sql:ro" backend \
     bench --site lms.seemplifyai.com restore /tmp/lms-restore.sql --force --db-root-password "$LMS_DB_ROOT_PASSWORD"
   "${compose[@]}" run --rm --no-deps backend touch sites/lms.seemplifyai.com/.historical-restore-complete

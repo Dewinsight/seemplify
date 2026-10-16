@@ -2,7 +2,7 @@ name: Deploy Frappe LMS to Hostinger
 on:
   push:
     branches: [main]
-    paths: ['lms/**', 'deploy/hostinger/lms.compose.yml', 'deploy/hostinger/deploy-lms.sh', '.github/workflows/deploy-lms-hostinger.yml']
+    paths: ['lms/**', 'deploy/hostinger/lms.compose.yml', 'deploy/hostinger/deploy-lms.sh', 'deploy/hostinger/prepare-lms-base.*', '.github/workflows/deploy-lms-hostinger.yml']
   workflow_dispatch:
 permissions:
   contents: read

@@ -2,7 +2,9 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
+from contextlib import nullcontext
+from types import SimpleNamespace
 
 spec = importlib.util.spec_from_file_location('release', Path(__file__).parents[1] / 'github-orchestrator.py')
 module = importlib.util.module_from_spec(spec)
@@ -66,6 +68,23 @@ class ReleaseTests(unittest.TestCase):
     def test_complete_release_includes_stanbic_lms(self):
         self.assertEqual(len(module.WORKFLOWS), 9)
         self.assertIn('deploy-lms-hostinger.yml', module.WORKFLOWS)
+
+    def test_transient_read_disconnect_is_retried(self):
+        self.release.token = 'test-token'
+        response = SimpleNamespace(read=lambda: b'{"ok":true}')
+        with patch.object(module.urllib.request, 'urlopen', side_effect=[
+                module.http.client.RemoteDisconnected('test'), nullcontext(response)]) as request, \
+                patch.object(module.time, 'sleep'):
+            self.assertEqual(self.release.api('git/ref/heads/main'), {'ok': True})
+            self.assertEqual(request.call_count, 2)
+
+    def test_ambiguous_dispatch_is_not_replayed(self):
+        self.release.token = 'test-token'
+        with patch.object(module.urllib.request, 'urlopen', side_effect=
+                module.http.client.RemoteDisconnected('test')) as request:
+            with self.assertRaises(module.http.client.RemoteDisconnected):
+                self.release.api('actions/workflows/example/dispatches', {'ref': 'main'})
+            self.assertEqual(request.call_count, 1)
 
 
 if __name__ == '__main__':
