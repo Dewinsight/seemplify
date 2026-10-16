@@ -52,7 +52,7 @@ jobs:
           (cd frontend && node --test --test-name-pattern='deploys local Nomic|refuses an incompatible rollback' test/smoke.test.mjs)
       - name: Test production knowledge runtime contracts
         working-directory: tools/local-knowledge
-        run: node --test embedding-profiles.test.cjs nomic.test.cjs runtime.test.cjs server.test.cjs gte-embedding-client.test.cjs
+        run: node --test embedding-profiles.test.cjs nomic.test.cjs runtime.test.cjs server.test.cjs gte-embedding-client.test.cjs bootstrap-arango.test.cjs
       - name: Test SSH deployment stdin contract
         run: node --test deploy/hostinger/experience-deployment-contract.test.cjs
       - name: Test IdP Hub contracts

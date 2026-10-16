@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate shared infrastructure compose
         run: |
+          node --test tools/local-knowledge/bootstrap-arango.test.cjs
           mkdir -p /tmp/seemplify-secrets/knowledge
           for name in arango-root arango-app arango-provisioner; do
             printf 'validation-only-secret-value-with-sufficient-length\n' > "/tmp/seemplify-secrets/knowledge/$name"
@@ -102,7 +103,7 @@ jobs:
               "$arango_url/_db/_system/_api/user/$username")
             if [[ "$status" == 200 ]]; then
               arango_curl --fail --silent --show-error --user "root:$root_password" \
-                --header 'content-type: application/json' --request PUT --data "$payload" \
+                --header 'content-type: application/json' --request PATCH --data "$payload" \
                 "$arango_url/_db/_system/_api/user/$username" >/dev/null
             else
               payload=$(jq -cn --arg user "$username" --arg passwd "$password" --arg owner "$extra" \

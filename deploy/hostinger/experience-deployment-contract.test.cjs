@@ -30,3 +30,10 @@ test('a separate SSH step verifies current running images and real Nomic readine
   assert.match(verify, /s\.activeEmbeddingProvider/);
   assert.match(verify, /seemplify-smoke/);
 });
+
+test('the production Arango provisioner preserves database grants when updating existing users', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/provision-experience-knowledge-hostinger.yml'), 'utf8');
+  const update = source.slice(source.indexOf('if [[ "$status" == 200 ]]'), source.indexOf('else', source.indexOf('if [[ "$status" == 200 ]]')));
+  assert.match(update, /--request PATCH --data "\$payload"/);
+  assert.doesNotMatch(update, /--request PUT/);
+});
