@@ -2,7 +2,8 @@
 
 ## Production target
 
-- VPS: `179.198.192.126` (`srv1907030`)
+- VPS: Hostinger KVM4, ID `1903452`, `191.215.40.99` (`srv1903452`)
+- Capacity: 4 vCPU, 16 GiB RAM, 200 GiB disk and 4 GiB swap
 - OS: Ubuntu 24.04 LTS
 - Public zone: `seemplifyai.com`
 - Runtime: Docker, single-node Swarm, Dokploy and Traefik
@@ -12,6 +13,22 @@
 
 Never copy protected environment values into Git, tickets, chat, screenshots or
 shell history. Password SSH is disabled; use the Hostinger root SSH key.
+
+Seemplify and Milo moved here from KVM8 on 16 October 2026. All application
+databases, Docker volumes, protected configuration, Dokploy state and Milo
+models were copied and verified before public DNS changed. Workspace's protected
+environment must retain `WORKSPACE_ANNOUNCED_IP=191.215.40.99`, and the core
+environment must retain `COTURN_EXTERNAL_IP=191.215.40.99`.
+
+Use the two-runner `github-runner/kvm4.compose.yml` profile and the bounded
+`seemplify-production` BuildKit worker. The older `kvm8` runner names and labels
+remain routing aliases. They do not identify the physical host.
+
+The former KVM8 at `179.198.192.126` retains recovery archives and a verified
+HTTPS forwarding edge for cached DNS. Its application containers are stopped
+with automatic restarts disabled and both Swarm services scaled to zero.
+Do not start its old applications or cancel it while the SMTP dependency below
+and recovery archive retention remain outstanding.
 
 ## Deployed applications
 
@@ -309,8 +326,19 @@ Inbound company mail remains on Google Workspace. Outbound product email uses:
 `Mail API -> Postal -> Postfix relay -> smtp-relay.gmail.com:587`
 
 The Google relay uses source-IP authorization, not a stored Google password.
-Its allowlist contains only `179.198.192.126`; the retired relay IP was removed
-after delivery succeeded. `MAIL_API_SEND_ENABLED=true` is active.
+Its allowlist still authorizes `179.198.192.126`. Pending the Google Workspace
+administrator's verification and approval of `191.215.40.99`, KVM4 uses a
+pinned SSH tunnel through the old approved IPv4 address. The tunnel binds only
+to the mail Docker network gateway and preserves Google's TLS hostname
+verification. `seemplify-mail-egress-bridge.service` runs on KVM4 and
+`seemplify-mail-ipv4-transport.service` runs on KVM8. The restricted forwarding
+key expires on 16 November 2026. Monitor these units and finish the allowlist
+change before that date. `MAIL_API_SEND_ENABLED=true` remains active.
+
+After approving the new IP, verify a direct SMTP envelope without sending
+DATA, remove the temporary `smtp-relay.gmail.com` ExtraHosts overrides from
+Postfix and Mail API, and verify mail readiness again before retiring the
+tunnel. Preserve the old route until direct verification succeeds.
 
 Enabled sender domains are `seemplifyai.com` and `aiinnigeria.com`. Postal's
 SPF, DKIM and aligned return-path checks pass for both, and controlled messages

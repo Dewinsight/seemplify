@@ -1,4 +1,4 @@
-name: Inspect KVM8 GitHub Actions Runners
+name: Inspect Production GitHub Actions Runners
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   inspect:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, dewinsight-kvm4-control]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +34,10 @@ jobs:
           source deploy/hostinger/github-actions-ssh-retry.sh
           hostinger_ssh_stdin "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
           set -euo pipefail
+
+          test "$(hostname)" = srv1903452
+          test "${BUILDX_BUILDER:-}" = seemplify-production
+          printf 'production_host=%s bounded_builder=%s\n' "$(hostname)" "$BUILDX_BUILDER"
 
           runner_containers=(
             github-actions-runner-seemplify-worker-1
