@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { applyGoalScore } = require('../services/goalScoringService');
+const { INDEX_KEY, INDEX_OPTIONS } = require('../services/goalIdempotencyIndex');
 
 const actorSchema = new mongoose.Schema({
   userId: String,
@@ -201,10 +202,9 @@ OKRSchema.index({ organizationId: 1, periodId: 1, status: 1 });
 OKRSchema.index({ organizationId: 1, period: 1, status: 1 });
 OKRSchema.index({ organizationId: 1, 'teamHierarchy.teamId': 1 });
 OKRSchema.index({ organizationId: 1, 'alignment.parentOKRId': 1 });
-OKRSchema.index(
-  { organizationId: 1, 'assignment.idempotencyKey': 1 },
-  { unique: true, sparse: true }
-);
+// Compound sparse indexes still include a document when organizationId exists,
+// so they incorrectly make every missing retry key collide within the tenant.
+OKRSchema.index(INDEX_KEY, INDEX_OPTIONS);
 
 OKRSchema.methods.captureVersion = function captureVersion(reason, actor = {}, changes = {}) {
   const nextVersion = Number(this.version || 0) + 1;

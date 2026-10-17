@@ -227,6 +227,9 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.db.dropDatabase();
+  // dropDatabase removes indexes too; route tests must exercise the same
+  // uniqueness constraints as a running production database.
+  await OKR.createIndexes();
   const now = new Date();
   const startDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
   const endDate = new Date(now.getTime() + 150 * 24 * 60 * 60 * 1000);
@@ -251,6 +254,22 @@ beforeEach(async () => {
 afterAll(async () => {
   await mongoose.disconnect();
   await mongo.stop();
+});
+
+test('HR can create several organization goals after individual and team goals in the same organization', async () => {
+  const create = (actor, type, title, extra = {}) => request(app).post('/api/okrs').set('x-test-actor', actor).send({
+    title, type, periodId: String(period._id),
+    objectives: [{ title, keyResults: [{ title: 'Measure the result', metricType: 'number', startValue: 0, targetValue: 10 }] }],
+    ...extra
+  });
+  await create('employee', 'individual', 'Existing individual goal').expect(201);
+  for (const title of ['First organization objective', 'Second organization objective']) {
+    const created = await create('hr', 'organization', title).expect(201);
+    expect(created.body.data).toMatchObject({ type: 'organization', organizationId: ORG_A, title });
+  }
+  await create('manager', 'team', 'Team objective', { teamId: 'team-a' }).expect(201);
+  await create('manager', 'organization', 'Unauthorized organization objective').expect(403);
+  expect(await OKR.countDocuments({ organizationId: ORG_A })).toBe(4);
 });
 
 test('employee future goal is approved and snapshotted immutably', async () => {
