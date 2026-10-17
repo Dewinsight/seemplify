@@ -1,5 +1,6 @@
 "use client"
 
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -37,7 +38,7 @@ import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 const jobFormSchema = z.object({
   title: z.string().min(2, {
-    message: "Job title must be at least 2 characters.",
+    message: "Title must be at least 2 characters.",
   }),
   department: z.string().min(1, {
     message: "Please select a department.",
@@ -46,19 +47,19 @@ const jobFormSchema = z.object({
     message: "Location must be at least 2 characters.",
   }),
   type: z.enum(['Full-time', 'Part-time', 'Contract', 'Internship', 'Freelance'], {
-    required_error: "Please select a job type.",
+    required_error: "Please select a type.",
   }),
   level: z.enum(['Entry', 'Mid', 'Senior', 'Lead', 'Executive'], {
-    required_error: "Please select a job level.",
+    required_error: "Please select a level.",
   }),
   description: z.string().min(10, {
-    message: "Job description must be at least 10 characters.",
+    message: "Description must be at least 10 characters.",
   }),
   requirements: z.string().min(10, {
-    message: "Job requirements must be at least 10 characters.",
+    message: "Requirements must be at least 10 characters.",
   }),
   responsibilities: z.string().min(10, {
-    message: "Job responsibilities must be at least 10 characters.",
+    message: "Responsibilities must be at least 10 characters.",
   }),
   experience: z.enum(['0-1', '1-3', '3-5', '5-10', '10+'], {
     required_error: "Please select experience requirement.",
@@ -121,6 +122,7 @@ const TAB_FIELD_MAPPING = {
 }
 
 export default function CreateJobPage() {
+  const workspace = useJobWorkspace();
   const router = useRouter()
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
   const { isFeatureEnabled } = useFeatureFlags()
@@ -202,7 +204,7 @@ export default function CreateJobPage() {
 
     try {
       // Step 1: Preparing job data
-      setCreationStep("Preparing job data...")
+      setCreationStep(workspace.copy("Preparing job data..."))
       await new Promise(resolve => setTimeout(resolve, 500))
 
       // Decode HTML entities from all text fields to prevent &amp; appearing as &amp; instead of &
@@ -210,6 +212,7 @@ export default function CreateJobPage() {
 
       // Transform form data to match API expectations
       const jobData: JobFormData = {
+        workflowType: workspace.workflowType,
         title: cleanedData.title,
         department: cleanedData.department,
         location: cleanedData.location,
@@ -239,13 +242,13 @@ export default function CreateJobPage() {
       };
 
       // Step 2: Creating job posting
-      setCreationStep("Creating job posting...")
+      setCreationStep(workspace.copy("Creating job posting..."))
       await new Promise(resolve => setTimeout(resolve, 300))
 
       const result = await createJob(jobData);
 
       // Step 3: Finalizing
-      setCreationStep("Finalizing job creation...")
+      setCreationStep(workspace.copy("Finalizing job creation..."))
       await new Promise(resolve => setTimeout(resolve, 300))
 
       setIsSubmitting(false);
@@ -265,7 +268,7 @@ export default function CreateJobPage() {
 
       if (!isCreditError) {
         // Show error modal for non-credit errors
-        setErrorDetails(error.message || "An unexpected error occurred while creating the job.");
+        setErrorDetails(error.message || workspace.copy("An unexpected error occurred while creating the job."));
         setShowErrorModal(true);
       }
 
@@ -287,12 +290,12 @@ export default function CreateJobPage() {
 
     // Validate required fields
     const missingFields: string[] = []
-    if (!title) missingFields.push("job title")
+    if (!title) missingFields.push(workspace.copy("job title"))
     if (!department) missingFields.push("department")
     if (!location) missingFields.push("location")
 
     if (missingFields.length > 0) {
-      const errorMessage = `Please fill in ${missingFields.join(", ")} before generating the job description.`
+      const errorMessage = ("Please fill in " + (missingFields.join(", ")) + workspace.copy(" before generating the job description."))
       setAiAssistantLimited(false)
       setAiAssistantError(errorMessage)
       toast({
@@ -341,11 +344,11 @@ export default function CreateJobPage() {
 
       toast({
         title: "Description Generated",
-        description: "AI has created a comprehensive job description based on your inputs.",
+        description: workspace.copy("AI has created a comprehensive job description based on your inputs."),
       })
     } catch (error: any) {
       setIsGeneratingDescription(false)
-      const errorMessage = messageFromAiFailure(error, "Failed to generate job description. Please try again.")
+      const errorMessage = messageFromAiFailure(error, workspace.copy("Failed to generate job description. Please try again."))
       setAiAssistantLimited(isUsageLimitFailure(error))
       setAiAssistantError(errorMessage)
       toast({
@@ -370,12 +373,12 @@ export default function CreateJobPage() {
 
     // Validate required fields
     const missingFields: string[] = []
-    if (!title) missingFields.push("job title")
+    if (!title) missingFields.push(workspace.copy("job title"))
     if (!department) missingFields.push("department")
     if (!location) missingFields.push("location")
 
     if (missingFields.length > 0) {
-      const errorMessage = `Please fill in ${missingFields.join(", ")} before generating the job requirements.`
+      const errorMessage = ("Please fill in " + (missingFields.join(", ")) + workspace.copy(" before generating the job requirements."))
       setAiAssistantLimited(false)
       setAiAssistantError(errorMessage)
       toast({
@@ -404,11 +407,11 @@ export default function CreateJobPage() {
 
       toast({
         title: "Requirements Generated",
-        description: "AI has created detailed job requirements based on your inputs.",
+        description: workspace.copy("AI has created detailed job requirements based on your inputs."),
       })
     } catch (error: any) {
       setIsGeneratingRequirements(false)
-      const errorMessage = messageFromAiFailure(error, "Failed to generate job requirements. Please try again.")
+      const errorMessage = messageFromAiFailure(error, workspace.copy("Failed to generate job requirements. Please try again."))
       setAiAssistantLimited(isUsageLimitFailure(error))
       setAiAssistantError(errorMessage)
       toast({
@@ -471,7 +474,7 @@ export default function CreateJobPage() {
   const handleViewJob = () => {
     setShowSuccessModal(false)
     if (createdJob) {
-      router.push(`/jobs/${createdJob._id}`)
+      router.push(`${workspace.basePath}/${createdJob._id}`)
     }
   }
 
@@ -488,7 +491,7 @@ export default function CreateJobPage() {
 
   const handleCancelJobCreation = () => {
     setShowErrorModal(false)
-    router.push('/jobs')
+    router.push(workspace.path("/jobs"))
   }
 
 
@@ -497,16 +500,15 @@ export default function CreateJobPage() {
     <div className="container mx-auto p-4 sm:p-6">
       <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Create New Job</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{workspace.copy("Create New Job")}</h1>
           <p className="text-muted-foreground text-sm sm:text-base">
-            Fill out the form below to create a new job posting.
-          </p>
+            {workspace.copy(" Fill out the form below to create a new job posting. ")}</p>
           {showProgress && (
             <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex items-center space-x-3">
                 <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
                 <div>
-                  <p className="text-sm font-medium text-blue-900">Creating your job posting...</p>
+                  <p className="text-sm font-medium text-blue-900">{workspace.copy("Creating your job posting...")}</p>
                   <p className="text-xs text-blue-600">{creationStep}</p>
                 </div>
               </div>
@@ -519,10 +521,9 @@ export default function CreateJobPage() {
         <div className={aiAssistantEnabled ? "w-full lg:w-2/3" : "w-full"}>
           <Card>
             <CardHeader>
-              <CardTitle>Job Details</CardTitle>
+              <CardTitle>{workspace.copy("Job Details")}</CardTitle>
               <CardDescription>
-                Enter the details for the new job posting. All fields marked with * are required.
-              </CardDescription>
+                {workspace.copy(" Enter the details for the new job posting. All fields marked with * are required. ")}</CardDescription>
             </CardHeader>
             <CardContent>
               <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
@@ -711,7 +712,7 @@ export default function CreateJobPage() {
 
                     <TabsContent value="description" className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-medium">Job Description *</h3>
+                        <h3 className="text-sm font-medium">{workspace.copy("Job Description *")}</h3>
                         {aiAssistantEnabled && <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -736,7 +737,7 @@ export default function CreateJobPage() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Generate a job description based on the title and department</p>
+                              <p>{workspace.copy("Generate a job description based on the title and department")}</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>}
@@ -792,7 +793,7 @@ export default function CreateJobPage() {
 
                     <TabsContent value="requirements" className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-medium">Job Requirements *</h3>
+                        <h3 className="text-sm font-medium">{workspace.copy("Job Requirements *")}</h3>
                         {aiAssistantEnabled && <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -817,7 +818,7 @@ export default function CreateJobPage() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Generate job requirements based on the title and department</p>
+                              <p>{workspace.copy("Generate job requirements based on the title and department")}</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>}
@@ -1000,10 +1001,9 @@ export default function CreateJobPage() {
                       {/* Public Job Settings */}
                       <div className="space-y-4 border-t pt-6">
                         <div>
-                          <h3 className="text-lg font-medium mb-1">Public Job Settings</h3>
+                          <h3 className="text-lg font-medium mb-1">{workspace.copy("Public Job Settings")}</h3>
                           <p className="text-sm text-muted-foreground">
-                            Control how external candidates can apply and manage your credit allocation
-                          </p>
+                            {workspace.copy(" Control how external candidates can apply and manage your credit allocation ")}</p>
                         </div>
 
                         <FormField
@@ -1107,8 +1107,7 @@ export default function CreateJobPage() {
                           ) : (
                             <>
                               <Plus className="mr-2 h-4 w-4" />
-                              Create Job Posting
-                            </>
+                              {workspace.copy(" Create Job Posting ")}</>
                           )}
                         </Button>
                       </div>
@@ -1126,7 +1125,7 @@ export default function CreateJobPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">AI Assistant</CardTitle>
-              <CardDescription>Let AI help you create an effective job posting</CardDescription>
+              <CardDescription>{workspace.copy("Let AI help you create an effective job posting")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-md bg-muted p-4">
@@ -1137,7 +1136,7 @@ export default function CreateJobPage() {
                 <ul className="space-y-3 text-sm">
                   <li className="flex items-start gap-2">
                     <Wand2 className="h-4 w-4 text-purple-500 mt-0.5 shrink-0" />
-                    <span>Generate job descriptions and requirements with one click</span>
+                    <span>{workspace.copy("Generate job descriptions and requirements with one click")}</span>
                   </li>
                 </ul>
               </div>
@@ -1175,8 +1174,7 @@ export default function CreateJobPage() {
                   ) : (
                     <Wand2 className="h-4 w-4" />
                   )}
-                  Generate Job Description
-                </Button>
+                  {workspace.copy(" Generate Job Description ")}</Button>
 
                 <Button
                   variant="outline"
@@ -1245,11 +1243,9 @@ export default function CreateJobPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
               <CheckCircle className="h-6 w-6" />
-              Job Created Successfully!
-            </DialogTitle>
+              {workspace.copy(" Job Created Successfully! ")}</DialogTitle>
             <DialogDescription>
-              Your job posting has been created and is now active.
-            </DialogDescription>
+              {workspace.copy(" Your job posting has been created and is now active. ")}</DialogDescription>
           </DialogHeader>
 
           <div className="py-6 text-center">
@@ -1272,8 +1268,7 @@ export default function CreateJobPage() {
               className="flex-1"
               onClick={handleViewJob}
             >
-              View Job
-            </Button>
+              {workspace.copy(" View Job ")}</Button>
             <Button
               variant="outline"
               className="flex-1"
@@ -1291,11 +1286,9 @@ export default function CreateJobPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <XCircle className="h-6 w-6" />
-              Job Creation Failed
-            </DialogTitle>
+              {workspace.copy(" Job Creation Failed ")}</DialogTitle>
             <DialogDescription>
-              We encountered an error while creating your job posting.
-            </DialogDescription>
+              {workspace.copy(" We encountered an error while creating your job posting. ")}</DialogDescription>
           </DialogHeader>
 
           <div className="py-6 text-center">
@@ -1304,7 +1297,7 @@ export default function CreateJobPage() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm font-medium">Failed to create job posting</p>
+              <p className="text-sm font-medium">{workspace.copy("Failed to create job posting")}</p>
               {errorDetails && (
                 <p className="text-xs text-muted-foreground px-4">
                   {errorDetails}

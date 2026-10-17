@@ -1,5 +1,8 @@
 "use client";
 
+
+import { jobRecordPath } from "@/lib/jobWorkspace";
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Users } from 'lucide-react';
@@ -11,6 +14,7 @@ import { CreditErrorDialog } from '@/components/ui/credit-error-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export default function ScheduleMultiCandidatePage() {
+  const workspace = useJobWorkspace();
   const params = useParams();
   const router = useRouter();
   const { creditError, showCreditDialog, setShowCreditDialog } = useCreditError();
@@ -29,11 +33,15 @@ export default function ScheduleMultiCandidatePage() {
     try {
       setLoading(true);
       const data = await getJobById(jobId);
+      if ((data.workflowType || 'recruitment') !== workspace.workflowType) {
+        router.replace(jobRecordPath(data, '/schedule-multi') + window.location.search);
+        return;
+      }
       setJobData(data);
     } catch (error) {
       console.error('Error loading job:', error);
-      toast.error('Failed to load job details');
-      router.push(`/jobs/${jobId}`);
+      toast.error(workspace.copy("Failed to load job details"));
+      router.push(`${workspace.basePath}/${jobId}`);
     } finally {
       setLoading(false);
     }
@@ -42,11 +50,11 @@ export default function ScheduleMultiCandidatePage() {
   const handleScheduled = (result: any) => {
     console.log('Multi-candidate interviews scheduled:', result);
     toast.success(`Successfully scheduled ${result.successCount || 0} interviews!`);
-    router.push(`/jobs/${jobId}?tab=pipeline`);
+    router.push(`${workspace.basePath}/${jobId}?tab=pipeline`);
   };
 
   const handleCancel = () => {
-    router.push(`/jobs/${jobId}?tab=pipeline`);
+    router.push(`${workspace.basePath}/${jobId}?tab=pipeline`);
   };
 
   if (loading) {
@@ -54,7 +62,7 @@ export default function ScheduleMultiCandidatePage() {
       <div className="min-h-screen bg-gray-50/50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading job details...</p>
+          <p className="text-muted-foreground">{workspace.copy("Loading job details...")}</p>
         </div>
       </div>
     );
@@ -71,10 +79,9 @@ export default function ScheduleMultiCandidatePage() {
           <DialogHeader className="sr-only">
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Multi-Candidate Interview Scheduler
-            </DialogTitle>
+              {workspace.copy(" Multi-Candidate Interview Scheduler ")}</DialogTitle>
             <DialogDescription>
-              Schedule multiple candidates in one session for {jobData.title}.
+              {workspace.copy(" Schedule multiple candidates in one session for ")}{jobData.title}.
             </DialogDescription>
           </DialogHeader>
 

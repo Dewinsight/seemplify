@@ -1,5 +1,6 @@
 "use client"
 
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import type React from "react"
 import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
@@ -45,6 +46,7 @@ interface UploadedFile {
 }
 
 export default function BulkJobUploadPage() {
+  const workspace = useJobWorkspace();
   const router = useRouter()
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -118,6 +120,7 @@ export default function BulkJobUploadPage() {
         // Create FormData and upload
         const formData = new FormData();
         formData.append("jobsFile", actualFile);
+        formData.append("workflowType", workspace.workflowType);
         
         const result = await bulkUploadJobs(formData);
         
@@ -133,14 +136,14 @@ export default function BulkJobUploadPage() {
                     ...f, 
                     status: "success", 
                     progress: 100,
-                    jobTitle: `${successCount} jobs created`,
+                    jobTitle: ("" + (successCount) + workspace.copy(" jobs created")),
                     department: `${errorCount} failed`,
                   }
                 : f
             )
           );
         } else {
-          throw new Error("No jobs were successfully created");
+          throw new Error(workspace.copy("No jobs were successfully created"));
         }
 
       } catch (error: any) {
@@ -155,7 +158,7 @@ export default function BulkJobUploadPage() {
                   ...f, 
                   status: "error", 
                   progress: 0,
-                  errorMessage: isCreditError ? "Insufficient credits" : (error.message || "Failed to process jobs file")
+                  errorMessage: isCreditError ? "Insufficient credits" : (error.message || workspace.copy("Failed to process jobs file"))
                 }
               : f
           )
@@ -247,7 +250,7 @@ export default function BulkJobUploadPage() {
       case "uploading":
         return "Uploading..."
       case "processing":
-        return "Processing jobs..."
+        return workspace.copy("Processing jobs...")
       case "success":
         return `Success: ${file.jobTitle} (${file.department})`
       case "error":
@@ -297,20 +300,18 @@ export default function BulkJobUploadPage() {
     <div className="container mx-auto py-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Bulk Job Upload</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{workspace.copy("Bulk Job Upload")}</h1>
           <p className="text-muted-foreground">
-            Upload CSV or Excel files to create multiple job postings at once.
-          </p>
+            {workspace.copy(" Upload CSV or Excel files to create multiple job postings at once. ")}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={downloadTemplate}>
             <Download className="mr-2 h-4 w-4" />
             Download Template
           </Button>
-          <Button variant="outline" onClick={() => router.push("/jobs")}>
+          <Button variant="outline" onClick={() => router.push(workspace.path("/jobs"))}>
             <Briefcase className="mr-2 h-4 w-4" />
-            View All Jobs
-          </Button>
+            {workspace.copy(" View All Jobs ")}</Button>
         </div>
       </div>
 
@@ -320,12 +321,9 @@ export default function BulkJobUploadPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />
-              Upload Job Files
-            </CardTitle>
+              {workspace.copy(" Upload Job Files ")}</CardTitle>
             <CardDescription>
-              Select CSV or Excel files containing job data. Each row will create a new job posting.
-              Download the template above to see the required format.
-            </CardDescription>
+              {workspace.copy(" Select CSV or Excel files containing job data. Each row will create a new job posting. Download the template above to see the required format. ")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div
@@ -338,7 +336,7 @@ export default function BulkJobUploadPage() {
                   <FileSpreadsheet className="w-6 h-6 text-gray-600" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  {files.length === 0 ? "Upload Job Files" : "Add More Files"}
+                  {files.length === 0 ? workspace.copy("Upload Job Files") : "Add More Files"}
                 </h3>
                 <p className="text-sm text-gray-500 mb-6">
                   Drag and drop your CSV or Excel files here, or click to browse.
@@ -422,11 +420,10 @@ export default function BulkJobUploadPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => router.push("/jobs")}
+                            onClick={() => router.push(workspace.path("/jobs"))}
                           >
                             <Eye className="h-4 w-4 mr-1" />
-                            View Jobs
-                          </Button>
+                            {workspace.copy(" View Jobs ")}</Button>
                         )}
                         {file.status !== "processing" && (
                           <Button
@@ -468,10 +465,9 @@ export default function BulkJobUploadPage() {
                 </div>
               </div>
               <div className="mt-6 flex justify-center gap-4">
-                <Button onClick={() => router.push("/jobs")}>
+                <Button onClick={() => router.push(workspace.path("/jobs"))}>
                   <Briefcase className="mr-2 h-4 w-4" />
-                  View All Jobs
-                </Button>
+                  {workspace.copy(" View All Jobs ")}</Button>
                 <Button variant="outline" onClick={handleReset}>
                   <Plus className="mr-2 h-4 w-4" />
                   Upload More Files
@@ -490,4 +486,4 @@ export default function BulkJobUploadPage() {
       />
     </div>
   )
-} 
+}

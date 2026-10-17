@@ -1,5 +1,7 @@
 'use client'
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -43,6 +45,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 export default function FullFeedbackPage() {
+  const workspace = useJobWorkspace();
   const params = useParams()
   const router = useRouter()
   const jobId = params.jobId as string
@@ -227,10 +230,9 @@ export default function FullFeedbackPage() {
       <div className="min-h-screen p-8">
         <div className="max-w-4xl mx-auto">
           <Button variant="ghost" asChild className="mb-6">
-            <Link href={`/jobs/${jobId}`}>
+            <Link href={`${workspace.basePath}/${jobId}`}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Job Detail
-            </Link>
+              {workspace.copy(" Back to Job Detail ")}</Link>
           </Button>
 
           <Card>
@@ -238,8 +240,7 @@ export default function FullFeedbackPage() {
               <MessageSquare className="h-16 w-16 mx-auto mb-4 text-gray-300" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No Feedback Yet</h3>
               <p className="text-gray-500">
-                No feedback has been submitted for this job position yet.
-              </p>
+                {workspace.copy(" No feedback has been submitted for this job position yet. ")}</p>
             </CardContent>
           </Card>
         </div>
@@ -256,10 +257,9 @@ export default function FullFeedbackPage() {
         {/* Header */}
         <div className="mb-6">
           <Button variant="ghost" asChild className="mb-4">
-            <Link href={`/jobs/${jobId}`}>
+            <Link href={`${workspace.basePath}/${jobId}`}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Job Detail
-            </Link>
+              {workspace.copy(" Back to Job Detail ")}</Link>
           </Button>
 
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -371,7 +371,7 @@ export default function FullFeedbackPage() {
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">{stage.stageName}</h2>
                     <p className="text-sm text-gray-600">
-                      {stage.candidates.length} candidate{stage.candidates.length !== 1 ? 's' : ''} • 
+                      {stage.candidates.length} {workspace.copy(" candidate")}{stage.candidates.length !== 1 ? 's' : ''} •
                       {' '}{stage.candidates.reduce((sum, c) => sum + c.feedback.length, 0)} feedback item{stage.candidates.reduce((sum, c) => sum + c.feedback.length, 0) !== 1 ? 's' : ''}
                     </p>
                   </div>

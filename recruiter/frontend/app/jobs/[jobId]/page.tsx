@@ -1,5 +1,7 @@
 "use client"
 
+import { jobRecordPath } from "@/lib/jobWorkspace";
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
@@ -128,6 +130,7 @@ import type { CandidateEmailTemplateType } from "@/lib/candidateEmailTemplatePre
 import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 function JobDetailInnerPage() {
+  const workspace = useJobWorkspace();
   const params = useParams()
   const router = useRouter()
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
@@ -429,6 +432,10 @@ function JobDetailInnerPage() {
       }
 
       const data = await getJobById(currentJobId)
+      if ((data.workflowType || 'recruitment') !== workspace.workflowType) {
+        router.replace(jobRecordPath(data, '') + window.location.search);
+        return;
+      }
       // Decode HTML entities in job data for display
       const decodedData = decodeObjectHtmlEntities(data)
       // Calculate total applicants: shortlist (excluding moved_to_pipeline) + pipeline
@@ -442,11 +449,11 @@ function JobDetailInnerPage() {
       console.error("Error fetching job data:", e)
       // Avoid blanking the entire page on background refresh failures.
       if (shouldShowLoading) {
-        setError(e.message || "An error occurred while fetching job data.")
+        setError(e.message || workspace.copy("An error occurred while fetching job data."))
       }
       toast({
-        title: "Error Loading Job",
-        description: e.message || "Failed to load job details.",
+        title: workspace.copy("Error Loading Job"),
+        description: e.message || workspace.copy("Failed to load job details."),
         variant: "destructive",
       })
     } finally {
@@ -510,14 +517,14 @@ function JobDetailInnerPage() {
     try {
       await deleteJob(jobData?._id)
       toast({
-        title: "Job Deleted",
-        description: "The job has been successfully deleted.",
+        title: workspace.copy("Job Deleted"),
+        description: workspace.copy("The job has been successfully deleted."),
       })
-      router.push('/jobs')
+      router.push(workspace.path("/jobs"))
     } catch (error: any) {
       toast({
         title: "Delete Failed",
-        description: error.message || "Failed to delete the job.",
+        description: error.message || workspace.copy("Failed to delete the job."),
         variant: "destructive",
       })
     } finally {
@@ -562,7 +569,7 @@ function JobDetailInnerPage() {
       await fetchCreditInfo()
       
       toast({
-        title: isPublic ? "Job Made Public" : "Job Made Private",
+        title: isPublic ? workspace.copy("Job Made Public") : workspace.copy("Job Made Private"),
         description: isPublic 
           ? `Credits reserved for ${candidateApplyLimit} applications`
           : "Unused credits have been refunded",
@@ -572,19 +579,19 @@ function JobDetailInnerPage() {
       
       // Parse error response for better user feedback
       let errorTitle = "Update Failed"
-      let errorMessage = "Failed to update job status."
+      let errorMessage = workspace.copy("Failed to update job status.")
       
       if (error.message) {
         // Check for specific error codes
         if (error.message.includes('INSUFFICIENT_CREDITS')) {
           errorTitle = "Insufficient Credits"
-          errorMessage = "You don't have enough credits to make this job public. Please purchase more credits or reduce the candidate limit."
+          errorMessage = workspace.copy("You don't have enough credits to make this job public. Please purchase more credits or reduce the candidate limit.")
         } else if (error.message.includes('INVALID_APPLY_LIMIT')) {
-          errorTitle = "Invalid Candidate Limit"
-          errorMessage = "Please set a valid candidate apply limit (minimum 1)."
+          errorTitle = workspace.copy("Invalid Candidate Limit")
+          errorMessage = workspace.copy("Please set a valid candidate apply limit (minimum 1).")
         } else if (error.message.includes('validation failed')) {
           errorTitle = "Validation Error"
-          errorMessage = "There was a problem saving the job settings. Please try again or contact support."
+          errorMessage = workspace.copy("There was a problem saving the job settings. Please try again or contact support.")
         } else {
           errorMessage = error.message
         }
@@ -638,7 +645,7 @@ function JobDetailInnerPage() {
       console.error('Error loading job interviews:', error)
       toast({
         title: "Error Loading Interviews",
-        description: error.message || "Failed to load job interviews.",
+        description: error.message || workspace.copy("Failed to load job interviews."),
         variant: "destructive",
       })
     } finally {
@@ -931,7 +938,7 @@ function JobDetailInnerPage() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <Loader2 className="animate-spin h-8 w-8 text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading job details...</p>
+          <p className="text-muted-foreground">{workspace.copy("Loading job details...")}</p>
         </div>
       </div>
     )
@@ -941,13 +948,12 @@ function JobDetailInnerPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
         <div className="max-w-md">
-          <h2 className="text-2xl font-semibold mb-2">Job Not Found</h2>
+          <h2 className="text-2xl font-semibold mb-2">{workspace.copy("Job Not Found")}</h2>
           <p className="text-muted-foreground mb-4">
-            {error || "The job you're looking for doesn't exist or has been removed."}
+            {error || workspace.copy("The job you're looking for doesn't exist or has been removed.")}
           </p>
-          <Button onClick={() => router.push('/jobs')}>
-            Back to Jobs
-          </Button>
+          <Button onClick={() => router.push(workspace.path("/jobs"))}>
+            {workspace.copy(" Back to Jobs ")}</Button>
         </div>
       </div>
     )
@@ -980,7 +986,7 @@ function JobDetailInnerPage() {
         }}
         isMobile={isMobile}
         onBack={() => router.back()}
-        onEdit={() => router.push(`/jobs/${jobData?._id}/edit`)}
+        onEdit={() => router.push(`${workspace.basePath}/${jobData?._id}/edit`)}
         onDelete={handleDeleteJob}
         onExportReport={handleExportPipelineReport}
         onEmailSettings={() => {
@@ -998,7 +1004,7 @@ function JobDetailInnerPage() {
       {aiInterviewsEnabled && (
         <div className="mx-auto flex w-full max-w-screen-2xl justify-end px-4 pt-4 sm:px-6 lg:px-8">
           <Button asChild className="w-full sm:w-auto">
-            <Link href={`/ai-interviews?jobId=${jobData._id}`}>
+            <Link href={`/ai-interviews?jobId=${jobData._id}&workflowType=${workspace.workflowType}`}>
               <Bot className="mr-2 h-4 w-4" />
               Create AI Interview
             </Link>
@@ -1029,8 +1035,7 @@ function JobDetailInnerPage() {
                     <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-t-lg">
                       <CardTitle className="text-xl font-semibold flex items-center gap-2">
                         <FileText className="h-5 w-5" />
-                        Job Details
-                      </CardTitle>
+                        {workspace.copy(" Job Details ")}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4 sm:space-y-6 pt-4 sm:pt-6 px-3 sm:px-4 lg:px-6">
                         {/* Public Job Application Management */}
@@ -1058,8 +1063,8 @@ function JobDetailInnerPage() {
                               </div>
                               <p className="text-sm text-gray-600 dark:text-gray-400">
                                 {jobData?.isPublic
-                                  ? 'Anyone can apply through your public job link'
-                                  : 'Applications can only be added by your hiring team'}
+                                  ? workspace.copy("Anyone can apply through your public job link")
+                                  : workspace.copy("Applications can only be added by your hiring team")}
                               </p>
                             </div>
                             <div className="flex items-center gap-3">
@@ -1081,7 +1086,7 @@ function JobDetailInnerPage() {
                               {jobData?.publicUrl ? (
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2">
-                                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Public Job Link:</label>
+                                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{workspace.copy("Public Job Link:")}</label>
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -1159,8 +1164,7 @@ function JobDetailInnerPage() {
                                     className="w-full"
                                   >
                                     <ExternalLink className="h-4 w-4 mr-2" />
-                                    Preview Public Job Page
-                                  </Button>
+                                    {workspace.copy(" Preview Public Job Page ")}</Button>
                                 </div>
                               ) : (
                                 <div className="text-center py-4">
@@ -1169,8 +1173,7 @@ function JobDetailInnerPage() {
                                     <span className="text-sm font-medium">Generating public link...</span>
                                   </div>
                                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                                    Your public job link will be available shortly
-                                  </p>
+                                    {workspace.copy(" Your public job link will be available shortly ")}</p>
                                 </div>
                               )}
                             </div>
@@ -1209,7 +1212,7 @@ function JobDetailInnerPage() {
                               <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">Job Type</p>
+                              <p className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">{workspace.copy("Job Type")}</p>
                               <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.type}</p>
                             </div>
                           </div>
@@ -1521,8 +1524,7 @@ function JobDetailInnerPage() {
                           </div>
                           <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">🎯 Ready to interview?</h3>
                           <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
-                            Create interview questions to help evaluate candidates for this position.
-                          </p>
+                            {workspace.copy(" Create interview questions to help evaluate candidates for this position. ")}</p>
                           <div className="flex flex-wrap justify-center gap-3">
                             <Button 
                               onClick={() => setShowAdvancedGenerator(true)}
@@ -1930,8 +1932,7 @@ function JobDetailInnerPage() {
                                   <span className="truncate">Pipeline Rejection Center</span>
                                 </h3>
                                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                                  Reject selected candidates or reject everyone in a chosen stage from one place.
-                                </p>
+                                  {workspace.copy(" Reject selected candidates or reject everyone in a chosen stage from one place. ")}</p>
                               </div>
                               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                                 <Button
@@ -1999,11 +2000,10 @@ function JobDetailInnerPage() {
                         <CardHeader className="border-b px-4 sm:px-6">
                           <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
                             <Mail className="h-5 w-5 flex-shrink-0" />
-                            <span className="truncate">Customize Candidate Emails</span>
+                            <span className="truncate">{workspace.copy("Customize Candidate Emails")}</span>
                           </CardTitle>
                           <CardDescription className="text-sm">
-                            Rejection, stage movement, shortlist, and application emails for this job
-                          </CardDescription>
+                            {workspace.copy(" Rejection, stage movement, shortlist, and application emails for this job ")}</CardDescription>
                         </CardHeader>
                         <CardContent className="p-4 sm:p-6">
                           <JobEmailSettings
@@ -2108,7 +2108,7 @@ function JobDetailInnerPage() {
                                 const scheduledDate = new Date(interview.scheduledAt);
                                 const candidateName = interview.candidateId?.firstName && interview.candidateId?.lastName 
                                   ? `${interview.candidateId.firstName} ${interview.candidateId.lastName}`
-                                  : interview.candidateId?.email || 'Unknown Candidate';
+                                  : interview.candidateId?.email || workspace.copy("Unknown Candidate");
                                 
                                 return (
                                   <Card key={interview._id} className="border border-gray-200 hover:border-emerald-300 transition-colors dark:border-slate-700 dark:hover:border-emerald-600">
@@ -2198,8 +2198,7 @@ function JobDetailInnerPage() {
                             <span className="truncate">Feedback Form Management</span>
                           </CardTitle>
                           <CardDescription className="text-purple-100 text-sm">
-                            Configure job settings and manage organization templates & custom fields
-                          </CardDescription>
+                            {workspace.copy(" Configure job settings and manage organization templates & custom fields ")}</CardDescription>
                         </CardHeader>
                         <CardContent className="p-4 sm:p-6">
                           <FeedbackFormSettings jobId={jobData?._id || ''} />
@@ -2238,7 +2237,7 @@ function JobDetailInnerPage() {
                         className="mb-4 sm:mb-6"
                       >
                         <MobileStatCard
-                          title="Applicants"
+                          title={workspace.copy("Applicants")}
                           value={jobData?.applicantCount || 0}
                           icon={<Users className="h-4 w-4 text-blue-600" />}
                           trend="up"
@@ -2314,7 +2313,7 @@ function JobDetailInnerPage() {
                             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
                               <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                             </div>
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Job Readiness</h3>
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">{workspace.copy("Job Readiness")}</h3>
                             <p className="text-2xl sm:text-3xl font-bold text-green-600 mb-1">
                               {Math.round(((jobData?.description ? 25 : 0) + 
                                          (jobData?.requirements ? 25 : 0) + 
@@ -2359,9 +2358,9 @@ function JobDetailInnerPage() {
       <Dialog open={showEmailSettingsDialog} onOpenChange={setShowEmailSettingsDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Customize Candidate Emails</DialogTitle>
+            <DialogTitle>{workspace.copy("Customize Candidate Emails")}</DialogTitle>
             <DialogDescription>
-              Edit the message sent to candidates for {jobData?.title || 'this job'}
+              {workspace.copy(" Edit the message sent to candidates for ")}{jobData?.title || workspace.copy("this job")}
             </DialogDescription>
           </DialogHeader>
           <JobEmailSettings
@@ -2381,8 +2380,7 @@ function JobDetailInnerPage() {
           <DialogHeader>
             <DialogTitle>Pipeline Rejection Center</DialogTitle>
             <DialogDescription>
-              Select individual pipeline candidates or reject everyone in a selected scope.
-            </DialogDescription>
+              {workspace.copy(" Select individual pipeline candidates or reject everyone in a selected scope. ")}</DialogDescription>
           </DialogHeader>
           <PipelineEmailManagementTab
             jobId={jobData?._id}

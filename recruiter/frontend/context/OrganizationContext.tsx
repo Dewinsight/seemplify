@@ -357,6 +357,7 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           // Only reload if we're on a page that needs fresh organization data
           if (window.location.pathname.includes('/dashboard') || 
               window.location.pathname.includes('/jobs') || 
+              window.location.pathname.includes('/employee-assessments') ||
               window.location.pathname.includes('/candidates')) {
             console.log('🔄 Refreshing page for organization-specific content...');
             window.location.reload();

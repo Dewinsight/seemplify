@@ -1,5 +1,6 @@
 "use client"
 
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -50,6 +51,7 @@ export function InterviewSetupTab({
   onInterviewScheduled,
   onNavigateToShortlist,
 }: InterviewSetupTabProps) {
+  const workspace = useJobWorkspace();
   const [schedulerMode, setSchedulerMode] = useState<SchedulerMode>('none')
   
   // Selection state
@@ -101,7 +103,7 @@ export function InterviewSetupTab({
       console.log(`📊 Loaded ${candidatesData?.length || 0} job-specific candidates for selection`)
     } catch (error) {
       console.error('Error loading candidates:', error)
-      toast.error('Failed to load candidates')
+      toast.error(workspace.copy("Failed to load candidates"))
       setCandidates([])
     } finally {
       setLoadingCandidates(false)
@@ -132,12 +134,12 @@ export function InterviewSetupTab({
         <DialogContent className="w-[98vw] max-w-[1600px] h-[96vh] max-h-[96vh] p-0 overflow-hidden multi-step-scheduler-portal">
           <DialogHeader className="sr-only">
             <DialogTitle>
-              {schedulerMode === 'single' ? 'Single Interview Scheduler' : 'Multi-Candidate Interview Scheduler'}
+              {schedulerMode === 'single' ? 'Single Interview Scheduler' : workspace.copy("Multi-Candidate Interview Scheduler")}
             </DialogTitle>
             <DialogDescription>
               {schedulerMode === 'single'
-                ? `Schedule an interview for ${selectedCandidateData ? `${selectedCandidateData.firstName} ${selectedCandidateData.lastName}` : 'the selected candidate'}`
-                : `Schedule a multi-candidate interview session for ${jobTitle}`}
+                ? `Schedule an interview for ${selectedCandidateData ? `${selectedCandidateData.firstName} ${selectedCandidateData.lastName}` : workspace.copy("the selected candidate")}`
+                : (workspace.copy("Schedule a multi-candidate interview session for ") + (jobTitle) + "")}
             </DialogDescription>
           </DialogHeader>
 
@@ -195,8 +197,7 @@ export function InterviewSetupTab({
                     <Badge variant="secondary" className="bg-blue-100 text-blue-700 text-xs">Standard</Badge>
                   </div>
                   <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                    Schedule one candidate at a time with personalized scheduling
-                  </p>
+                    {workspace.copy(" Schedule one candidate at a time with personalized scheduling ")}</p>
                 </div>
               </div>
 
@@ -205,22 +206,20 @@ export function InterviewSetupTab({
                 {/* Candidate Selection */}
                 <div className="space-y-2">
                   <Label htmlFor="single-candidate-select" className="text-xs sm:text-sm font-medium">
-                    Select Candidate <span className="text-red-500">*</span>
+                    {workspace.copy(" Select Candidate ")}<span className="text-red-500">*</span>
                   </Label>
                   {loadingCandidates ? (
                     <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading candidates...
-                    </div>
+                      {workspace.copy(" Loading candidates... ")}</div>
                   ) : candidates.length === 0 ? (
                     <div className="flex flex-col gap-2 p-4 text-xs sm:text-sm text-amber-600 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
                       <div className="flex items-center gap-2">
                         <AlertCircle className="h-4 w-4" />
-                        <span className="font-medium">No candidates available for interview</span>
+                        <span className="font-medium">{workspace.copy("No candidates available for interview")}</span>
                       </div>
                       <p className="text-xs text-amber-600/80 dark:text-amber-400/80 ml-6">
-                        Add candidates to the pipeline or shortlist first
-                      </p>
+                        {workspace.copy(" Add candidates to the pipeline or shortlist first ")}</p>
                     </div>
                   ) : (
                     <>
@@ -241,7 +240,7 @@ export function InterviewSetupTab({
                                 </div>
                               )
                             })()
-                          : "Select candidate..."}
+                          : workspace.copy("Select candidate...")}
                         <Users className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
 
@@ -249,10 +248,9 @@ export function InterviewSetupTab({
                       <Dialog open={candidateDialogOpen} onOpenChange={setCandidateDialogOpen}>
                         <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
                           <DialogHeader>
-                            <DialogTitle>Select Candidate</DialogTitle>
+                            <DialogTitle>{workspace.copy("Select Candidate")}</DialogTitle>
                             <DialogDescription>
-                              Choose a candidate from the job pipeline or shortlist
-                            </DialogDescription>
+                              {workspace.copy(" Choose a candidate from the job pipeline or shortlist ")}</DialogDescription>
                           </DialogHeader>
 
                           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'pipeline' | 'shortlist')}>
@@ -264,8 +262,7 @@ export function InterviewSetupTab({
                             <TabsContent value="pipeline" className="space-y-4 mt-4">
                               <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4">
                                 <p className="text-sm text-emerald-800 dark:text-emerald-200">
-                                  Showing pipeline candidates for this job
-                                </p>
+                                  {workspace.copy(" Showing pipeline candidates for this job ")}</p>
                               </div>
 
                               <div>
@@ -280,8 +277,7 @@ export function InterviewSetupTab({
                               <ScrollArea className="h-[300px] border rounded-lg p-4">
                                 {filteredPipelineCandidates.length === 0 ? (
                                   <p className="text-center text-muted-foreground py-8">
-                                    No pipeline candidates found
-                                  </p>
+                                    {workspace.copy(" No pipeline candidates found ")}</p>
                                 ) : (
                                   <div className="space-y-2">
                                     {filteredPipelineCandidates.map(candidate => (
@@ -328,8 +324,7 @@ export function InterviewSetupTab({
                               {/* Helpful message */}
                               <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
                                 <p className="text-sm text-amber-800 dark:text-amber-200 mb-2">
-                                  Don't see the candidate you want? Add them to the shortlist first.
-                                </p>
+                                  {workspace.copy(" Don't see the candidate you want? Add them to the shortlist first. ")}</p>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -344,8 +339,7 @@ export function InterviewSetupTab({
                                   }}
                                   className="text-xs"
                                 >
-                                  Go to Job Shortlist
-                                </Button>
+                                  {workspace.copy(" Go to Job Shortlist ")}</Button>
                               </div>
 
                               <div className="flex justify-end gap-2">
@@ -359,16 +353,14 @@ export function InterviewSetupTab({
                                   }}
                                   disabled={!selectedCandidate}
                                 >
-                                  Select Candidate
-                                </Button>
+                                  {workspace.copy(" Select Candidate ")}</Button>
                               </div>
                             </TabsContent>
 
                             <TabsContent value="shortlist" className="space-y-4 mt-4">
                               <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
                                 <p className="text-sm text-purple-800 dark:text-purple-200">
-                                  Showing shortlisted candidates for this job
-                                </p>
+                                  {workspace.copy(" Showing shortlisted candidates for this job ")}</p>
                               </div>
 
                               <div>
@@ -383,8 +375,7 @@ export function InterviewSetupTab({
                               <ScrollArea className="h-[300px] border rounded-lg p-4">
                                 {filteredShortlistCandidates.length === 0 ? (
                                   <p className="text-center text-muted-foreground py-8">
-                                    No shortlisted candidates found
-                                  </p>
+                                    {workspace.copy(" No shortlisted candidates found ")}</p>
                                 ) : (
                                   <div className="space-y-2">
                                     {filteredShortlistCandidates.map(candidate => (
@@ -436,8 +427,7 @@ export function InterviewSetupTab({
                               {/* Helpful message */}
                               <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
                                 <p className="text-sm text-amber-800 dark:text-amber-200 mb-2">
-                                  Don't see the candidate you want? Add them to the shortlist first.
-                                </p>
+                                  {workspace.copy(" Don't see the candidate you want? Add them to the shortlist first. ")}</p>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -452,8 +442,7 @@ export function InterviewSetupTab({
                                   }}
                                   className="text-xs"
                                 >
-                                  Go to Job Shortlist
-                                </Button>
+                                  {workspace.copy(" Go to Job Shortlist ")}</Button>
                               </div>
 
                               <div className="flex justify-end gap-2">
@@ -467,8 +456,7 @@ export function InterviewSetupTab({
                                   }}
                                   disabled={!selectedCandidate}
                                 >
-                                  Select Candidate
-                                </Button>
+                                  {workspace.copy(" Select Candidate ")}</Button>
                               </div>
                             </TabsContent>
                           </Tabs>
@@ -537,7 +525,7 @@ export function InterviewSetupTab({
                   {!canStartSingle ? (
                     <>
                       <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                      <span className="text-xs sm:text-sm">Select Candidate & Stage</span>
+                      <span className="text-xs sm:text-sm">{workspace.copy("Select Candidate & Stage")}</span>
                     </>
                   ) : (
                     <>
@@ -576,11 +564,9 @@ export function InterviewSetupTab({
                 </div>
                 <div className="flex-1">
                   <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100 mb-1 sm:mb-2">
-                    Multi-Candidate Interview
-                  </h3>
+                    {workspace.copy(" Multi-Candidate Interview ")}</h3>
                   <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                    Interview multiple candidates back-to-back in one session
-                  </p>
+                    {workspace.copy(" Interview multiple candidates back-to-back in one session ")}</p>
                 </div>
               </div>
 
@@ -621,7 +607,7 @@ export function InterviewSetupTab({
                 {/* Info */}
                 <div className="flex items-start gap-2 text-xs text-muted-foreground bg-orange-50/50 dark:bg-orange-950/20 p-2 rounded">
                   <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                  <span>You'll add multiple candidates in the next step</span>
+                  <span>{workspace.copy("You'll add multiple candidates in the next step")}</span>
                 </div>
               </div>
 
@@ -637,7 +623,7 @@ export function InterviewSetupTab({
                 </div>
                 <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
-                  <span>15-90 min slots per candidate</span>
+                  <span>{workspace.copy("15-90 min slots per candidate")}</span>
                 </div>
               </div>
 
@@ -669,9 +655,7 @@ export function InterviewSetupTab({
       {/* Info Footer */}
       <div className="text-center text-xs sm:text-sm text-muted-foreground bg-gray-50 dark:bg-slate-900/50 rounded-lg p-3 sm:p-4 max-w-full sm:max-w-3xl mx-auto">
         <p>
-          💡 <span className="font-medium">Tip:</span> Select the interview stage first, then choose your scheduling type. 
-          Multi-candidate interviews use a shared meeting link with individual time slots - perfect for screening rounds!
-        </p>
+          💡 <span className="font-medium">Tip:</span> {workspace.copy(" Select the interview stage first, then choose your scheduling type. Multi-candidate interviews use a shared meeting link with individual time slots - perfect for screening rounds! ")}</p>
       </div>
       
       {/* No stages warning */}

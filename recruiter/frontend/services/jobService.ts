@@ -1,7 +1,9 @@
 import { apiRequest, getAuthHeaders } from './apiConfig';
 import { handleApiError } from '../utils/errorHandlers';
+import type { JobWorkflowType } from '@/lib/jobWorkspace';
 
 export interface JobData {
+  workflowType?: JobWorkflowType;
   _id: string;
   organization?: string; // Organization ID
   title: string;
@@ -95,6 +97,7 @@ export interface JobData {
 }
 
 export interface JobFormData {
+  workflowType?: JobWorkflowType;
   title: string;
   department: string;
   location: string;
@@ -175,6 +178,7 @@ export const createJob = async (data: JobFormData): Promise<CreateJobResponse> =
 
 // Get all jobs
 export const getAllJobs = async (params?: {
+  workflowType?: JobWorkflowType;
   status?: string;
   department?: string;
   type?: string;
@@ -182,6 +186,7 @@ export const getAllJobs = async (params?: {
   limit?: number;
 }): Promise<JobData[]> => {
   const searchParams = new URLSearchParams();
+  if (params?.workflowType) searchParams.append('workflowType', params.workflowType);
   
   if (params?.status) searchParams.append('status', params.status);
   if (params?.department) searchParams.append('department', params.department);

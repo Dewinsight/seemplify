@@ -1,5 +1,7 @@
 "use client"
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState } from "react"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
@@ -15,6 +17,7 @@ interface StatusToggleProps {
 }
 
 export function StatusToggle({ jobId, currentStatus, onStatusChange, className = "" }: StatusToggleProps) {
+  const workspace = useJobWorkspace();
   const [isUpdating, setIsUpdating] = useState(false)
   const [status, setStatus] = useState(currentStatus)
 
@@ -29,12 +32,12 @@ export function StatusToggle({ jobId, currentStatus, onStatusChange, className =
       
       toast({
         title: "Status Updated",
-        description: `Job is now ${newStatus}.`,
+        description: (workspace.copy("Job is now ") + (newStatus) + "."),
       })
     } catch (error: any) {
       toast({
         title: "Update Failed",
-        description: error.message || "Failed to update job status.",
+        description: error.message || workspace.copy("Failed to update job status."),
         variant: "destructive",
       })
     } finally {
@@ -103,4 +106,4 @@ export function StatusToggle({ jobId, currentStatus, onStatusChange, className =
       </Label>
     </div>
   )
-} 
+}

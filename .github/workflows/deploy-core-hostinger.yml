@@ -116,6 +116,7 @@ jobs:
             tests/codexAccountService.test.js \
             tests/idpAdminSsoService.test.js
           node --test tests/platformConfigurationClient.test.js tests/embeddingRuntimeConfig.test.js tests/nomicEmbeddingClient.test.js tests/nomicIndexMigration.test.js tests/nomicWeaviateProfile.test.js
+          node --test tests/employeeAssessments.test.js
 
   learning-qa:
     name: Test Learning platform configuration
@@ -212,6 +213,9 @@ jobs:
         with:
           node-version: '22'
       - run: ${{ matrix.install_command }}
+      - name: Verify shared employee assessment routes
+        if: matrix.name == 'Recruiter'
+        run: node --test scripts/employee-assessments.test.js
       - run: npm run build
 
   deploy:

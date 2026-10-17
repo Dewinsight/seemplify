@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -35,6 +37,7 @@ interface FeedbackFormSettingsProps {
 }
 
 export function FeedbackFormSettings({ jobId }: FeedbackFormSettingsProps) {
+  const workspace = useJobWorkspace();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<FeedbackFormConfig | null>(null);
@@ -123,8 +126,7 @@ export function FeedbackFormSettings({ jobId }: FeedbackFormSettingsProps) {
       <TabsList className="grid w-full grid-cols-2">
         <TabsTrigger value="job-settings" className="flex items-center gap-2">
           <SettingsIcon className="h-4 w-4" />
-          Job Settings
-        </TabsTrigger>
+          {workspace.copy(" Job Settings ")}</TabsTrigger>
         <TabsTrigger value="manage-templates" className="flex items-center gap-2">
           <FolderOpen className="h-4 w-4" />
           Manage Templates & Fields
@@ -136,8 +138,7 @@ export function FeedbackFormSettings({ jobId }: FeedbackFormSettingsProps) {
           <CardHeader>
             <CardTitle>Feedback Form Configuration</CardTitle>
             <CardDescription>
-              Select a feedback form template for this job position
-            </CardDescription>
+              {workspace.copy(" Select a feedback form template for this job position ")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
           {/* Template Selection */}
@@ -157,8 +158,7 @@ export function FeedbackFormSettings({ jobId }: FeedbackFormSettingsProps) {
               </SelectContent>
             </Select>
             <p className="text-sm text-muted-foreground">
-              Select a template to use for this job's feedback form. Configure templates in the "Manage Templates & Fields" tab.
-            </p>
+              {workspace.copy(" Select a template to use for this job's feedback form. Configure templates in the \"Manage Templates & Fields\" tab. ")}</p>
           </div>
 
           {/* Save Button */}

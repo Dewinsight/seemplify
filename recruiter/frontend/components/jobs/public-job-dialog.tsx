@@ -1,5 +1,7 @@
 'use client'
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -44,6 +46,7 @@ export function PublicJobDialog({
   onConfirm,
   isLoading
 }: PublicJobDialogProps) {
+  const workspace = useJobWorkspace();
   const [candidateLimit, setCandidateLimit] = useState<number>(50)
   const [error, setError] = useState<string>('')
 
@@ -87,7 +90,7 @@ export function PublicJobDialog({
     if (mode === 'enable') {
       // Validation for enable mode
       if (!candidateLimit || candidateLimit < 1) {
-        setError('Please enter a valid candidate limit (minimum 1)')
+        setError(workspace.copy("Please enter a valid candidate limit (minimum 1)"))
         return
       }
 
@@ -101,12 +104,12 @@ export function PublicJobDialog({
       } catch (err: any) {
         console.error('Dialog error:', err)
         // Extract user-friendly error message
-        let errorMsg = 'Failed to make job public. Please try again.'
+        let errorMsg = workspace.copy("Failed to make job public. Please try again.")
         if (err.message) {
           if (err.message.includes('INSUFFICIENT_CREDITS')) {
             errorMsg = 'Insufficient credits available. Please purchase more credits.'
           } else if (err.message.includes('INVALID_APPLY_LIMIT')) {
-            errorMsg = 'Invalid candidate limit. Please enter a number greater than 0.'
+            errorMsg = workspace.copy("Invalid candidate limit. Please enter a number greater than 0.")
           } else if (err.message.includes('validation')) {
             errorMsg = 'System error occurred. Please contact support if this persists.'
           } else {
@@ -141,7 +144,7 @@ export function PublicJobDialog({
           if (err.message.includes('INSUFFICIENT_CREDITS')) {
             errorMsg = 'Insufficient credits available. Please purchase more credits.'
           } else if (err.message.includes('INVALID_APPLY_LIMIT')) {
-            errorMsg = 'Invalid candidate limit. Please enter a valid number.'
+            errorMsg = workspace.copy("Invalid candidate limit. Please enter a valid number.")
           } else {
             errorMsg = err.message
           }
@@ -154,7 +157,7 @@ export function PublicJobDialog({
         await onConfirm(false)
       } catch (err: any) {
         console.error('Dialog error:', err)
-        setError(err.message || 'Failed to make job private. Please try again.')
+        setError(err.message || workspace.copy("Failed to make job private. Please try again."))
       }
     }
   }
@@ -164,7 +167,7 @@ export function PublicJobDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle className="text-2xl">Make Job Public</DialogTitle>
+            <DialogTitle className="text-2xl">{workspace.copy("Make Job Public")}</DialogTitle>
             <DialogDescription>
               Set a limit for public applications. Credits will be reserved upfront to cover AI-powered CV parsing and matching.
             </DialogDescription>
@@ -245,8 +248,7 @@ export function PublicJobDialog({
               )}
 
               <div className="pt-2 border-t text-xs text-muted-foreground">
-                💡 Credits are reserved upfront. Unused credits will be automatically refunded if you unpublish or delete this job.
-              </div>
+                {workspace.copy(" 💡 Credits are reserved upfront. Unused credits will be automatically refunded if you unpublish or delete this job. ")}</div>
             </div>
 
             {error && (
@@ -291,7 +293,7 @@ export function PublicJobDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle className="text-2xl">Make Job Private?</DialogTitle>
+            <DialogTitle className="text-2xl">{workspace.copy("Make Job Private?")}</DialogTitle>
             <DialogDescription>
               This will disable public applications and refund any unused credits.
             </DialogDescription>
@@ -341,11 +343,10 @@ export function PublicJobDialog({
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Making this job private will:
-                <ul className="list-disc list-inside mt-2 space-y-1">
+                {workspace.copy(" Making this job private will: ")}<ul className="list-disc list-inside mt-2 space-y-1">
                   <li>Disable the public application link</li>
                   <li>Stop accepting new public applications</li>
-                  <li>Keep existing applicants in your pipeline</li>
+                  <li>{workspace.copy("Keep existing applicants in your pipeline")}</li>
                 </ul>
               </AlertDescription>
             </Alert>
@@ -392,8 +393,7 @@ export function PublicJobDialog({
         <DialogHeader>
           <DialogTitle className="text-2xl">Increase Application Slots</DialogTitle>
           <DialogDescription>
-            Add more slots to allow additional candidates to apply to this public job.
-          </DialogDescription>
+            {workspace.copy(" Add more slots to allow additional candidates to apply to this public job. ")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">

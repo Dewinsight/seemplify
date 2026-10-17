@@ -1,5 +1,6 @@
 "use client"
 
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -41,6 +42,7 @@ export function InternalRecruitmentDialog({
   creditInfo,
   onSuccess
 }: InternalRecruitmentDialogProps) {
+  const workspace = useJobWorkspace();
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -67,7 +69,7 @@ export function InternalRecruitmentDialog({
 
     // Validation
     if (!candidateLimit || candidateLimit < 1) {
-      setError('Please enter a valid candidate limit (minimum 1)')
+      setError(workspace.copy("Please enter a valid candidate limit (minimum 1)"))
       return
     }
 
@@ -97,14 +99,14 @@ export function InternalRecruitmentDialog({
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.message || 'Failed to enable internal recruitment')
+        throw new Error(data.message || workspace.copy("Failed to enable internal recruitment"))
       }
 
       onSuccess()
       onOpenChange(false)
     } catch (err: any) {
       console.error('Error enabling internal recruitment:', err)
-      setError(err.message || 'Failed to enable internal recruitment. Please try again.')
+      setError(err.message || workspace.copy("Failed to enable internal recruitment. Please try again."))
     } finally {
       setIsLoading(false)
     }
@@ -124,14 +126,14 @@ export function InternalRecruitmentDialog({
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.message || 'Failed to disable internal recruitment')
+        throw new Error(data.message || workspace.copy("Failed to disable internal recruitment"))
       }
 
       onSuccess()
       onOpenChange(false)
     } catch (err: any) {
       console.error('Error disabling internal recruitment:', err)
-      setError(err.message || 'Failed to disable internal recruitment. Please try again.')
+      setError(err.message || workspace.copy("Failed to disable internal recruitment. Please try again."))
     } finally {
       setIsLoading(false)
     }
@@ -149,8 +151,7 @@ export function InternalRecruitmentDialog({
           <DialogHeader>
             <DialogTitle className="text-2xl flex items-center gap-2">
               <Building className="h-6 w-6 text-purple-600" />
-              Enable Internal Recruitment
-            </DialogTitle>
+              {workspace.copy(" Enable Internal Recruitment ")}</DialogTitle>
             <DialogDescription>
               Allow internal employees to apply for: <span className="font-semibold">{jobTitle}</span>
             </DialogDescription>
@@ -176,8 +177,7 @@ export function InternalRecruitmentDialog({
                 className="text-lg"
               />
               <p className="text-sm text-muted-foreground">
-                Maximum number of internal candidates who can apply. Set to 0 for unlimited.
-              </p>
+                {workspace.copy(" Maximum number of internal candidates who can apply. Set to 0 for unlimited. ")}</p>
             </div>
 
             {/* Settings */}
@@ -190,8 +190,7 @@ export function InternalRecruitmentDialog({
                     Require Employee ID
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Applicants must provide their employee ID
-                  </p>
+                    {workspace.copy(" Applicants must provide their employee ID ")}</p>
                 </div>
                 <Switch
                   id="requireEmployeeId"
@@ -203,8 +202,7 @@ export function InternalRecruitmentDialog({
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label htmlFor="notifyHiringManager" className="text-sm font-medium">
-                    Notify Hiring Manager
-                  </Label>
+                    {workspace.copy(" Notify Hiring Manager ")}</Label>
                   <p className="text-xs text-muted-foreground">
                     Send notifications for new internal applications
                   </p>
@@ -276,10 +274,8 @@ export function InternalRecruitmentDialog({
                 )}
 
                 <div className="pt-2 border-t text-xs text-muted-foreground">
-                  ✓ Credits will be reserved and consumed as internal candidates apply.
-                  <br />
-                  ✓ Unused credits will be refunded if you disable internal recruitment.
-                </div>
+                  {workspace.copy(" ✓ Credits will be reserved and consumed as internal candidates apply. ")}<br />
+                  {workspace.copy(" ✓ Unused credits will be refunded if you disable internal recruitment. ")}</div>
               </div>
             )}
 
@@ -312,7 +308,7 @@ export function InternalRecruitmentDialog({
               ) : (
                 candidateLimit > 0
                   ? `Reserve ${totalCost} Credits & Enable`
-                  : 'Enable Internal Recruitment'
+                  : workspace.copy("Enable Internal Recruitment")
               )}
             </Button>
           </DialogFooter>
@@ -329,7 +325,7 @@ export function InternalRecruitmentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="text-2xl">Disable Internal Recruitment?</DialogTitle>
+          <DialogTitle className="text-2xl">{workspace.copy("Disable Internal Recruitment?")}</DialogTitle>
           <DialogDescription>
             This will stop accepting internal applications and refund unused credits.
           </DialogDescription>
@@ -379,11 +375,10 @@ export function InternalRecruitmentDialog({
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Disabling internal recruitment will:
-              <ul className="list-disc list-inside mt-2 space-y-1">
+              {workspace.copy(" Disabling internal recruitment will: ")}<ul className="list-disc list-inside mt-2 space-y-1">
                 <li>Disable the internal application link</li>
                 <li>Stop accepting new internal applications</li>
-                <li>Keep existing internal applicants in your pipeline</li>
+                <li>{workspace.copy("Keep existing internal applicants in your pipeline")}</li>
               </ul>
             </AlertDescription>
           </Alert>

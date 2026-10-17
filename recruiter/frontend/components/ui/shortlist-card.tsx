@@ -1,5 +1,7 @@
 "use client"
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect, useRef, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -51,6 +53,7 @@ interface ShortlistedCandidate {
 }
 
 export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCardProps) {
+  const workspace = useJobWorkspace();
   const router = useRouter()
   const lastLoadedJobIdRef = useRef<string | null>(null)
   const [shortlistedCandidates, setShortlistedCandidates] = useState<ShortlistedCandidate[]>([])
@@ -85,7 +88,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
 
   // Helper function to get candidate name consistently
   const getCandidateName = (match: ShortlistedCandidate): string => {
-    return match.candidate?.name || 'Unnamed Candidate'
+    return match.candidate?.name || workspace.copy("Unnamed Candidate")
   }
 
   // Helper function to get candidate position consistently
@@ -154,7 +157,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       console.error('Error fetching shortlisted candidates:', error)
       toast({
         title: "Error",
-        description: "Failed to fetch shortlisted candidates",
+        description: workspace.copy("Failed to fetch shortlisted candidates"),
         variant: "destructive",
       })
     } finally {
@@ -237,7 +240,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       await updateShortlistCandidateStatus(jobId, candidateId, 'moved_to_pipeline');
       
       toast({
-        title: "Candidate Moved",
+        title: workspace.copy("Candidate Moved"),
         description: `${candidateName} has been moved to the pipeline.`,
       });
       
@@ -311,8 +314,8 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       } else {
         // Show generic error message
         toast({
-          title: "Failed to Move Candidate",
-          description: errorMessage || "An error occurred while moving the candidate to the pipeline.",
+          title: workspace.copy("Failed to Move Candidate"),
+          description: errorMessage || workspace.copy("An error occurred while moving the candidate to the pipeline."),
           variant: "destructive",
         })
       }
@@ -339,7 +342,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       console.log(`✅ Successfully returned candidate to shortlist:`, result)
       
       toast({
-        title: "✅ Candidate Returned Successfully",
+        title: workspace.copy("✅ Candidate Returned Successfully"),
         description: `${candidateName} has been returned to the active shortlist.`,
       });
       
@@ -352,8 +355,8 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
     } catch (error: any) {
       console.error(`❌ Error returning candidate to shortlist:`, error)
       toast({
-        title: "Failed to Return Candidate",
-        description: error.message || "An error occurred while returning the candidate to shortlist.",
+        title: workspace.copy("Failed to Return Candidate"),
+        description: error.message || workspace.copy("An error occurred while returning the candidate to shortlist."),
         variant: "destructive",
       })
     } finally {
@@ -372,14 +375,14 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       setRemovingFromShortlist(prev => new Set([...prev, candidateId]))
       await removeCandidateFromShortlist(jobId, candidateId)
       toast({
-        title: "Candidate Removed",
+        title: workspace.copy("Candidate Removed"),
         description: `${candidateName} has been removed from the shortlist.`,
       })
       // Refresh current view (preserves ranking)
       await refreshCurrentView()
     } catch (error: any) {
       toast({
-        title: "Failed to Remove Candidate",
+        title: workspace.copy("Failed to Remove Candidate"),
         description: error.message,
         variant: "destructive",
       })
@@ -407,7 +410,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       console.error('Error loading all candidates:', error)
       toast({
         title: "Error",
-        description: "Failed to load all candidates",
+        description: workspace.copy("Failed to load all candidates"),
         variant: "destructive",
       })
     } finally {
@@ -435,7 +438,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       await addCandidateToShortlist(jobId, candidateId)
       
       toast({
-        title: "Candidate Added to Shortlist",
+        title: workspace.copy("Candidate Added to Shortlist"),
         description: `${candidateName} has been added to the shortlist.`,
       })
       
@@ -446,8 +449,8 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       }
     } catch (error: any) {
       toast({
-        title: "Failed to Add Candidate",
-        description: error.message || "An error occurred while adding the candidate.",
+        title: workspace.copy("Failed to Add Candidate"),
+        description: error.message || workspace.copy("An error occurred while adding the candidate."),
         variant: "destructive",
       })
     } finally {
@@ -537,23 +540,23 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       
       if (result.moved > 0) {
         toast({
-          title: "Candidates Moved",
-          description: `Successfully moved ${result.moved} candidate(s) to the pipeline.`,
+          title: workspace.copy("Candidates Moved"),
+          description: ("Successfully moved " + (result.moved) + workspace.copy(" candidate(s) to the pipeline.")),
         })
       }
       
       if (result.failed > 0) {
         toast({
           title: "Some Moves Failed",
-          description: `${result.failed} candidate(s) could not be moved. ${result.failures[0]?.reason || ''}`,
+          description: ("" + (result.failed) + workspace.copy(" candidate(s) could not be moved. ") + (result.failures[0]?.reason || '') + ""),
           variant: "destructive",
         })
       }
       
       if (result.moved === 0 && result.failed === 0) {
         toast({
-          title: "No Candidates Moved",
-          description: "No candidates were moved. They may already be in the pipeline.",
+          title: workspace.copy("No Candidates Moved"),
+          description: workspace.copy("No candidates were moved. They may already be in the pipeline."),
           variant: "destructive",
         })
       }
@@ -567,7 +570,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       console.error('❌ Error during bulk move to pipeline:', error)
       toast({
         title: "Bulk Move Failed",
-        description: error.message || "An error occurred while moving candidates.",
+        description: error.message || workspace.copy("An error occurred while moving candidates."),
         variant: "destructive",
       })
     } finally {
@@ -578,7 +581,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
   const handleBulkRemoveFromShortlist = async () => {
     if (selectedCandidates.size === 0) return
 
-    const confirmed = window.confirm(`Are you sure you want to remove ${selectedCandidates.size} candidate(s) from the shortlist?`)
+    const confirmed = window.confirm(("Are you sure you want to remove " + (selectedCandidates.size) + workspace.copy(" candidate(s) from the shortlist?")))
     if (!confirmed) return
 
     try {
@@ -593,23 +596,23 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       
       if (result.removed > 0) {
         toast({
-          title: "Candidates Removed",
-          description: `Successfully removed ${result.removed} candidate(s) from the shortlist.`,
+          title: workspace.copy("Candidates Removed"),
+          description: ("Successfully removed " + (result.removed) + workspace.copy(" candidate(s) from the shortlist.")),
         })
       }
       
       if (result.failed > 0) {
         toast({
           title: "Some Removals Failed",
-          description: `${result.failed} candidate(s) could not be removed. ${result.failures[0]?.reason || ''}`,
+          description: ("" + (result.failed) + workspace.copy(" candidate(s) could not be removed. ") + (result.failures[0]?.reason || '') + ""),
           variant: "destructive",
         })
       }
       
       if (result.removed === 0 && result.failed === 0) {
         toast({
-          title: "No Candidates Removed",
-          description: "No candidates were found in the shortlist to remove.",
+          title: workspace.copy("No Candidates Removed"),
+          description: workspace.copy("No candidates were found in the shortlist to remove."),
           variant: "destructive",
         })
       }
@@ -620,7 +623,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       console.error('❌ Error during bulk removal:', error)
       toast({
         title: "Bulk Removal Failed",
-        description: error.message || "An error occurred while removing candidates.",
+        description: error.message || workspace.copy("An error occurred while removing candidates."),
         variant: "destructive",
       })
     } finally {
@@ -645,7 +648,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
     return (
       <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
         <CardHeader>
-          <CardTitle className="text-gray-900 dark:text-gray-100">Shortlisted Candidates</CardTitle>
+          <CardTitle className="text-gray-900 dark:text-gray-100">{workspace.copy("Shortlisted Candidates")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-8">
@@ -667,7 +670,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
               <div className="flex items-center justify-center sm:justify-start gap-2">
                 <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
                 <span className="font-semibold text-sm sm:text-lg">
-                  {selectedCandidates.size} candidate{selectedCandidates.size !== 1 ? 's' : ''} selected
+                  {selectedCandidates.size} {workspace.copy(" candidate")}{selectedCandidates.size !== 1 ? 's' : ''} selected
                 </span>
               </div>
 
@@ -730,7 +733,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
             <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2 flex-wrap">
               <Users className="h-5 w-5 flex-shrink-0" />
-              <span>Shortlisted Candidates</span>
+              <span>{workspace.copy("Shortlisted Candidates")}</span>
               {selectedCandidates.size > 0 && (
                 <Badge variant="secondary" className="bg-white text-blue-600">
                   {selectedCandidates.size} selected
@@ -746,7 +749,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                 size="sm"
               >
                 <UserPlus className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Add Candidates</span>
+                <span className="hidden sm:inline">{workspace.copy("Add Candidates")}</span>
               </Button>
               <Button
                 onClick={handleRankShortlist}
@@ -827,7 +830,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                 <SelectValue placeholder="Filter by staff" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Candidates</SelectItem>
+                <SelectItem value="all">{workspace.copy("All Candidates")}</SelectItem>
                 <SelectItem value="staff">Staff Only</SelectItem>
                 <SelectItem value="non_staff">Non-Staff Only</SelectItem>
               </SelectContent>
@@ -836,8 +839,8 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
         </div>
         <CardDescription className="text-blue-100 text-sm mt-3">
           {isRanked
-            ? 'Candidates are ranked by AI relevance score. Rankings are saved automatically.'
-            : 'These candidates have been shortlisted for the role. Rank them to see the best matches.'
+            ? workspace.copy("Candidates are ranked by AI relevance score. Rankings are saved automatically.")
+            : workspace.copy("These candidates have been shortlisted for the role. Rank them to see the best matches.")
           }
         </CardDescription>
       </CardHeader>
@@ -854,7 +857,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
             <div className="flex items-start sm:items-center gap-2 text-xs sm:text-sm text-blue-700 dark:text-blue-300">
               <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 mt-0.5 sm:mt-0 flex-shrink-0" />
               <span className="font-medium">Tip:</span>
-              <span className="hidden sm:inline">Click on candidate cards or use checkboxes to select multiple candidates for bulk actions</span>
+              <span className="hidden sm:inline">{workspace.copy("Click on candidate cards or use checkboxes to select multiple candidates for bulk actions")}</span>
               <span className="sm:hidden">Tap cards to select for bulk actions</span>
             </div>
           </div>
@@ -976,7 +979,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                     <div className="relative flex-shrink-0">
                       <Avatar className="h-12 w-12 sm:h-16 sm:w-16 ring-2 sm:ring-4 ring-white/80 shadow-lg group-hover:ring-blue-200 transition-all duration-300">
                         <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-sm sm:text-lg font-bold shadow-inner">
-                          {getCandidateName(match) !== 'Unnamed Candidate' ? getCandidateName(match).split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'N/A'}
+                          {getCandidateName(match) !== workspace.copy("Unnamed Candidate") ? getCandidateName(match).split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'N/A'}
                         </AvatarFallback>
                       </Avatar>
                       {/* Online indicator */}
@@ -1277,13 +1280,13 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
             <Users className="h-16 w-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
             {shortlistedCandidates.length > 0 ? (
               <>
-                <p className="text-base">No candidates match this staff filter.</p>
-                <p className="text-sm text-gray-400 mt-2">Try switching the filter back to "All Candidates".</p>
+                <p className="text-base">{workspace.copy("No candidates match this staff filter.")}</p>
+                <p className="text-sm text-gray-400 mt-2">{workspace.copy("Try switching the filter back to \"All Candidates\".")}</p>
               </>
             ) : (
               <>
-                <p className="text-base">No candidates have been shortlisted yet.</p>
-                <p className="text-sm text-gray-400 mt-2">Use "Add Candidates" to start building your shortlist.</p>
+                <p className="text-base">{workspace.copy("No candidates have been shortlisted yet.")}</p>
+                <p className="text-sm text-gray-400 mt-2">{workspace.copy("Use \"Add Candidates\" to start building your shortlist.")}</p>
               </>
             )}
           </div>
@@ -1298,7 +1301,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
               <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
                 <UserPlus className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
               </div>
-              <span className="truncate">Add Candidates to Shortlist</span>
+              <span className="truncate">{workspace.copy("Add Candidates to Shortlist")}</span>
             </DialogTitle>
           </DialogHeader>
 
@@ -1307,7 +1310,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Search candidates..."
+              placeholder={workspace.copy("Search candidates...")}
               className="pl-9 text-sm sm:text-base h-9 sm:h-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1330,7 +1333,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                     )
                     .map((candidate) => {
                       const candidateId = candidate._id
-                      const candidateName = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || 'Unnamed Candidate'
+                      const candidateName = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || workspace.copy("Unnamed Candidate")
                       const isAdding = addingCandidates.has(candidateId)
                       const isAlreadyInShortlist = shortlistedCandidates.some(item =>
                         item.candidate._id === candidateId || item.candidateId === candidateId
@@ -1401,9 +1404,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
           </DialogHeader>
           <div className="py-4">
             <p className="text-sm text-gray-700 dark:text-gray-300">
-              Before you can add candidates to the pipeline, you need to create at least one pipeline stage. 
-              Pipeline stages define the interview process for this job.
-            </p>
+              {workspace.copy(" Before you can add candidates to the pipeline, you need to create at least one pipeline stage. Pipeline stages define the interview process for this job. ")}</p>
           </div>
           <DialogFooter className="flex gap-2 sm:gap-2">
             <Button

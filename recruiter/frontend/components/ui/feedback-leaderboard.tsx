@@ -1,5 +1,7 @@
 'use client'
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +45,7 @@ interface FeedbackLeaderboardProps {
 }
 
 export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
+  const workspace = useJobWorkspace();
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedStage, setSelectedStage] = useState('all')
@@ -376,9 +379,7 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
           <Trophy className="h-16 w-16 text-gray-300 mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 mb-2">No Feedback Data Available</h3>
           <p className="text-gray-500 max-w-md">
-            There is no interview feedback available yet for this job. 
-            Feedback will appear here once interviews are completed and assessors submit their evaluations.
-          </p>
+            {workspace.copy(" There is no interview feedback available yet for this job. Feedback will appear here once interviews are completed and assessors submit their evaluations. ")}</p>
         </CardContent>
       </Card>
     )
@@ -399,7 +400,7 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
                 {leaderboardData.jobTitle}
               </CardDescription>
             </div>
-            <Link href={`/jobs/${jobId}/feedback`}>
+            <Link href={`${workspace.basePath}/${jobId}/feedback`}>
               <Button variant="secondary" size="sm">
                 <FileText className="h-4 w-4 mr-2" />
                 View All Feedback
@@ -410,7 +411,7 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-              <div className="text-white/80 text-sm mb-1">Total Candidates</div>
+              <div className="text-white/80 text-sm mb-1">{workspace.copy("Total Candidates")}</div>
               <div className="text-3xl font-bold">
                 {leaderboardData.overallStatistics.totalCandidatesInterviewed}
               </div>
@@ -465,7 +466,7 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="overallScore">Overall Score (Highest)</SelectItem>
-                  <SelectItem value="candidateName">Candidate Name (A-Z)</SelectItem>
+                  <SelectItem value="candidateName">{workspace.copy("Candidate Name (A-Z)")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -509,6 +510,7 @@ function StageLeaderboardSection({
   getPerformanceColor,
   getPerformanceLabel
 }: StageLeaderboardSectionProps) {
+  const workspace = useJobWorkspace();
   const { statistics, leaderboard } = stage
 
   return (
@@ -527,7 +529,7 @@ function StageLeaderboardSection({
             <div>
               <CardTitle className="text-lg">{stage.stageName}</CardTitle>
               <CardDescription>
-                {statistics.totalCandidates} candidates • Avg Score: {statistics.averageScore.toFixed(1)}
+                {statistics.totalCandidates} {workspace.copy(" candidates • Avg Score: ")}{statistics.averageScore.toFixed(1)}
               </CardDescription>
             </div>
           </div>
@@ -590,7 +592,7 @@ function StageLeaderboardSection({
         <CardContent>
           <div className="text-center py-8 text-gray-500">
             <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-            <p>No candidates with feedback in this stage yet.</p>
+            <p>{workspace.copy("No candidates with feedback in this stage yet.")}</p>
           </div>
         </CardContent>
       )}
@@ -613,6 +615,7 @@ function CandidateCard({
   getPerformanceColor,
   getPerformanceLabel
 }: CandidateCardProps) {
+  const workspace = useJobWorkspace();
   return (
     <div className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-white dark:bg-gray-900">
       <div className="flex items-start gap-4">
@@ -638,7 +641,7 @@ function CandidateCard({
                 >
                   {candidate.candidateName}
                 </Link>
-                <p className="text-sm text-gray-500">{candidate.candidatePosition || 'Candidate'}</p>
+                <p className="text-sm text-gray-500">{candidate.candidatePosition || workspace.copy("Candidate")}</p>
               </div>
             </div>
             
