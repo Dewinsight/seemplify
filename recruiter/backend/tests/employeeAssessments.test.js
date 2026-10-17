@@ -88,3 +88,37 @@ test('editing cannot silently reclassify existing records', () => {
   assert.throws(() => assertWorkflowUnchanged({}, 'employee-assessment'), { statusCode: 400 });
   assert.throws(() => assertWorkflowUnchanged({ workflowType: 'employee-assessment' }, 'recruitment'), { statusCode: 400 });
 });
+
+
+test('creation notifications use assessment wording and canonical links for every recipient', async () => {
+  class Schema {
+    constructor() { this.statics = {}; this.methods = {}; }
+    index() {}
+    virtual() { return { get() {} }; }
+    set() {}
+  }
+  Schema.Types = { ObjectId: class {}, Mixed: class {} };
+  const module = { exports: {} };
+  const organization = { name: 'Tenant A', members: [{ status: 'active', user: 'other' }], select() { return { async lean() { return { name: 'Tenant A' }; } }; } };
+  const dependencies = {
+    mongoose: { Schema, model(name, schema) { return { ...schema.statics, async insertMany(rows) { return rows; } }; } },
+    '../utils/htmlDecode': { decodeHtmlEntities: value => value },
+    './User': { async findById() { return { currentOrganization: 'tenant-a', name: 'Creator' }; }, async find() { return [{ _id: 'other' }]; } },
+    './Organization': { findById() { return organization; } },
+  };
+  vm.runInNewContext(fs.readFileSync(require.resolve('../models/Notification'), 'utf8'), {
+    module, exports: module.exports, require: name => dependencies[name], console,
+  });
+  for (const workflowType of ['recruitment', 'employee-assessment']) {
+    const assessment = workflowType === 'employee-assessment';
+    const rows = await module.exports.createJobCreatedNotification('actor', { _id: 'record', workflowType, title: 'Original Job Title', department: 'Team' });
+    assert.equal(rows.length, 2);
+    for (const row of rows) {
+      assert.equal(row.actionUrl, assessment ? '/employee-assessments/record' : '/jobs/record');
+      assert.equal(row.actionText, assessment ? 'View Assessment' : 'View Job');
+      assert.ok(row.title.endsWith('Original Job Title'));
+      assert.ok(row.message.includes(assessment ? 'new employee assessment' : 'new job posting'));
+      assert.equal(row.data.organizationId, 'tenant-a');
+    }
+  }
+});
