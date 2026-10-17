@@ -1607,8 +1607,7 @@ export function InterviewScheduler({
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="single" className="text-xs sm:text-sm">Single interview</TabsTrigger>
             <TabsTrigger value="multi" className="text-xs sm:text-sm relative">
-              Multi-candidate
-              <span className="ml-2 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-600 rounded font-medium">
+              {workspace.copy(" Multi-candidate ")}<span className="ml-2 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-600 rounded font-medium">
                 BETA
               </span>
             </TabsTrigger>
@@ -2382,7 +2381,7 @@ export function InterviewScheduler({
             >
               <DialogContent className="w-[98vw] max-w-[1600px] h-[96vh] max-h-[96vh] p-0 overflow-hidden flex flex-col gap-0 scheduler-dialog">
                 <DialogHeader className="px-4 sm:px-6 py-3 border-b">
-                  <DialogTitle className="text-base sm:text-lg">Multi-candidate Interview Scheduler</DialogTitle>
+                  <DialogTitle className="text-base sm:text-lg">{workspace.copy("Multi-candidate Interview Scheduler")}</DialogTitle>
                   <DialogDescription className="text-xs sm:text-sm">
                     Schedule an entire interview session with one shared workflow.
                   </DialogDescription>
@@ -2400,8 +2399,7 @@ export function InterviewScheduler({
                   <div>
                     <h4 className="text-sm font-medium text-orange-800 mb-1">Beta Feature</h4>
                     <p className="text-sm text-orange-700">
-                      Multi-candidate interviews are currently in testing. While fully functional, some features may be refined based on user feedback. Please report any issues to our support team.
-                    </p>
+                      {workspace.copy(" Multi-candidate interviews are currently in testing. While fully functional, some features may be refined based on user feedback. Please report any issues to our support team. ")}</p>
                   </div>
                 </div>
               </div>
@@ -2517,8 +2515,7 @@ export function InterviewScheduler({
                       <AlertCircle className="h-4 w-4" />
                       <AlertTitle>Calendar Not Connected</AlertTitle>
                       <AlertDescription>
-                        Connect your calendar to schedule multi-candidate interviews.
-                      </AlertDescription>
+                        {workspace.copy(" Connect your calendar to schedule multi-candidate interviews. ")}</AlertDescription>
                     </Alert>
                     <div className="flex flex-wrap gap-2">
                       <Button 
@@ -2636,15 +2633,14 @@ export function InterviewScheduler({
                 <Alert className="border-blue-200 bg-blue-50">
                   <Video className="h-4 w-4 text-blue-600" />
                   <AlertDescription className="text-blue-800">
-                    All candidates will use the same meeting link. Each candidate will receive a calendar invite for their specific time slot only.
-                  </AlertDescription>
+                    {workspace.copy(" All candidates will use the same meeting link. Each candidate will receive a calendar invite for their specific time slot only. ")}</AlertDescription>
                 </Alert>
               )}
 
               {/* Candidate Slots Section */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-base font-medium">Candidate Time Slots</h4>
+                  <h4 className="text-base font-medium">{workspace.copy("Candidate Time Slots")}</h4>
                   <Button 
                     variant="outline" 
                     size="sm"
@@ -2654,16 +2650,15 @@ export function InterviewScheduler({
                     }}
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Candidate
-                  </Button>
+                    {workspace.copy(" Add Candidate ")}</Button>
                 </div>
 
                 {/* Candidate List */}
                 {multiCandidateSlots.length === 0 ? (
                   <div className="text-center py-8 border-2 border-dashed rounded-lg">
                     <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-600">No candidates added yet</p>
-                    <p className="text-xs text-gray-500 mt-1">Add at least 2 candidates to create a multi-candidate session</p>
+                    <p className="text-sm text-gray-600">{workspace.copy("No candidates added yet")}</p>
+                    <p className="text-xs text-gray-500 mt-1">{workspace.copy("Add at least 2 candidates to create a multi-candidate session")}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -2766,9 +2761,7 @@ export function InterviewScheduler({
                   <Alert className="border-amber-200 bg-amber-50">
                     <AlertCircle className="h-4 w-4 text-amber-600" />
                     <AlertDescription className="text-amber-800">
-                      <strong>One notetaker for all:</strong> The AI notetaker will record the entire session continuously. 
-                      Transcripts will be automatically segmented by candidate based on their scheduled time slots.
-                    </AlertDescription>
+                      <strong>One notetaker for all:</strong> {workspace.copy(" The AI notetaker will record the entire session continuously. Transcripts will be automatically segmented by candidate based on their scheduled time slots. ")}</AlertDescription>
                   </Alert>
                 </div>
               )}
@@ -2848,8 +2841,7 @@ export function InterviewScheduler({
                             onCheckedChange={(checked) => setMultiSendCustomEmail(checked as boolean)}
                           />
                           <label htmlFor="multiSendCustomEmail" className="text-sm font-medium text-gray-700">
-                            Send custom email to each candidate
-                          </label>
+                            {workspace.copy(" Send custom email to each candidate ")}</label>
                         </div>
                       </div>
 
@@ -2859,7 +2851,7 @@ export function InterviewScheduler({
                             value={multiEmailTemplate}
                             onChange={setMultiEmailTemplate}
                             previewData={multiTemplatePreviewData}
-                            label="Email Template (sent to each candidate)"
+                            label={workspace.copy("Email Template (sent to each candidate)")}
                             helperText="Choose a template style, customize it, and each candidate gets their own rendered version."
                           />
                         </div>
@@ -2987,17 +2979,16 @@ export function InterviewScheduler({
       <Dialog open={showAddCandidateDialog} onOpenChange={setShowAddCandidateDialog}>
             <DialogContent className="max-w-2xl w-[95vw] sm:w-[90vw] max-h-[85vh] flex flex-col overflow-hidden min-h-0 scheduler-dialog">
               <DialogHeader className="pb-2">
-                <DialogTitle className="text-base sm:text-lg">Add Candidate {stageId ? 'from Stage' : 'from Pipeline'}</DialogTitle>
+                <DialogTitle className="text-base sm:text-lg">{workspace.copy("Add Candidate ")}{stageId ? 'from Stage' : 'from Pipeline'}</DialogTitle>
                 <DialogDescription className="text-xs sm:text-sm">
-                  Select a candidate {stageId ? 'from this interview stage' : 'from the job pipeline'} to add to the multi-candidate session
-                </DialogDescription>
+                  {workspace.copy(" Select a candidate ")}{stageId ? 'from this interview stage' : 'from the job pipeline'} {workspace.copy(" to add to the multi-candidate session ")}</DialogDescription>
               </DialogHeader>
               
               <div className="flex-1 overflow-y-auto space-y-3 sm:space-y-4 px-4 sm:px-6">
                 {/* Candidate Search and Selection */}
                 <div className="space-y-2">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <Label htmlFor="candidateSearch" className="text-sm font-medium">Search & Select Candidates</Label>
+                    <Label htmlFor="candidateSearch" className="text-sm font-medium">{workspace.copy("Search & Select Candidates")}</Label>
                     {systemCandidates.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -3029,7 +3020,7 @@ export function InterviewScheduler({
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                       id="candidateSearch"
-                      placeholder="Search candidates by name or email..."
+                      placeholder={workspace.copy("Search candidates by name or email...")}
                       value={candidateSearchTerm}
                       onChange={(e) => setCandidateSearchTerm(e.target.value)}
                       className="flex-1"
@@ -3177,7 +3168,7 @@ export function InterviewScheduler({
                   <Label htmlFor="candidateNotes">Notes (Optional)</Label>
                   <Textarea
                     id="candidateNotes"
-                    placeholder="Any specific notes for this candidate's interview..."
+                    placeholder={workspace.copy("Any specific notes for this candidate's interview...")}
                     value={newCandidateNotes}
                     onChange={(e) => setNewCandidateNotes(e.target.value)}
                     rows={2}
@@ -3215,7 +3206,7 @@ export function InterviewScheduler({
           <Dialog open={showMultiAddParticipantDialog} onOpenChange={setShowMultiAddParticipantDialog}>
             <DialogContent className="max-w-2xl w-[95vw] sm:w-[90vw] max-h-[85vh] flex flex-col overflow-hidden min-h-0 scheduler-dialog">
               <DialogHeader className="pb-2">
-                <DialogTitle className="text-base sm:text-lg">Add Participant to Multi-Candidate Session</DialogTitle>
+                <DialogTitle className="text-base sm:text-lg">{workspace.copy("Add Participant to Multi-Candidate Session")}</DialogTitle>
                 <DialogDescription className="text-xs sm:text-sm">
                   Add team members or external participants who will join the entire interview session
                 </DialogDescription>

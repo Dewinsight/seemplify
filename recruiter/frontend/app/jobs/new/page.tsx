@@ -543,7 +543,7 @@ export default function CreateJobPage() {
                           name="title"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Job Title *</FormLabel>
+                              <FormLabel>{workspace.copy("Job Title *")}</FormLabel>
                               <FormControl>
                                 <Input placeholder="e.g. Senior Software Engineer" {...field} />
                               </FormControl>
@@ -588,11 +588,11 @@ export default function CreateJobPage() {
                           name="type"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Job Type *</FormLabel>
+                              <FormLabel>{workspace.copy("Job Type *")}</FormLabel>
                               <Select onValueChange={field.onChange} defaultValue={field.value}>
                                 <FormControl>
                                   <SelectTrigger>
-                                    <SelectValue placeholder="Select job type" />
+                                    <SelectValue placeholder={workspace.copy("Select job type")} />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
@@ -614,11 +614,11 @@ export default function CreateJobPage() {
                           name="level"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Job Level *</FormLabel>
+                              <FormLabel>{workspace.copy("Job Level *")}</FormLabel>
                               <Select onValueChange={field.onChange} defaultValue={field.value}>
                                 <FormControl>
                                   <SelectTrigger>
-                                    <SelectValue placeholder="Select job level" />
+                                    <SelectValue placeholder={workspace.copy("Select job level")} />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
@@ -749,7 +749,7 @@ export default function CreateJobPage() {
                           <FormItem>
                             <FormControl>
                               <Textarea
-                                placeholder="Enter a detailed job description..."
+                                placeholder={workspace.copy("Enter a detailed job description...")}
                                 className="min-h-[200px]"
                                 {...field}
                               />
@@ -766,10 +766,10 @@ export default function CreateJobPage() {
                         name="responsibilities"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Job Responsibilities *</FormLabel>
+                            <FormLabel>{workspace.copy("Job Responsibilities *")}</FormLabel>
                             <FormControl>
                               <Textarea
-                                placeholder="Enter job responsibilities..."
+                                placeholder={workspace.copy("Enter job responsibilities...")}
                                 className="min-h-[150px]"
                                 {...field}
                               />
@@ -829,7 +829,7 @@ export default function CreateJobPage() {
                         render={({ field }) => (
                           <FormItem>
                             <FormControl>
-                              <Textarea placeholder="Enter job requirements..." className="min-h-[200px]" {...field} />
+                              <Textarea placeholder={workspace.copy("Enter job requirements...")} className="min-h-[200px]" {...field} />
                             </FormControl>
                             <FormDescription>
                               List qualifications, skills, experience, and education requirements.
@@ -990,8 +990,7 @@ export default function CreateJobPage() {
                                 />
                               </FormControl>
                               <FormDescription>
-                                Describe the benefits package, perks, and company culture. This can also be auto-generated when using AI job description.
-                              </FormDescription>
+                                {workspace.copy(" Describe the benefits package, perks, and company culture. This can also be auto-generated when using AI job description. ")}</FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1019,11 +1018,9 @@ export default function CreateJobPage() {
                               </FormControl>
                               <div className="space-y-1 leading-none">
                                 <FormLabel className="text-base">
-                                  Make this job public
-                                </FormLabel>
+                                  {workspace.copy(" Make this job public ")}</FormLabel>
                                 <FormDescription className="text-sm leading-relaxed">
-                                  Enable external candidates to apply directly. Each application uses credits for AI-powered CV parsing, analysis, and matching.
-                                </FormDescription>
+                                  {workspace.copy(" Enable external candidates to apply directly. Each application uses credits for AI-powered CV parsing, analysis, and matching. ")}</FormDescription>
                               </div>
                             </FormItem>
                           )}
@@ -1050,7 +1047,7 @@ export default function CreateJobPage() {
                                           <li>• <strong>Cost Control:</strong> Each application triggers AI CV parsing, analysis, and matching</li>
                                           <li>• <strong>Budget Planning:</strong> Credits are reserved upfront so you know exact costs</li>
                                           <li>• <strong>Resource Management:</strong> Helps the system allocate processing capacity</li>
-                                          <li>• <strong>Quality Focus:</strong> Encourages targeted, well-defined job postings</li>
+                                          <li>• <strong>Quality Focus:</strong> {workspace.copy(" Encourages targeted, well-defined job postings")}</li>
                                         </ul>
                                       </TooltipContent>
                                     </Tooltip>
@@ -1074,15 +1071,13 @@ export default function CreateJobPage() {
                                     <div className="bg-white dark:bg-gray-900 rounded p-3 border border-blue-300 dark:border-blue-700">
                                       <p className="text-xs font-medium text-muted-foreground mb-1">💡 Cost Breakdown:</p>
                                       <p className="text-sm">
-                                        Each application includes AI-powered CV parsing, data extraction, candidate scoring, and intelligent matching.
-                                      </p>
+                                        {workspace.copy(" Each application includes AI-powered CV parsing, data extraction, candidate scoring, and intelligent matching. ")}</p>
                                       <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
                                         <p className="font-semibold text-blue-700 dark:text-blue-300">
                                           {field.value || 0} applications × 3 credits = <span className="text-lg">{(field.value || 0) * 3} credits</span> reserved
                                         </p>
                                         <p className="text-xs text-muted-foreground mt-1">
-                                          Credits are reserved upfront. Unused credits are automatically refunded if you unpublish or delete this job.
-                                        </p>
+                                          {workspace.copy(" Credits are reserved upfront. Unused credits are automatically refunded if you unpublish or delete this job. ")}</p>
                                       </div>
                                     </div>
                                   </div>
