@@ -193,12 +193,12 @@ const PAGE_GUIDES: GuideDefinition[] = [
     key: 'appraisals',
     matcher: /^\/appraisals$/,
     title: 'Appraisals',
-    summary: 'This page shows your appraisal work items and their current stage.',
-    purpose: 'Use this page to find active appraisals, see what stage each one is in, and open the exact workflow step waiting on you.',
+    summary: 'Continue current appraisals or find past results across all cycles.',
+    purpose: 'Use Current for work waiting on you and History & results for completed appraisals, final ratings and reports. Managers and HR can use Start appraisal to begin staff reviews.',
     steps: [
-      'Review the status of each appraisal and identify which one needs action now.',
-      'Open the appraisal that is pending on you.',
-      'Complete the assigned stage instead of trying to do everything from the list view.'
+      'Use Start appraisal to choose staff and an existing cycle or a one-off review.',
+      'Use Current to open the next task waiting on you.',
+      'Use History & results to search past reviews, open a result report, download CSV or print.'
     ],
     success: [
       'You know which appraisal is waiting on you.',
@@ -208,6 +208,24 @@ const PAGE_GUIDES: GuideDefinition[] = [
       'Employees usually start with self-assessment.',
       'Managers only move when employee submissions are ready for review.'
     ]
+  },
+  {
+    key: 'appraisal-start',
+    matcher: /^\/appraisals\/start$/,
+    title: 'Start appraisal',
+    summary: 'Choose staff, review details, then confirm the launch.',
+    purpose: 'Managers start reviews for their staff. HR and admins can start reviews across their organization. Reporting relationships come from Seemplify Identity.',
+    steps: ['Choose eligible staff and check the assigned reviewer.', 'Use an existing cycle or name a one-off review and set response deadlines.', 'Confirm the participant list. Starting notifies employees to complete their self-assessment.'],
+    success: ['The launch results show started, existing and blocked appraisals separately.']
+  },
+  {
+    key: 'appraisal-result',
+    matcher: /^\/appraisals\/[^/]+\/report$/,
+    title: 'Appraisal result report',
+    summary: 'Read the published outcome of a completed appraisal.',
+    purpose: 'See the assessment period, reviewer, final rating and shared summaries. Download CSV or use Print to save a PDF through your browser.',
+    steps: ['Check the assessment period and final rating.', 'Read the employee and manager summaries.', 'Download or print the report, or return to History & results.'],
+    success: ['You can find and retain the published result of the review.']
   },
   {
     key: 'appraisal-detail',
@@ -686,6 +704,7 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
   const [dismissedGuideKey, setDismissedGuideKey] = useState<string | null>(null);
   const drawerOpen = drawerState.guideKey === guide.key && drawerState.open;
   const bannerVisible = showBanner && dismissedGuideKey !== guide.key;
+  const inlineMobileGuide = ['appraisals', 'appraisal-start', 'appraisal-result'].includes(guide.key);
   const openDrawer = () => setDrawerState({ guideKey: guide.key, open: true });
   const closeDrawer = () => setDrawerState({ guideKey: guide.key, open: false });
 
@@ -743,7 +762,8 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
         onClick={openDrawer}
         sx={{
           display: { xs: 'inline-flex', sm: showBanner && bannerVisible ? 'none' : 'inline-flex' },
-          position: 'fixed',
+          position: { xs: inlineMobileGuide ? 'static' : 'fixed', sm: 'fixed' },
+          mb: { xs: inlineMobileGuide ? 2 : 0, sm: 0 },
           right: 24,
           bottom: 24,
           zIndex: 1200,

@@ -1,4 +1,114 @@
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+
+test('starts a manager appraisal in three steps and displays partial launch results', async ({ page }) => {
+  const state = createState(); state.managerMode = true;
+  await installMockApi(page, state);
+  await page.goto('/dashboard'); await switchPerformanceWorkspace(page, 'Manager');
+  await page.goto('/appraisals');
+  await page.getByRole('button', { name: 'Start appraisal', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Choose staff' })).toBeVisible();
+  await page.getByRole('checkbox', { name: /Jordan Lee/ }).check();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Review details', exact: true })).toBeVisible();
+  await expect(muiSelect(page, 'Review cycle')).toHaveText('2026 Annual Review');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByText(/Starting creates the selected appraisals/)).toBeVisible();
+  await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
+  await expect(page.getByText('1 started · 1 already in progress · 1 blocked')).toBeVisible();
+  expect(state.createdCycleBodies[0]).toEqual({ cycleId: 'cycle-1', employees: [{ userId: 'member-1' }] });
+  await expect(page.getByRole('link', { name: 'Open appraisal' })).toHaveAttribute('href', '/appraisals/started-review');
+  await page.getByRole('button', { name: 'Review blocked staff' }).click();
+  await expect(page.getByRole('heading', { name: 'Choose staff' })).toBeVisible();
+});
+
+test('starts a one-off staff review with simple deadlines on mobile', async ({ page }) => {
+  const state = createState(); state.managerMode = true;
+  await installMockApi(page, state); await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/appraisals/start?employeeId=member-1');
+  await expect(page.getByRole('checkbox', { name: /Jordan Lee/ })).toBeChecked();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await muiSelect(page, 'Review cycle').click(); await page.getByRole('option', { name: 'New one-off review' }).click();
+  await page.getByLabel('Review name', { exact: true }).fill('Probation check-in');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Confirm and start', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Confirm and start', exact: true })).toBeFocused();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('mobile-start-appraisal.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
+  expect(state.createdCycleBodies[0]).toMatchObject({ name: 'Probation check-in', launchNow: true, employees: [{ userId: 'member-1' }], responseDeadlines: { selfAssessmentDue: expect.any(String), managerReviewDue: expect.any(String) } });
+  expect(state.createdCycleBodies[0]).not.toHaveProperty('phases');
+});
+
+test('finds past results across cycles, exports filtered history, and opens a printable report', async ({ page }) => {
+  const state = createState();
+  const record = (id: string, name: string, overall?: number) => ({ _id: id, status: 'completed', employee: { userId: 'user-1', name: '=Employee formula' }, manager: { name: 'Manager One' }, cycleId: null,
+    cycleConfigurationSnapshot: { cycleName: name, periodStart: '2024-01-01', periodEnd: '2024-12-31', ratingScale: { max: 5 } }, finalRating: overall === undefined ? {} : { overall, ratingLabel: 'Exceeds expectations' } });
+  state.appraisals = [record('past-1', '2024 annual review', 4), record('unrated', 'Legacy review'), record('zero', 'Zero result', 0)];
+  await installMockApi(page, state); await page.goto('/appraisals');
+  await page.getByRole('tab', { name: /History & results/ }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('2024 annual review', { exact: true })).toBeVisible();
+  await expect(page.getByText('No final rating recorded', { exact: true })).toBeVisible();
+  await expect(page.getByText('0 / 5', { exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('appraisal-history.png'), fullPage: true });
+  await page.getByLabel('Search past appraisals').fill('2024 annual');
+  await expect(page.getByRole('link', { name: 'View result report' })).toHaveCount(1);
+  const downloaded = page.waitForEvent('download'); await page.getByRole('button', { name: 'Download CSV' }).click();
+  const download = await downloaded; const csv = await readFile((await download.path())!, 'utf8');
+  expect(csv).toContain("'=Employee formula"); expect(csv).toContain('2024 annual review'); expect(csv).not.toContain('Legacy review');
+  await page.getByRole('link', { name: 'View result report' }).click();
+  await expect(page.getByRole('heading', { name: 'Appraisal result report' })).toBeVisible();
+  await expect(page.getByText('Delivered customer improvements')).toBeVisible();
+  await expect(page.getByText('Published learning answer')).toBeVisible();
+  await expect(page.getByText('Consistent delivery')).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('appraisal-result-report.png'), fullPage: true });
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.getByRole('heading', { name: 'Appraisal result report' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download CSV' })).toBeHidden();
+  await page.pdf({ path: test.info().outputPath('appraisal-result-report.pdf'), format: 'A4' });
+  await page.emulateMedia({ media: 'screen' });
+  await page.evaluate(() => { window.print = () => { document.body.dataset.printed = 'true'; }; });
+  await page.getByRole('button', { name: 'Print / save PDF' }).click();
+  expect(await page.locator('body').getAttribute('data-printed')).toBe('true');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole('link', { name: 'Back to history' }).click();
+  await expect(page.getByRole('tab', { name: /History & results/ })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('shows HR organization results and start action in the Admin workspace', async ({ page }) => {
+  const state = createState(); state.hrAdminMode = true;
+  state.appraisals = [{ _id: 'old-staff-review', status: 'employee_acknowledged', employee: { name: 'Jordan Lee', userId: 'member-1' }, manager: { name: 'Alex Morgan' }, cycleId: null, cycleConfigurationSnapshot: { cycleName: 'Archived staff review', periodEnd: '2023-12-31' }, finalRating: { overall: 3 } }];
+  await installMockApi(page, state); await page.goto('/dashboard'); await switchPerformanceWorkspace(page, 'Admin');
+  await page.goto('/appraisals?section=history');
+  await expect(page.getByRole('button', { name: 'Start appraisal', exact: true })).toBeVisible();
+  await expect(page.getByText('Jordan Lee', { exact: true })).toBeVisible();
+  await expect(page.getByText('Archived staff review', { exact: true })).toBeVisible();
+  await page.getByLabel('Search past appraisals').fill('nothing matches');
+  await expect(page.getByText('No past appraisals match these filters.')).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(page.getByText('Archived staff review', { exact: true })).toBeVisible();
+});
+
+test('recovers from a history error and explains an empty history without allowing employee launches', async ({ page }) => {
+  const state = createState(); state.appraisals = [];
+  await installMockApi(page, state);
+  let unavailable = true;
+  await page.route('**/__mock-api/appraisals/my*', async (route) => route.fulfill({ status: unavailable ? 503 : 200, contentType: 'application/json', body: JSON.stringify(unavailable ? { success: false, error: 'Unavailable' } : { success: true, data: [] }) }));
+  await page.goto('/appraisals?section=history');
+  await expect(page.getByText('Could not load your appraisals. Please try again.')).toBeVisible();
+  unavailable = false;
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByText('Your completed and cancelled appraisals will appear here across all cycles.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
+  await page.goto('/appraisals/start');
+  await expect(page.getByText(/Your manager or HR starts staff appraisals/)).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+});
 
 interface GoalRecord {
   _id: string;
@@ -312,7 +422,7 @@ async function jsonBody(request: Request): Promise<Record<string, unknown>> {
   return request.postDataJSON() as Record<string, unknown>;
 }
 
-function muiSelect(scope: Locator, label: string) {
+function muiSelect(scope: Locator | Page, label: string) {
   return scope.locator('label').filter({ hasText: label }).first().locator('..').getByRole('combobox');
 }
 
@@ -666,6 +776,13 @@ async function installMockApi(page: Page, state: MockApiState) {
       state.createdCycleBodies.push(body);
       return fulfill({ success: true, data: { cycle: { _id: 'created-cycle', ...body }, launchSummary: { launched: 1, replayed: 0, errors: 0 } } }, 201);
     }
+    if (method === 'POST' && path === '/appraisals/cycles/cycle-1/launch') {
+      const body = await jsonBody(request);
+      state.createdCycleBodies.push({ ...body, cycleId: 'cycle-1' });
+      return fulfill({ success: true, data: { launched: 1, replayed: 1, errors: 1,
+        appraisals: [{ _id: 'started-review', employee: { name: 'Jordan Lee' } }],
+        errorDetails: [{ userId: 'member-1', error: 'Roster changed. Refresh staff and retry.' }] } });
+    }
     if (method === 'PUT' && path === '/appraisals/cycles/cycle-1') {
       const body = await jsonBody(request);
       state.updatedCycleBodies.push(body);
@@ -694,10 +811,20 @@ async function installMockApi(page: Page, state: MockApiState) {
       });
     }
     if (method === 'GET' && path === '/appraisals/team') {
-      return fulfill({ success: true, data: [] });
+      return fulfill({ success: true, data: state.managerMode ? state.appraisals : [] });
     }
+    if (method === 'GET' && path === '/appraisals/organization') return fulfill({ success: true, data: state.appraisals });
     if (method === 'GET' && path === '/appraisals/my') {
       return fulfill({ success: true, data: state.appraisals });
+    }
+    if (method === 'GET' && /^\/appraisals\/[^/]+\/report$/.test(path)) {
+      const appraisal = state.appraisals.find((item) => item._id === path.split('/')[2]);
+      return fulfill({ success: true, data: { id: appraisal?._id, employee: appraisal?.employee, manager: appraisal?.manager,
+        cycle: { name: '2024 annual review', periodStart: '2024-01-01', periodEnd: '2024-12-31' },
+        ratingScale: { min: 1, max: 5 }, status: 'employee_acknowledged', finalRating: { overall: 4, ratingLabel: 'Exceeds expectations', justification: 'Strong delivery', finalizedAt: '2025-01-15' },
+        employeeReflection: { achievements: 'Delivered customer improvements' }, managerSummary: { strengths: 'Reliable delivery' }, goals: [],
+        competencies: [{ name: 'Delivery', selfRating: 3, managerRating: 4, managerComments: 'Consistent delivery' }],
+        answers: [{ section: 'Learning', question: 'What did you apply?', respondent: 'employee', answer: 'Published learning answer' }] } });
     }
     if (method === 'GET' && /^\/appraisals\/[^/]+$/.test(path)) {
       const id = path.split('/')[2];

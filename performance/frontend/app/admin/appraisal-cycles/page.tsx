@@ -400,7 +400,7 @@ export default function AppraisalCyclesAdminPage() {
             Appraisal Cycle Management
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Create, launch, and manage appraisal cycles from one place. New cycles now go live as soon as you create them.
+            Manage review cycles and their progress, or start appraisals for selected staff.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
@@ -414,15 +414,16 @@ export default function AppraisalCyclesAdminPage() {
           <Button
             variant="contained"
             startIcon={<Add />}
-            onClick={() => router.push('/admin/appraisal-cycles/new')}
+            onClick={() => router.push('/appraisals/start')}
           >
-            Create And Launch Cycle
+            Start appraisal
           </Button>
+          <Button variant="outlined" onClick={() => router.push('/admin/appraisal-cycles/new')}>Configure a cycle</Button>
         </Box>
       </Box>
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        New flow: define the cycle, choose participants, and create it once. Draft-only setup is now legacy behavior for older cycles.
+        Start appraisal uses an existing cycle or a one-off review. Configure a cycle when you need a custom assessment design.
       </Alert>
 
       {/* Summary Cards */}
