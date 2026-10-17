@@ -571,7 +571,7 @@ async function installMockApi(page: Page, state: MockApiState) {
       const created: GoalRecord = {
         _id: `goal-created-${state.createdGoalBodies.length}`,
         title: String(body.title),
-        type: 'individual',
+        type: body.type as GoalRecord['type'],
         ownerId: String(body.ownerId || currentUser.id),
         period: String(body.period),
         periodId: String(body.periodId),
@@ -587,6 +587,9 @@ async function installMockApi(page: Page, state: MockApiState) {
     }
     if (method === 'GET' && path === '/okrs/alignable/list') {
       return fulfill({ success: true, data: [] });
+    }
+    if (method === 'GET' && path === '/okrs/hierarchy') {
+      return fulfill({ success: true, data: { organization: [], unalignedDepartment: [], unalignedTeam: [], unalignedIndividual: [] } });
     }
     if (method === 'GET' && /^\/okrs\/[^/]+$/.test(path)) {
       const goal = state.goals.find((item) => item._id === path.split('/')[2]);
@@ -1186,6 +1189,73 @@ test('lets an authorised manager edit a team goal without losing recorded progre
     direction: 'decrease',
     health: 'on_track',
   });
+});
+
+test('switches goal tabs from a team deep link even when presence is unavailable', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  await installMockApi(page, state);
+  await page.route('**/__mock-api/presence/**', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Presence reporting is temporarily unavailable' }) }));
+  await page.goto('/dashboard');
+  await switchPerformanceWorkspace(page, 'Manager');
+  await page.goto('/okrs?view=team');
+  const team = page.getByRole('tab', { name: /Team & Department Goals/ });
+  const alignment = page.getByRole('tab', { name: 'Organization Alignment', exact: true });
+  const approvals = page.getByRole('tab', { name: /Approvals/ });
+  await expect(team).toHaveAttribute('aria-selected', 'true');
+  await alignment.click();
+  await expect(alignment).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByText('No organization goals', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/view=alignment/);
+  await approvals.click();
+  await expect(approvals).toHaveAttribute('aria-selected', 'true');
+  await expect(page).toHaveURL(/view=approvals/);
+  await page.reload();
+  await expect(approvals).toHaveAttribute('aria-selected', 'true');
+  await page.goBack();
+  await expect(alignment).toHaveAttribute('aria-selected', 'true');
+  await alignment.press('ArrowLeft');
+  await team.press('Enter');
+  await expect(team).toHaveAttribute('aria-selected', 'true');
+});
+
+test('lets HR admins open organization OKRs from Admin and create an organization goal', async ({ page }) => {
+  const state = createState();
+  state.hrAdminMode = true;
+  await installMockApi(page, state);
+  await page.goto('/dashboard');
+  await switchPerformanceWorkspace(page, 'Admin');
+  const menu = await openDesktopNavigationGroup(page, 'Administration');
+  await menu.getByRole('menuitem', { name: 'Organization OKRs', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /Organization Goals/ })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: 'Upcoming', exact: true }).click();
+  await page.getByRole('button', { name: 'Create goal', exact: true }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Create goal' });
+  await expect(muiSelect(dialog, 'Scope')).toHaveText('Organization');
+  await dialog.getByLabel('Goal title').fill('Grow customer retention');
+  await dialog.getByLabel('Objective', { exact: true }).fill('Keep customers successful');
+  await dialog.getByLabel('Key result 1').fill('Launch the retention programme');
+  await muiSelect(dialog, 'Metric').click();
+  await page.getByRole('option', { name: 'Milestone', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Create goal', exact: true }).click();
+  await expect(page.getByText('Goal created.', { exact: true })).toBeVisible();
+  expect(state.createdGoalBodies[0]).toMatchObject({ type: 'organization', title: 'Grow customer retention' });
+  await expect(page.getByRole('heading', { name: 'Grow customer retention', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Organization Alignment', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Organization Alignment', exact: true })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('keeps organization goal creation unavailable to line managers', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  await installMockApi(page, state);
+  await page.goto('/dashboard');
+  await switchPerformanceWorkspace(page, 'Manager');
+  await page.goto('/okrs?view=team');
+  await expect(page.getByRole('tab', { name: /Organization Goals/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Create goal', exact: true }).first().click();
+  await muiSelect(page.getByRole('dialog'), 'Scope').click();
+  await expect(page.getByRole('option', { name: 'Organization', exact: true })).toHaveCount(0);
 });
 
 test('initializes canonical goal periods for a manager when a new organization has none', async ({ page }) => {

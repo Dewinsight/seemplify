@@ -8,6 +8,7 @@ const okrRouter = require('../routes/okrs');
 const goalPeriodRouter = require('../routes/goalPeriods');
 const legacyReviewRouter = require('../routes/reviews');
 const appraisalRouter = require('../routes/appraisals');
+const { getUserRole } = require('../middleware/rbac');
 const {
   canAssignGoal,
   canEditGoal,
@@ -27,6 +28,17 @@ function requestContext(overrides = {}) {
     ...overrides
   };
 }
+
+test('IdP owners, admins and HR managers can set organization goals while line managers and employees cannot', () => {
+  for (const role of ['owner', 'admin', 'hr_manager', 'employee']) {
+    const organization = { id: 'org-1', role };
+    const user = { id: 'actor-1', sub: 'actor-1', currentOrganization: organization, organizations: [organization] };
+    const req = requestContext({ session: { user }, userRole: getUserRole(user) });
+    assert.equal(canAssignGoal(req, { type: 'organization', ownerId: user.id }), role !== 'employee', role);
+    assert.equal(canViewGoal(req, { type: 'organization', organizationId: 'org-2' }), false);
+  }
+  assert.equal(canAssignGoal(requestContext(), { type: 'organization', ownerId: 'manager-1' }), false);
+});
 
 test('goal permissions require the active tenant and relationship scope', () => {
   const req = requestContext();

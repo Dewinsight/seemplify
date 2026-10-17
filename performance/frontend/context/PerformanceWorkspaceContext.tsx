@@ -34,7 +34,7 @@ const MANAGER_WORKSPACE: PerformanceWorkspaceOption = {
 const ADMIN_WORKSPACE: PerformanceWorkspaceOption = {
   value: 'admin',
   label: 'Admin',
-  description: 'Cycles, calibration and organization reporting',
+  description: 'Organization goals, cycles, calibration and reporting',
 };
 
 const PerformanceWorkspaceContext = createContext<PerformanceWorkspaceContextValue | null>(null);
