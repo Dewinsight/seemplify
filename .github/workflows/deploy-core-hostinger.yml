@@ -406,6 +406,10 @@ jobs:
           wait_healthy seemplify-core-recruiter-backend-1
           docker exec seemplify-core-recruiter-backend-1 npm run seed:catalog
           docker exec seemplify-core-recruiter-backend-1 npm run reconcile:idp-admin-locks
+          # Retire the legacy sparse constraint only after its tenant-scoped
+          # partial replacement is built and verified. The job container is disposable.
+          "${compose[@]}" run --rm --no-deps performance-backend \
+            node scripts/migrateGoalIdempotencyIndex.js --apply
           "${compose[@]}" up -d --no-deps --force-recreate \
             leave-backend performance-backend payroll-backend time-backend learning
           for container in \
