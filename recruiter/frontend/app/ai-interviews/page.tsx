@@ -941,7 +941,7 @@ export default function AIInterviewsPage() {
       </CardHeader>
       <CardContent className="space-y-3 p-5">
         <Input
-          placeholder="Search all saved candidates"
+          placeholder={workspace.copy("Search all saved candidates")}
           value={candidateSearch}
           onChange={(event) => setCandidateSearch(event.target.value)}
           className="bg-white dark:bg-slate-950"
@@ -958,7 +958,7 @@ export default function AIInterviewsPage() {
                 }
               }}
             />
-            <span className="font-medium text-slate-900 dark:text-white">Select all visible saved candidates</span>
+            <span className="font-medium text-slate-900 dark:text-white">{workspace.copy("Select all visible saved candidates")}</span>
           </label>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={selectVisibleCandidates} disabled={!filteredCandidateIds.length}>
@@ -975,8 +975,8 @@ export default function AIInterviewsPage() {
         <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 dark:border-blue-900/50 dark:bg-blue-950/20">
           <div className="mb-2 flex items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-950 dark:text-white">Add guest candidate</div>
-              <div className="text-xs text-muted-foreground">Invite someone who is not saved in the candidate database.</div>
+              <div className="text-sm font-semibold text-slate-950 dark:text-white">{workspace.copy("Add guest candidate")}</div>
+              <div className="text-xs text-muted-foreground">{workspace.copy("Invite someone who is not saved in the candidate database.")}</div>
             </div>
             <Badge variant="outline">{guestRecipients.length} guest</Badge>
           </div>
@@ -1026,8 +1026,7 @@ export default function AIInterviewsPage() {
         <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
           {loadingCandidates && (
             <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-950/40">
-              Loading saved candidates...
-            </div>
+              {workspace.copy(" Loading saved candidates... ")}</div>
           )}
           {!loadingCandidates && filteredCandidates.map((candidate) => {
             const checked = selectedCandidateIds.includes(candidate._id);
@@ -1051,7 +1050,7 @@ export default function AIInterviewsPage() {
           })}
           {!loadingCandidates && !filteredCandidates.length && (
             <Alert>
-              <AlertDescription>No saved candidates found. Add a guest recipient above.</AlertDescription>
+              <AlertDescription>{workspace.copy("No saved candidates found. Add a guest recipient above.")}</AlertDescription>
             </Alert>
           )}
         </div>
@@ -1160,8 +1159,7 @@ export default function AIInterviewsPage() {
               <div>
                 <h1 className="text-2xl font-bold tracking-normal text-slate-950 dark:text-white md:text-3xl">AI Interviews</h1>
                 <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
-                  Schedule guided chat interviews, control the question set, and track candidate progress from one workspace.
-                </p>
+                  {workspace.copy(" Schedule guided chat interviews, control the question set, and track candidate progress from one workspace. ")}</p>
               </div>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -1169,15 +1167,13 @@ export default function AIInterviewsPage() {
                 <Button asChild variant="outline" className="justify-start">
                   <Link href={jobRecordPath(selectedJob)}>
                     <Briefcase className="mr-2 h-4 w-4" />
-                    Back to job
-                  </Link>
+                    {workspace.copy(" Back to job ")}</Link>
                 </Button>
               )}
               <Button asChild variant="outline" className="justify-start">
                 <Link href={`${workspace.basePath}/new?returnTo=${encodeURIComponent(`/ai-interviews?workflowType=${workspace.workflowType}`)}`}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Post job
-                </Link>
+                  {workspace.copy(" Post job ")}</Link>
               </Button>
               <Button variant="outline" onClick={loadData} disabled={loading} className="justify-start">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -1209,7 +1205,7 @@ export default function AIInterviewsPage() {
                 <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
               </div>
               <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{completedSessions}</div>
-              <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">Candidate sessions submitted</p>
+              <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">{workspace.copy("Candidate sessions submitted")}</p>
             </div>
             <div className="ai-interviews-metric rounded-xl border border-violet-100 bg-violet-50/90 p-4 dark:border-violet-900/70 dark:bg-violet-950/30">
               <div className="flex items-center justify-between">
@@ -1223,7 +1219,7 @@ export default function AIInterviewsPage() {
             </div>
             <div className="ai-interviews-metric rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Candidates</span>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{workspace.copy("Candidates")}</span>
                 <Users className="h-5 w-5 text-slate-600 dark:text-slate-300" />
               </div>
               <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{totalCandidateSessions}</div>
@@ -1305,8 +1301,7 @@ export default function AIInterviewsPage() {
                 ) : (
                   <Button asChild className="bg-emerald-700 text-white hover:bg-emerald-800">
                     <Link href={`/ai-interviews/${lastScheduledInterview.id}`}>
-                      View candidate links
-                      <ArrowUpRight className="ml-2 h-4 w-4" />
+                      {workspace.copy(" View candidate links ")}<ArrowUpRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
                 )}
@@ -1350,8 +1345,7 @@ export default function AIInterviewsPage() {
                           Interview Setup
                         </CardTitle>
                         <CardDescription className="mt-1 text-slate-300">
-                          Choose the AI model, job, questions, recipients, then review the schedule.
-                        </CardDescription>
+                          {workspace.copy(" Choose the AI model, job, questions, recipients, then review the schedule. ")}</CardDescription>
                       </div>
                       <Badge className="w-fit border-white/20 bg-white/10 text-white">
                         {createProgress}% ready
@@ -1403,12 +1397,11 @@ export default function AIInterviewsPage() {
                         <div className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-2">
                             <div className="flex items-center justify-between gap-3">
-                              <Label>Job</Label>
+                              <Label>{workspace.copy("Job")}</Label>
                               <Button asChild variant="outline" size="sm" className="h-8 bg-white dark:bg-slate-950">
                                 <Link href={`${workspace.basePath}/new?returnTo=${encodeURIComponent(`/ai-interviews?workflowType=${workspace.workflowType}`)}`}>
                                   <Plus className="mr-2 h-3.5 w-3.5" />
-                                  Create job
-                                </Link>
+                                  {workspace.copy(" Create job ")}</Link>
                               </Button>
                             </div>
                             {jobs.length > 0 ? (
@@ -1421,7 +1414,7 @@ export default function AIInterviewsPage() {
                                 }}
                               >
                                 <SelectTrigger className="bg-white dark:bg-slate-950">
-                                  <SelectValue placeholder="Select job" />
+                                  <SelectValue placeholder={workspace.copy("Select job")} />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {jobs.map((job) => (
@@ -1433,15 +1426,13 @@ export default function AIInterviewsPage() {
                               </Select>
                             ) : (
                               <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/60">
-                                <div className="font-medium text-slate-950 dark:text-white">No jobs found</div>
+                                <div className="font-medium text-slate-950 dark:text-white">{workspace.copy("No jobs found")}</div>
                                 <p className="mt-1 text-muted-foreground">
-                                  Create a job first so the AI interview can load role-specific questions and candidates.
-                                </p>
+                                  {workspace.copy(" Create a job first so the AI interview can load role-specific questions and candidates. ")}</p>
                                 <Button asChild className="mt-3">
                                   <Link href={`${workspace.basePath}/new?returnTo=${encodeURIComponent(`/ai-interviews?workflowType=${workspace.workflowType}`)}`}>
                                     <Plus className="mr-2 h-4 w-4" />
-                                    Create job
-                                  </Link>
+                                    {workspace.copy(" Create job ")}</Link>
                                 </Button>
                               </div>
                             )}
@@ -1470,15 +1461,14 @@ export default function AIInterviewsPage() {
                               </div>
                               <Button asChild variant="outline" size="sm" className="w-fit bg-white/80 dark:bg-slate-900">
                                 <Link href={jobRecordPath(selectedJob)}>
-                                  View job
-                                </Link>
+                                  {workspace.copy(" View job ")}</Link>
                               </Button>
                             </div>
                           </div>
                         )}
 
                         <div className="space-y-2">
-                          <Label>Candidate guidelines</Label>
+                          <Label>{workspace.copy("Candidate guidelines")}</Label>
                           <Textarea
                             rows={5}
                             value={form.guidelines}
@@ -1542,7 +1532,7 @@ export default function AIInterviewsPage() {
                             </div>
                           </div>
                           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
-                            <div className="text-xs text-muted-foreground">Job</div>
+                            <div className="text-xs text-muted-foreground">{workspace.copy("Job")}</div>
                             <div className="mt-1 font-semibold text-slate-950 dark:text-white">
                               {selectedJob?.title || "Not selected"}
                             </div>
@@ -1694,12 +1684,11 @@ export default function AIInterviewsPage() {
                       </div>
                       {selectedRecipientCount === 0 && (
                         <div className="mt-3 rounded-xl border border-blue-100 bg-white/70 px-3 py-2 text-xs text-blue-900 dark:border-blue-900/60 dark:bg-slate-950/50 dark:text-blue-100">
-                          Add candidates or guest recipients to calculate the real batch total. Showing a one-candidate preview for now.
-                        </div>
+                          {workspace.copy(" Add candidates or guest recipients to calculate the real batch total. Showing a one-candidate preview for now. ")}</div>
                       )}
                       <div className="ai-interviews-cost-grid mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
-                          <div className="text-xs text-muted-foreground">Per candidate</div>
+                          <div className="text-xs text-muted-foreground">{workspace.copy("Per candidate")}</div>
                           <div className="mt-1 text-lg font-bold">{costEstimate?.creditCostPerCandidate ?? 8} credits</div>
                         </div>
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
@@ -1747,7 +1736,7 @@ export default function AIInterviewsPage() {
                           <FileQuestion className="h-4 w-4 text-purple-600" />
                           Question Set
                         </CardTitle>
-                        <CardDescription>Choose existing questions or generate a fresh set for the selected job.</CardDescription>
+                        <CardDescription>{workspace.copy("Choose existing questions or generate a fresh set for the selected job.")}</CardDescription>
                       </div>
                       <Button size="sm" variant="outline" onClick={generateQuestions} disabled={!form.jobId || generating}>
                         {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileQuestion className="mr-2 h-4 w-4" />}
@@ -1778,7 +1767,7 @@ export default function AIInterviewsPage() {
                       <ShieldCheck className="h-4 w-4 text-emerald-300" />
                       Schedule Summary
                     </CardTitle>
-                    <CardDescription className="text-slate-300">Review the batch before creating candidate links.</CardDescription>
+                    <CardDescription className="text-slate-300">{workspace.copy("Review the batch before creating candidate links.")}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 p-5 text-sm">
                     <div className="grid grid-cols-2 gap-3">
@@ -1813,7 +1802,7 @@ export default function AIInterviewsPage() {
                       <div className="flex items-start gap-3">
                         <Briefcase className="mt-0.5 h-4 w-4 text-blue-300" />
                         <div className="min-w-0">
-                          <div className="text-xs text-slate-400">Job</div>
+                          <div className="text-xs text-slate-400">{workspace.copy("Job")}</div>
                           <div className="truncate font-medium">{selectedJob?.title || "No job selected"}</div>
                         </div>
                       </div>
@@ -1934,8 +1923,7 @@ export default function AIInterviewsPage() {
                           <div>
                             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
                               <Trophy className="h-3.5 w-3.5" />
-                              Interview candidate ranking
-                            </div>
+                              {workspace.copy(" Interview candidate ranking ")}</div>
                             <h2 className="mt-3 text-2xl font-semibold">{selectedJobRanking.jobTitle}</h2>
                             <p className="mt-1 max-w-2xl text-sm text-slate-300">
                               Rankings here are scoped to this interview batch only.
@@ -1948,7 +1936,7 @@ export default function AIInterviewsPage() {
                             <div className="text-2xl font-semibold">{selectedJobRanking.questionCount}</div>
                           </div>
                           <div className="rounded-xl border border-white/10 bg-white/10 p-3">
-                            <div className="text-xs text-slate-300">Candidates</div>
+                            <div className="text-xs text-slate-300">{workspace.copy("Candidates")}</div>
                             <div className="text-2xl font-semibold">{selectedJobRanking.candidateCount}</div>
                           </div>
                           <div className="rounded-xl border border-white/10 bg-white/10 p-3">
@@ -1968,10 +1956,9 @@ export default function AIInterviewsPage() {
                     <div className="ai-interviews-panel overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
                       <div className="flex flex-col gap-3 border-b bg-white p-5 dark:border-slate-800 dark:bg-slate-900 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Candidate ranking</h3>
+                          <h3 className="text-lg font-semibold text-slate-950 dark:text-white">{workspace.copy("Candidate ranking")}</h3>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            Scored candidates for this interview batch, highest score first.
-                          </p>
+                            {workspace.copy(" Scored candidates for this interview batch, highest score first. ")}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <Input
@@ -1981,7 +1968,7 @@ export default function AIInterviewsPage() {
                             value={rankingListTopN}
                             onChange={(event) => setRankingListTopN(Math.min(Math.max(Number(event.target.value) || 1, 1), selectedJobRanking.rankings.length || 1))}
                             className="h-9 w-24"
-                            aria-label="Top ranked candidates to save"
+                            aria-label={workspace.copy("Top ranked candidates to save")}
                           />
                           <Button type="button" variant="outline" size="sm" onClick={openRankingList}>
                             <ListPlus className="mr-2 h-4 w-4" />
@@ -2032,8 +2019,7 @@ export default function AIInterviewsPage() {
                           </div>
                         ) : (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-950/50">
-                            Ranking appears here after candidates complete this interview and scoring finishes.
-                          </div>
+                            {workspace.copy(" Ranking appears here after candidates complete this interview and scoring finishes. ")}</div>
                         )}
                       </div>
                     </div>
@@ -2043,7 +2029,7 @@ export default function AIInterviewsPage() {
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <h3 className="text-base font-semibold text-slate-950 dark:text-white">Interview details</h3>
-                            <p className="mt-1 text-xs text-muted-foreground">Schedule and candidate progress</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{workspace.copy("Schedule and candidate progress")}</p>
                           </div>
                           <Badge variant="outline">{selectedJobRanking.interviews.length}</Badge>
                         </div>
@@ -2176,8 +2162,7 @@ export default function AIInterviewsPage() {
                     <div>
                       <h2 className="text-xl font-semibold text-slate-950 dark:text-white">AI interview batches</h2>
                       <p className="text-sm text-muted-foreground">
-                        Open an interview to view its details, candidates, and ranking.
-                      </p>
+                        {workspace.copy(" Open an interview to view its details, candidates, and ranking. ")}</p>
                     </div>
                     <Badge variant="outline" className="w-fit">
                       {jobRankingGroups.length} interview{jobRankingGroups.length === 1 ? "" : "s"}
@@ -2217,7 +2202,7 @@ export default function AIInterviewsPage() {
                                   <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{group.questionCount}</div>
                                 </div>
                                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
-                                  <div className="text-muted-foreground">Candidates</div>
+                                  <div className="text-muted-foreground">{workspace.copy("Candidates")}</div>
                                   <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{group.candidateCount}</div>
                                 </div>
                                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
@@ -2235,7 +2220,7 @@ export default function AIInterviewsPage() {
                                     <div className="min-w-0">
                                       <div className="font-medium text-slate-950 dark:text-white">Scoring complete</div>
                                       <div className="mt-1 text-xs text-muted-foreground">
-                                        {group.scoredCount} scored candidate{group.scoredCount === 1 ? "" : "s"} ready inside this interview.
+                                        {group.scoredCount} {workspace.copy(" scored candidate")}{group.scoredCount === 1 ? "" : "s"} ready inside this interview.
                                       </div>
                                     </div>
                                     <div className="shrink-0 text-right">
@@ -2246,8 +2231,7 @@ export default function AIInterviewsPage() {
                                 ) : (
                                   <div className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
                                     <Medal className="h-4 w-4 text-slate-400" />
-                                    Ranking appears after candidates complete this interview.
-                                  </div>
+                                    {workspace.copy(" Ranking appears after candidates complete this interview. ")}</div>
                                 )}
                               </div>
                               <div className="mt-4 space-y-2">
@@ -2343,7 +2327,7 @@ export default function AIInterviewsPage() {
               </DialogHeader>
               <div className="grid gap-3 rounded-xl border bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-950/50 sm:grid-cols-2">
                 <div>
-                  <div className="text-xs text-muted-foreground">Job</div>
+                  <div className="text-xs text-muted-foreground">{workspace.copy("Job")}</div>
                   <div className="mt-1 font-medium text-slate-950 dark:text-white">{scheduleDialog.interview.jobTitle}</div>
                 </div>
                 <div>
@@ -2413,8 +2397,7 @@ export default function AIInterviewsPage() {
                 ) : (
                   <Button asChild className="bg-emerald-600 text-white hover:bg-emerald-700">
                     <Link href={`/ai-interviews/${scheduleDialog.interview.id}`}>
-                      View candidate links
-                      <ArrowUpRight className="ml-2 h-4 w-4" />
+                      {workspace.copy(" View candidate links ")}<ArrowUpRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
                 )}

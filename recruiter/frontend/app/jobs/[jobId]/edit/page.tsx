@@ -336,7 +336,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                       name="title"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Job Title</FormLabel>
+                          <FormLabel>{workspace.copy("Job Title")}</FormLabel>
                           <FormControl>
                             <Input placeholder="e.g. Senior Frontend Developer" {...field} />
                           </FormControl>
@@ -382,11 +382,11 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                       name="type"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Job Type</FormLabel>
+                          <FormLabel>{workspace.copy("Job Type")}</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="Select job type" />
+                                <SelectValue placeholder={workspace.copy("Select job type")} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
@@ -491,7 +491,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                       name="status"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Job Status</FormLabel>
+                          <FormLabel>{workspace.copy("Job Status")}</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger>
@@ -532,7 +532,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                     name="description"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Job Description</FormLabel>
+                        <FormLabel>{workspace.copy("Job Description")}</FormLabel>
                         <FormControl>
                           <Textarea
                             placeholder="Describe the role, responsibilities, and what makes this position exciting..."
@@ -541,8 +541,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                           />
                         </FormControl>
                         <FormDescription>
-                          Provide a compelling description that attracts the right candidates
-                        </FormDescription>
+                          {workspace.copy(" Provide a compelling description that attracts the right candidates ")}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -692,8 +691,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                           />
                         </FormControl>
                         <FormDescription>
-                          What specific skills and technologies should candidates have?
-                        </FormDescription>
+                          {workspace.copy(" What specific skills and technologies should candidates have? ")}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -811,11 +809,9 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                           </FormControl>
                           <div className="space-y-1 leading-none">
                             <FormLabel className="text-base">
-                              Make this job public
-                            </FormLabel>
+                              {workspace.copy(" Make this job public ")}</FormLabel>
                             <FormDescription className="text-sm leading-relaxed">
-                              Enable external candidates to apply directly. Each application uses credits for AI-powered CV parsing, analysis, and matching.
-                            </FormDescription>
+                              {workspace.copy(" Enable external candidates to apply directly. Each application uses credits for AI-powered CV parsing, analysis, and matching. ")}</FormDescription>
                           </div>
                         </FormItem>
                       )}
@@ -842,7 +838,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                                       <li>• <strong>Cost Control:</strong> Each application triggers AI CV parsing, analysis, and matching</li>
                                       <li>• <strong>Budget Planning:</strong> Credits are reserved upfront so you know exact costs</li>
                                       <li>• <strong>Resource Management:</strong> Helps the system allocate processing capacity</li>
-                                      <li>• <strong>Quality Focus:</strong> Encourages targeted, well-defined job postings</li>
+                                      <li>• <strong>Quality Focus:</strong> {workspace.copy(" Encourages targeted, well-defined job postings")}</li>
                                     </ul>
                                   </TooltipContent>
                                 </Tooltip>
@@ -867,15 +863,13 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                                 <div className="bg-white dark:bg-gray-900 rounded p-3 border border-blue-300 dark:border-blue-700">
                                   <p className="text-xs font-medium text-muted-foreground mb-1">💡 Cost Breakdown:</p>
                                   <p className="text-sm">
-                                    Each application includes AI-powered CV parsing, data extraction, candidate scoring, and intelligent matching.
-                                  </p>
+                                    {workspace.copy(" Each application includes AI-powered CV parsing, data extraction, candidate scoring, and intelligent matching. ")}</p>
                                   <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
                                     <p className="font-semibold text-blue-700 dark:text-blue-300">
                                       {field.value || 0} applications × 3 credits = <span className="text-lg">{(field.value || 0) * 3} credits</span> reserved
                                     </p>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                      Credits are reserved upfront. Unused credits are automatically refunded if you unpublish or delete this job.
-                                    </p>
+                                      {workspace.copy(" Credits are reserved upfront. Unused credits are automatically refunded if you unpublish or delete this job. ")}</p>
                                   </div>
                                 </div>
                               </div>
