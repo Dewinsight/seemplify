@@ -154,6 +154,10 @@ NotificationSchema.statics.getUnreadCount = function(userId) {
 // Static method to create job creation activity notification for all org members
 NotificationSchema.statics.createJobCreatedNotification = async function(userId, jobData, creatorName = null) {
   try {
+    const assessment = jobData.workflowType === 'employee-assessment';
+    const recordType = assessment ? 'employee assessment' : 'job posting';
+    const actionUrl = `${assessment ? '/employee-assessments' : '/jobs'}/${jobData._id}`;
+    const actionText = assessment ? 'View Assessment' : 'View Job';
     const User = require('./User');
     const Organization = require('./Organization');
     const creator = await User.findById(userId);
@@ -181,8 +185,8 @@ NotificationSchema.statics.createJobCreatedNotification = async function(userId,
     notifications.push({
       user: userId,
       type: 'job_created',
-      title: decodeHtmlEntities(`Job created: ${jobData.title}`),
-      message: decodeHtmlEntities(`You created a new job posting for ${jobData.title} in ${jobData.department}`),
+      title: decodeHtmlEntities(`${assessment ? 'Assessment created' : 'Job created'}: ${jobData.title}`),
+      message: decodeHtmlEntities(`You created a new ${recordType} for ${jobData.title} in ${jobData.department}`),
       data: {
         jobId: jobData._id,
         jobTitle: decodeHtmlEntities(jobData.title),
@@ -194,8 +198,8 @@ NotificationSchema.statics.createJobCreatedNotification = async function(userId,
         organizationId: creator.currentOrganization,
         organizationName: orgName
       },
-      actionUrl: `/jobs/${jobData._id}`,
-      actionText: 'View Job',
+      actionUrl,
+      actionText,
       priority: 'medium'
     });
 
@@ -204,8 +208,8 @@ NotificationSchema.statics.createJobCreatedNotification = async function(userId,
       notifications.push({
         user: orgUser._id,
         type: 'job_created',
-        title: decodeHtmlEntities(`New job posted: ${jobData.title}`),
-        message: decodeHtmlEntities(`${creator.name || creator.email} created a new job posting for ${jobData.title} in ${jobData.department}`),
+        title: decodeHtmlEntities(`${assessment ? 'New assessment created' : 'New job posted'}: ${jobData.title}`),
+        message: decodeHtmlEntities(`${creator.name || creator.email} created a new ${recordType} for ${jobData.title} in ${jobData.department}`),
         data: {
           jobId: jobData._id,
           jobTitle: decodeHtmlEntities(jobData.title),
@@ -217,8 +221,8 @@ NotificationSchema.statics.createJobCreatedNotification = async function(userId,
           organizationId: creator.currentOrganization,
           organizationName: orgName
         },
-        actionUrl: `/jobs/${jobData._id}`,
-        actionText: 'View Job',
+        actionUrl,
+        actionText,
         priority: 'medium'
       });
     }
