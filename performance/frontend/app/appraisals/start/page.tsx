@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Alert, Box, Button, Checkbox, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Step, StepLabel, Stepper, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Checkbox, CircularProgress, Divider, FormControlLabel, MenuItem, Paper, Stack, Step, StepLabel, Stepper, TextField, Typography } from '@mui/material';
 import { useAppraisalCycles, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
 import { CycleTemplateSummary } from '@/components/appraisals/CycleDesignBuilder';
@@ -15,12 +15,16 @@ interface Cycle { _id: string; name: string; status: string; periodStart: string
 interface StartedReview { _id: string; employee?: { name?: string } }
 interface Receipt { launched: number; replayed?: number; errors: number; appraisals?: StartedReview[]; existingAppraisals?: StartedReview[]; errorDetails?: Array<{ userId?: string; error?: string }> }
 const dateIn = (days: number) => { const date = new Date(); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
+const calendarDate = (value: string) => new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const dayAfter = (value: string) => { const date = new Date(value); date.setUTCDate(date.getUTCDate() + 1); return date.toISOString().slice(0, 10); };
+type DateField = 'periodStart' | 'periodEnd' | 'selfDue' | 'managerDue';
 const apiError = (error: unknown) => (error as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not complete this request. Please try again.';
 
 export default function StartAppraisalPage() {
   const router = useRouter();
   const { workspace, setWorkspace } = usePerformanceWorkspace();
   const stepHeading = useRef<HTMLHeadingElement>(null);
+  const dateInputs = useRef<Partial<Record<DateField, HTMLInputElement | null>>>({});
   const { isManager, isHRAdmin, isLoading: contextLoading } = useUserContext();
   const { cycles, isLoading: cyclesLoading, isError: cyclesError, mutate: refreshCycles } = useAppraisalCycles();
   const query = useSearchParams();
@@ -40,6 +44,7 @@ export default function StartAppraisalPage() {
   const [periodEnd, setPeriodEnd] = useState(dateIn(-1));
   const [selfDue, setSelfDue] = useState(dateIn(7));
   const [managerDue, setManagerDue] = useState(dateIn(14));
+  const [detailsAttempted, setDetailsAttempted] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const permitted = isManager || isHRAdmin;
   const openCycles = (cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status));
@@ -50,6 +55,16 @@ export default function StartAppraisalPage() {
   const participants = people.filter((person) => selected.includes(person.userId) && person.isSelectableForAppraisal !== false);
   const unavailable = people.filter((person) => person.isSelectableForAppraisal === false);
   const shownPeople = useMemo(() => people.filter((person) => `${person.name} ${person.teamName || ''}`.toLowerCase().includes(search.toLowerCase())), [people, search]);
+  const today = dateIn(0);
+  const yesterday = dateIn(-1);
+  const dateErrors: Record<DateField, string> = {
+    periodStart: !periodStart ? 'Choose the first day of the work being reviewed.' : periodStart >= today ? `Choose ${calendarDate(yesterday)} or earlier. This review is for work already completed.` : '',
+    periodEnd: !periodEnd ? 'Choose the last day of the work being reviewed.' : periodEnd >= today ? `Choose ${calendarDate(yesterday)} or earlier. The work period must finish before this review starts today.` : periodStart && periodEnd < periodStart ? 'Choose an end date on or after the assessment start date.' : '',
+    selfDue: !selfDue ? 'Choose an employee response deadline.' : selfDue < today ? `Choose ${calendarDate(today)} or later so employees have time to respond.` : '',
+    managerDue: !managerDue ? 'Choose a manager review deadline.' : managerDue <= (selfDue || today) ? `Choose a date after ${calendarDate(selfDue || today)}. Employees respond before managers review.` : '',
+  };
+  const dateError = (field: DateField, value: string) => (detailsAttempted || value) ? dateErrors[field] : '';
+  const changeDate = (setter: (value: string) => void, value: string) => { setter(value); setError(''); };
 
   const loadStaff = async () => {
     setLoading(true); setError('');
@@ -69,19 +84,28 @@ export default function StartAppraisalPage() {
   const validateDetails = () => {
     if (cycleId !== 'new') return existingCycle ? '' : 'Choose an open cycle or a one-off review.';
     if (!title.trim() || !template) return 'Choose a review name and template.';
-    if (!periodStart || !periodEnd || periodEnd < periodStart) return 'Choose a valid assessment period.';
-    if (periodEnd >= dateIn(0)) return 'The assessment period must end before the review begins today.';
-    if (selfDue < dateIn(0) || managerDue <= selfDue) return 'Choose an employee deadline from today onward, followed by a later manager deadline.';
+    if (Object.values(dateErrors).some(Boolean)) return 'Check the highlighted dates below. The work period comes before the review, and employee responses come before manager reviews.';
     return '';
   };
   const focusStep = () => window.requestAnimationFrame(() => { stepHeading.current?.focus({ preventScroll: true }); window.scrollTo({ top: 0 }); });
   const moveStep = (index: number) => { setStep(index); focusStep(); };
   const next = () => {
+    if (step === 1) setDetailsAttempted(true);
     const issue = step === 0 ? (participants.length ? '' : 'Choose at least one eligible member of staff.') : validateDetails();
     setError(issue); if (!issue) moveStep(step + 1);
+    else if (step === 1 && cycleId === 'new') {
+      const field = (Object.keys(dateErrors) as DateField[]).find((key) => dateErrors[key]);
+      if (field) dateInputs.current[field]?.focus();
+    }
   };
   const start = async () => {
-    const issue = validateDetails(); if (issue || !participants.length) { setError(issue || 'Choose staff before starting.'); return; }
+    const issue = validateDetails();
+    if (issue || !participants.length) {
+      setError(issue || 'Choose staff before starting.');
+      if (issue) { setDetailsAttempted(true); moveStep(1); }
+      else moveStep(0);
+      return;
+    }
     setSaving(true); setError('');
     try {
       const employees = participants.map((person) => ({ userId: person.userId }));
@@ -109,7 +133,7 @@ export default function StartAppraisalPage() {
   return <Box sx={{ maxWidth: 1000, mx: 'auto' }}>
     <Button component={Link} href="/appraisals" sx={{ mb: 1 }}>Back to appraisals</Button>
     <Typography variant="h4" fontWeight={700}>Start appraisal</Typography>
-    <Typography color="text.secondary" mt={1} mb={3}>{isHRAdmin ? 'Start reviews for staff in your organization.' : 'Start reviews for the staff you manage.'}</Typography>
+    <Typography color="text.secondary" mt={1} mb={3}>{isHRAdmin ? 'Start reviews for staff in your organization.' : 'Start reviews for the staff you manage.'} Review work already completed, then collect employee and manager responses.</Typography>
     <Stepper activeStep={step} alternativeLabel sx={{ mb: 3 }}>{['People', 'Review details', 'Confirm and start'].map((label) => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}</Stepper>
     {error && <Alert severity="error" sx={{ mb: 2 }} action={step === 0 ? <Button onClick={loadStaff}>Retry</Button> : undefined}>{error}</Alert>}
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
@@ -123,20 +147,38 @@ export default function StartAppraisalPage() {
       {step === 1 && <Stack spacing={2.5}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Review details</Typography>
         {cyclesError && <Alert severity="warning" action={<Button onClick={() => refreshCycles()}>Retry</Button>}>Existing cycles could not be loaded. Retry to choose an existing cycle, or use a new one-off review.</Alert>}
-        <TextField select label="Review cycle" value={cycleId || 'new'} onChange={(event) => setCycleId(event.target.value)}><MenuItem value="new">New one-off review</MenuItem>{openCycles.map((cycle) => <MenuItem key={cycle._id} value={cycle._id}>{cycle.name}</MenuItem>)}</TextField>
+        <TextField select label="Review cycle" value={cycleId || 'new'} onChange={(event) => { setCycleId(event.target.value); setError(''); setDetailsAttempted(false); }} helperText="Use an existing cycle’s questions and deadlines, or start a new one-off review now."><MenuItem value="new">New one-off review</MenuItem>{openCycles.map((cycle) => <MenuItem key={cycle._id} value={cycle._id}>{cycle.name}</MenuItem>)}</TextField>
         {existingCycle ? <Box><Typography fontWeight={600}>{existingCycle.name}</Typography><Typography>Assessment period: {shortDate(existingCycle.periodStart)} – {shortDate(existingCycle.periodEnd)}</Typography><Typography>Employee deadline: {shortDate(existingSelfDue)}</Typography><Typography>Manager deadline: {shortDate(existingManagerDue)}</Typography><Alert severity="info" sx={{ mt: 2 }}>This uses the existing cycle&apos;s questions and deadlines. Staff who already have an appraisal in this cycle will keep their existing review.</Alert></Box> : <>
           <TextField label="Review name" value={title} onChange={(event) => setTitle(event.target.value)} />
           <TextField select label="Review type" value={reviewType} onChange={(event) => setReviewType(event.target.value)}><MenuItem value="adhoc">One-off review</MenuItem><MenuItem value="quarterly">Quarterly review</MenuItem><MenuItem value="probation">Probation review</MenuItem><MenuItem value="project">Project review</MenuItem><MenuItem value="annual">Annual review</MenuItem></TextField>
           <TextField select label="Review template" value={template?.id || ''} onChange={(event) => setTemplateId(event.target.value)}>{templates.map((entry) => <MenuItem key={entry.id} value={entry.id}>{entry.name}</MenuItem>)}</TextField>
           <Typography variant="body2" color="text.secondary">{template?.description || 'Uses the standard review questions and scoring.'}</Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}><TextField fullWidth label="Assessment period starts" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} /><TextField fullWidth label="Assessment period ends" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} /></Stack>
-          <Typography variant="body2">The review begins today. The assessment period is the work being reviewed.</Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}><TextField fullWidth label="Employee response due" type="date" value={selfDue} onChange={(event) => setSelfDue(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} /><TextField fullWidth label="Manager review due" type="date" value={managerDue} onChange={(event) => setManagerDue(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} /></Stack>
+          <Alert severity="info"><Typography fontWeight={600}>This review starts today, {calendarDate(today)}.</Typography>First choose the work you are reviewing. Response deadlines are when people complete the review; they are not the end of the work period.</Alert>
+          <Box component="section" aria-labelledby="assessment-period-heading">
+            <Typography id="assessment-period-heading" component="h3" variant="subtitle1" fontWeight={600}>1. Work being reviewed</Typography>
+            <Typography variant="body2" color="text.secondary" mb={2}>Choose a completed assessment period. Its last day must be {calendarDate(yesterday)} or earlier.</Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField fullWidth required label="Assessment period starts" type="date" value={periodStart} inputRef={(input) => { dateInputs.current.periodStart = input; }} onChange={(event) => changeDate(setPeriodStart, event.target.value)} error={Boolean(dateError('periodStart', periodStart))} helperText={dateError('periodStart', periodStart) || 'First day of the work you want to review.'} slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: yesterday } }} />
+              <TextField fullWidth required label="Assessment period ends" type="date" value={periodEnd} inputRef={(input) => { dateInputs.current.periodEnd = input; }} onChange={(event) => changeDate(setPeriodEnd, event.target.value)} error={Boolean(dateError('periodEnd', periodEnd))} helperText={dateError('periodEnd', periodEnd) || 'Last day of completed work, not the response deadline.'} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: periodStart && periodStart <= yesterday ? periodStart : undefined, max: yesterday } }} />
+            </Stack>
+            {periodEnd >= today && periodStart && periodStart <= yesterday && <Button variant="outlined" size="small" sx={{ mt: 1.5 }} onClick={() => changeDate(setPeriodEnd, yesterday)}>Set assessment end to yesterday ({calendarDate(yesterday)})</Button>}
+            <Typography variant="body2" color="text.secondary" mt={1.5}>Need to assess work that ends in the future? Start the review after that work period has ended.</Typography>
+          </Box>
+          <Divider />
+          <Box component="section" aria-labelledby="response-deadlines-heading">
+            <Typography id="response-deadlines-heading" component="h3" variant="subtitle1" fontWeight={600}>2. Time to complete the review</Typography>
+            <Typography variant="body2" color="text.secondary" mb={2}>Employees respond first. Give managers a later deadline to review their submissions.</Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField fullWidth required label="Employee response due" type="date" value={selfDue} inputRef={(input) => { dateInputs.current.selfDue = input; }} onChange={(event) => changeDate(setSelfDue, event.target.value)} error={Boolean(dateError('selfDue', selfDue))} helperText={dateError('selfDue', selfDue) || `Choose ${calendarDate(today)} or later.`} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today } }} />
+              <TextField fullWidth required label="Manager review due" type="date" value={managerDue} inputRef={(input) => { dateInputs.current.managerDue = input; }} onChange={(event) => changeDate(setManagerDue, event.target.value)} error={Boolean(dateError('managerDue', managerDue))} helperText={dateError('managerDue', managerDue) || 'After the employee response deadline.'} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: selfDue && selfDue >= today ? dayAfter(selfDue) : dateIn(1) } }} />
+            </Stack>
+          </Box>
         </>}
       </Stack>}
       {step === 2 && <Stack spacing={2}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Confirm and start</Typography><Typography fontWeight={600}>{existingCycle?.name || title}</Typography><Typography>{participants.length} participant{participants.length === 1 ? '' : 's'} · {existingCycle ? 'Existing cycle' : template?.name}</Typography>
         <Typography>Assessment period: {shortDate(existingCycle?.periodStart || periodStart)} – {shortDate(existingCycle?.periodEnd || periodEnd)}</Typography>
+        {!existingCycle && <Typography>Review starts: {calendarDate(today)} (today)</Typography>}
         <Typography>Employee deadline: {shortDate(existingSelfDue || (existingCycle ? undefined : selfDue))}</Typography><Typography>Manager deadline: {shortDate(existingManagerDue || (existingCycle ? undefined : managerDue))}</Typography>
         {participants.map((person) => <Typography key={person.userId}>{person.name} · Reviewer: {person.managerName || 'Assigned manager'}</Typography>)}
         <Alert severity="info">Starting creates the selected appraisals and notifies employees to complete their self-assessment. Managers review their submissions next. Existing appraisals are reused.</Alert>
