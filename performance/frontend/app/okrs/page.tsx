@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Alert,
   Autocomplete,
@@ -54,7 +55,7 @@ import { useDirectReports, useUserContext } from '@/lib/hooks';
 type MetricType = 'percentage' | 'number' | 'currency' | 'boolean' | 'milestone';
 type GoalType = 'individual' | 'team' | 'department' | 'organization';
 type PeriodBand = 'upcoming' | 'current' | 'past';
-type WorkspaceView = 'my' | 'team' | 'alignment' | 'approvals';
+type WorkspaceView = 'my' | 'organization' | 'team' | 'alignment' | 'approvals';
 type Decision = 'approve' | 'request_changes' | 'reject';
 
 interface KeyResult {
@@ -314,6 +315,8 @@ function EmptyState({ title, description, action }: { title: string; description
 }
 
 export default function OKRWorkspacePage() {
+  const searchParams = useSearchParams();
+  const requestedView = searchParams.get('view') as WorkspaceView | null;
   const { user: authUser, currentOrganization: authOrganization } = useAuth();
   const { workspace } = usePerformanceWorkspace();
   const { user, role, isManager, isHRAdmin, teams, isLoading: contextLoading } = useUserContext();
@@ -570,6 +573,10 @@ export default function OKRWorkspacePage() {
     () => periodGoals.filter((goal) => goal.permissions?.decide === true),
     [periodGoals],
   );
+  const organizationGoals = useMemo(
+    () => periodGoals.filter((goal) => goal.type === 'organization'),
+    [periodGoals],
+  );
 
   const views = useMemo(() => {
     const items: Array<{ value: WorkspaceView; label: string; count?: number }> = [];
@@ -577,20 +584,28 @@ export default function OKRWorkspacePage() {
       items.push({ value: 'my', label: 'My Goals', count: myGoals.length });
       return items;
     }
+    if (workspace === 'admin' && isHRAdmin) items.push({ value: 'organization', label: 'Organization Goals', count: organizationGoals.length });
     if (canManageGoalWorkspace) items.push({ value: 'team', label: 'Team & Department Goals', count: teamGoals.length });
     items.push({ value: 'alignment', label: 'Organization Alignment' });
     if (canManageGoalWorkspace || approvalGoals.length > 0) items.push({ value: 'approvals', label: 'Approvals', count: approvalGoals.length });
     return items;
-  }, [approvalGoals.length, canManageGoalWorkspace, myGoals.length, teamGoals.length, workspace]);
+  }, [approvalGoals.length, canManageGoalWorkspace, isHRAdmin, myGoals.length, organizationGoals.length, teamGoals.length, workspace]);
+
+  const availableViewKeys = views.map((item) => item.value).join(',');
 
   useEffect(() => {
-    const requestedView = new URLSearchParams(window.location.search).get('view') as WorkspaceView | null;
-    if (requestedView && views.some((item) => item.value === requestedView)) {
-      if (view !== requestedView) setView(requestedView);
-      return;
-    }
-    if (!views.some((item) => item.value === view)) setView(views[0]?.value || 'my');
-  }, [view, views, workspace]);
+    const allowed = availableViewKeys.split(',') as WorkspaceView[];
+    setView((current) => requestedView && allowed.includes(requestedView)
+      ? requestedView
+      : allowed.includes(current) ? current : allowed[0] || 'my');
+  }, [availableViewKeys, requestedView, workspace]);
+
+  const changeView = (nextView: WorkspaceView) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', nextView);
+    window.history.pushState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    setView(nextView);
+  };
 
   const loadHierarchy = useCallback(async () => {
     setHierarchyLoading(true);
@@ -618,7 +633,7 @@ export default function OKRWorkspacePage() {
       || periodDefinitions.find((item) => !['closed', 'archived'].includes(String(item.status || '')));
     setForm({
       title: '',
-      type: 'individual',
+      type: workspace === 'admin' && isHRAdmin && view === 'organization' ? 'organization' : 'individual',
       period: period?.name || period?.code || selectedPeriod,
       periodId: period?._id || '',
       assignees: [],
@@ -628,7 +643,7 @@ export default function OKRWorkspacePage() {
       objectives: [emptyObjective()],
     });
     setAlignableGoals([]);
-  }, [periodDefinitions, selectedPeriod]);
+  }, [isHRAdmin, periodDefinitions, selectedPeriod, view, workspace]);
 
   const closeGoalEditor = useCallback(() => {
     setCreateOpen(false);
@@ -1183,7 +1198,7 @@ export default function OKRWorkspacePage() {
       </Paper>
 
       <Paper variant="outlined" sx={{ borderRadius: 2 }}>
-        <Tabs value={view} onChange={(_, value: WorkspaceView) => setView(value)} variant="scrollable" scrollButtons="auto">
+        <Tabs value={views.some((item) => item.value === view) ? view : views[0]?.value} onChange={(_, value: WorkspaceView) => changeView(value)} variant="scrollable" scrollButtons="auto">
           {views.map((item) => (
             <Tab key={item.value} value={item.value} label={item.count == null ? item.label : `${item.label} (${item.count})`} />
           ))}
@@ -1201,6 +1216,9 @@ export default function OKRWorkspacePage() {
         <>
           <TabPanel active={view === 'my'}>
             {renderGoalList(myGoals, 'No goals for this period', 'Create a goal or choose another period.')}
+          </TabPanel>
+          <TabPanel active={view === 'organization'}>
+            {renderGoalList(organizationGoals, 'No organization goals for this period', 'Create an organization goal to set direction for departments and teams.')}
           </TabPanel>
           <TabPanel active={view === 'team'}>
             {renderGoalList(teamGoals, 'No team or department goals for this period', 'Assigned, team, and department goals will appear here.')}

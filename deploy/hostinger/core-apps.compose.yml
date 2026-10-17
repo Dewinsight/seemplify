@@ -315,6 +315,8 @@ services:
       HUB_TOKEN_SECRET: ${PERFORMANCE_HUB_SECRET:?required}
       IDP_PERFORMANCE_SERVICE_SECRET: ${IDP_WEBHOOK_PERFORMANCE:?required}
       IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_PERFORMANCE:?required}
+      PRESENCE_REPORTER_SERVICE_SECRET: ${TIME_INTERNAL_SECRET:?required}
+      TIME_ATTENDANCE_PRESENCE_URL: http://time-backend:5010/api/internal/v1/presence
       MAIL_API_BASE_URL: https://mail-control.seemplifyai.com
       MAIL_API_TOKEN: ${MAIL_API_TOKEN:?required}
       MAIL_FROM_EMAIL: no-reply@seemplifyai.com
