@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -122,6 +124,7 @@ const replaceLegacyCandidateTemplates = (emailSettings: EmailSettings) => {
 };
 
 export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection', onSettingsChange }: JobEmailSettingsProps) {
+  const workspace = useJobWorkspace();
   const { toast } = useToast();
   const { state } = useUser();
   const { currentOrganization } = useOrganization();
@@ -337,13 +340,13 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
           onSettingsChange?.(currentSettings);
           toast({
             title: 'Email templates updated',
-            description: 'Older stock templates were replaced with the correct candidate-specific versions.',
+            description: workspace.copy("Older stock templates were replaced with the correct candidate-specific versions."),
           });
         } catch (migrationError) {
           console.error('Failed to persist candidate email template migration:', migrationError);
           toast({
             title: 'Review updated email templates',
-            description: 'The corrected content is shown, but it still needs to be saved for this job.',
+            description: workspace.copy("The corrected content is shown, but it still needs to be saved for this job."),
             variant: 'destructive',
           });
         }
@@ -516,7 +519,7 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
 
       toast({
         title: 'Template saved',
-        description: `${TEMPLATE_LABEL_MAP[activeTemplate]} template saved for this job.`
+        description: ("" + (TEMPLATE_LABEL_MAP[activeTemplate]) + workspace.copy(" template saved for this job."))
       });
     } catch (error: any) {
       toast({
@@ -561,8 +564,7 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
     return (
       <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        Loading candidate email templates...
-      </div>
+        {workspace.copy(" Loading candidate email templates... ")}</div>
     );
   }
 
@@ -571,8 +573,7 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
       <div>
         <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
           <Mail className="h-5 w-5" />
-          Candidate email templates
-        </h3>
+          {workspace.copy(" Candidate email templates ")}</h3>
         <p className="mt-1 text-sm text-muted-foreground">{jobTitle}</p>
       </div>
 
@@ -583,7 +584,7 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
         </TabsList>
 
         <TabsContent value="templates" className="space-y-5">
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" role="list" aria-label="Candidate email template types">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" role="list" aria-label={workspace.copy("Candidate email template types")}>
             {TEMPLATE_OPTIONS.map(option => {
               const Icon = option.icon;
               const isActive = activeTemplate === option.type;
@@ -640,7 +641,7 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
               ) : saveConfirmation?.templateType === activeTemplate ? (
                 <span className="flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-300">
                   <CheckCircle className="h-4 w-4" />
-                  Saved for this job at {saveConfirmation.savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {workspace.copy(" Saved for this job at ")}{saveConfirmation.savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               ) : (
                 <span className="flex items-center gap-2 text-muted-foreground">

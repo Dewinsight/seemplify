@@ -1,5 +1,7 @@
 'use client'
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -71,6 +73,7 @@ export function MobileJobHeader({
   isExportingReport = false,
   formatSalaryDisplay
 }: MobileJobHeaderProps) {
+  const workspace = useJobWorkspace();
   const [showMobileDetails, setShowMobileDetails] = useState(false)
 
   if (isMobile) {
@@ -120,7 +123,7 @@ export function MobileJobHeader({
                 <div className="grid grid-cols-3 gap-3">
                   <div className="text-center">
                     <div className="text-lg font-bold">{jobData.applicantCount || 0}</div>
-                    <div className="text-xs text-blue-100">Applicants</div>
+                    <div className="text-xs text-blue-100">{workspace.copy("Applicants")}</div>
                   </div>
                   <div className="text-center">
                     <div className="text-lg font-bold">{jobData.type}</div>
@@ -150,8 +153,7 @@ export function MobileJobHeader({
                     className="w-full border-white/30 text-white hover:bg-white/10 backdrop-blur-sm bg-blue-700/50"
                   >
                     <Edit className="h-4 w-4 mr-2" />
-                    Edit Job
-                  </Button>
+                    {workspace.copy(" Edit Job ")}</Button>
                 </div>
 
                 <div className="w-full">
@@ -180,7 +182,7 @@ export function MobileJobHeader({
                       <XCircle className="h-4 w-4 text-gray-300" />
                     )}
                     <span className="text-sm">
-                      {jobData.publiclyVisible ? 'Public Job' : 'Private Job'}
+                      {jobData.publiclyVisible ? workspace.copy("Public Job") : workspace.copy("Private Job")}
                     </span>
                   </div>
                   <Button
@@ -218,8 +220,7 @@ export function MobileJobHeader({
             className="mb-6 text-white hover:bg-white/10 backdrop-blur-sm border border-white/20"
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Jobs
-          </Button>
+            {workspace.copy(" Back to Jobs ")}</Button>
           
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6 lg:gap-8">
             <div className="flex-1 min-w-0">
@@ -253,7 +254,7 @@ export function MobileJobHeader({
                 </div>
                 <div className="inline-flex items-center rounded-full bg-white/10 px-3 py-2 text-xs sm:text-sm font-medium backdrop-blur-sm min-h-[36px]">
                   <Users className="mr-2 h-4 w-4 flex-shrink-0" />
-                  <span className="truncate">{jobData.applicantCount || 0} Applicants</span>
+                  <span className="truncate">{jobData.applicantCount || 0} {workspace.copy(" Applicants")}</span>
                 </div>
                 <Badge 
                   variant={jobData.status === 'active' ? 'default' : 'secondary'} 
@@ -305,12 +306,11 @@ export function MobileJobHeader({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Job Actions</DropdownMenuLabel>
+                  <DropdownMenuLabel>{workspace.copy("Job Actions")}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={onEdit}>
                     <Edit className="mr-2 h-4 w-4" />
-                    Edit Job
-                  </DropdownMenuItem>
+                    {workspace.copy(" Edit Job ")}</DropdownMenuItem>
                   
                   <DropdownMenuItem onClick={onTogglePublic} disabled={isUpdatingPublicStatus}>
                     {jobData.publiclyVisible ? (
@@ -344,8 +344,7 @@ export function MobileJobHeader({
                   
                   <DropdownMenuItem onClick={onDelete} className="text-red-600">
                     <XCircle className="mr-2 h-4 w-4" />
-                    Delete Job
-                  </DropdownMenuItem>
+                    {workspace.copy(" Delete Job ")}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import { useJobWorkspace } from '@/hooks/use-job-workspace'
 import React, { useRef, useState, useCallback, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -72,6 +73,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
   candidateCount,
   isMobile = false
 }) => {
+  const workspace = useJobWorkspace()
   const carouselRef = useRef<HTMLDivElement>(null)
   const [touchStart, setTouchStart] = useState<number | null>(null)
   const [touchEnd, setTouchEnd] = useState<number | null>(null)
@@ -204,7 +206,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                       "text-xs font-medium leading-tight text-center",
                       isActive ? "text-white" : "text-gray-700 dark:text-gray-300"
                     )}>
-                      {tab.shortLabel}
+                      {workspace.copy(tab.shortLabel)}
                     </span>
                     {tab.id === 'candidates' && candidateCount !== undefined && candidateCount > 0 && (
                       <Badge
@@ -237,7 +239,7 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                     ? "bg-blue-600 w-6"
                     : "bg-gray-300 dark:bg-gray-600 w-2 hover:bg-gray-400 dark:hover:bg-gray-500"
                 )}
-                aria-label={`Go to ${tab.label} tab`}
+                aria-label={`Go to ${workspace.copy(tab.label)} tab`}
               />
             ))}
           </div>
@@ -285,8 +287,8 @@ export const SimpleTabNavigation: React.FC<SimpleTabNavigationProps> = ({
                   "text-sm font-medium leading-tight",
                   activeTab === tab.id ? "text-blue-700 dark:text-blue-300" : "text-slate-700 dark:text-slate-300"
                 )}>
-                  <span className="hidden sm:inline">{tab.label}</span>
-                  <span className="sm:hidden">{tab.shortLabel}</span>
+                  <span className="hidden sm:inline">{workspace.copy(tab.label)}</span>
+                  <span className="sm:hidden">{workspace.copy(tab.shortLabel)}</span>
                 </div>
                 
                 {/* Candidate Count Badge */}

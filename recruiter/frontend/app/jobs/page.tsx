@@ -1,5 +1,6 @@
 "use client"
 
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import {
@@ -72,6 +73,7 @@ function JobCard({
   onStatusChange?: (jobId: string, newStatus: any) => void;
   onDelete?: (jobId: string) => void;
 }) {
+  const workspace = useJobWorkspace();
   const [isDeleting, setIsDeleting] = useState(false)
   const { isFeatureEnabled } = useFeatureFlags()
   const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
@@ -83,14 +85,14 @@ function JobCard({
     try {
       await deleteJob(job._id)
       toast({
-        title: "Job Deleted",
+        title: workspace.copy("Job Deleted"),
         description: `${job.title} has been successfully deleted.`,
       })
       onDelete(job._id)
     } catch (error: any) {
       toast({
         title: "Delete Failed",
-        description: error.message || "Failed to delete the job.",
+        description: error.message || workspace.copy("Failed to delete the job."),
         variant: "destructive",
       })
     } finally {
@@ -130,7 +132,7 @@ function JobCard({
   }
 
   return (
-    <Link href={`/jobs/${job._id}`} className="block group">
+    <Link href={`${workspace.basePath}/${job._id}`} className="block group">
       <Card className="relative overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/25 dark:hover:shadow-blue-400/20 hover:-translate-y-1 border border-gray-200/50 dark:border-gray-700/50 bg-white dark:bg-gray-800 shadow-md cursor-pointer active:scale-[0.98]">
         {/* Status Indicator Bar */}
         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${getStatusColor(job.status)}`} />
@@ -166,7 +168,7 @@ function JobCard({
                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href={`/jobs/${job._id}`} className="flex items-center gap-2">
+                  <Link href={`${workspace.basePath}/${job._id}`} className="flex items-center gap-2">
                     <Eye className="h-4 w-4" />
                     View Details
                   </Link>
@@ -180,10 +182,9 @@ function JobCard({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem asChild>
-                  <Link href={`/jobs/${job._id}/edit`} className="flex items-center gap-2">
+                  <Link href={`${workspace.basePath}/${job._id}/edit`} className="flex items-center gap-2">
                     <Edit className="h-4 w-4" />
-                    Edit Job
-                  </Link>
+                    {workspace.copy(" Edit Job ")}</Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem 
                   onClick={(e) => { e.preventDefault(); handleDelete(); }}
@@ -250,6 +251,7 @@ function JobCard({
 }
 
 function JobsInnerPage() {
+  const workspace = useJobWorkspace();
   const { isFeatureEnabled } = useFeatureFlags()
   const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
   const TourPopover = ({ title, children }: { title: string; children: React.ReactNode }) => {
@@ -332,7 +334,7 @@ function JobsInnerPage() {
   
   const handleBulkDeleteJobs = async () => {
     if (selectedJobs.length === 0) return
-    const confirmed = window.confirm(`Delete ${selectedJobs.length} selected job(s)? This action cannot be undone.`)
+    const confirmed = window.confirm(("Delete " + (selectedJobs.length) + workspace.copy(" selected job(s)? This action cannot be undone.")))
     if (!confirmed) return
     try {
       setIsBulkProcessing(true)
@@ -342,11 +344,11 @@ function JobsInnerPage() {
       if (successCount > 0) {
         setJobs(prev => prev.filter(j => !res.results.some(r => r.id === j._id && r.success)))
         setSelectedJobs([])
-        toast({ title: "Jobs deleted", description: `Deleted ${successCount} job(s)` })
+        toast({ title: workspace.copy("Jobs deleted"), description: ("Deleted " + (successCount) + workspace.copy(" job(s)")) })
       }
       if (failures.length > 0) {
         const sample = failures.slice(0, 3).map(f => f.id).join(', ')
-        toast({ title: "Some deletions failed", description: `Failed ${failures.length} job(s)` + (sample ? ` (e.g. ${sample})` : ''), variant: "destructive" })
+        toast({ title: "Some deletions failed", description: ("Failed " + (failures.length) + workspace.copy(" job(s)")) + (sample ? ` (e.g. ${sample})` : ''), variant: "destructive" })
       }
       await fetchJobs()
     } catch (err: any) {
@@ -360,7 +362,7 @@ function JobsInnerPage() {
     try {
       setLoading(true)
       setError(null)
-      const jobsData = await getAllJobs()
+      const jobsData = await getAllJobs({ workflowType: workspace.workflowType })
       // Decode HTML entities in all jobs for display and calculate applicant count
       const decodedJobs = (jobsData || []).map(job => {
         const decoded = decodeObjectHtmlEntities(job)
@@ -373,10 +375,10 @@ function JobsInnerPage() {
       setJobs(decodedJobs)
     } catch (error: any) {
       console.error('Error fetching jobs:', error)
-      setError(error.message || "Failed to fetch jobs.")
+      setError(error.message || workspace.copy("Failed to fetch jobs."))
       toast({
         title: "Error",
-        description: error.message || "Failed to fetch jobs.",
+        description: error.message || workspace.copy("Failed to fetch jobs."),
         variant: "destructive",
       })
     } finally {
@@ -386,7 +388,7 @@ function JobsInnerPage() {
 
   useEffect(() => {
     fetchJobs()
-  }, [])
+  }, [workspace.workflowType])
 
   // Filter jobs based on search query and selected filters
   const filteredJobs = jobs.filter((job) => {
@@ -470,7 +472,7 @@ function JobsInnerPage() {
     try {
       await deleteJob(jobToDelete._id)
       toast({
-        title: "Job Deleted",
+        title: workspace.copy("Job Deleted"),
         description: `${jobToDelete.title} has been successfully deleted.`,
       })
       handleJobDelete(jobToDelete._id)
@@ -479,7 +481,7 @@ function JobsInnerPage() {
     } catch (error: any) {
       toast({
         title: "Delete Failed",
-        description: error.message || "Failed to delete the job.",
+        description: error.message || workspace.copy("Failed to delete the job."),
         variant: "destructive",
       })
     }
@@ -496,21 +498,19 @@ function JobsInnerPage() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 lg:gap-6">
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-gray-100 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent job-page-title">
-              Job Management
-            </h1>
+              {workspace.copy(" Job Management ")}</h1>
             <p className="text-sm sm:text-base lg:text-lg text-gray-600 dark:text-gray-400 mt-1 sm:mt-2 job-page-description">
-              Manage your job postings and track applications
-            </p>
+              {workspace.copy(" Manage your job postings and track applications ")}</p>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <Button variant="outline" size="sm" className="hidden sm:flex" onClick={() => { setCurrentStep(0); setIsOpen(true) }}>
               Guided Tour
             </Button>
             <Button asChild size="sm" className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-200 w-full sm:w-auto" data-tutorial="create-job-btn">
-              <Link href="/jobs/new">
+              <Link href={workspace.path("/jobs/new")}>
                 <Plus className="h-4 w-4 mr-2" />
-                <span className="hidden sm:inline">Post New Job</span>
-                <span className="sm:hidden">New Job</span>
+                <span className="hidden sm:inline">{workspace.copy("Post New Job")}</span>
+                <span className="sm:hidden">{workspace.copy("New Job")}</span>
               </Link>
             </Button>
           </div>
@@ -524,7 +524,7 @@ function JobsInnerPage() {
                 <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
               </div>
               <div>
-                <p className="text-xs sm:text-sm font-medium text-blue-700 dark:text-blue-300">Total Jobs</p>
+                <p className="text-xs sm:text-sm font-medium text-blue-700 dark:text-blue-300">{workspace.copy("Total Jobs")}</p>
                 <p className="text-xl sm:text-2xl font-bold text-blue-900 dark:text-blue-100">{jobs.length}</p>
               </div>
             </div>
@@ -573,7 +573,7 @@ function JobsInnerPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
                   <Input
-                    placeholder="Search jobs..."
+                    placeholder={workspace.copy("Search jobs...")}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10 pr-10 w-full bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
@@ -660,7 +660,7 @@ function JobsInnerPage() {
               <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                    {selectedJobs.length} job{selectedJobs.length !== 1 ? 's' : ''} selected
+                    {selectedJobs.length} {workspace.copy(" job")}{selectedJobs.length !== 1 ? 's' : ''} selected
                   </span>
                   <div className="flex items-center gap-2">
                     <Button 
@@ -693,7 +693,7 @@ function JobsInnerPage() {
         {/* Jobs Display */}
         {error ? (
           <ErrorState
-            title="Failed to load jobs"
+            title={workspace.copy("Failed to load jobs")}
             description={error}
             onRetry={fetchJobs}
           />
@@ -725,10 +725,10 @@ function JobsInnerPage() {
                     <Checkbox
                         checked={selectedJobs.length === filteredJobs.length && filteredJobs.length > 0}
                       onCheckedChange={handleSelectAll}
-                      aria-label="Select all jobs"
+                      aria-label={workspace.copy("Select all jobs")}
                     />
                   </TableHead>
-                  <TableHead className="text-gray-900 dark:text-gray-100 font-semibold">Job Title</TableHead>
+                  <TableHead className="text-gray-900 dark:text-gray-100 font-semibold">{workspace.copy("Job Title")}</TableHead>
                   <TableHead className="text-gray-900 dark:text-gray-100 font-semibold">Status</TableHead>
                   <TableHead className="text-gray-900 dark:text-gray-100 font-semibold">Applications</TableHead>
                   <TableHead className="text-gray-900 dark:text-gray-100 font-semibold">Created</TableHead>
@@ -755,7 +755,7 @@ function JobsInnerPage() {
                         </div>
                         <div>
                           <Link 
-                            href={`/jobs/${job._id}`}
+                            href={`${workspace.basePath}/${job._id}`}
                             className="font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                           >
                             {job.title}
@@ -789,7 +789,7 @@ function JobsInnerPage() {
                           <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-700" />
                           <DropdownMenuItem asChild>
                             <Link 
-                              href={`/jobs/${job._id}`}
+                              href={`${workspace.basePath}/${job._id}`}
                               className="flex items-center gap-2 cursor-pointer text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
                             >
                               <Eye className="h-4 w-4" />
@@ -809,12 +809,11 @@ function JobsInnerPage() {
                           )}
                           <DropdownMenuItem asChild>
                             <Link 
-                              href={`/jobs/${job._id}/edit`}
+                              href={`${workspace.basePath}/${job._id}/edit`}
                               className="flex items-center gap-2 cursor-pointer text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
                             >
                               <Edit className="h-4 w-4" />
-                              Edit Job
-                            </Link>
+                              {workspace.copy(" Edit Job ")}</Link>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-700" />
                           <DropdownMenuItem 
@@ -822,8 +821,7 @@ function JobsInnerPage() {
                             className="flex items-center gap-2 cursor-pointer text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/50"
                           >
                             <Trash2 className="h-4 w-4" />
-                            Delete Job
-                          </DropdownMenuItem>
+                            {workspace.copy(" Delete Job ")}</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -843,20 +841,19 @@ function JobsInnerPage() {
                 <Briefcase className="h-8 w-8 text-blue-500 dark:text-blue-400" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                {searchQuery || selectedTab !== "all" ? "No jobs found" : "No jobs yet"}
+                {searchQuery || selectedTab !== "all" ? workspace.copy("No jobs found") : workspace.copy("No jobs yet")}
               </h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
                 {searchQuery || selectedTab !== "all" 
                   ? "Try adjusting your search criteria or filters" 
-                  : "Get started by posting your first job opening"
+                  : workspace.copy("Get started by posting your first job opening")
                 }
               </p>
               {(!searchQuery && selectedTab === "all") && (
                 <Button asChild className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
-                  <Link href="/jobs/new">
+                  <Link href={workspace.path("/jobs/new")}>
                     <Plus className="h-4 w-4 mr-2" />
-                    Post Your First Job
-                  </Link>
+                    {workspace.copy(" Post Your First Job ")}</Link>
                 </Button>
               )}
             </CardContent>
@@ -870,18 +867,16 @@ function JobsInnerPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-red-500" />
-              Delete Job?
-            </DialogTitle>
+              {workspace.copy(" Delete Job? ")}</DialogTitle>
             <DialogDescription>
-              This action cannot be undone. Are you sure you want to delete this job posting?
-            </DialogDescription>
+              {workspace.copy(" This action cannot be undone. Are you sure you want to delete this job posting? ")}</DialogDescription>
           </DialogHeader>
 
           {jobToDelete && (
             <div className="space-y-4 py-4">
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-2 bg-gray-50 dark:bg-gray-800/50">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Job Title:</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{workspace.copy("Job Title:")}</span>
                   <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{jobToDelete.title}</span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -904,8 +899,7 @@ function JobsInnerPage() {
                 <p className="text-sm text-red-800 dark:text-red-200 flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span>
-                    This will permanently delete the job posting
-                    {jobToDelete.applicantCount && jobToDelete.applicantCount > 0 
+                    {workspace.copy(" This will permanently delete the job posting ")}{jobToDelete.applicantCount && jobToDelete.applicantCount > 0
                       ? ` and all associated data, including ${jobToDelete.applicantCount} application(s).`
                       : ' and all associated data.'}
                   </span>
@@ -928,8 +922,7 @@ function JobsInnerPage() {
               onClick={handleConfirmDelete}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete Job
-            </Button>
+              {workspace.copy(" Delete Job ")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -939,12 +932,13 @@ function JobsInnerPage() {
 }
 
 export default function JobsPage() {
+  const workspace = useJobWorkspace();
   const steps: StepType[] = [
-    { selector: "[data-tutorial='jobs-grid'], [data-tutorial='jobs-table']", content: "This is your Jobs list. Use the tabs above to switch between Grid and Table. Each row/card shows title, department, status, applications and created date.", position: 'top' },
-    { selector: "[data-tutorial='create-job-btn']", content: "Create a new Job. You can add details, requirements and let AI optimize your description before publishing.", position: 'bottom' },
+    { selector: "[data-tutorial='jobs-grid'], [data-tutorial='jobs-table']", content: workspace.copy("This is your Jobs list. Use the tabs above to switch between Grid and Table. Each row/card shows title, department, status, applications and created date."), position: 'top' },
+    { selector: "[data-tutorial='create-job-btn']", content: workspace.copy("Create a new Job. You can add details, requirements and let AI optimize your description before publishing."), position: 'bottom' },
     { selector: "[data-tutorial='search-filter-section']", content: "Search by title/department/location and filter by status. Sorting and bulk actions help you manage large lists efficiently.", position: 'bottom' },
-    { selector: "[data-tutorial='applications-count']", content: "Applications shows how many candidates applied. Click to dive into the pipeline for this job.", position: 'top' },
-    { selector: "[data-tutorial='job-actions']", content: "Open the actions menu to view details, edit or share the job. More options appear based on status.", position: 'left' },
+    { selector: "[data-tutorial='applications-count']", content: workspace.copy("Applications shows how many candidates applied. Click to dive into the pipeline for this job."), position: 'top' },
+    { selector: "[data-tutorial='job-actions']", content: workspace.copy("Open the actions menu to view details, edit or share the job. More options appear based on status."), position: 'left' },
   ]
   return (
     <TourProvider 

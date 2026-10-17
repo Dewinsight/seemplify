@@ -1,5 +1,7 @@
 'use client'
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -62,6 +64,7 @@ export function InterviewStageConfiguration({
   jobId, 
   onStagesUpdate 
 }: InterviewStageConfigurationProps) {
+  const workspace = useJobWorkspace();
   const { state: userState } = useUser()
   const [stages, setStages] = useState<InterviewStage[]>([])
   const [templates, setTemplates] = useState<Record<string, StageTemplate>>({})
@@ -404,8 +407,7 @@ export function InterviewStageConfiguration({
               <Wand2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">No Interview Stages Configured</h3>
               <p className="text-muted-foreground mb-6">
-                Get started by choosing a template for your hiring process. Templates provide a structured interview pipeline with predefined stages.
-              </p>
+                {workspace.copy(" Get started by choosing a template for your hiring process. Templates provide a structured interview pipeline with predefined stages. ")}</p>
             </div>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -424,8 +426,7 @@ export function InterviewStageConfiguration({
                   <Alert className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
                     <AlertTriangle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                     <AlertDescription className="text-blue-900 dark:text-blue-100">
-                      Applying a template will create interview stages for this job.
-                    </AlertDescription>
+                      {workspace.copy(" Applying a template will create interview stages for this job. ")}</AlertDescription>
                   </Alert>
 
                   {/* Search and Filter */}
@@ -583,8 +584,7 @@ export function InterviewStageConfiguration({
                             </div>
                             <p className="text-sm font-medium text-muted-foreground mb-1">No custom templates yet</p>
                             <p className="text-xs text-muted-foreground">
-                              Save your first template by clicking "Save as Template" on a job with stages
-                            </p>
+                              {workspace.copy(" Save your first template by clicking \"Save as Template\" on a job with stages ")}</p>
                           </div>
                         )}
                       </div>
@@ -670,16 +670,13 @@ export function InterviewStageConfiguration({
                     <Alert variant="destructive">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertDescription>
-                        This job already has {stages.length} stage(s). You can only apply templates to jobs without stages. 
-                        Please delete all stages first if you want to use a template.
-                      </AlertDescription>
+                        {workspace.copy(" This job already has ")}{stages.length} {workspace.copy(" stage(s). You can only apply templates to jobs without stages. Please delete all stages first if you want to use a template. ")}</AlertDescription>
                     </Alert>
                   ) : (
                     <Alert className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
                       <AlertTriangle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       <AlertDescription className="text-blue-900 dark:text-blue-100">
-                        Applying a template will create interview stages for this job.
-                      </AlertDescription>
+                        {workspace.copy(" Applying a template will create interview stages for this job. ")}</AlertDescription>
                     </Alert>
                   )}
 
@@ -838,8 +835,7 @@ export function InterviewStageConfiguration({
                             </div>
                             <p className="text-sm font-medium text-muted-foreground mb-1">No custom templates yet</p>
                             <p className="text-xs text-muted-foreground">
-                              Save your first template by clicking "Save as Template" on a job with stages
-                            </p>
+                              {workspace.copy(" Save your first template by clicking \"Save as Template\" on a job with stages ")}</p>
                           </div>
                         )}
                       </div>
@@ -1194,9 +1190,7 @@ export function InterviewStageConfiguration({
                   This action cannot be undone. The template will be permanently removed from the database.
                   {deletingTemplate.usageCount > 0 && (
                     <span className="block mt-2">
-                      This template has been used {deletingTemplate.usageCount} time{deletingTemplate.usageCount !== 1 ? 's' : ''}. 
-                      Existing jobs using this template will not be affected.
-                    </span>
+                      This template has been used {deletingTemplate.usageCount} time{deletingTemplate.usageCount !== 1 ? 's' : ''}{workspace.copy(". Existing jobs using this template will not be affected. ")}</span>
                   )}
                 </AlertDescription>
               </Alert>

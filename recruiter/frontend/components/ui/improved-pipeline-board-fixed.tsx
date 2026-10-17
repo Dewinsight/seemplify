@@ -1,5 +1,7 @@
 'use client'
 
+
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -119,6 +121,7 @@ export function ImprovedPipelineBoard({
   jobTitle,
   refreshTrigger
 }: ImprovedPipelineBoardProps) {
+  const workspace = useJobWorkspace();
   const [stageColumns, setStageColumns] = useState<StageColumn[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -168,7 +171,7 @@ export function ImprovedPipelineBoard({
       })
 
       if (result.success) {
-        toast.success(`Successfully moved ${result.results.successful.length} candidate${result.results.successful.length !== 1 ? 's' : ''}`)
+        toast.success(("Successfully moved " + (result.results.successful.length) + workspace.copy(" candidate") + (result.results.successful.length !== 1 ? 's' : '') + ""))
       } else if (result.partialSuccess) {
         toast.warning(
           `${result.results.successful.length} moved, ${result.results.failed.length} failed`,
@@ -181,7 +184,7 @@ export function ImprovedPipelineBoard({
       clearSelection()
       fetchPipelineData()
     } catch (error: any) {
-      toast.error('Failed to move candidates', {
+      toast.error(workspace.copy("Failed to move candidates"), {
         description: error.message
       })
     }
@@ -392,7 +395,7 @@ export function ImprovedPipelineBoard({
       onStageUpdate?.()
     } catch (error: any) {
       console.error('Error moving candidate:', error)
-      toast.error('Failed to move candidate', { id: `move-${candidateId}` })
+      toast.error(workspace.copy("Failed to move candidate"), { id: `move-${candidateId}` })
     } finally {
       setMovingCandidate(prev => {
         const newSet = new Set(prev)
@@ -445,7 +448,7 @@ export function ImprovedPipelineBoard({
       fetchPipelineData()
       onStageUpdate?.()
     } catch (error: any) {
-      toast.error(error.message || 'Failed to move candidate to Keep in View', {
+      toast.error(error.message || workspace.copy("Failed to move candidate to Keep in View"), {
         id: `keep-in-view-${candidateId}`
       })
     } finally {
@@ -489,7 +492,7 @@ export function ImprovedPipelineBoard({
       })
 
       if (result.success) {
-        toast.success(`Successfully moved ${result.results.successful.length} candidate${result.results.successful.length !== 1 ? 's' : ''} to Keep in View`)
+        toast.success(("Successfully moved " + (result.results.successful.length) + workspace.copy(" candidate") + (result.results.successful.length !== 1 ? 's' : '') + " to Keep in View"))
       } else if (result.partialSuccess) {
         toast.warning(
           `${result.results.successful.length} moved to Keep in View, ${result.results.failed.length} failed`,
@@ -503,7 +506,7 @@ export function ImprovedPipelineBoard({
       fetchPipelineData()
       onStageUpdate?.()
     } catch (error: any) {
-      toast.error('Failed to keep candidates in view', {
+      toast.error(workspace.copy("Failed to keep candidates in view"), {
         description: error.message
       })
     }
@@ -552,7 +555,7 @@ export function ImprovedPipelineBoard({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="hidden sm:block">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Interview Pipeline</h2>
-              <p className="text-sm text-muted-foreground mt-1">Manage candidates through your multi-stage interview process</p>
+              <p className="text-sm text-muted-foreground mt-1">{workspace.copy("Manage candidates through your multi-stage interview process")}</p>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -582,7 +585,7 @@ export function ImprovedPipelineBoard({
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   ref={searchInputRef}
-                  placeholder="Search candidates..."
+                  placeholder={workspace.copy("Search candidates...")}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 w-full sm:w-48"
@@ -595,7 +598,7 @@ export function ImprovedPipelineBoard({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Candidates</SelectItem>
+                    <SelectItem value="all">{workspace.copy("All Candidates")}</SelectItem>
                     <SelectItem value="priority">High Priority</SelectItem>
                     <SelectItem value="recent">Recent</SelectItem>
                     <SelectItem value="needs_action">Needs Action</SelectItem>
@@ -741,7 +744,7 @@ export function ImprovedPipelineBoard({
                 </div>
               </div>
               <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
-                <span>Use dropdowns to move candidates</span>
+                <span>{workspace.copy("Use dropdowns to move candidates")}</span>
               </div>
             </div>
 
@@ -839,8 +842,8 @@ export function ImprovedPipelineBoard({
                         <div className="flex items-center justify-center h-32 border-2 border-dashed border-muted-foreground/25 rounded-lg">
                           <div className="text-center">
                             <Users className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-muted-foreground/50" />
-                            <p className="text-xs sm:text-sm text-muted-foreground">No candidates in this stage</p>
-                            <p className="text-xs text-muted-foreground/75">Use dropdown menus to move candidates here</p>
+                            <p className="text-xs sm:text-sm text-muted-foreground">{workspace.copy("No candidates in this stage")}</p>
+                            <p className="text-xs text-muted-foreground/75">{workspace.copy("Use dropdown menus to move candidates here")}</p>
                           </div>
                         </div>
                       )}
@@ -896,7 +899,7 @@ export function ImprovedPipelineBoard({
             {/* Hidden DialogTitle for accessibility */}
             <DialogHeader className="sr-only">
               <DialogTitle>
-                Schedule Interview for {scheduleCandidate ? `${scheduleCandidate.firstName} ${scheduleCandidate.lastName}` : 'Candidate'}
+                Schedule Interview for {scheduleCandidate ? `${scheduleCandidate.firstName} ${scheduleCandidate.lastName}` : workspace.copy("Candidate")}
               </DialogTitle>
             </DialogHeader>
 
@@ -951,7 +954,7 @@ export function ImprovedPipelineBoard({
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="left" className="bg-slate-900 text-white">
-                <p>Move {selectedCandidates.size} candidate{selectedCandidates.size !== 1 ? 's' : ''} to a new stage</p>
+                <p>Move {selectedCandidates.size} {workspace.copy(" candidate")}{selectedCandidates.size !== 1 ? 's' : ''} to a new stage</p>
               </TooltipContent>
             </Tooltip>
           </div>

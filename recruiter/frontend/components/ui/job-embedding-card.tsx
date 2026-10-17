@@ -1,5 +1,6 @@
 "use client"
 
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 
@@ -133,6 +134,7 @@ interface MatchingCandidate {
 const TOP_K_OPTIONS = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
 
 export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds = [], shortlistCandidateIds = [] }: JobEmbeddingCardProps) {
+  const workspace = useJobWorkspace();
   const router = useRouter()
   const { isFeatureEnabled } = useFeatureFlags()
   const candidateEnrichmentEnabled = isFeatureEnabled('candidateEnrichment')
@@ -253,7 +255,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
       setSelectedCandidates(new Set())
       toast({
-        title: "Candidates added to shortlist",
+        title: workspace.copy("Candidates added to shortlist"),
         description: `${result.addedCount} added, ${result.skippedCount} skipped.`,
       })
 
@@ -263,7 +265,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     } catch (error: any) {
       toast({
         title: "Bulk add failed",
-        description: error.message || "Failed to bulk add candidates to shortlist",
+        description: error.message || workspace.copy("Failed to bulk add candidates to shortlist"),
         variant: "destructive",
       })
     } finally {
@@ -322,7 +324,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       console.error('Error fetching matching candidates:', error)
       const isCreditError = handleCreditError(error)
       if (!isCreditError) {
-        toast({ title: "Error", description: error.message || "Failed to fetch matching candidates", variant: "destructive" })
+        toast({ title: "Error", description: error.message || workspace.copy("Failed to fetch matching candidates"), variant: "destructive" })
       }
     } finally {
       setLoadingMatches(false)
@@ -363,7 +365,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       
       toast({
         title: "Success",
-        description: "Job embedding created successfully",
+        description: workspace.copy("Job embedding created successfully"),
       })
       
       // Refresh status and fetch matches
@@ -402,7 +404,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       })
       
       toast({
-        title: "Candidate Added to Shortlist",
+        title: workspace.copy("Candidate Added to Shortlist"),
         description: `${candidateName} has been added to the shortlist`,
       })
 
@@ -413,11 +415,11 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     } catch (error: any) {
       let errorMessage = error.message
       if (error.message.includes('already in shortlist')) {
-        errorMessage = `${candidateName} is already in the shortlist for this job`
+        errorMessage = ("" + (candidateName) + workspace.copy(" is already in the shortlist for this job"))
       }
       
       toast({
-        title: "Failed to Add Candidate",
+        title: workspace.copy("Failed to Add Candidate"),
         description: errorMessage,
         variant: "destructive",
       })
@@ -534,14 +536,14 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
           setEnrichmentStatus(null)
           toast({
             title: "Enrichment complete",
-            description: `Ranked ${status.enrichCount} candidates with AI enrichment.`,
+            description: ("Ranked " + (status.enrichCount) + workspace.copy(" candidates with AI enrichment.")),
           })
         } else if (status.state === 'failed') {
           setEnrichmentId(null)
           setEnrichmentStarting(false)
           toast({
             title: "Enrichment failed",
-            description: status.errors?.[0]?.error || "Failed to enrich and rank candidates.",
+            description: status.errors?.[0]?.error || workspace.copy("Failed to enrich and rank candidates."),
             variant: "destructive",
           })
         }
@@ -563,7 +565,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       setEnrichmentStatus(null)
       toast({
         title: "Enrichment started",
-        description: `Analyzing top ${selectedEnrichCount} candidates in the background.`,
+        description: ("Analyzing top " + (selectedEnrichCount) + workspace.copy(" candidates in the background.")),
       })
     } catch (error: any) {
       setEnrichmentStarting(false)
@@ -612,7 +614,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
         <CardDescription className="text-purple-100">
           {matchingCandidates.length > 0 && matchingCandidates[0]?.explanation?.gptEnhanced 
             ? "Advanced LLM analysis with contextual insights and interview recommendations"
-            : "Find the best candidates using AI-powered semantic matching"
+            : workspace.copy("Find the best candidates using AI-powered semantic matching")
           }
         </CardDescription>
       </CardHeader>
@@ -694,7 +696,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex items-center gap-2 flex-1">
                 <Users className="h-5 w-5 text-purple-600" />
-                <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">Top Matching Candidates</h3>
+                <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">{workspace.copy("Top Matching Candidates")}</h3>
                 <Badge variant="secondary">{matchingCandidates.length} found</Badge>
                 <Badge variant="outline" className="text-xs">
                   {matchMode === 'deep-analysis' ? (
@@ -736,7 +738,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   {TOP_K_OPTIONS.filter(n => analysisMode === 'quick' || n <= 100).map(n => (
-                    <option key={n} value={n}>{n.toLocaleString()} candidates</option>
+                    <option key={n} value={n}>{n.toLocaleString()} {workspace.copy(" candidates")}</option>
                   ))}
                 </select>
               </div>
@@ -744,7 +746,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
             {selectedCandidates.size > 0 && (
               <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50/80 dark:bg-green-950/20 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="text-xs text-green-800 dark:text-green-300">
-                  {selectedCandidates.size} analysed candidate{selectedCandidates.size !== 1 ? 's' : ''} selected
+                  {selectedCandidates.size} {workspace.copy(" analysed candidate")}{selectedCandidates.size !== 1 ? 's' : ''} selected
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -787,7 +789,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
               <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-3 space-y-3">
                 <div className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
                   <Brain className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>Large quick rankings can be enriched in the background for deeper candidate analysis.</span>
+                  <span>{workspace.copy("Large quick rankings can be enriched in the background for deeper candidate analysis.")}</span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-end gap-3">
@@ -817,7 +819,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                       <>
                         <div>
                           <strong>{enrichmentEstimate.batchCount}</strong> batch{enrichmentEstimate.batchCount !== 1 ? 'es' : ''} (up to{' '}
-                          <strong>{enrichmentEstimate.batchSize}</strong> candidates each) ×{' '}
+                          <strong>{enrichmentEstimate.batchSize}</strong> {workspace.copy(" candidates each) ×")}{' '}
                           <strong>{enrichmentEstimate.costPerBatch}</strong> credit{enrichmentEstimate.costPerBatch !== 1 ? 's' : ''} per batch ={' '}
                           <strong>{enrichmentEstimate.totalCredits}</strong> credits total.
                         </div>
@@ -836,8 +838,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                         </div>
                         {!enrichmentEstimate.hasEnoughCredits && enrichmentEstimate.totalCredits > 0 && (
                           <div className="text-amber-700 dark:text-amber-400 font-medium">
-                            Not enough credits for this run. Add credits or choose fewer candidates.
-                          </div>
+                            {workspace.copy(" Not enough credits for this run. Add credits or choose fewer candidates. ")}</div>
                         )}
                         {enrichmentEstimate.totalCredits === 0 && (
                           <div className="text-emerald-700 dark:text-emerald-400">
@@ -1145,7 +1146,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                       {isExpanded && isLoadingExplanation && (
                         <div className="border-t border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 p-8 flex flex-col items-center gap-3">
                           <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-                          <p className="text-sm text-muted-foreground">Generating AI analysis for this candidate...</p>
+                          <p className="text-sm text-muted-foreground">{workspace.copy("Generating AI analysis for this candidate...")}</p>
                         </div>
                       )}
                       {/* Expanded explanation */}
@@ -1156,8 +1157,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                             <div>
                               <h5 className="font-medium text-green-800 dark:text-green-300 mb-2 flex items-center gap-2">
                                 <ThumbsUp className="h-4 w-4" />
-                                Why This Candidate Matches
-                              </h5>
+                                {workspace.copy(" Why This Candidate Matches ")}</h5>
                               <div className="grid gap-2">
                                 {explanation.reasons.map((reason: string, idx: number) => (
                                   <div key={idx} className="flex items-start gap-2 p-2 rounded bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
@@ -1483,8 +1483,8 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
             ) : (
               <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                 <Users className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
-                <p>No matching candidates found</p>
-                <p className="text-sm">Try creating more candidate embeddings</p>
+                <p>{workspace.copy("No matching candidates found")}</p>
+                <p className="text-sm">{workspace.copy("Try creating more candidate embeddings")}</p>
               </div>
             )}
           </div>

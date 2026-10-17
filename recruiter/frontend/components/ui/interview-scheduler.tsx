@@ -27,6 +27,7 @@ import { useUser } from '@/context/UserContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { getAllCandidates } from '@/services/candidateService';
 import { getAllJobs } from '@/services/jobService';
+import { useJobWorkspace } from '@/hooks/use-job-workspace';
 import { getDefaultEmailTemplate } from '@/lib/emailTemplatePresets';
 import { resolveEmailPreviewOrganizationName } from '@/lib/emailOrganizationContext';
 
@@ -101,6 +102,7 @@ export function InterviewScheduler({
   onScheduled, 
   onCancel 
 }: InterviewSchedulerProps) {
+  const workspace = useJobWorkspace();
   const { state } = useUser();
   const { currentOrganization } = useOrganization();
   
@@ -345,7 +347,7 @@ export function InterviewScheduler({
 
   const loadSystemJobs = async () => {
     try {
-      const jobs = await getAllJobs();
+      const jobs = await getAllJobs({ workflowType: workspace.workflowType });
       setSystemJobs(jobs);
       // Set default job if provided
       if (jobId) {

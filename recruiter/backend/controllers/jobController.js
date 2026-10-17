@@ -23,6 +23,7 @@ const publicApplicationCapacityService = require('../services/publicApplicationC
 const publicApplicationCapability = require('../services/publicApplicationCapabilityService');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const interviewController = require('./interviewController');
+const { normalizeJobWorkflow, jobWorkflowFilter, assertWorkflowUnchanged } = require('../utils/jobWorkflow');
 
 const unlinkAsync = util.promisify(fs.unlink);
 const interviewService = new InterviewService();
@@ -76,6 +77,7 @@ exports.createJob = async (req, res) => {
     
     const jobData = { 
       ...decodedBody, 
+      workflowType: normalizeJobWorkflow(decodedBody.workflowType),
       createdBy: req.user?.id || null, 
       organization: req.user.currentOrganization,
       uploadMetadata: { source: 'manual' } 
@@ -154,7 +156,7 @@ exports.getAllJobs = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const { status, department, type, search } = req.query;
-    const filter = { organization: organizationId };
+    const filter = { organization: organizationId, ...jobWorkflowFilter(req.query.workflowType) };
     
     if (status) filter.status = status;
     if (department) filter.department = new RegExp(department, 'i');
@@ -174,7 +176,7 @@ exports.getAllJobs = async (req, res) => {
     res.json(jobs);
   } catch (error) {
     console.error('❌ Error fetching jobs:', error);
-    res.status(500).json({ msg: 'Server error fetching jobs', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: error.statusCode ? error.message : 'Server error fetching jobs', error: error.message });
   }
 };
 
@@ -223,6 +225,7 @@ exports.updateJob = async (req, res) => {
       publicApplicationCount: ignoredApplicationCount,
       publicApplicationReservations: ignoredReservations,
       publicApplicationCreditUnitCost: ignoredUnitCost,
+      workflowType: requestedWorkflowType,
       ...otherUpdateData
     } = decodedBody;
     void ignoredReservedCredits;
@@ -231,6 +234,7 @@ exports.updateJob = async (req, res) => {
     void ignoredUnitCost;
 
     const mutateJob = (jobToUpdate) => {
+      assertWorkflowUnchanged(jobToUpdate, requestedWorkflowType);
       Object.assign(jobToUpdate, otherUpdateData);
       jobToUpdate.updatedBy = req.user?.id || null;
       jobToUpdate.updatedAt = new Date();
@@ -389,6 +393,7 @@ exports.bulkUploadJobs = async (req, res) => {
   const batchId = `batch_${Date.now()}`;
   try {
     console.log(`🚀 Starting bulk job upload: ${req.file.originalname}`);
+    const workflowType = normalizeJobWorkflow(req.body.workflowType);
     let jobsData = [];
     if (req.file.originalname.endsWith('.csv')) jobsData = await parseCSV(filePath);
     else if (req.file.originalname.endsWith('.xlsx')) jobsData = await parseExcel(filePath);
@@ -399,6 +404,7 @@ exports.bulkUploadJobs = async (req, res) => {
       try {
         const rowData = jobsData[i];
         const jobData = {
+          workflowType,
           title: rowData.title || rowData['Job Title'] || rowData['Position'],
           department: rowData.department || rowData['Department'],
           location: rowData.location || rowData['Location'],
@@ -432,7 +438,7 @@ exports.bulkUploadJobs = async (req, res) => {
     res.status(201).json({ msg: 'Bulk upload completed', results, batchId });
   } catch (error) {
     console.error('❌ Error in bulk job upload:', error);
-    res.status(500).json({ msg: 'Server error during bulk upload', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: error.statusCode ? error.message : 'Server error during bulk upload', error: error.message });
   } finally {
     if (filePath) await unlinkAsync(filePath).catch(err => console.error('⚠️ Error deleting temporary file:', err));
   }

@@ -44,6 +44,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InterviewQuestionSelector } from "@/components/ui/interview-question-selector";
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
+import { jobRecordPath } from "@/lib/jobWorkspace";
 import { getAllJobs, type JobData } from "@/services/jobService";
 import { getAllCandidates } from "@/services/candidateService";
 import interviewService from "@/services/interviewService";
@@ -302,6 +304,7 @@ const CREATE_STEPS = [
 
 export default function AIInterviewsPage() {
   const searchParams = useSearchParams();
+  const workspace = useJobWorkspace(searchParams.get("workflowType") === "employee-assessment" ? "employee-assessment" : "recruitment");
   const presetJobId = searchParams.get("jobId") || "";
   const requestedTab = searchParams.get("tab");
   const initialTab = requestedTab === "interviews" ? "interviews" : "create";
@@ -648,7 +651,7 @@ export default function AIInterviewsPage() {
     try {
       const [interviewsResult, jobsResult, candidatesResult, optionsResult] = await Promise.allSettled([
         aiInterviewService.list(),
-        getAllJobs({ limit: 200 }),
+        getAllJobs({ limit: 200, workflowType: workspace.workflowType }),
         getAllCandidates(1000),
         aiInterviewService.getOptions()
       ]);
@@ -691,7 +694,7 @@ export default function AIInterviewsPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [workspace.workflowType]);
 
   useEffect(() => {
     return () => {
@@ -1164,14 +1167,14 @@ export default function AIInterviewsPage() {
             <div className="flex flex-col gap-2 sm:flex-row">
               {presetJobId && selectedJob && (
                 <Button asChild variant="outline" className="justify-start">
-                  <Link href={`/jobs/${selectedJob._id}`}>
+                  <Link href={jobRecordPath(selectedJob)}>
                     <Briefcase className="mr-2 h-4 w-4" />
                     Back to job
                   </Link>
                 </Button>
               )}
               <Button asChild variant="outline" className="justify-start">
-                <Link href="/jobs/new?returnTo=%2Fai-interviews">
+                <Link href={`${workspace.basePath}/new?returnTo=${encodeURIComponent(`/ai-interviews?workflowType=${workspace.workflowType}`)}`}>
                   <Plus className="mr-2 h-4 w-4" />
                   Post job
                 </Link>
@@ -1402,7 +1405,7 @@ export default function AIInterviewsPage() {
                             <div className="flex items-center justify-between gap-3">
                               <Label>Job</Label>
                               <Button asChild variant="outline" size="sm" className="h-8 bg-white dark:bg-slate-950">
-                                <Link href="/jobs/new?returnTo=%2Fai-interviews">
+                                <Link href={`${workspace.basePath}/new?returnTo=${encodeURIComponent(`/ai-interviews?workflowType=${workspace.workflowType}`)}`}>
                                   <Plus className="mr-2 h-3.5 w-3.5" />
                                   Create job
                                 </Link>
@@ -1435,7 +1438,7 @@ export default function AIInterviewsPage() {
                                   Create a job first so the AI interview can load role-specific questions and candidates.
                                 </p>
                                 <Button asChild className="mt-3">
-                                  <Link href="/jobs/new?returnTo=%2Fai-interviews">
+                                  <Link href={`${workspace.basePath}/new?returnTo=${encodeURIComponent(`/ai-interviews?workflowType=${workspace.workflowType}`)}`}>
                                     <Plus className="mr-2 h-4 w-4" />
                                     Create job
                                   </Link>
@@ -1466,7 +1469,7 @@ export default function AIInterviewsPage() {
                                 </div>
                               </div>
                               <Button asChild variant="outline" size="sm" className="w-fit bg-white/80 dark:bg-slate-900">
-                                <Link href={`/jobs/${selectedJob._id}`}>
+                                <Link href={jobRecordPath(selectedJob)}>
                                   View job
                                 </Link>
                               </Button>

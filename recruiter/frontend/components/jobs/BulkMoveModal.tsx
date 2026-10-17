@@ -1,5 +1,6 @@
 "use client"
 
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,7 @@ export function BulkMoveModal({
   selectedCandidateCount,
   stages = []
 }: BulkMoveModalProps) {
+  const workspace = useJobWorkspace();
   const [selectedStageId, setSelectedStageId] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   
@@ -58,11 +60,10 @@ export function BulkMoveModal({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            Move {selectedCandidateCount} Candidate{selectedCandidateCount !== 1 ? 's' : ''}
+            Move {selectedCandidateCount} {workspace.copy(" Candidate")}{selectedCandidateCount !== 1 ? 's' : ''}
           </DialogTitle>
           <DialogDescription>
-            Select the target stage for the selected candidates
-          </DialogDescription>
+            {workspace.copy(" Select the target stage for the selected candidates ")}</DialogDescription>
         </DialogHeader>
         
         <div className="space-y-4 py-4">
@@ -98,7 +99,7 @@ export function BulkMoveModal({
           >
             {isSubmitting 
               ? 'Moving...' 
-              : `Move ${selectedCandidateCount} Candidate${selectedCandidateCount !== 1 ? 's' : ''}`
+              : ("Move " + (selectedCandidateCount) + workspace.copy(" Candidate") + (selectedCandidateCount !== 1 ? 's' : '') + "")
             }
           </Button>
         </DialogFooter>

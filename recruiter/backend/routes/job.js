@@ -51,6 +51,7 @@ router.get('/public', async (req, res) => {
     // Build query
     const query = {
       isPublic: true,
+      workflowType: { $ne: 'employee-assessment' },
       status: 'active',
       candidateApplyLimit: { $gt: 0 }
     };

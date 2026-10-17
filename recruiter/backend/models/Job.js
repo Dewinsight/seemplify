@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
 
 const JobSchema = new mongoose.Schema({
+  workflowType: {
+    type: String,
+    enum: ['recruitment', 'employee-assessment'],
+    default: 'recruitment',
+    immutable: true,
+    index: true,
+  },
   title: {
     type: String,
     required: [true, 'Job title is required'],

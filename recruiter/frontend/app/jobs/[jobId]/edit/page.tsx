@@ -1,5 +1,7 @@
 "use client"
 
+import { jobRecordPath } from "@/lib/jobWorkspace";
+import { useJobWorkspace } from "@/hooks/use-job-workspace";
 import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -29,7 +31,7 @@ import { getCurrencies } from "@/services/currencyService"
 
 const jobFormSchema = z.object({
   title: z.string().min(2, {
-    message: "Job title must be at least 2 characters.",
+    message: "Title must be at least 2 characters.",
   }),
   department: z.string().min(1, {
     message: "Please select a department.",
@@ -38,19 +40,19 @@ const jobFormSchema = z.object({
     message: "Location must be at least 2 characters.",
   }),
   type: z.enum(['Full-time', 'Part-time', 'Contract', 'Internship', 'Freelance'], {
-    required_error: "Please select a job type.",
+    required_error: "Please select a type.",
   }),
   level: z.enum(['Entry', 'Mid', 'Senior', 'Lead', 'Executive'], {
-    required_error: "Please select a job level.",
+    required_error: "Please select a level.",
   }),
   description: z.string().min(10, {
-    message: "Job description must be at least 10 characters.",
+    message: "Description must be at least 10 characters.",
   }),
   requirements: z.string().min(10, {
-    message: "Job requirements must be at least 10 characters.",
+    message: "Requirements must be at least 10 characters.",
   }),
   responsibilities: z.string().min(10, {
-    message: "Job responsibilities must be at least 10 characters.",
+    message: "Responsibilities must be at least 10 characters.",
   }),
   experience: z.enum(['0-1', '1-3', '3-5', '5-10', '10+'], {
     required_error: "Please select experience requirement.",
@@ -89,6 +91,7 @@ interface EditJobPageProps {
 }
 
 export default function EditJobPage({ params }: EditJobPageProps) {
+  const workspace = useJobWorkspace();
   const resolvedParams = use(params)
   const router = useRouter()
   const [activeTab, setActiveTab] = useState("basic")
@@ -122,6 +125,10 @@ export default function EditJobPage({ params }: EditJobPageProps) {
       try {
         setIsLoading(true)
         const job = await getJobById(resolvedParams.jobId)
+      if ((job.workflowType || 'recruitment') !== workspace.workflowType) {
+        router.replace(jobRecordPath(job, '/edit') + window.location.search);
+        return;
+      }
         setJobData(job)
         
         // Convert job data to form values
@@ -155,9 +162,9 @@ export default function EditJobPage({ params }: EditJobPageProps) {
         setIsLoading(false)
       } catch (error: unknown) {
         console.error("Failed to load job:", error)
-        const message = error instanceof Error ? error.message : "Failed to load job data."
+        const message = error instanceof Error ? error.message : workspace.copy("Failed to load job data.")
         toast({
-          title: "Error Loading Job",
+          title: workspace.copy("Error Loading Job"),
           description: message,
           variant: "destructive",
         })
@@ -207,15 +214,15 @@ export default function EditJobPage({ params }: EditJobPageProps) {
       
       setIsSubmitting(false);
       toast({
-        title: "Job Updated Successfully",
+        title: workspace.copy("Job Updated Successfully"),
         description: `${result.title} has been updated.`,
       });
-      router.push(`/jobs/${resolvedParams.jobId}`);
+      router.push(`${workspace.basePath}/${resolvedParams.jobId}`);
     } catch (error: unknown) {
       setIsSubmitting(false);
       const message = error instanceof Error ? error.message : "An unexpected error occurred."
       toast({
-        title: "Error Updating Job",
+        title: workspace.copy("Error Updating Job"),
         description: message,
         variant: "destructive",
       });
@@ -229,7 +236,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
         <div className="flex items-center justify-center h-64">
           <div className="flex items-center gap-2">
             <Loader2 className="h-6 w-6 animate-spin" />
-            <span>Loading job data...</span>
+            <span>{workspace.copy("Loading job data...")}</span>
           </div>
         </div>
       </div>
@@ -240,10 +247,10 @@ export default function EditJobPage({ params }: EditJobPageProps) {
     return (
       <div className="container mx-auto p-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Job Not Found</h1>
-          <p className="text-muted-foreground mb-4">The job you're trying to edit doesn't exist.</p>
-          <Link href="/jobs">
-            <Button>Back to Jobs</Button>
+          <h1 className="text-2xl font-bold mb-4">{workspace.copy("Job Not Found")}</h1>
+          <p className="text-muted-foreground mb-4">{workspace.copy("The job you're trying to edit doesn't exist.")}</p>
+          <Link href={workspace.path("/jobs")}>
+            <Button>{workspace.copy("Back to Jobs")}</Button>
           </Link>
         </div>
       </div>
@@ -255,15 +262,14 @@ export default function EditJobPage({ params }: EditJobPageProps) {
       {/* Enhanced Header Section */}
       <div className="mb-8">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-4">
-          <Link href={`/jobs/${resolvedParams.jobId}`} className="flex-shrink-0">
+          <Link href={`${workspace.basePath}/${resolvedParams.jobId}`} className="flex-shrink-0">
             <Button variant="ghost" size="icon" className="hover:bg-gray-100">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <div className="min-w-0 flex-1">
             <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Edit Job
-            </h1>
+              {workspace.copy(" Edit Job ")}</h1>
             <p className="text-muted-foreground text-lg mt-1 truncate">
               Updating: "{jobData.title}"
             </p>
@@ -321,8 +327,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                     Basic Information
                   </CardTitle>
                   <CardDescription>
-                    Essential details about the job position
-                  </CardDescription>
+                    {workspace.copy(" Essential details about the job position ")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -516,8 +521,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                 <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-t-lg border-b">
                   <CardTitle className="text-xl flex items-center gap-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    Job Description
-                  </CardTitle>
+                    {workspace.copy(" Job Description ")}</CardTitle>
                   <CardDescription>
                     Detailed description of the role and company
                   </CardDescription>
@@ -595,8 +599,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                 <CardHeader className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-t-lg border-b">
                   <CardTitle className="text-xl flex items-center gap-2">
                     <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                    Job Requirements
-                  </CardTitle>
+                    {workspace.copy(" Job Requirements ")}</CardTitle>
                   <CardDescription>
                     Skills, experience, and qualifications needed
                   </CardDescription>
@@ -790,10 +793,9 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                   {/* Public Job Settings */}
                   <div className="space-y-4 border-t pt-6 mt-6">
                     <div>
-                      <h3 className="text-lg font-medium mb-1">Public Job Settings</h3>
+                      <h3 className="text-lg font-medium mb-1">{workspace.copy("Public Job Settings")}</h3>
                       <p className="text-sm text-muted-foreground">
-                        Control how external candidates can apply and manage your credit allocation
-                      </p>
+                        {workspace.copy(" Control how external candidates can apply and manage your credit allocation ")}</p>
                     </div>
                     
                     <FormField
@@ -943,13 +945,11 @@ export default function EditJobPage({ params }: EditJobPageProps) {
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Updating Job...
-                  </>
+                    {workspace.copy(" Updating Job... ")}</>
                 ) : (
                   <>
                     <Check className="mr-2 h-4 w-4" />
-                    Update Job
-                  </>
+                    {workspace.copy(" Update Job ")}</>
                 )}
               </Button>
             </div>
@@ -1000,4 +1000,4 @@ export default function EditJobPage({ params }: EditJobPageProps) {
       />
     </div>
   )
-} 
+}
