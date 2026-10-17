@@ -192,6 +192,7 @@ export default function DashboardPage() {
     { name: 'Set and update OKRs', href: '/okrs?view=my', icon: Target, copy: 'Create objectives, update progress, and keep outcomes connected to your work.', meta: `${data.totalOkrs || 0} active` },
     ...(features.canonicalAppraisals === false ? [] : [
       { name: 'My appraisals', href: '/appraisals?view=personal', icon: FileText, copy: 'Continue your self-assessments, discussions, and assigned reviews.', meta: `${data.upcomingDeadlines || 0} due soon` },
+      { name: 'My appraisal results', href: '/appraisals?section=history', icon: BarChart3, copy: 'Find past reviews, final results, and downloadable reports.', meta: 'History & results' },
     ]),
   ];
   const managerActions = [
@@ -199,12 +200,15 @@ export default function DashboardPage() {
     { name: 'Team goals', href: '/okrs?view=team', icon: Target, copy: 'Assign, approve, and monitor goals for the people who report to you.', meta: `${data.totalOkrs || 0} in view` },
     ...(features.canonicalAppraisals === false ? [] : [
       { name: 'Team appraisals', href: '/appraisals?view=team', icon: ClipboardCheck, copy: 'Complete manager assessments and move submitted appraisals forward.', meta: `${managerData?.pendingReviews || 0} pending` },
+      { name: 'Start appraisal', href: '/appraisals/start', icon: Flag, copy: 'Choose staff, confirm review details, and start their appraisal.', meta: 'New review' },
+      { name: 'Team appraisal results', href: '/appraisals?section=history', icon: BarChart3, copy: 'Review previous outcomes and download a results report.', meta: 'History & results' },
     ]),
   ];
   const adminActions = [
     { name: 'Administration overview', href: '/admin', icon: Settings, copy: 'See cycle health, organization activity, and exceptions that need HR attention.', meta: 'Organization-wide' },
     ...(features.canonicalAppraisals === false ? [] : [
-      { name: 'Create appraisal cycle', href: '/admin/appraisal-cycles/new', icon: Flag, copy: 'Choose participants, set the timeline, and launch the next review cycle.', meta: 'New cycle' },
+      { name: 'Start appraisal', href: '/appraisals/start', icon: Flag, copy: 'Choose staff, review deadlines, and start their appraisals.', meta: 'New review' },
+      { name: 'Appraisal results', href: '/appraisals?section=history', icon: FileText, copy: 'Find completed appraisals and individual result reports.', meta: 'History & results' },
       { name: 'Calibration', href: '/admin/calibration', icon: ClipboardCheck, copy: 'Review rating distribution and complete fair, auditable calibration.', meta: 'HR workflow' },
       { name: 'Performance reports', href: '/admin/reports', icon: BarChart3, copy: 'Monitor completion, progress, and organization-level outcomes.', meta: 'Reporting' },
     ]),

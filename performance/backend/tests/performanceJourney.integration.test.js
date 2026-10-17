@@ -15,6 +15,7 @@ const Feedback = require('../models/Feedback');
 const FeedbackRequest = require('../models/FeedbackRequest');
 const Appraisal = require('../models/Appraisal');
 const AppraisalCycle = require('../models/AppraisalCycle');
+const User = require('../models/User');
 const AppraisalDocument = require('../models/AppraisalDocument');
 const ReviewCycle = require('../models/ReviewCycle');
 const { PerformanceReview } = require('../models/PerformanceReview');
@@ -36,6 +37,107 @@ const ORG_A = 'org-a';
 const ORG_B = 'org-b';
 const EMPLOYEE = 'employee-1';
 const MANAGER = 'manager-1';
+
+async function seedLaunchEmployee(userId = EMPLOYEE, teamId = 'team-a', organizationId = ORG_A, managerId = MANAGER) {
+  return User.create({ idpSub: userId, email: `${userId}@example.com`, currentOrganizationId: organizationId,
+    profile: { displayName: userId === EMPLOYEE ? 'Employee One' : userId },
+    idpTeams: [{ id: teamId, name: 'Team A', organizationId, role: 'member', managerId, managerName: 'Manager One', managerEmail: 'manager@example.com' }]
+  });
+}
+
+function launchPayload(employees) {
+  return { name: 'Staff performance review', periodStart: '2025-01-01', periodEnd: '2025-12-31', launchNow: true, employees,
+    responseDeadlines: { selfAssessmentDue: '2027-01-10', managerReviewDue: '2027-01-20' } };
+}
+
+test('manager and HR launch staff reviews using trusted reviewer details and replay the same cycle', async () => {
+  await seedLaunchEmployee();
+  const created = await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'manager')
+    .send(launchPayload([{ userId: EMPLOYEE, managerId: 'forged-manager', managerEmail: 'forged@example.com', name: 'Forged name', teamId: 'other-team' }])).expect(201);
+  expect(created.body.data.launchSummary).toMatchObject({ launched: 1, replayed: 0, errors: 0 });
+  const cycleId = created.body.data.cycle._id;
+  const appraisal = await Appraisal.findOne({ cycleId }).lean();
+  expect(appraisal.employee.name).toBe('Employee One');
+  expect(appraisal.manager.userId).toBe(MANAGER);
+  expect(appraisal.deadlines.selfAssessmentDue.toISOString()).toBe('2027-01-10T00:00:00.000Z');
+  expect(appraisal.cycleConfigurationSnapshot.workflowDefinition.sections.length).toBeGreaterThan(0);
+  const replay = await request(app).post(`/api/appraisals/cycles/${cycleId}/launch-for-team`).set('x-test-actor', 'manager')
+    .send({ employees: [{ userId: EMPLOYEE }] }).expect(200);
+  expect(replay.body.data).toMatchObject({ launched: 0, replayed: 1, errors: 0 });
+  expect(await Appraisal.countDocuments({ cycleId })).toBe(1);
+  expect(await DomainEvent.countDocuments({ 'aggregate.id': String(appraisal._id) })).toBe(2);
+  await seedLaunchEmployee('other-staff', 'team-b');
+  const hr = await request(app).post(`/api/appraisals/cycles/${cycleId}/launch`).set('x-test-actor', 'hr')
+    .send({ employees: [{ userId: 'other-staff' }] }).expect(200);
+  expect(hr.body.data.launched).toBe(1);
+});
+
+test('launch rejects out-of-team and foreign-tenant staff before creating records or notifications', async () => {
+  await seedLaunchEmployee();
+  await seedLaunchEmployee('outsider', 'team-b');
+  await seedLaunchEmployee('foreign-staff', 'team-a', ORG_B);
+  for (const userId of ['outsider', 'foreign-staff', 'unknown-staff']) {
+    await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'manager')
+      .send(launchPayload([{ userId: EMPLOYEE }, { userId, teamId: 'team-a', managerId: MANAGER }])).expect(403);
+  }
+  await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'hr')
+    .send(launchPayload([{ userId: 'foreign-staff' }])).expect(403);
+  await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'employee')
+    .send(launchPayload([{ userId: EMPLOYEE }])).expect(403);
+  expect(await Appraisal.countDocuments()).toBe(0);
+  expect(await AppraisalCycle.countDocuments()).toBe(0);
+  expect(await DomainEvent.countDocuments()).toBe(0);
+});
+
+test('launch reports missing managers individually and rejects invalid response deadlines', async () => {
+  await seedLaunchEmployee();
+  await seedLaunchEmployee('blocked-staff', 'team-a', ORG_A, null);
+  await User.updateOne({ idpSub: 'blocked-staff' }, { $unset: { 'idpTeams.0.managerName': '', 'idpTeams.0.managerEmail': '' } });
+  const invalid = launchPayload([{ userId: EMPLOYEE }]);
+  invalid.responseDeadlines.managerReviewDue = '2027-01-01';
+  await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'hr').send(invalid).expect(400);
+  expect(await AppraisalCycle.countDocuments()).toBe(0);
+  const launched = await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'hr')
+    .send(launchPayload([{ userId: EMPLOYEE }, { userId: 'blocked-staff', managerId: MANAGER, managerEmail: 'manager@example.com' }])).expect(201);
+  expect(launched.body.data.launchSummary).toMatchObject({ launched: 1, errors: 1 });
+  expect(launched.body.data.launchSummary.errorDetails[0]).toMatchObject({ userId: 'blocked-staff', error: expect.stringMatching(/manager/i) });
+  const cycleId = launched.body.data.cycle._id;
+  await AppraisalCycle.updateOne({ _id: cycleId }, { $set: { status: 'cancelled' } });
+  await request(app).post(`/api/appraisals/cycles/${cycleId}/launch`).set('x-test-actor', 'hr').send({ employees: [{ userId: EMPLOYEE }] }).expect(400);
+  expect(await Appraisal.countDocuments()).toBe(1);
+});
+
+test('history and published reports retain frozen periods while enforcing employee manager and tenant access', async () => {
+  const deletedCycleId = new mongoose.Types.ObjectId();
+  const appraisal = await Appraisal.create({ organizationId: ORG_A, cycleId: deletedCycleId, status: 'completed',
+    employee: { userId: EMPLOYEE, name: 'Employee One', email: 'employee@example.com' },
+    manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+    cycleConfigurationSnapshot: { cycleName: '2024 historical review', periodStart: '2024-01-01', periodEnd: '2024-12-31', ratingScale: { min: 1, max: 5 }, workflowDefinition: { sections: [{ id: 'learning', title: 'Learning', questions: [{ id: 'applied', prompt: 'What did you apply?' }] }] } },
+    finalRating: { overall: 4, ratingLabel: 'Exceeds expectations', justification: 'Published outcome', finalizedAt: new Date() },
+    selfAssessment: { submittedAt: new Date(), overallSummary: { achievements: 'Employee reflection' } },
+    managerReview: { overallSummary: { strengths: 'Shared strengths' }, competencyRatings: [{ competencyId: 'delivery', competencyName: 'Delivery', managerRating: 4, managerComments: 'Consistent delivery' }] },
+    customResponses: [{ sectionId: 'learning', questionId: 'applied', respondentRole: 'employee', value: 'Published learning', submittedAt: new Date() }, { sectionId: 'learning', questionId: 'applied', respondentRole: 'manager', value: 'PRIVATE DRAFT' }],
+    calibration: { justification: 'PRIVATE CALIBRATION' }
+  });
+  for (const actor of ['employee', 'manager', 'hr']) {
+    const response = await request(app).get(`/api/appraisals/${appraisal._id}/report`).set('x-test-actor', actor).expect(200);
+    expect(response.body.data.cycle).toMatchObject({ name: '2024 historical review', periodEnd: '2024-12-31' });
+    expect(response.body.data.finalRating.overall).toBe(4);
+    expect(response.body.data.employeeReflection.achievements).toBe('Employee reflection');
+    expect(response.body.data.competencies[0]).toMatchObject({ name: 'Delivery', managerRating: 4 });
+    expect(response.body.data.answers).toEqual([{ section: 'Learning', question: 'What did you apply?', respondent: 'employee', answer: 'Published learning' }]);
+    expect(JSON.stringify(response.body)).not.toMatch(/PRIVATE CALIBRATION|PRIVATE DRAFT|example.com|calibration|conversationAssessment|auditTrail/);
+  }
+  await request(app).get(`/api/appraisals/${appraisal._id}/report`).set('x-test-user', 'unrelated-staff').expect(403);
+  await request(app).get(`/api/appraisals/${appraisal._id}/report`).set('x-test-actor', 'hr').set('x-test-organization', ORG_B).expect(404);
+  const history = await request(app).get('/api/appraisals/my').expect(200);
+  expect(history.body.data.some((item) => item._id === String(appraisal._id))).toBe(true);
+  const organization = await request(app).get('/api/appraisals/organization').set('x-test-actor', 'hr').expect(200);
+  expect(organization.body.data).toHaveLength(1);
+  await request(app).get('/api/appraisals/organization').set('x-test-actor', 'manager').expect(403);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_in_progress' } });
+  await request(app).get(`/api/appraisals/${appraisal._id}/report`).expect(409);
+});
 
 let mongo;
 let app;
@@ -1756,6 +1858,11 @@ test('1,000-person canonical appraisal launch snapshots tenant goals and replays
   const payload = {
     employees
   };
+  await User.insertMany(employees.map((employee) => ({
+    idpSub: employee.userId, email: employee.email, currentOrganizationId: ORG_A,
+    profile: { displayName: employee.name },
+    idpTeams: [{ id: 'team-a', organizationId: ORG_A, role: 'member', managerId: MANAGER, managerName: 'Manager One', managerEmail: 'manager@example.com' }]
+  })));
 
   const firstStartedAt = Date.now();
   const first = await request(app)
@@ -1799,6 +1906,7 @@ test('1,000-person canonical appraisal launch snapshots tenant goals and replays
 }, 150000);
 
 test('admin cycle design templates launch immutable questions and enforce employee and manager responses', async () => {
+  await seedLaunchEmployee();
   const templates = await request(app)
     .get('/api/appraisals/cycle-templates')
     .set('x-test-actor', 'hr')

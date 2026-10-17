@@ -2,16 +2,18 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useUserContext, useMyAppraisals, useTeamAppraisals, useAppraisalCycles } from '@/lib/hooks';
+import { useUserContext, useMyAppraisals, useTeamAppraisals, useAppraisalCycles, useOrganizationAppraisals } from '@/lib/hooks';
 import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import api from '@/lib/api';
+import AppraisalHistory from '@/components/appraisals/AppraisalHistory';
+import { AppraisalResultItem, isFinishedAppraisal } from '@/lib/appraisal-results';
 import {
   Box, Typography, Card, CardContent, Grid, Button, Chip, Alert,
   LinearProgress, Paper, List, ListItem, ListItemText,
   ListItemAvatar, Avatar, ListItemSecondaryAction, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Stepper, Step, StepLabel, StepContent, Divider, CircularProgress,
-  Tooltip, Badge, Select, MenuItem, FormControl, InputLabel,
+  Tooltip, Badge, Select, MenuItem, FormControl, InputLabel, Tabs, Tab,
   alpha, useTheme
 } from '@mui/material';
 import {
@@ -21,7 +23,7 @@ import {
 } from '@mui/icons-material';
 import { gradients } from '../theme';
 
-interface Appraisal {
+interface Appraisal extends AppraisalResultItem {
   _id: string;
   cycleId: any;
   employee: { userId: string; name: string; email: string; jobTitle?: string; department?: string };
@@ -99,28 +101,35 @@ export default function AppraisalsPage() {
   const searchParams = useSearchParams();
   const theme = useTheme();
   const { workspace } = usePerformanceWorkspace();
-  const { isManager, isHRAdmin, user, role } = useUserContext();
+  const { isManager, isHRAdmin, user, role, organization } = useUserContext();
 
-  const selectedTab = workspace === 'manager' && isManager ? 1 : 0;
+  const selectedTab = workspace === 'admin' && isHRAdmin ? 2 : workspace === 'manager' && isManager ? 1 : 0;
+  const historyMode = searchParams.get('section') === 'history';
+  const changeSection = (section: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('section', section);
+    window.history.pushState(null, '', `${url.pathname}${url.search}`);
+  };
   const [selectedCycleId, setSelectedCycleId] = useState<string>('');
   const [managerNotifications, setManagerNotifications] = useState<ManagerNotification[]>([]);
 
-  const { appraisals: myAppraisals, isLoading: myLoading, mutate: mutateMyAppraisals } = useMyAppraisals({ cycleId: selectedCycleId || undefined });
-  const { appraisals: teamAppraisals, isLoading: teamLoading, mutate: mutateTeamAppraisals } = useTeamAppraisals({
+  const { appraisals: allMyAppraisals, isLoading: myLoading, isError: myError, mutate: mutateMyAppraisals } = useMyAppraisals({ cycleId: selectedCycleId || undefined });
+  const { appraisals: allTeamAppraisals, isLoading: directTeamLoading, isError: teamError, mutate: mutateTeamAppraisals } = useTeamAppraisals({
     cycleId: selectedCycleId || undefined,
     enabled: selectedTab === 1,
   });
   const { cycles, isLoading: cyclesLoading } = useAppraisalCycles();
 
-  // Find active cycle
-  useEffect(() => {
-    if (cycles.length > 0 && !selectedCycleId) {
-      const activeCycle = cycles.find((c: AppraisalCycle) => c.status === 'active');
-      if (activeCycle) {
-        setSelectedCycleId(activeCycle._id);
-      }
-    }
-  }, [cycles, selectedCycleId]);
+  const { appraisals: organizationAppraisals, isLoading: organizationLoading, isError: organizationError, mutate: mutateOrganizationAppraisals } = useOrganizationAppraisals(selectedTab === 2);
+  const scopedTeamAppraisals = selectedTab === 2
+    ? organizationAppraisals.filter((item: Appraisal) => !selectedCycleId || item.cycleId?._id === selectedCycleId)
+    : allTeamAppraisals;
+  const myAppraisals = (allMyAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status));
+  const teamAppraisals = (scopedTeamAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status));
+  const teamLoading = selectedTab === 2 ? organizationLoading : directTeamLoading;
+  const loadError = selectedTab === 2 ? organizationError : selectedTab === 1 ? teamError : myError;
+  const allVisibleAppraisals: Appraisal[] = selectedTab ? scopedTeamAppraisals : allMyAppraisals;
+  const historyAppraisals = allVisibleAppraisals.filter((item) => isFinishedAppraisal(item.status) && (!searchParams.get('employeeId') || item.employee.userId === searchParams.get('employeeId')));
 
   // Handle employee filter from query params
   const employeeIdFilter = searchParams.get('employeeId');
@@ -167,7 +176,7 @@ export default function AppraisalsPage() {
     try {
       await api.post(`/appraisals/${appraisalId}/start`);
       // Refresh data
-      router.push(`/appraisals/${appraisalId}/goal-setting`);
+      router.push(`/appraisals/${appraisalId}/self-assessment`);
     } catch (error: any) {
       console.error('Failed to start appraisal:', error);
       alert(error.response?.data?.error || 'Failed to start appraisal');
@@ -278,8 +287,7 @@ export default function AppraisalsPage() {
           overflow: 'hidden',
           transition: 'all 0.3s ease',
           '&:hover': {
-            boxShadow: theme.shadows[8],
-            transform: 'translateY(-2px)',
+            borderColor: 'primary.main',
           },
           '&::before': {
             content: '""',
@@ -637,28 +645,25 @@ export default function AppraisalsPage() {
             variant="h4"
             fontWeight={800}
             gutterBottom
-            sx={{
-              background: gradients.primary,
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
           >
             Performance Appraisals
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            {selectedTab === 1
-              ? 'Review direct reports and complete the manager steps assigned to you.'
-              : 'Complete your own self-assessments, discussions, and acknowledgements.'}
+            {selectedTab === 2 ? 'Start staff reviews, track current work, and find results across your organization.' : selectedTab === 1
+              ? 'Start staff reviews, continue current work, and find past results for your team.'
+              : 'Continue your current appraisal or find past results and reports.'}
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
           <FormControl size="small" sx={{ minWidth: 220 }}>
-            <InputLabel>Cycle</InputLabel>
+            <InputLabel shrink>Cycle</InputLabel>
             <Select
+              displayEmpty
               value={selectedCycleId}
               label="Cycle"
               onChange={(e) => setSelectedCycleId(e.target.value)}
             >
+              <MenuItem value="">All cycles</MenuItem>
               {cycles.map((cycle: AppraisalCycle) => (
                 <MenuItem key={cycle._id} value={cycle._id}>
                   {cycle.name} {cycle.status === 'active' && '(Active)'}
@@ -666,15 +671,7 @@ export default function AppraisalsPage() {
               ))}
             </Select>
           </FormControl>
-          {workspace === 'admin' && isHRAdmin && (
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={() => router.push('/admin')}
-            >
-              Admin Panel
-            </Button>
-          )}
+          {(isManager || isHRAdmin) && workspace !== 'personal' && <Button variant="contained" startIcon={<Add />} onClick={() => router.push('/appraisals/start')}>Start appraisal</Button>}
         </Box>
       </Box>
 
@@ -698,7 +695,7 @@ export default function AppraisalsPage() {
         </Alert>
       )}
 
-      {workspace === 'manager' && isManager && unreadManagerNotificationCount > 0 && (
+      {!historyMode && workspace === 'manager' && isManager && unreadManagerNotificationCount > 0 && (
         <Paper
           sx={{
             p: 2.5,
@@ -759,26 +756,30 @@ export default function AppraisalsPage() {
         </Paper>
       )}
 
+      <Paper variant="outlined" sx={{ mb: 3 }}><Tabs value={historyMode ? 'history' : 'current'} onChange={(_, value: string) => changeSection(value)} variant="fullWidth"><Tab value="current" label={`Current (${allVisibleAppraisals.filter((item) => !isFinishedAppraisal(item.status)).length})`} /><Tab value="history" label={`History & results (${historyAppraisals.length})`} /></Tabs></Paper>
+      {loadError && <Alert severity="error" action={<Button onClick={() => { mutateMyAppraisals(); mutateTeamAppraisals(); mutateOrganizationAppraisals(); }}>Retry</Button>}>Could not load your appraisals. Please try again.</Alert>}
+      {historyMode && !loadError && ((selectedTab ? teamLoading : myLoading) ? <CircularProgress aria-label="Loading appraisal history" /> : <AppraisalHistory appraisals={historyAppraisals} showEmployee={selectedTab > 0} organizationName={organization?.name} />)}
+      {!historyMode && !loadError && <>
       {/* Cycle Summary */}
       {selectedCycleId && renderCycleSummary()}
 
       <Paper sx={{ mb: 3, px: 2.25, py: 1.5, bgcolor: alpha(theme.palette.grey[500], 0.04), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
         <Box>
           <Typography variant="subtitle2" fontWeight={700}>
-            {selectedTab === 1 ? 'Manager appraisal queue' : 'Personal appraisals'}
+            {selectedTab === 2 ? 'Organization appraisals' : selectedTab === 1 ? 'Manager appraisal queue' : 'Personal appraisals'}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {selectedTab === 1
+            {selectedTab === 2 ? 'Appraisals for your organization, across every cycle.' : selectedTab === 1
               ? 'Only direct-report appraisals and manager actions are shown in this workspace.'
               : 'Only appraisals where you are the employee are shown in this workspace.'}
           </Typography>
         </Box>
         <Badge
-          badgeContent={(selectedTab === 1 ? teamAppraisals : myAppraisals).filter((item: Appraisal) => item.status.includes('pending')).length}
+          badgeContent={(selectedTab > 0 ? teamAppraisals : myAppraisals).filter((item: Appraisal) => item.status.includes('pending')).length}
           color="warning"
           sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
         >
-          <Chip size="small" label={selectedTab === 1 ? 'Manager view' : 'Personal view'} />
+          <Chip size="small" label={selectedTab === 2 ? 'HR view' : selectedTab === 1 ? 'Manager view' : 'Personal view'} />
         </Badge>
       </Paper>
 
@@ -801,7 +802,7 @@ export default function AppraisalsPage() {
               <Typography variant="body2">
                 {selectedCycleId
                   ? 'You have no appraisals in this cycle. Your manager or HR will initiate your appraisal when the cycle begins.'
-                  : 'Select a cycle to view your appraisals.'}
+                  : 'You have no current appraisals. Open History & results for previous reviews.'}
               </Typography>
             </Alert>
           ) : (
@@ -811,7 +812,7 @@ export default function AppraisalsPage() {
       )}
 
       {/* Team Appraisals (Manager View) */}
-      {selectedTab === 1 && isManager && (
+      {selectedTab > 0 && (isManager || isHRAdmin) && (
         <Box>
           {teamLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -827,7 +828,7 @@ export default function AppraisalsPage() {
             >
               <Typography variant="body1" fontWeight={600}>No team appraisals found</Typography>
               <Typography variant="body2">
-                Your direct reports' appraisals will appear here once the cycle is launched.
+                Start an appraisal for your staff, or open History & results to find completed reviews.
               </Typography>
             </Alert>
           ) : (
@@ -838,7 +839,7 @@ export default function AppraisalsPage() {
                   { label: 'Total', value: teamAppraisals.length, color: 'primary' },
                   { label: 'Pending Action', value: teamAppraisals.filter((a: Appraisal) => a.status.includes('pending') || a.status.includes('in_progress')).length, color: 'warning' },
                   { label: 'Self-Assessment Done', value: teamAppraisals.filter((a: Appraisal) => a.selfAssessment?.submittedAt).length, color: 'info' },
-                  { label: 'Completed', value: teamAppraisals.filter((a: Appraisal) => a.status === 'completed').length, color: 'success' },
+                  { label: 'Awaiting Employee', value: teamAppraisals.filter((a: Appraisal) => ['self_assessment_pending', 'self_assessment_in_progress'].includes(a.status)).length, color: 'info' },
                 ].map((stat, index) => (
                   <Grid key={index} size={{ xs: 6, md: 3 }}>
                     <Paper
@@ -847,11 +848,6 @@ export default function AppraisalsPage() {
                         textAlign: 'center',
                         borderLeft: stat.value > 0 && stat.color !== 'primary' ? 4 : 0,
                         borderColor: stat.value > 0 ? `${stat.color}.main` : 'transparent',
-                        transition: 'all 0.2s ease',
-                        '&:hover': {
-                          transform: 'translateY(-2px)',
-                          boxShadow: theme.shadows[4],
-                        },
                       }}
                     >
                       <Typography
@@ -880,42 +876,8 @@ export default function AppraisalsPage() {
         </Box>
       )}
 
-      {/* AI Assistant Tip */}
-      <Paper
-        sx={{
-          p: 3,
-          mt: 4,
-          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%)',
-          border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
-          borderRadius: 3,
-        }}
-      >
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-          <Box
-            sx={{
-              width: 48,
-              height: 48,
-              borderRadius: 2,
-              background: gradients.primary,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 8px 24px -8px rgba(99, 102, 241, 0.5)',
-            }}
-          >
-            <Psychology sx={{ color: 'white', fontSize: 28 }} />
-          </Box>
-          <Box>
-            <Typography variant="subtitle1" fontWeight={700} color="primary.main">
-              AI-Powered Appraisals
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Our AI assistant helps you write better self-assessments with suggestions based on your OKRs and feedback.
-              For managers, get AI-generated insights, bias detection, and development plan recommendations.
-            </Typography>
-          </Box>
-        </Box>
-      </Paper>
+      </>}
+
     </Box>
   );
 }

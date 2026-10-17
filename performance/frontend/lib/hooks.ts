@@ -634,6 +634,11 @@ export function useTeamAppraisals(filters?: { status?: string; cycleId?: string;
   };
 }
 
+export function useOrganizationAppraisals(enabled: boolean) {
+  const { data, error, isLoading, mutate } = useSWR(enabled ? '/appraisals/organization' : null, fetcher);
+  return { appraisals: Array.isArray(data) ? data : [], isLoading, isError: error, mutate };
+}
+
 /**
  * Get a specific appraisal by ID
  * Backend returns: { success: true, data: appraisal, okrs, accessLevel }

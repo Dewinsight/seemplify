@@ -50,6 +50,12 @@ const appraisalCycleSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  // Response deadlines are independent of phase opening windows so a manager
+  // can review an early employee submission without waiting for a global phase.
+  responseDeadlines: {
+    selfAssessmentDue: Date,
+    managerReviewDue: Date
+  },
 
   // Workflow Phases with Deadlines
   phases: {

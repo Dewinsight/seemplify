@@ -148,7 +148,11 @@ export default function TeamMemberProfilePage() {
             </Box>
           </Grid>
           <Grid size={{ xs: 12, md: 'auto' }}>
-            <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              {(isManager || isHRAdmin) && <>
+                <Button variant="contained" startIcon={<Assignment />} onClick={() => router.push(`/appraisals/start?employeeId=${encodeURIComponent(userId)}`)}>Start appraisal</Button>
+                <Button variant="outlined" onClick={() => router.push(`/appraisals?section=history&employeeId=${encodeURIComponent(userId)}`)}>Appraisal results</Button>
+              </>}
               <Button variant="contained" startIcon={<VideoCall />} onClick={() => router.push(`/one-on-ones/new?employeeId=${userId}&name=${encodeURIComponent(profile.name)}`)}>
                 Schedule 1:1
               </Button>

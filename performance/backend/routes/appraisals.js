@@ -11,7 +11,7 @@ const Appraisal = require('../models/Appraisal');
 const AppraisalDocument = require('../models/AppraisalDocument');
 const OKR = require('../models/OKR');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
-const { requireAuth, requireHRAdmin, requireManager } = require('../middleware/rbac');
+const { requireAuth, requireHRAdmin, requireManager, requirePermission, hasPermission } = require('../middleware/rbac');
 const documentExtractionService = require('../services/documentExtractionService');
 const appraisalAIService = require('../services/appraisalAIService');
 const aiGatewayService = require('../services/aiGatewayService');
@@ -26,6 +26,8 @@ const notificationService = require('../services/notificationService');
 const { getOrganizationFeatureState } = require('../services/organizationFeatureService');
 const { findManagerForEmployee } = require('../services/idpService');
 const User = require('../models/User');
+const { resolveLaunchParticipants } = require('../services/appraisalLaunchParticipants');
+const { resultReport } = require('../services/appraisalResultReport');
 const { fetchAttendanceContext } = require('../services/attendanceContextService');
 const { buildGoalSnapshots } = require('../services/appraisalGoalSnapshotService');
 const { createStorageService } = require('../services/storageService');
@@ -767,6 +769,13 @@ const FINAL_REVIEW_PENDING_STATUSES = ['final_review_pending', 'calibration_comp
 
 function validateCycleConfiguration(input = {}) {
   const errors = [];
+  if (input.responseDeadlines) {
+    const selfDue = Date.parse(input.responseDeadlines.selfAssessmentDue);
+    const managerDue = Date.parse(input.responseDeadlines.managerReviewDue);
+    if (!Number.isFinite(selfDue) || !Number.isFinite(managerDue) || managerDue <= selfDue) {
+      errors.push('Employee and manager response deadlines must be valid, with the manager deadline after the employee deadline');
+    }
+  }
   const periodStart = new Date(input.periodStart);
   const periodEnd = new Date(input.periodEnd);
   if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime()) || periodEnd < periodStart) {
@@ -1247,8 +1256,8 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         manager: managerIdentity.manager,
         status: 'self_assessment_pending',
         deadlines: {
-          selfAssessmentDue: cycle.phases?.selfAssessment?.endDate,
-          managerReviewDue: cycle.phases?.managerReview?.endDate
+          selfAssessmentDue: cycle.responseDeadlines?.selfAssessmentDue || cycle.phases?.selfAssessment?.endDate,
+          managerReviewDue: cycle.responseDeadlines?.managerReviewDue || cycle.phases?.managerReview?.endDate
         }
       });
 
@@ -1620,13 +1629,14 @@ router.get('/cycles', requireAuth, async (req, res) => {
 });
 
 // Create new cycle (HR Admin or Manager)
-router.post('/cycles', requireAuth, requireManager, async (req, res) => {
+router.post('/cycles', requireAuth, requireManager, requirePermission('review:conduct:direct_reports'), async (req, res) => {
   try {
     const orgId = resolveOrganizationId(req);
     const userId = req.session?.user?.id || req.session?.user?.sub;
     const userName = req.session?.user?.name;
     const userRole = req.userRole;
-    const normalizedEmployees = normalizeLaunchEmployees(req.body?.employees);
+    const selectedEmployees = normalizeLaunchEmployees(req.body?.employees);
+    const normalizedEmployees = selectedEmployees.length ? await resolveLaunchParticipants(req, selectedEmployees) : [];
     const shouldLaunchImmediately = Boolean(req.body?.launchNow || normalizedEmployees.length > 0);
     const derivedScope = shouldLaunchImmediately ? buildCycleScopeFromEmployees(userRole, normalizedEmployees) : null;
     const requestedScope = req.body?.scope || derivedScope;
@@ -1718,8 +1728,8 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
       message: `Cycle created and launched for ${launchSummary.launched} employee${launchSummary.launched === 1 ? '' : 's'}.`
     });
   } catch (error) {
-    console.error('Create cycle error:', error);
-    res.status(500).json({ success: false, error: 'Failed to create appraisal cycle' });
+    if (!error.status) console.error('Create cycle error:', error);
+    res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Failed to create appraisal cycle' });
   }
 });
 
@@ -1896,7 +1906,7 @@ router.patch('/cycles/:cycleId/phase', requireAuth, requireHRAdmin, async (req, 
  * HR Admin launches a cycle - creates appraisals for specified employees
  * This is the starting point of the appraisal flow!
  */
-router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, res) => {
+router.post('/cycles/:cycleId/launch', requireAuth, requireManager, requirePermission('review:conduct:direct_reports'), async (req, res) => {
   try {
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: resolveOrganizationId(req) });
     if (!cycle) {
@@ -1906,7 +1916,7 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const employees = normalizeLaunchEmployees(req.body?.employees);
+    const employees = await resolveLaunchParticipants(req, normalizeLaunchEmployees(req.body?.employees));
 
     // Permission check for non-HR appraisers (line managers and team leads).
     if (req.userRole !== 'hr_admin' && isAppraisalManagerRole(req.userRole)) {
@@ -1937,8 +1947,8 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
       }
     }
 
-    if (cycle.status === 'completed') {
-      return res.status(400).json({ success: false, error: 'Cannot launch a completed cycle' });
+    if (!['active', 'draft'].includes(cycle.status)) {
+      return res.status(400).json({ success: false, error: 'This cycle is no longer open for appraisals' });
     }
 
     if (employees.length === 0) {
@@ -1965,8 +1975,8 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
       message: `Created ${launchSummary.launched} appraisals${launchSummary.replayed > 0 ? `, replayed ${launchSummary.replayed} existing` : ''}${launchSummary.errors > 0 ? `, ${launchSummary.errors} failed` : ''}`
     });
   } catch (error) {
-    console.error('Launch cycle error:', error);
-    res.status(500).json({ success: false, error: 'Failed to launch cycle' });
+    if (!error.status) console.error('Launch cycle error:', error);
+    res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Failed to launch cycle' });
   }
 });
 
@@ -1974,114 +1984,18 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
  * POST /api/appraisals/cycles/:cycleId/launch-for-team
  * Manager can launch appraisals for their direct reports in an active cycle
  */
-router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, async (req, res) => {
+router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireManager, requirePermission('review:conduct:direct_reports'), async (req, res) => {
   try {
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: resolveOrganizationId(req) });
-    if (!cycle) {
-      return res.status(404).json({ success: false, error: 'Cycle not found' });
-    }
-    if (!(await canManageAppraisalCycle(req, cycle))) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
-    }
-
-    if (cycle.status !== 'active' && cycle.status !== 'draft') {
-      return res.status(400).json({ success: false, error: 'Cycle is not active' });
-    }
-
-    const managerId = req.session?.user?.id || req.session?.user?.sub;
-    const managerName = req.session?.user?.name;
-    const managerEmail = req.session?.user?.email;
-
-    const { employees } = req.body;
-    // employees: array of { userId, name, email, department?, jobTitle? }
-
-    if (!employees || !Array.isArray(employees)) {
-      return res.status(400).json({ success: false, error: 'Employee list required' });
-    }
-
-    const createdAppraisals = [];
-    const errors = [];
-
-    for (const emp of employees) {
-      try {
-        // Enforce hierarchy-aware appraisal scope
-        const canAppraise = await canAppraiseEmployee(req, {
-          targetUserId: emp.userId,
-          targetEmail: emp.email
-        });
-        if (!canAppraise) {
-          throw new Error('Access denied: employee is outside your appraisal scope');
-        }
-
-        const existing = await Appraisal.findOne({
-          cycleId: cycle._id,
-          organizationId: cycle.organizationId,
-          ...(buildEmployeeIdentityMatch(emp) || { 'employee.userId': emp.userId })
-        });
-
-        if (existing) {
-          errors.push({ userId: emp.userId, error: 'Appraisal already exists' });
-        return;
-        }
-
-        const goalSnapshot = await buildGoalSnapshots({
-          organizationId: cycle.organizationId,
-          employeeId: emp.userId,
-          cycle
-        });
-
-        const appraisal = new Appraisal({
-          cycleId: cycle._id,
-          organizationId: cycle.organizationId,
-          goals: goalSnapshot.goalIds,
-          goalSnapshots: goalSnapshot.snapshots,
-          goalEvidenceSummary: goalSnapshot.evidenceSummary,
-          employee: {
-            userId: emp.userId,
-            name: emp.name,
-            email: emp.email,
-            department: emp.department,
-            jobTitle: emp.jobTitle
-          },
-          manager: {
-            userId: managerId,
-            name: managerName,
-            email: managerEmail
-          },
-          // Skip goal setting, start directly at self-assessment
-          status: 'self_assessment_pending',
-          deadlines: {
-            selfAssessmentDue: cycle.phases?.selfAssessment?.endDate,
-            managerReviewDue: cycle.phases?.managerReview?.endDate
-          }
-        });
-
-        await appraisal.save();
-        appraisal.addAuditLog('appraisal_created', req.session.user, {
-          cycleId: cycle._id,
-          cycleName: cycle.name,
-          goalSnapshotCount: goalSnapshot.snapshots.length,
-          goalSnapshotCutoff: goalSnapshot.evidenceSummary.cutoffAt
-        });
-        await appraisal.save();
-        createdAppraisals.push(appraisal);
-
-      } catch (empError) {
-        errors.push({ userId: emp.userId, error: empError.message });
-    }
-  };
-
-    res.json({
-      success: true,
-      data: {
-        launched: createdAppraisals.length,
-        errors: errors.length,
-        appraisals: createdAppraisals
-      }
-    });
+    if (!cycle) return res.status(404).json({ success: false, error: 'Cycle not found' });
+    if (!(await canManageAppraisalCycle(req, cycle))) return res.status(403).json({ success: false, error: 'Access denied' });
+    if (!['active', 'draft'].includes(cycle.status)) return res.status(409).json({ success: false, error: 'This cycle is no longer open for appraisals' });
+    const employees = await resolveLaunchParticipants(req, normalizeLaunchEmployees(req.body?.employees));
+    if (!employees.length) return res.status(400).json({ success: false, error: 'Select at least one employee' });
+    const summary = await createAppraisalsForCycle(cycle, employees, req);
+    return res.status(summary.launched || summary.replayed ? 200 : 400).json({ success: Boolean(summary.launched || summary.replayed), data: summary });
   } catch (error) {
-    console.error('Launch for team error:', error);
-    res.status(500).json({ success: false, error: 'Failed to launch appraisals for team' });
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Failed to start team appraisals' });
   }
 });
 
@@ -2584,6 +2498,19 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
 // APPRAISAL ROUTES
 // =============================================
 
+router.get('/organization', requireAuth, requireHRAdmin, requirePermission('review:view:all'), async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    const appraisals = await Appraisal.find({ organizationId: String(organizationId) })
+      .select('cycleId employee manager status selfAssessment.submittedAt selfAssessment.overallSelfRating managerReview.submittedAt managerReview.overallManagerRating finalRating deadlines notifications cycleConfigurationSnapshot.cycleName cycleConfigurationSnapshot.periodStart cycleConfigurationSnapshot.periodEnd cycleConfigurationSnapshot.ratingScale')
+      .populate(tenantCyclePopulate(req, 'name periodStart periodEnd currentPhase status ratingScale'))
+      .sort({ createdAt: -1 });
+    res.json({ success: true, data: appraisals });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Could not load organization appraisals' });
+  }
+});
+
 // Get my appraisals (as employee)
 router.get('/my', requireAuth, async (req, res) => {
   try {
@@ -2605,7 +2532,7 @@ router.get('/my', requireAuth, async (req, res) => {
     if (status) query.status = status;
 
     const appraisals = await Appraisal.find(query)
-      .populate(tenantCyclePopulate(req, 'name periodStart periodEnd currentPhase status'))
+      .populate(tenantCyclePopulate(req, 'name periodStart periodEnd currentPhase status ratingScale'))
       .sort({ createdAt: -1 });
 
     res.json({ success: true, data: appraisals });
@@ -2652,7 +2579,7 @@ router.get('/team', requireAuth, requireManager, async (req, res) => {
     if (status) query.status = status;
 
     const appraisals = await Appraisal.find(query)
-      .populate(tenantCyclePopulate(req, 'name periodStart periodEnd currentPhase status'))
+      .populate(tenantCyclePopulate(req, 'name periodStart periodEnd currentPhase status ratingScale'))
       .sort({ createdAt: -1 });
 
     res.json({ success: true, data: appraisals });
@@ -2975,6 +2902,23 @@ router.get('/:appraisalId/attendance-context', requireAuth, async (req, res) => 
   } catch (error) {
     console.error('Get attendance context error:', error);
     res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Attendance context is unavailable' });
+  }
+});
+
+// A published result deliberately excludes private calibration, AI and audit notes.
+router.get('/:appraisalId/report', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId))
+      .populate(tenantCyclePopulate(req, 'name periodStart periodEnd ratingScale'));
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    const employeeAccess = isAppraisalEmployee(req, appraisal) && hasPermission(req.userRole, 'review:view:own', req.session.user);
+    const managerAccess = hasPermission(req.userRole, 'review:view:direct_reports', req.session.user) && await canManageAppraisal(req, appraisal);
+    const hrAccess = hasPermission(req.userRole, 'review:view:all', req.session.user);
+    if (!employeeAccess && !managerAccess && !hrAccess) return res.status(403).json({ success: false, error: 'Access denied' });
+    if (!APPRAISAL_COMPLETED_STATUSES.includes(appraisal.status)) return res.status(409).json({ success: false, error: 'The final result report will be available when this appraisal is completed.' });
+    return res.json({ success: true, data: resultReport(appraisal, appraisal.cycleId) });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Could not load the appraisal result report' });
   }
 });
 
