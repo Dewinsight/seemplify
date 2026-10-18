@@ -45,10 +45,12 @@ for (const actor of actors) {
     if (managerRoles.has(actor)) paths.push('/team', '/appraisals?view=team', '/appraisals/start', '/okrs?view=team', '/analytics', '/coaching', '/talent');
     if (hrRoles.has(actor)) paths.push('/admin', '/admin/appraisal-cycles', '/admin/appraisal-cycles/new', '/admin/calibration', '/admin/reports', '/okrs?view=organization');
     for (const path of paths) {
-      const teamContext = path === '/team' ? page.waitForResponse(response => response.url().endsWith('/api/user/context') && response.status() === 200) : null;
+      const userContext = page.waitForResponse(response => response.url().endsWith('/api/user/context') && response.status() === 200);
+      const report = path === '/admin/reports' ? page.waitForResponse(response => response.url().endsWith('/api/reports/org-summary') && response.status() === 200) : null;
       await page.goto(path, { waitUntil: 'domcontentloaded' });
-      if (teamContext) {
-        await teamContext;
+      await userContext;
+      if (report) await report;
+      if (path === '/team') {
         await expect(page.getByRole('button', { name: 'All Members', exact: true })).toBeVisible();
       }
       await expect(page.locator('main').getByRole('heading').first(), path).toBeVisible();
