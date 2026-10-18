@@ -11,7 +11,7 @@ interface Meeting { _id: string; stepId: string; title: string; mode?: string; s
 const getData = async (url: string) => (await api.get(url)).data.data;
 const problem = (error: unknown) => (error as { response?: { data?: { error?: string } } })?.response?.data?.error || 'This request could not be completed. Please retry.';
 
-export default function AppraisalMeetings({ appraisalId, steps, canManage, onUpdated, currentStepId }: { appraisalId: string; steps: FlowStep[]; canManage: boolean; onUpdated: () => void; currentStepId?: string }) {
+export default function AppraisalMeetings({ appraisalId, steps, canManage, canJoin = true, onUpdated, currentStepId }: { appraisalId: string; steps: FlowStep[]; canManage: boolean; canJoin?: boolean; onUpdated: () => void; currentStepId?: string }) {
   const base = `/appraisals/${appraisalId}/meetings`;
   const { data: meetings = [], error: loadError, isLoading, mutate } = useSWR<Meeting[]>(base, getData, { refreshInterval: 30000 });
   const [error, setError] = useState(''); const [busy, setBusy] = useState(''); const [showForm, setShowForm] = useState(false);
@@ -36,7 +36,7 @@ export default function AppraisalMeetings({ appraisalId, steps, canManage, onUpd
       <AccordionSummary expandIcon={<ExpandMore />}><Box><Typography fontWeight={600}>{meeting.title}</Typography><Typography variant="body2" color="text.secondary">{new Date(meeting.scheduledDate).toLocaleString()} · {meeting.duration} min · {meeting.status.replaceAll('_', ' ')}</Typography></Box></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>
         {!meeting.conferenceUrl && meeting.mode !== 'in_app' && <Alert severity="warning">The calendar has not confirmed a meeting link. Use Schedule a call to retry the connection; an uncertain provider result must be checked before creating another invitation.</Alert>}
-        {meeting.mode === 'in_app' && meeting.status !== 'completed' && <AppraisalNativeCall base={`${base}/${meeting._id}/native`} record={Boolean(meeting.integration?.recordingRequested)} onSaved={() => { void mutate(); }} />}
+        {meeting.mode === 'in_app' && canJoin && meeting.status !== 'completed' && <AppraisalNativeCall base={`${base}/${meeting._id}/native`} record={Boolean(meeting.integration?.recordingRequested)} recorded={meeting.integration?.recordingAvailable} onSaved={() => { void mutate(); }} />}
         <Typography variant="body2">Recording: {(meeting.integration?.recordingState || (meeting.integration?.recordingRequested ? 'not scheduled' : 'off')).replaceAll('_', ' ')}</Typography>
         <Stack direction="row" flexWrap="wrap" gap={1}>
           {meeting.conferenceUrl && <Button component="a" href={meeting.conferenceUrl} target="_blank" rel="noopener noreferrer" variant="outlined">Join call</Button>}

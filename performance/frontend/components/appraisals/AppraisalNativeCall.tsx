@@ -8,7 +8,7 @@ type State = { peer: string | null; recording: boolean; offer?: Signal; answer?:
 type Signal = { sender: string; target: string; description: RTCSessionDescriptionInit };
 type Session = { peerId: string; role: 'manager' | 'employee'; iceServers: RTCIceServer[] };
 
-export default function AppraisalNativeCall({ base, record, onSaved }: { base: string; record: boolean; onSaved: () => void }) {
+export default function AppraisalNativeCall({ base, record, recorded, onSaved }: { base: string; record: boolean; recorded?: boolean; onSaved: () => void }) {
   const [consent, setConsent] = useState(false); const [joined, setJoined] = useState(false); const [busy, setBusy] = useState(false);
   const [error, setError] = useState(''); const [status, setStatus] = useState(''); const [recording, setRecording] = useState(false);
   const [remoteReady, setRemoteReady] = useState(false); const [mic, setMic] = useState(true); const [camera, setCamera] = useState(true);
@@ -148,7 +148,7 @@ export default function AppraisalNativeCall({ base, record, onSaved }: { base: s
         <Button variant="outlined" onClick={() => { media.current?.getAudioTracks().forEach(track => { track.enabled = !mic; }); setMic(!mic); }}>{mic ? 'Mute microphone' : 'Unmute microphone'}</Button>
         <Button variant="outlined" disabled={!media.current?.getVideoTracks().length} onClick={() => { media.current?.getVideoTracks().forEach(track => { track.enabled = !camera; }); setCamera(!camera); }}>{camera ? 'Turn camera off' : 'Turn camera on'}</Button>
         <Button onClick={() => { void remoteVideo.current?.play().catch(() => setError('Audio playback is blocked by your browser. Check this site’s sound permissions.')); }}>Enable call audio</Button>
-        {record && session.current?.role === 'manager' && !recording && !savedBlob && <Button variant="contained" disabled={busy || !remoteReady} onClick={startRecording}>Start agreed recording</Button>}
+        {record && !recorded && session.current?.role === 'manager' && !recording && !savedBlob && <Button variant="contained" disabled={busy || !remoteReady} onClick={startRecording}>Start agreed recording</Button>}
         {recording && <Button variant="contained" color="error" disabled={busy} onClick={() => recorder.current?.stop()}>Stop and save recording</Button>}
         <Button color="error" disabled={busy || recording || !!savedBlob} onClick={leave}>Leave call</Button>
       </Stack>}

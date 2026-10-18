@@ -67,6 +67,7 @@ module.exports = function nativeCalls(publicMeeting) {
       if (!live(call[other]) || !call[other].consentAt || !call[role].consentAt) return res.status(409).json({ error: 'Both participants must join and agree to recording first.' });
       const claimed = await Call.findOneAndUpdate({ _id: call._id, $or: [{ recordingUntil: { $lt: new Date() } }, { recordingPeer: { $exists: false } }] }, { $set: { recordingPeer: id, recordingActive: true, recordingUntil: new Date(Date.now() + 35 * 60000) } }, { new: true });
       if (!claimed || req.meeting.appraisalMeeting.recordingFileId) return res.status(409).json({ error: 'This call already has a recording. Review it before scheduling another call step.' });
+      await OneOnOne.updateOne({ _id: req.meeting._id }, { $set: { 'appraisalMeeting.recordingConsent': { manager: { userId: req.appraisal.manager.userId, acceptedAt: call.manager.consentAt }, employee: { userId: req.appraisal.employee.userId, acceptedAt: call.employee.consentAt }, startedAt: new Date(), noticeVersion: 'appraisal-recording-v1' } } });
       return res.json({ success: true });
     }
     if (req.method === 'POST' && req.path === '/stop') {
