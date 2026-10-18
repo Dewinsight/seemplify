@@ -570,7 +570,8 @@ export default function OKRWorkspacePage() {
     [currentUserIds, periodGoals],
   );
   const approvalGoals = useMemo(
-    () => periodGoals.filter((goal) => goal.permissions?.decide === true),
+    () => periodGoals.filter((goal) => goal.permissions?.decide === true &&
+      (lifecycleState(goal) === 'pending_approval' || goal.approvalStatus === 'pending')),
     [periodGoals],
   );
   const organizationGoals = useMemo(
@@ -1058,6 +1059,14 @@ export default function OKRWorkspacePage() {
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 {ownerName(goal)} · {originLabel(goal)}
               </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Period: {goal.period}
+              </Typography>
+              {state === 'draft' && goal.type === 'individual' && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  {canSubmit ? 'Submit this draft for manager approval when it is ready.' : 'Waiting for the goal owner to submit this draft for approval.'}
+                </Typography>
+              )}
               {alignmentTitle(goal) && (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <AccountTree fontSize="small" /> {alignmentTitle(goal)}
@@ -1389,7 +1398,7 @@ export default function OKRWorkspacePage() {
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                   onOpen={() => !alignableGoals.length && loadAlignableGoals(form.type)}
                   onChange={(_, value) => setForm({ ...form, parentOKRId: value?.id || '' })}
-                  renderInput={(params) => <TextField {...params} label="Align to parent goal (optional)" />}
+                  renderInput={(params) => <TextField {...params} label="Align to parent goal (optional)" helperText={`Choose a parent goal in ${form.period}. Alignment does not submit or approve this goal.`} />}
                 />
               </Grid>
             )}

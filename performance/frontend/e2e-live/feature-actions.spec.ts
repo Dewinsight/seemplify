@@ -60,6 +60,36 @@ test('HR creates and saves two organization OKRs in the browser', async ({ page,
   await page.getByRole('tab', { name: /Organization alignment/i }).click();
 });
 
+test('employee aligns an existing draft in its own period, submits it, and manager approves it', async ({ page, request }) => {
+  const stamp = Date.now();
+  const period = await api(request, 'hr_manager', 'POST', 'goal-periods', { name: `Alignment ${stamp}`, code: `ALIGN-${stamp}`, startDate: date(-1), endDate: date(90), status: 'open' });
+  const goalBody = (title: string, type: string) => ({ title, type, periodId: period._id, objectives: [{ title: 'Verify measured delivery', weight: 100, keyResults: [{ title: 'Document the result', targetValue: 100 }] }] });
+  const parent = await api(request, 'hr_manager', 'POST', 'okrs', goalBody(`Company priority ${stamp}`, 'organization'));
+  const child = await api(request, 'employee', 'POST', 'okrs', goalBody(`Employee priority ${stamp}`, 'individual'));
+  await login(page, 'employee', '/okrs');
+  await muiSelect(page, 'Period').click(); await page.getByRole('option', { name: period.name, exact: true }).click();
+  await page.getByRole('button', { name: 'Edit goal', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Edit goal' });
+  await expect(muiSelect(dialog, 'Period')).toHaveText(period.name);
+  await dialog.getByRole('combobox', { name: 'Align to parent goal (optional)' }).click();
+  await page.getByRole('option', { name: `${parent.title} · ${period.name}`, exact: true }).click();
+  await dialog.getByLabel('Reason for edit').fill('Align this draft with the company priority');
+  await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(dialog).not.toBeVisible(); await expect(page.getByText('Goal updated.', { exact: true })).toBeVisible();
+  const saved = await api(request, 'employee', 'GET', `okrs/${child._id}`);
+  expect(saved.alignment.parentOKRId._id || saved.alignment.parentOKRId).toBe(parent._id);
+  expect(saved.lifecycle.state).toBe('draft');
+  await page.getByRole('button', { name: 'Submit for approval', exact: true }).click();
+  await expect(page.getByText('Goal submitted for approval.', { exact: true })).toBeVisible();
+  await login(page, 'manager', '/okrs?view=approvals');
+  await muiSelect(page, 'Period').click(); await page.getByRole('option', { name: period.name, exact: true }).click();
+  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(page.getByText('Goal approved.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Approvals (0)', exact: true })).toBeVisible();
+  expect((await api(request, 'employee', 'GET', `okrs/${child._id}`)).lifecycle.state).toBe('active');
+});
+
 test('employee sends feedback from the real colleague picker', async ({ page }) => {
   await login(page, 'employee', '/feedback');
   await page.getByRole('button', { name: 'Give feedback', exact: true }).first().click();
