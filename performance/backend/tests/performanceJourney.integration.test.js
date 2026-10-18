@@ -319,6 +319,8 @@ test('alignment rejects different period IDs even when their labels match and re
   });
   const parent = (await create('hr', 'organization', period._id).expect(201)).body.data;
   const child = (await create('employee', 'individual', otherPeriod._id).expect(201)).body.data;
+  const candidates = await request(app).get('/api/okrs/alignable/list').query({ childType: 'individual', periodId: String(otherPeriod._id) }).expect(200);
+  expect(candidates.body.data.map((candidate) => candidate.id)).not.toContain(parent._id);
   const mismatch = await request(app).put(`/api/okrs/${child._id}`).send({ parentOKRId: parent._id }).expect(400);
   expect(mismatch.body.code).toBe('PERIOD_MISMATCH');
   expect((await OKR.findById(child._id)).alignment?.parentOKRId).toBeFalsy();

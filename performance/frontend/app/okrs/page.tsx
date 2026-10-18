@@ -653,13 +653,13 @@ export default function OKRWorkspacePage() {
     setEditReason('');
   }, []);
 
-  const loadAlignableGoals = async (type: GoalType, period = form.period) => {
+  const loadAlignableGoals = async (type: GoalType, period = form.period, periodId = form.periodId) => {
     if (type === 'organization') {
       setAlignableGoals([]);
       return;
     }
     try {
-      const response = await api.get('/okrs/alignable/list', { params: { childType: type, period } });
+      const response = await api.get('/okrs/alignable/list', { params: { childType: type, ...(periodId ? { periodId } : { period }) } });
       setAlignableGoals(unwrapData<AlignableGoal[]>(response, []));
     } catch {
       setAlignableGoals([]);
@@ -823,7 +823,7 @@ export default function OKRWorkspacePage() {
         parentOKRId,
         objectives: objectives.length ? objectives : [emptyObjective()],
       });
-      await loadAlignableGoals(fullGoal.type, fullGoal.period);
+      await loadAlignableGoals(fullGoal.type, fullGoal.period, periodId);
     } catch (editError) {
       closeGoalEditor();
       setMessage({ text: apiError(editError, 'Could not load this goal for editing.'), severity: 'error' });
