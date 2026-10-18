@@ -17,9 +17,10 @@ const org = { id: 'org-review', role: 'employee', appAccess: { mode: 'all', appI
 function actor(name) {
   const hr = name === 'hr';
   const organization = { ...org, role: hr ? 'hr_manager' : 'employee' };
+  if (name === 'department-head') organization.departmentHeadPermissions = [{ id: 'department-review', permissions: ['manage_performance'] }];
   const team = name === 'outsider' ? 'separate' : name === 'leader' ? 'parent' : 'child';
   return { id: name, sub: name, name, email: `${name}@example.test`, currentOrganization: organization, organizations: [organization],
-    idpTeams: hr ? [] : [{ id: team, name: team, organizationId: org.id, parentTeamId: team === 'child' ? 'parent' : null, role: name === 'leader' ? 'line_manager' : 'member' }] };
+    idpTeams: hr || name === 'department-head' ? [] : [{ id: team, name: team, organizationId: org.id, parentTeamId: team === 'child' ? 'parent' : null, role: name === 'leader' ? 'line_manager' : 'member' }] };
 }
 async function seed(name, organizationId = org.id) {
   const principal = actor(name);
@@ -92,6 +93,16 @@ test('upward reviews need no reporting manager and only the assigned reviewer, s
   await call('post', `/cycles/${cycle._id}/launch`, 'peer').send(launch('leader')).expect(200);
   expect(await Appraisal.countDocuments()).toBe(2);
   expect((await AppraisalCycle.findById(cycle._id)).responseDeadlines.selfAssessmentDue.getUTCFullYear()).toBe(2026);
+});
+
+test('department heads can review their department without needing a team-manager title', async () => {
+  await User.updateOne({ idpSub: 'leader' }, { $set: { 'idpTeams.0.departmentId': 'department-review' } });
+  const roster = await call('get', '/colleague-roster', 'department-head').expect(200);
+  expect(roster.body.data.employees.map((person) => person.userId)).toEqual(['leader']);
+  await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
+  const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
+  await call('post', `/cycles/${cycle._id}/launch`, 'department-head').send(launch('leader')).expect(200);
+  await call('post', `/cycles/${cycle._id}/launch`, 'department-head').send(launch('outsider')).expect(403);
 });
 
 test('future quarters and bad deadlines cannot launch; HR can appraise a leader with no teams', async () => {

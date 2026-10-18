@@ -14,6 +14,11 @@ async function colleagueRoster(req) {
   const actor = req.session?.user;
   if (!org || !actor) return [];
   const hr = req.userRole === 'hr_admin' || isHrPlusRole(getOrganizationRole(actor, org));
+  const organization = (actor.organizations || actor.userinfo?.organizations || []).find((entry) => id(entry.id || entry._id) === org)
+    || (id(actor.currentOrganization?.id) === org ? actor.currentOrganization : null);
+  const headedDepartments = new Set((organization?.departmentHeadPermissions || [])
+    .filter((entry) => (entry.permissions || []).includes('manage_performance'))
+    .map((entry) => id(entry.id)));
   const users = await User.find({ $or: [
     { currentOrganizationId: org }, { 'idpTeams.organizationId': org },
     { organizationMemberships: { $elemMatch: { organization: org, isActive: true } } }
@@ -39,7 +44,7 @@ async function colleagueRoster(req) {
     const userId = id(user.idpSub || user._id);
     if ([id(actor.id), id(actor.sub)].includes(userId) || email(actor.email) === email(user.email)) return [];
     const memberships = (user.idpTeams || []).filter((team) => id(team.organizationId) === org);
-    if (!hr && !memberships.some((team) => roots.has(root(team.id)))) return [];
+    if (!hr && !memberships.some((team) => roots.has(root(team.id)) || headedDepartments.has(id(team.departmentId)))) return [];
     const team = memberships.find((entry) => roots.has(root(entry.id))) || memberships[0];
     return [{ userId, email: user.email,
       name: user.profile?.displayName || `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() || user.email,
