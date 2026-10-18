@@ -293,7 +293,7 @@ export default function AppraisalsPage() {
       <Card
         key={appraisal._id}
         component="article"
-        aria-label={`${resultCycleName(appraisal)} — ${appraisal.employee.name}`}
+        aria-label={`${resultCycleName(appraisal)} — ${appraisal.employee?.name || 'Employee not recorded'}`}
         sx={{
           mb: 2,
           position: 'relative',
@@ -525,7 +525,7 @@ export default function AppraisalsPage() {
 
                 <IconButton
                   size="small"
-                  aria-label={`View appraisal for ${appraisal.employee.name}`}
+                  aria-label={`View appraisal for ${appraisal.employee?.name || 'employee'}`}
                   onClick={() => handleViewAppraisal(appraisal._id)}
                   sx={{
                     bgcolor: alpha(theme.palette.primary.main, 0.08),
