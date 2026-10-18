@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+
+test.use({ launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] } });
 
 const backend = createRequire(path.resolve(process.cwd(), '../backend/package.json'));
 const express = backend('express');
@@ -29,10 +33,56 @@ test.beforeAll(async () => {
   const app = express(); app.use(express.json());
   // Authentication fixture supplies signed-in identity only. Appraisal endpoints
   // below use the real Express routes, authorization service and MongoDB.
-  app.use((req: { session: unknown }, _res: unknown, next: () => void) => { req.session = { user: structuredClone(activePrincipal), currentOrganizationId: organization.id }; next(); });
+  app.use((req: { session: unknown; get: (name: string) => string }, _res: unknown, next: () => void) => { const who = req.get('x-native-qa-actor'); const user = who ? { ...principal, id: who, sub: who, email: `${who}@example.test` } : activePrincipal; req.session = { user: structuredClone(user), currentOrganizationId: organization.id }; next(); });
   app.use('/api/appraisals', backend('./routes/appraisals'));
   server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
   apiURL = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
+});
+
+test('two real browser peers connect, obtain consent, record, save and play a private in-app call', async ({ browser }, testInfo) => {
+  test.setTimeout(120000);
+  await Appraisal.deleteMany({}); await backend('./models/OneOnOne').deleteMany({});
+  const cycle = await AppraisalCycle.findOne({});
+  const launched = await fetch(`${apiURL}/api/appraisals/cycles/${cycle._id}/launch`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-native-qa-actor': 'member' }, body: JSON.stringify({ employees: [{ userId: 'leader' }], reviewerMode: 'initiator', responseDeadlines: { selfAssessmentDue: '2099-01-01', managerReviewDue: '2099-01-10' }, appraisalFlow: { assessmentMode: 'form', steps: [{ id: 'call_1', type: 'oneOnOne', label: 'Discussion call' }, { id: 'final_2', type: 'finalReview', label: 'Final outcome' }] } }) });
+  const result = await launched.json(); expect(launched.ok, JSON.stringify(result)).toBeTruthy(); const appraisal = result.data.appraisals[0];
+  const created = await fetch(`${apiURL}/api/appraisals/${appraisal._id}/meetings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-native-qa-actor': 'member' }, body: JSON.stringify({ mode: 'in_app', stepId: 'call_1', scheduledDate: new Date(Date.now() + 60000), record: true, recordingNoticeAccepted: true }) });
+  expect(created.ok).toBeTruthy();
+  const contexts = await Promise.all(['member', 'leader'].map(() => browser.newContext({ permissions: ['camera', 'microphone'] })));
+  const pages = await Promise.all(contexts.map(context => context.newPage()));
+  for (const [index, page] of pages.entries()) {
+    const who = index ? 'leader' : 'member'; const user = { ...principal, id: who, sub: who, email: `${who}@example.test` };
+    await page.addInitScript(() => localStorage.setItem('accessToken', 'isolated-native-call-qa'));
+    await page.route('**/__mock-api/**', async route => {
+      const url = new URL(route.request().url()); const endpoint = url.pathname.slice('/__mock-api'.length);
+      if (endpoint.startsWith('/appraisals/')) { const response = await route.fetch({ url: `${apiURL}/api${endpoint}${url.search}`, headers: { ...route.request().headers(), 'x-native-qa-actor': who } }); await route.fulfill({ response }); return; }
+      const response = endpoint === '/auth/me' ? { success: true, user, currentOrganization: organization, currentOrganizationId: organization.id } : endpoint === '/user/context' ? { success: true, data: { user, role: { name: 'employee', isManager: false, isHRAdmin: false }, organization, teams: principal.idpTeams, features: {}, stats: {} } } : { success: true, data: [] };
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
+    });
+    await page.goto(`/appraisals/${appraisal._id}`);
+    await expect(page.getByRole('button', { name: 'Join in-app call', exact: true })).toBeDisabled();
+    await page.getByRole('checkbox', { name: /I agree to this call being recorded/ }).check();
+    await page.getByRole('button', { name: 'Join in-app call', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Leave call', exact: true })).toBeVisible({ timeout: 20000 });
+  }
+  await expect(pages[0].getByRole('button', { name: 'Start agreed recording', exact: true })).toBeEnabled({ timeout: 35000 });
+  await expect(pages[1].getByRole('button', { name: 'Start agreed recording', exact: true })).toHaveCount(0);
+  await pages[0].getByRole('button', { name: 'Start agreed recording', exact: true }).click();
+  await expect(pages[1].getByText('Recording is in progress. Both participants’ audio and video may be captured.')).toBeVisible({ timeout: 10000 });
+  await expect(pages[0].getByRole('button', { name: 'Leave call', exact: true })).toBeDisabled();
+  await pages[0].screenshot({ path: testInfo.outputPath('in-app-recording.png'), fullPage: true });
+  await pages[0].getByRole('button', { name: 'Stop and save recording', exact: true }).click();
+  await expect(pages[0].getByText(/Recording saved. Transcription/)).toBeVisible({ timeout: 20000 });
+  await pages[0].getByRole('button', { name: 'Play saved recording', exact: true }).click();
+  await expect(pages[0].getByLabel('Saved appraisal call recording', { exact: true })).toBeVisible();
+  const playback = pages[0].getByLabel('Saved appraisal call recording', { exact: true });
+  await playback.evaluate((video: HTMLVideoElement) => video.play());
+  await expect.poll(() => playback.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0);
+  const meeting = await backend('./models/OneOnOne').findOne({ appraisalId: appraisal._id });
+  expect(meeting.appraisalMeeting.recordingFileId).toBeTruthy();
+  const file = await mongoose.connection.db.collection('appraisalRecordings.files').findOne({ _id: new mongoose.Types.ObjectId(meeting.appraisalMeeting.recordingFileId) }); expect(file.length).toBeGreaterThan(1000);
+  await pipeline(new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'appraisalRecordings' }).openDownloadStream(file._id), createWriteStream(testInfo.outputPath('native-call.webm')));
+  for (const page of pages) await page.getByRole('button', { name: 'Leave call', exact: true }).click();
+  await Promise.all(contexts.map(context => context.close()));
 });
 test.afterAll(async () => {
   if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
