@@ -47,8 +47,16 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
   const result = await launched.json(); expect(launched.ok, JSON.stringify(result)).toBeTruthy(); const appraisal = result.data.appraisals[0];
   const created = await fetch(`${apiURL}/api/appraisals/${appraisal._id}/meetings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-native-qa-actor': 'member' }, body: JSON.stringify({ mode: 'in_app', stepId: 'call_1', scheduledDate: new Date(Date.now() + 60000), record: true, recordingNoticeAccepted: true }) });
   expect(created.ok).toBeTruthy();
-  const contexts = await Promise.all(['member', 'leader'].map(() => browser.newContext({ permissions: ['camera', 'microphone'] })));
+  const contexts = await Promise.all(['member', 'leader'].map((_, index) => browser.newContext({ permissions: ['camera', 'microphone'], viewport: index ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, colorScheme: index ? 'dark' : 'light' })));
   const pages = await Promise.all(contexts.map(context => context.newPage()));
+  const captureCall = async (page: typeof pages[number], filename: string) => {
+    const viewport = page.viewportSize()!;
+    if (viewport.width < 600) await page.setViewportSize({ ...viewport, height: 1600 });
+    const call = page.getByRole('region', { name: 'In-app one-on-one', exact: true });
+    await call.evaluate(element => element.scrollIntoView({ block: 'center' }));
+    await call.screenshot({ path: testInfo.outputPath(filename) });
+    if (viewport.width < 600) await page.setViewportSize(viewport);
+  };
   for (const [index, page] of pages.entries()) {
     const who = index ? 'leader' : 'member'; const user = { ...principal, id: who, sub: who, email: `${who}@example.test` };
     await page.addInitScript(() => localStorage.setItem('accessToken', 'isolated-native-call-qa'));
@@ -63,6 +71,10 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
     await expect(page.getByRole('tab', { name: 'Manager Review', exact: true })).toHaveCount(0);
     await expect(page.getByText(/Self-Assessment Due:/)).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Join in-app call', exact: true })).toBeDisabled();
+    const call = page.getByRole('region', { name: 'In-app one-on-one', exact: true });
+    await expect(call.getByText('Private call', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await captureCall(page, index ? 'mobile-dark-before-join.png' : 'desktop-light-before-join.png');
     if (index === 1) await page.getByRole('checkbox', { name: 'Join with camera on', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: /I agree to this call being recorded/ }).check();
     await page.getByRole('button', { name: 'Join in-app call', exact: true }).click();
@@ -70,10 +82,23 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
   }
   await expect(pages[0].getByRole('button', { name: 'Start agreed recording', exact: true })).toBeEnabled({ timeout: 35000 });
   await expect(pages[1].getByRole('button', { name: 'Start agreed recording', exact: true })).toHaveCount(0);
+  for (const page of pages) {
+    const call = page.getByRole('region', { name: 'In-app one-on-one', exact: true });
+    await expect(call.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(call.getByText('Camera off', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const mute = page.getByRole('button', { name: 'Mute microphone', exact: true });
+    expect((await mute.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await mute.click();
+    await expect(page.getByRole('button', { name: 'Unmute microphone', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Unmute microphone', exact: true }).click();
+  }
   await pages[0].getByRole('button', { name: 'Start agreed recording', exact: true }).click();
   await expect(pages[1].getByText('Recording is in progress. Both participants’ audio and video may be captured.')).toBeVisible({ timeout: 10000 });
   await expect(pages[0].getByRole('button', { name: 'Leave call', exact: true })).toBeDisabled();
   await pages[0].screenshot({ path: testInfo.outputPath('in-app-recording.png'), fullPage: true });
+  await captureCall(pages[0], 'desktop-light-connected.png');
+  await captureCall(pages[1], 'mobile-dark-connected.png');
   // A failed upload must retain the real recording and allow a safe retry.
   await pages[0].route('**/native/upload?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic temporary upload outage.' }) }), { times: 1 });
   await pages[0].getByRole('button', { name: 'Stop and save recording', exact: true }).click();

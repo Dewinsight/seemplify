@@ -291,7 +291,7 @@ export default function AppraisalDetailPage() {
         </Alert>
       )}
 
-      {customSteps && <AppraisalMeetings appraisalId={appraisalId} steps={customSteps.filter(step => step.type === 'oneOnOne')} canManage={hasManagerAccess && !isEmployee} canJoin={isEmployee || isAssignedManager} currentStepId={customSteps[activeStep]?.id} onUpdated={() => { void mutate(); }} />}
+      {customSteps && <AppraisalMeetings appraisalId={appraisalId} steps={customSteps.filter(step => step.type === 'oneOnOne')} canManage={hasManagerAccess && !isEmployee} canJoin={isEmployee || isAssignedManager} participantName={isEmployee ? appraisal.manager?.name : appraisal.employee?.name} ownName={isEmployee ? appraisal.employee?.name : appraisal.manager?.name} currentStepId={customSteps[activeStep]?.id} onUpdated={() => { void mutate(); }} />}
       {/* Workflow Progress */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="subtitle1" fontWeight={600} gutterBottom>
