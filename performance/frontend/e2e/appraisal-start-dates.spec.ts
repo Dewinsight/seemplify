@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 test.use({ locale: 'en-GB' });
 
-async function install(page: Page, existingCycle = false) {
+async function install(page: Page, existingCycle = false, selectedCycle = '') {
   const posts: Record<string, unknown>[] = [];
   await page.clock.setFixedTime(new Date('2026-10-17T12:00:00Z'));
   await page.addInitScript(() => {
@@ -22,14 +22,14 @@ async function install(page: Page, existingCycle = false) {
     else if (path === '/user/current-team') response = data({ currentTeam: teams[0], availableTeams: teams });
     else if (path === '/appraisals/colleague-roster') response = data({ employees: [{ userId: 'employee-1', name: 'Jordan Lee', email: 'jordan@example.test', managerName: 'Alex Morgan', isSelectableForAppraisal: true }] });
     else if (path === '/appraisals/cycle-templates') response = data([{ id: 'balanced_performance', name: 'Balanced performance review', version: 1, description: 'Review completed work and plan development.', design: { version: 1, sections: [] } }]);
-    else if (path === '/appraisals/cycles' && route.request().method() === 'GET') response = data(existingCycle ? [{ _id: 'existing-cycle', name: 'Completed quarter', status: 'active', periodStart: '2026-07-01', periodEnd: '2026-09-30', responseDeadlines: { selfAssessmentDue: '2026-10-24', managerReviewDue: '2026-10-31' } }] : []);
+    else if (path === '/appraisals/cycles' && route.request().method() === 'GET') response = data(existingCycle ? [{ _id: 'existing-cycle', name: 'Completed quarter', status: 'active', periodStart: '2026-07-01', periodEnd: '2026-09-30', responseDeadlines: { selfAssessmentDue: '2026-10-24', managerReviewDue: '2026-10-31' } }, { _id: 'previous-cycle', name: 'Previous quarter', status: 'draft', periodStart: '2026-04-01', periodEnd: '2026-06-30' }] : []);
     else if (route.request().method() === 'POST' && path.startsWith('/appraisals/cycles')) {
       posts.push({ path, ...route.request().postDataJSON() });
       response = data({ launchSummary: { launched: 1, replayed: 0, errors: 0 } });
     } else if (path === '/notifications/count') response = data({ unread: 0, actionable: 0 });
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
   });
-  await page.goto('/appraisals/start?employeeId=employee-1');
+  await page.goto(`/appraisals/start?employeeId=employee-1${selectedCycle ? `&cycleId=${selectedCycle}` : ''}`);
   await expect(page.getByRole('checkbox', { name: /Jordan Lee/ })).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Review details', exact: true })).toBeVisible();
@@ -102,4 +102,13 @@ test('retains the existing cycle launch flow', async ({ page }) => {
   await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
   expect(posts).toEqual([{ path: '/appraisals/cycles/existing-cycle/launch', reviewerMode: 'initiator', employees: [{ userId: 'employee-1' }], responseDeadlines: { selfAssessmentDue: '2026-10-24T23:59:59.000Z', managerReviewDue: '2026-10-31T23:59:59.000Z' } }]);
+});
+
+test('keeps the quarterly cycle selected from the HR cycle list', async ({ page }) => {
+  const posts = await install(page, true, 'previous-cycle');
+  await expect(page.getByRole('combobox', { name: 'Review cycle' })).toContainText('Previous quarter');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
+  expect(posts[0].path).toBe('/appraisals/cycles/previous-cycle/launch');
 });

@@ -130,53 +130,8 @@ export default function AppraisalCyclesAdminPage() {
     severity: 'info'
   });
 
-  const handleOpenLaunchDialog = async (cycle: AppraisalCycle) => {
-    setSelectedCycle(cycle);
-    setLaunchDialogOpen(true);
-    setLoadingEmployees(true);
-
-    try {
-      // Fetch employees with manager relationships for better grouping
-      const response = await api.get('/user/employees-for-appraisal');
-      // API returns { success: true, data: { employees, byManager, withoutManager, summary } }
-      const data = response.data?.data || {};
-      const employeeList = data.employees || [];
-      const byManager = data.byManager || [];
-      const withoutManager = data.withoutManager || [];
-
-      setEmployees(employeeList);
-      setManagerGroups(byManager);
-      setEmployeesWithoutManager(withoutManager);
-
-      if (employeeList.length === 0) {
-        setSnackbar({ open: true, message: 'No employees found in the organization', severity: 'info' });
-      } else {
-        // Show summary
-        const summary = data.summary || {};
-        console.log(`Found ${summary.totalEmployees} employees, ${summary.totalManagers} managers, ${summary.withoutManager} without manager`);
-      }
-    } catch (error: any) {
-      console.error('Fetch employees error:', error);
-      // Fallback to old endpoint if new one fails
-      try {
-        const fallbackResponse = await api.get('/user/all-employees');
-        const employeeList = fallbackResponse.data?.data || [];
-        setEmployees(employeeList);
-        setManagerGroups([]);
-        setEmployeesWithoutManager([]);
-      } catch (fallbackError) {
-        setEmployees([]);
-        setManagerGroups([]);
-        setEmployeesWithoutManager([]);
-        setSnackbar({
-          open: true,
-          message: error.response?.data?.error || 'Failed to fetch employees',
-          severity: 'error'
-        });
-      }
-    } finally {
-      setLoadingEmployees(false);
-    }
+  const handleOpenLaunchDialog = (cycle: AppraisalCycle) => {
+    router.push(`/appraisals/start?cycleId=${encodeURIComponent(cycle._id)}`);
   };
 
   const handleLaunchCycle = async () => {
@@ -337,8 +292,9 @@ export default function AppraisalCyclesAdminPage() {
                     startIcon={<Rocket />}
                     onClick={() => handleOpenLaunchDialog(cycle)}
                     size="small"
+                    disabled={cycle.periodEnd.slice(0, 10) >= new Date().toISOString().slice(0, 10)}
                   >
-                    Finish Setup
+                    {cycle.periodEnd.slice(0, 10) >= new Date().toISOString().slice(0, 10) ? 'Quarter not finished' : 'Start reviews'}
                   </Button>
                 )}
                 {cycle.status === 'active' && (

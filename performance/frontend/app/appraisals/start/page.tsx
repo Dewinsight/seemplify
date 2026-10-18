@@ -75,7 +75,7 @@ export default function StartAppraisalPage() {
     finally { setLoading(false); }
   };
   useEffect(() => { if (!contextLoading && permitted) void loadStaff(); }, [contextLoading, permitted]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!cyclesLoading && !cycleId) setCycleId(openCycles[0]?._id || 'new'); }, [cyclesLoading, cycles, cycleId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!cyclesLoading && !cycleId) setCycleId(openCycles.find((cycle) => cycle._id === query.get('cycleId'))?._id || openCycles[0]?._id || 'new'); }, [cyclesLoading, cycles, cycleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validateDetails = () => {
     if (cycleId !== 'new' && !existingCycle) return 'Choose a completed quarterly cycle or a one-off review.';
