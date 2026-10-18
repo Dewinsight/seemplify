@@ -27,13 +27,13 @@ async function main() {
   const health = await (await fetch(`${base}/__test/health`)).json();
   assert.equal(health.ready, true, 'Refuse to run against any non-fixture service');
   const common = ['auth/me', 'dashboard/summary', 'user/context', 'user/organizations', 'user/teams', 'user/direct-reports',
-    'user/search?q=Acceptance', 'okrs', 'goal-periods', 'goal-periods/current', 'goal-periods/upcoming', 'appraisals/my', 'appraisals/cycles',
+    'user/search?q=Acceptance', 'okrs', 'goal-periods', 'goal-periods/current', 'goal-periods/upcoming', 'appraisals/my', 'appraisals/cycles', 'appraisals/cycle-templates', 'appraisals/colleague-roster',
     'feedback', 'feedback/received', 'feedback/sent', 'feedback/requests', 'one-on-ones', 'one-on-ones/upcoming', 'check-ins',
     'development-plans', 'learning/records', 'support-plans', 'recognition', 'performance-projects', 'analytics/dashboard',
     'actions', 'actions/counts', 'notifications', 'notifications/counts', 'notifications/preferences'];
-  const managerOnly = ['appraisals/team', 'appraisals/cycle-templates', 'learning/team', 'manager-insights/practices', 'talent/reviews', 'talent/signals', 'analytics/performance', 'reports/team-performance'];
+  const managerOnly = ['appraisals/team', 'learning/team', 'manager-insights/practices', 'talent/reviews', 'talent/signals', 'analytics/performance', 'reports/team-performance'];
   const hrOnly = ['appraisals/organization', 'appraisals/admin/analytics', 'calibration', 'reports/org-summary', 'reports/okr-trends', 'reports/feedback-analytics', 'organization-features', 'talent/succession-plans'];
-  for (const actor of actors) await journey(`${actor}: 47 feature reads and permission boundaries`, async () => {
+  for (const actor of actors) await journey(`${actor}: feature reads and permission boundaries`, async () => {
     for (const route of common) await api(actor, 'GET', route);
     for (const route of managerOnly) await api(actor, 'GET', route, null, manager.has(actor) ? 200 : 403);
     for (const route of hrOnly) await api(actor, 'GET', route, null, hr.has(actor) ? 200 : 403);
