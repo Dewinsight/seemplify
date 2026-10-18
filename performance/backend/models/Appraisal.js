@@ -612,4 +612,11 @@ appraisalSchema.post('findOne', function (doc) {
 appraisalSchema.post('find', function (docs) {
   for (const doc of docs) require('../services/appraisalFlowService').applySnapshot(doc);
 });
+appraisalSchema.pre('updateMany', function () {
+  if (this.getUpdate()?.$set?.status) {
+    // Legacy calibration batches may advance a whole cycle. Configured flows
+    // already advance on individual evidence saves and can have calls next.
+    this.where({ 'cycleConfigurationSnapshot.appraisalFlow': { $exists: false } });
+  }
+});
 module.exports = mongoose.model('Appraisal', appraisalSchema);

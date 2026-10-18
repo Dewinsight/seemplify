@@ -153,8 +153,11 @@ class AIGatewayService {
           promptVersion: String(options.promptVersion || '1'),
           maxTokens: options.maxTokens || options.max_tokens,
           jsonSchema: options.jsonSchema || options.response_format?.json_schema?.schema,
-          codexModel: options.codexModel || process.env.PERFORMANCE_CHATGPT_MODEL || 'gpt-5.6-terra',
-          reasoningEffort: options.reasoningEffort || 'medium',
+          // The shared authority applies Performance's Terra default before
+          // resolving personal preferences. Only explicit request overrides
+          // belong here, or the account settings screen would be ineffective.
+          codexModel: options.codexModel || process.env.PERFORMANCE_CHATGPT_MODEL || undefined,
+          reasoningEffort: options.reasoningEffort || undefined,
           context: { requestId, sourceApp: 'performance-management' }
         }, { timeoutMs: options.timeoutMs || 240_000 });
         return completionResponse(payload, runtime);

@@ -70,6 +70,8 @@ test('outcome-only workflows finish with a human result, and model writes cannot
   expect(final.body.data.selfAssessment?.submittedAt).toBeFalsy();
   await Appraisal.deleteMany({});
   const ordered = await launch(['selfAssessment', 'finalReview']);
+  await Appraisal.updateMany({ _id: ordered._id }, { $set: { status: 'final_review_pending' } });
+  expect((await Appraisal.findById(ordered._id)).status).toBe('self_assessment_pending');
   const record = await Appraisal.findById(ordered._id);
   record.finalRating = { overall: 4, finalizedAt: new Date() };
   await expect(record.save()).rejects.toMatchObject({ code: 'APPRAISAL_STEP_ORDER' });
@@ -90,11 +92,11 @@ test('calls use trusted participants, enforce reviewer access, recover connectio
   await call('post', `${base}/${meetingId}/complete`).send({ notes: 'Not yet' }).expect(409);
   await OneOnOne.updateOne({ _id: meetingId }, { $set: { scheduledDate: new Date(Date.now() - 3600000) } });
   provider.mockResolvedValue({ recordingState: 'ready', transcript: JSON.stringify({ segments: [{ speaker: 'Reviewer', text: 'We agreed to document the release.' }] }), recordingUrl: 'https://example.nylas.com/recording.mp4' });
-  const completion = jest.spyOn(ai, 'getChatCompletions').mockResolvedValue({ choices: [{ message: { content: 'Agreed: document the release. Owner: not specified.' } }] });
+  const completion = jest.spyOn(ai, 'getChatCompletions').mockResolvedValue({ model: 'gpt-5.6-terra', choices: [{ message: { content: 'Agreed: document the release. Owner: not specified.' } }] });
   await processDueMeetings();
   const meeting = await OneOnOne.findById(meetingId);
-  expect(meeting.transcript.content).toContain('Reviewer: We agreed'); expect(meeting.appraisalMeeting.summaryState).toBe('ready');
-  expect(completion.mock.calls[0][1]).toMatchObject({ codexModel: 'gpt-5.6-terra', runtimePreference: 'chatgpt', identity: { sub: 'reviewer' } });
+  expect(meeting.transcript.content).toContain('Reviewer: We agreed'); expect(meeting.appraisalMeeting.summaryState).toBe('ready'); expect(meeting.appraisalMeeting.summaryModel).toBe('gpt-5.6-terra');
+  expect(completion.mock.calls[0][1]).toMatchObject({ runtimePreference: 'chatgpt', identity: { sub: 'reviewer' } });
   await call('post', `${base}/${meetingId}/complete`).send({ notes: 'Agreed to document the release.' }).expect(200);
   expect((await Appraisal.findById(appraisal._id)).status).toBe('final_review_pending');
 });

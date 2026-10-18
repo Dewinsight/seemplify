@@ -457,6 +457,7 @@ class AIRuntimeService {
     });
     const runtimeActorId = String(baseContext.runtimeActorId || baseContext.actorId || '').trim();
     if (route.provider === CHATGPT_PROVIDER) {
+      if (String(options.defaultCodexModel || '').trim()) route.codexModel = String(options.defaultCodexModel).trim();
       route = await this.resolveUserRoute(runtimeActorId, activity, route);
       if (String(options.codexModel || '').trim()) route.codexModel = String(options.codexModel).trim();
       if (String(options.reasoningEffort || '').trim()) route.reasoningEffort = String(options.reasoningEffort).trim();
