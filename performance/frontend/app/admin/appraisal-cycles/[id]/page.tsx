@@ -176,7 +176,7 @@ export default function AppraisalCycleDetailsPage() {
                                 <Grid size={{ xs: 6 }}>
                                     <Typography variant="subtitle2" color="text.secondary">Period</Typography>
                                     <Typography variant="body1">
-                                        {new Date(cycle.periodStart).toLocaleDateString()} - {new Date(cycle.periodEnd).toLocaleDateString()}
+                                        {new Date(cycle.periodStart).toLocaleDateString(undefined, { timeZone: 'UTC' })} - {new Date(cycle.periodEnd).toLocaleDateString(undefined, { timeZone: 'UTC' })}
                                     </Typography>
                                 </Grid>
                                 <Grid size={{ xs: 6 }}>

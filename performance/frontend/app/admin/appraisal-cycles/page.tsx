@@ -270,7 +270,7 @@ export default function AppraisalCyclesAdminPage() {
                     {cycleTypeLabels[cycle.cycleType]}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {new Date(cycle.periodStart).toLocaleDateString()} - {new Date(cycle.periodEnd).toLocaleDateString()}
+                    {new Date(cycle.periodStart).toLocaleDateString(undefined, { timeZone: 'UTC' })} - {new Date(cycle.periodEnd).toLocaleDateString(undefined, { timeZone: 'UTC' })}
                   </Typography>
                 </Box>
               </Box>

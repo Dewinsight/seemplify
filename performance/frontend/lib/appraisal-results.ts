@@ -18,7 +18,7 @@ export function resultRating(item: AppraisalResultItem) {
   return `${item.finalRating.overall} / ${scale?.max ?? 5}`;
 }
 export function shortDate(value?: string) {
-  return value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not recorded';
+  return value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Not recorded';
 }
 export function downloadResultsCsv(rows: string[][], name: string) {
   const csv = rows.map((row) => row.map((value) => {
