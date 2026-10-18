@@ -13,13 +13,15 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
   const [error, setError] = useState(''); const [status, setStatus] = useState(''); const [recording, setRecording] = useState(false);
   const [remoteReady, setRemoteReady] = useState(false); const [mic, setMic] = useState(true); const [camera, setCamera] = useState(true);
   const [savedBlob, setSavedBlob] = useState<Blob | null>(null); const [recordingNotice, setRecordingNotice] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
   const localVideo = useRef<HTMLVideoElement>(null); const remoteVideo = useRef<HTMLVideoElement>(null);
   const media = useRef<MediaStream | null>(null); const peer = useRef<RTCPeerConnection | null>(null); const session = useRef<Session | null>(null);
   const recorder = useRef<MediaRecorder | null>(null); const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const mounted = useRef(true); const pending = useRef(false); const remoteId = useRef(''); const negotiation = useRef('');
   const unsaved = useRef(false); const recordingCleanup = useRef<(() => void) | null>(null);
   const leave = async () => {
-    if (recorder.current?.state === 'recording' || unsaved.current) { setError('Stop and save the recording, or download the unsaved copy, before leaving.'); return; }
+    if (recorder.current?.state === 'recording' || (unsaved.current && !downloaded)) { setError('Stop and save the recording, or download the unsaved copy, before leaving.'); return; }
+    unsaved.current = false; setSavedBlob(null); setDownloaded(false);
     if (timer.current) clearInterval(timer.current); timer.current = null;
     peer.current?.close(); peer.current = null; media.current?.getTracks().forEach(track => track.stop()); media.current = null;
     const current = session.current; session.current = null;
@@ -100,7 +102,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
     try {
       const data = new FormData(); data.append('recording', blob, blob.type.includes('mp4') ? 'call.mp4' : 'call.webm');
       await api.post(`${base}/upload`, data, { params: { peerId: session.current!.peerId }, headers: { 'Content-Type': undefined }, timeout: 180000 });
-      unsaved.current = false; setSavedBlob(null); setStatus('Recording saved. Transcription and ChatGPT notes will appear after processing.'); onSaved();
+      unsaved.current = false; setSavedBlob(null); setDownloaded(false); setStatus('Recording saved. Transcription and ChatGPT notes will appear after processing.'); onSaved();
     } catch (error) { setError(message(error)); setSavedBlob(blob); setStatus('Recording is still in this browser. Retry saving or download a copy before leaving.'); }
     finally { setBusy(false); }
   };
@@ -127,7 +129,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
       recorder.current = activeRecorder; activeRecorder.start(1000); setRecording(true); unsaved.current = true; setStatus('Recording both participants. Stop and save before leaving.'); onSaved();
     } catch (error) { setError(message(error)); } finally { setBusy(false); }
   };
-  const download = () => { if (!savedBlob) return; const url = URL.createObjectURL(savedBlob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'unsaved-appraisal-call.webm'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 10000); };
+  const download = () => { if (!savedBlob) return; const url = URL.createObjectURL(savedBlob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = savedBlob.type.includes('mp4') ? 'unsaved-appraisal-call.mp4' : 'unsaved-appraisal-call.webm'; anchor.click(); setDownloaded(true); setTimeout(() => URL.revokeObjectURL(url), 10000); };
   return <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}>
     <Stack spacing={2}>
       <Typography component="h3" variant="subtitle1" fontWeight={600}>In-app one-on-one</Typography>
@@ -150,9 +152,10 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
         <Button onClick={() => { void remoteVideo.current?.play().catch(() => setError('Audio playback is blocked by your browser. Check this site’s sound permissions.')); }}>Enable call audio</Button>
         {record && !recorded && session.current?.role === 'manager' && !recording && !savedBlob && <Button variant="contained" disabled={busy || !remoteReady} onClick={startRecording}>Start agreed recording</Button>}
         {recording && <Button variant="contained" color="error" disabled={busy} onClick={() => recorder.current?.stop()}>Stop and save recording</Button>}
-        <Button color="error" disabled={busy || recording || !!savedBlob} onClick={leave}>Leave call</Button>
+        <Button color="error" disabled={busy || recording || (!!savedBlob && !downloaded)} onClick={leave}>{savedBlob && downloaded ? 'Leave with downloaded copy' : 'Leave call'}</Button>
       </Stack>}
       {savedBlob && !busy && <Stack direction="row" flexWrap="wrap" gap={1}><Button variant="contained" onClick={() => upload(savedBlob)}>Retry saving recording</Button><Button onClick={download}>Download unsaved copy</Button></Stack>}
+      {savedBlob && downloaded && <Alert severity="warning">Check that the download succeeded before leaving. This copy has not been saved to Seemplify; leaving will keep only your downloaded file.</Alert>}
       {joined && record && <Typography variant="caption" color="text.secondary">Keep this page open until saving finishes. Each call supports one recording of up to 30 minutes or 50 MB. Add another call step for a longer discussion.</Typography>}
     </Stack>
   </Box>;
