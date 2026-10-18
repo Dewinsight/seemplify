@@ -19,6 +19,21 @@ const { validateWorkspaceMcp } = require('../services/aiRuntime/workspaceMcp');
 const router = express.Router();
 const internalAuth = createInternalServiceAuth();
 
+// Speech recognition reuses Recruiter's managed Speech service. The personal
+// ChatGPT account remains the authority for the subsequent meeting notes.
+router.post('/v1/meetings/transcribe', internalAuth, async (req, res) => {
+  if (req.internalService !== 'performance-management') return res.status(403).json({ error: 'Service not authorized.' });
+  try {
+    await resolveSharedPrincipal(req.body?.identity);
+    const encoded = req.body?.audio;
+    if (typeof encoded !== 'string' || encoded.length > 1400000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) return res.status(400).json({ error: 'A bounded PCM WAV segment is required.' });
+    const audio = Buffer.from(encoded, 'base64');
+    if (audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE' || audio.length > 1000000) return res.status(400).json({ error: 'A PCM WAV segment of at most 30 seconds is required.' });
+    const transcript = await require('../services/aiInterviewVoiceLiveService').transcribeWav(audio);
+    return res.json({ transcript, provider: 'azure-speech' });
+  } catch (error) { return internalError(res, error, 'Call transcription failed.'); }
+});
+
 // Reuse the existing service-bound identity channel. Calendar application keys
 // and personal grants remain in Recruiter and are never returned to consumers.
 for (const operation of ['connection', 'create', 'sync', 'cancel']) {

@@ -2,6 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Convert browser call recordings to bounded PCM segments for managed STT.
+RUN apk add --no-cache ffmpeg
+
 # Copy package files
 COPY package*.json ./
 

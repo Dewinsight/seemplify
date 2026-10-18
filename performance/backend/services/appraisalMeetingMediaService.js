@@ -8,6 +8,7 @@ function readableTranscript(content) {
   try {
     const json = JSON.parse(content);
     const turns = Array.isArray(json) ? json : json.transcript || json.transcription || json.segments;
+    if (typeof turns === 'string') return turns;
     if (!Array.isArray(turns)) return content;
     return turns.map(turn => `${turn.speaker?.name || turn.speaker_name || (typeof turn.speaker === 'string' ? turn.speaker : 'Speaker')}: ${turn.text || turn.content || ''}`).filter(line => !line.endsWith(': ')).join('\n') || content;
   } catch { return content; }
@@ -36,6 +37,7 @@ async function summarize(meeting, identity) {
   return OneOnOne.findById(meeting._id);
 }
 async function processDueMeetings() {
+  await require('./appraisalNativeMediaService').processDue();
   const now = new Date();
   const meetings = await OneOnOne.find({ appraisalId: { $exists: true }, status: { $ne: 'cancelled' }, scheduledDate: { $lte: now, $gte: new Date(Date.now() - 7 * 86400000) }, 'nylas.eventId': { $exists: true }, 'appraisalMeeting.recordingRequested': true, 'appraisalMeeting.summaryState': { $ne: 'ready' }, $or: [{ 'appraisalMeeting.lastSyncedAt': { $exists: false } }, { 'appraisalMeeting.lastSyncedAt': { $lt: new Date(Date.now() - 5 * 60000) } }] }).limit(20);
   for (const meeting of meetings) {

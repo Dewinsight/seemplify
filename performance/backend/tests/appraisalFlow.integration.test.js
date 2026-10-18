@@ -20,6 +20,40 @@ async function launch(types) {
   const result = await call('post', `/cycles/${cycle._id}/launch`).send({ employees: [{ userId: 'employee' }], reviewerMode: 'initiator', responseDeadlines: { selfAssessmentDue: '2099-01-01', managerReviewDue: '2099-01-10' }, appraisalFlow: flow(types) }).expect(200);
   return result.body.data.appraisals[0];
 }
+test('native calls enforce two-party consent, private signaling, leases and recording access', async () => {
+  const appraisal = await launch(['oneOnOne', 'finalReview']); const base = `/${appraisal._id}/meetings`;
+  const provider = jest.spyOn(shared, 'request');
+  const payload = { mode: 'in_app', stepId: 'oneOnOne_0', scheduledDate: new Date(Date.now() + 3600000), record: true, recordingNoticeAccepted: true };
+  const created = await call('post', base).send(payload).expect(201); const native = `${base}/${created.body.data._id}/native`;
+  expect(created.body.data.mode).toBe('in_app'); expect(provider).not.toHaveBeenCalled();
+  await call('post', base).send(payload).expect(201); expect(await OneOnOne.countDocuments()).toBe(1);
+  const turn = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ urls: ['turn:turn.example.test'], username: 'ephemeral', credential: 'credential' }) });
+  const manager = '00000000-0000-4000-8000-000000000001', employee = '00000000-0000-4000-8000-000000000002';
+  await call('post', `${native}/join`, 'outsider').send({ peerId: manager, consent: true }).expect(403);
+  await call('post', `${native}/join`).send({ peerId: manager }).expect(400);
+  await call('post', `${native}/join`).send({ peerId: manager, consent: true }).expect(200);
+  await call('post', `${native}/join`).send({ peerId: employee, consent: true }).expect(409);
+  await call('post', `${native}/record`).send({ peerId: manager }).expect(409);
+  await call('post', `${native}/join`, 'employee').send({ peerId: employee, consent: true }).expect(200);
+  await call('post', `${native}/signal`).send({ peerId: manager, target: employee, description: { type: 'answer', sdp: 'invalid' } }).expect(400);
+  await call('post', `${native}/signal`).send({ peerId: manager, target: employee, description: { type: 'offer', sdp: 'test-offer' } }).expect(200);
+  const state = await call('get', `${native}/state?peerId=${employee}`, 'employee').expect(200); expect(state.body.offer.description.sdp).toBe('test-offer');
+  await call('post', `${native}/record`, 'employee').send({ peerId: employee }).expect(403);
+  await call('post', `${native}/record`).send({ peerId: manager }).expect(200);
+  await call('post', `${native}/record`).send({ peerId: manager }).expect(409);
+  const saved = await call('post', `${native}/upload?peerId=${manager}`).attach('recording', Buffer.alloc(100, 1), { filename: 'call.webm', contentType: 'video/webm' }).expect(201);
+  expect(saved.body.data.integration.recordingAvailable).toBe(true); expect(JSON.stringify(saved.body)).not.toMatch(/recordingFileId|ownerIdentity|credential/);
+  const bytes = await call('get', `${native}/recording`, 'employee').expect(200); expect(bytes.body.length).toBe(100);
+  await call('get', `${native}/recording`, 'outsider').expect(403);
+  await call('post', `${native}/leave`).send({ peerId: manager }).expect(200);
+  await call('get', `${native}/state?peerId=${manager}`).expect(409);
+  turn.mockRestore();
+});
+
+test('raw Nylas transcript JSON is displayed as readable text', () => {
+  expect(require('../services/appraisalMeetingMediaService').readableTranscript(JSON.stringify({ type: 'raw', transcript: 'We agreed to write the handover.' }))).toBe('We agreed to write the handover.');
+});
+
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
   app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.get('x-actor') !== 'anonymous') req.session = { user: actor(req.get('x-actor') || 'reviewer'), currentOrganizationId: org.id }; next(); }); app.use('/api/appraisals', routes);

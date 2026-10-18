@@ -14,9 +14,9 @@ function sign({ body, secret, service = 'ai-interview', timestamp }) {
     .digest('hex');
 }
 
-function signV2({ body, secret, service = 'performance-management', timestamp, nonce }) {
+function signV2({ body, secret, service = 'performance-management', timestamp, nonce, path = PATH }) {
   return crypto.createHmac('sha256', secret)
-    .update([timestamp, nonce, service, 'POST', PATH, body].join('\n'))
+    .update([timestamp, nonce, service, 'POST', path, body].join('\n'))
     .digest('hex');
 }
 
@@ -37,6 +37,26 @@ async function startGateway() {
     close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   };
 }
+
+test('Performance speech bridge requires a signed service identity and bounded WAV audio', async t => {
+  const oldSecret = process.env.PERFORMANCE_AI_SHARED_SECRET; const secret = 'performance-speech-contract'; process.env.PERFORMANCE_AI_SHARED_SECRET = secret;
+  const nonce = require('../models/InternalServiceNonce'); const identities = require('../services/aiRuntime/sharedIdentityService'); const speech = require('../services/aiInterviewVoiceLiveService');
+  t.mock.method(nonce, 'init', async () => nonce); t.mock.method(nonce, 'create', async () => ({}));
+  const resolve = t.mock.method(identities, 'resolveSharedPrincipal', async identity => { assert.equal(identity.sub, 'personal-idp-user'); return { identity, user: {} }; });
+  const transcribe = t.mock.method(speech, 'transcribeWav', async () => 'We agreed to document the release.');
+  const gateway = await startGateway(); const path = '/api/internal/ai/v1/meetings/transcribe'; const url = new URL(path, gateway.url);
+  async function post(audio, signature = true) {
+    const body = JSON.stringify({ identity: { sub: 'personal-idp-user', email: 'person@example.test', organizationId: 'org-1' }, audio }); const timestamp = String(Date.now()); const nonce = crypto.randomBytes(16).toString('hex');
+    return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-seemplify-service': 'performance-management', 'x-seemplify-timestamp': timestamp, 'x-seemplify-nonce': nonce, 'x-seemplify-signature-version': '2', 'x-seemplify-signature': signature ? signV2({ body, secret, timestamp, nonce, path }) : 'invalid' }, body });
+  }
+  try {
+    const wav = Buffer.alloc(100); wav.write('RIFF'); wav.write('WAVE', 8);
+    assert.equal((await post(wav.toString('base64'), false)).status, 401);
+    assert.equal((await post('not audio')).status, 400);
+    assert.equal((await post(Buffer.alloc(1000001).toString('base64'))).status, 400);
+    const response = await post(wav.toString('base64')); assert.equal(response.status, 200); assert.equal((await response.json()).transcript, 'We agreed to document the release.'); assert.equal(transcribe.mock.callCount(), 1); assert.equal(resolve.mock.callCount(), 3);
+  } finally { await gateway.close(); t.mock.restoreAll(); if (oldSecret === undefined) delete process.env.PERFORMANCE_AI_SHARED_SECRET; else process.env.PERFORMANCE_AI_SHARED_SECRET = oldSecret; }
+});
 
 test('signed gateway routes activity and context but ignores caller provider controls', async () => {
   const originalSecret = process.env.AI_GATEWAY_HMAC_SECRET;

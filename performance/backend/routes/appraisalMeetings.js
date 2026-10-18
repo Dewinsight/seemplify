@@ -5,7 +5,7 @@ const OneOnOne = require('../models/OneOnOne');
 const shared = require('../services/sharedAIAccountService');
 const flow = require('../services/appraisalFlowService');
 
-const publicMeeting = meeting => ({ _id: meeting._id, title: meeting.title, scheduledDate: meeting.scheduledDate, duration: meeting.duration, status: meeting.status, stepId: meeting.workflowStepId, conferenceUrl: meeting.nylas?.conferenceUrl, integration: meeting.appraisalMeeting ? { recordingRequested: meeting.appraisalMeeting.recordingRequested, recordingState: meeting.appraisalMeeting.recordingState, calendarState: meeting.appraisalMeeting.calendarState, recordingUrl: meeting.appraisalMeeting.recordingUrl, summaryState: meeting.appraisalMeeting.summaryState, summaryModel: meeting.appraisalMeeting.summaryModel } : undefined, transcript: meeting.transcript?.content, notes: meeting.sharedNotes, summary: meeting.appraisalMeeting?.summary });
+const publicMeeting = meeting => ({ _id: meeting._id, title: meeting.title, scheduledDate: meeting.scheduledDate, duration: meeting.duration, status: meeting.status, stepId: meeting.workflowStepId, mode: meeting.appraisalMeeting?.mode || 'calendar', conferenceUrl: meeting.nylas?.conferenceUrl, integration: meeting.appraisalMeeting ? { recordingRequested: meeting.appraisalMeeting.recordingRequested, recordingState: meeting.appraisalMeeting.recordingState, calendarState: meeting.appraisalMeeting.calendarState, recordingAvailable: Boolean(meeting.appraisalMeeting.recordingFileId), transcriptionState: meeting.appraisalMeeting.transcriptionState, recordingUrl: meeting.appraisalMeeting.recordingUrl, summaryState: meeting.appraisalMeeting.summaryState, summaryModel: meeting.appraisalMeeting.summaryModel } : undefined, transcript: meeting.transcript?.content, notes: meeting.sharedNotes, summary: meeting.appraisalMeeting?.summary });
 function errorResponse(res, error) { return res.status(Number(error.statusCode) || 503).json({ success: false, error: error.message || 'The meeting request failed.', code: error.code || 'MEETING_UNAVAILABLE' }); }
 
 module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalEmployee, tenantAppraisalIdFilter }) {
@@ -34,15 +34,20 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
       if (['cancelled', 'employee_acknowledged', 'completed'].includes(appraisal.status)) return res.status(409).json({ success: false, error: 'This appraisal is no longer accepting new meetings.' });
       const step = flow.flowFor(appraisal)?.steps.find(step => step.id === req.body.stepId && step.type === 'oneOnOne');
       if (!step) return res.status(400).json({ success: false, error: 'Choose a one-on-one step from this appraisal.' });
+      const mode = req.body.mode === 'in_app' ? 'in_app' : 'calendar';
+      if (req.body.mode !== undefined && !['calendar', 'in_app'].includes(req.body.mode)) return res.status(400).json({ error: 'Choose a calendar meeting or an in-app call.' });
       const scheduledDate = new Date(req.body.scheduledDate); const duration = Number(req.body.duration || 30);
+      if (mode === 'in_app' && req.body.record && duration > 30) return res.status(400).json({ error: 'Recorded in-app calls support up to 30 minutes. Add another call step for a longer discussion.' });
       if (!Number.isFinite(+scheduledDate) || +scheduledDate <= Date.now() || !Number.isInteger(duration) || duration < 15 || duration > 480) return res.status(400).json({ success: false, error: 'Choose a future time and a duration from 15 to 480 minutes.' });
       if (req.body.record && req.body.recordingNoticeAccepted !== true) return res.status(400).json({ success: false, error: 'Confirm that you will inform participants before recording.' });
       const identity = shared.identityFromRequest(req);
       let meeting = await OneOnOne.findOne({ appraisalId: appraisal._id, workflowStepId: step.id, organizationId: appraisal.organizationId });
       if (!meeting) {
-        try { meeting = await OneOnOne.create({ appraisalId: appraisal._id, workflowStepId: step.id, managerId: appraisal.manager.userId, managerInfo: appraisal.manager, employeeId: appraisal.employee.userId, employeeInfo: appraisal.employee, organizationId: appraisal.organizationId, title: step.label, scheduledDate, duration, meetingType: 'performance_review', meetingFormat: 'video', createdBy: identity.sub, appraisalMeeting: { ownerIdentity: identity, recordingRequested: Boolean(req.body.record), summaryState: 'not_started' } }); }
+        try { meeting = await OneOnOne.create({ appraisalId: appraisal._id, workflowStepId: step.id, managerId: appraisal.manager.userId, managerInfo: appraisal.manager, employeeId: appraisal.employee.userId, employeeInfo: appraisal.employee, organizationId: appraisal.organizationId, title: step.label, scheduledDate, duration, meetingType: 'performance_review', meetingFormat: 'video', createdBy: identity.sub, appraisalMeeting: { mode, ownerIdentity: identity, recordingRequested: Boolean(req.body.record), summaryState: 'not_started' } }); }
         catch (error) { if (error.code !== 11000) throw error; meeting = await OneOnOne.findOne({ appraisalId: appraisal._id, workflowStepId: step.id, organizationId: appraisal.organizationId }); }
       }
+      if ((meeting.appraisalMeeting.mode || 'calendar') !== mode) return res.status(409).json({ error: 'This call step already uses a different meeting type.' });
+      if (mode === 'in_app') return res.status(201).json({ success: true, data: publicMeeting(meeting) });
       if (meeting.nylas?.eventId) return res.json({ success: true, data: publicMeeting(meeting) });
       const result = await shared.request('meetings/create', meeting.appraisalMeeting.ownerIdentity, { externalId: String(meeting._id), scheduledDate: meeting.scheduledDate, duration: meeting.duration, title: meeting.title, meetingLink: req.body.meetingLink, record: meeting.appraisalMeeting.recordingRequested, participants: [appraisal.manager, appraisal.employee].map(p => ({ name: p.name, email: p.email })) }, { timeoutMs: 90_000 });
       meeting.nylas = { eventId: result.eventId, calendarId: result.calendarId, conferenceUrl: result.conferenceUrl, syncStatus: 'synced', lastSyncAt: new Date() };
@@ -59,9 +64,15 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
       return next();
     } catch (error) { return next(error); }
   });
+  router.use('/:meetingId/native', require('./appraisalNativeCalls')(publicMeeting));
   router.post('/:meetingId/sync', async (req, res) => {
     try {
       const meeting = req.meeting;
+      if (meeting.appraisalMeeting?.mode === 'in_app') {
+        if (meeting.appraisalMeeting.transcriptionState === 'failed') await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.transcriptionAttempts': 0 } });
+        void require('../services/appraisalNativeMediaService').process(meeting).catch(() => {});
+        return res.status(202).json({ success: true, data: publicMeeting(meeting), message: 'Processing queued. Refresh the call to see progress.' });
+      }
       await require('../services/appraisalMeetingMediaService').sync(meeting);
       return res.json({ success: true, data: publicMeeting(meeting) });
     } catch (error) { return errorResponse(res, error); }
@@ -79,6 +90,7 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
       if (!req.canManageMeeting) return res.status(403).json({ success: false, error: 'Only the reviewer or HR can complete this step.' });
       const meeting = req.meeting; const appraisal = req.appraisal;
       if (meeting.status === 'completed' && appraisal.completedMeetingSteps?.includes(meeting.workflowStepId)) return res.json({ success: true, data: publicMeeting(meeting) });
+      if (meeting.appraisalMeeting?.mode === 'in_app' && await require('../models/AppraisalCall').exists({ meetingId: meeting._id, $or: [{ 'manager.seenAt': { $gt: new Date(Date.now() - 30000) } }, { 'employee.seenAt': { $gt: new Date(Date.now() - 30000) } }] })) return res.status(409).json({ error: 'Both participants must leave the in-app call after saving any recording before completing this step.' });
       if (flow.currentStep(appraisal)?.id !== meeting.workflowStepId) return res.status(409).json({ success: false, error: 'Complete the preceding appraisal steps first.' });
       if (Date.now() < +meeting.scheduledDate) return res.status(409).json({ success: false, error: 'The meeting has not started yet.' });
       const notes = String(req.body.notes || '').trim().slice(0, 10000);
