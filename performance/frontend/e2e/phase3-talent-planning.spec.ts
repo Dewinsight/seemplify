@@ -53,7 +53,7 @@ async function install(page: Page, state: State) {
     if (method === 'GET' && path === '/talent/signals') return fulfill(data({ signals: [{ type: 'cycle_completion_risk', severity: 'high', employee, appraisalId: 'appraisal-stalled', status: 'manager_review_pending', reasons: ['Manager review has had no completion for 15 days'], definition: 'Deterministic workflow-age signal.' }], methodology: 'Explainable rules use workflow state and elapsed time only. No protected characteristics, attendance, leave, or hidden productivity data are used.', machineLearning: { enabled: false } }));
     if (method === 'GET' && path === '/talent/succession-plans') return fulfill(data(state.plans));
     if (method === 'GET' && path === '/appraisals/cycles') return fulfill(data([{ _id: 'cycle-1', name: 'FY26 mid-year', status: 'completed' }]));
-    if (method === 'GET' && path === '/user/search') return fulfill(data([employee]));
+    if (method === 'GET' && path === '/user/search') return fulfill(data([{ id: employee.userId, name: employee.name, email: employee.email }]));
     if (method === 'POST' && path === '/talent/reviews') {
       const body = await requestBody(request); state.posts.push({ method, path, body }); const created = review('draft'); created.name = String(body.name); state.reviews = [created]; return fulfill(data(created), 201);
     }

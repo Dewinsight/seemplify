@@ -725,7 +725,7 @@ export default function OKRWorkspacePage() {
         : [currentUser].filter(Boolean) as PersonOption[];
       const targets = assignees.length ? assignees : [{ id: String(user?.id || user?.sub), name: user?.name || 'You' }];
 
-      await Promise.all(targets.map((assignee) => api.post('/okrs', {
+      const responses = await Promise.all(targets.map((assignee) => api.post('/okrs', {
         title: form.title.trim(),
         type: form.type,
         period: form.period,
@@ -752,6 +752,17 @@ export default function OKRWorkspacePage() {
       setCreateOpen(false);
       resetForm();
       await loadGoals();
+      const createdGoal = unwrapData<Goal>(responses[0], {} as Goal);
+      if (createdGoal._id) {
+        setSelectedGoalId(createdGoal._id);
+        setSelectedPeriod(createdGoal.period);
+        const period = periodDefinitions.find((item) => item._id === createdGoal.periodId);
+        const now = Date.now();
+        setPeriodBand(period && (period.status === 'closed' || period.status === 'archived' || new Date(period.endDate).getTime() < now)
+          ? 'past' : period && (period.status === 'upcoming' || period.status === 'draft' || new Date(period.startDate).getTime() > now) ? 'upcoming' : classifyPeriod(createdGoal.period));
+        if (createdGoal.type === 'organization' && workspace === 'admin') changeView('organization');
+        else if (canManageGoalWorkspace && workspace !== 'personal') changeView('team');
+      }
       setMessage({
         text: targets.length > 1 ? `Goal created for ${targets.length} people.` : 'Goal created.',
         severity: 'success',

@@ -99,6 +99,7 @@ export default function DevelopmentPlansPage() {
         learningActivities: newPlan.learningActivity.trim() ? [{ title: newPlan.learningActivity.trim(), type: 'other', status: 'not_started', dueDate: newPlan.targetDate }] : [],
       });
       setDialogOpen(false);
+      setTabValue(currentUserIds.has(newPlan.userId) ? 0 : 1);
       setNewPlan({ userId: '', title: '', description: '', startDate: '', targetDate: '', careerGoal: '', skillName: '', learningActivity: '' });
       await mutate();
       setNotice('Development plan created.');

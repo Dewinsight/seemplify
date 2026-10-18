@@ -89,6 +89,23 @@ test('launch rejects out-of-team and foreign-tenant staff before creating record
   expect(await DomainEvent.countDocuments()).toBe(0);
 });
 
+test('department heads launch only staff in departments granted by the current IdP organization', async () => {
+  await seedLaunchEmployee();
+  await User.updateOne({ idpSub: EMPLOYEE }, { $set: { 'idpTeams.0.departmentId': 'department-a' } });
+  await seedLaunchEmployee('other-department', 'team-b');
+  await User.updateOne({ idpSub: 'other-department' }, { $set: { 'idpTeams.0.departmentId': 'department-b' } });
+  await seedLaunchEmployee('foreign-department-staff', 'foreign-team', ORG_B);
+  await User.updateOne({ idpSub: 'foreign-department-staff' }, { $set: { 'idpTeams.0.departmentId': 'department-a' } });
+  const created = await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'department_head')
+    .send(launchPayload([{ userId: EMPLOYEE }])).expect(201);
+  expect(created.body.data.launchSummary.launched).toBe(1);
+  for (const userId of ['other-department', 'foreign-department-staff']) {
+    await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'department_head')
+      .send(launchPayload([{ userId, departmentId: 'department-a', teamId: 'team-a' }])).expect(403);
+  }
+  expect(await Appraisal.countDocuments()).toBe(1);
+});
+
 test('launch reports missing managers individually and rejects invalid response deadlines', async () => {
   await seedLaunchEmployee();
   await seedLaunchEmployee('blocked-staff', 'team-a', ORG_A, null);
@@ -149,6 +166,11 @@ function sessionUser(actor, organizationId) {
     role: actor === 'hr' ? 'hr_manager' : 'employee',
     appAccess: { mode: 'all', appIds: [] }
   };
+  if (actor === 'department_head') {
+    organization.departmentHeadPermissions = [{ id: 'department-a', permissions: ['manage_performance'] }];
+    return { id: 'department-head-1', sub: 'department-head-1', name: 'Department Head', email: 'head@example.com',
+      currentOrganization: organization, organizations: [organization], idpTeams: [] };
+  }
   if (actor === 'manager') {
     return {
       id: MANAGER,

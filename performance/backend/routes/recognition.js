@@ -49,7 +49,7 @@ router.post('/', requirePermission('recognition:create'), async (req, res) => {
   try {
     const sender = currentUser(req);
     const recipient = {
-      userId: text(req.body.recipient?.userId || req.body.recipientId, 240),
+      userId: text(req.body.recipient?.userId || req.body.recipient?.id || req.body.recipientId, 240),
       name: text(req.body.recipient?.name, 240),
       email: text(req.body.recipient?.email, 320),
       teamId: text(req.body.recipient?.teamId, 240),
@@ -71,8 +71,8 @@ router.post('/', requirePermission('recognition:create'), async (req, res) => {
     recipient.name = organizationMembership.profile?.displayName || [organizationMembership.profile?.firstName, organizationMembership.profile?.lastName].filter(Boolean).join(' ') || recipient.name;
     recipient.email = organizationMembership.email || recipient.email;
     const recipientTeam = (organizationMembership.idpTeams || []).find(team => String(team.organizationId) === req.organizationId);
-    recipient.teamId = recipientTeam?.id || recipient.teamId;
-    recipient.teamName = recipientTeam?.name || recipient.teamName;
+    recipient.teamId = recipientTeam?.id || '';
+    recipient.teamName = recipientTeam?.name || '';
     const visibility = ['public', 'team', 'private'].includes(req.body.visibility) ? req.body.visibility : 'team';
     if (visibility === 'team' && !recipient.teamId) return res.status(400).json({ success: false, error: 'Team visibility requires the recipient team' });
     const recognition = await Recognition.create({

@@ -3,17 +3,30 @@
 import { useState } from 'react';
 import { useCalibrationSessions, useReviewCycles, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
+import { downloadResultsCsv } from '@/lib/appraisal-results';
 import {
   Typography, Box, CircularProgress, Button, Card, CardContent, Chip,
   Grid, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-  Table, TableHead, TableRow, TableCell, TableBody, Alert, Tabs, Tab,
-  LinearProgress, Slider, IconButton, Tooltip
+  Table, TableHead, TableRow, TableCell, TableBody, Alert,
+  LinearProgress, Tooltip
 } from '@mui/material';
 import {
-  Add, PlayArrow, CheckCircle, Edit, Insights, Assessment,
+  Add, PlayArrow, CheckCircle, Insights, Assessment,
   Balance, TrendingUp, TrendingDown
 } from '@mui/icons-material';
-import { useRouter } from 'next/navigation';
+interface CalibrationReview {
+  employeeId: string; employeeName?: string; originalSelfRating?: number; originalManagerRating: number;
+  calibratedRating?: number; calibrationNotes?: string; performanceBucket?: string; decision: string;
+}
+interface CalibrationSession {
+  _id: string; title: string; status: string; completedAt?: string; reviewsUnderCalibration: CalibrationReview[];
+  summary?: { totalReviews: number; reviewsAdjusted: number; averageOriginalRating?: number; averageCalibratedRating?: number };
+  actualDistribution?: Record<string, number>;
+  aiInsights?: { ratingDistributionAnalysis?: string; potentialBiasFlags: Array<{ type: string; description: string }> };
+}
+interface CycleSummary { _id: string; title: string; status: string }
+interface ExportReview { employeeId: string; originalRating?: number; calibratedRating?: number; decision: string; notes?: string }
+
 
 function getApiErrorMessage(error: unknown, fallback: string) {
   const candidate = error as { response?: { data?: { error?: string; message?: string } } };
@@ -21,13 +34,14 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 }
 
 export default function CalibrationPage() {
-  const router = useRouter();
   const { isHRAdmin, isLoading: userLoading } = useUserContext();
-  const { cycles } = useReviewCycles();
-  const { sessions, isLoading, mutate } = useCalibrationSessions();
+  const { cycles: rawCycles } = useReviewCycles();
+  const cycles = rawCycles as CycleSummary[];
+  const { sessions: rawSessions, isLoading, mutate } = useCalibrationSessions();
+  const sessions = rawSessions as CalibrationSession[];
   
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedSession, setSelectedSession] = useState<any>(null);
+  const [selectedSession, setSelectedSession] = useState<CalibrationSession | null>(null);
   const [newSession, setNewSession] = useState({
     reviewCycleId: '',
     title: '',
@@ -35,6 +49,10 @@ export default function CalibrationPage() {
   });
   const [aiInsightsLoading, setAiInsightsLoading] = useState('');
   const [aiInsightsError, setAiInsightsError] = useState('');
+  const [error, setError] = useState('');
+  const [editingReview, setEditingReview] = useState<{ index: number; name: string; originalRating: number } | null>(null);
+  const [decisionForm, setDecisionForm] = useState({ rating: '3', notes: '' });
+  const [saving, setSaving] = useState(false);
 
   if (userLoading || isLoading) {
     return (
@@ -55,8 +73,9 @@ export default function CalibrationPage() {
   }
 
   const handleCreateSession = async () => {
+    setError('');
     try {
-      const cycle = cycles?.find((c: any) => c._id === newSession.reviewCycleId);
+      const cycle = cycles?.find((c: CycleSummary) => c._id === newSession.reviewCycleId);
       await api.post('/calibration', {
         ...newSession,
         title: newSession.title || `Calibration - ${cycle?.title || 'Review Cycle'}`
@@ -65,7 +84,7 @@ export default function CalibrationPage() {
       setNewSession({ reviewCycleId: '', title: '', scheduledDate: '' });
       mutate();
     } catch (error) {
-      console.error('Error creating session:', error);
+      setError(getApiErrorMessage(error, 'Could not create calibration session.'));
     }
   };
 
@@ -74,17 +93,32 @@ export default function CalibrationPage() {
       await api.post(`/calibration/${sessionId}/start`, {});
       mutate();
     } catch (error) {
-      console.error('Error starting session:', error);
+      setError(getApiErrorMessage(error, 'Could not start calibration session.'));
     }
   };
 
   const handleCompleteSession = async (sessionId: string) => {
     try {
-      await api.post(`/calibration/${sessionId}/complete`, {});
+      const response = await api.post(`/calibration/${sessionId}/complete`, {});
+      if (selectedSession?._id === sessionId) setSelectedSession(response.data.data);
       mutate();
-    } catch (error: any) {
-      alert(error.response?.data?.error || 'Error completing session');
+    } catch (error) {
+      setError(getApiErrorMessage(error, 'Could not complete calibration.'));
     }
+  };
+
+  const saveDecision = async () => {
+    if (!editingReview || !selectedSession) return;
+    setSaving(true); setError('');
+    try {
+      const rating = Number(decisionForm.rating);
+      const response = await api.put(`/calibration/${selectedSession._id}/reviews/${editingReview.index}`, {
+        calibratedRating: rating, calibrationNotes: decisionForm.notes,
+        decision: rating === editingReview.originalRating ? 'approved' : 'adjusted'
+      });
+      setSelectedSession(response.data.data); setEditingReview(null); await mutate();
+    } catch (requestError) { setError(getApiErrorMessage(requestError, 'Could not save the calibration decision.')); }
+    finally { setSaving(false); }
   };
 
   const handleGenerateInsights = async (sessionId: string) => {
@@ -111,8 +145,8 @@ export default function CalibrationPage() {
     }
   };
 
-  const activeSessions = sessions?.filter((s: any) => s.status !== 'completed') || [];
-  const completedSessions = sessions?.filter((s: any) => s.status === 'completed') || [];
+  const activeSessions = sessions?.filter((s: CalibrationSession) => s.status !== 'completed') || [];
+  const completedSessions = sessions?.filter((s: CalibrationSession) => s.status === 'completed') || [];
 
   return (
     <Box>
@@ -128,6 +162,8 @@ export default function CalibrationPage() {
           New Session
         </Button>
       </Box>
+
+      {error && !dialogOpen && !selectedSession && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
       {aiInsightsError && (
         <Alert
@@ -166,7 +202,7 @@ export default function CalibrationPage() {
                 <PlayArrow color="warning" sx={{ fontSize: 40 }} />
                 <Box>
                   <Typography variant="h4" fontWeight="bold">
-                    {sessions?.filter((s: any) => s.status === 'in_progress').length || 0}
+                    {sessions?.filter((s: CalibrationSession) => s.status === 'in_progress').length || 0}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">In Progress</Typography>
                 </Box>
@@ -196,7 +232,7 @@ export default function CalibrationPage() {
                 <Assessment color="info" sx={{ fontSize: 40 }} />
                 <Box>
                   <Typography variant="h4" fontWeight="bold">
-                    {sessions?.reduce((sum: number, s: any) => sum + (s.reviewsUnderCalibration?.length || 0), 0) || 0}
+                    {sessions?.reduce((sum: number, s: CalibrationSession) => sum + (s.reviewsUnderCalibration?.length || 0), 0) || 0}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">Reviews Calibrated</Typography>
                 </Box>
@@ -211,7 +247,7 @@ export default function CalibrationPage() {
         <>
           <Typography variant="h6" fontWeight="bold" mb={2}>Active Sessions</Typography>
           <Grid container spacing={3} mb={4}>
-            {activeSessions.map((session: any) => (
+            {activeSessions.map((session: CalibrationSession) => (
               <Grid size={{ xs: 12, md: 6 }} key={session._id}>
                 <Card>
                   <CardContent>
@@ -221,7 +257,7 @@ export default function CalibrationPage() {
                         <Chip 
                           size="small" 
                           label={session.status}
-                          color={getStatusColor(session.status) as any}
+                          color={getStatusColor(session.status)}
                           sx={{ mt: 0.5 }}
                         />
                       </Box>
@@ -239,13 +275,13 @@ export default function CalibrationPage() {
                           variant="determinate" 
                           value={
                             session.reviewsUnderCalibration?.length > 0 
-                              ? (session.reviewsUnderCalibration.filter((r: any) => r.decision !== 'pending_review').length / session.reviewsUnderCalibration.length) * 100
+                              ? (session.reviewsUnderCalibration.filter((r: CalibrationReview) => r.decision !== 'pending_review').length / session.reviewsUnderCalibration.length) * 100
                               : 0
                           }
                           sx={{ height: 8, borderRadius: 1 }}
                         />
                         <Typography variant="caption">
-                          {session.reviewsUnderCalibration?.filter((r: any) => r.decision !== 'pending_review').length || 0} of {session.reviewsUnderCalibration?.length || 0} reviewed
+                          {session.reviewsUnderCalibration?.filter((r: CalibrationReview) => r.decision !== 'pending_review').length || 0} of {session.reviewsUnderCalibration?.length || 0} reviewed
                         </Typography>
                       </Box>
                     )}
@@ -343,7 +379,7 @@ export default function CalibrationPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {completedSessions.map((session: any) => (
+                {completedSessions.map((session: CalibrationSession) => (
                   <TableRow key={session._id}>
                     <TableCell>
                       <Typography variant="subtitle2">{session.title}</Typography>
@@ -395,6 +431,7 @@ export default function CalibrationPage() {
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Create Calibration Session</DialogTitle>
         <DialogContent>
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
             <TextField
               select
@@ -405,7 +442,7 @@ export default function CalibrationPage() {
               SelectProps={{ native: true }}
             >
               <option value="">Select review cycle</option>
-              {cycles?.filter((c: any) => c.status !== 'closed').map((cycle: any) => (
+              {cycles?.filter((c: CycleSummary) => c.status !== 'closed').map((cycle: CycleSummary) => (
                 <option key={cycle._id} value={cycle._id}>
                   {cycle.title} ({cycle.status})
                 </option>
@@ -454,11 +491,12 @@ export default function CalibrationPage() {
                 <Typography variant="h6">{selectedSession.title}</Typography>
                 <Chip 
                   label={selectedSession.status}
-                  color={getStatusColor(selectedSession.status) as any}
+                  color={getStatusColor(selectedSession.status)}
                 />
               </Box>
             </DialogTitle>
             <DialogContent>
+              {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
               {/* Summary */}
               {selectedSession.summary && (
                 <Box mb={3}>
@@ -510,7 +548,7 @@ export default function CalibrationPage() {
                   {selectedSession.aiInsights.potentialBiasFlags?.length > 0 && (
                     <Alert severity="warning">
                       <Typography variant="subtitle2">Potential Bias Detected:</Typography>
-                      {selectedSession.aiInsights.potentialBiasFlags.map((flag: any, idx: number) => (
+                      {selectedSession.aiInsights.potentialBiasFlags.map((flag: { type: string; description: string }, idx: number) => (
                         <Typography key={idx} variant="body2">• {flag.type}: {flag.description}</Typography>
                       ))}
                     </Alert>
@@ -530,10 +568,11 @@ export default function CalibrationPage() {
                       <TableCell align="center">Calibrated</TableCell>
                       <TableCell>Bucket</TableCell>
                       <TableCell>Decision</TableCell>
+                      {selectedSession.status === 'in_progress' && <TableCell>Review</TableCell>}
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {selectedSession.reviewsUnderCalibration?.map((review: any, idx: number) => (
+                    {selectedSession.reviewsUnderCalibration?.map((review: CalibrationReview, idx: number) => (
                       <TableRow key={idx}>
                         <TableCell>{review.employeeName || review.employeeId}</TableCell>
                         <TableCell align="center">{review.originalSelfRating || '-'}</TableCell>
@@ -567,6 +606,10 @@ export default function CalibrationPage() {
                             }
                           />
                         </TableCell>
+                        {selectedSession.status === 'in_progress' && <TableCell><Button size="small" onClick={() => {
+                          setError(''); setDecisionForm({ rating: String(review.calibratedRating ?? review.originalManagerRating ?? 3), notes: review.calibrationNotes || '' });
+                          setEditingReview({ index: idx, name: review.employeeName || review.employeeId, originalRating: review.originalManagerRating });
+                        }}>Review rating</Button></TableCell>}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -575,13 +618,17 @@ export default function CalibrationPage() {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSelectedSession(null)}>Close</Button>
+              {selectedSession.status === 'in_progress' && <Button variant="contained" onClick={() => void handleCompleteSession(selectedSession._id)}>Complete calibration</Button>}
               {selectedSession.status === 'completed' && (
                 <Button 
                   variant="outlined"
                   onClick={async () => {
-                    const res = await api.get(`/calibration/${selectedSession._id}/export`);
-                    console.log('Export data:', res.data);
-                    // Could trigger download here
+                    try {
+                      const res = await api.get(`/calibration/${selectedSession._id}/export`);
+                      const report = res.data.data;
+                      downloadResultsCsv([['Employee', 'Original rating', 'Calibrated rating', 'Decision', 'Notes'],
+                        ...report.reviews.map((review: ExportReview) => [review.employeeId, String(review.originalRating ?? ''), String(review.calibratedRating ?? ''), review.decision, review.notes || ''])], `calibration-${selectedSession._id}.csv`);
+                    } catch (requestError) { setError(getApiErrorMessage(requestError, 'Could not export this calibration report.')); }
                   }}
                 >
                   Export Report
@@ -590,6 +637,16 @@ export default function CalibrationPage() {
             </DialogActions>
           </>
         )}
+      </Dialog>
+      <Dialog open={Boolean(editingReview)} onClose={() => !saving && setEditingReview(null)} fullWidth maxWidth="sm" aria-labelledby="calibration-decision-title">
+        <DialogTitle id="calibration-decision-title">Review rating: {editingReview?.name}</DialogTitle>
+        <DialogContent dividers>
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          <Typography sx={{ mb: 2 }}>Manager rating: {editingReview?.originalRating}. Keep this rating to approve it, or record an adjusted rating with a reason.</Typography>
+          <TextField fullWidth type="number" label="Calibrated rating" value={decisionForm.rating} onChange={(event) => setDecisionForm((current) => ({ ...current, rating: event.target.value }))} sx={{ mb: 2 }} />
+          <TextField fullWidth multiline minRows={3} label="Calibration reason" value={decisionForm.notes} onChange={(event) => setDecisionForm((current) => ({ ...current, notes: event.target.value }))} helperText="Required when changing the manager rating; use at least 10 characters." />
+        </DialogContent>
+        <DialogActions><Button disabled={saving} onClick={() => setEditingReview(null)}>Cancel</Button><Button variant="contained" disabled={saving || !decisionForm.rating || !Number.isFinite(Number(decisionForm.rating)) || (Number(decisionForm.rating) !== editingReview?.originalRating && decisionForm.notes.trim().length < 10)} onClick={() => void saveDecision()}>{saving ? 'Saving…' : 'Save decision'}</Button></DialogActions>
       </Dialog>
     </Box>
   );

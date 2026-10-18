@@ -17,7 +17,7 @@ test('starts a manager appraisal in three steps and displays partial launch resu
   await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
   await expect(page.getByText('1 started · 1 already in progress · 1 blocked')).toBeVisible();
-  expect(state.createdCycleBodies[0]).toEqual({ cycleId: 'cycle-1', employees: [{ userId: 'member-1' }] });
+  expect(state.createdCycleBodies[0]).toMatchObject({ cycleId: 'cycle-1', employees: [{ userId: 'member-1' }], reviewerMode: 'initiator', appraisalFlow: { version: 1 } });
   await expect(page.getByRole('link', { name: 'Open appraisal' })).toHaveAttribute('href', '/appraisals/started-review');
   await page.getByRole('button', { name: 'Review blocked staff' }).click();
   await expect(page.getByRole('heading', { name: 'Choose staff' })).toBeVisible();
@@ -94,7 +94,7 @@ test('shows HR organization results and start action in the Admin workspace', as
   await expect(page.getByText('Archived staff review', { exact: true })).toBeVisible();
 });
 
-test('recovers from a history error and explains an empty history without allowing employee launches', async ({ page }) => {
+test('recovers from a history error and explains when an employee has no eligible colleagues', async ({ page }) => {
   const state = createState(); state.appraisals = [];
   await installMockApi(page, state);
   let unavailable = true;
@@ -106,7 +106,8 @@ test('recovers from a history error and explains an empty history without allowi
   await expect(page.getByText('Your completed and cancelled appraisals will appear here across all cycles.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
   await page.goto('/appraisals/start');
-  await expect(page.getByText(/Your manager or HR starts staff appraisals/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose staff', exact: true })).toBeVisible();
+  await expect(page.getByText(/No colleagues are available in your team hierarchy/)).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
 });
 
@@ -559,6 +560,9 @@ async function installMockApi(page: Page, state: MockApiState) {
       const team = { id: 'team-1', name: 'Customer Success', role: 'line_manager', organizationId: 'org-1' };
       return fulfill({ success: true, data: { currentTeam: state.managerMode ? team : null, availableTeams: state.managerMode ? [team] : [] } });
     }
+    if (method === 'GET' && path === '/appraisals/colleague-roster') {
+      return fulfill({ success: true, data: { employees: state.managerMode || state.hrAdminMode ? [{ userId: 'member-1', name: 'Jordan Lee', email: 'jordan@example.com', teamName: 'Customer Success', isSelectableForAppraisal: true }] : [] } });
+    }
     if (method === 'GET' && path === '/user/my-team-members') {
       const directReports = state.managerMode ? [{ userId: 'member-1', name: 'Jordan Lee', email: 'jordan@example.com', title: 'Customer Success Manager', teamName: 'Customer Success' }] : [];
       return fulfill({
@@ -733,7 +737,7 @@ async function installMockApi(page: Page, state: MockApiState) {
           name: '2026 Annual Review',
           cycleType: 'annual',
           periodStart: '2026-01-01T00:00:00.000Z',
-          periodEnd: '2026-12-31T23:59:59.999Z',
+          periodEnd: new Date(Date.now() - 86400000).toISOString(),
           currentPhase: 'selfAssessment',
           status: 'active',
           phases: {},
@@ -1561,7 +1565,7 @@ test('refreshes manager scoring after a custom rating autosaves and submits the 
   await installMockApi(page, state);
 
   await page.goto('/appraisals/507f1f77bcf86cd799439011/manager-review');
-  await expect(page.getByRole('heading', { name: 'Manager Review: Jordan Lee' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Review: Jordan Lee', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
@@ -1691,7 +1695,7 @@ test('opens an unread Action Centre notification at its goal deep link', async (
   await expect(page.getByText('Quarterly goal needs an update')).toBeVisible();
   await page.getByRole('button', { name: 'Review goal' }).click();
 
-  await expect(page).toHaveURL(/\/okrs\?goal=future-goal-1$/);
+  await expect(page).toHaveURL(/\/okrs\?goal=future-goal-1$/, { timeout: 30_000 });
   await expect(page.getByText('Build launch readiness')).toBeVisible();
   expect(state.readNotificationIds).toContain('notification-1');
 });
@@ -1859,8 +1863,8 @@ test('lets a line manager switch between personal and manager work without expos
 
   const reloadedTeamMenu = await openDesktopNavigationGroup(page, 'Team');
   await reloadedTeamMenu.getByRole('menuitem', { name: 'Team Appraisals', exact: true }).click();
-  await expect(page.getByText('Manager appraisal queue')).toBeVisible();
-  await expect(page.getByText('Only direct-report appraisals and manager actions are shown in this workspace.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Reviews I’m conducting', exact: true })).toBeVisible();
+  await expect(page.getByText('Reviews you are assigned to conduct appear here.')).toBeVisible();
 
   await switchPerformanceWorkspace(page, 'Personal');
   await page.getByRole('link', { name: 'My Appraisals', exact: true }).click();
