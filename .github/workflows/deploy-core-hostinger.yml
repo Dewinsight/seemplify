@@ -408,13 +408,13 @@ jobs:
           docker exec seemplify-core-recruiter-backend-1 npm run reconcile:idp-admin-locks
           # Retire the legacy sparse constraint only after its tenant-scoped
           # partial replacement is built and verified. The job container is disposable.
-          "${compose[@]}" run --rm --no-deps performance-backend \
-            node scripts/migrateGoalIdempotencyIndex.js --apply
+          "${compose[@]}" run --rm --no-deps -T performance-backend \
+            node scripts/migrateGoalIdempotencyIndex.js --apply < /dev/null
           install -d -m 700 /opt/seemplify/backups/performance-reviews
-          "${compose[@]}" run --rm --no-deps \
+          "${compose[@]}" run --rm --no-deps -T \
             -v /opt/seemplify/backups/performance-reviews:/review-backups performance-backend \
             node scripts/migrateQuarterlyReviews.js --apply \
-            --backup="/review-backups/cycles-$RELEASE_SHA-$(date -u +%Y%m%dT%H%M%S).json"
+            --backup="/review-backups/cycles-$RELEASE_SHA-$(date -u +%Y%m%dT%H%M%S).json" < /dev/null
           "${compose[@]}" up -d --no-deps --force-recreate \
             leave-backend performance-backend payroll-backend time-backend learning
           for container in \
