@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const productionServer = Boolean(process.env.CI || process.env.PERFORMANCE_E2E_PRODUCTION);
+
 // Unlike playwright.config.ts, this suite never intercepts product API requests.
 export default defineConfig({
   testDir: './e2e-live', fullyParallel: false, workers: 1, retries: 0, timeout: 120_000,
@@ -8,7 +10,7 @@ export default defineConfig({
   projects: [{ name: 'real-api-chrome', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     { command: 'node ../backend/tests/helpers/liveJourneyServer.js', url: 'http://127.0.0.1:5014/__test/health', reuseExistingServer: !process.env.CI, timeout: 120_000 },
-    { command: 'npx next dev --webpack -p 5015 -H 127.0.0.1', url: 'http://127.0.0.1:5015/login', reuseExistingServer: !process.env.CI, timeout: 120_000,
+    { command: productionServer ? 'npm run build && npx next start -p 5015 -H 127.0.0.1' : 'npx next dev --webpack -p 5015 -H 127.0.0.1', url: 'http://127.0.0.1:5015/login', reuseExistingServer: !productionServer, timeout: 180_000,
       env: { NEXT_PUBLIC_API_URL: 'http://127.0.0.1:5014/api', NEXT_PUBLIC_WS_URL: 'ws://127.0.0.1:5014/ws' } },
   ],
 });
