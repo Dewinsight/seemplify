@@ -5,7 +5,13 @@ import { CallEndOutlined, DownloadOutlined, FiberManualRecord, MicNoneOutlined, 
 import { alpha } from '@mui/material/styles';
 import api from '@/lib/api';
 
-const message = (error: unknown) => (error as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (error as Error)?.message || 'Call failed. Please retry.';
+const message = (error: unknown) => {
+  const name = (error as Error)?.name;
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') return 'Microphone or camera access is blocked. Allow access in your browser’s site settings, then join again. You can turn off “Join with camera on” for an audio-only call.';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'No microphone or camera was found. Connect a microphone, or turn off “Join with camera on” if you do not have a camera, then join again.';
+  if (name === 'NotReadableError' || name === 'TrackStartError') return 'Your microphone or camera is unavailable. Close any other app using it, then join again. You can also try joining with your camera off.';
+  return (error as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (error as Error)?.message || 'The call could not connect. Check your internet connection and try again.';
+};
 type State = { peer: string | null; recording: boolean; offer?: Signal; answer?: Signal };
 type Signal = { sender: string; target: string; description: RTCSessionDescriptionInit };
 type Session = { peerId: string; role: 'manager' | 'employee'; iceServers: RTCIceServer[] };
@@ -57,7 +63,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved, p
     connection.ontrack = event => { if (remoteVideo.current) remoteVideo.current.srcObject = event.streams[0]; setRemoteHasVideo(event.streams[0].getVideoTracks().length > 0); };
     connection.onconnectionstatechange = () => {
       if (!mounted.current || peer.current !== connection) return;
-      setStatus(connection.connectionState === 'connected' ? 'Connected to your appraisal participant.' : `Call ${connection.connectionState}.`);
+      setStatus(connection.connectionState === 'connected' ? `Connected to ${participantName}.` : ['failed', 'disconnected'].includes(connection.connectionState) ? 'The call connection was interrupted. Check your internet connection. If it does not recover, save any recording, then leave and rejoin.' : 'Connecting your call…');
       setRemoteReady(connection.connectionState === 'connected');
       if (['failed', 'disconnected', 'closed'].includes(connection.connectionState) && recorder.current?.state === 'recording') recorder.current.stop();
     };
@@ -71,7 +77,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved, p
       setRecordingNotice(state.recording);
       if (!state.peer) {
         if (remoteId.current) { peer.current?.close(); peer.current = null; setRemoteReady(false); if (recorder.current?.state === 'recording') recorder.current.stop(); }
-        remoteId.current = ''; negotiation.current = ''; setStatus('Waiting for the other appraisal participant…'); return;
+        remoteId.current = ''; negotiation.current = ''; setStatus(`Waiting for ${participantName} to join. They need to open this appraisal and select “Join in-app call”.`); return;
       }
       if (state.peer !== remoteId.current) { remoteId.current = state.peer; negotiation.current = ''; connect(); }
       const connection = peer.current || connect();
@@ -148,7 +154,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved, p
         </Stack>
         <Chip size="small" variant="outlined" color={recordingActive ? 'error' : remoteReady ? 'success' : 'default'} icon={recordingActive ? <FiberManualRecord sx={{ fontSize: '12px !important' }} /> : <ShieldOutlined />} label={recordingActive ? 'Recording' : remoteReady ? 'Connected' : joined ? 'Waiting for participant' : 'Private call'} />
       </Stack>
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <Alert severity="error" role="alert">{error}</Alert>}
       {status && !recordingActive && <Typography role="status" aria-live="polite" variant="body2" color="text.secondary">{status}</Typography>}
       {recordingActive && <Alert severity="warning">Recording is in progress. Both participants’ audio and video may be captured.</Alert>}
       <Box sx={{ display: joined ? 'grid' : 'none', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
@@ -169,7 +175,9 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved, p
           <Typography variant="body2" color="text.secondary" mt={.5}>{record ? 'Both participants must agree before recording starts. The recording, transcript and meeting notes stay with this appraisal.' : 'Join for a private conversation. The reviewer can add agreed notes afterwards.'}</Typography>
         </Box>
         <FormControlLabel sx={{ m: 0 }} control={<Checkbox checked={camera} onChange={(_, checked) => setCamera(checked)} />} label="Join with camera on" />
+        <Typography variant="body2" color="text.secondary">Your browser will ask for microphone{camera ? ' and camera' : ''} access when you join.{record ? ' Recording starts only when the reviewer selects “Start agreed recording”.' : ' This call will not be recorded.'}</Typography>
         {record && <FormControlLabel sx={{ m: 0, alignItems: 'flex-start', '& .MuiCheckbox-root': { pt: 0 }, '& .MuiFormControlLabel-label': { typography: 'body2' } }} control={<Checkbox checked={consent} onChange={(_, checked) => setConsent(checked)} />} label="I agree to this call being recorded and transcribed, and shared with people who can access this appraisal." />}
+        {record && !consent && <Typography variant="body2" color="text.secondary">To join this recorded call, confirm your agreement above. If you prefer an unrecorded call, ask your reviewer to arrange one.</Typography>}
         <Button variant="contained" startIcon={busy ? <CircularProgress size={18} color="inherit" /> : <VideocamOutlined />} sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' }, minHeight: 44, px: 3 }} disabled={busy || (record && !consent)} onClick={join}>Join in-app call</Button>
       </Stack>}
       {joined && <>
