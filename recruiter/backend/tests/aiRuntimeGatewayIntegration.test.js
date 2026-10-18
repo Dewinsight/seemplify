@@ -40,7 +40,7 @@ async function startGateway() {
 
 test('Performance speech bridge requires a signed service identity and bounded WAV audio', async t => {
   const oldSecret = process.env.PERFORMANCE_AI_SHARED_SECRET; const secret = 'performance-speech-contract'; process.env.PERFORMANCE_AI_SHARED_SECRET = secret;
-  const nonce = require('../models/InternalServiceNonce'); const identities = require('../services/aiRuntime/sharedIdentityService'); const speech = require('../services/aiInterviewVoiceLiveService');
+  const nonce = require('../models/InternalServiceNonce'); const identities = require('../services/aiRuntime/sharedIdentityService'); const speech = require('../services/performanceTranscriptionService');
   t.mock.method(nonce, 'init', async () => nonce); t.mock.method(nonce, 'create', async () => ({}));
   const resolve = t.mock.method(identities, 'resolveSharedPrincipal', async identity => { assert.equal(identity.sub, 'personal-idp-user'); return { identity, user: {} }; });
   const transcribe = t.mock.method(speech, 'transcribeWav', async () => 'We agreed to document the release.');
@@ -54,7 +54,7 @@ test('Performance speech bridge requires a signed service identity and bounded W
     assert.equal((await post(wav.toString('base64'), false)).status, 401);
     assert.equal((await post('not audio')).status, 400);
     assert.equal((await post(Buffer.alloc(1000001).toString('base64'))).status, 400);
-    const response = await post(wav.toString('base64')); assert.equal(response.status, 200); assert.equal((await response.json()).transcript, 'We agreed to document the release.'); assert.equal(transcribe.mock.callCount(), 1); assert.equal(resolve.mock.callCount(), 3);
+    const response = await post(wav.toString('base64')); assert.equal(response.status, 200); const payload = await response.json(); assert.equal(payload.transcript, 'We agreed to document the release.'); assert.equal(payload.provider, 'deepgram'); assert.equal(payload.model, 'nova-3'); assert.equal(transcribe.mock.callCount(), 1); assert.equal(resolve.mock.callCount(), 3);
   } finally { await gateway.close(); t.mock.restoreAll(); if (oldSecret === undefined) delete process.env.PERFORMANCE_AI_SHARED_SECRET; else process.env.PERFORMANCE_AI_SHARED_SECRET = oldSecret; }
 });
 
