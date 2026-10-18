@@ -77,6 +77,16 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
     await captureCall(page, index ? 'mobile-dark-before-join.png' : 'desktop-light-before-join.png');
     if (index === 1) await page.getByRole('checkbox', { name: 'Join with camera on', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: /I agree to this call being recorded/ }).check();
+    if (index === 0) {
+      // Exercise the permission failure, then retry with actual browser media.
+      await page.evaluate(() => {
+        const getMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async constraints => { navigator.mediaDevices.getUserMedia = getMedia; throw new DOMException('Synthetic permission denial', 'NotAllowedError'); };
+      });
+      await page.getByRole('button', { name: 'Join in-app call', exact: true }).click();
+      await expect(call.getByRole('alert')).toContainText('Allow access in your browser’s site settings');
+      await expect(page.getByRole('button', { name: 'Join in-app call', exact: true })).toBeEnabled();
+    }
     await page.getByRole('button', { name: 'Join in-app call', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Leave call', exact: true })).toBeVisible({ timeout: 20000 });
   }
@@ -186,6 +196,41 @@ for (const mobile of [false, true]) test(`manual assessment and visual call work
   await page.goto(`/appraisals/${appraisal._id}`);
   await expect(page.getByRole('heading', { name: 'Appraisal calls and notes' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Schedule a call', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Schedule a call', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Schedule an appraisal call' });
+  const nativeOption = form.getByRole('radio', { name: /^In-app call/ });
+  const calendarOption = form.getByRole('radio', { name: /^Calendar meeting/ });
+  await expect(nativeOption).toBeChecked();
+  const date = form.getByRole('textbox', { name: 'Call starts (your local time)', exact: true });
+  await expect(nativeOption).toBeFocused();
+  await expect(form.getByText(/Time zone:/)).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Schedule in-app call', exact: true })).toBeDisabled();
+  await page.route('**/meetings/connection', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic calendar outage' }) }));
+  await nativeOption.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(calendarOption).toBeChecked();
+  await expect(form.getByText(/We could not check your calendar/)).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Create calendar invitation', exact: true })).toBeDisabled();
+  await calendarOption.press('ArrowLeft');
+  await expect(nativeOption).toBeChecked();
+  await expect(form.getByText(/We could not check your calendar/)).toHaveCount(0);
+  await date.fill('2000-01-01T10:00');
+  await form.getByRole('checkbox', { name: 'Record and transcribe this call', exact: true }).uncheck();
+  await form.getByRole('button', { name: 'Schedule in-app call', exact: true }).click();
+  expect(await date.evaluate((input: HTMLInputElement) => input.validity.rangeUnderflow)).toBe(true);
+  expect(await backend('./models/OneOnOne').countDocuments({ appraisalId: appraisal._id })).toBe(0);
+  await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Schedule a call', exact: true }).click();
+  expect(await date.inputValue()).not.toBe('2000-01-01T10:00');
+  expect(new Date(await date.inputValue()).getTime()).toBeGreaterThan(Date.now());
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('simple-call-scheduling.png'), fullPage: true });
+  await form.getByRole('button', { name: 'Schedule in-app call', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  const scheduled = await backend('./models/OneOnOne').findOne({ appraisalId: appraisal._id });
+  expect(scheduled.appraisalMeeting.mode).toBe('in_app');
+  expect(scheduled.appraisalMeeting.recordingRequested).toBe(false);
+  await expect(page.getByText(/You can complete this step after the scheduled start time/)).toBeVisible();
   // Finish the call in the fixture, then verify the employee is taken directly to the manual form.
   await Appraisal.updateOne({ _id: appraisal._id }, { $set: { completedMeetingSteps: [appraisal.cycleConfigurationSnapshot.appraisalFlow.steps[0].id], status: 'self_assessment_pending' } });
   activePrincipal = { ...principal, id: 'leader', sub: 'leader', email: 'leader@example.test' };
