@@ -59,7 +59,11 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
     });
     await page.goto(`/appraisals/${appraisal._id}`);
+    await expect(page.getByRole('tab', { name: 'Self-Assessment', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Manager Review', exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Self-Assessment Due:/)).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Join in-app call', exact: true })).toBeDisabled();
+    if (index === 1) await page.getByRole('checkbox', { name: 'Join with camera on', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: /I agree to this call being recorded/ }).check();
     await page.getByRole('button', { name: 'Join in-app call', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Leave call', exact: true })).toBeVisible({ timeout: 20000 });
@@ -70,7 +74,16 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
   await expect(pages[1].getByText('Recording is in progress. Both participants’ audio and video may be captured.')).toBeVisible({ timeout: 10000 });
   await expect(pages[0].getByRole('button', { name: 'Leave call', exact: true })).toBeDisabled();
   await pages[0].screenshot({ path: testInfo.outputPath('in-app-recording.png'), fullPage: true });
+  // A failed upload must retain the real recording and allow a safe retry.
+  await pages[0].route('**/native/upload?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic temporary upload outage.' }) }), { times: 1 });
   await pages[0].getByRole('button', { name: 'Stop and save recording', exact: true }).click();
+  await expect(pages[0].getByRole('button', { name: 'Retry saving recording', exact: true })).toBeVisible();
+  await expect(pages[0].getByRole('button', { name: 'Leave call', exact: true })).toBeDisabled();
+  const downloaded = pages[0].waitForEvent('download');
+  await pages[0].getByRole('button', { name: 'Download unsaved copy', exact: true }).click();
+  await (await downloaded).saveAs(testInfo.outputPath('unsaved-call-recovery.webm'));
+  await expect(pages[0].getByRole('button', { name: 'Leave with downloaded copy', exact: true })).toBeEnabled();
+  await pages[0].getByRole('button', { name: 'Retry saving recording', exact: true }).click();
   await expect(pages[0].getByText(/Recording saved. Transcription/)).toBeVisible({ timeout: 20000 });
   await pages[0].getByRole('button', { name: 'Play saved recording', exact: true }).click();
   await expect(pages[0].getByLabel('Saved appraisal call recording', { exact: true })).toBeVisible();

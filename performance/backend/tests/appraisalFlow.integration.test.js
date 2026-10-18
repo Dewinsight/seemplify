@@ -43,6 +43,8 @@ test('native calls enforce two-party consent, private signaling, leases and reco
   await call('post', `${native}/record`).send({ peerId: manager }).expect(409);
   const saved = await call('post', `${native}/upload?peerId=${manager}`).attach('recording', Buffer.alloc(100, 1), { filename: 'call.webm', contentType: 'video/webm' }).expect(201);
   expect(saved.body.data.integration.recordingAvailable).toBe(true); expect(JSON.stringify(saved.body)).not.toMatch(/recordingFileId|ownerIdentity|credential/);
+  await call('post', `${native}/upload?peerId=${manager}`).expect(200);
+  expect(await mongoose.connection.db.collection('appraisalRecordings.files').countDocuments()).toBe(1);
   const bytes = await call('get', `${native}/recording`, 'employee').expect(200); expect(bytes.body.length).toBe(100);
   await call('get', `${native}/recording`, 'outsider').expect(403);
   await call('post', `${native}/leave`).send({ peerId: manager }).expect(200);

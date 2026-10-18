@@ -67,16 +67,19 @@ module.exports = function nativeCalls(publicMeeting) {
       if (!live(call[other]) || !call[other].consentAt || !call[role].consentAt) return res.status(409).json({ error: 'Both participants must join and agree to recording first.' });
       const claimed = await Call.findOneAndUpdate({ _id: call._id, $or: [{ recordingUntil: { $lt: new Date() } }, { recordingPeer: { $exists: false } }] }, { $set: { recordingPeer: id, recordingActive: true, recordingUntil: new Date(Date.now() + 35 * 60000) } }, { new: true });
       if (!claimed || req.meeting.appraisalMeeting.recordingFileId) return res.status(409).json({ error: 'This call already has a recording. Review it before scheduling another call step.' });
-      await OneOnOne.updateOne({ _id: req.meeting._id }, { $set: { 'appraisalMeeting.recordingConsent': { manager: { userId: req.appraisal.manager.userId, acceptedAt: call.manager.consentAt }, employee: { userId: req.appraisal.employee.userId, acceptedAt: call.employee.consentAt }, startedAt: new Date(), noticeVersion: 'appraisal-recording-v1' } } });
+      await OneOnOne.updateOne({ _id: req.meeting._id }, { $set: { 'appraisalMeeting.recordingState': 'recording', 'appraisalMeeting.recordingConsent': { manager: { userId: req.appraisal.manager.userId, acceptedAt: call.manager.consentAt }, employee: { userId: req.appraisal.employee.userId, acceptedAt: call.employee.consentAt }, startedAt: new Date(), noticeVersion: 'appraisal-recording-v1' } } });
       return res.json({ success: true });
     }
     if (req.method === 'POST' && req.path === '/stop') {
+      if (call.recordingPeer !== id) return res.status(403).json({ error: 'Only the recording host can stop this recording.' });
       await Call.updateOne({ _id: call._id, recordingPeer: id }, { $set: { recordingActive: false } });
+      await OneOnOne.updateOne({ _id: req.meeting._id, 'appraisalMeeting.recordingFileId': { $exists: false } }, { $set: { 'appraisalMeeting.recordingState': 'awaiting_upload' } });
       return res.json({ success: true });
     }
     if (req.method === 'POST' && req.path === '/upload') {
-      if (role !== 'manager' || call.recordingPeer !== id || +call.recordingUntil < Date.now()) return res.status(403).json({ error: 'Start an agreed recording before uploading.' });
+      if (role !== 'manager') return res.status(403).json({ error: 'Only the recording host can save this recording.' });
       if (req.meeting.appraisalMeeting.recordingFileId) return res.json({ success: true, data: publicMeeting(req.meeting) });
+      if (call.recordingPeer !== id || +call.recordingUntil < Date.now()) return res.status(403).json({ error: 'Start an agreed recording before uploading.' });
       await new Promise((resolve, reject) => upload(req, res, error => error ? reject(error) : resolve()));
       const file = req.file;
       if (!file || !['video/webm', 'audio/webm', 'video/mp4', 'audio/mp4'].includes(file.mimetype) || file.size < 32) return res.status(400).json({ error: 'Upload a browser call recording in WebM or MP4 format (up to 50 MB).' });
