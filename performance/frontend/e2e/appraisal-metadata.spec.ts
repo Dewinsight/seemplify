@@ -10,7 +10,7 @@ const makeReview = (id: string, title: string, createdAt?: string) => ({
 });
 const older = makeReview('older', 'Earlier review', '2026-10-01T09:15:00Z');
 const latest = makeReview('latest', 'Latest review', '2026-10-18T14:30:00Z');
-const legacy = makeReview('legacy', 'Legacy review');
+const legacy = { ...makeReview('legacy', 'Legacy review'), employee: undefined };
 const finished = { ...makeReview('finished', 'Completed review', '2026-10-12T10:00:00Z'), status: 'completed', finalRating: { overall: 4, finalizedAt: '2026-10-17T13:00:00Z' }, discussion: { scheduledDate: '2026-10-16T12:00:00Z', employeeAcknowledgedAt: '2026-10-18T09:00:00Z' }, calibration: { calibratedAt: '2026-10-17T12:00:00Z' }, deadlines: { discussionDue: '2026-10-16', signOffDue: '2026-10-18' } };
 const pastLegacy = { ...makeReview('past-legacy', 'Earlier completed review'), status: 'completed', auditLog: [{ action: 'appraisal_created', performedBy: { name: 'Original HR' }, timestamp: '2026-10-03T10:00:00Z' }] };
 
@@ -40,7 +40,7 @@ for (const mode of ['employee', 'reviewer', 'hr'] as const) test(`${mode} can id
   await expect(cards).toHaveCount(3);
   await expect(cards.nth(0)).toHaveAccessibleName('Latest review — Taylor Employee');
   await expect(cards.nth(1)).toHaveAccessibleName('Earlier review — Taylor Employee');
-  await expect(cards.nth(2)).toHaveAccessibleName('Legacy review — Taylor Employee');
+  await expect(cards.nth(2)).toHaveAccessibleName('Legacy review — Employee not recorded');
   await expect(cards.first().getByText('Newest active appraisal')).toBeVisible();
   await expect(cards.first().getByText('Harper HR', { exact: true })).toBeVisible();
   await expect(cards.first().getByText('Existing review cycle')).toBeVisible();

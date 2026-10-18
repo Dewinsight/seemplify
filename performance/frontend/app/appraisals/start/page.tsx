@@ -141,6 +141,7 @@ export default function StartAppraisalPage() {
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2}>
         <Box><Typography fontWeight={600}>{review.employee?.name || 'Appraisal'} · {resultCycleName(review)}</Typography>
           <Typography variant="body2" color="text.secondary">{receipt.appraisals?.some(item => item._id === review._id) ? 'Created in this launch' : 'Already existed — no duplicate created'} · Reviewer: {review.manager?.name || 'Not recorded'}</Typography>
+          <Typography variant="body2" color="text.secondary">{review.status === 'meeting_pending' ? 'The one-on-one call is the next step.' : 'Open the appraisal to see the next step.'}</Typography>
         </Box><Button component={Link} href={`/appraisals/${review._id}`}>Open appraisal</Button>
       </Stack><Box sx={{ mt: 2 }}><AppraisalMetadata appraisal={review} /></Box>
     </Paper>)}
