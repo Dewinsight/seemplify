@@ -36,7 +36,7 @@ export default function AppraisalMeetings({ appraisalId, steps, canManage, canJo
       <AccordionSummary expandIcon={<ExpandMore />}><Box><Typography fontWeight={600}>{meeting.title}</Typography><Typography variant="body2" color="text.secondary">{new Date(meeting.scheduledDate).toLocaleString()} · {meeting.duration} min · {meeting.status.replaceAll('_', ' ')}</Typography></Box></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>
         {!meeting.conferenceUrl && meeting.mode !== 'in_app' && <Alert severity="warning">The calendar has not confirmed a meeting link. Use Schedule a call to retry the connection; an uncertain provider result must be checked before creating another invitation.</Alert>}
-        {meeting.mode === 'in_app' && canJoin && meeting.status !== 'completed' && <AppraisalNativeCall base={`${base}/${meeting._id}/native`} record={Boolean(meeting.integration?.recordingRequested)} recorded={meeting.integration?.recordingAvailable} onSaved={() => { void mutate(); }} />}
+        {meeting.mode === 'in_app' && canJoin && !['completed', 'cancelled'].includes(meeting.status) && <AppraisalNativeCall base={`${base}/${meeting._id}/native`} record={Boolean(meeting.integration?.recordingRequested)} recorded={meeting.integration?.recordingAvailable} onSaved={() => { void mutate(); }} />}
         <Typography variant="body2">Recording: {(meeting.integration?.recordingState || (meeting.integration?.recordingRequested ? 'not scheduled' : 'off')).replaceAll('_', ' ')}</Typography>
         <Stack direction="row" flexWrap="wrap" gap={1}>
           {meeting.conferenceUrl && <Button component="a" href={meeting.conferenceUrl} target="_blank" rel="noopener noreferrer" variant="outlined">Join call</Button>}
