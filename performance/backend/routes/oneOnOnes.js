@@ -6,6 +6,8 @@ const User = require('../models/User');
 const { requireAuth, requireManager } = require('../middleware/rbac');
 const { requireOrganization, tenantFilter, getActorId } = require('../services/tenantPolicy');
 const multer = require('multer');
+const calls = require('../services/meetingCallService');
+const shared = require('../services/sharedAIAccountService');
 
 const MEETING_STATUSES = new Set(['scheduled', 'in_progress', 'completed', 'cancelled', 'rescheduled', 'no_show']);
 const MEETING_TYPES = new Set(['weekly', 'biweekly', 'monthly', 'adhoc', 'performance_review', 'career_discussion']);
@@ -56,6 +58,12 @@ function meetingAccess(req, meeting) {
 function serializeMeeting(req, meeting, { stripConversation = false } = {}) {
   const access = meetingAccess(req, meeting);
   const value = typeof meeting.toObject === 'function' ? meeting.toObject() : { ...meeting };
+  if (value.appraisalMeeting) {
+    value.call = calls.publicMeeting(value);
+    if (stripConversation) delete value.call.transcript;
+    delete value.appraisalMeeting;
+  }
+  if (value.nylas) delete value.nylas.grantId;
   if (!access.isManager && !access.isHrAdmin) {
     delete value.privateManagerNotes;
     if (value.managerScoring && !value.managerScoring.isVisible) delete value.managerScoring;
@@ -122,6 +130,7 @@ function participantRecipients(meeting) {
 }
 
 function meetingDeepLink(meeting, actionItemId = null) {
+  if (meeting.appraisalMeeting?.source === 'one_on_one') return `/one-on-ones/${meeting._id}`;
   const query = new URLSearchParams({ meeting: String(meeting._id) });
   if (actionItemId) query.set('actionItem', String(actionItemId));
   return `/one-on-ones?${query.toString()}`;
@@ -377,6 +386,12 @@ router.param('id', async (req, res, next, id) => {
   }
 });
 
+router.get('/call-connection', requireManager, async (req, res) => {
+  try { res.json({ success: true, data: await shared.request('meetings/connection', shared.identityFromRequest(req)) }); }
+  catch (error) { res.status(error.statusCode || 503).json({ success: false, error: error.message || 'Could not check your calendar connection.' }); }
+});
+router.use('/:id/call', require('./oneOnOneCalls')({ completeMeeting, onScheduled: scheduleMeetingLifecycle }));
+
 /**
  * GET /api/one-on-ones - List 1:1 meetings
  */
@@ -410,13 +425,14 @@ router.get('/', requireAuth, async (req, res) => {
 
     const now = new Date();
     if (upcoming === 'true') {
-      query.scheduledDate = { $gte: now };
+      query.$and = [{ status: { $nin: ['completed', 'cancelled', 'no_show'] } }, { $or: [{ scheduledDate: { $gte: now } }, { status: 'in_progress' }] }];
     } else if (past === 'true') {
-      query.scheduledDate = { $lt: now };
+      query.$and = [{ status: { $ne: 'in_progress' } }, { $or: [{ scheduledDate: { $lt: now } }, { status: { $in: ['completed', 'cancelled', 'no_show'] } }] }];
     }
 
     const meetings = await OneOnOne.find(query)
       .sort({ scheduledDate: upcoming === 'true' ? 1 : -1 })
+      .skip(Math.max(0, Math.min(100000, Number.parseInt(req.query.offset, 10) || 0)))
       .limit(boundedLimit(limit, 50))
       .select('-transcript.content -chatThread -privateManagerNotes');
 
@@ -512,7 +528,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     const meeting = req.oneOnOne;
     const { isManager, isEmployee, isHrAdmin: isHRAdmin } = req.oneOnOneAccess;
 
-    const response = meeting.toObject();
+    const response = serializeMeeting(req, meeting);
     if (!isManager && !isHRAdmin) {
       delete response.privateManagerNotes;
       if (response.managerScoring && !response.managerScoring.isVisible) {
@@ -533,6 +549,8 @@ router.get('/:id', requireAuth, async (req, res) => {
 /**
  * POST /api/one-on-ones - Create new 1:1 meeting
  */
+const scheduleCall = require('./oneOnOneCalls').schedule({ serializeMeeting, onScheduled: scheduleMeetingLifecycle });
+router.post('/', requireManager, (req, res, next) => req.body.mode === undefined ? next('route') : scheduleCall(req, res));
 router.post('/', requireManager, async (req, res) => {
   try {
     const managerId = getActorId(req);
@@ -673,7 +691,7 @@ router.post('/', requireManager, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      data: meeting,
+      data: serializeMeeting(req, meeting),
       message: '1:1 meeting scheduled successfully'
     });
   } catch (error) {
@@ -702,6 +720,9 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     const calendarFields = new Set(['title', 'scheduledDate', 'duration', 'meetingFormat', 'location']);
     const calendarChanged = Object.keys(updates).some(key => calendarFields.has(key));
+    if (calendarChanged && meeting.appraisalMeeting?.source === 'one_on_one') {
+      return res.status(409).json({ error: 'Cancel this integrated call and schedule a replacement so participants receive the correct invitation and call details.' });
+    }
     let scheduleChanged = false;
 
     if (updates.scheduledDate !== undefined) {
@@ -759,7 +780,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (scheduleChanged) {
       await scheduleMeetingLifecycle(meeting, 'one_on_one.rescheduled', req.session.user);
     }
-    res.json({ success: true, data: meeting });
+    res.json({ success: true, data: serializeMeeting(req, meeting) });
   } catch (error) {
     console.error('Error updating meeting:', error);
     res.status(500).json({ success: false, error: 'Failed to update meeting' });
@@ -1205,7 +1226,7 @@ router.put('/:id/action-items/:itemId', requireAuth, async (req, res) => {
 /**
  * POST /api/one-on-ones/:id/complete - Mark meeting as completed
  */
-router.post('/:id/complete', requireAuth, async (req, res) => {
+async function completeMeeting(req, res) {
   try {
     const meeting = req.oneOnOne;
     if (!req.oneOnOneAccess.isManager && !req.oneOnOneAccess.isHrAdmin) {
@@ -1213,6 +1234,12 @@ router.post('/:id/complete', requireAuth, async (req, res) => {
     }
     if (['cancelled', 'no_show'].includes(meeting.status)) {
       return res.status(409).json({ success: false, error: 'A cancelled meeting cannot be completed' });
+    }
+    if (meeting.appraisalMeeting?.source === 'one_on_one' && meeting.status !== 'completed') {
+      if (+meeting.scheduledDate > Date.now() && !meeting.actualStartTime) return res.status(409).json({ error: 'You can complete the meeting after its scheduled start.' });
+      await calls.assertNoLiveCall(meeting);
+      if (!cleanText(req.body.sharedNotes || meeting.sharedNotes || meeting.appraisalMeeting.summary, 20000)) return res.status(400).json({ error: 'Add agreed meeting notes or generate them from the transcript first.' });
+      req.body.sharedNotes = req.body.sharedNotes || meeting.sharedNotes || meeting.appraisalMeeting.summary;
     }
 
     meeting.status = 'completed';
@@ -1229,12 +1256,13 @@ router.post('/:id/complete', requireAuth, async (req, res) => {
       eventId: `one_on_one:${meeting._id}:completed`
     });
 
-    res.json({ success: true, data: meeting });
+    res.json({ success: true, data: serializeMeeting(req, meeting) });
   } catch (error) {
-    console.error('Error completing meeting:', error);
-    res.status(500).json({ success: false, error: 'Failed to complete meeting' });
+    console.error('Error completing meeting:', error.code || 'MEETING_COMPLETION_FAILED');
+    res.status(error.statusCode || 500).json({ success: false, error: error.statusCode ? error.message : 'Failed to complete meeting' });
   }
-});
+}
+router.post('/:id/complete', requireAuth, completeMeeting);
 
 /**
  * POST /api/one-on-ones/:id/mood - Record employee mood
@@ -1381,6 +1409,12 @@ router.delete('/:id', requireManager, async (req, res) => {
     }
 
     const shouldCancelCalendar = meeting.status !== 'cancelled' || meeting.nylas?.syncStatus === 'failed';
+    if (meeting.appraisalMeeting?.source === 'one_on_one' && meeting.status !== 'cancelled') {
+      if (meeting.status === 'completed') return res.status(409).json({ error: 'Completed meetings remain in history and cannot be cancelled.' });
+      await calls.assertNoLiveCall(meeting);
+      if (meeting.appraisalMeeting.mode === 'calendar') await shared.request('meetings/cancel', meeting.appraisalMeeting.ownerIdentity, { externalId: String(meeting._id) });
+      meeting.appraisalMeeting = { ...meeting.appraisalMeeting, calendarState: 'cancelled', recordingState: meeting.appraisalMeeting.recordingState === 'ready' ? 'ready' : 'cancelled' };
+    }
     meeting.status = 'cancelled';
     await meeting.save();
     await cancelMeetingLifecycle(meeting, 'meeting_cancelled');
@@ -1391,8 +1425,8 @@ router.delete('/:id', requireManager, async (req, res) => {
 
     res.json({ success: true, message: 'Meeting cancelled' });
   } catch (error) {
-    console.error('Error cancelling meeting:', error);
-    res.status(500).json({ success: false, error: 'Failed to cancel meeting' });
+    console.error('Error cancelling meeting:', error.code || 'MEETING_CANCELLATION_FAILED');
+    res.status(error.statusCode || 500).json({ success: false, error: error.statusCode ? error.message : 'Failed to cancel meeting' });
   }
 });
 

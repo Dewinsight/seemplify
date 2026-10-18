@@ -25,6 +25,8 @@ function createRouterRecorder() {
   const parameterHandlers = new Map();
   const router = {
     use: (...handlers) => {
+      // A router mounted at /:id/call is not middleware for unrelated AI routes.
+      if (typeof handlers[0] === 'string') return router;
       sharedHandlers.push(...handlers.filter((handler) => typeof handler === 'function'));
       return router;
     },
@@ -54,9 +56,13 @@ function loadRouteModule(routeName, moduleStubs = {}) {
   const originalLoad = Module._load;
   const multer = () => ({ single: () => passMiddleware });
   multer.memoryStorage = () => ({});
+  let rootRouterCreated = false;
 
   Module._load = function patchedLoad(request, parent, isMain) {
-    if (request === 'express') return { Router: () => router };
+    if (request === 'express') return { Router: () => {
+      if (!rootRouterCreated) { rootRouterCreated = true; return router; }
+      return createRouterRecorder().router;
+    } };
     if (request === 'multer') return multer;
     if (Object.prototype.hasOwnProperty.call(moduleStubs, request)) {
       return moduleStubs[request];

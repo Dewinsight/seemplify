@@ -17,13 +17,13 @@ module.exports = function nativeCalls(publicMeeting) {
   router.use((req, res, next) => {
     if (req.meeting.appraisalMeeting?.mode !== 'in_app') return res.status(409).json({ error: 'This is a calendar call.' });
     const sub = shared.identityFromRequest(req).sub;
-    req.callRole = String(req.appraisal.manager.userId) === sub ? 'manager' : String(req.appraisal.employee.userId) === sub ? 'employee' : null;
+    req.callRole = String(req.meeting.managerId) === sub ? 'manager' : String(req.meeting.employeeId) === sub ? 'employee' : null;
     // HR can read the appraisal, but cannot silently join a participant's call.
     if (!req.callRole && req.path !== '/recording') return res.status(403).json({ error: 'Only the assigned reviewer and employee can join this call.' });
     return next();
   });
   router.post('/join', wrap(async (req, res) => {
-    if (['cancelled', 'completed'].includes(req.meeting.status) || ['cancelled', 'completed', 'employee_acknowledged'].includes(req.appraisal.status)) return res.status(409).json({ error: 'This call is closed.' });
+    if (['cancelled', 'completed', 'no_show'].includes(req.meeting.status) || ['cancelled', 'completed', 'employee_acknowledged'].includes(req.appraisal?.status)) return res.status(409).json({ error: 'This call is closed.' });
     if (req.meeting.appraisalMeeting.recordingRequested && req.body.consent !== true) return res.status(400).json({ error: 'Agree to recording and transcription before joining, or ask the reviewer to schedule an unrecorded call.' });
     const id = String(req.body.peerId || '');
     if (!/^[a-f0-9-]{36}$/i.test(id)) return res.status(400).json({ error: 'Invalid call session.' });
@@ -36,6 +36,7 @@ module.exports = function nativeCalls(publicMeeting) {
     if (!response.ok) throw new Error('The call relay is unavailable. Please retry.');
     const turn = await response.json();
     if (!Array.isArray(turn.urls) || !turn.username || !turn.credential) throw new Error('The call relay is unavailable.');
+    await OneOnOne.updateOne({ _id: req.meeting._id, status: { $in: ['scheduled', 'rescheduled'] } }, { $set: { status: 'in_progress', actualStartTime: new Date() } });
     return res.json({ role, peerId: id, recordingRequested: Boolean(req.meeting.appraisalMeeting.recordingRequested), iceServers: [{ urls: 'stun:turn.seemplifyai.com:3478' }, { urls: turn.urls, username: turn.username, credential: turn.credential }] });
   }));
   router.use(wrap(async (req, res) => {
@@ -60,6 +61,10 @@ module.exports = function nativeCalls(publicMeeting) {
     }
     if (req.method === 'POST' && req.path === '/leave') {
       await Call.updateOne({ _id: call._id, [`${role}.id`]: id }, { $unset: { [role]: 1 } });
+      if (!req.appraisal) {
+        const remaining = await Call.findById(call._id);
+        if (!live(remaining?.manager) && !live(remaining?.employee)) await OneOnOne.updateOne({ _id: req.meeting._id, status: 'in_progress' }, { $set: { status: 'scheduled' } });
+      }
       return res.json({ success: true });
     }
     if (req.method === 'POST' && req.path === '/record') {
@@ -67,7 +72,7 @@ module.exports = function nativeCalls(publicMeeting) {
       if (!live(call[other]) || !call[other].consentAt || !call[role].consentAt) return res.status(409).json({ error: 'Both participants must join and agree to recording first.' });
       const claimed = await Call.findOneAndUpdate({ _id: call._id, $or: [{ recordingUntil: { $lt: new Date() } }, { recordingPeer: { $exists: false } }] }, { $set: { recordingPeer: id, recordingActive: true, recordingUntil: new Date(Date.now() + 35 * 60000) } }, { new: true });
       if (!claimed || req.meeting.appraisalMeeting.recordingFileId) return res.status(409).json({ error: 'This call already has a recording. Review it before scheduling another call step.' });
-      await OneOnOne.updateOne({ _id: req.meeting._id }, { $set: { 'appraisalMeeting.recordingState': 'recording', 'appraisalMeeting.recordingConsent': { manager: { userId: req.appraisal.manager.userId, acceptedAt: call.manager.consentAt }, employee: { userId: req.appraisal.employee.userId, acceptedAt: call.employee.consentAt }, startedAt: new Date(), noticeVersion: 'appraisal-recording-v1' } } });
+      await OneOnOne.updateOne({ _id: req.meeting._id }, { $set: { 'appraisalMeeting.recordingState': 'recording', 'appraisalMeeting.recordingConsent': { manager: { userId: req.meeting.managerId, acceptedAt: call.manager.consentAt }, employee: { userId: req.meeting.employeeId, acceptedAt: call.employee.consentAt }, startedAt: new Date(), noticeVersion: 'appraisal-recording-v1' } } });
       return res.json({ success: true });
     }
     if (req.method === 'POST' && req.path === '/stop') {
