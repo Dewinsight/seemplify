@@ -54,7 +54,7 @@ export default function TeamHubPage() {
   const router = useRouter();
   const { mode } = useThemeMode();
   const isDarkMode = mode === 'dark';
-  const { isManager, isHRAdmin, user, teams, currentTeam: contextCurrentTeam, features } = useUserContext();
+  const { isManager, isHRAdmin, user, teams, currentTeam: contextCurrentTeam, features, isLoading: contextLoading, isError: contextError, mutate: reloadContext } = useUserContext();
   const { directReports, isLoading: reportsLoading, managedTeams } = useDirectReports();
 
   const [selectedTab, setSelectedTab] = useState(0);
@@ -209,6 +209,24 @@ export default function TeamHubPage() {
     router.push(`/team/${member.userId}?tab=okrs`);
     handleMenuClose();
   };
+
+  if (contextLoading || contextError) {
+    return (
+      <Box className={styles.teamHub}>
+        <Typography component="h1" variant="h4" sx={{ mb: 2 }}>My Team</Typography>
+        {contextLoading ? (
+          <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <CircularProgress size={24} aria-hidden="true" />
+            <Typography>Loading your team…</Typography>
+          </Box>
+        ) : (
+          <Alert severity="error" action={<Button color="inherit" onClick={() => void reloadContext().catch(() => undefined)}>Retry</Button>}>
+            We couldn&apos;t load your team access. Please try again.
+          </Alert>
+        )}
+      </Box>
+    );
+  }
 
   if (!isManager && !isHRAdmin) {
     return (
