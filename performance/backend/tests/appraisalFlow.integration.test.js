@@ -133,6 +133,14 @@ test('calls use trusted participants, enforce reviewer access, recover connectio
   const meeting = await OneOnOne.findById(meetingId);
   expect(meeting.transcript.content).toContain('Reviewer: We agreed'); expect(meeting.appraisalMeeting.summaryState).toBe('ready'); expect(meeting.appraisalMeeting.summaryModel).toBe('gpt-5.6-terra');
   expect(completion.mock.calls[0][1]).toMatchObject({ runtimePreference: 'chatgpt', identity: { sub: 'reviewer' } });
+  completion.mockRejectedValueOnce(Object.assign(new Error('Connect your own ChatGPT account'), { statusCode: 409, code: 'CHATGPT_ACCOUNT_REQUIRED' }));
+  await call('post', `${base}/${meetingId}/summary`, 'employee').expect(409);
+  const preserved = await OneOnOne.findById(meetingId);
+  expect(preserved.appraisalMeeting.summaryState).toBe('ready');
+  expect(preserved.appraisalMeeting.summary).toBe(meeting.appraisalMeeting.summary);
+  expect(preserved.appraisalMeeting.summaryModel).toBe('gpt-5.6-terra');
+  expect(preserved.appraisalMeeting.summaryLeaseUntil).toBeUndefined();
+  expect(completion.mock.calls.at(-1)[1].identity.sub).toBe('employee');
   await call('post', `${base}/${meetingId}/complete`).send({ notes: 'Agreed to document the release.' }).expect(200);
   expect((await Appraisal.findById(appraisal._id)).status).toBe('final_review_pending');
 });
