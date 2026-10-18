@@ -50,7 +50,7 @@ test('quarterly defaults are tenant scoped, concurrency safe, editable and roll 
   await Promise.all([ensureQuarterlyCycles(org.id, now), ensureQuarterlyCycles(org.id, now)]);
   expect(await AppraisalCycle.countDocuments()).toBe(5);
   const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
-  cycle.name = 'HR edited quarter'; await cycle.save();
+  await call('put', `/cycles/${cycle._id}`, 'hr').send({ name: 'HR edited quarter' }).expect(200);
   await ensureQuarterlyCycles(org.id, now);
   expect((await AppraisalCycle.findById(cycle._id)).name).toBe('HR edited quarter');
   await ensureQuarterlyCycles('other-org', now);

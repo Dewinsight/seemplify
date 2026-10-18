@@ -798,6 +798,7 @@ function validateCycleConfiguration(input = {}) {
 
   const orderedPhases = ['goalSetting', 'selfAssessment', 'managerReview', 'calibration', 'finalReview'];
   let previousEnd = null;
+  let previousPhase = null;
   for (const phaseName of orderedPhases) {
     const phase = input.phases?.[phaseName];
     if (!phase?.startDate && !phase?.endDate) continue;
@@ -807,10 +808,15 @@ function validateCycleConfiguration(input = {}) {
       errors.push(`${phaseName} requires a valid start date before its end date`);
       continue;
     }
-    if (previousEnd && start < previousEnd) {
+    // Explicit response deadlines let reviewers work on early submissions.
+    // Submission authorization still requires the employee response first.
+    const parallelResponseWindows = phaseName === 'managerReview' && previousPhase === 'selfAssessment'
+      && input.responseDeadlines && start >= new Date(input.phases.selfAssessment.startDate);
+    if (previousEnd && start < previousEnd && !parallelResponseWindows) {
       errors.push(`${phaseName} cannot overlap the preceding phase`);
     }
     previousEnd = end;
+    previousPhase = phaseName;
   }
 
   const selfStartsAt = input.phases?.selfAssessment?.startDate
@@ -1856,6 +1862,7 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
       periodStart: periodStart || cycle.periodStart,
       periodEnd: periodEnd || cycle.periodEnd,
       phases: phases || cycle.phases,
+      responseDeadlines: cycle.responseDeadlines?.selfAssessmentDue ? cycle.responseDeadlines : undefined,
       okrWeight: workflowDefinition !== undefined
         ? normalizedWorkflowDefinition.scoring.goalsWeight
         : (okrWeight !== undefined ? okrWeight : cycle.okrWeight),
