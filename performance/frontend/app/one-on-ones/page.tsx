@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import OneOnOneSchedule from '@/components/OneOnOneSchedule';
 import { useOneOnOnes, useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
@@ -18,9 +20,10 @@ export default function OneOnOnesPage() {
   const { user, isManager, isLoading: userLoading } = useUserContext();
   const { directReports } = useDirectReports();
   const [tabValue, setTabValue] = useState(0);
-  const { meetings: upcomingMeetings, isLoading: upcomingLoading, mutate: mutateUpcoming } = useOneOnOnes({ upcoming: true });
-  const { meetings: pastMeetings, isLoading: pastLoading, mutate: mutatePast } = useOneOnOnes({ upcoming: false });
-  
+  const [historyPage, setHistoryPage] = useState(0);
+  const { meetings: upcomingMeetings, isLoading: upcomingLoading, isError: upcomingError, mutate: mutateUpcoming } = useOneOnOnes({ upcoming: true });
+  const { meetings: pastMeetings, hasMore: moreHistory, isLoading: pastLoading, isError: pastError, mutate: mutatePast } = useOneOnOnes({ upcoming: false, page: historyPage });
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [error, setError] = useState('');
@@ -28,13 +31,8 @@ export default function OneOnOnesPage() {
   const [saving, setSaving] = useState(false);
   const [agendaTopic, setAgendaTopic] = useState('');
   const [withUserId, setWithUserId] = useState('');
-  const [newMeeting, setNewMeeting] = useState({
-    employeeId: '',
-    scheduledDate: '',
-    duration: 30,
-    location: 'Virtual',
-    meetingType: 'weekly'
-  });
+  const [search, setSearch] = useState('');
+  const [initialEmployeeId, setInitialEmployeeId] = useState('');
 
   const currentUserIds = useMemo(() => new Set([
     user?.id, user?._id, user?.userId, user?.idpSub, user?.sub,
@@ -43,52 +41,32 @@ export default function OneOnOnesPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const employeeId = params.get('employeeId');
+    if (params.get('tab') === 'history') setTabValue(1);
     setWithUserId(params.get('with') || '');
     if (employeeId) {
-      setNewMeeting((current) => ({ ...current, employeeId }));
+      setInitialEmployeeId(employeeId);
       setDialogOpen(true);
     }
   }, []);
 
-  const upcomingDisplay = useMemo(() => withUserId
+  const upcomingRows = useMemo(() => withUserId
     ? (upcomingMeetings || []).filter((meeting: any) => [meeting.employeeId, meeting.managerId].map(String).includes(withUserId))
     : (upcomingMeetings || []), [upcomingMeetings, withUserId]);
-  const pastDisplay = useMemo(() => withUserId
+  const pastRows = useMemo(() => withUserId
     ? (pastMeetings || []).filter((meeting: any) => [meeting.employeeId, meeting.managerId].map(String).includes(withUserId))
     : (pastMeetings || []), [pastMeetings, withUserId]);
 
-  if (userLoading || upcomingLoading || pastLoading) {
+  const matches = (meeting: any) => [meeting.title, meeting.employeeInfo?.name, meeting.managerInfo?.name].some(value => String(value || '').toLowerCase().includes(search.toLowerCase().trim()));
+  const upcomingDisplay = upcomingRows.filter(matches);
+  const pastDisplay = pastRows.filter(matches);
+
+  if (userLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
         <CircularProgress />
       </Box>
     );
   }
-
-  const handleCreateMeeting = async () => {
-    const selectedEmployee = directReports?.find((report: any) => String(report.id || report._id || report.userId) === newMeeting.employeeId);
-    setSaving(true);
-    setError('');
-    try {
-      await api.post('/one-on-ones', {
-        ...newMeeting,
-        employeeInfo: selectedEmployee ? {
-          name: selectedEmployee.name || selectedEmployee.email,
-          email: selectedEmployee.email,
-          title: selectedEmployee.title || selectedEmployee.jobTitle,
-        } : { name: new URLSearchParams(window.location.search).get('name') || undefined },
-        meetingFormat: newMeeting.location.toLowerCase().includes('virtual') ? 'video' : 'in_person',
-      });
-      setDialogOpen(false);
-      setNewMeeting({ employeeId: '', scheduledDate: '', duration: 30, location: 'Virtual', meetingType: 'weekly' });
-      await mutateUpcoming();
-      setNotice('1:1 meeting scheduled.');
-    } catch (requestError: any) {
-      setError(requestError?.response?.data?.error || requestError?.response?.data?.message || 'Could not schedule this meeting.');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleCompleteMeeting = async (meetingId: string) => {
     setSaving(true);
@@ -158,11 +136,15 @@ export default function OneOnOnesPage() {
 
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
 
-      <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
+      <Tabs value={tabValue} onChange={(_, v) => { setTabValue(v); const url = new URL(window.location.href); if (v === 1) url.searchParams.set("tab", "history"); else url.searchParams.delete("tab"); window.history.replaceState(null, "", url.pathname + url.search); }} sx={{ mb: 3 }}>
         <Tab label={`Upcoming (${upcomingDisplay.length})`} />
-        <Tab label={`Past (${pastDisplay.length})`} />
+        <Tab label={`Past calls & history (${pastDisplay.length})`} />
       </Tabs>
 
+      {(upcomingError || pastError) && <Alert severity="error" action={<Button onClick={() => { void mutateUpcoming(); void mutatePast(); }}>Retry</Button>} sx={{ mb: 2 }}>Meetings could not be loaded. Please retry.</Alert>}
+      <TextField fullWidth size="small" label="Search displayed meetings by person or title" value={search} onChange={event => setSearch(event.target.value)} sx={{ mb: 3 }} />
+      {(upcomingLoading || pastLoading) && <LinearProgress aria-label="Loading meetings" sx={{ mb: 2 }} />}
+      {tabValue === 1 && <Stack direction="row" gap={1} alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}><Typography variant="body2" color="text.secondary">Newest first · Page {historyPage + 1}</Typography><Stack direction="row" gap={1}><Button disabled={historyPage === 0 || pastLoading} onClick={() => { setSearch(''); setHistoryPage(value => value - 1); }}>Previous</Button><Button disabled={!moreHistory || pastLoading} onClick={() => { setSearch(''); setHistoryPage(value => value + 1); }}>Older meetings</Button></Stack></Stack>}
       {tabValue === 0 && (
         <Grid container spacing={3}>
           {upcomingDisplay.length === 0 ? (
@@ -184,10 +166,10 @@ export default function OneOnOnesPage() {
                             {participantName(meeting)}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">{String(meeting.meetingType || 'regular').replace('_', ' ')} 1:1</Typography>
-                          <Chip 
-                            size="small" 
-                            label={meeting.status}
-                            color={getStatusColor(meeting.status) as any}
+                          <Chip
+                            size="small"
+                            label={meeting.call?.integration?.calendarState === 'needs_attention' ? 'Invitation needs attention' : meeting.status}
+                            color={meeting.call?.integration?.calendarState === 'needs_attention' ? 'warning' : getStatusColor(meeting.status) as any}
                           />
                         </Box>
                       </Box>
@@ -196,7 +178,7 @@ export default function OneOnOnesPage() {
                     <Box display="flex" alignItems="center" gap={1} mb={1}>
                       <Event fontSize="small" color="action" />
                       <Typography variant="body2">
-                        {new Date(meeting.scheduledDate).toLocaleDateString('en-US', {
+                        {new Date(meeting.scheduledDate).toLocaleDateString(undefined, {
                           weekday: 'short',
                           month: 'short',
                           day: 'numeric',
@@ -212,8 +194,8 @@ export default function OneOnOnesPage() {
                     </Box>
 
                     <Box display="flex" alignItems="center" gap={1} mb={2}>
-                      {meeting.location?.includes('Virtual') ? 
-                        <VideoCall fontSize="small" color="action" /> : 
+                      {meeting.call || meeting.location?.includes('Virtual') ?
+                        <VideoCall fontSize="small" color="action" /> :
                         <LocationOn fontSize="small" color="action" />
                       }
                       <Typography variant="body2">{meeting.location}</Typography>
@@ -228,15 +210,16 @@ export default function OneOnOnesPage() {
                       </>
                     )}
 
-                    <Box display="flex" gap={1} mt={2}>
-                      <Button 
-                        size="small" 
+                    <Box display="flex" gap={1} mt={2} flexWrap="wrap">
+                      {meeting.call && <Button component={Link} href={meeting.appraisalId ? `/appraisals/${meeting.appraisalId}` : `/one-on-ones/${meeting._id}`} variant="contained" size="small">Open call & notes</Button>}
+                      <Button
+                        size="small"
                         variant="outlined"
                         onClick={() => setSelectedMeeting(meeting)}
                       >
-                        View Details
+                        {meeting.call ? 'Agenda & actions' : 'View Details'}
                       </Button>
-                      {isManager && meeting.status === 'scheduled' && (
+                      {isManager && !meeting.call && meeting.status === 'scheduled' && (
                         <Button
                           size="small"
                           variant="contained"
@@ -260,7 +243,7 @@ export default function OneOnOnesPage() {
         <Grid container spacing={3}>
           {pastDisplay.length === 0 ? (
             <Grid size={12}>
-              <Alert severity="info">No past meetings to show.</Alert>
+              <Alert severity="info">No past calls match this view. Recordings, transcripts and meeting notes will appear here after your calls.</Alert>
             </Grid>
           ) : (
             pastDisplay.map((meeting: any) => (
@@ -271,8 +254,8 @@ export default function OneOnOnesPage() {
                       <Typography variant="subtitle1" fontWeight="medium">
                         {participantName(meeting)}
                       </Typography>
-                      <Chip 
-                        size="small" 
+                      <Chip
+                        size="small"
                         label={meeting.status}
                         color={getStatusColor(meeting.status) as any}
                       />
@@ -281,14 +264,14 @@ export default function OneOnOnesPage() {
                     <Box display="flex" alignItems="center" gap={1} mb={1}>
                       <Event fontSize="small" color="action" />
                       <Typography variant="body2">
-                        {new Date(meeting.scheduledDate).toLocaleDateString()}
+                        {new Date(meeting.scheduledDate).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                       </Typography>
                     </Box>
 
                     {meeting.sharedNotes && (
                       <Box mt={2}>
                         <Typography variant="caption" color="text.secondary">Notes:</Typography>
-                        <Typography variant="body2" sx={{ 
+                        <Typography variant="body2" sx={{
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           display: '-webkit-box',
@@ -305,13 +288,16 @@ export default function OneOnOnesPage() {
                         <Typography variant="caption" color="text.secondary">
                           Action items: {meeting.actionItems.filter((a: any) => a.status === 'completed').length}/{meeting.actionItems.length} done
                         </Typography>
-                        <LinearProgress 
-                          variant="determinate" 
+                        <LinearProgress
+                          variant="determinate"
                           value={(meeting.actionItems.filter((a: any) => a.status === 'completed').length / meeting.actionItems.length) * 100}
                           sx={{ mt: 0.5 }}
                         />
                       </Box>
                     )}
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{meeting.title}</Typography>
+                    {meeting.call && <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 1 }}><Chip size="small" variant="outlined" label={meeting.call.mode === 'in_app' ? 'In-app call' : 'Calendar meeting'} />{meeting.call.integration?.recordingAvailable || meeting.call.integration?.recordingUrl ? <Chip size="small" label="Recording available" color="success" /> : meeting.call.integration?.recordingRequested && <Chip size="small" label={`Recording: ${meeting.call.integration?.recordingState || 'pending'}`} />}</Stack>}
+                    <Button component={Link} href={meeting.appraisalId ? `/appraisals/${meeting.appraisalId}` : `/one-on-ones/${meeting._id}`} variant="outlined" size="small" sx={{ mt: 2 }}>View call, transcript & notes</Button>
                   </CardContent>
                 </Card>
               </Grid>
@@ -320,87 +306,13 @@ export default function OneOnOnesPage() {
         </Grid>
       )}
 
-      {/* Create Meeting Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Schedule 1:1 Meeting</DialogTitle>
-        <DialogContent>
-          <Box display="flex" flexDirection="column" gap={2} mt={1}>
-            {error && <Alert severity="error">{error}</Alert>}
-            <TextField
-              select
-              label="Team Member"
-              value={newMeeting.employeeId}
-              onChange={(e) => setNewMeeting({ ...newMeeting, employeeId: e.target.value })}
-              fullWidth
-              SelectProps={{ native: true }}
-            >
-              <option value="">Select team member</option>
-              {directReports?.map((dr: any) => (
-                <option key={dr.id || dr._id} value={dr.id || dr._id}>
-                  {dr.name || dr.email}
-                </option>
-              ))}
-            </TextField>
-            <TextField
-              type="datetime-local"
-              label="Date & Time"
-              value={newMeeting.scheduledDate}
-              onChange={(e) => setNewMeeting({ ...newMeeting, scheduledDate: e.target.value })}
-              fullWidth
-              InputLabelProps={{ shrink: true }}
-            />
-            <TextField
-              select
-              label="Duration"
-              value={newMeeting.duration}
-              onChange={(e) => setNewMeeting({ ...newMeeting, duration: parseInt(e.target.value) })}
-              fullWidth
-              SelectProps={{ native: true }}
-            >
-              <option value={15}>15 minutes</option>
-              <option value={30}>30 minutes</option>
-              <option value={45}>45 minutes</option>
-              <option value={60}>60 minutes</option>
-            </TextField>
-            <TextField
-              label="Location"
-              value={newMeeting.location}
-              onChange={(e) => setNewMeeting({ ...newMeeting, location: e.target.value })}
-              fullWidth
-              placeholder="Virtual - Zoom, Conference Room, etc."
-            />
-            <TextField
-              select
-              label="Meeting Type"
-              value={newMeeting.meetingType}
-              onChange={(e) => setNewMeeting({ ...newMeeting, meetingType: e.target.value })}
-              fullWidth
-              SelectProps={{ native: true }}
-            >
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Bi-weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="adhoc">Ad-hoc</option>
-            </TextField>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
-          <Button 
-            onClick={handleCreateMeeting} 
-            variant="contained"
-            disabled={saving || !newMeeting.employeeId || !newMeeting.scheduledDate}
-          >
-            {saving ? 'Scheduling…' : 'Schedule'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <OneOnOneSchedule open={dialogOpen} onClose={() => setDialogOpen(false)} initialEmployeeId={initialEmployeeId} people={(directReports || []).filter((person: any) => !currentUserIds.has(String(person.userId || person.id || person._id)))} onCreated={() => { void mutateUpcoming(); void mutatePast(); setNotice('1:1 call scheduled.'); }} />
 
       {/* Meeting Details Dialog */}
-      <Dialog 
-        open={!!selectedMeeting} 
-        onClose={() => setSelectedMeeting(null)} 
-        maxWidth="md" 
+      <Dialog
+        open={!!selectedMeeting}
+        onClose={() => setSelectedMeeting(null)}
+        maxWidth="md"
         fullWidth
       >
         {selectedMeeting && (
@@ -413,19 +325,19 @@ export default function OneOnOnesPage() {
                 {error && <Grid size={12}><Alert severity="error">{error}</Alert></Grid>}
                 <Grid size={12}>
                   <Box display="flex" gap={2} flexWrap="wrap">
-                    <Chip 
-                      icon={<Event />} 
-                      label={new Date(selectedMeeting.scheduledDate).toLocaleString()} 
+                    <Chip
+                      icon={<Event />}
+                      label={new Date(selectedMeeting.scheduledDate).toLocaleString()}
                     />
-                    <Chip 
-                      icon={<AccessTime />} 
-                      label={`${selectedMeeting.duration} min`} 
+                    <Chip
+                      icon={<AccessTime />}
+                      label={`${selectedMeeting.duration} min`}
                     />
-                    <Chip 
-                      icon={<LocationOn />} 
-                      label={selectedMeeting.location} 
+                    <Chip
+                      icon={<LocationOn />}
+                      label={selectedMeeting.location}
                     />
-                    <Chip 
+                    <Chip
                       label={selectedMeeting.status}
                       color={getStatusColor(selectedMeeting.status) as any}
                     />
@@ -441,7 +353,7 @@ export default function OneOnOnesPage() {
                           <ListItemIcon>
                             {item.discussed ? <CheckCircle color="success" /> : <Schedule />}
                           </ListItemIcon>
-                          <ListItemText 
+                          <ListItemText
                             primary={item.topic}
                             secondary={item.addedBy === 'manager' ? 'Added by manager' : 'Added by employee'}
                           />
@@ -474,12 +386,12 @@ export default function OneOnOnesPage() {
                       {selectedMeeting.actionItems.map((item: any, idx: number) => (
                         <ListItem key={idx}>
                           <ListItemIcon>
-                            {item.status === 'completed' ? 
-                              <CheckCircle color="success" /> : 
+                            {item.status === 'completed' ?
+                              <CheckCircle color="success" /> :
                               <Schedule color="warning" />
                             }
                           </ListItemIcon>
-                          <ListItemText 
+                          <ListItemText
                             primary={item.description}
                             secondary={`Assigned to ${item.assignedTo} • Due: ${item.dueDate ? new Date(item.dueDate).toLocaleDateString() : 'No date'}`}
                           />
@@ -502,8 +414,8 @@ export default function OneOnOnesPage() {
                   <Grid size={12}>
                     <Typography variant="h6" gutterBottom>Employee Mood</Typography>
                     <Box display="flex" alignItems="center" gap={2}>
-                      <Chip 
-                        label={`${selectedMeeting.employeeMood.score}/5`} 
+                      <Chip
+                        label={`${selectedMeeting.employeeMood.score}/5`}
                         color={selectedMeeting.employeeMood.score >= 4 ? 'success' : selectedMeeting.employeeMood.score >= 3 ? 'warning' : 'error'}
                       />
                       {selectedMeeting.employeeMood.comment && (
@@ -516,7 +428,8 @@ export default function OneOnOnesPage() {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSelectedMeeting(null)}>Close</Button>
-              {isManager && selectedMeeting.status === 'scheduled' && (
+              {selectedMeeting.call && <Button component={Link} href={selectedMeeting.appraisalId ? `/appraisals/${selectedMeeting.appraisalId}` : `/one-on-ones/${selectedMeeting._id}`} variant="contained">Open call & notes</Button>}
+              {isManager && !selectedMeeting.call && selectedMeeting.status === 'scheduled' && (
                 <Button variant="contained" startIcon={<Done />} onClick={() => void handleCompleteMeeting(selectedMeeting._id)} disabled={saving}>
                   Complete meeting
                 </Button>

@@ -47,8 +47,8 @@ async function process(meeting) {
 }
 async function processDue() {
   const meetings = await OneOnOne.find({ 'appraisalMeeting.mode': 'in_app', 'appraisalMeeting.recordingFileId': { $exists: true }, 'appraisalMeeting.transcriptionState': { $in: ['pending', 'failed', 'processing'] }, $or: [{ 'appraisalMeeting.transcriptionAttempts': { $exists: false } }, { 'appraisalMeeting.transcriptionAttempts': { $lt: 3 } }] }).limit(3);
-  for (const meeting of meetings) { try { if (await require('../models/Appraisal').exists({ _id: meeting.appraisalId, organizationId: meeting.organizationId, status: { $ne: 'cancelled' } })) await process(meeting); } catch { /* Bounded retries; manual refresh remains available. */ } }
+  for (const meeting of meetings) { try { if (await require('./meetingCallService').isProcessable(meeting)) await process(meeting); } catch { /* Bounded retries; manual refresh remains available. */ } }
   const notes = await OneOnOne.find({ 'appraisalMeeting.mode': 'in_app', 'transcript.status': 'ready', 'transcript.content': { $gt: '' }, 'appraisalMeeting.summaryState': { $ne: 'ready' }, $or: [{ 'appraisalMeeting.summaryAttempts': { $exists: false } }, { 'appraisalMeeting.summaryAttempts': { $lt: 3 } }] }).limit(3);
-  for (const meeting of notes) { try { if (await require('../models/Appraisal').exists({ _id: meeting.appraisalId, organizationId: meeting.organizationId, status: { $ne: 'cancelled' } })) await process(meeting); } catch { /* Personal AI consent failures remain visible on the meeting. */ } }
+  for (const meeting of notes) { try { if (await require('./meetingCallService').isProcessable(meeting)) await process(meeting); } catch { /* Personal AI consent failures remain visible on the meeting. */ } }
 }
 module.exports = { process, processDue };

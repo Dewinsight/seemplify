@@ -36,6 +36,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved, p
     const current = session.current; session.current = null;
     if (current) await api.post(`${base}/leave`, { peerId: current.peerId }).catch(() => {});
     setJoined(false); setRemoteReady(false); setRemoteHasVideo(false); setRecordingNotice(false); setStatus('You left the call.');
+    onSaved();
   };
   useEffect(() => {
     mounted.current = true;
@@ -172,7 +173,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved, p
       {!joined && <Stack spacing={2}>
         <Box sx={{ p: 2, borderRadius: 1.5, bgcolor: theme => alpha(theme.palette.primary.main, .04), border: 1, borderColor: 'divider' }}>
           <Typography fontWeight={600} variant="body2">{record ? 'Recording enabled for this call' : 'Recording is off for this call.'}</Typography>
-          <Typography variant="body2" color="text.secondary" mt={.5}>{record ? 'Both participants must agree before recording starts. The recording, transcript and meeting notes stay with this appraisal.' : 'Join for a private conversation. The reviewer can add agreed notes afterwards.'}</Typography>
+          <Typography variant="body2" color="text.secondary" mt={.5}>{record ? 'Both participants must agree before recording starts. The recording, transcript and meeting notes stay with this meeting.' : 'Join for a private conversation. The organizer can add agreed notes afterwards.'}</Typography>
         </Box>
         <FormControlLabel sx={{ m: 0 }} control={<Checkbox checked={camera} onChange={(_, checked) => setCamera(checked)} />} label="Join with camera on" />
         <Typography variant="body2" color="text.secondary">Your browser will ask for microphone{camera ? ' and camera' : ''} access when you join.{record ? ' Recording starts only when the reviewer selects “Start agreed recording”.' : ' This call will not be recorded.'}</Typography>

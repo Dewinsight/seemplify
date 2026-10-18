@@ -536,9 +536,11 @@ OneOnOneSchema.methods.completeActionItem = async function(actionItemId) {
 OneOnOneSchema.add({
   appraisalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appraisal' },
   workflowStepId: String,
+  callRequestId: String,
   appraisalMeeting: mongoose.Schema.Types.Mixed
 });
 OneOnOneSchema.index({ appraisalId: 1, workflowStepId: 1 }, { unique: true, partialFilterExpression: { appraisalId: { $type: 'objectId' }, workflowStepId: { $type: 'string' } } });
+OneOnOneSchema.index({ organizationId: 1, managerId: 1, callRequestId: 1 }, { unique: true, partialFilterExpression: { callRequestId: { $type: 'string' } } });
 module.exports = mongoose.models.OneOnOne || mongoose.model('OneOnOne', OneOnOneSchema);
 
 

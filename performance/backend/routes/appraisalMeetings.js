@@ -5,7 +5,7 @@ const OneOnOne = require('../models/OneOnOne');
 const shared = require('../services/sharedAIAccountService');
 const flow = require('../services/appraisalFlowService');
 
-const publicMeeting = meeting => ({ _id: meeting._id, title: meeting.title, scheduledDate: meeting.scheduledDate, duration: meeting.duration, status: meeting.status, stepId: meeting.workflowStepId, mode: meeting.appraisalMeeting?.mode || 'calendar', conferenceUrl: meeting.nylas?.conferenceUrl, integration: meeting.appraisalMeeting ? { recordingRequested: meeting.appraisalMeeting.recordingRequested, recordingState: meeting.appraisalMeeting.recordingState, calendarState: meeting.appraisalMeeting.calendarState, recordingAvailable: Boolean(meeting.appraisalMeeting.recordingFileId), transcriptionState: meeting.appraisalMeeting.transcriptionState, recordingUrl: meeting.appraisalMeeting.recordingUrl, summaryState: meeting.appraisalMeeting.summaryState, summaryModel: meeting.appraisalMeeting.summaryModel } : undefined, transcript: meeting.transcript?.content, notes: meeting.sharedNotes, summary: meeting.appraisalMeeting?.summary });
+const { publicMeeting } = require('../services/meetingCallService');
 function errorResponse(res, error) { return res.status(Number(error.statusCode) || 503).json({ success: false, error: error.message || 'The meeting request failed.', code: error.code || 'MEETING_UNAVAILABLE' }); }
 
 module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalEmployee, tenantAppraisalIdFilter }) {

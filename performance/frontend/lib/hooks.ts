@@ -367,16 +367,19 @@ export function useDashboardAnalytics() {
 /**
  * Get 1:1 meetings
  */
-export function useOneOnOnes(filters?: { status?: string; upcoming?: boolean }) {
+export function useOneOnOnes(filters?: { status?: string; upcoming?: boolean; page?: number }) {
   const queryParams = new URLSearchParams();
   if (filters?.status) queryParams.append('status', filters.status);
-  if (filters?.upcoming !== undefined) queryParams.append('upcoming', String(filters.upcoming));
+  if (filters?.upcoming === true) queryParams.append('upcoming', 'true');
+  if (filters?.upcoming === false) queryParams.append('past', 'true');
+  if (filters?.page !== undefined) { queryParams.append('limit', '51'); queryParams.append('offset', String(filters.page * 50)); }
 
   const url = `/one-on-ones${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-  const { data, error, isLoading, mutate } = useSWR(url, fetcher);
+  const { data, error, isLoading, mutate } = useSWR(url, fetcher, { keepPreviousData: true });
 
   return {
-    meetings: data || [],
+    meetings: filters?.page !== undefined ? (data || []).slice(0, 50) : data || [],
+    hasMore: filters?.page !== undefined && (data || []).length > 50,
     isLoading,
     isError: error,
     mutate,

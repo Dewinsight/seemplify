@@ -73,6 +73,7 @@ test('meeting lists always include the active organization and participant scope
     capturedQuery = query;
     return {
       sort() { return this; },
+      skip() { return this; },
       limit() { return this; },
       select() { return Promise.resolve([meeting]); }
     };

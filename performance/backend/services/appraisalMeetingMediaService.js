@@ -41,11 +41,10 @@ async function summarize(meeting, identity) {
 async function processDueMeetings() {
   await require('./appraisalNativeMediaService').processDue();
   const now = new Date();
-  const meetings = await OneOnOne.find({ appraisalId: { $exists: true }, status: { $ne: 'cancelled' }, scheduledDate: { $lte: now, $gte: new Date(Date.now() - 7 * 86400000) }, 'nylas.eventId': { $exists: true }, 'appraisalMeeting.recordingRequested': true, 'appraisalMeeting.summaryState': { $ne: 'ready' }, $or: [{ 'appraisalMeeting.lastSyncedAt': { $exists: false } }, { 'appraisalMeeting.lastSyncedAt': { $lt: new Date(Date.now() - 5 * 60000) } }] }).limit(20);
+  const meetings = await OneOnOne.find({ 'appraisalMeeting.ownerIdentity': { $exists: true }, status: { $ne: 'cancelled' }, scheduledDate: { $lte: now, $gte: new Date(Date.now() - 7 * 86400000) }, 'nylas.eventId': { $exists: true }, 'appraisalMeeting.recordingRequested': true, 'appraisalMeeting.summaryState': { $ne: 'ready' }, $or: [{ 'appraisalMeeting.lastSyncedAt': { $exists: false } }, { 'appraisalMeeting.lastSyncedAt': { $lt: new Date(Date.now() - 5 * 60000) } }] }).limit(20);
   for (const meeting of meetings) {
     try {
-      const appraisal = await Appraisal.findOne({ _id: meeting.appraisalId, organizationId: meeting.organizationId, status: { $ne: 'cancelled' } });
-      if (!appraisal) continue;
+      if (!await require('./meetingCallService').isProcessable(meeting)) continue;
       await sync(meeting);
       // The organizer's existing personal connection and activity consent are enforced by the gateway.
       if (meeting.transcript?.content && Number(meeting.appraisalMeeting?.summaryAttempts || 0) < 3) await summarize(meeting, meeting.appraisalMeeting.ownerIdentity);
