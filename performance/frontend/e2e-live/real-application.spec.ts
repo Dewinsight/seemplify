@@ -45,11 +45,15 @@ for (const actor of actors) {
     if (managerRoles.has(actor)) paths.push('/team', '/appraisals?view=team', '/appraisals/start', '/okrs?view=team', '/analytics', '/coaching', '/talent');
     if (hrRoles.has(actor)) paths.push('/admin', '/admin/appraisal-cycles', '/admin/appraisal-cycles/new', '/admin/calibration', '/admin/reports', '/okrs?view=organization');
     for (const path of paths) {
-      const userContext = page.waitForResponse(response => response.url().endsWith('/api/user/context') && response.status() === 200);
-      const report = path === '/admin/reports' ? page.waitForResponse(response => response.url().endsWith('/api/reports/org-summary') && response.status() === 200) : null;
-      await page.goto(path, { waitUntil: 'domcontentloaded' });
-      await userContext;
-      if (report) await report;
+      // These waits include Next's cold route compilation, so use the navigation
+      // budget rather than the shorter action timeout. Await them together so a
+      // rejected response wait cannot become an unhandled promise during goto.
+      const navigationTimeout = 30_000;
+      await Promise.all([
+        page.waitForResponse(response => response.url().endsWith('/api/user/context') && response.status() === 200, { timeout: navigationTimeout }),
+        ...(path === '/admin/reports' ? [page.waitForResponse(response => response.url().endsWith('/api/reports/org-summary') && response.status() === 200, { timeout: navigationTimeout })] : []),
+        page.goto(path, { waitUntil: 'domcontentloaded', timeout: navigationTimeout }),
+      ]);
       if (path === '/team') {
         await expect(page.getByRole('button', { name: 'All Members', exact: true })).toBeVisible();
       }
