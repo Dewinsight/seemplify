@@ -143,7 +143,7 @@ test.afterAll(async () => {
 
 
 for (const mobile of [false, true]) test(`manual assessment and visual call workflow persists through real APIs (${mobile ? 'mobile' : 'desktop'})`, async ({ page }, testInfo) => {
-  if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+  if (mobile) { await page.setViewportSize({ width: 390, height: 844 }); await page.emulateMedia({ colorScheme: 'dark' }); }
   activePrincipal = principal;
   await Appraisal.deleteMany({});
   await page.addInitScript(() => { localStorage.setItem('accessToken', 'isolated-review-qa'); });
@@ -203,6 +203,13 @@ for (const mobile of [false, true]) test(`manual assessment and visual call work
   await expect(nativeOption).toBeChecked();
   const date = form.getByRole('textbox', { name: 'Call starts (your local time)', exact: true });
   await expect(nativeOption).toBeFocused();
+  const choiceContrast = await form.locator('#appraisal-call-type').evaluate(label => {
+    const luminance = (color: string) => { const channels = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(channel => { const value = channel / 255; return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4; }); return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722; };
+    const foreground = luminance(getComputedStyle(label).color);
+    const background = luminance(getComputedStyle(label.closest('.MuiPaper-root')!).backgroundColor);
+    return (Math.max(foreground, background) + .05) / (Math.min(foreground, background) + .05);
+  });
+  expect(choiceContrast).toBeGreaterThanOrEqual(4.5);
   await expect(form.getByText(/Time zone:/)).toBeVisible();
   await expect(form.getByRole('button', { name: 'Schedule in-app call', exact: true })).toBeDisabled();
   await page.route('**/meetings/connection', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic calendar outage' }) }));
