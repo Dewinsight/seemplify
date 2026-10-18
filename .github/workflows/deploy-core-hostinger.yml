@@ -117,6 +117,7 @@ jobs:
             tests/idpAdminSsoService.test.js
           node --test tests/platformConfigurationClient.test.js tests/embeddingRuntimeConfig.test.js tests/nomicEmbeddingClient.test.js tests/nomicIndexMigration.test.js tests/nomicWeaviateProfile.test.js
           node --test tests/employeeAssessments.test.js
+          node --test test/performance-meetings.test.js
 
   learning-qa:
     name: Test Learning platform configuration
@@ -153,7 +154,7 @@ jobs:
           - name: Performance
             directory: performance/backend
             install_command: npm install --ignore-scripts --no-package-lock
-            test_command: npm run test:legacy && npm run test:unit
+            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/colleagueReviews.integration.test.js --runInBand
           - name: Payroll
             directory: payroll/backend
             install_command: npm install --ignore-scripts --no-package-lock

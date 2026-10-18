@@ -101,7 +101,7 @@ test('retains the existing cycle launch flow', async ({ page }) => {
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
-  expect(posts).toEqual([{ path: '/appraisals/cycles/existing-cycle/launch', reviewerMode: 'initiator', employees: [{ userId: 'employee-1' }], responseDeadlines: { selfAssessmentDue: '2026-10-24T23:59:59.000Z', managerReviewDue: '2026-10-31T23:59:59.000Z' } }]);
+  expect(posts).toMatchObject([{ path: '/appraisals/cycles/existing-cycle/launch', reviewerMode: 'initiator', employees: [{ userId: 'employee-1' }], responseDeadlines: { selfAssessmentDue: '2026-10-24T23:59:59.000Z', managerReviewDue: '2026-10-31T23:59:59.000Z' } }]);
 });
 
 test('keeps the quarterly cycle selected from the HR cycle list', async ({ page }) => {

@@ -4,8 +4,20 @@ export interface AppraisalResultItem {
   employee: { name: string; userId?: string };
   manager: { name: string };
   cycleId?: { name?: string; periodStart?: string; periodEnd?: string; ratingScale?: { min?: number; max?: number } };
-  cycleConfigurationSnapshot?: { cycleName?: string; periodStart?: string; periodEnd?: string; ratingScale?: { min?: number; max?: number } };
+  cycleConfigurationSnapshot?: { cycleName?: string; periodStart?: string; periodEnd?: string; ratingScale?: { min?: number; max?: number }; appraisalFlow?: { steps: Array<{ id: string; type: string; label: string }> } };
+  completedMeetingSteps?: string[];
+  selfAssessment?: { submittedAt?: string };
+  managerReview?: { submittedAt?: string };
+  discussion?: { completedDate?: string; employeeAcknowledgedAt?: string };
+  calibration?: { calibratedAt?: string };
   finalRating?: { overall?: number | null; ratingLabel?: string; finalizedAt?: string };
+}
+
+export function isAppraisalStepComplete(item: AppraisalResultItem, step: { id: string; type: string }) {
+  return ({ selfAssessment: !!item.selfAssessment?.submittedAt, managerReview: !!item.managerReview?.submittedAt,
+    discussion: !!item.discussion?.completedDate, calibration: !!item.calibration?.calibratedAt,
+    finalReview: !!item.finalRating?.finalizedAt, acknowledgement: !!item.discussion?.employeeAcknowledgedAt,
+    oneOnOne: (item.completedMeetingSteps || []).includes(step.id) } as Record<string, boolean>)[step.type] || false;
 }
 
 export const isFinishedAppraisal = (status: string) => ['completed', 'employee_acknowledged', 'cancelled'].includes(status);

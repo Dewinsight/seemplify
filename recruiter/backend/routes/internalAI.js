@@ -19,6 +19,16 @@ const { validateWorkspaceMcp } = require('../services/aiRuntime/workspaceMcp');
 const router = express.Router();
 const internalAuth = createInternalServiceAuth();
 
+// Reuse the existing service-bound identity channel. Calendar application keys
+// and personal grants remain in Recruiter and are never returned to consumers.
+for (const operation of ['connection', 'create', 'sync', 'cancel']) {
+  router.post(`/v1/meetings/${operation}`, internalAuth, async (req, res) => {
+    if (req.internalService !== 'performance-management') return res.status(403).json({ code: 'MEETING_SERVICE_FORBIDDEN', message: 'Service not authorized.' });
+    try { return res.json(await require('../services/performanceMeetingService')[operation](req.body?.identity, req.body || {})); }
+    catch (error) { return internalError(res, error, 'The calendar request could not be completed.'); }
+  });
+}
+
 function validateMessages(messages) {
   if (!Array.isArray(messages) || !messages.length || messages.length > 100) {
     throw new TypeError('messages must be a non-empty array with at most 100 entries');

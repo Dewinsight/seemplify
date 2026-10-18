@@ -139,6 +139,7 @@ const appraisalSchema = new mongoose.Schema({
       'manager_review_pending',
       'manager_review_in_progress',
       'manager_review_submitted',
+      'meeting_pending',
       'discussion_scheduled',
       'discussion_completed',
       'calibration_pending',
@@ -537,7 +538,8 @@ const appraisalSchema = new mongoose.Schema({
     disputeReason: String
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  optimisticConcurrency: true
 });
 
 // Indexes
@@ -587,4 +589,27 @@ appraisalSchema.methods.addChatMessage = function (sender, message, messageType 
   });
 };
 
+appraisalSchema.add({ completedMeetingSteps: { type: [String], default: undefined } });
+appraisalSchema.pre('save', async function () {
+  const flow = require('../services/appraisalFlowService');
+  if (!this.isNew && flow.flowFor(this)) {
+    const original = await this.constructor.findById(this._id).lean();
+    if (original && JSON.stringify(flow.flowFor(original)) !== JSON.stringify(flow.flowFor(this))) {
+      throw Object.assign(new Error('The launched appraisal workflow cannot be changed.'), { statusCode: 409 });
+    }
+    const current = flow.currentStep(original);
+    for (const step of flow.flowFor(this).steps) {
+      if (!flow.completed(original, step) && flow.completed(this, step) && current?.id !== step.id) {
+        throw Object.assign(new Error('Complete the current appraisal step first.'), { statusCode: 409, code: 'APPRAISAL_STEP_ORDER' });
+      }
+    }
+  }
+  flow.syncFlowStatus(this);
+});
+appraisalSchema.post('findOne', function (doc) {
+  require('../services/appraisalFlowService').applySnapshot(doc);
+});
+appraisalSchema.post('find', function (docs) {
+  for (const doc of docs) require('../services/appraisalFlowService').applySnapshot(doc);
+});
 module.exports = mongoose.model('Appraisal', appraisalSchema);

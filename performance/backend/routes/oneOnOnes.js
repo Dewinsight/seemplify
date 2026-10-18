@@ -368,6 +368,7 @@ router.param('id', async (req, res, next, id) => {
     if (!access.isManager && !access.isEmployee && !access.isHrAdmin) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
+    if (meeting.appraisalId && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return res.status(409).json({ success: false, error: 'Manage this call from its appraisal so workflow steps and calendar updates stay consistent.' });
     req.oneOnOne = meeting;
     req.oneOnOneAccess = access;
     return next();

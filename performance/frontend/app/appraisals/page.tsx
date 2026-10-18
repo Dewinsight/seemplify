@@ -7,7 +7,7 @@ import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import api from '@/lib/api';
 import useSWR from 'swr';
 import AppraisalHistory from '@/components/appraisals/AppraisalHistory';
-import { AppraisalResultItem, isFinishedAppraisal } from '@/lib/appraisal-results';
+import { AppraisalResultItem, isFinishedAppraisal, isAppraisalStepComplete } from '@/lib/appraisal-results';
 import {
   Box, Typography, Card, CardContent, Grid, Button, Chip, Alert,
   LinearProgress, Paper, List, ListItem, ListItemText,
@@ -78,6 +78,7 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
   'manager_review_pending': { label: 'Manager Review Pending', color: 'warning', icon: <Person />, gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' },
   'manager_review_in_progress': { label: 'Manager Review In Progress', color: 'info', icon: <Edit /> },
   'manager_review_submitted': { label: 'Manager Review Submitted', color: 'success', icon: <CheckCircle />, gradient: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)' },
+  'meeting_pending': { label: 'One-on-one call', color: 'info', icon: <Groups /> },
   'discussion_scheduled': { label: 'Discussion Scheduled', color: 'info', icon: <Chat /> },
   'discussion_completed': { label: 'Discussion Completed', color: 'success', icon: <CheckCircle /> },
   'calibration_pending': { label: 'Calibration Pending', color: 'warning', icon: <Groups /> },
@@ -279,6 +280,9 @@ export default function AppraisalsPage() {
 
   const renderAppraisalCard = (appraisal: Appraisal, isEmployee: boolean) => {
     const config = statusConfig[appraisal.status] || statusConfig['not_started'];
+    const customSteps = appraisal.cycleConfigurationSnapshot?.appraisalFlow?.steps;
+    const currentCustomStep = customSteps?.findIndex(step => !isAppraisalStepComplete(appraisal, step)) ?? -1;
+    const cardSteps = customSteps ? customSteps.map(step => ({ key: step.id, label: step.label })) : workflowSteps;
     const selfDue = appraisal.deadlines?.selfAssessmentDue;
     const managerDue = appraisal.deadlines?.managerReviewDue;
     const selfOverdue = isOverdue(selfDue, appraisal.status, 'self');
@@ -344,7 +348,7 @@ export default function AppraisalsPage() {
                   <Chip
                     size="small"
                     icon={config.icon as any}
-                    label={config.label}
+                    label={appraisal.status === 'employee_acknowledged' && customSteps && !customSteps.some(step => step.type === 'acknowledgement') ? 'Completed' : config.label}
                     sx={{
                       fontWeight: 600,
                       background: config.gradient || alpha(theme.palette[config.color]?.main || theme.palette.grey[500], 0.1),
@@ -543,8 +547,8 @@ export default function AppraisalsPage() {
 
           {/* Progress Steps */}
           <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {workflowSteps.map((step, idx) => {
-              const stepStatus = getStepStatus(appraisal.status, step.key);
+            {cardSteps.map((step, idx) => {
+              const stepStatus = customSteps ? (currentCustomStep < 0 || idx < currentCustomStep ? 'completed' : idx === currentCustomStep ? 'active' : 'pending') : getStepStatus(appraisal.status, step.key);
               return (
                 <Chip
                   key={step.key}

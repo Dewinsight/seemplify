@@ -17,6 +17,7 @@ const STATUS_STAGE = Object.freeze({
   manager_review_pending: 'manager_review',
   manager_review_in_progress: 'manager_review',
   manager_review_submitted: 'discussion',
+  meeting_pending: 'discussion',
   discussion_scheduled: 'discussion',
   discussion_completed: 'discussion',
   calibration_pending: 'calibration',
@@ -68,6 +69,7 @@ function getNextAction(status, { calibrationRequired = false } = {}) {
     manager_review_pending: { actor: 'manager', label: 'Review employee reflection' },
     manager_review_in_progress: { actor: 'manager', label: 'Continue manager review' },
     manager_review_submitted: { actor: 'manager', label: 'Hold performance discussion' },
+    meeting_pending: { actor: 'manager', label: 'Complete appraisal call' },
     discussion_scheduled: { actor: 'manager', label: 'Hold performance discussion' },
     discussion_completed: calibrationRequired
       ? { actor: 'manager', label: 'Calibrate rating' }

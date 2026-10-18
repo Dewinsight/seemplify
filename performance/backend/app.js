@@ -129,6 +129,7 @@ mongoose.connect(mongoUri)
       startNotificationWorker();
       startReminderScheduler();
       require('./services/quarterlyAppraisalService').startQuarterlyCycleScheduler();
+      require('./services/appraisalMeetingMediaService').start();
     }
   })
   .catch(err => console.error('MongoDB connection error:', err));

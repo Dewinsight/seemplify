@@ -1,0 +1,93 @@
+'use strict';
+const express = require('express');
+const Appraisal = require('../models/Appraisal');
+const OneOnOne = require('../models/OneOnOne');
+const shared = require('../services/sharedAIAccountService');
+const flow = require('../services/appraisalFlowService');
+
+const publicMeeting = meeting => ({ _id: meeting._id, title: meeting.title, scheduledDate: meeting.scheduledDate, duration: meeting.duration, status: meeting.status, stepId: meeting.workflowStepId, conferenceUrl: meeting.nylas?.conferenceUrl, integration: meeting.appraisalMeeting ? { recordingRequested: meeting.appraisalMeeting.recordingRequested, recordingState: meeting.appraisalMeeting.recordingState, calendarState: meeting.appraisalMeeting.calendarState, recordingUrl: meeting.appraisalMeeting.recordingUrl, summaryState: meeting.appraisalMeeting.summaryState, summaryModel: meeting.appraisalMeeting.summaryModel } : undefined, transcript: meeting.transcript?.content, notes: meeting.sharedNotes, summary: meeting.appraisalMeeting?.summary });
+function errorResponse(res, error) { return res.status(Number(error.statusCode) || 503).json({ success: false, error: error.message || 'The meeting request failed.', code: error.code || 'MEETING_UNAVAILABLE' }); }
+
+module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalEmployee, tenantAppraisalIdFilter }) {
+  const router = express.Router({ mergeParams: true });
+  router.use(async (req, res, next) => {
+    try {
+      req.appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId));
+      if (!req.appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found.' });
+      req.canManageMeeting = await canManageAppraisal(req, req.appraisal);
+      if (!req.canManageMeeting && !isAppraisalEmployee(req, req.appraisal)) return res.status(403).json({ success: false, error: 'Access denied.' });
+      return next();
+    } catch (error) { return next(error); }
+  });
+  router.get('/', async (req, res) => {
+    try { return res.json({ success: true, data: (await OneOnOne.find({ organizationId: req.appraisal.organizationId, appraisalId: req.appraisal._id }).sort({ scheduledDate: 1 })).map(publicMeeting) }); }
+    catch (error) { return errorResponse(res, error); }
+  });
+  router.get('/connection', async (req, res) => {
+    try { return res.json({ success: true, data: await shared.request('meetings/connection', shared.identityFromRequest(req)) }); }
+    catch (error) { return errorResponse(res, error); }
+  });
+  router.post('/', async (req, res) => {
+    try {
+      if (!req.canManageMeeting) return res.status(403).json({ success: false, error: 'Only the assigned reviewer or HR can schedule this call.' });
+      const appraisal = req.appraisal;
+      if (['cancelled', 'employee_acknowledged', 'completed'].includes(appraisal.status)) return res.status(409).json({ success: false, error: 'This appraisal is no longer accepting new meetings.' });
+      const step = flow.flowFor(appraisal)?.steps.find(step => step.id === req.body.stepId && step.type === 'oneOnOne');
+      if (!step) return res.status(400).json({ success: false, error: 'Choose a one-on-one step from this appraisal.' });
+      const scheduledDate = new Date(req.body.scheduledDate); const duration = Number(req.body.duration || 30);
+      if (!Number.isFinite(+scheduledDate) || +scheduledDate <= Date.now() || !Number.isInteger(duration) || duration < 15 || duration > 480) return res.status(400).json({ success: false, error: 'Choose a future time and a duration from 15 to 480 minutes.' });
+      if (req.body.record && req.body.recordingNoticeAccepted !== true) return res.status(400).json({ success: false, error: 'Confirm that you will inform participants before recording.' });
+      const identity = shared.identityFromRequest(req);
+      let meeting = await OneOnOne.findOne({ appraisalId: appraisal._id, workflowStepId: step.id, organizationId: appraisal.organizationId });
+      if (!meeting) {
+        try { meeting = await OneOnOne.create({ appraisalId: appraisal._id, workflowStepId: step.id, managerId: appraisal.manager.userId, managerInfo: appraisal.manager, employeeId: appraisal.employee.userId, employeeInfo: appraisal.employee, organizationId: appraisal.organizationId, title: step.label, scheduledDate, duration, meetingType: 'performance_review', meetingFormat: 'video', createdBy: identity.sub, appraisalMeeting: { ownerIdentity: identity, recordingRequested: Boolean(req.body.record), summaryState: 'not_started' } }); }
+        catch (error) { if (error.code !== 11000) throw error; meeting = await OneOnOne.findOne({ appraisalId: appraisal._id, workflowStepId: step.id, organizationId: appraisal.organizationId }); }
+      }
+      if (meeting.nylas?.eventId) return res.json({ success: true, data: publicMeeting(meeting) });
+      const result = await shared.request('meetings/create', meeting.appraisalMeeting.ownerIdentity, { externalId: String(meeting._id), scheduledDate: meeting.scheduledDate, duration: meeting.duration, title: meeting.title, meetingLink: req.body.meetingLink, record: meeting.appraisalMeeting.recordingRequested, participants: [appraisal.manager, appraisal.employee].map(p => ({ name: p.name, email: p.email })) }, { timeoutMs: 90_000 });
+      meeting.nylas = { eventId: result.eventId, calendarId: result.calendarId, conferenceUrl: result.conferenceUrl, syncStatus: 'synced', lastSyncAt: new Date() };
+      meeting.appraisalMeeting = { ...meeting.appraisalMeeting, recordingState: result.recordingState, calendarState: result.state };
+      await meeting.save();
+      appraisal.addAuditLog('appraisal_meeting_scheduled', req.session.user, { meetingId: meeting._id, stepId: step.id, recordingRequested: Boolean(req.body.record) }); await appraisal.save();
+      return res.status(201).json({ success: true, data: publicMeeting(meeting) });
+    } catch (error) { return errorResponse(res, error); }
+  });
+  router.param('meetingId', async (req, res, next, id) => {
+    try {
+      req.meeting = await OneOnOne.findOne({ _id: id, organizationId: req.appraisal.organizationId, appraisalId: req.appraisal._id });
+      if (!req.meeting) return res.status(404).json({ success: false, error: 'Meeting not found.' });
+      return next();
+    } catch (error) { return next(error); }
+  });
+  router.post('/:meetingId/sync', async (req, res) => {
+    try {
+      const meeting = req.meeting;
+      await require('../services/appraisalMeetingMediaService').sync(meeting);
+      return res.json({ success: true, data: publicMeeting(meeting) });
+    } catch (error) { return errorResponse(res, error); }
+  });
+  router.post('/:meetingId/summary', async (req, res) => {
+    try {
+      const meeting = req.meeting;
+      if (!meeting.transcript?.content) return res.status(409).json({ success: false, error: 'Wait for the transcript before creating meeting notes.' });
+      const updated = await require('../services/appraisalMeetingMediaService').summarize(meeting, shared.identityFromRequest(req));
+      return res.json({ success: true, data: publicMeeting(updated) });
+    } catch (error) { return errorResponse(res, error); }
+  });
+  router.post('/:meetingId/complete', async (req, res) => {
+    try {
+      if (!req.canManageMeeting) return res.status(403).json({ success: false, error: 'Only the reviewer or HR can complete this step.' });
+      const meeting = req.meeting; const appraisal = req.appraisal;
+      if (meeting.status === 'completed' && appraisal.completedMeetingSteps?.includes(meeting.workflowStepId)) return res.json({ success: true, data: publicMeeting(meeting) });
+      if (flow.currentStep(appraisal)?.id !== meeting.workflowStepId) return res.status(409).json({ success: false, error: 'Complete the preceding appraisal steps first.' });
+      if (Date.now() < +meeting.scheduledDate) return res.status(409).json({ success: false, error: 'The meeting has not started yet.' });
+      const notes = String(req.body.notes || '').trim().slice(0, 10000);
+      if (!notes && !meeting.appraisalMeeting?.summary) return res.status(400).json({ success: false, error: 'Add the agreed meeting notes, or generate notes from the transcript.' });
+      meeting.status = 'completed'; meeting.actualEndTime = new Date(); meeting.sharedNotes = notes || meeting.appraisalMeeting.summary; await meeting.save();
+      appraisal.completedMeetingSteps = [...new Set([...(appraisal.completedMeetingSteps || []), meeting.workflowStepId])];
+      appraisal.addAuditLog('appraisal_meeting_completed', req.session.user, { meetingId: meeting._id, stepId: meeting.workflowStepId }); await appraisal.save();
+      return res.json({ success: true, data: publicMeeting(meeting), appraisalStatus: appraisal.status });
+    } catch (error) { return errorResponse(res, error); }
+  });
+  return router;
+};
