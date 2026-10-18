@@ -43,9 +43,9 @@ function enabled(name, fallback) {
 }
 
 function environmentPolicy() {
-  const localEnabled = enabled('PERFORMANCE_AI_LOCAL_ENABLED', true);
+  const localEnabled = enabled('PERFORMANCE_AI_LOCAL_ENABLED', false);
   const chatgptEnabled = enabled('PERFORMANCE_AI_CHATGPT_ENABLED', true);
-  const requested = process.env.PERFORMANCE_AI_DEFAULT_RUNTIME === CHATGPT ? CHATGPT : LOCAL;
+  const requested = process.env.PERFORMANCE_AI_DEFAULT_RUNTIME === LOCAL ? LOCAL : CHATGPT;
   const defaultRuntime = requested === LOCAL && !localEnabled && chatgptEnabled ? CHATGPT
     : requested === CHATGPT && !chatgptEnabled && localEnabled ? LOCAL : requested;
   return { localEnabled, chatgptEnabled, defaultRuntime };
@@ -153,7 +153,7 @@ class AIGatewayService {
           promptVersion: String(options.promptVersion || '1'),
           maxTokens: options.maxTokens || options.max_tokens,
           jsonSchema: options.jsonSchema || options.response_format?.json_schema?.schema,
-          codexModel: options.codexModel || process.env.PERFORMANCE_CHATGPT_MODEL || 'gpt-5.6-sol',
+          codexModel: options.codexModel || process.env.PERFORMANCE_CHATGPT_MODEL || 'gpt-5.6-terra',
           reasoningEffort: options.reasoningEffort || 'medium',
           context: { requestId, sourceApp: 'performance-management' }
         }, { timeoutMs: options.timeoutMs || 240_000 });

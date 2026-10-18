@@ -7,10 +7,11 @@ import { Alert, Box, Button, Checkbox, CircularProgress, Divider, FormControlLab
 import { useAppraisalCycles, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
 import { CycleTemplateSummary } from '@/components/appraisals/CycleDesignBuilder';
+import AppraisalFlowEditor, { AppraisalFlow, defaultFlow, flowError } from '@/components/appraisals/AppraisalFlowEditor';
 import { shortDate } from '@/lib/appraisal-results';
 
 interface Person { userId: string; name: string; email: string; managerName?: string; teamName?: string; isSelectableForAppraisal?: boolean; selectionBlockedReason?: string }
-interface Cycle { _id: string; name: string; status: string; periodStart: string; periodEnd: string; responseDeadlines?: { selfAssessmentDue?: string; managerReviewDue?: string }; phases?: { selfAssessment?: { endDate?: string }; managerReview?: { endDate?: string } } }
+interface Cycle { workflowDefinition?: { stages?: Record<string, { enabled?: boolean }> }; _id: string; name: string; status: string; periodStart: string; periodEnd: string; responseDeadlines?: { selfAssessmentDue?: string; managerReviewDue?: string }; phases?: { selfAssessment?: { endDate?: string }; managerReview?: { endDate?: string } } }
 interface StartedReview { _id: string; employee?: { name?: string } }
 interface Receipt { launched: number; replayed?: number; errors: number; appraisals?: StartedReview[]; existingAppraisals?: StartedReview[]; errorDetails?: Array<{ userId?: string; error?: string }> }
 const dateIn = (days: number) => { const date = new Date(); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
@@ -43,11 +44,13 @@ export default function StartAppraisalPage() {
   const [selfDue, setSelfDue] = useState(dateIn(7));
   const [managerDue, setManagerDue] = useState(dateIn(14));
   const [detailsAttempted, setDetailsAttempted] = useState(false);
+  const [appraisalFlow, setAppraisalFlow] = useState<AppraisalFlow>(defaultFlow());
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const permitted = true;
   const openCycles = (cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status) && cycle.periodEnd.slice(0, 10) < dateIn(0));
   const existingCycle = openCycles.find((cycle) => cycle._id === cycleId);
   const template = templates.find((entry) => entry.id === templateId) || templates[0];
+  useEffect(() => { setAppraisalFlow(defaultFlow(existingCycle?.workflowDefinition?.stages || template?.design?.stages)); }, [cycleId, templateId]);
   const participants = people.filter((person) => selected.includes(person.userId) && person.isSelectableForAppraisal !== false);
   const unavailable = people.filter((person) => person.isSelectableForAppraisal === false);
   const shownPeople = useMemo(() => people.filter((person) => `${person.name} ${person.teamName || ''}`.toLowerCase().includes(search.toLowerCase())), [people, search]);
@@ -88,7 +91,7 @@ export default function StartAppraisalPage() {
   const moveStep = (index: number) => { setStep(index); focusStep(); };
   const next = () => {
     if (step === 1) setDetailsAttempted(true);
-    const issue = step === 0 ? (participants.length ? '' : 'Choose at least one eligible member of staff.') : validateDetails();
+    const issue = step === 0 ? (participants.length ? '' : 'Choose at least one eligible member of staff.') : (validateDetails() || flowError(appraisalFlow));
     setError(issue); if (!issue) moveStep(step + 1);
     else if (step === 1 && cycleId === 'new') {
       const field = (Object.keys(dateErrors) as DateField[]).find((key) => dateErrors[key]);
@@ -103,14 +106,15 @@ export default function StartAppraisalPage() {
       else moveStep(0);
       return;
     }
+    if (flowError(appraisalFlow)) { setError(flowError(appraisalFlow)); moveStep(1); return; }
     setSaving(true); setError('');
     try {
       const employees = participants.map((person) => ({ userId: person.userId }));
       const response = cycleId === 'new'
-        ? await api.post('/appraisals/cycles', { name: title.trim(), cycleType: reviewType, periodStart, periodEnd, launchNow: true, reviewerMode: 'initiator', employees,
+        ? await api.post('/appraisals/cycles', { name: title.trim(), cycleType: reviewType, periodStart, periodEnd, launchNow: true, reviewerMode: 'initiator', employees, appraisalFlow,
           workflowDefinition: template!.design, sourceTemplate: { id: template!.id, name: template!.name, version: template!.version || 1 },
           responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } })
-        : await api.post(`/appraisals/cycles/${cycleId}/launch`, { employees, reviewerMode: 'initiator', responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } });
+        : await api.post(`/appraisals/cycles/${cycleId}/launch`, { employees, reviewerMode: 'initiator', appraisalFlow, responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } });
       setReceipt(response.data?.data?.launchSummary || response.data?.data);
       focusStep();
     } catch (failure) { setError(apiError(failure)); }
@@ -179,13 +183,17 @@ export default function StartAppraisalPage() {
           <TextField label="Reviewer response due" type="date" value={managerDue} onChange={(event) => changeDate(setManagerDue, event.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: dayAfter(selfDue || today) } }} error={!!dateError('managerDue', managerDue)} helperText={dateError('managerDue', managerDue)} fullWidth />
         </Stack>
       </Stack>}
+      {step === 1 && <Box mt={3}><Divider sx={{ mb: 3 }} /><AppraisalFlowEditor value={appraisalFlow} onChange={value => { setAppraisalFlow(value); setError(''); }} onReset={() => { setAppraisalFlow(defaultFlow(existingCycle?.workflowDefinition?.stages || template?.design?.stages)); setError(''); }} /></Box>}
       {step === 2 && <Stack spacing={2}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Confirm and start</Typography><Typography fontWeight={600}>{existingCycle?.name || title}</Typography><Typography>{participants.length} participant{participants.length === 1 ? '' : 's'} · {existingCycle ? 'Existing cycle' : template?.name}</Typography>
         <Typography>Assessment period: {shortDate(existingCycle?.periodStart || periodStart)} – {shortDate(existingCycle?.periodEnd || periodEnd)}</Typography>
         {!existingCycle && <Typography>Review starts: {calendarDate(today)} (today)</Typography>}
         <Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography>
         {participants.map((person) => <Typography key={person.userId}>{person.name} · Reviewer: you</Typography>)}
-        <Alert severity="info">Starting creates the selected appraisals and notifies employees to complete their self-assessment. You review their submissions next. Repeating this launch reuses your existing reviews.</Alert>
+        <Typography fontWeight={600}>Your review flow</Typography>
+        <Box component="ol" sx={{ pl: 3 }}>{appraisalFlow.steps.map(step => <Typography component="li" key={step.id}>{step.label}</Typography>)}</Box>
+        <Typography>Employee assessment: {appraisalFlow.assessmentMode === 'form' ? 'Manual form' : 'AI conversation or form'}</Typography>
+        <Alert severity="info">Starting creates the selected appraisals and notifies the participants. Steps open in the order shown above. Repeating this launch reuses your existing reviews and their original settings.</Alert>
       </Stack>}
     </Paper>
     <Stack direction="row" justifyContent="space-between" mt={3}><Button disabled={step === 0 || saving} onClick={() => { setError(''); moveStep(step - 1); }}>Previous</Button><Button variant="contained" disabled={loading || cyclesLoading || saving || (step === 0 && !participants.length)} onClick={step === 2 ? start : next}>{saving ? 'Starting…' : step === 2 ? 'Start appraisals' : 'Continue'}</Button></Stack>

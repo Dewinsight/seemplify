@@ -109,6 +109,7 @@ const OneOnOneSchema = new mongoose.Schema({
     expiresAt: Date
   },
   transcript: {
+    rawContent: String,
     content: String, // Full transcript text
     segments: [{
       speaker: String, // 'manager', 'employee', 'unknown'
@@ -128,7 +129,7 @@ const OneOnOneSchema = new mongoose.Schema({
     processedAt: Date,
     source: {
       type: String,
-      enum: ['auto', 'manual_upload', 'live_transcription'],
+      enum: ['auto', 'manual_upload', 'live_transcription', 'nylas'],
       default: 'auto'
     }
   },
@@ -532,6 +533,12 @@ OneOnOneSchema.methods.completeActionItem = async function(actionItemId) {
   throw new Error('Action item not found');
 };
 
+OneOnOneSchema.add({
+  appraisalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appraisal' },
+  workflowStepId: String,
+  appraisalMeeting: mongoose.Schema.Types.Mixed
+});
+OneOnOneSchema.index({ appraisalId: 1, workflowStepId: 1 }, { unique: true, partialFilterExpression: { appraisalId: { $type: 'objectId' }, workflowStepId: { $type: 'string' } } });
 module.exports = mongoose.models.OneOnOne || mongoose.model('OneOnOne', OneOnOneSchema);
 
 

@@ -8,6 +8,7 @@ const fs = require('fs');
 const AppraisalCycle = require('../models/AppraisalCycle');
 const AppraisalCycleTemplate = require('../models/AppraisalCycleTemplate');
 const Appraisal = require('../models/Appraisal');
+const appraisalFlow = require('../services/appraisalFlowService');
 const AppraisalDocument = require('../models/AppraisalDocument');
 const OKR = require('../models/OKR');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
@@ -124,6 +125,24 @@ function tenantCyclePopulate(req, select = null) {
     ...(select ? { select } : {})
   };
 }
+
+router.use('/:appraisalId/meetings', requireAuth, require('./appraisalMeetings')({ canManageAppraisal, isAppraisalEmployee, tenantAppraisalIdFilter }));
+
+router.param('appraisalId', (req, res, next, id) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  return requireAuth(req, res, async () => {
+    try {
+      const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, id));
+      if (!appraisal || !appraisalFlow.flowFor(appraisal)) return next();
+      if (!isAppraisalEmployee(req, appraisal) && !(await canManageAppraisal(req, appraisal))) return res.status(403).json({ success: false, error: 'Access denied' });
+      const action = req.path.split('/')[2];
+      const expected = { 'self-assessment': 'selfAssessment', conversation: 'selfAssessment', 'manager-review': 'managerReview', discussion: 'discussion', calibration: 'calibration', finalize: 'finalReview', acknowledge: 'acknowledgement' }[action];
+      if (action === 'conversation' && appraisalFlow.flowFor(appraisal).assessmentMode === 'form') return res.status(409).json({ success: false, error: 'AI conversation is turned off for this appraisal. Use the manual assessment form.', code: 'ASSESSMENT_FORM_MODE' });
+      if (expected && appraisalFlow.currentStep(appraisal)?.type !== expected) return res.status(409).json({ success: false, error: 'Complete the current appraisal step first.', code: 'APPRAISAL_STEP_ORDER', currentStep: appraisalFlow.currentStep(appraisal) });
+      return next();
+    } catch (error) { return next(error); }
+  });
+});
 
 function normalizeIdentityEmail(value) {
   if (!value || typeof value !== 'string') return null;
@@ -836,10 +855,12 @@ function validateCycleConfiguration(input = {}) {
 }
 
 function getCycleDesign(cycle) {
+  if (cycle?.$appraisalDesign) return cycle.$appraisalDesign;
   return normalizeDesign(cycle?.workflowDefinition || cloneBuiltInTemplate().design);
 }
 
 function phaseHasOpened(cycle, phaseName) {
+  if (cycle?.$appraisalDesign) return true;
   const startDate = cycle?.phases?.[phaseName]?.startDate;
   if (!startDate) return true;
   const start = new Date(startDate);
@@ -1206,6 +1227,12 @@ async function resolveManagerIdentityForLaunch(employee, req) {
 }
 
 async function createAppraisalsForCycle(cycle, employees = [], req) {
+  const requestedFlow = req.body?.appraisalFlow;
+  const flowResult = requestedFlow ? appraisalFlow.validateFlow(requestedFlow, getCycleDesign(cycle)) : null;
+  if (flowResult?.errors.length) {
+    const error = new Error(flowResult.errors[0]); error.statusCode = 400; throw error;
+  }
+
   const normalizedEmployees = normalizeLaunchEmployees(employees);
   const createdAppraisals = [];
   const existingAppraisals = [];
@@ -1260,6 +1287,7 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         goalEvidenceSummary: goalSnapshot.evidenceSummary,
         cycleConfigurationSnapshot: {
           version: 1,
+          ...(flowResult ? { appraisalFlow: flowResult.flow } : {}),
           cycleId: String(cycle._id),
           cycleName: cycle.name,
           periodStart: cycle.periodStart,
@@ -1267,7 +1295,10 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
           ratingScale: toPlainObject(cycle.ratingScale),
           competencies: (cycle.competencies || []).map((item) => toPlainObject(item)),
           settings: toPlainObject(cycle.settings),
-          workflowDefinition: getCycleDesign(cycle),
+          workflowDefinition: flowResult ? { ...getCycleDesign(cycle), stages: {
+            ...getCycleDesign(cycle).stages,
+            ...Object.fromEntries(Object.keys(appraisalFlow.TYPES).map(type => [type, { enabled: flowResult.flow.steps.some(step => step.type === type) }]))
+          } } : getCycleDesign(cycle),
           sourceTemplate: toPlainObject(cycle.sourceTemplate),
           capturedAt: new Date()
         },
@@ -1308,7 +1339,7 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         recipients: employeeRecipient,
         data: { cycleId: String(cycle._id) }
       });
-      await recordAppraisalEvent(appraisal, 'appraisal.self_assessment_due', req.session.user, {
+      if (appraisalFlow.hasStep(appraisal, 'selfAssessment')) await recordAppraisalEvent(appraisal, 'appraisal.self_assessment_due', req.session.user, {
         recipients: employeeRecipient,
         dueAt: appraisal.deadlines?.selfAssessmentDue,
         reminderTargetType: 'appraisal_self_assessment',
@@ -1682,6 +1713,7 @@ router.get('/cycles', requireAuth, async (req, res) => {
 // Create new cycle (HR Admin or Manager)
 router.post('/cycles', requireAuth, requireLaunchAccess, async (req, res) => {
   try {
+    if (req.body?.appraisalFlow) { const result = appraisalFlow.validateFlow(req.body.appraisalFlow); if (result.errors.length) return res.status(400).json({ success: false, error: result.errors[0], errors: result.errors }); }
     const orgId = resolveOrganizationId(req);
     const userId = req.session?.user?.id || req.session?.user?.sub;
     const userName = req.session?.user?.name;
@@ -1964,6 +1996,7 @@ router.patch('/cycles/:cycleId/phase', requireAuth, requireHRAdmin, async (req, 
  */
 router.post('/cycles/:cycleId/launch', requireAuth, requireLaunchAccess, async (req, res) => {
   try {
+    if (req.body?.appraisalFlow) { const result = appraisalFlow.validateFlow(req.body.appraisalFlow); if (result.errors.length) return res.status(400).json({ success: false, error: result.errors[0], errors: result.errors }); }
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: resolveOrganizationId(req) });
     if (!cycle) {
       return res.status(404).json({ success: false, error: 'Cycle not found' });
@@ -3438,7 +3471,7 @@ router.post('/:appraisalId/manager-review/start', requireAuth, async (req, res) 
       return res.status(403).json({ success: false, error: 'Only an authorized manager can start review' });
     }
 
-    if (!appraisal.selfAssessment?.submittedAt) {
+    if (!appraisalFlow.flowFor(appraisal) && !appraisal.selfAssessment?.submittedAt) {
       return res.status(400).json({ success: false, error: 'Self-assessment must be submitted before manager review' });
     }
 
@@ -3487,7 +3520,7 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Only an authorized manager can submit review' });
     }
 
-    if (!appraisal.selfAssessment?.submittedAt) {
+    if (!appraisalFlow.flowFor(appraisal) && !appraisal.selfAssessment?.submittedAt) {
       return res.status(400).json({ success: false, error: 'Self-assessment must be submitted before manager review' });
     }
 
@@ -4219,11 +4252,11 @@ router.post('/:appraisalId/finalize', requireAuth, async (req, res) => {
       return res.status(409).json({ success: false, error: 'Final review has not opened for this cycle' });
     }
 
-    if (!appraisal.selfAssessment?.submittedAt) {
+    if (!appraisalFlow.flowFor(appraisal) && !appraisal.selfAssessment?.submittedAt) {
       return res.status(400).json({ success: false, error: 'Self-assessment must be submitted first' });
     }
 
-    if (!appraisal.managerReview?.submittedAt) {
+    if (appraisalFlow.hasStep(appraisal, 'managerReview') && !appraisal.managerReview?.submittedAt) {
       return res.status(400).json({ success: false, error: 'Manager review must be submitted first' });
     }
 

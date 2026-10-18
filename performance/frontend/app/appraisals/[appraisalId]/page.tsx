@@ -1,5 +1,7 @@
 'use client';
 
+import AppraisalMeetings from '@/components/appraisals/AppraisalMeetings';
+import { FlowStep } from '@/components/appraisals/AppraisalFlowEditor';
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAppraisal, useUserContext } from '@/lib/hooks';
@@ -36,6 +38,7 @@ function normalizeIdentityEmail(value?: string | null) {
 }
 
 const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error'; icon: React.ReactNode }> = {
+  'meeting_pending': { label: 'One-on-one call', color: 'info', icon: <Groups /> },
   'not_started': { label: 'Not Started', color: 'default', icon: <Schedule /> },
   'goal_setting': { label: 'Goal Setting', color: 'info', icon: <Edit /> },
   'goal_approval_pending': { label: 'Goal Approval Pending', color: 'warning', icon: <Schedule /> },
@@ -77,7 +80,7 @@ export default function AppraisalDetailPage() {
   const appraisalId = params.appraisalId as string;
   const { user, isManager, isHRAdmin } = useUserContext();
 
-  const { appraisal, isLoading, isError } = useAppraisal(appraisalId);
+  const { appraisal, isLoading, isError, mutate } = useAppraisal(appraisalId);
   const [tabValue, setTabValue] = useState(0);
 
   if (isLoading) {
@@ -137,7 +140,15 @@ export default function AppraisalDetailPage() {
     if (status === 'completed' || status === 'employee_acknowledged') return 6;
     return 5;
   };
-  const activeStep = getActiveStep();
+  const customSteps: FlowStep[] | undefined = appraisal.cycleConfigurationSnapshot?.appraisalFlow?.steps;
+  const stepIsComplete = (step: FlowStep) => ({
+    selfAssessment: !!appraisal.selfAssessment?.submittedAt, managerReview: !!appraisal.managerReview?.submittedAt,
+    discussion: !!appraisal.discussion?.completedDate, calibration: !!appraisal.calibration?.calibratedAt,
+    finalReview: !!appraisal.finalRating?.finalizedAt, acknowledgement: !!appraisal.discussion?.employeeAcknowledgedAt,
+    oneOnOne: (appraisal.completedMeetingSteps || []).includes(step.id)
+  })[step.type];
+  const customIndex = customSteps?.findIndex(step => !stepIsComplete(step)) ?? -1;
+  const activeStep = customSteps ? (customIndex < 0 ? customSteps.length : customIndex) : getActiveStep();
 
   const selfAssessment = appraisal.selfAssessment;
   const managerReview = appraisal.managerReview;
@@ -166,7 +177,7 @@ export default function AppraisalDetailPage() {
               <Chip
                 size="small"
                 icon={config.icon as any}
-                label={config.label}
+                label={appraisal.status === 'employee_acknowledged' && customSteps && !customSteps.some(step => step.type === 'acknowledgement') ? 'Completed' : config.label}
                 color={config.color}
                 sx={{ mt: 1 }}
               />
@@ -262,7 +273,7 @@ export default function AppraisalDetailPage() {
         <Alert severity="success" sx={{ mb: 3 }}>
           <Typography variant="subtitle2" fontWeight={700}>Self-assessment completed</Typography>
           <Typography variant="body2">
-            Your part is complete. Your manager is now handling the review stage.
+            The reviewer is now handling the review stage. Your appraisal progress below shows any remaining steps.
           </Typography>
         </Alert>
       )}
@@ -271,19 +282,20 @@ export default function AppraisalDetailPage() {
         <Alert severity="warning" sx={{ mb: 3 }}>
           <Typography variant="subtitle2" fontWeight={700}>Manager action required</Typography>
           <Typography variant="body2">
-            Self-assessment is submitted. Start manager review to continue the workflow.
+            Start your assessment to continue the appraisal workflow.
           </Typography>
         </Alert>
       )}
 
+      {customSteps && <AppraisalMeetings appraisalId={appraisalId} steps={customSteps.filter(step => step.type === 'oneOnOne')} canManage={hasManagerAccess && !isEmployee} currentStepId={customSteps[activeStep]?.id} onUpdated={() => { void mutate(); }} />}
       {/* Workflow Progress */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="subtitle1" fontWeight={600} gutterBottom>
           Appraisal Progress
         </Typography>
-        <Stepper activeStep={getActiveStep()} alternativeLabel>
-          {workflowSteps.map((step, index) => (
-            <Step key={step.key} completed={index < getActiveStep()}>
+        <Stepper activeStep={activeStep} orientation={customSteps ? "vertical" : "horizontal"} alternativeLabel={!customSteps}>
+          {(customSteps ? customSteps.map(step => ({ key: step.id, label: step.label })) : workflowSteps).map((step, index) => (
+            <Step key={step.key} completed={index < activeStep}>
               <StepLabel>{step.label}</StepLabel>
             </Step>
           ))}

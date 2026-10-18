@@ -150,7 +150,7 @@ export default function SelfAssessmentPage() {
 
   const editableStatuses = ['self_assessment_pending', 'self_assessment_in_progress'];
   const isEditable = editableStatuses.includes(appraisal.status);
-  const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false;
+  const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false && appraisal?.cycleConfigurationSnapshot?.appraisalFlow?.assessmentMode !== 'form';
   const requireSelfRating = appraisal?.cycleId?.settings?.allowSelfRating !== false;
 
   if (appraisal.selfAssessment?.submittedAt) {
@@ -331,7 +331,7 @@ export default function SelfAssessmentPage() {
             />
 
             <Alert severity="info" sx={{ mb: 3 }}>
-              AI assistance is disabled for this appraisal cycle. Use this manual form to complete and submit your self-assessment.
+              This appraisal uses a manual assessment form. Use this manual form to complete and submit your self-assessment.
             </Alert>
 
             <Card sx={{ mb: 3 }}>

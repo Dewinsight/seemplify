@@ -207,7 +207,7 @@ export default function ManagerReviewPage() {
 
   useEffect(() => {
     if (!appraisal || !isManager || managerReviewStarted) return;
-    if (!appraisal.selfAssessment?.submittedAt || appraisal.managerReview?.submittedAt) return;
+    if ((!appraisal.cycleConfigurationSnapshot?.appraisalFlow && !appraisal.selfAssessment?.submittedAt) || appraisal.managerReview?.submittedAt) return;
 
     const startableStatuses = ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress'];
     if (!startableStatuses.includes(appraisal.status)) return;
@@ -340,7 +340,7 @@ export default function ManagerReviewPage() {
       const discussionEnabled = appraisal?.cycleConfigurationSnapshot?.workflowDefinition?.stages?.discussion?.enabled !== false;
       setSnackbar({
         open: true,
-        message: discussionEnabled ? 'Review submitted. The performance discussion is next.' : 'Review submitted. The cycle is ready for its next configured stage.',
+        message: appraisal?.cycleConfigurationSnapshot?.appraisalFlow ? 'Review submitted. Open the appraisal to see its next step.' : discussionEnabled ? 'Review submitted. The performance discussion is next.' : 'Review submitted. The cycle is ready for its next configured stage.',
         severity: 'success'
       });
       setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
@@ -447,7 +447,7 @@ export default function ManagerReviewPage() {
   }
 
   // Check if self-assessment is submitted
-  if (!appraisal.selfAssessment?.submittedAt) {
+  if (!appraisal.cycleConfigurationSnapshot?.appraisalFlow && !appraisal.selfAssessment?.submittedAt) {
     return (
       <Box>
         <Alert severity="warning" sx={{ mb: 3 }}>

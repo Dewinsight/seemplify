@@ -4,9 +4,9 @@ const mongoose = require('mongoose');
 
 const AIRuntimeSettingsSchema = new mongoose.Schema({
   key: { type: String, default: 'global', unique: true, immutable: true },
-  localEnabled: { type: Boolean, default: true },
+  localEnabled: { type: Boolean, default: false },
   chatgptEnabled: { type: Boolean, default: true },
-  defaultRuntime: { type: String, enum: ['local', 'chatgpt'], default: 'local' },
+  defaultRuntime: { type: String, enum: ['local', 'chatgpt'], default: 'chatgpt' },
   updatedBy: { type: String, default: '' }
 }, { timestamps: true });
 
