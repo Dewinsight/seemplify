@@ -94,7 +94,11 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
   expect(meeting.appraisalMeeting.recordingFileId).toBeTruthy();
   const file = await mongoose.connection.db.collection('appraisalRecordings.files').findOne({ _id: new mongoose.Types.ObjectId(meeting.appraisalMeeting.recordingFileId) }); expect(file.length).toBeGreaterThan(1000);
   await pipeline(new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'appraisalRecordings' }).openDownloadStream(file._id), createWriteStream(testInfo.outputPath('native-call.webm')));
-  for (const page of pages) await page.getByRole('button', { name: 'Leave call', exact: true }).click();
+  for (const page of pages) {
+    await page.getByRole('button', { name: 'Leave call', exact: true }).click();
+    await expect(page.getByText('You left the call.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Recording is in progress. Both participants’ audio and video may be captured.')).toHaveCount(0);
+  }
   await Promise.all(contexts.map(context => context.close()));
 });
 test.afterAll(async () => {
