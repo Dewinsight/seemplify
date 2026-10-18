@@ -25,6 +25,7 @@ function actor(name) {
 async function seed(name, organizationId = org.id) {
   const principal = actor(name);
   return User.create({ idpSub: name, email: principal.email, profile: { displayName: name }, currentOrganizationId: organizationId,
+    organizationMemberships: [{ organization: organizationId, role: name === 'hr' ? 'hr_manager' : 'staff', isActive: true }],
     idpTeams: principal.idpTeams.map((team) => ({ ...team, organizationId })) });
 }
 const call = (method, url, who = 'member') => request(app)[method](`/api/appraisals${url}`).set('x-actor', who);
@@ -34,7 +35,7 @@ beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
   app = express(); app.use(express.json());
-  app.use((req, res, next) => { if (req.get('x-actor') !== 'anonymous') req.session = { user: actor(req.get('x-actor') || 'member'), currentOrganizationId: org.id }; next(); });
+  app.use((req, res, next) => { if (req.get('x-actor') !== 'anonymous') { const user = actor(req.get('x-actor') || 'member'); if (req.get('x-role-removed')) user.idpTeams.forEach(team => { team.role = 'member'; }); req.session = { user, currentOrganizationId: org.id }; } next(); });
   app.use('/api/appraisals', routes);
 });
 beforeEach(async () => {
@@ -59,9 +60,10 @@ test('quarterly defaults are tenant scoped, concurrency safe, editable and roll 
   expect(await AppraisalCycle.countDocuments({ organizationId: org.id, defaultQuarterKey: /^2027/ })).toBe(4);
 });
 
-test('members can select peers and managers across parent/child teams, but not self, unrelated teams or tenants', async () => {
-  const roster = await call('get', '/colleague-roster').expect(200);
-  expect(roster.body.data.employees.map((person) => person.userId).sort()).toEqual(['leader', 'peer']);
+test('members cannot launch appraisals; managers see their hierarchy and HR sees the organization', async () => {
+  await call('get', '/colleague-roster').expect(403);
+  const roster = await call('get', '/colleague-roster', 'leader').expect(200);
+  expect(roster.body.data.employees.map((person) => person.userId).sort()).toEqual(['leader', 'member', 'peer']);
   const hrRoster = await call('get', '/colleague-roster', 'hr').expect(200);
   expect(hrRoster.body.data.employees.map((person) => person.userId)).toContain('leader');
   expect(hrRoster.body.data.employees.map((person) => person.userId)).not.toContain('foreign');
@@ -69,30 +71,77 @@ test('members can select peers and managers across parent/child teams, but not s
   await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
   const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
   for (const target of ['member', 'outsider', 'foreign', 'unknown']) await call('post', `/cycles/${cycle._id}/launch`).send(launch(target)).expect(403);
+  for (const target of ['outsider', 'foreign', 'unknown']) await call('post', `/cycles/${cycle._id}/launch`, 'leader').send({ ...launch(target), reviewerMode: 'selected', employees: [{ userId: target, reviewerId: 'hr' }] }).expect(403);
   expect(await Appraisal.countDocuments()).toBe(0);
 });
 
-test('upward reviews need no reporting manager and only the assigned reviewer, subject and HR can access them', async () => {
+test('HR explicitly selects a reviewer for a top manager; forged, self and unqualified reviewers are rejected', async () => {
   await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
   const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
-  const result = await call('post', `/cycles/${cycle._id}/launch`).send(launch('leader')).expect(200);
+  const selected = reviewerId => ({ ...launch('leader'), reviewerMode: 'selected', employees: [{ userId: 'leader', reviewerId, managerId: 'forged', managerEmail: 'forged@example.test' }] });
+  await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(selected('')).expect(400);
+  for (const invalid of ['leader', 'member', 'outsider', 'foreign']) await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(selected(invalid)).expect(403);
+  const result = await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(selected('hr')).expect(200);
   expect(result.body.data.launched).toBe(1);
   const review = await Appraisal.findOne();
-  expect(review.manager.userId).toBe('member'); expect(review.reviewerInitiated).toBe(true);
-  await call('get', `/${review._id}`, 'member').expect(200);
+  expect(review.manager.userId).toBe('hr'); expect(review.manager.email).toBe('hr@example.test'); expect(review.reviewerInitiated).toBe(true);
+  await call('get', `/${review._id}`, 'member').expect(403);
   await call('get', `/${review._id}`, 'leader').expect(200);
   await call('get', `/${review._id}`, 'hr').expect(200);
   await call('get', `/${review._id}`, 'peer').expect(403);
   await call('get', `/${review._id}`, 'outsider').expect(403);
-  await call('post', `/${review._id}/manager-review/start`, 'member').expect(400); // needs self-assessment, not a manager job title
+  await call('post', `/${review._id}/manager-review/start`, 'hr').expect(400); // needs self-assessment
   await call('post', `/${review._id}/manager-review/start`, 'peer').expect(403);
-  const queue = await call('get', '/assigned-reviews').expect(200);
+  const queue = await call('get', '/assigned-reviews', 'hr').expect(200);
   expect(queue.body.data).toHaveLength(1);
-  const replay = await call('post', `/cycles/${cycle._id}/launch`).send(launch('leader')).expect(200);
+  const replay = await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(selected('hr')).expect(200);
   expect(replay.body.data.replayed).toBe(1);
-  await call('post', `/cycles/${cycle._id}/launch`, 'peer').send(launch('leader')).expect(200);
-  expect(await Appraisal.countDocuments()).toBe(2);
+  await call('post', `/cycles/${cycle._id}/launch`, 'peer').send(selected('hr')).expect(403);
+  expect(await Appraisal.countDocuments()).toBe(1);
   expect((await AppraisalCycle.findById(cycle._id)).responseDeadlines.selfAssessmentDue.getUTCFullYear()).toBe(2026);
+});
+
+test('an old reviewer assignment does not retain access after team management authority is removed', async () => {
+  await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
+  const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
+  await call('post', `/cycles/${cycle._id}/launch`, 'leader').send({ ...launch('member'), reviewerMode: 'selected', employees: [{ userId: 'member', reviewerId: 'leader' }] }).expect(200);
+  const review = await Appraisal.findOne();
+  await call('get', `/${review._id}`, 'leader').set('x-role-removed', 'true').expect(403);
+  await call('get', '/assigned-reviews', 'leader').set('x-role-removed', 'true').expect(403);
+  await call('get', `/${review._id}`, 'member').expect(200);
+});
+
+test('creation details survive launch/replay and are visible newest-first to employee, reviewer and HR', async () => {
+  await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
+  const cycles = await AppraisalCycle.find({ defaultQuarterKey: { $in: ['2026-Q2', '2026-Q3'] } }).sort({ periodStart: 1 });
+  const payload = { ...launch('member'), reviewerMode: 'selected', employees: [{ userId: 'member', reviewerId: 'leader' }], launchContext: { createdBy: { name: 'Forged Creator' } } };
+  const created = [];
+  for (const cycle of cycles) {
+    const response = await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(payload).expect(200);
+    const review = response.body.data.appraisals[0];
+    expect(review.createdAt).toBeTruthy();
+    expect(review.launchContext).toEqual({ method: 'existing_cycle', createdBy: { userId: 'hr', name: 'hr' } });
+    expect(review.manager.userId).toBe('leader');
+    created.push(review);
+  }
+  await Appraisal.collection.updateOne({ _id: new mongoose.Types.ObjectId(created[0]._id) }, { $set: { createdAt: new Date('2026-10-01') } });
+  await Appraisal.collection.updateOne({ _id: new mongoose.Types.ObjectId(created[1]._id) }, { $set: { createdAt: new Date('2026-10-18') } });
+  for (const [path, who] of [['/my', 'member'], ['/team', 'leader'], ['/assigned-reviews', 'leader'], ['/organization', 'hr']]) {
+    const response = await call('get', path, who).expect(200);
+    expect(response.body.data.map(item => item._id)).toEqual([created[1]._id, created[0]._id]);
+    expect(response.body.data[0]).toMatchObject({ createdAt: '2026-10-18T00:00:00.000Z', launchContext: { createdBy: { name: 'hr' } } });
+    expect(response.body.data[0].deadlines.selfAssessmentDue).toBeTruthy();
+  }
+  const replay = await call('post', `/cycles/${cycles[1]._id}/launch`, 'leader').send(payload).expect(200);
+  expect(replay.body.data.replayed).toBe(1);
+  expect(replay.body.data.existingAppraisals[0].launchContext.createdBy.userId).toBe('hr');
+  const detail = await call('get', `/${created[1]._id}`, 'member').expect(200);
+  expect(detail.body.data.launchContext.createdBy.userId).toBe('hr');
+  const oneOff = await call('post', '/cycles', 'hr').send({ ...payload, name: 'Creation details review', periodStart: '2026-07-01', periodEnd: '2026-09-30', launchNow: true, appraisalFlow: { steps: require('../services/appraisalFlowService').defaultSteps() } }).expect(201);
+  expect(oneOff.body.data.launchSummary.appraisals[0].launchContext.method).toBe('new_review');
+  const organization = await call('get', '/organization', 'hr').expect(200);
+  const launched = organization.body.data.find(item => item._id === oneOff.body.data.launchSummary.appraisals[0]._id);
+  expect(launched.cycleConfigurationSnapshot.appraisalFlow.steps.length).toBeGreaterThan(0);
 });
 
 test('department heads can review their department without needing a team-manager title', async () => {

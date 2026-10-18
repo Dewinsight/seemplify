@@ -3,14 +3,27 @@ export interface AppraisalResultItem {
   status: string;
   employee: { name: string; userId?: string };
   manager: { name: string };
+  createdAt?: string;
+  updatedAt?: string;
+  launchContext?: { method?: string; createdBy?: { userId?: string; name?: string } };
+  auditLog?: Array<{ action?: string; performedBy?: { name?: string }; timestamp?: string }>;
+  migration?: { legacyPerformanceReviewId?: string };
+  deadlines?: { selfAssessmentDue?: string; managerReviewDue?: string; discussionDue?: string; signOffDue?: string };
   cycleId?: { name?: string; periodStart?: string; periodEnd?: string; ratingScale?: { min?: number; max?: number } };
-  cycleConfigurationSnapshot?: { cycleName?: string; periodStart?: string; periodEnd?: string; ratingScale?: { min?: number; max?: number }; appraisalFlow?: { steps: Array<{ id: string; type: string; label: string }> } };
+  cycleConfigurationSnapshot?: { cycleName?: string; periodStart?: string; periodEnd?: string; sourceTemplate?: { name?: string }; ratingScale?: { min?: number; max?: number }; appraisalFlow?: { steps: Array<{ id: string; type: string; label: string }> } };
   completedMeetingSteps?: string[];
   selfAssessment?: { submittedAt?: string };
   managerReview?: { submittedAt?: string };
-  discussion?: { completedDate?: string; employeeAcknowledgedAt?: string };
+  discussion?: { scheduledDate?: string; completedDate?: string; employeeAcknowledgedAt?: string };
   calibration?: { calibratedAt?: string };
   finalRating?: { overall?: number | null; ratingLabel?: string; finalizedAt?: string };
+}
+
+export const creationEvent = (item: AppraisalResultItem) => item.auditLog?.find(event => event.action === 'appraisal_created');
+export const appraisalCreatedAt = (item: AppraisalResultItem) => item.createdAt || creationEvent(item)?.timestamp;
+export function newestAppraisalsFirst<T extends AppraisalResultItem>(items: T[]): T[] {
+  const timestamp = (item: T) => Date.parse(appraisalCreatedAt(item) || '') || 0;
+  return [...items].sort((a, b) => timestamp(b) - timestamp(a) || b._id.localeCompare(a._id));
 }
 
 export function isAppraisalStepComplete(item: AppraisalResultItem, step: { id: string; type: string }) {

@@ -20,7 +20,7 @@ let apiURL: string;
 let activePrincipal: typeof principal;
 const organization = { id: 'review-browser-org', name: 'Browser review QA', role: 'employee', appAccess: { mode: 'all', appIds: [] } };
 const principal = { id: 'member', sub: 'member', name: 'Taylor Member', email: 'member@example.test', organizations: [organization], currentOrganization: organization,
-  idpTeams: [{ id: 'team', name: 'Product', organizationId: organization.id, role: 'member' }] };
+  idpTeams: [{ id: 'team', name: 'Product', organizationId: organization.id, role: 'line_manager' }] };
 
 test.beforeAll(async () => {
   activePrincipal = principal;
@@ -63,7 +63,7 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
     await page.route('**/__mock-api/**', async route => {
       const url = new URL(route.request().url()); const endpoint = url.pathname.slice('/__mock-api'.length);
       if (endpoint.startsWith('/appraisals/')) { const response = await route.fetch({ url: `${apiURL}/api${endpoint}${url.search}`, headers: { ...route.request().headers(), 'x-native-qa-actor': who } }); await route.fulfill({ response }); return; }
-      const response = endpoint === '/auth/me' ? { success: true, user, currentOrganization: organization, currentOrganizationId: organization.id } : endpoint === '/user/context' ? { success: true, data: { user, role: { name: 'employee', isManager: false, isHRAdmin: false }, organization, teams: principal.idpTeams, features: {}, stats: {} } } : { success: true, data: [] };
+      const response = endpoint === '/auth/me' ? { success: true, user, currentOrganization: organization, currentOrganizationId: organization.id } : endpoint === '/user/context' ? { success: true, data: { user, role: { name: 'line_manager', isManager: true, isHRAdmin: false }, organization, teams: principal.idpTeams, features: {}, stats: {} } } : { success: true, data: [] };
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
     });
     await page.goto(`/appraisals/${appraisal._id}`);
@@ -156,13 +156,14 @@ for (const mobile of [false, true]) test(`manual assessment and visual call work
     }
     let response: unknown = { success: true, data: [] };
     if (endpoint === '/auth/me') response = { success: true, user: activePrincipal, currentOrganization: organization, currentOrganizationId: organization.id };
-    if (endpoint === '/user/context') response = { success: true, data: { user: activePrincipal, role: { name: 'employee', isManager: false, isHRAdmin: false }, organization, teams: principal.idpTeams, features: {}, stats: {} } };
+    if (endpoint === '/user/context') response = { success: true, data: { user: activePrincipal, role: { name: 'line_manager', isManager: true, isHRAdmin: false }, organization, teams: principal.idpTeams, features: {}, stats: {} } };
     if (endpoint === '/user/current-team') response = { success: true, data: { currentTeam: principal.idpTeams[0], availableTeams: principal.idpTeams } };
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
   });
 
   await page.goto('/appraisals/start');
   await page.getByRole('checkbox', { name: /Alex Team Leader/ }).check();
+  await page.getByRole('combobox', { name: /Reviewer for Alex Team Leader/ }).click(); await page.getByRole('option', { name: /Taylor Member/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const editor = page.getByRole('region', { name: 'Appraisal steps', exact: true });
   await expect(editor.getByRole('switch', { name: 'AI conversation for employee assessment' })).toBeChecked();

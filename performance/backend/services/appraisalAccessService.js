@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { loadPerformanceDirectory } = require('./performanceDirectoryService');
 
 const HR_PLUS_MEMBER_ROLES = new Set(['owner', 'admin', 'hr_manager']);
 const TEAM_APPRAISER_ROLES = new Set(['line_manager', 'team_lead']);
@@ -161,20 +162,23 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
 
   const sessionUser = getSessionUser(req);
   const organizationId = pickCurrentOrganizationId(req, sessionUser);
+  const directory = await loadPerformanceDirectory(req);
   const organizationRole = getOrganizationRole(sessionUser, organizationId);
-  const isHrPlus = req?.userRole === 'hr_admin' || isHrPlusRole(organizationRole);
+  const isHrPlus = directory ? directory.scope === 'organization' : req?.userRole === 'hr_admin' || isHrPlusRole(organizationRole);
   const userRole = req?.userRole || null;
-  const managedTeams = getManagedRootTeams(sessionUser, organizationId);
+  const managedTeams = directory ? directory.teams : getManagedRootTeams(sessionUser, organizationId);
   const managedRootTeamIds = managedTeams.map((team) => team.id);
-  const directReportIdsFromClaims = new Set((req?.directReports || []).map(normalizeId).filter(Boolean));
+  const directReportIdsFromClaims = new Set((directory ? [] : req?.directReports || []).map(normalizeId).filter(Boolean));
 
   const scope = {
     organizationId,
-    organizationRole,
+    organizationRole: directory?.organizationRole || organizationRole,
     userRole,
     includeSelf,
     isHrPlus,
-    canManageAppraisals: isHrPlus || isAppraisalManagerRole(userRole),
+    canManageAppraisals: directory ? directory.canStartAppraisals : isHrPlus || isAppraisalManagerRole(userRole),
+    directoryScope: directory?.scope || (isHrPlus ? 'organization' : 'managed_teams'),
+    directory,
     managedTeams,
     managedRootTeamIds,
     accessibleTeamIds: [...managedRootTeamIds],
@@ -189,7 +193,10 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
     return scope;
   }
 
-  const orgUsers = await User.find({
+  const orgUsers = directory ? directory.members.map(member => ({
+    idpSub: member.userId, email: member.email, profile: { displayName: member.name, title: member.jobTitle },
+    idpTeams: member.teams, organizationRole: member.organizationRole
+  })) : await User.find({
     $or: [
       { currentOrganizationId: organizationId },
       { 'idpTeams.organizationId': organizationId }
@@ -229,7 +236,7 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
   const organizationClaim = getSessionOrganizations(sessionUser).find((organization) =>
     normalizeId(organization.id || organization._id || organization.organizationId) === organizationId
   ) || (normalizeId(sessionUser?.currentOrganization?.id) === organizationId ? sessionUser.currentOrganization : null);
-  const headedDepartmentIds = new Set((organizationClaim?.departmentHeadPermissions || [])
+  const headedDepartmentIds = new Set((directory ? [] : organizationClaim?.departmentHeadPermissions || [])
     .map((department) => normalizeId(department.id)).filter(Boolean));
   if (!isHrPlus && headedDepartmentIds.size > 0) {
     for (const [teamId, team] of teamNodesById) {
@@ -258,9 +265,9 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
     if (!includeSelf && isSelf) return;
 
     const userTeams = (userDoc.idpTeams || []).filter(
-      (team) => normalizeId(team.organizationId) === organizationId
+      (team) => normalizeId(team.organizationId) === organizationId && (isHrPlus || accessibleTeamIdsSet.has(normalizeId(team.id)))
     );
-    if (userTeams.length === 0) return;
+    if (userTeams.length === 0 && !isHrPlus) return;
 
     const isInScope = isHrPlus || userTeams.some((team) => {
       const teamId = normalizeId(team.id);
@@ -290,6 +297,8 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
       managerName: primaryTeam?.managerName || null,
       managerEmail: primaryTeam?.managerEmail || null,
       teamIds: userTeams.map((team) => normalizeId(team.id)).filter(Boolean),
+      organizationRole: userDoc.organizationRole || null,
+      teams: userTeams,
       isSelf
     });
   });
@@ -359,7 +368,9 @@ function appraisalBelongsToCurrentOrganization(req, appraisal) {
 
 async function canManageAppraisal(req, appraisal) {
   if (!appraisal || !appraisalBelongsToCurrentOrganization(req, appraisal)) return false;
-  if (isAssignedManager(req, appraisal)) return true;
+  if (isAssignedManager(req, appraisal)) return canAppraiseEmployee(req, {
+    targetUserId: appraisal.employee?.userId, targetEmail: appraisal.employee?.email
+  });
   // Starting a colleague review does not grant its subject's line manager access.
   if (appraisal.reviewerInitiated) {
     return req.userRole === 'hr_admin' || isHrPlusRole(getOrganizationRole(getSessionUser(req), pickCurrentOrganizationId(req)));

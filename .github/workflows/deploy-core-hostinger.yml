@@ -64,6 +64,7 @@ jobs:
           node --test \
             production-wiring.test.mjs \
             tests/workspace-oidc-session-policy.test.mjs \
+            tests/performance-directory.test.mjs \
             tests/session-invalidation-webhook.test.mjs \
             tests/member-import.test.mjs \
             tests/invitation-view-contract.test.mjs \

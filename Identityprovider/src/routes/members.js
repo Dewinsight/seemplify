@@ -185,6 +185,18 @@ async function updateCompletionTracking(account, organizationId) {
  * GET /api/organizations/:orgId/members
  * Accepts both session auth and Bearer token (for API calls from SmartHR)
  */
+router.get('/:orgId/performance-directory', requireAuthOrAPIToken, requireOrganizationMember, async (req, res) => {
+  try {
+    const { buildPerformanceDirectory } = await import('../utils/performanceDirectory.js')
+    const organization = await Organization.findById(req.params.orgId)
+      .populate('members.account', 'sub email profile.name').lean()
+    const teams = await Team.find({ organization: req.params.orgId }).select('organization name parentTeam department members').lean()
+    return res.json(buildPerformanceDirectory({ organization, teams, actorId: req.user._id, view: req.query.scope }))
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'Could not load Performance directory' })
+  }
+})
+
 router.get('/:orgId/members',
   requireAuthOrAPIToken,
   requireOrganizationMember,

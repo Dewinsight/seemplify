@@ -839,11 +839,6 @@ export default function OKRWorkspacePage() {
       setMessage({ text: validationError, severity: 'error' });
       return;
     }
-    if (!editReason.trim()) {
-      setMessage({ text: 'Add a short reason for this edit.', severity: 'error' });
-      return;
-    }
-
     setSaving(true);
     try {
       const response = await api.put(`/okrs/${editingGoal._id}`, {
@@ -851,7 +846,7 @@ export default function OKRWorkspacePage() {
         period: form.period,
         periodId: form.periodId || undefined,
         parentOKRId: form.parentOKRId || null,
-        editReason: editReason.trim(),
+        ...(editReason.trim() ? { editReason: editReason.trim() } : {}),
         objectives: form.objectives.map((objective) => {
           const keyResultWeightTotal = objective.keyResults.reduce((total, keyResult) => total + Number(keyResult.weight ?? 0), 0);
           const hasExplicitKeyResultWeights = objective.keyResults.every((keyResult) => typeof keyResult.weight === 'number')
@@ -1485,10 +1480,9 @@ export default function OKRWorkspacePage() {
           {editingGoal && (
             <TextField
               fullWidth
-              required
               multiline
               minRows={2}
-              label="Reason for edit"
+              label="Reason for edit (optional)"
               value={editReason}
               onChange={(event) => setEditReason(event.target.value)}
               helperText="This is recorded in the goal history for employees, managers, and HR."

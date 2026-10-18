@@ -9,6 +9,7 @@ test('starts a manager appraisal in three steps and displays partial launch resu
   await page.getByRole('button', { name: 'Start appraisal', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Choose staff' })).toBeVisible();
   await page.getByRole('checkbox', { name: /Jordan Lee/ }).check();
+  await muiSelect(page, 'Reviewer for Jordan Lee').click(); await page.getByRole('option', { name: /Alex Morgan/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Review details', exact: true })).toBeVisible();
   await expect(muiSelect(page, 'Review cycle')).toHaveText('2026 Annual Review');
@@ -17,7 +18,7 @@ test('starts a manager appraisal in three steps and displays partial launch resu
   await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
   await expect(page.getByText('1 started · 1 already in progress · 1 blocked')).toBeVisible();
-  expect(state.createdCycleBodies[0]).toMatchObject({ cycleId: 'cycle-1', employees: [{ userId: 'member-1' }], reviewerMode: 'initiator', appraisalFlow: { version: 1 } });
+  expect(state.createdCycleBodies[0]).toMatchObject({ cycleId: 'cycle-1', employees: [{ userId: 'member-1', reviewerId: currentUser.id }], reviewerMode: 'selected', appraisalFlow: { version: 1 } });
   await expect(page.getByRole('link', { name: 'Open appraisal' })).toHaveAttribute('href', '/appraisals/started-review');
   await page.getByRole('button', { name: 'Review blocked staff' }).click();
   await expect(page.getByRole('heading', { name: 'Choose staff' })).toBeVisible();
@@ -28,6 +29,7 @@ test('starts a one-off staff review with simple deadlines on mobile', async ({ p
   await installMockApi(page, state); await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/appraisals/start?employeeId=member-1');
   await expect(page.getByRole('checkbox', { name: /Jordan Lee/ })).toBeChecked();
+  await muiSelect(page, 'Reviewer for Jordan Lee').click(); await page.getByRole('option', { name: /Alex Morgan/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await muiSelect(page, 'Review cycle').click(); await page.getByRole('option', { name: 'New one-off review' }).click();
   await page.getByLabel('Review name', { exact: true }).fill('Probation check-in');
@@ -106,8 +108,7 @@ test('recovers from a history error and explains when an employee has no eligibl
   await expect(page.getByText('Your completed and cancelled appraisals will appear here across all cycles.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
   await page.goto('/appraisals/start');
-  await expect(page.getByRole('heading', { name: 'Choose staff', exact: true })).toBeVisible();
-  await expect(page.getByText(/No colleagues are available in your team hierarchy/)).toBeVisible();
+  await expect(page.getByText(/Your manager or HR starts staff appraisals/)).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
 });
 
@@ -561,7 +562,7 @@ async function installMockApi(page: Page, state: MockApiState) {
       return fulfill({ success: true, data: { currentTeam: state.managerMode ? team : null, availableTeams: state.managerMode ? [team] : [] } });
     }
     if (method === 'GET' && path === '/appraisals/colleague-roster') {
-      return fulfill({ success: true, data: { employees: state.managerMode || state.hrAdminMode ? [{ userId: 'member-1', name: 'Jordan Lee', email: 'jordan@example.com', teamName: 'Customer Success', isSelectableForAppraisal: true }] : [] } });
+      return fulfill({ success: true, data: { teams: [{ id: 'team-1', name: 'Customer Success' }], employees: state.managerMode || state.hrAdminMode ? [{ userId: 'member-1', name: 'Jordan Lee', email: 'jordan@example.com', teamId: 'team-1', teamIds: ['team-1'], teamName: 'Customer Success', isSelectableForAppraisal: true, reviewerOptions: [{ userId: currentUser.id, name: 'Alex Morgan', email: currentUser.email, role: 'team_manager' }] }] : [] } });
     }
     if (method === 'GET' && path === '/user/my-team-members') {
       const directReports = state.managerMode ? [{ userId: 'member-1', name: 'Jordan Lee', email: 'jordan@example.com', title: 'Customer Success Manager', teamName: 'Customer Success' }] : [];
@@ -1446,6 +1447,7 @@ test('customizes an appraisal cycle flow, adds a question, selects people, and l
   await page.getByText('Jordan Lee', { exact: true }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Confirm and launch' })).toBeVisible();
+  await muiSelect(page, 'Reviewer for Jordan Lee').click(); await page.getByRole('option', { name: /Alex Morgan/ }).click();
   await page.getByRole('button', { name: 'Launch Review Cycle' }).click();
   await expect.poll(() => state.createdCycleBodies.length).toBe(1);
   const body = state.createdCycleBodies[0] as {
@@ -1510,6 +1512,7 @@ test('validates a scored custom design, saves it as a template, and launches the
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByText('Jordan Lee', { exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await muiSelect(page, 'Reviewer for Jordan Lee').click(); await page.getByRole('option', { name: /Alex Morgan/ }).click();
   await page.getByRole('button', { name: 'Launch Review Cycle' }).click();
   await expect.poll(() => state.createdCycleBodies.length).toBe(1);
 

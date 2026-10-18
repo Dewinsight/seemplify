@@ -73,7 +73,7 @@ test('employee aligns an existing draft in its own period, submits it, and manag
   await expect(muiSelect(dialog, 'Period')).toHaveText(period.name);
   await dialog.getByRole('combobox', { name: 'Align to parent goal (optional)' }).click();
   await page.getByRole('option', { name: `${parent.title} · ${period.name}`, exact: true }).click();
-  await dialog.getByLabel('Reason for edit').fill('Align this draft with the company priority');
+  await expect(dialog.getByLabel('Reason for edit (optional)', { exact: true })).toHaveValue('');
   await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(dialog).not.toBeVisible(); await expect(page.getByText('Goal updated.', { exact: true })).toBeVisible();
   const saved = await api(request, 'employee', 'GET', `okrs/${child._id}`);
@@ -177,6 +177,7 @@ test('manager launches from the three-step wizard and employee submits the manua
     workflowDefinition: design, settings: { enableAiAssist: false, requireOkrAlignment: false }, responseDeadlines: { selfAssessmentDue: date(7), managerReviewDue: date(14) } });
   await login(page, 'manager', '/appraisals/start?employeeId=acceptance-employee');
   await expect(page.getByRole('checkbox', { name: /Acceptance employee/ })).toBeChecked();
+  await muiSelect(page, 'Reviewer for Acceptance employee').click(); await page.getByRole('option', { name: /Acceptance manager/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await muiSelect(page, 'Review cycle').click(); await page.getByRole('option', { name: cycle.cycle?.name || cycle.name, exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();

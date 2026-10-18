@@ -13,7 +13,7 @@ const { processDueMeetings } = require('../services/appraisalMeetingMediaService
 const routes = require('../routes/appraisals');
 let mongo, app, cycle;
 const org = { id: 'flow-org', role: 'employee', appAccess: { mode: 'all', appIds: [] } };
-const actor = name => ({ id: name, sub: name, name, email: `${name}@example.test`, organizations: [org], currentOrganization: org, idpTeams: [{ id: name === 'outsider' ? 'outside' : 'team', name: 'Product', organizationId: org.id, role: 'member' }] });
+const actor = name => ({ id: name, sub: name, name, email: `${name}@example.test`, organizations: [org], currentOrganization: org, idpTeams: [{ id: name === 'outsider' ? 'outside' : 'team', name: 'Product', organizationId: org.id, role: name === 'reviewer' ? 'line_manager' : 'member' }] });
 const call = (method, url, who = 'reviewer') => request(app)[method](`/api/appraisals${url}`).set('x-actor', who);
 const flow = types => ({ assessmentMode: 'form', steps: types.map((type, index) => ({ id: `${type}_${index}`, type, label: type })) });
 async function launch(types) {
