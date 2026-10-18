@@ -30,7 +30,17 @@ function performancePreferences(response) {
   return {
     ...response,
     activities: Array.isArray(response.activities)
-      ? response.activities.filter((activity) => activity?.app === 'performance')
+      ? response.activities.filter((activity) => activity?.app === 'performance').map((activity) => {
+        const inherited = ['admin_default', 'app_default'].includes(activity.provenance?.codexModel);
+        return {
+          ...activity,
+          adminDefault: { ...activity.adminDefault, codexModel: 'gpt-5.6-terra' },
+          ...(inherited ? {
+            effective: { ...activity.effective, codexModel: 'gpt-5.6-terra' },
+            provenance: { ...activity.provenance, codexModel: 'app_default' }
+          } : {})
+        };
+      })
       : []
   };
 }
