@@ -272,7 +272,8 @@ function getGoalPermissionFlags(req, goal) {
     view: canViewGoal(req, goal),
     edit: canEditGoal(req, goal),
     submit: canSubmitGoal(req, goal),
-    decide: canDecideGoal(req, goal),
+    decide: canDecideGoal(req, goal) &&
+      (goal?.lifecycle?.state === 'pending_approval' || goal?.approvalStatus === 'pending'),
     acknowledge: canAcknowledgeGoal(req, goal),
     requestChange: canRequestGoalChange(req, goal),
     checkIn: canCheckInGoal(req, goal),

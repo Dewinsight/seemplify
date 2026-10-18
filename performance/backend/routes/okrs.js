@@ -623,7 +623,9 @@ async function resolvePeriod(req, periodId, periodLabel) {
 }
 
 function samePeriod(goal, parent) {
-  if (goal.periodId && parent.periodId) return String(goal.periodId) === String(parent.periodId);
+  // findTenantGoal populates periodId; parent lookups retain a bare ObjectId.
+  // Compare their identities rather than a populated document's string output.
+  if (goal.periodId && parent.periodId) return idFingerprint(goal.periodId) === idFingerprint(parent.periodId);
   return String(goal.period || '') === String(parent.period || '');
 }
 
@@ -639,7 +641,7 @@ async function validateAlignment(req, goal, parentOKRId, parentObjectiveIndex = 
     throw httpError(400, 'A goal cannot be aligned to itself', 'INVALID_ALIGNMENT');
   }
   if (!samePeriod(goal, parent)) {
-    throw httpError(400, 'Parent and child goals must belong to the same goal period', 'PERIOD_MISMATCH');
+    throw httpError(400, `Choose the same goal period for both goals. This goal: ${goal.period || 'unspecified'}; parent goal: ${parent.period || 'unspecified'}.`, 'PERIOD_MISMATCH');
   }
   if (goal.type === 'organization') {
     throw httpError(400, 'Organization goals cannot have parents', 'INVALID_ALIGNMENT');
@@ -1688,6 +1690,17 @@ router.put('/:id', requireAuth, async (req, res) => {
           goal.alignment = undefined;
         }
         changes.parentOKRId = nextParentId;
+      }
+    }
+
+    if (changes.period) {
+      if (goal.alignment?.parentOKRId && !parentChanged) {
+        await validateAlignment(req, goal, goal.alignment.parentOKRId, goal.alignment.parentObjectiveIndex ?? 0);
+      }
+      const children = await OKR.find({ organizationId: goal.organizationId, 'alignment.parentOKRId': goal._id })
+        .select('period periodId');
+      if (children.some((child) => !samePeriod(child, goal))) {
+        throw httpError(400, 'Unlink or move child goals before changing this goal period', 'PERIOD_MISMATCH');
       }
     }
 

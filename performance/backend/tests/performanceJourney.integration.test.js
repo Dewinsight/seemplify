@@ -294,6 +294,45 @@ test('HR can create several organization goals after individual and team goals i
   expect(await OKR.countDocuments({ organizationId: ORG_A })).toBe(4);
 });
 
+test.each(['edit', 'align'])('aligns existing goals in the same populated period through %s', async (endpoint) => {
+  const create = (actor, type, title) => request(app).post('/api/okrs').set('x-test-actor', actor).send({
+    title, type, periodId: String(period._id),
+    objectives: [{ title, keyResults: [{ title: 'Measured result', targetValue: 100 }] }]
+  });
+  const parent = (await create('hr', 'organization', 'Company priority').expect(201)).body.data;
+  const child = (await create('employee', 'individual', 'Employee priority').expect(201)).body.data;
+  const response = endpoint === 'edit'
+    ? await request(app).put(`/api/okrs/${child._id}`).send({ periodId: String(period._id), period: period.name, parentOKRId: parent._id }).expect(200)
+    : await request(app).put(`/api/okrs/${child._id}/align`).send({ parentOKRId: parent._id }).expect(200);
+  expect(response.body.data.alignment.parentOKRId).toBe(parent._id);
+  expect((await OKR.findById(parent._id)).childOKRIds.map(String)).toContain(child._id);
+  // Replay and a later content edit retain the alignment and draft workflow.
+  await request(app).put(`/api/okrs/${child._id}`).send({ parentOKRId: parent._id, title: 'Updated employee priority' }).expect(200);
+  expect((await OKR.findById(child._id)).lifecycle.state).toBe('draft');
+});
+
+test('alignment rejects different period IDs even when their labels match and rejects moving an aligned goal away', async () => {
+  const otherPeriod = await GoalPeriod.create({ ...period.toObject(), _id: new mongoose.Types.ObjectId(), code: 'OTHER-PERIOD' });
+  const create = (actor, type, periodId) => request(app).post('/api/okrs').set('x-test-actor', actor).send({
+    title: 'Period validation', type, periodId: String(periodId),
+    objectives: [{ title: 'Measured objective', keyResults: [{ title: 'Measured result' }] }]
+  });
+  const parent = (await create('hr', 'organization', period._id).expect(201)).body.data;
+  const child = (await create('employee', 'individual', otherPeriod._id).expect(201)).body.data;
+  const candidates = await request(app).get('/api/okrs/alignable/list').query({ childType: 'individual', periodId: String(otherPeriod._id) }).expect(200);
+  expect(candidates.body.data.map((candidate) => candidate.id)).not.toContain(parent._id);
+  const mismatch = await request(app).put(`/api/okrs/${child._id}`).send({ parentOKRId: parent._id }).expect(400);
+  expect(mismatch.body.code).toBe('PERIOD_MISMATCH');
+  expect((await OKR.findById(child._id)).alignment?.parentOKRId).toBeFalsy();
+  // Changing the period and aligning together is valid.
+  await request(app).put(`/api/okrs/${child._id}`).send({ periodId: String(period._id), parentOKRId: parent._id }).expect(200);
+  const invalidMove = await request(app).put(`/api/okrs/${child._id}`).send({ periodId: String(otherPeriod._id) }).expect(400);
+  expect(invalidMove.body.code).toBe('PERIOD_MISMATCH');
+  expect(String((await OKR.findById(child._id)).periodId)).toBe(String(period._id));
+  await request(app).put(`/api/okrs/${parent._id}`).set('x-test-actor', 'hr').send({ periodId: String(otherPeriod._id) }).expect(400);
+  await request(app).put(`/api/okrs/${child._id}`).set('x-test-organization', ORG_B).send({ parentOKRId: parent._id }).expect(404);
+});
+
 test('employee future goal is approved and snapshotted immutably', async () => {
   const created = await request(app)
     .post('/api/okrs')
@@ -313,16 +352,20 @@ test('employee future goal is approved and snapshotted immutably', async () => {
   expect(created.body.data.scoring.status).toBe('unrated');
 
   const goalId = created.body.data._id;
+  const managerGoal = () => request(app).get(`/api/okrs/${goalId}`).set('x-test-actor', 'manager');
+  expect((await managerGoal()).body.data.permissions.decide).toBe(false);
   await request(app)
     .post(`/api/okrs/${goalId}/submit`)
     .set('x-test-actor', 'employee')
     .send({})
     .expect(200);
+  expect((await managerGoal()).body.data.permissions.decide).toBe(true);
   await request(app)
     .post(`/api/okrs/${goalId}/decision`)
     .set('x-test-actor', 'manager')
     .send({ decision: 'approve' })
     .expect(200);
+  expect((await managerGoal()).body.data.permissions.decide).toBe(false);
   await request(app)
     .post(`/api/okrs/${goalId}/check-ins`)
     .set('x-test-actor', 'employee')

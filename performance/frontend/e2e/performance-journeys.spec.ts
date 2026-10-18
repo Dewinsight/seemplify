@@ -1322,6 +1322,22 @@ test('lets an authorised manager edit a team goal without losing recorded progre
   });
 });
 
+test('draft goals explain owner submission and do not appear as actionable approvals', async ({ page }) => {
+  const state = createState(); state.managerMode = true;
+  const draft = state.goals[0]; draft.ownerId = 'member-1'; draft.title = 'Draft employee goal';
+  draft.lifecycle.state = 'draft'; draft.status = 'draft'; draft.approvalStatus = 'draft';
+  // Older APIs advertised reviewer authority even before submission.
+  draft.permissions = { view: true, edit: true, decide: true, submit: false };
+  await installMockApi(page, state);
+  await page.goto('/dashboard'); await switchPerformanceWorkspace(page, 'Manager');
+  await page.goto('/okrs?view=team'); await page.getByRole('tab', { name: 'Upcoming', exact: true }).click();
+  await expect(page.getByText('Waiting for the goal owner to submit this draft for approval.', { exact: true })).toBeVisible();
+  await expect(page.getByText(`Period: ${state.futurePeriod.name}`, { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Approvals (0)', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Draft employee goal', { exact: true })).toHaveCount(0);
+});
+
 test('switches goal tabs from a team deep link even when presence is unavailable', async ({ page }) => {
   const state = createState();
   state.managerMode = true;
