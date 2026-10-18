@@ -133,7 +133,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
   return <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}>
     <Stack spacing={2}>
       <Typography component="h3" variant="subtitle1" fontWeight={600}>In-app one-on-one</Typography>
-      <Typography variant="body2" color="text.secondary">Only the assigned reviewer and employee can join. {record ? 'The reviewer can record both participants after both agree. Recordings are saved privately with this appraisal. Speech is transcribed by Seemplify’s managed Azure Speech service; ChatGPT creates the meeting notes.' : 'Recording is off for this call.'}</Typography>
+      <Typography variant="body2" color="text.secondary">Only the assigned reviewer and employee can join. {record ? 'The reviewer can record both participants after both agree. Recordings are saved privately with this appraisal. Deepgram transcribes the audio; the reviewer’s personal ChatGPT connection creates the meeting notes.' : 'Recording is off for this call.'}</Typography>
       {error && <Alert severity="error">{error}</Alert>}
       {status && <Typography role="status" variant="body2">{status}</Typography>}
       {(recording || recordingNotice) && <Alert severity="warning">Recording is in progress. Both participants’ audio and video may be captured.</Alert>}

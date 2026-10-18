@@ -30,7 +30,7 @@ async function process(meeting) {
       const audio = await fs.readFile(path.join(dir, files[index]));
       const result = await shared.request('meetings/transcribe', claimed.appraisalMeeting.ownerIdentity, { audio: audio.toString('base64') }, { timeoutMs: 180000 });
       parts.push(String(result.transcript || '').slice(0, 10000));
-      await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.transcriptionParts': parts } });
+      await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.transcriptionParts': parts, 'appraisalMeeting.transcriptionProvider': result.provider, 'appraisalMeeting.transcriptionModel': result.model } });
     }
     const content = parts.filter(Boolean).join('\n');
     await OneOnOne.updateOne({ _id: meeting._id }, { $set: { transcript: { content, source: 'auto', status: 'ready', processedAt: new Date() }, 'appraisalMeeting.transcriptionState': content ? 'ready' : 'no_speech' }, $unset: { 'appraisalMeeting.transcriptionLeaseUntil': 1 } });

@@ -151,6 +151,7 @@ services:
       USE_WEAVIATE: "true"
       RECRUITER_EMBEDDING_HMAC_SECRET_FILE: /run/seemplify/recruiter-embedding-hmac
       RECRUITER_EMBEDDING_PROVIDER: nomic-node
+      DEEPGRAM_API_KEY_FILE: /run/seemplify/deepgram-api-key
       RECRUITER_EMBEDDING_URL: http://knowledge-runtime:11540/v1/embeddings
       CHATGPT_GATEWAY_BASE_URL: http://chatgpt-gateway:11435
       CHATGPT_GATEWAY_SHARED_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
@@ -168,6 +169,7 @@ services:
       FORCE_BREVO_INTERVIEW_EMAILS: "false"
     volumes:
       - /opt/seemplify/secrets/knowledge/recruiter-embedding-hmac:/run/seemplify/recruiter-embedding-hmac:ro
+      - /opt/seemplify/secrets/platform-integrations/deepgram-api-key:/run/seemplify/deepgram-api-key:ro
       - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-hmac:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5001/api/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))\""]
