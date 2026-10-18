@@ -124,7 +124,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
       activeRecorder.ondataavailable = event => { if (event.data.size) { chunks.push(event.data); bytes += event.data.size; if (bytes > 45 * 1024 * 1024 && activeRecorder.state === 'recording') activeRecorder.stop(); } };
       activeRecorder.onstop = () => { clean(); const blob = new Blob(chunks, { type: mimeType.split(';')[0] }); chunks = []; setRecording(false); unsaved.current = true; setSavedBlob(blob); void api.post(`${base}/stop`, { peerId: session.current?.peerId }).catch(() => {}); void upload(blob); };
       try { await api.post(`${base}/record`, { peerId: session.current!.peerId }); } catch (error) { clean(); throw error; }
-      recorder.current = activeRecorder; activeRecorder.start(1000); setRecording(true); unsaved.current = true; setStatus('Recording both participants. Stop and save before leaving.');
+      recorder.current = activeRecorder; activeRecorder.start(1000); setRecording(true); unsaved.current = true; setStatus('Recording both participants. Stop and save before leaving.'); onSaved();
     } catch (error) { setError(message(error)); } finally { setBusy(false); }
   };
   const download = () => { if (!savedBlob) return; const url = URL.createObjectURL(savedBlob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'unsaved-appraisal-call.webm'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 10000); };
