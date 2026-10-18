@@ -214,6 +214,7 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
         teamNodesById.set(teamId, {
           id: teamId,
           name: team.name,
+          departmentId: normalizeId(team.departmentId),
           parentTeamId: normalizeId(team.parentTeamId)
         });
       });
@@ -222,6 +223,24 @@ async function resolveAppraisalAccessScope(req, { force = false, includeSelf = f
   const accessibleTeamIdsSet = isHrPlus
     ? new Set(Array.from(teamNodesById.keys()))
     : collectHierarchyTeamIds(managedRootTeamIds, teamNodesById);
+
+  // Department authority comes from the active organization's signed IdP
+  // claims. A head need not also hold a line-manager role in every team.
+  const organizationClaim = getSessionOrganizations(sessionUser).find((organization) =>
+    normalizeId(organization.id || organization._id || organization.organizationId) === organizationId
+  ) || (normalizeId(sessionUser?.currentOrganization?.id) === organizationId ? sessionUser.currentOrganization : null);
+  const headedDepartmentIds = new Set((organizationClaim?.departmentHeadPermissions || [])
+    .map((department) => normalizeId(department.id)).filter(Boolean));
+  if (!isHrPlus && headedDepartmentIds.size > 0) {
+    for (const [teamId, team] of teamNodesById) {
+      if (!headedDepartmentIds.has(team.departmentId)) continue;
+      accessibleTeamIdsSet.add(teamId);
+      if (!managedRootTeamIds.includes(teamId)) {
+        managedRootTeamIds.push(teamId);
+        managedTeams.push({ ...team, organizationId, role: 'department_head' });
+      }
+    }
+  }
 
   if (!isHrPlus && accessibleTeamIdsSet.size === 0) {
     req[cacheKey] = scope;

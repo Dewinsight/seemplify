@@ -174,6 +174,22 @@ test('recognition is tenant-validated, audience-aware, acknowledged, and non-sco
   expect(await Recognition.countDocuments({ organizationId: ORG_A })).toBe(1);
 });
 
+test('recognition accepts the actual colleague picker response and ignores forged team details', async () => {
+  const search = await request(app).get('/api/users/search?q=phase2-employee').set('x-test-actor', 'manager').expect(200);
+  const recipient = search.body.data.find(person => person.id === EMPLOYEE);
+  expect(recipient).toBeTruthy();
+  expect(recipient).not.toHaveProperty('userId');
+  const sent = await request(app).post('/api/recognition').set('x-test-actor', 'manager')
+    .send({ recipient: { ...recipient, teamId: 'forged-team', teamName: 'Forged team' }, message: 'Specific appreciation from the real picker contract.', visibility: 'team' }).expect(201);
+  expect(sent.body.data.recipient).toMatchObject({ userId: EMPLOYEE, teamId: 'team-a', teamName: 'Team A' });
+  const teamless = await seedUser('teamless-colleague', ORG_A);
+  await User.updateOne({ _id: teamless._id }, { $set: { idpTeams: [], organizationMemberships: [{ organization: ORG_A, role: 'employee', isActive: true }] } });
+  await request(app).post('/api/recognition').set('x-test-actor', 'manager')
+    .send({ recipient: { id: 'teamless-colleague', teamId: 'forged-team' }, message: 'Teamless colleague', visibility: 'team' }).expect(400);
+  await request(app).post('/api/recognition').set('x-test-actor', 'manager')
+    .send({ recipient: { id: 'teamless-colleague' }, message: 'Private appreciation', visibility: 'private' }).expect(201);
+});
+
 test('project feedback requires a lead and verifies both people are project members', async () => {
   const created = await request(app).post('/api/performance-projects').set('x-test-actor', 'manager').send({ name: 'Payroll migration', startDate: new Date().toISOString(), state: 'active', participants: [{ userId: EMPLOYEE }, { userId: REVIEWER }] }).expect(201);
   const id = created.body.data._id;

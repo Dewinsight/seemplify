@@ -426,6 +426,9 @@ jobs:
             seemplify-core-learning-1; do
             wait_healthy "$container"
           done
+          # A healthy Performance process must also be able to authenticate to
+          # the shared AI authority; a stopped dependency previously went unseen.
+          docker exec seemplify-core-performance-backend-1 node scripts/verifySharedAIHealth.js
           docker exec seemplify-core-time-backend-1 npm run rules:seed
           "${compose[@]}" up -d --no-deps --force-recreate identity-provider
           wait_healthy seemplify-core-identity-provider-1

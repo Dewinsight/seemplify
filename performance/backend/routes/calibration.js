@@ -7,6 +7,7 @@ const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
 const AIPerformanceService = require('../services/aiPerformanceService');
 const { requireOrganization } = require('../services/tenantPolicy');
 const { AI_ACTIVITIES } = require('../config/aiActivityCatalog');
+const CALIBRATION_STATES = ['calibration_pending', 'calibration_in_progress'];
 
 router.use(requireAuth, requireOrganization);
 
@@ -82,8 +83,13 @@ router.post('/', requireHRAdmin, async (req, res) => {
     const reviews = await Appraisal.find({
       organizationId: req.organizationId,
       cycleId: reviewCycleId,
-      status: { $in: ['manager_review_submitted', 'calibration_pending', 'calibration_in_progress', 'calibration_completed', 'final_review_pending', 'completed', 'employee_acknowledged'] }
+      status: { $in: CALIBRATION_STATES },
+      'finalRating.finalizedAt': null
     }).limit(100);
+    if (!reviews.length) return res.status(409).json({ success: false, error: 'No appraisals are ready for calibration. Complete manager reviews and discussions first.' });
+    if (await Calibration.exists({ organizationId: req.organizationId, reviewCycleId, status: { $in: ['scheduled', 'in_progress'] } })) {
+      return res.status(409).json({ success: false, error: 'An active calibration session already exists for this cycle' });
+    }
     
     // Map reviews to calibration format
     const reviewsUnderCalibration = reviews.map(r => ({
@@ -146,12 +152,10 @@ router.put('/:id', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Session not found' });
     }
     
-    const updates = req.body;
-    Object.keys(updates).forEach(key => {
-      if (key !== '_id' && key !== 'reviewCycleId' && key !== 'createdBy') {
-        session[key] = updates[key];
-      }
-    });
+    if (['completed', 'cancelled'].includes(session.status)) return res.status(409).json({ success: false, error: 'This calibration session is closed' });
+    const allowed = new Set(['title', 'scheduledDate', 'participants', 'distributionTargets']);
+    if (Object.keys(req.body).some(key => !allowed.has(key))) return res.status(400).json({ success: false, error: 'Only session details can be changed here. Record decisions through the review controls.' });
+    for (const key of Object.keys(req.body)) session[key] = req.body[key];
     
     await session.save();
     
@@ -173,6 +177,7 @@ router.post('/:id/start', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Session not found' });
     }
     
+    if (session.status !== 'scheduled') return res.status(409).json({ success: false, error: 'Only a scheduled calibration session can be started' });
     session.status = 'in_progress';
     await session.save();
     
@@ -194,7 +199,9 @@ router.put('/:id/reviews/:reviewIndex', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Session not found' });
     }
     
-    const reviewIndex = parseInt(req.params.reviewIndex);
+    if (session.status !== 'in_progress') return res.status(409).json({ success: false, error: 'Start the calibration session before reviewing ratings. Closed sessions cannot be changed.' });
+    const reviewIndex = Number(req.params.reviewIndex);
+    if (!Number.isInteger(reviewIndex) || reviewIndex < 0) return res.status(404).json({ success: false, error: 'Review not found' });
     const review = session.reviewsUnderCalibration[reviewIndex];
     
     if (!review) {
@@ -202,7 +209,16 @@ router.put('/:id/reviews/:reviewIndex', requireHRAdmin, async (req, res) => {
     }
     
     const userId = req.session.user.id || req.session.user.sub;
-    const { calibratedRating, performanceBucket, calibrationNotes, decision } = req.body;
+    const { performanceBucket, calibrationNotes, decision } = req.body;
+    if (!['approved', 'adjusted', 'pending_review', 'deferred'].includes(decision)) return res.status(400).json({ success: false, error: 'Choose a valid review decision' });
+    const actualReview = await Appraisal.findOne({ _id: review.reviewId, organizationId: req.organizationId, status: { $in: CALIBRATION_STATES }, 'finalRating.finalizedAt': null });
+    if (!actualReview) return res.status(409).json({ success: false, error: 'This appraisal is no longer available for calibration' });
+    const cycle = await AppraisalCycle.findOne({ _id: session.reviewCycleId, organizationId: req.organizationId }).select('ratingScale').lean();
+    const calibratedRating = req.body.calibratedRating === undefined && decision === 'approved' ? review.originalManagerRating : req.body.calibratedRating;
+    if (['approved', 'adjusted'].includes(decision) && (calibratedRating === null || calibratedRating === '' || !Number.isFinite(Number(calibratedRating)) || Number(calibratedRating) < (cycle?.ratingScale?.min ?? 1) || Number(calibratedRating) > (cycle?.ratingScale?.max ?? 5))) {
+      return res.status(400).json({ success: false, error: 'Choose a calibrated rating within the cycle rating scale' });
+    }
+    if (decision === 'approved' && Number(calibratedRating) !== Number(review.originalManagerRating)) return res.status(400).json({ success: false, error: 'Use Adjust rating when changing the manager rating' });
     if (calibratedRating !== undefined && Number(calibratedRating) !== Number(review.originalManagerRating) && String(calibrationNotes || '').trim().length < 10) {
       return res.status(400).json({ success: false, error: 'A reason of at least 10 characters is required to change a rating' });
     }
@@ -236,7 +252,6 @@ router.put('/:id/reviews/:reviewIndex', requireHRAdmin, async (req, res) => {
     
     // If decision is 'adjusted', update the actual review
     if (decision === 'adjusted' || decision === 'approved') {
-      const actualReview = await Appraisal.findOne({ _id: review.reviewId, organizationId: req.organizationId });
       if (actualReview && calibratedRating !== undefined) {
         actualReview.calibration = {
           ...(actualReview.calibration || {}),
@@ -363,9 +378,12 @@ router.post('/:id/complete', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Session not found' });
     }
     
-    // Check all reviews have decisions
+    if (session.status === 'completed') return res.json({ success: true, data: session, message: 'Calibration already completed' });
+    if (session.status !== 'in_progress') return res.status(409).json({ success: false, error: 'Start the session before completing calibration' });
+    if (!session.reviewsUnderCalibration.length) return res.status(400).json({ success: false, error: 'There are no reviews in this calibration session' });
+    // Deferred reviews remain unresolved and must not be sent to final review.
     const pendingReviews = session.reviewsUnderCalibration.filter(
-      r => r.decision === 'pending_review'
+      r => !['approved', 'adjusted'].includes(r.decision)
     );
     
     if (pendingReviews.length > 0) {
@@ -403,7 +421,7 @@ router.post('/:id/complete', requireHRAdmin, async (req, res) => {
     const calibratedAppraisalIds = session.reviewsUnderCalibration.map((review) => review.reviewId).filter(Boolean);
     if (calibratedAppraisalIds.length > 0) {
       await Appraisal.updateMany(
-        { _id: { $in: calibratedAppraisalIds }, organizationId: req.organizationId },
+        { _id: { $in: calibratedAppraisalIds }, organizationId: req.organizationId, status: { $in: CALIBRATION_STATES }, 'finalRating.finalizedAt': null },
         { $set: { status: 'final_review_pending' } }
       );
     }
@@ -439,7 +457,7 @@ router.get('/:id/export', requireHRAdmin, async (req, res) => {
     // Return data formatted for export
     const exportData = {
       sessionTitle: session.title,
-      reviewCycle: session.reviewCycleId?.title,
+      reviewCycle: session.reviewCycleId?.name || session.reviewCycleId?.title,
       completedAt: session.completedAt,
       summary: session.summary,
       distribution: session.actualDistribution,

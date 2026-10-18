@@ -1,0 +1,63 @@
+name: Performance Management CI
+on:
+  pull_request:
+    paths: ['performance/**', '.github/workflows/performance-ci.yml']
+  push:
+    branches: [main]
+    paths: ['performance/**', '.github/workflows/performance-ci.yml']
+permissions:
+  contents: read
+concurrency:
+  group: performance-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    # Test identities and databases remain isolated from the production runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: performance/frontend/package-lock.json
+      - run: npm install --legacy-peer-deps
+        working-directory: performance/backend
+      - run: npm ci --legacy-peer-deps
+        working-directory: performance/frontend
+      - run: npm test
+        working-directory: performance/backend
+      - name: Full-application API journeys with production indexes
+        working-directory: performance/backend
+        shell: bash
+        run: |
+          mkdir -p tmp
+          node tests/helpers/liveJourneyServer.js > tmp/acceptance-server.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill -TERM "$fixture_pid" 2>/dev/null || true; wait "$fixture_pid" || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:5014/__test/health > /dev/null; then break; fi
+            sleep 1
+          done
+          node tests/helpers/runLiveJourneys.js
+      - run: npx playwright install --with-deps chrome
+        working-directory: performance/frontend
+      - run: npm run test:e2e
+        working-directory: performance/frontend
+      - run: npm run test:e2e:live
+        working-directory: performance/frontend
+      - run: npm run build
+        working-directory: performance/frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-acceptance-proof
+          path: |
+            performance/backend/tmp/live-api-proof.json
+            performance/backend/tmp/acceptance-server.log
+            performance/frontend/test-results/
+            performance/frontend/playwright-report/
+          if-no-files-found: ignore
