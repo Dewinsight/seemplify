@@ -177,6 +177,8 @@ for (const mobile of [false, true]) test(`manual assessment and visual call work
   await expect(page.getByText('Employee assessment: Manual form', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
+  await expect(page.getByText('The one-on-one call is the next step.', { exact: true })).toBeVisible();
+  await expect(page.getByText('The employee completes their self-assessment next.', { exact: true })).toHaveCount(0);
   const appraisal = await Appraisal.findOne();
   expect(appraisal.status).toBe('meeting_pending');
   expect(appraisal.cycleConfigurationSnapshot.appraisalFlow.assessmentMode).toBe('form');
