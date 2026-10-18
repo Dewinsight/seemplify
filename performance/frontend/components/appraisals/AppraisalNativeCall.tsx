@@ -26,7 +26,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
     peer.current?.close(); peer.current = null; media.current?.getTracks().forEach(track => track.stop()); media.current = null;
     const current = session.current; session.current = null;
     if (current) await api.post(`${base}/leave`, { peerId: current.peerId }).catch(() => {});
-    setJoined(false); setRemoteReady(false); setStatus('You left the call.');
+    setJoined(false); setRemoteReady(false); setRecordingNotice(false); setStatus('You left the call.');
   };
   useEffect(() => {
     mounted.current = true;
@@ -136,7 +136,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
       <Typography variant="body2" color="text.secondary">Only the assigned reviewer and employee can join. {record ? 'The reviewer can record both participants after both agree. Recordings are saved privately with this appraisal. Deepgram transcribes the audio; the reviewer’s personal ChatGPT connection creates the meeting notes.' : 'Recording is off for this call.'}</Typography>
       {error && <Alert severity="error">{error}</Alert>}
       {status && <Typography role="status" variant="body2">{status}</Typography>}
-      {(recording || recordingNotice) && <Alert severity="warning">Recording is in progress. Both participants’ audio and video may be captured.</Alert>}
+      {joined && (recording || recordingNotice) && <Alert severity="warning">Recording is in progress. Both participants’ audio and video may be captured.</Alert>}
       <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ display: joined ? 'flex' : 'none' }}>
         <Box component="video" ref={localVideo} autoPlay playsInline muted aria-label="Your camera preview" sx={{ width: { xs: '100%', sm: '50%' }, minWidth: 0, bgcolor: 'background.default', borderRadius: 1 }} />
         <Box component="video" ref={remoteVideo} autoPlay playsInline aria-label="Other participant" sx={{ width: { xs: '100%', sm: '50%' }, minWidth: 0, bgcolor: 'background.default', borderRadius: 1 }} />
