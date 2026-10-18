@@ -17,8 +17,9 @@ export default function DiscussionPage() {
     const params = useParams();
     const router = useRouter();
     const appraisalId = params.appraisalId as string;
-    const { user, isManager } = useUserContext();
+    const { user, isManager: managerRole, isHRAdmin } = useUserContext();
     const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
+    const isManager = !!user && !!appraisal && (isHRAdmin || [user.id, user.sub].filter(Boolean).map(String).includes(String(appraisal.manager?.userId)) || String(user.email || '').toLowerCase() === String(appraisal.manager?.email || '').toLowerCase() || (managerRole && !appraisal.reviewerInitiated));
 
     const [saving, setSaving] = useState(false);
     const [notes, setNotes] = useState({

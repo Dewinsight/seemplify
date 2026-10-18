@@ -229,7 +229,7 @@ export default function TeamAppraisalsPage() {
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {appraisal.cycleId?.periodStart
-                          ? `${new Date(appraisal.cycleId.periodStart).toLocaleDateString()} - ${new Date(appraisal.cycleId.periodEnd).toLocaleDateString()}`
+                          ? `${new Date(appraisal.cycleId.periodStart).toLocaleDateString(undefined, { timeZone: 'UTC' })} - ${new Date(appraisal.cycleId.periodEnd).toLocaleDateString(undefined, { timeZone: 'UTC' })}`
                           : 'N/A'}
                       </Typography>
                     </TableCell>

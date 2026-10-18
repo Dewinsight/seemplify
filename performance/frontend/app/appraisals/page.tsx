@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useUserContext, useMyAppraisals, useTeamAppraisals, useAppraisalCycles, useOrganizationAppraisals } from '@/lib/hooks';
 import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import api from '@/lib/api';
+import useSWR from 'swr';
 import AppraisalHistory from '@/components/appraisals/AppraisalHistory';
 import { AppraisalResultItem, isFinishedAppraisal } from '@/lib/appraisal-results';
 import {
@@ -103,7 +104,8 @@ export default function AppraisalsPage() {
   const { workspace } = usePerformanceWorkspace();
   const { isManager, isHRAdmin, user, role, organization } = useUserContext();
 
-  const selectedTab = workspace === 'admin' && isHRAdmin ? 2 : workspace === 'manager' && isManager ? 1 : 0;
+  const conducting = searchParams.get('section') === 'conducting';
+  const selectedTab = conducting ? 1 : workspace === 'admin' && isHRAdmin ? 2 : workspace === 'manager' && isManager ? 1 : 0;
   const historyMode = searchParams.get('section') === 'history';
   const changeSection = (section: string) => {
     const url = new URL(window.location.href);
@@ -116,18 +118,22 @@ export default function AppraisalsPage() {
   const { appraisals: allMyAppraisals, isLoading: myLoading, isError: myError, mutate: mutateMyAppraisals } = useMyAppraisals({ cycleId: selectedCycleId || undefined });
   const { appraisals: allTeamAppraisals, isLoading: directTeamLoading, isError: teamError, mutate: mutateTeamAppraisals } = useTeamAppraisals({
     cycleId: selectedCycleId || undefined,
-    enabled: selectedTab === 1,
+    enabled: selectedTab === 1 && !conducting,
   });
   const { cycles, isLoading: cyclesLoading } = useAppraisalCycles();
 
   const { appraisals: organizationAppraisals, isLoading: organizationLoading, isError: organizationError, mutate: mutateOrganizationAppraisals } = useOrganizationAppraisals(selectedTab === 2);
-  const scopedTeamAppraisals = selectedTab === 2
+  const { data: assignedReviews = [], error: assignedError, isLoading: assignedLoading, mutate: refreshAssigned } = useSWR<Appraisal[]>(
+    conducting && organization?.id ? ['/appraisals/assigned-reviews', organization.id] : null,
+    async ([url]: [string, string]) => (await api.get(url)).data?.data || []
+  );
+  const scopedTeamAppraisals = conducting ? assignedReviews.filter((item) => !selectedCycleId || item.cycleId?._id === selectedCycleId) : selectedTab === 2
     ? organizationAppraisals.filter((item: Appraisal) => !selectedCycleId || item.cycleId?._id === selectedCycleId)
     : allTeamAppraisals;
   const myAppraisals = (allMyAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status));
   const teamAppraisals = (scopedTeamAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status));
-  const teamLoading = selectedTab === 2 ? organizationLoading : directTeamLoading;
-  const loadError = selectedTab === 2 ? organizationError : selectedTab === 1 ? teamError : myError;
+  const teamLoading = conducting ? assignedLoading : selectedTab === 2 ? organizationLoading : directTeamLoading;
+  const loadError = conducting ? assignedError : selectedTab === 2 ? organizationError : selectedTab === 1 ? teamError : myError;
   const allVisibleAppraisals: Appraisal[] = selectedTab ? scopedTeamAppraisals : allMyAppraisals;
   const historyAppraisals = allVisibleAppraisals.filter((item) => isFinishedAppraisal(item.status) && (!searchParams.get('employeeId') || item.employee.userId === searchParams.get('employeeId')));
 
@@ -589,7 +595,7 @@ export default function AppraisalsPage() {
               {activeCycle.name}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {new Date(activeCycle.periodStart).toLocaleDateString()} - {new Date(activeCycle.periodEnd).toLocaleDateString()}
+              {new Date(activeCycle.periodStart).toLocaleDateString(undefined, { timeZone: 'UTC' })} - {new Date(activeCycle.periodEnd).toLocaleDateString(undefined, { timeZone: 'UTC' })}
             </Typography>
           </Box>
           <Chip
@@ -671,7 +677,7 @@ export default function AppraisalsPage() {
               ))}
             </Select>
           </FormControl>
-          {(isManager || isHRAdmin) && workspace !== 'personal' && <Button variant="contained" startIcon={<Add />} onClick={() => router.push('/appraisals/start')}>Start appraisal</Button>}
+          <Button variant="contained" startIcon={<Add />} onClick={() => router.push('/appraisals/start')}>Start appraisal</Button><Button onClick={() => router.push('/appraisals?section=conducting')}>Reviews I’m conducting</Button>
         </Box>
       </Box>
 
@@ -757,7 +763,7 @@ export default function AppraisalsPage() {
       )}
 
       <Paper variant="outlined" sx={{ mb: 3 }}><Tabs value={historyMode ? 'history' : 'current'} onChange={(_, value: string) => changeSection(value)} variant="fullWidth"><Tab value="current" label={`Current (${allVisibleAppraisals.filter((item) => !isFinishedAppraisal(item.status)).length})`} /><Tab value="history" label={`History & results (${historyAppraisals.length})`} /></Tabs></Paper>
-      {loadError && <Alert severity="error" action={<Button onClick={() => { mutateMyAppraisals(); mutateTeamAppraisals(); mutateOrganizationAppraisals(); }}>Retry</Button>}>Could not load your appraisals. Please try again.</Alert>}
+      {loadError && <Alert severity="error" action={<Button onClick={() => { mutateMyAppraisals(); mutateTeamAppraisals(); mutateOrganizationAppraisals(); refreshAssigned(); }}>Retry</Button>}>Could not load your appraisals. Please try again.</Alert>}
       {historyMode && !loadError && ((selectedTab ? teamLoading : myLoading) ? <CircularProgress aria-label="Loading appraisal history" /> : <AppraisalHistory appraisals={historyAppraisals} showEmployee={selectedTab > 0} organizationName={organization?.name} />)}
       {!historyMode && !loadError && <>
       {/* Cycle Summary */}
@@ -766,11 +772,11 @@ export default function AppraisalsPage() {
       <Paper sx={{ mb: 3, px: 2.25, py: 1.5, bgcolor: alpha(theme.palette.grey[500], 0.04), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
         <Box>
           <Typography variant="subtitle2" fontWeight={700}>
-            {selectedTab === 2 ? 'Organization appraisals' : selectedTab === 1 ? 'Manager appraisal queue' : 'Personal appraisals'}
+            {selectedTab === 2 ? 'Organization appraisals' : selectedTab === 1 ? 'Reviews I’m conducting' : 'Personal appraisals'}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {selectedTab === 2 ? 'Appraisals for your organization, across every cycle.' : selectedTab === 1
-              ? 'Only direct-report appraisals and manager actions are shown in this workspace.'
+              ? 'Reviews you are assigned to conduct appear here.'
               : 'Only appraisals where you are the employee are shown in this workspace.'}
           </Typography>
         </Box>
@@ -812,7 +818,7 @@ export default function AppraisalsPage() {
       )}
 
       {/* Team Appraisals (Manager View) */}
-      {selectedTab > 0 && (isManager || isHRAdmin) && (
+      {selectedTab > 0 && (conducting || isManager || isHRAdmin) && (
         <Box>
           {teamLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>

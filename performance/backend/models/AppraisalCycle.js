@@ -7,6 +7,8 @@ const mongoose = require('mongoose');
  */
 const appraisalCycleSchema = new mongoose.Schema({
   // Basic Info
+  defaultQuarterKey: { type: String },
+  retiredAt: { type: Date, default: null },
   name: {
     type: String,
     required: true,
@@ -204,6 +206,7 @@ const appraisalCycleSchema = new mongoose.Schema({
 
 // Indexes
 appraisalCycleSchema.index({ organizationId: 1, status: 1 });
+appraisalCycleSchema.index({ organizationId: 1, defaultQuarterKey: 1 }, { unique: true, partialFilterExpression: { defaultQuarterKey: { $type: 'string' } } });
 appraisalCycleSchema.index({ organizationId: 1, periodStart: 1, periodEnd: 1 });
 
 // Default rating scale labels

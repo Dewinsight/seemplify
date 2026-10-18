@@ -341,6 +341,10 @@ function appraisalBelongsToCurrentOrganization(req, appraisal) {
 async function canManageAppraisal(req, appraisal) {
   if (!appraisal || !appraisalBelongsToCurrentOrganization(req, appraisal)) return false;
   if (isAssignedManager(req, appraisal)) return true;
+  // Starting a colleague review does not grant its subject's line manager access.
+  if (appraisal.reviewerInitiated) {
+    return req.userRole === 'hr_admin' || isHrPlusRole(getOrganizationRole(getSessionUser(req), pickCurrentOrganizationId(req)));
+  }
 
   return canAppraiseEmployee(req, {
     targetUserId: appraisal.employee?.userId,

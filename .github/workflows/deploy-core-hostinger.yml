@@ -410,6 +410,11 @@ jobs:
           # partial replacement is built and verified. The job container is disposable.
           "${compose[@]}" run --rm --no-deps performance-backend \
             node scripts/migrateGoalIdempotencyIndex.js --apply
+          install -d -m 700 /opt/seemplify/backups/performance-reviews
+          "${compose[@]}" run --rm --no-deps \
+            -v /opt/seemplify/backups/performance-reviews:/review-backups performance-backend \
+            node scripts/migrateQuarterlyReviews.js --apply \
+            --backup="/review-backups/cycles-$RELEASE_SHA-$(date -u +%Y%m%dT%H%M%S).json"
           "${compose[@]}" up -d --no-deps --force-recreate \
             leave-backend performance-backend payroll-backend time-backend learning
           for container in \

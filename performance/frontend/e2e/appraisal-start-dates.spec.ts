@@ -20,7 +20,7 @@ async function install(page: Page, existingCycle = false) {
     if (path === '/auth/me') response = { success: true, user: { ...manager, idpOrganizations: [{ id: 'org-1', name: 'QA Product', role: 'employee' }], organizations: [{ id: 'org-1', name: 'QA Product', role: 'employee' }] }, currentOrganizationId: 'org-1', currentOrganization: { id: 'org-1', name: 'QA Product' } };
     else if (path === '/user/context') response = data({ user: manager, role: { name: 'line_manager', displayName: 'Line Manager', isManager: true, isTeamLead: true, isHRAdmin: false }, organization: { id: 'org-1', name: 'QA Product' }, teams, currentTeam: teams[0], managerData: { directReportCount: 1 }, features: { canonicalAppraisals: true }, stats: {} });
     else if (path === '/user/current-team') response = data({ currentTeam: teams[0], availableTeams: teams });
-    else if (path === '/user/employees-for-appraisal') response = data({ employees: [{ userId: 'employee-1', name: 'Jordan Lee', email: 'jordan@example.test', managerName: 'Alex Morgan', isSelectableForAppraisal: true }] });
+    else if (path === '/appraisals/colleague-roster') response = data({ employees: [{ userId: 'employee-1', name: 'Jordan Lee', email: 'jordan@example.test', managerName: 'Alex Morgan', isSelectableForAppraisal: true }] });
     else if (path === '/appraisals/cycle-templates') response = data([{ id: 'balanced_performance', name: 'Balanced performance review', version: 1, description: 'Review completed work and plan development.', design: { version: 1, sections: [] } }]);
     else if (path === '/appraisals/cycles' && route.request().method() === 'GET') response = data(existingCycle ? [{ _id: 'existing-cycle', name: 'Completed quarter', status: 'active', periodStart: '2026-07-01', periodEnd: '2026-09-30', responseDeadlines: { selfAssessmentDue: '2026-10-24', managerReviewDue: '2026-10-31' } }] : []);
     else if (route.request().method() === 'POST' && path.startsWith('/appraisals/cycles')) {
@@ -55,7 +55,7 @@ test('explains future assessment dates, focuses the error, and recovers without 
   await expect(end).toHaveValue('2026-10-16');
   await expect(end).toHaveAttribute('aria-invalid', 'false');
   await expect(page.getByLabel('Employee response due', { exact: false })).toHaveValue('2026-10-24');
-  await expect(page.getByLabel('Manager review due', { exact: false })).toHaveValue('2026-10-31');
+  await expect(page.getByLabel('Reviewer response due', { exact: false })).toHaveValue('2026-10-31');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath('appraisal-date-guidance-fixed.png'), fullPage: true });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -71,7 +71,7 @@ test('guides empty and reversed dates and deadline order on mobile', async ({ pa
   const start = page.getByLabel('Assessment period starts', { exact: false });
   const end = page.getByLabel('Assessment period ends', { exact: false });
   const employee = page.getByLabel('Employee response due', { exact: false });
-  const manager = page.getByLabel('Manager review due', { exact: false });
+  const manager = page.getByLabel('Reviewer response due', { exact: false });
   await start.fill('2026-10-17');
   await expect(start).toHaveAttribute('aria-invalid', 'true');
   await start.fill('2026-10-10'); await end.fill('2026-10-09');
@@ -84,7 +84,7 @@ test('guides empty and reversed dates and deadline order on mobile', async ({ pa
   await expect(page.getByText('Choose 17 Oct 2026 or later so employees have time to respond.')).toBeVisible();
   await employee.fill('2026-10-24'); await manager.fill('2026-10-24');
   await expect(manager).toHaveAttribute('min', '2026-10-25');
-  await expect(page.getByText('Choose a date after 24 Oct 2026. Employees respond before managers review.')).toBeVisible();
+  await expect(page.getByText('Choose a date after 24 Oct 2026. Employees respond before you complete your review.')).toBeVisible();
   await manager.fill('2026-10-31');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath('appraisal-dates-mobile.png'), fullPage: true });
@@ -101,5 +101,5 @@ test('retains the existing cycle launch flow', async ({ page }) => {
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
-  expect(posts).toEqual([{ path: '/appraisals/cycles/existing-cycle/launch', employees: [{ userId: 'employee-1' }] }]);
+  expect(posts).toEqual([{ path: '/appraisals/cycles/existing-cycle/launch', reviewerMode: 'initiator', employees: [{ userId: 'employee-1' }], responseDeadlines: { selfAssessmentDue: '2026-10-24T23:59:59.000Z', managerReviewDue: '2026-10-31T23:59:59.000Z' } }]);
 });

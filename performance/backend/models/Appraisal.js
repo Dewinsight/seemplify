@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
  * Contains self-assessment, manager review, OKR achievements, and final ratings
  */
 const appraisalSchema = new mongoose.Schema({
+  reviewerInitiated: { type: Boolean, default: false },
   // References
   cycleId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -540,7 +541,7 @@ const appraisalSchema = new mongoose.Schema({
 });
 
 // Indexes
-appraisalSchema.index({ cycleId: 1, 'employee.userId': 1 }, { unique: true });
+appraisalSchema.index({ cycleId: 1, 'employee.userId': 1, 'manager.userId': 1 }, { unique: true });
 appraisalSchema.index({ organizationId: 1, status: 1 });
 appraisalSchema.index({ 'manager.userId': 1, status: 1 });
 appraisalSchema.index({ cycleId: 1, status: 1 });

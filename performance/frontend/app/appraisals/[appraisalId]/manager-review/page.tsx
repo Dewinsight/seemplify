@@ -101,9 +101,11 @@ export default function ManagerReviewPage() {
   const params = useParams();
   const router = useRouter();
   const appraisalId = params.appraisalId as string;
-  const { user, isManager } = useUserContext();
+  const { user, isManager: managerRole, isHRAdmin } = useUserContext();
 
   const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
+  const isAssignedReviewer = !!user && !!appraisal && ([user.id, user.sub].filter(Boolean).map(String).includes(String(appraisal.manager?.userId)) || String(user.email || '').toLowerCase() === String(appraisal.manager?.email || '').toLowerCase());
+  const isManager = isAssignedReviewer || isHRAdmin || (managerRole && !appraisal?.reviewerInitiated);
   const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false;
 
   const [activeStep, setActiveStep] = useState(0);
@@ -441,7 +443,7 @@ export default function ManagerReviewPage() {
   }
 
   if (!isManager) {
-    return <Alert severity="error">Only managers can access this page</Alert>;
+    return <Alert severity="error">Only the assigned reviewer or HR can complete this review</Alert>;
   }
 
   // Check if self-assessment is submitted
@@ -1289,7 +1291,7 @@ export default function ManagerReviewPage() {
             Back to Appraisals
           </Button>
           <Typography variant="h4" fontWeight={700}>
-            Manager Review: {appraisal.employee.name}
+            Review: {appraisal.employee.name}
           </Typography>
           <Typography variant="body1" color="text.secondary">
             {appraisal.cycleId?.name || 'Performance Review'}

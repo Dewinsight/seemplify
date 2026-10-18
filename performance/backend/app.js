@@ -128,6 +128,7 @@ mongoose.connect(mongoUri)
     if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_BACKGROUND_WORKERS !== 'true') {
       startNotificationWorker();
       startReminderScheduler();
+      require('./services/quarterlyAppraisalService').startQuarterlyCycleScheduler();
     }
   })
   .catch(err => console.error('MongoDB connection error:', err));
