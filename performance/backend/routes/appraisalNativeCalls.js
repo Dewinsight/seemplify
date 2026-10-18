@@ -73,7 +73,7 @@ module.exports = function nativeCalls(publicMeeting) {
     if (req.method === 'POST' && req.path === '/stop') {
       if (call.recordingPeer !== id) return res.status(403).json({ error: 'Only the recording host can stop this recording.' });
       await Call.updateOne({ _id: call._id, recordingPeer: id }, { $set: { recordingActive: false } });
-      await OneOnOne.updateOne({ _id: req.meeting._id }, { $set: { 'appraisalMeeting.recordingState': 'awaiting_upload' } });
+      await OneOnOne.updateOne({ _id: req.meeting._id, 'appraisalMeeting.recordingFileId': { $exists: false } }, { $set: { 'appraisalMeeting.recordingState': 'awaiting_upload' } });
       return res.json({ success: true });
     }
     if (req.method === 'POST' && req.path === '/upload') {
