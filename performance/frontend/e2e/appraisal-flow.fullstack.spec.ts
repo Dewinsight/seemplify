@@ -63,6 +63,7 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
     await expect(page.getByRole('tab', { name: 'Manager Review', exact: true })).toHaveCount(0);
     await expect(page.getByText(/Self-Assessment Due:/)).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Join in-app call', exact: true })).toBeDisabled();
+    if (index === 1) await page.getByRole('checkbox', { name: 'Join with camera on', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: /I agree to this call being recorded/ }).check();
     await page.getByRole('button', { name: 'Join in-app call', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Leave call', exact: true })).toBeVisible({ timeout: 20000 });

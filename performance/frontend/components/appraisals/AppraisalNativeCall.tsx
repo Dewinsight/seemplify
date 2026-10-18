@@ -115,7 +115,7 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved }:
       const audio = new AudioContext(); await audio.resume(); const mixed = audio.createMediaStreamDestination();
       audio.createMediaStreamSource(media.current!).connect(mixed); audio.createMediaStreamSource(remoteVideo.current.srcObject as MediaStream).connect(mixed);
       const canvas = document.createElement('canvas'); canvas.width = 960; canvas.height = 270; const context = canvas.getContext('2d')!;
-      const draw = () => { context.fillStyle = '#111827'; context.fillRect(0, 0, 960, 270); if (localVideo.current?.readyState) context.drawImage(localVideo.current, 0, 0, 480, 270); if (remoteVideo.current?.readyState) context.drawImage(remoteVideo.current, 480, 0, 480, 270); };
+      const draw = () => { context.fillStyle = '#111827'; context.fillRect(0, 0, 960, 270); if (localVideo.current && localVideo.current.videoWidth > 0 && localVideo.current.readyState >= 2) context.drawImage(localVideo.current, 0, 0, 480, 270); if (remoteVideo.current && remoteVideo.current.videoWidth > 0 && remoteVideo.current.readyState >= 2) context.drawImage(remoteVideo.current, 480, 0, 480, 270); };
       draw(); const drawing = setInterval(draw, 1000 / 12); const video = canvas.captureStream(12);
       const stream = new MediaStream([...video.getVideoTracks(), ...mixed.stream.getAudioTracks()]);
       const activeRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 128000, audioBitsPerSecond: 48000 });
