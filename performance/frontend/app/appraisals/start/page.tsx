@@ -12,7 +12,7 @@ import { shortDate } from '@/lib/appraisal-results';
 
 interface Person { userId: string; name: string; email: string; managerName?: string; teamName?: string; isSelectableForAppraisal?: boolean; selectionBlockedReason?: string }
 interface Cycle { workflowDefinition?: { stages?: Record<string, { enabled?: boolean }> }; _id: string; name: string; status: string; periodStart: string; periodEnd: string; responseDeadlines?: { selfAssessmentDue?: string; managerReviewDue?: string }; phases?: { selfAssessment?: { endDate?: string }; managerReview?: { endDate?: string } } }
-interface StartedReview { _id: string; employee?: { name?: string } }
+interface StartedReview { _id: string; status?: string; employee?: { name?: string } }
 interface Receipt { launched: number; replayed?: number; errors: number; appraisals?: StartedReview[]; existingAppraisals?: StartedReview[]; errorDetails?: Array<{ userId?: string; error?: string }> }
 const dateIn = (days: number) => { const date = new Date(); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
 const calendarDate = (value: string) => new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -126,7 +126,7 @@ export default function StartAppraisalPage() {
   if (receipt) return <Box sx={{ maxWidth: 900, mx: 'auto' }}>
     <Typography component="h1" variant="h4" ref={stepHeading} tabIndex={-1} fontWeight={700} mb={2}>Appraisal launch results</Typography>
     <Alert severity={receipt.errors ? 'warning' : 'success'}>{receipt.launched} started · {receipt.replayed || 0} already in progress · {receipt.errors} blocked</Alert>
-    <Stack spacing={1.5} my={3}>{[...(receipt.appraisals || []), ...(receipt.existingAppraisals || [])].map((review) => <Paper variant="outlined" sx={{ p: 2 }} key={review._id}><Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}><Box><Typography fontWeight={600}>{review.employee?.name || 'Appraisal'}</Typography><Typography variant="body2" color="text.secondary">The employee completes their self-assessment next.</Typography></Box><Button component={Link} href={`/appraisals/${review._id}`}>Open appraisal</Button></Stack></Paper>)}
+    <Stack spacing={1.5} my={3}>{[...(receipt.appraisals || []), ...(receipt.existingAppraisals || [])].map((review) => <Paper variant="outlined" sx={{ p: 2 }} key={review._id}><Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}><Box><Typography fontWeight={600}>{review.employee?.name || 'Appraisal'}</Typography><Typography variant="body2" color="text.secondary">{review.status === 'meeting_pending' ? 'The one-on-one call is the next step.' : 'Open the appraisal to see the next step.'}</Typography></Box><Button component={Link} href={`/appraisals/${review._id}`}>Open appraisal</Button></Stack></Paper>)}
       {(receipt.errorDetails || []).map((failure, index) => <Alert key={index} severity="warning">{people.find((person) => person.userId === failure.userId)?.name || 'Staff member'}: {failure.error || 'Could not start this review.'}</Alert>)}
     </Stack><Stack direction="row" spacing={2}><Button variant="contained" onClick={() => { router.push('/appraisals?section=conducting'); }}>View appraisals</Button>{receipt.errors > 0 && <Button onClick={() => { setSelected((receipt.errorDetails || []).map((failure) => failure.userId || '')); setReceipt(null); setStep(0); }}>Review blocked staff</Button>}</Stack>
   </Box>;
