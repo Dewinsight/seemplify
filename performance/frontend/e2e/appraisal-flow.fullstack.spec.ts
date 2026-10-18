@@ -59,6 +59,9 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
     });
     await page.goto(`/appraisals/${appraisal._id}`);
+    await expect(page.getByRole('tab', { name: 'Self-Assessment', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Manager Review', exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Self-Assessment Due:/)).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Join in-app call', exact: true })).toBeDisabled();
     await page.getByRole('checkbox', { name: /I agree to this call being recorded/ }).check();
     await page.getByRole('button', { name: 'Join in-app call', exact: true }).click();

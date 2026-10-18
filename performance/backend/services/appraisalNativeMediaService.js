@@ -22,7 +22,7 @@ async function process(meeting) {
     const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'appraisalRecordings' });
     const input = path.join(dir, 'recording');
     await pipeline(bucket.openDownloadStream(new mongoose.Types.ObjectId(claimed.appraisalMeeting.recordingFileId)), createWriteStream(input, { mode: 0o600 }));
-    await promisify(execFile)('ffmpeg', ['-nostdin', '-v', 'error', '-protocol_whitelist', 'file,pipe', '-i', input, '-t', '1801', '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'segment', '-segment_time', '30', path.join(dir, 'part-%03d.wav')], { timeout: 120000, maxBuffer: 65536 });
+    await promisify(execFile)('ffmpeg', ['-nostdin', '-v', 'error', '-protocol_whitelist', 'file,pipe', '-f', claimed.appraisalMeeting.recordingMime?.includes('mp4') ? 'mov' : 'matroska', '-i', input, '-t', '1801', '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'segment', '-segment_time', '30', path.join(dir, 'part-%03d.wav')], { timeout: 120000, maxBuffer: 65536 });
     const files = (await fs.readdir(dir)).filter(name => /^part-\d+.wav$/.test(name)).sort();
     if (!files.length || files.length > 60) throw new Error('No supported audio track was found.');
     const parts = [...(claimed.appraisalMeeting.transcriptionParts || [])];

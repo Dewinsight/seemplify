@@ -153,6 +153,10 @@ export default function AppraisalDetailPage() {
   const selfAssessment = appraisal.selfAssessment;
   const managerReview = appraisal.managerReview;
   const cycle = appraisal.cycleId;
+  const includesSelf = !customSteps || customSteps.some(step => step.type === 'selfAssessment');
+  const includesReviewer = !customSteps || customSteps.some(step => step.type === 'managerReview');
+  const visibleTabs = [...(includesSelf ? [0] : []), ...(includesReviewer ? [1] : []), ...(appraisal.finalRating?.overall ? [2] : [])];
+  const selectedTab = visibleTabs.includes(tabValue) ? tabValue : visibleTabs[0] ?? -1;
 
   return (
     <Box>
@@ -305,7 +309,7 @@ export default function AppraisalDetailPage() {
       {/* Deadline Warnings */}
       {appraisal.deadlines && (
         <Box sx={{ mb: 3, display: 'flex', gap: 2 }}>
-          {appraisal.deadlines.selfAssessmentDue && !selfAssessment?.submittedAt && (
+          {includesSelf && appraisal.deadlines.selfAssessmentDue && !selfAssessment?.submittedAt && (
             <Alert
               severity={new Date(appraisal.deadlines.selfAssessmentDue) < new Date() ? 'error' : 'info'}
               icon={<Schedule />}
@@ -315,7 +319,7 @@ export default function AppraisalDetailPage() {
               {new Date(appraisal.deadlines.selfAssessmentDue) < new Date() && ' (OVERDUE)'}
             </Alert>
           )}
-          {appraisal.deadlines.managerReviewDue && selfAssessment?.submittedAt && !managerReview?.submittedAt && (
+          {includesReviewer && appraisal.deadlines.managerReviewDue && (selfAssessment?.submittedAt || !includesSelf || customSteps?.[activeStep]?.type === 'managerReview') && !managerReview?.submittedAt && (
             <Alert
               severity={new Date(appraisal.deadlines.managerReviewDue) < new Date() ? 'error' : 'info'}
               icon={<Schedule />}
@@ -329,18 +333,18 @@ export default function AppraisalDetailPage() {
       )}
 
       {/* Tabs */}
-      <Paper sx={{ mb: 3 }}>
-        <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+      {visibleTabs.length > 0 && <Paper sx={{ mb: 3 }}>
+        <Tabs value={selectedTab} onChange={(_, v) => setTabValue(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
           {/* <Tab label="Overview" /> REMOVED */}
-          <Tab label="Self-Assessment" disabled={!selfAssessment?.submittedAt && !isEmployee} />
-          <Tab label="Manager Review" disabled={!managerReview?.submittedAt && !hasManagerAccess} />
-          {appraisal.finalRating?.overall && <Tab label="Final Rating" />}
+          {includesSelf && <Tab value={0} label="Self-Assessment" disabled={!selfAssessment?.submittedAt && !isEmployee} />}
+          {includesReviewer && <Tab value={1} label="Manager Review" disabled={!managerReview?.submittedAt && !hasManagerAccess} />}
+          {appraisal.finalRating?.overall && <Tab value={2} label="Final Rating" />}
         </Tabs>
 
         {/* Overview Tab REMOVED */}
 
         {/* Self-Assessment Tab - Now Index 0 */}
-        <TabPanel value={tabValue} index={0}>
+        <TabPanel value={selectedTab} index={0}>
           <Box sx={{ px: 3 }}>
             {selfAssessment?.submittedAt ? (
               <>
@@ -455,7 +459,7 @@ export default function AppraisalDetailPage() {
         </TabPanel>
 
         {/* Manager Review Tab - Now Index 1 */}
-        <TabPanel value={tabValue} index={1}>
+        <TabPanel value={selectedTab} index={1}>
           <Box sx={{ px: 3 }}>
             {managerReview?.submittedAt ? (
               <>
@@ -563,7 +567,7 @@ export default function AppraisalDetailPage() {
 
         {/* Final Rating Tab - Now Index 2 */}
         {appraisal.finalRating?.overall && (
-          <TabPanel value={tabValue} index={2}>
+          <TabPanel value={selectedTab} index={2}>
             <Box sx={{ px: 3 }}>
               <Card sx={{ p: 3, textAlign: 'center', bgcolor: 'success.lighter' }}>
                 <Typography variant="h6" gutterBottom>Final Performance Rating</Typography>
@@ -626,7 +630,7 @@ export default function AppraisalDetailPage() {
             </Box>
           </TabPanel>
         )}
-      </Paper>
+      </Paper>}
     </Box>
   );
 }
