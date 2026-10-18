@@ -31,9 +31,8 @@ const { resolveLaunchParticipants } = require('../services/appraisalLaunchPartic
 const { colleagueRoster, resolveColleagueParticipants } = require('../services/colleagueReviewService');
 const { ensureQuarterlyCycles } = require('../services/quarterlyAppraisalService');
 
-const colleagueLaunch = (req) => req.body?.reviewerMode === 'initiator';
+const colleagueLaunch = (req) => ['initiator', 'selected'].includes(req.body?.reviewerMode);
 function requireLaunchAccess(req, res, next) {
-  if (colleagueLaunch(req)) return next();
   return requireManager(req, res, () => requirePermission('review:conduct:direct_reports')(req, res, next));
 }
 async function launchParticipants(req, selections) {
@@ -1047,6 +1046,7 @@ function normalizeLaunchEmployee(employee = {}) {
     teamRole: typeof employee?.teamRole === 'string' ? employee.teamRole.trim() : '',
     isSelf: Boolean(employee?.isSelf),
     managerId: employee?.managerId ? String(employee.managerId) : null,
+    reviewerId: employee?.reviewerId ? String(employee.reviewerId) : null,
     managerName: typeof employee?.managerName === 'string' ? employee.managerName.trim() : '',
     managerEmail: typeof employee?.managerEmail === 'string' ? employee.managerEmail.trim() : ''
   };
@@ -1107,8 +1107,7 @@ function employeeHasRealManager(employee = {}) {
 
 async function resolveManagerIdentityForLaunch(employee, req) {
   if (colleagueLaunch(req)) {
-    const actor = req.session.user;
-    return { manager: { userId: String(actor.id || actor.sub), name: actor.name || actor.email, email: actor.email } };
+    return { manager: { userId: employee.managerId, name: employee.managerName, email: employee.managerEmail } };
   }
   const organizationId = resolveOrganizationId(req);
   const requestedTeamIds = Array.from(
@@ -1282,6 +1281,13 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         cycleId: cycle._id,
         organizationId: cycle.organizationId,
         reviewerInitiated: colleagueLaunch(req),
+        launchContext: {
+          method: req.route?.path === '/cycles' ? 'new_review' : 'existing_cycle',
+          createdBy: {
+            userId: req.session.user.id || req.session.user.sub,
+            name: req.session.user.name || req.session.user.email
+          }
+        },
         goals: goalSnapshot.goalIds,
         goalSnapshots: goalSnapshot.snapshots,
         goalEvidenceSummary: goalSnapshot.evidenceSummary,
@@ -1353,7 +1359,7 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         const replay = await Appraisal.findOne({
           cycleId: cycle._id,
           organizationId: cycle.organizationId,
-          'manager.userId': colleagueLaunch(req) ? String(req.session.user.id || req.session.user.sub) : employee.managerId,
+          'manager.userId': employee.managerId,
           'employee.userId': String(employee.userId)
         });
         if (replay && await canManageAppraisal(req, replay)) {
@@ -1561,9 +1567,11 @@ const upload = multer({
 router.get('/colleague-roster', requireAuth, async (req, res) => {
   try {
     if (!resolveOrganizationId(req)) return res.status(403).json({ success: false, error: 'Select an organization first.' });
-    return res.json({ success: true, data: { employees: await colleagueRoster(req) } });
+    const scope = await resolveAppraisalAccessScope(req, { includeSelf: true });
+    if (!scope.canManageAppraisals) return res.status(403).json({ success: false, error: 'Only team leads, line managers and organization administrators can start appraisals.' });
+    return res.json({ success: true, data: { employees: await colleagueRoster(req), teams: scope.managedTeams, scope: scope.directoryScope } });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Could not load colleagues. Please try again.' });
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Could not load colleagues. Please try again.' });
   }
 });
 
@@ -1571,10 +1579,13 @@ router.get('/assigned-reviews', requireAuth, async (req, res) => {
   try {
     const org = resolveOrganizationId(req);
     if (!org) return res.status(403).json({ success: false, error: 'Select an organization first.' });
+    const scope = await resolveAppraisalAccessScope(req);
+    if (!scope.canManageAppraisals) return res.status(403).json({ success: false, error: 'Reviewer access requires a current team management or organization administrator role.' });
     const filters = buildManagerIdentityFilters(getRequesterIdentity(req));
     const records = filters.length ? await Appraisal.find({ organizationId: String(org), $or: filters })
       .populate(tenantCyclePopulate(req, 'name periodStart periodEnd currentPhase status ratingScale')).sort({ createdAt: -1 }) : [];
-    return res.json({ success: true, data: records });
+    const allowed = await Promise.all(records.map(record => canManageAppraisal(req, record)));
+    return res.json({ success: true, data: records.filter((record, index) => allowed[index]) });
   } catch (error) {
     return res.status(500).json({ success: false, error: 'Could not load assigned reviews.' });
   }
@@ -2607,7 +2618,7 @@ router.get('/organization', requireAuth, requireHRAdmin, requirePermission('revi
   try {
     const organizationId = resolveOrganizationId(req);
     const appraisals = await Appraisal.find({ organizationId: String(organizationId) })
-      .select('cycleId employee manager status selfAssessment.submittedAt selfAssessment.overallSelfRating managerReview.submittedAt managerReview.overallManagerRating finalRating deadlines notifications cycleConfigurationSnapshot.cycleName cycleConfigurationSnapshot.periodStart cycleConfigurationSnapshot.periodEnd cycleConfigurationSnapshot.ratingScale')
+      .select('cycleId employee manager status selfAssessment.submittedAt selfAssessment.overallSelfRating managerReview.submittedAt managerReview.overallManagerRating discussion.scheduledDate discussion.completedDate discussion.employeeAcknowledgedAt calibration.calibratedAt completedMeetingSteps finalRating deadlines notifications createdAt updatedAt launchContext auditLog.action auditLog.performedBy.name auditLog.timestamp cycleConfigurationSnapshot.cycleName cycleConfigurationSnapshot.periodStart cycleConfigurationSnapshot.periodEnd cycleConfigurationSnapshot.ratingScale cycleConfigurationSnapshot.sourceTemplate cycleConfigurationSnapshot.appraisalFlow')
       .populate(tenantCyclePopulate(req, 'name periodStart periodEnd currentPhase status ratingScale'))
       .sort({ createdAt: -1 });
     res.json({ success: true, data: appraisals });
@@ -2687,7 +2698,8 @@ router.get('/team', requireAuth, requireManager, async (req, res) => {
       .populate(tenantCyclePopulate(req, 'name periodStart periodEnd currentPhase status ratingScale'))
       .sort({ createdAt: -1 });
 
-    res.json({ success: true, data: appraisals });
+    const allowed = await Promise.all(appraisals.map(appraisal => canManageAppraisal(req, appraisal)));
+    res.json({ success: true, data: appraisals.filter((appraisal, index) => allowed[index]) });
   } catch (error) {
     console.error('Get team appraisals error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch team appraisals' });

@@ -26,7 +26,7 @@ test('pending permissions show loading, then the authorized team page', async ({
   await expect(page.getByRole('status').filter({ hasText: 'Loading your team' })).toBeVisible();
   await expect(page.getByText(denied)).toHaveCount(0);
   release();
-  await expect(page.getByRole('heading', { name: 'My Team', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'My teams', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'All Members', exact: true })).toBeVisible();
   await expect(page.getByText('Loading your team…')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('team-loaded.png'), fullPage: true });

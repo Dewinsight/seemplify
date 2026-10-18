@@ -215,7 +215,8 @@ router.get('/context', requireAuth, async (req, res) => {
         // Role and permissions
         role: {
           name: role,
-          displayName: formatRoleName(role),
+          displayName: role === 'hr_admin' ? ({ owner: 'Organization Owner', admin: 'Organization Admin', hr_manager: 'HR Manager' }[appraisalScope?.organizationRole] || 'HR Administrator') : formatRoleName(role),
+          organizationRole: appraisalScope?.organizationRole || null,
           isManager: isManagerRole,
           isHRAdmin: role === 'hr_admin',
           isTeamLead: role === 'team_lead' || role === 'line_manager' || role === 'hr_admin'
@@ -320,7 +321,7 @@ router.get('/context', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching user context:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch user context' });
+    res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Failed to fetch user context' });
   }
 });
 
@@ -1031,7 +1032,7 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
       });
     }
 
-    const scope = await resolveAppraisalAccessScope(req);
+    const scope = await resolveAppraisalAccessScope(req, { includeSelf: true });
     let directReports = (scope.directReports || []).map((member) => ({
       id: member.userId,
       userId: member.userId,
@@ -1042,12 +1043,16 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
       teamId: member.teamId,
       teamName: member.teamName,
       teamRole: member.teamRole || 'member',
+      teamIds: member.teamIds,
+      teams: member.teams,
+      organizationRole: member.organizationRole,
+      isSelf: member.isSelf,
       isAlsoManager: !!member.isManager,
       directReportCount: 0,
       source: 'organization-cache'
     }));
 
-    if (directReports.length === 0) {
+    if (!scope.directory && directReports.length === 0) {
       const effectiveOrgId = scope.organizationId || req.currentOrganization?.id || req.session?.currentOrganizationId;
       const claimDirectReportIds = new Set((req.directReports || []).filter(Boolean).map(String));
       const teams = sessionUser?.idpTeams || sessionUser?.teams || sessionUser?.userinfo?.teams || [];
@@ -1113,11 +1118,14 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
       isManager: true,
       managerId: sessionUser.id || sessionUser.sub,
       managerName: sessionUser.name,
+      scope: scope.directoryScope,
+      organizationRole: scope.organizationRole,
       teams: (scope.managedTeams || []).map(t => ({
         id: t.id,
         name: t.name,
         role: t.role,
-        memberCount: directReports.filter((member) => member.teamId === t.id).length
+        parentTeamId: t.parentTeamId,
+        memberCount: directReports.filter((member) => (member.teamIds || [member.teamId]).includes(t.id)).length
       })),
       directReports: directReports,
       totalDirectReports: directReports.length
@@ -1129,7 +1137,7 @@ router.get('/my-team-members', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching team members:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch team members' });
+    res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Failed to fetch team members' });
   }
 });
 

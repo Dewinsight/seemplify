@@ -13,7 +13,7 @@
  *    - Everything Employee can do
  *    - View team OKRs (read-only)
  *    - View team members
- *    - Cannot conduct performance reviews
+ *    - Conduct performance reviews when selected for people in their team hierarchy
  * 
  * 3. LINE_MANAGER
  *    - Everything Team Lead can do

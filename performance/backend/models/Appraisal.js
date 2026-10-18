@@ -7,6 +7,11 @@ const mongoose = require('mongoose');
  */
 const appraisalSchema = new mongoose.Schema({
   reviewerInitiated: { type: Boolean, default: false },
+  // Captured by the server at launch; the creator may differ from the reviewer.
+  launchContext: {
+    method: { type: String, enum: ['new_review', 'existing_cycle'] },
+    createdBy: { userId: String, name: String }
+  },
   // References
   cycleId: {
     type: mongoose.Schema.Types.ObjectId,

@@ -1,6 +1,7 @@
 'use client';
 
 import AppraisalMeetings from '@/components/appraisals/AppraisalMeetings';
+import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
 import { FlowStep } from '@/components/appraisals/AppraisalFlowEditor';
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -272,6 +273,11 @@ export default function AppraisalDetailPage() {
           </Box>
         </Box>
       </Box>
+
+      <Paper variant="outlined" sx={{ p: 2.5, mb: 3 }}>
+        <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Appraisal details & dates</Typography>
+        <AppraisalMetadata appraisal={appraisal} />
+      </Paper>
 
       {isEmployee && (appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
         <Alert severity="success" sx={{ mb: 3 }}>

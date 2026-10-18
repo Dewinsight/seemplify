@@ -48,6 +48,7 @@ import {
 } from '@mui/icons-material';
 
 interface AssignableEmployee {
+    reviewerOptions?: Array<{ userId: string; name: string; email: string; role: string }>;
     userId: string;
     name: string;
     email: string;
@@ -199,8 +200,11 @@ export default function EditAppraisalCyclePage() {
     const [assignableEmployees, setAssignableEmployees] = useState<AssignableEmployee[]>([]);
     const [loadingEmployees, setLoadingEmployees] = useState(false);
     const [employeeSearch, setEmployeeSearch] = useState('');
-    const [participantView, setParticipantView] = useState<'byManager' | 'list'>('byManager');
+    const [participantView, setParticipantView] = useState<'byManager' | 'list'>('list');
     const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
+    const [selectedReviewers, setSelectedReviewers] = useState<Record<string, string>>({});
+    const [participantTeams, setParticipantTeams] = useState<ManagedTeamOption[]>([]);
+    const [participantTeam, setParticipantTeam] = useState('all');
     const [setupStep, setSetupStep] = useState(0);
     const [cycleStatus, setCycleStatus] = useState('draft');
 
@@ -268,22 +272,14 @@ export default function EditAppraisalCyclePage() {
         const fetchAssignableEmployees = async () => {
             setLoadingEmployees(true);
             try {
-                const response = await api.get('/user/employees-for-appraisal');
+                const response = await api.get('/appraisals/colleague-roster');
                 const employeeList = response.data?.data?.employees || [];
                 if (!isMounted) return;
                 setAssignableEmployees(Array.isArray(employeeList) ? employeeList : []);
+                setParticipantTeams(response.data?.data?.teams || []);
             } catch (primaryError) {
                 console.error('Failed to fetch assignable users', primaryError);
-                try {
-                    const fallbackResponse = await api.get('/user/all-employees');
-                    const fallbackEmployees = fallbackResponse.data?.data || [];
-                    if (!isMounted) return;
-                    setAssignableEmployees(Array.isArray(fallbackEmployees) ? fallbackEmployees : []);
-                } catch (fallbackError: any) {
-                    if (!isMounted) return;
-                    console.error('Failed to fetch fallback assignable users', fallbackError);
-                    setSaveError(fallbackError.response?.data?.error || 'Failed to load employees for this cycle.');
-                }
+                if (isMounted) setSaveError('Could not refresh people and eligible reviewers from Seemplify Identity. Please reload this page.');
             } finally {
                 if (isMounted) {
                     setLoadingEmployees(false);
@@ -309,13 +305,13 @@ export default function EditAppraisalCyclePage() {
     );
 
     const filteredEligibleEmployees = useMemo(
-        () => eligibleEmployees.filter((employee) => matchesEmployeeSearch(employee, employeeSearch)),
-        [eligibleEmployees, employeeSearch]
+        () => eligibleEmployees.filter((employee) => matchesEmployeeSearch(employee, employeeSearch) && (participantTeam === 'all' || (employee.teamIds || [employee.teamId]).includes(participantTeam))),
+        [eligibleEmployees, employeeSearch, participantTeam]
     );
 
     const filteredIneligibleEmployees = useMemo(
-        () => ineligibleEmployees.filter((employee) => matchesEmployeeSearch(employee, employeeSearch)),
-        [ineligibleEmployees, employeeSearch]
+        () => ineligibleEmployees.filter((employee) => matchesEmployeeSearch(employee, employeeSearch) && (participantTeam === 'all' || (employee.teamIds || [employee.teamId]).includes(participantTeam))),
+        [ineligibleEmployees, employeeSearch, participantTeam]
     );
 
     const selectedParticipants = useMemo(
@@ -357,7 +353,7 @@ export default function EditAppraisalCyclePage() {
     };
 
     const selectAllEligible = () => {
-        setSelectedParticipantIds(eligibleEmployees.map((employee) => employee.userId));
+        setSelectedParticipantIds(previous => [...new Set([...previous, ...filteredEligibleEmployees.map(employee => employee.userId)])]);
     };
 
     const clearSelectedParticipants = () => {
@@ -386,6 +382,10 @@ export default function EditAppraisalCyclePage() {
             setSaveError('Select at least one eligible employee before creating the cycle.');
             return;
         }
+        if (isNewCycle && selectedParticipants.some(employee => !employee.reviewerOptions?.some(reviewer => reviewer.userId === selectedReviewers[employee.userId]))) {
+            setSaveError('Choose a reviewer for every selected employee.');
+            return;
+        }
 
         const designErrors = validateCycleDesign(formData.workflowDefinition);
         if (designErrors.length > 0) {
@@ -401,8 +401,10 @@ export default function EditAppraisalCyclePage() {
                     ...formData,
                     scope,
                     launchNow: true,
+                    reviewerMode: 'selected',
                     employees: selectedParticipants.map((employee) => ({
                         userId: employee.userId,
+                        reviewerId: selectedReviewers[employee.userId],
                         name: employee.name,
                         email: employee.email,
                         department: employee.department,
@@ -472,7 +474,7 @@ export default function EditAppraisalCyclePage() {
 
         if (setupStep === 2) {
             if (selectedParticipants.length === 0) {
-                setSaveError('Choose at least one employee with an assigned line manager.');
+                setSaveError('Choose at least one employee with an eligible reviewer.');
                 return;
             }
             setSetupStep(3);
@@ -719,7 +721,7 @@ export default function EditAppraisalCyclePage() {
                                     <Box>
                                         <Typography variant="h6" gutterBottom>Choose Participants</Typography>
                                         <Typography variant="body2" color="text.secondary">
-                                            Eligible employees have a real manager in the hierarchy. Top-level users without a manager stay visible here, but they cannot be selected.
+                                            Choose people from your permitted teams, including leaders. In the confirmation step, select an eligible reviewer for each person. A reporting manager is not required when an HR manager or administrator can conduct the review.
                                         </Typography>
                                     </Box>
                                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -729,6 +731,7 @@ export default function EditAppraisalCyclePage() {
                                     </Stack>
                                 </Box>
 
+                                <TextField select fullWidth label="Filter by team" value={participantTeam} onChange={event => setParticipantTeam(event.target.value)} helperText="Selections are kept when you change filters." sx={{ mb: 2 }}><MenuItem value="all">All available teams</MenuItem>{participantTeams.map(team => { const id = String(team.id || team._id || team.teamId || ''); return <MenuItem key={id} value={id}>{team.name || team.teamName || 'Team'}</MenuItem>; })}</TextField>
                                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
                                     <TextField
                                         fullWidth
@@ -745,7 +748,7 @@ export default function EditAppraisalCyclePage() {
                                     />
                                     <Stack direction="row" spacing={1}>
                                         <Button variant="outlined" onClick={selectAllEligible} disabled={eligibleEmployees.length === 0}>
-                                            Select All Eligible
+                                            Select All Shown
                                         </Button>
                                         <Button variant="text" onClick={clearSelectedParticipants} disabled={selectedParticipantIds.length === 0}>
                                             Clear
@@ -754,7 +757,7 @@ export default function EditAppraisalCyclePage() {
                                 </Stack>
 
                                 <Tabs value={participantView} onChange={(_, value) => setParticipantView(value)} sx={{ mb: 2 }}>
-                                    <Tab value="byManager" label="By Manager" />
+                                    <Tab value="byManager" label="By Reporting Manager" />
                                     <Tab value="list" label="List View" />
                                 </Tabs>
 
@@ -898,7 +901,7 @@ export default function EditAppraisalCyclePage() {
                                                                         .join(' | ')}
                                                                 </Typography>
                                                                 <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
-                                                                    {employee.selectionBlockedReason || 'No manager is assigned for this employee.'}
+                                                                    {employee.selectionBlockedReason || 'No eligible reviewer is assigned in Seemplify Identity.'}
                                                                 </Typography>
                                                             </Box>
                                                         ))}
@@ -948,6 +951,7 @@ export default function EditAppraisalCyclePage() {
                                         <Typography variant="body2" color="text.secondary">
                                             {selectedParticipants.map((employee) => employee.name).join(', ')}
                                         </Typography>
+                                        <Stack spacing={2} mt={2}>{selectedParticipants.map(employee => <TextField key={employee.userId} select required fullWidth label={`Reviewer for ${employee.name}`} value={selectedReviewers[employee.userId] || ''} onChange={event => setSelectedReviewers(previous => ({ ...previous, [employee.userId]: event.target.value }))} helperText="Choose the team lead, line manager, HR manager or administrator who will conduct this appraisal.">{(employee.reviewerOptions || []).map(reviewer => <MenuItem key={reviewer.userId} value={reviewer.userId}>{reviewer.name} · {reviewer.role.replace(/_/g, ' ')}</MenuItem>)}</TextField>)}</Stack>
                                     </Box>
                                     <Divider />
                                     <Stack spacing={1}>

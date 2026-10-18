@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserContext, useDirectReports } from '@/lib/hooks';
 import { useThemeMode } from '@/context/ThemeContext';
+import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import api from '@/lib/api';
 import {
   Box, Typography, Card, CardContent, Grid, Avatar, Chip, Button,
@@ -27,6 +28,10 @@ interface TeamMember {
   avatar?: string;
   department?: string;
   teamName?: string;
+  teamIds?: string[];
+  organizationRole?: string;
+  isSelf?: boolean;
+  teams?: Array<{ id: string; name: string; role: string }>;
   role?: string;
 }
 
@@ -55,7 +60,9 @@ export default function TeamHubPage() {
   const { mode } = useThemeMode();
   const isDarkMode = mode === 'dark';
   const { isManager, isHRAdmin, user, teams, currentTeam: contextCurrentTeam, features, isLoading: contextLoading, isError: contextError, mutate: reloadContext } = useUserContext();
-  const { directReports, isLoading: reportsLoading, managedTeams } = useDirectReports();
+  const { workspace, setWorkspace } = usePerformanceWorkspace();
+  const organizationView = isHRAdmin && workspace === 'admin';
+  const { directReports, isLoading: reportsLoading, managedTeams, isError: peopleError } = useDirectReports(organizationView ? 'organization' : 'managed');
 
   const [selectedTab, setSelectedTab] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,18 +88,16 @@ export default function TeamHubPage() {
           avatar: report.avatar || report.profile?.avatar,
           department: report.teamName || report.department,
           teamName: report.teamName,
+          teamIds: report.teamIds || (report.teamId ? [report.teamId] : []),
+          organizationRole: report.organizationRole,
+          isSelf: report.isSelf,
+          teams: report.teams,
           role: report.teamRole || report.role
         });
       });
       
       setAllTeamMembers(Array.from(membersMap.values()));
       
-      console.log('📊 Loaded team members:', {
-        total: membersMap.size,
-        directReports: directReports?.length,
-        managedTeams: managedTeams?.length,
-        members: Array.from(membersMap.values())
-      });
     };
     
     loadTeamMembers();
@@ -137,13 +142,16 @@ export default function TeamHubPage() {
   };
 
   // Get user's managed teams for filter
-  const userManagedTeams = teams?.filter((t: any) => t.isManager || t.role === 'line_manager' || t.role === 'team_lead') || [];
+  const userManagedTeams = managedTeams || [];
+  useEffect(() => {
+    if (selectedTeamFilter !== 'all' && !userManagedTeams.some((team: any) => team.id === selectedTeamFilter)) setSelectedTeamFilter('all');
+  }, [managedTeams, selectedTeamFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   
   // Filter team members by selected team and search
   const filteredMembers = (allTeamMembers || []).filter((member: TeamMember) => {
     // Filter by team
     if (selectedTeamFilter !== 'all') {
-      if (member.teamName !== userManagedTeams.find((t: any) => t.id === selectedTeamFilter)?.name) {
+      if (!(member.teamIds || []).includes(selectedTeamFilter)) {
         return false;
       }
     }
@@ -160,15 +168,16 @@ export default function TeamHubPage() {
   });
 
   // Calculate team summary
+  const filteredStats = filteredMembers.map(member => teamStats[member.userId] || emptyMemberStats);
   const teamSummary = {
     total: filteredMembers.length,
-    needsAttention: Object.values(teamStats).filter(s =>
+    needsAttention: filteredStats.filter(s =>
       (features.canonicalAppraisals !== false && s.pendingAppraisals > 0) || s.okrProgress < 30
     ).length,
     avgOkrProgress: filteredMembers.length > 0
-      ? Object.values(teamStats).reduce((a, s) => a + (s.okrProgress || 0), 0) / filteredMembers.length
+      ? filteredStats.reduce((a, s) => a + (s.okrProgress || 0), 0) / filteredMembers.length
       : 0,
-    pending1on1s: Object.values(teamStats).filter(s => {
+    pending1on1s: filteredStats.filter(s => {
       if (!s.last1on1Date) return true;
       const daysSince = Math.floor((Date.now() - new Date(s.last1on1Date).getTime()) / (1000 * 60 * 60 * 24));
       return daysSince > 14;
@@ -196,6 +205,7 @@ export default function TeamHubPage() {
   };
 
   const handleViewAppraisal = (member: TeamMember) => {
+    if (member.isSelf) setWorkspace('personal');
     router.push(`/appraisals?employeeId=${member.userId}`);
     handleMenuClose();
   };
@@ -286,7 +296,7 @@ export default function TeamHubPage() {
           <div className="space-y-2">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className={`${styles.heading} text-4xl font-bold`}>
-                My Team
+                {organizationView ? 'People & teams' : 'My teams'}
               </h1>
               {selectedTeamFilter !== 'all' && (
                 <span className={`${styles.badge} inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm`}>
@@ -297,11 +307,17 @@ export default function TeamHubPage() {
             </div>
             <p className={`text-base ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
               {selectedTeamFilter === 'all' 
-                ? `Manage ${userManagedTeams.length} team${userManagedTeams.length !== 1 ? 's' : ''} with ${allTeamMembers.length} total members`
+                ? `${organizationView ? 'Organization-wide access' : 'Your managed team hierarchy'} · ${userManagedTeams.length} team${userManagedTeams.length !== 1 ? 's' : ''} · ${allTeamMembers.length} people`
                 : `Track performance and schedule check-ins for ${filteredMembers.length} member${filteredMembers.length !== 1 ? 's' : ''}`
               }
             </p>
           </div>
+
+      <Alert severity="info" action={isHRAdmin && !organizationView ? <Button onClick={() => setWorkspace('admin')}>View all people</Button> : undefined}>
+        {organizationView ? 'Your organization role gives you access to everyone in this organization. Filter by team, then choose who to review and who will conduct each appraisal.' : 'This manager view contains the teams you lead and their subteams. Use Personal for your own work.'}
+      </Alert>
+      {peopleError && <Alert severity="error">People and teams could not be refreshed from Seemplify Identity. Please refresh this page to retry.</Alert>}
+      {features.canonicalAppraisals !== false && <Button variant="contained" onClick={() => router.push(`/appraisals/start${selectedTeamFilter !== 'all' ? `?teamId=${encodeURIComponent(selectedTeamFilter)}` : ''}`)}>Start appraisal</Button>}
 
       {/* Summary Cards */}
       <div aria-label="Team summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -390,8 +406,9 @@ export default function TeamHubPage() {
             </button>
           </div>
           <div className="flex gap-3 flex-wrap items-center">
-            {userManagedTeams.length > 1 && (
+            {userManagedTeams.length > 0 && (
               <select
+                aria-label="Filter by team"
                 value={selectedTeamFilter}
                 onChange={(e) => setSelectedTeamFilter(e.target.value)}
                 className={`min-w-[240px] px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
@@ -405,7 +422,7 @@ export default function TeamHubPage() {
                 </option>
                 {userManagedTeams.map((team: any) => (
                   <option key={team.id} value={team.id}>
-                    👥 {team.name} ({allTeamMembers.filter(m => m.teamName === team.name).length} members)
+                    {team.name} ({allTeamMembers.filter(m => m.teamIds?.includes(team.id)).length} people)
                   </option>
                 ))}
               </select>
@@ -487,6 +504,7 @@ export default function TeamHubPage() {
                         <h3 className={`font-semibold text-lg ${isDarkMode ? 'text-zinc-100' : 'text-gray-900'}`}>
                           {member.name}
                         </h3>
+                        {member.isSelf && <Chip size="small" label="You" variant="outlined" />}
                         {needsAttention && (
                           <span className={`${styles.attentionBadge} inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold`}>
                             Needs Attention
@@ -501,7 +519,8 @@ export default function TeamHubPage() {
                       <div className="mt-1 space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className={`text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
-                            {member.title || 'Team Member'}
+                            {member.organizationRole ? `Organization role: ${member.organizationRole.replace(/_/g, ' ')}` : member.title || 'Team Member'}
+                            {member.teams?.length ? ` · ${member.teams.filter(team => selectedTeamFilter === 'all' || team.id === selectedTeamFilter).map(team => `${team.name}: ${team.role.replace(/_/g, ' ')}`).join(' · ')}` : member.role ? ` · Team role: ${member.role.replace(/_/g, ' ')}` : ''}
                           </span>
                           {member.teamName && selectedTeamFilter === 'all' && (
                             <>
@@ -572,7 +591,7 @@ export default function TeamHubPage() {
                     {/* Quick Actions */}
                     <div className="flex-shrink-0">
                       <div className="flex gap-2">
-                        {features.continuousPerformance !== false && <Tooltip title="Schedule 1:1">
+                        {features.continuousPerformance !== false && !member.isSelf && <Tooltip title="Schedule 1:1">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleSchedule1on1(member); }}
                             className={`${styles.action} p-2 rounded-lg transition-all`}
@@ -580,7 +599,7 @@ export default function TeamHubPage() {
                             <VideoCall fontSize="small" />
                           </button>
                         </Tooltip>}
-                        {features.continuousPerformance !== false && <Tooltip title="Give Feedback">
+                        {features.continuousPerformance !== false && !member.isSelf && <Tooltip title="Give Feedback">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleGiveFeedback(member); }}
                             className={`${styles.action} p-2 rounded-lg transition-all`}
@@ -635,7 +654,7 @@ export default function TeamHubPage() {
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <Person sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> View Full Profile
         </MenuItem>
-        {features.continuousPerformance !== false && <MenuItem onClick={() => selectedMember && handleSchedule1on1(selectedMember)}
+        {features.continuousPerformance !== false && !selectedMember?.isSelf && <MenuItem onClick={() => selectedMember && handleSchedule1on1(selectedMember)}
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <VideoCall sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> Schedule 1:1
         </MenuItem>}
@@ -643,7 +662,7 @@ export default function TeamHubPage() {
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <Assignment sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> View Appraisal
         </MenuItem>}
-        {features.continuousPerformance !== false && <MenuItem onClick={() => selectedMember && handleGiveFeedback(selectedMember)}
+        {features.continuousPerformance !== false && !selectedMember?.isSelf && <MenuItem onClick={() => selectedMember && handleGiveFeedback(selectedMember)}
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <FeedbackIcon sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> Give Feedback
         </MenuItem>}

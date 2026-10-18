@@ -139,6 +139,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       return [
         dashboard,
         { name: 'Overview', href: '/admin', icon: ShieldCheck, section: 'administration' },
+        { name: 'People & teams', href: '/team', icon: Users, section: 'administration' },
         { name: 'Organization OKRs', href: '/okrs?view=organization', icon: Target, section: 'administration' },
         ...(appraisalsEnabled ? [
           { name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'administration' as const },

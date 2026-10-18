@@ -348,11 +348,11 @@ const PAGE_GUIDES: GuideDefinition[] = [
   {
     key: 'team',
     matcher: /^\/team$/,
-    title: 'My Team',
-    summary: 'Use this page as the manager home for direct-report visibility and action.',
-    purpose: 'This page gives managers a quick picture of who is on the team and where attention is needed across reviews, OKRs, and feedback.',
+    title: 'People & teams',
+    summary: 'Admin shows the organization. Manager shows the teams you lead and their subteams.',
+    purpose: 'Browse people within your current workspace, filter by team, and set up appraisals with an explicitly selected reviewer.',
     steps: [
-      'Scan the team list and summary information first.',
+      'Check the workspace and team filter before using the summary.',
       'Open a team member when you need detailed context.',
       'Move into team appraisals, OKRs, feedback, or reviews depending on the task.'
     ],

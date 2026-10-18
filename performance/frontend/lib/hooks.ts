@@ -1,5 +1,6 @@
 import useSWR, { SWRConfiguration } from 'swr';
 import api from './api';
+const EMPTY_LIST: never[] = [];
 
 // Default SWR config to prevent too frequent revalidation
 const defaultConfig: SWRConfiguration = {
@@ -40,7 +41,7 @@ export function useUserContext() {
     organization: data?.organization,
 
     // Teams
-    teams: data?.teams || [],
+    teams: data?.teams || EMPTY_LIST,
     primaryTeam: data?.primaryTeam,
     currentTeam: data?.currentTeam,
 
@@ -133,12 +134,12 @@ export function useOrganizations() {
 /**
  * Get direct reports for managers
  */
-export function useDirectReports() {
-  const { data, error, isLoading } = useSWR('/user/my-team-members', fetcher);
+export function useDirectReports(scope?: 'managed' | 'organization') {
+  const { data, error, isLoading } = useSWR(`/user/my-team-members${scope ? `?scope=${scope}` : ''}`, fetcher);
   return {
     isManager: data?.isManager || false,
-    managedTeams: data?.teams || [],
-    directReports: data?.directReports || [],
+    managedTeams: data?.teams || EMPTY_LIST,
+    directReports: data?.directReports || EMPTY_LIST,
     totalDirectReports: data?.totalDirectReports || 0,
     isLoading,
     isError: error,

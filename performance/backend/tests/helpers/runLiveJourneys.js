@@ -34,7 +34,7 @@ async function main() {
   const managerOnly = ['appraisals/team', 'learning/team', 'manager-insights/practices', 'talent/reviews', 'talent/signals', 'analytics/performance', 'reports/team-performance'];
   const hrOnly = ['appraisals/organization', 'appraisals/admin/analytics', 'calibration', 'reports/org-summary', 'reports/okr-trends', 'reports/feedback-analytics', 'organization-features', 'talent/succession-plans'];
   for (const actor of actors) await journey(`${actor}: feature reads and permission boundaries`, async () => {
-    for (const route of common) await api(actor, 'GET', route);
+    for (const route of common) await api(actor, 'GET', route, null, route === 'appraisals/colleague-roster' && !manager.has(actor) ? 403 : 200);
     for (const route of managerOnly) await api(actor, 'GET', route, null, manager.has(actor) ? 200 : 403);
     for (const route of hrOnly) await api(actor, 'GET', route, null, hr.has(actor) ? 200 : 403);
   });

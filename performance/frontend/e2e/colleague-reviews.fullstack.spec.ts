@@ -15,7 +15,7 @@ let server: import('node:http').Server;
 let apiURL: string;
 const organization = { id: 'review-browser-org', name: 'Browser review QA', role: 'employee', appAccess: { mode: 'all', appIds: [] } };
 const principal = { id: 'member', sub: 'member', name: 'Taylor Member', email: 'member@example.test', organizations: [organization], currentOrganization: organization,
-  idpTeams: [{ id: 'team', name: 'Product', organizationId: organization.id, role: 'member' }] };
+  idpTeams: [{ id: 'team', name: 'Product', organizationId: organization.id, role: 'line_manager' }] };
 
 test.beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
@@ -37,7 +37,7 @@ test.afterAll(async () => {
   await mongoose.disconnect(); if (mongo) await mongo.stop();
 });
 
-for (const mobile of [false, true]) test(`ordinary member launches and conducts an upward review using real APIs (${mobile ? 'mobile' : 'desktop'})`, async ({ page }, testInfo) => {
+for (const mobile of [false, true]) test(`manager explicitly selects a reviewer and conducts an assigned review using real APIs (${mobile ? 'mobile' : 'desktop'})`, async ({ page }, testInfo) => {
   if (mobile) await page.setViewportSize({ width: 390, height: 844 });
   await Appraisal.deleteMany({});
   await page.addInitScript(() => { localStorage.setItem('accessToken', 'isolated-review-qa'); });
@@ -50,17 +50,18 @@ for (const mobile of [false, true]) test(`ordinary member launches and conducts 
     }
     let response: unknown = { success: true, data: [] };
     if (endpoint === '/auth/me') response = { success: true, user: principal, currentOrganization: organization, currentOrganizationId: organization.id };
-    if (endpoint === '/user/context') response = { success: true, data: { user: principal, role: { name: 'employee', isManager: false, isHRAdmin: false }, organization, teams: principal.idpTeams, features: {}, stats: {} } };
+    if (endpoint === '/user/context') response = { success: true, data: { user: principal, role: { name: 'line_manager', isManager: true, isHRAdmin: false }, organization, teams: principal.idpTeams, features: {}, stats: {} } };
     if (endpoint === '/user/current-team') response = { success: true, data: { currentTeam: principal.idpTeams[0], availableTeams: principal.idpTeams } };
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
   });
   await page.goto('/appraisals/start');
   await page.getByRole('checkbox', { name: /Alex Team Leader/ }).check();
-  await expect(page.getByText(/Reviewer: you/)).toBeVisible();
+  await page.getByRole('combobox', { name: /Reviewer for Alex Team Leader/ }).click();
+  await page.getByRole('option', { name: /Taylor Member/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Review cycle' })).toContainText('performance review');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByText('Alex Team Leader · Reviewer: you')).toBeVisible();
+  await expect(page.getByText('Alex Team Leader · Reviewer: Taylor Member')).toBeVisible();
   const quarter = await AppraisalCycle.findOne({ organizationId: organization.id, periodEnd: { $lt: new Date() } }).sort({ periodEnd: -1 });
   const expectedEnd = quarter.periodEnd.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   await expect(page.getByText(`Assessment period:`, { exact: false })).toContainText(expectedEnd);

@@ -8,11 +8,13 @@ import { useAppraisalCycles, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
 import { CycleTemplateSummary } from '@/components/appraisals/CycleDesignBuilder';
 import AppraisalFlowEditor, { AppraisalFlow, defaultFlow, flowError } from '@/components/appraisals/AppraisalFlowEditor';
-import { shortDate } from '@/lib/appraisal-results';
+import { shortDate, AppraisalResultItem, resultCycleName } from '@/lib/appraisal-results';
+import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
 
-interface Person { userId: string; name: string; email: string; managerName?: string; teamName?: string; isSelectableForAppraisal?: boolean; selectionBlockedReason?: string }
+interface Reviewer { userId: string; name: string; email: string; role: string }
+interface Person { userId: string; name: string; email: string; managerName?: string; teamName?: string; teamId?: string; teamIds?: string[]; reviewerOptions?: Reviewer[]; isSelectableForAppraisal?: boolean; selectionBlockedReason?: string }
 interface Cycle { workflowDefinition?: { stages?: Record<string, { enabled?: boolean }> }; _id: string; name: string; status: string; periodStart: string; periodEnd: string; responseDeadlines?: { selfAssessmentDue?: string; managerReviewDue?: string }; phases?: { selfAssessment?: { endDate?: string }; managerReview?: { endDate?: string } } }
-interface StartedReview { _id: string; status?: string; employee?: { name?: string } }
+type StartedReview = AppraisalResultItem;
 interface Receipt { launched: number; replayed?: number; errors: number; appraisals?: StartedReview[]; existingAppraisals?: StartedReview[]; errorDetails?: Array<{ userId?: string; error?: string }> }
 const dateIn = (days: number) => { const date = new Date(); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
 const calendarDate = (value: string) => new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -24,12 +26,16 @@ export default function StartAppraisalPage() {
   const router = useRouter();
   const stepHeading = useRef<HTMLHeadingElement>(null);
   const dateInputs = useRef<Partial<Record<DateField, HTMLInputElement | null>>>({});
-  const { isHRAdmin, isLoading: contextLoading } = useUserContext();
+  const { isHRAdmin, isManager, isLoading: contextLoading } = useUserContext();
   const { cycles, isLoading: cyclesLoading, isError: cyclesError, mutate: refreshCycles } = useAppraisalCycles();
   const query = useSearchParams();
   const [people, setPeople] = useState<Person[]>([]);
   const [templates, setTemplates] = useState<CycleTemplateSummary[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [reviewers, setReviewers] = useState<Record<string, string>>({});
+  const [peopleAttempted, setPeopleAttempted] = useState(false);
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const [teamFilter, setTeamFilter] = useState(query.get('teamId') || 'all');
   const [search, setSearch] = useState('');
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -46,14 +52,14 @@ export default function StartAppraisalPage() {
   const [detailsAttempted, setDetailsAttempted] = useState(false);
   const [appraisalFlow, setAppraisalFlow] = useState<AppraisalFlow>(defaultFlow());
   const [receipt, setReceipt] = useState<Receipt | null>(null);
-  const permitted = true;
+  const permitted = isHRAdmin || isManager;
   const openCycles = (cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status) && cycle.periodEnd.slice(0, 10) < dateIn(0));
   const existingCycle = openCycles.find((cycle) => cycle._id === cycleId);
   const template = templates.find((entry) => entry.id === templateId) || templates[0];
   useEffect(() => { setAppraisalFlow(defaultFlow(existingCycle?.workflowDefinition?.stages || template?.design?.stages)); }, [cycleId, templateId]);
   const participants = people.filter((person) => selected.includes(person.userId) && person.isSelectableForAppraisal !== false);
   const unavailable = people.filter((person) => person.isSelectableForAppraisal === false);
-  const shownPeople = useMemo(() => people.filter((person) => `${person.name} ${person.teamName || ''}`.toLowerCase().includes(search.toLowerCase())), [people, search]);
+  const shownPeople = useMemo(() => people.filter((person) => (teamFilter === 'all' || (person.teamIds || [person.teamId]).includes(teamFilter)) && `${person.name} ${person.teamName || ''}`.toLowerCase().includes(search.toLowerCase())), [people, search, teamFilter]);
   const today = dateIn(0);
   const yesterday = dateIn(-1);
   const dateErrors: Record<DateField, string> = {
@@ -71,6 +77,8 @@ export default function StartAppraisalPage() {
       const [staffResponse, templateResponse] = await Promise.all([api.get('/appraisals/colleague-roster'), api.get('/appraisals/cycle-templates')]);
       const staff: Person[] = staffResponse.data?.data?.employees || [];
       setPeople(staff); setTemplates(templateResponse.data?.data || []);
+      setTeams(staffResponse.data?.data?.teams || []);
+      setReviewers(previous => Object.fromEntries(Object.entries(previous).filter(([personId, reviewerId]) => staff.find(person => person.userId === personId)?.reviewerOptions?.some(reviewer => reviewer.userId === reviewerId))));
       setSelected((previous) => previous.filter((id) => staff.some((person) => person.userId === id && person.isSelectableForAppraisal !== false)));
       const requested = query.get('employeeId');
       if (requested && staff.some((person) => person.userId === requested && person.isSelectableForAppraisal !== false)) setSelected([requested]);
@@ -89,9 +97,11 @@ export default function StartAppraisalPage() {
   };
   const focusStep = () => window.requestAnimationFrame(() => { stepHeading.current?.focus({ preventScroll: true }); window.scrollTo({ top: 0 }); });
   const moveStep = (index: number) => { setStep(index); focusStep(); };
+  const peopleError = () => !participants.length ? 'Choose at least one eligible member of staff.' : participants.some(person => !person.reviewerOptions?.some(reviewer => reviewer.userId === reviewers[person.userId])) ? 'Choose a reviewer for every selected person.' : '';
   const next = () => {
+    if (step === 0) setPeopleAttempted(true);
     if (step === 1) setDetailsAttempted(true);
-    const issue = step === 0 ? (participants.length ? '' : 'Choose at least one eligible member of staff.') : (validateDetails() || flowError(appraisalFlow));
+    const issue = step === 0 ? peopleError() : (validateDetails() || flowError(appraisalFlow));
     setError(issue); if (!issue) moveStep(step + 1);
     else if (step === 1 && cycleId === 'new') {
       const field = (Object.keys(dateErrors) as DateField[]).find((key) => dateErrors[key]);
@@ -99,6 +109,7 @@ export default function StartAppraisalPage() {
     }
   };
   const start = async () => {
+    if (peopleError()) { setPeopleAttempted(true); setError(peopleError()); moveStep(0); return; }
     const issue = validateDetails();
     if (issue || !participants.length) {
       setError(issue || 'Choose staff before starting.');
@@ -109,12 +120,12 @@ export default function StartAppraisalPage() {
     if (flowError(appraisalFlow)) { setError(flowError(appraisalFlow)); moveStep(1); return; }
     setSaving(true); setError('');
     try {
-      const employees = participants.map((person) => ({ userId: person.userId }));
+      const employees = participants.map((person) => ({ userId: person.userId, reviewerId: reviewers[person.userId] }));
       const response = cycleId === 'new'
-        ? await api.post('/appraisals/cycles', { name: title.trim(), cycleType: reviewType, periodStart, periodEnd, launchNow: true, reviewerMode: 'initiator', employees, appraisalFlow,
+        ? await api.post('/appraisals/cycles', { name: title.trim(), cycleType: reviewType, periodStart, periodEnd, launchNow: true, reviewerMode: 'selected', employees, appraisalFlow,
           workflowDefinition: template!.design, sourceTemplate: { id: template!.id, name: template!.name, version: template!.version || 1 },
           responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } })
-        : await api.post(`/appraisals/cycles/${cycleId}/launch`, { employees, reviewerMode: 'initiator', appraisalFlow, responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } });
+        : await api.post(`/appraisals/cycles/${cycleId}/launch`, { employees, reviewerMode: 'selected', appraisalFlow, responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } });
       setReceipt(response.data?.data?.launchSummary || response.data?.data);
       focusStep();
     } catch (failure) { setError(apiError(failure)); }
@@ -126,7 +137,13 @@ export default function StartAppraisalPage() {
   if (receipt) return <Box sx={{ maxWidth: 900, mx: 'auto' }}>
     <Typography component="h1" variant="h4" ref={stepHeading} tabIndex={-1} fontWeight={700} mb={2}>Appraisal launch results</Typography>
     <Alert severity={receipt.errors ? 'warning' : 'success'}>{receipt.launched} started · {receipt.replayed || 0} already in progress · {receipt.errors} blocked</Alert>
-    <Stack spacing={1.5} my={3}>{[...(receipt.appraisals || []), ...(receipt.existingAppraisals || [])].map((review) => <Paper variant="outlined" sx={{ p: 2 }} key={review._id}><Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}><Box><Typography fontWeight={600}>{review.employee?.name || 'Appraisal'}</Typography><Typography variant="body2" color="text.secondary">{review.status === 'meeting_pending' ? 'The one-on-one call is the next step.' : 'Open the appraisal to see the next step.'}</Typography></Box><Button component={Link} href={`/appraisals/${review._id}`}>Open appraisal</Button></Stack></Paper>)}
+    <Stack spacing={1.5} my={3}>{[...(receipt.appraisals || []), ...(receipt.existingAppraisals || [])].map((review) => <Paper variant="outlined" sx={{ p: 2 }} key={review._id}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2}>
+        <Box><Typography fontWeight={600}>{review.employee?.name || 'Appraisal'} · {resultCycleName(review)}</Typography>
+          <Typography variant="body2" color="text.secondary">{receipt.appraisals?.some(item => item._id === review._id) ? 'Created in this launch' : 'Already existed — no duplicate created'} · Reviewer: {review.manager?.name || 'Not recorded'}</Typography>
+        </Box><Button component={Link} href={`/appraisals/${review._id}`}>Open appraisal</Button>
+      </Stack><Box sx={{ mt: 2 }}><AppraisalMetadata appraisal={review} /></Box>
+    </Paper>)}
       {(receipt.errorDetails || []).map((failure, index) => <Alert key={index} severity="warning">{people.find((person) => person.userId === failure.userId)?.name || 'Staff member'}: {failure.error || 'Could not start this review.'}</Alert>)}
     </Stack><Stack direction="row" spacing={2}><Button variant="contained" onClick={() => { router.push('/appraisals?section=conducting'); }}>View appraisals</Button>{receipt.errors > 0 && <Button onClick={() => { setSelected((receipt.errorDetails || []).map((failure) => failure.userId || '')); setReceipt(null); setStep(0); }}>Review blocked staff</Button>}</Stack>
   </Box>;
@@ -134,22 +151,23 @@ export default function StartAppraisalPage() {
   return <Box sx={{ maxWidth: 1000, mx: 'auto' }}>
     <Button component={Link} href="/appraisals" sx={{ mb: 1 }}>Back to appraisals</Button>
     <Typography variant="h4" fontWeight={700}>Start appraisal</Typography>
-    <Typography color="text.secondary" mt={1} mb={3}>{isHRAdmin ? 'Review anyone in your organization, including its leaders.' : 'Review a colleague, peer or manager in your team hierarchy.'} You will be the reviewer. Choose work already completed, then agree response deadlines.</Typography>
+    <Typography color="text.secondary" mt={1} mb={3}>{isHRAdmin ? 'Set up reviews for anyone in your organization, including its leaders.' : 'Set up reviews for people in the teams you manage and their subteams.'} Choose a reviewer for each person, then agree the assessment period and response deadlines.</Typography>
     <Stepper activeStep={step} alternativeLabel sx={{ mb: 3 }}>{['People', 'Review details', 'Confirm and start'].map((label) => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}</Stepper>
     {error && <Alert severity="error" sx={{ mb: 2 }} action={step === 0 ? <Button onClick={loadStaff}>Retry</Button> : undefined}>{error}</Alert>}
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
       {step === 0 && <Stack spacing={2}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Choose staff</Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}><TextField label="Search staff" value={search} onChange={(event) => setSearch(event.target.value)} size="small" fullWidth /><Button onClick={loadStaff} disabled={loading}>Refresh staff</Button></Stack>
+        <TextField select label="Filter by team" value={teamFilter} onChange={event => setTeamFilter(event.target.value)} size="small"><MenuItem value="all">All available teams</MenuItem>{teams.map(team => <MenuItem key={team.id} value={team.id}>{team.name}</MenuItem>)}</TextField>
         <Typography variant="body2">{participants.length} selected · {people.length - unavailable.length} eligible</Typography>
-        {loading ? <CircularProgress aria-label="Loading staff" /> : shownPeople.length ? shownPeople.map((person) => <Box key={person.userId} sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}><FormControlLabel sx={{ alignItems: 'flex-start' }} control={<Checkbox checked={selected.includes(person.userId)} disabled={person.isSelectableForAppraisal === false} onChange={(_, checked) => setSelected((previous) => checked ? [...previous, person.userId] : previous.filter((id) => id !== person.userId))} />} label={<Box><Typography>{person.name}</Typography><Typography variant="body2" color="text.secondary">{person.isSelectableForAppraisal === false ? person.selectionBlockedReason || 'A reporting manager must be assigned first.' : `Reviewer: you${person.teamName ? ` · ${person.teamName}` : ''}`}</Typography></Box>} /></Box>) : <Alert severity="info">{search ? 'No staff match your search.' : 'No colleagues are available in your team hierarchy. Ask HR to check your team membership in Seemplify Identity.'}</Alert>}
-        {!!unavailable.length && <Alert severity="info">{unavailable.length} people need a reporting manager before their appraisal can start. {isHRAdmin ? 'Check the reporting relationship in Seemplify Identity, then refresh this list.' : 'Ask HR to check their reporting relationship in Seemplify Identity.'}{isHRAdmin && <Button component="a" href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'} target="_blank" rel="noopener noreferrer">Open Seemplify Identity</Button>}</Alert>}
+        {loading ? <CircularProgress aria-label="Loading staff" /> : shownPeople.length ? shownPeople.map((person) => <Box key={person.userId} sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 2 }}><FormControlLabel sx={{ alignItems: 'flex-start' }} control={<Checkbox checked={selected.includes(person.userId)} disabled={person.isSelectableForAppraisal === false} onChange={(_, checked) => setSelected((previous) => checked ? [...previous, person.userId] : previous.filter((id) => id !== person.userId))} />} label={<Box><Typography>{person.name}</Typography><Typography variant="body2" color="text.secondary">{person.isSelectableForAppraisal === false ? person.selectionBlockedReason : person.teamName || 'No team assigned'}</Typography></Box>} />{selected.includes(person.userId) && <TextField select required fullWidth label={`Reviewer for ${person.name}`} value={reviewers[person.userId] || ''} onChange={event => setReviewers(previous => ({ ...previous, [person.userId]: event.target.value }))} error={peopleAttempted && !reviewers[person.userId]} helperText="Choose an eligible team lead, line manager, HR manager, admin or owner. The reviewer cannot be the person being reviewed.">{(person.reviewerOptions || []).map(reviewer => <MenuItem key={reviewer.userId} value={reviewer.userId}>{reviewer.name} · {reviewer.role.replace(/_/g, ' ')}</MenuItem>)}</TextField>}</Box>) : <Alert severity="info">{search || teamFilter !== 'all' ? 'No staff match these filters.' : 'No people are available in the teams you manage. Ask HR to check the team assignments in Seemplify Identity.'}</Alert>}
+        {!!unavailable.length && <Alert severity="info">{unavailable.length} people have no eligible reviewer. Check team leadership or organization roles in Seemplify Identity, then refresh this list.</Alert>}
       </Stack>}
       {step === 1 && <Stack spacing={2.5}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Review details</Typography>
         {cyclesError && <Alert severity="warning" action={<Button onClick={() => refreshCycles()}>Retry</Button>}>Existing cycles could not be loaded. Retry to choose an existing cycle, or use a new one-off review.</Alert>}
         <TextField select label="Review cycle" value={cycleId || 'new'} onChange={(event) => { setCycleId(event.target.value); setError(''); setDetailsAttempted(false); }} helperText="Choose a completed quarterly cycle, or start a one-off review. You set response deadlines next."><MenuItem value="new">New one-off review</MenuItem>{(cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status)).map((cycle) => <MenuItem key={cycle._id} value={cycle._id} disabled={cycle.periodEnd.slice(0, 10) >= today}>{cycle.name}{cycle.periodEnd.slice(0, 10) >= today ? ' · available after this quarter ends' : ''}</MenuItem>)}</TextField>
-        {existingCycle ? <Box><Typography fontWeight={600}>{existingCycle.name}</Typography><Typography>Assessment period: {shortDate(existingCycle.periodStart)} – {shortDate(existingCycle.periodEnd)}</Typography><Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography><Alert severity="info" sx={{ mt: 2 }}>This uses the shared cycle’s questions. You are the reviewer; choose your response deadlines below.</Alert></Box> : <>
+        {existingCycle ? <Box><Typography fontWeight={600}>{existingCycle.name}</Typography><Typography>Assessment period: {shortDate(existingCycle.periodStart)} – {shortDate(existingCycle.periodEnd)}</Typography><Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography><Alert severity="info" sx={{ mt: 2 }}>This uses the shared cycle’s questions. Choose response deadlines for the employees and their selected reviewers below.</Alert></Box> : <>
           <TextField label="Review name" value={title} onChange={(event) => setTitle(event.target.value)} />
           <TextField select label="Review type" value={reviewType} onChange={(event) => setReviewType(event.target.value)}><MenuItem value="adhoc">One-off review</MenuItem><MenuItem value="quarterly">Quarterly review</MenuItem><MenuItem value="probation">Probation review</MenuItem><MenuItem value="project">Project review</MenuItem><MenuItem value="annual">Annual review</MenuItem></TextField>
           <TextField select label="Review template" value={template?.id || ''} onChange={(event) => setTemplateId(event.target.value)}>{templates.map((entry) => <MenuItem key={entry.id} value={entry.id}>{entry.name}</MenuItem>)}</TextField>
@@ -177,7 +195,7 @@ export default function StartAppraisalPage() {
         </>}
       </Stack>}
       {step === 1 && cycleId !== 'new' && <Stack spacing={2} mt={3}>
-        <Alert severity="info">You are the reviewer. These deadlines apply to the reviews you start; The shared cycle dates stay the same. Future quarters become available after they finish.</Alert>
+        <Alert severity="info">These deadlines apply to the employees and selected reviewers. The shared cycle dates stay the same. Future quarters become available after they finish.</Alert>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField label="Employee response due" type="date" value={selfDue} onChange={(event) => changeDate(setSelfDue, event.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today } }} error={!!dateError('selfDue', selfDue)} helperText={dateError('selfDue', selfDue)} fullWidth />
           <TextField label="Reviewer response due" type="date" value={managerDue} onChange={(event) => changeDate(setManagerDue, event.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: dayAfter(selfDue || today) } }} error={!!dateError('managerDue', managerDue)} helperText={dateError('managerDue', managerDue)} fullWidth />
@@ -189,7 +207,7 @@ export default function StartAppraisalPage() {
         <Typography>Assessment period: {shortDate(existingCycle?.periodStart || periodStart)} – {shortDate(existingCycle?.periodEnd || periodEnd)}</Typography>
         {!existingCycle && <Typography>Review starts: {calendarDate(today)} (today)</Typography>}
         <Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography>
-        {participants.map((person) => <Typography key={person.userId}>{person.name} · Reviewer: you</Typography>)}
+        {participants.map((person) => <Typography key={person.userId}>{person.name} · Reviewer: {person.reviewerOptions?.find(reviewer => reviewer.userId === reviewers[person.userId])?.name || 'Choose a reviewer'}</Typography>)}
         <Typography fontWeight={600}>Your review flow</Typography>
         <Box component="ol" sx={{ pl: 3 }}>{appraisalFlow.steps.map(step => <Typography component="li" key={step.id}>{step.label}</Typography>)}</Box>
         <Typography>Employee assessment: {appraisalFlow.assessmentMode === 'form' ? 'Manual form' : 'AI conversation or form'}</Typography>

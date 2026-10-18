@@ -4,18 +4,22 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Alert, Box, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { Download, Print } from '@mui/icons-material';
-import { AppraisalResultItem, downloadResultsCsv, hasPublishedResult, resultCycleName, resultPeriodEnd, resultRating, shortDate } from '@/lib/appraisal-results';
+import { AppraisalResultItem, downloadResultsCsv, hasPublishedResult, resultCycleName, resultPeriodEnd, resultRating, shortDate, newestAppraisalsFirst } from '@/lib/appraisal-results';
 import ResultPrintStyles from './ResultPrintStyles';
+import AppraisalMetadata from './AppraisalMetadata';
 
 export default function AppraisalHistory({ appraisals, showEmployee, organizationName }: { appraisals: AppraisalResultItem[]; showEmployee: boolean; organizationName?: string }) {
   const [search, setSearch] = useState('');
   const [year, setYear] = useState('all');
   const [sort, setSort] = useState('newest');
   const years = useMemo(() => Array.from(new Set(appraisals.map((item) => resultPeriodEnd(item).slice(0, 4)).filter((value) => /^\d{4}$/.test(value)))).sort().reverse(), [appraisals]);
-  const results = useMemo(() => appraisals.filter((item) => (
-    (year === 'all' || resultPeriodEnd(item).startsWith(year))
-    && [resultCycleName(item), item.employee?.name, item.manager?.name, item.finalRating?.ratingLabel].some((text) => String(text || '').toLowerCase().includes(search.toLowerCase().trim()))
-  )).sort((a, b) => (sort === 'newest' ? -1 : 1) * resultPeriodEnd(a).localeCompare(resultPeriodEnd(b))), [appraisals, search, sort, year]);
+  const results = useMemo(() => {
+    const ordered = newestAppraisalsFirst(appraisals.filter((item) => (
+      (year === 'all' || resultPeriodEnd(item).startsWith(year))
+      && [resultCycleName(item), item.employee?.name, item.manager?.name, item.finalRating?.ratingLabel].some((text) => String(text || '').toLowerCase().includes(search.toLowerCase().trim()))
+    )));
+    return sort === 'newest' ? ordered : ordered.reverse();
+  }, [appraisals, search, sort, year]);
   const completed = results.filter((item) => hasPublishedResult(item.status));
   const exportResults = () => downloadResultsCsv([
     ['Employee', 'Appraisal', 'Period start', 'Period end', 'Manager', 'Final result', 'Rating label', 'Status', 'Finalized'],
@@ -44,6 +48,7 @@ export default function AppraisalHistory({ appraisals, showEmployee, organizatio
             <Button className="no-print" component={Link} href={hasPublishedResult(item.status) ? `/appraisals/${item._id}/report` : `/appraisals/${item._id}`} variant="outlined">{hasPublishedResult(item.status) ? 'View result report' : 'View appraisal'}</Button>
           </Stack>
         </Stack>
+        <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}><AppraisalMetadata appraisal={item} /></Box>
       </Paper>)}
     </Stack>}
   </Box>;

@@ -7,7 +7,8 @@ import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import api from '@/lib/api';
 import useSWR from 'swr';
 import AppraisalHistory from '@/components/appraisals/AppraisalHistory';
-import { AppraisalResultItem, isFinishedAppraisal, isAppraisalStepComplete } from '@/lib/appraisal-results';
+import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
+import { AppraisalResultItem, isFinishedAppraisal, isAppraisalStepComplete, newestAppraisalsFirst, appraisalCreatedAt, resultCycleName } from '@/lib/appraisal-results';
 import {
   Box, Typography, Card, CardContent, Grid, Button, Chip, Alert,
   LinearProgress, Paper, List, ListItem, ListItemText,
@@ -131,8 +132,8 @@ export default function AppraisalsPage() {
   const scopedTeamAppraisals = conducting ? assignedReviews.filter((item) => !selectedCycleId || item.cycleId?._id === selectedCycleId) : selectedTab === 2
     ? organizationAppraisals.filter((item: Appraisal) => !selectedCycleId || item.cycleId?._id === selectedCycleId)
     : allTeamAppraisals;
-  const myAppraisals = (allMyAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status));
-  const teamAppraisals = (scopedTeamAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status));
+  const myAppraisals = newestAppraisalsFirst((allMyAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status)));
+  const teamAppraisals = newestAppraisalsFirst((scopedTeamAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status)));
   const teamLoading = conducting ? assignedLoading : selectedTab === 2 ? organizationLoading : directTeamLoading;
   const loadError = conducting ? assignedError : selectedTab === 2 ? organizationError : selectedTab === 1 ? teamError : myError;
   const allVisibleAppraisals: Appraisal[] = selectedTab ? scopedTeamAppraisals : allMyAppraisals;
@@ -278,7 +279,7 @@ export default function AppraisalsPage() {
     }
   };
 
-  const renderAppraisalCard = (appraisal: Appraisal, isEmployee: boolean) => {
+  const renderAppraisalCard = (appraisal: Appraisal, isEmployee: boolean, newest = false) => {
     const config = statusConfig[appraisal.status] || statusConfig['not_started'];
     const customSteps = appraisal.cycleConfigurationSnapshot?.appraisalFlow?.steps;
     const currentCustomStep = customSteps?.findIndex(step => !isAppraisalStepComplete(appraisal, step)) ?? -1;
@@ -291,6 +292,8 @@ export default function AppraisalsPage() {
     return (
       <Card
         key={appraisal._id}
+        component="article"
+        aria-label={`${resultCycleName(appraisal)} — ${appraisal.employee.name}`}
         sx={{
           mb: 2,
           position: 'relative',
@@ -329,13 +332,13 @@ export default function AppraisalsPage() {
                 </Avatar>
                 <Box>
                   <Typography variant="subtitle1" fontWeight={600}>
-                    {isEmployee ? 'Your Appraisal' : (appraisal.employee?.name || 'Unknown Employee')}
+                    {isEmployee ? resultCycleName(appraisal) : (appraisal.employee?.name || 'Unknown Employee')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {isEmployee ? `Manager: ${appraisal.manager?.name || 'Unassigned'}` : (appraisal.employee?.jobTitle || 'Team Member')}
+                    Reviewer: {appraisal.manager?.name || 'Unassigned'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {appraisal.cycleId?.name || 'Performance Cycle'}
+                    {isEmployee ? 'Your appraisal' : resultCycleName(appraisal)}
                   </Typography>
                 </Box>
               </Box>
@@ -345,6 +348,7 @@ export default function AppraisalsPage() {
             <Grid size={{ xs: 12, md: 4 }}>
               <Box>
                 <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+                  {newest && appraisalCreatedAt(appraisal) && <Chip size="small" label="Newest active appraisal" color="primary" variant="outlined" />}
                   <Chip
                     size="small"
                     icon={config.icon as any}
@@ -370,18 +374,6 @@ export default function AppraisalsPage() {
                         '& .MuiChip-icon': { color: 'white' },
                       }}
                     />
-                  )}
-                </Box>
-                <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
-                  {selfDue && (
-                    <Typography variant="caption" color={selfOverdue ? 'error.main' : 'text.secondary'} fontWeight={selfOverdue ? 600 : 400}>
-                      Self: {new Date(selfDue).toLocaleDateString()}
-                    </Typography>
-                  )}
-                  {managerDue && (
-                    <Typography variant="caption" color={managerOverdue ? 'error.main' : 'text.secondary'} fontWeight={managerOverdue ? 600 : 400}>
-                      Manager: {new Date(managerDue).toLocaleDateString()}
-                    </Typography>
                   )}
                 </Box>
               </Box>
@@ -533,6 +525,7 @@ export default function AppraisalsPage() {
 
                 <IconButton
                   size="small"
+                  aria-label={`View appraisal for ${appraisal.employee.name}`}
                   onClick={() => handleViewAppraisal(appraisal._id)}
                   sx={{
                     bgcolor: alpha(theme.palette.primary.main, 0.08),
@@ -544,6 +537,8 @@ export default function AppraisalsPage() {
               </Box>
             </Grid>
           </Grid>
+
+          <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}><AppraisalMetadata appraisal={appraisal} /></Box>
 
           {/* Progress Steps */}
           <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -681,7 +676,7 @@ export default function AppraisalsPage() {
               ))}
             </Select>
           </FormControl>
-          <Button variant="contained" startIcon={<Add />} onClick={() => router.push('/appraisals/start')}>Start appraisal</Button><Button onClick={() => router.push('/appraisals?section=conducting')}>Reviews I’m conducting</Button>
+          {(isManager || isHRAdmin) && <Button variant="contained" startIcon={<Add />} onClick={() => router.push('/appraisals/start')}>Start appraisal</Button>}{(isManager || isHRAdmin) && <Button onClick={() => router.push('/appraisals?section=conducting')}>Reviews I’m conducting</Button>}
         </Box>
       </Box>
 
@@ -794,6 +789,7 @@ export default function AppraisalsPage() {
       </Paper>
 
       {/* My Appraisals */}
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Newest first by creation date. Completed and cancelled reviews are in History.</Typography>
       {selectedTab === 0 && (
         <Box>
           {myLoading ? (
@@ -816,7 +812,7 @@ export default function AppraisalsPage() {
               </Typography>
             </Alert>
           ) : (
-            myAppraisals.map((appraisal: Appraisal) => renderAppraisalCard(appraisal, true))
+            myAppraisals.map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, true, index === 0))
           )}
         </Box>
       )}
@@ -877,9 +873,9 @@ export default function AppraisalsPage() {
               {employeeIdFilter ? (
                 teamAppraisals
                   .filter((a: Appraisal) => a.employee.userId === employeeIdFilter)
-                  .map((appraisal: Appraisal) => renderAppraisalCard(appraisal, false))
+                  .map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, false, index === 0))
               ) : (
-                teamAppraisals.map((appraisal: Appraisal) => renderAppraisalCard(appraisal, false))
+                teamAppraisals.map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, false, index === 0))
               )}
             </>
           )}
