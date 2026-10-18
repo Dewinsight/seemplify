@@ -31,7 +31,9 @@ async function summarize(meeting, identity) {
     if (!summary?.trim()) throw new Error('No meeting notes were returned. Please retry.');
     await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.summary': summary.slice(0, 20000), 'appraisalMeeting.summaryState': 'ready', 'appraisalMeeting.summaryModel': String(response.model || 'unknown'), 'appraisalMeeting.summaryGeneratedAt': new Date() }, $unset: { 'appraisalMeeting.summaryLeaseUntil': 1 } });
   } catch (error) {
-    await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.summaryState': 'failed' }, $unset: { 'appraisalMeeting.summaryLeaseUntil': 1 } });
+    // A failed personal-account retry must not invalidate already generated notes.
+    const summaryState = claimed.appraisalMeeting?.summary?.trim() ? 'ready' : 'failed';
+    await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.summaryState': summaryState }, $unset: { 'appraisalMeeting.summaryLeaseUntil': 1 } });
     throw error;
   }
   return OneOnOne.findById(meeting._id);
