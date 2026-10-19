@@ -1,0 +1,36 @@
+{
+  "head": "cbc547f0f75ea14052dd1adc9be01d7a1b7aa9c7",
+  "run": 39186949448,
+  "conclusion": "success",
+  "source": "completed GitHub Actions log performance-ci-cbc547f-success.log",
+  "jest": {
+    "suitesPassed": 18,
+    "testsPassed": 193
+  },
+  "nodeLegacyPassed": 83,
+  "unitPassed": 38,
+  "persistedPolicyMigrationPassed": 2,
+  "realApi": {
+    "requests": 709,
+    "failures": 0
+  },
+  "browser": {
+    "executed": 107,
+    "passedWithoutRetry": 107,
+    "flakyPassedOnRetry": 0,
+    "finalFailures": 0
+  },
+  "realApiBrowser": {
+    "passed": 29,
+    "retries": 0
+  },
+  "productionBuild": "success",
+  "previousPullRequestRun": {
+    "run": 39185494953,
+    "head": "b8a6ff1ef658d87d8499c335e28992c4b0180c82",
+    "passedWithoutRetry": 105,
+    "flakyPassedOnRetry": 2,
+    "evidenceRetained": true
+  },
+  "deployment": "not established by this CI evidence"
+}

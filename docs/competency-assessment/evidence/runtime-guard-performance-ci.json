@@ -1,0 +1,30 @@
+{
+  "head": "f43677131a6cd42c6cb88e77cc8ee9f7033aed1b",
+  "run": 39193949849,
+  "conclusion": "success",
+  "source": "completed GitHub Actions log performance-ci-f436771-success.log",
+  "jest": {
+    "testsPassed": 199,
+    "suitesPassed": 18
+  },
+  "nodeLegacyPassed": 83,
+  "unitPassed": 38,
+  "persistedPolicyMigrationPassed": 2,
+  "realApi": {
+    "requests": 709,
+    "failures": 0
+  },
+  "browser": {
+    "executed": 107,
+    "finalFailures": 0,
+    "flakyPassedOnRetry": 0,
+    "passedWithoutRetry": 107
+  },
+  "realApiBrowser": {
+    "passed": 29,
+    "retries": 0
+  },
+  "productionBuild": "success",
+  "deployment": "not established by this CI evidence",
+  "scope": "three-file runtime policy guard, no competency local fallback"
+}

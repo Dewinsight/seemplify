@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-19",
+  "releaseRevision": "e2e57a51e8e8f39f3d68dde3dce5e05ce62ea97f",
+  "policyAndSessionVerification": [
+    {
+      "policySchemaVerified": 5,
+      "builtInPerformancePermissionCounts": {
+        "employee": 26,
+        "line_manager": 54,
+        "team_lead": 54,
+        "department_head": 56,
+        "hr_manager": 87,
+        "organization_admin": 87,
+        "organization_owner": 87
+      }
+    },
+    {
+      "performanceDatabaseVerified": true,
+      "expiredLoginSessions": 65
+    },
+    {
+      "performanceHealthy": true
+    }
+  ],
+  "backupServiceLock": {
+    "backupServiceDeploymentLockVerified": true,
+    "timerRetained": true,
+    "serviceTimeoutRetained": "infinity",
+    "hostLockAliasesShareInode": true,
+    "configurationSha256": "17683069e726fe3992a34db3555369c396da8302fe1e03ff5938c1d511e068ac",
+    "serviceVerificationInvokedBackup": false
+  },
+  "fullProductionBackupExecuted": false,
+  "productionRestoreCertified": false
+}

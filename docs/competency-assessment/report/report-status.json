@@ -1,11 +1,12 @@
 {
-  "headline": "Role-aware assessment is implemented and locally verified. Production acceptance remains open.",
-  "mongo": "193 / 193 clean-index checks passed",
+  "headline": "Manual competency assessment passed authenticated production acceptance.",
+  "releaseLabel": "MANUAL LIVE - FINAL GUARD ROLLOUT PENDING",
+  "mongo": "199 / 199 exact-head CI integration checks passed",
   "pure": "25 / 25 targeted checks passed",
-  "idp": "42 / 42 focused checks passed",
-  "browser": "43 focused +29 production API cases",
-  "providers": "Actual personal AI / new calls pending",
-  "release": "Full CI replay / deployment pending",
-  "revision": "PR135:193 local API checks,43 focused browser cases,29 production-mode real-API cases and709 HTTP requests passed. Fresh sign-in and linked launch passed. Call STT/AI are mocked. Backup/restore:16 checks. Exact-head CI/deployment/policy migration/session expiry pending; Experience has unchanged baseline failures.",
-  "backup": "16 isolated backup/restore checks passed"
+  "idp": "42 / 42 focused checks; schema 5 verified live",
+  "browser": "107 / 107; separate real-API suite 29 / 29, no retries",
+  "providers": "AI / recorded-call evidence off; actual providers pending",
+  "release": "Manual live at e2e57a51; final3095926a rollout pending",
+  "revision": "At e2e57a51: current organisation enabled manual; actual UI TXT/PDF/DOCX real-scanner intake/review/edit/confirm and private original byte comparison passed. Synthetic service-launched assessment: no ordinary parent/emails; actual UI score80, coverage1/1, Suitable, participant2-page/cohort1-page PDFs verified. Production Start appraisal confirmation/preflight only; launch not clicked. Fresh local linked launch separate. Final3095926a CI running/Core queued; AI/calls off, client pilot pending. Experience baseline separate.",
+  "backup": "16 isolated checks; live service lock/timer verified"
 }
