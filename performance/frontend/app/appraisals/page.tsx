@@ -677,6 +677,7 @@ export default function AppraisalsPage() {
             </Select>
           </FormControl>
           {(isManager || isHRAdmin) && <Button variant="contained" startIcon={<Add />} onClick={() => router.push('/appraisals/start')}>Start appraisal</Button>}{(isManager || isHRAdmin) && <Button onClick={() => router.push('/appraisals?section=conducting')}>Reviews I’m conducting</Button>}
+          {(isManager || isHRAdmin) && <Button onClick={() => router.push('/appraisals/removed')}>Removed appraisals</Button>}
         </Box>
       </Box>
 

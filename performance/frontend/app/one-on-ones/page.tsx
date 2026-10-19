@@ -45,6 +45,8 @@ export default function OneOnOnesPage() {
     setWithUserId(params.get('with') || '');
     if (employeeId) {
       setInitialEmployeeId(employeeId);
+    }
+    if (employeeId || params.get('compose') === 'true') {
       setDialogOpen(true);
     }
   }, []);

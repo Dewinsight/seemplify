@@ -6,7 +6,8 @@ const FeedbackRequest = require('../models/FeedbackRequest');
 const OKR = require('../models/OKR');
 const Appraisal = require('../models/Appraisal');
 const User = require('../models/User');
-const { requireAuth } = require('../middleware/rbac');
+const { requireAuth, requirePermission } = require('../middleware/rbac');
+const { resolvePerformanceColleague } = require('../services/performanceColleagueDirectoryService');
 const {
   requireOrganization,
   tenantFilter,
@@ -224,7 +225,7 @@ router.get('/requests', async (req, res) => {
   }
 });
 
-router.post('/requests', async (req, res) => {
+router.post('/requests', requirePermission('feedback:request'), async (req, res) => {
   try {
     const actorId = getActorId(req);
     const subjectId = String(req.body.subjectId || actorId);
@@ -245,16 +246,17 @@ router.post('/requests', async (req, res) => {
 
     const [requesterInfo, subjectInfo] = await Promise.all([
       resolvePerson(actorId, { name: req.session.user.name, email: req.session.user.email }),
-      resolvePerson(subjectId, { name: req.body.subjectName, email: req.body.subjectEmail })
+      resolvePerformanceColleague(req, subjectId, { action: 'feedback:request' })
     ]);
+    const reviewerContacts = await Promise.all(reviewers.map(userId => resolvePerformanceColleague(req, userId, { action: 'feedback:request' })));
     const cohortId = reviewers.length > 1 ? crypto.randomUUID() : undefined;
     const created = [];
-    for (const reviewerId of reviewers) {
-      const reviewerInfo = await resolvePerson(reviewerId);
+    for (const reviewerInfo of reviewerContacts) {
+      const reviewerId = reviewerInfo.userId;
       const request = await FeedbackRequest.create({
         organizationId: req.organizationId,
         requesterId: actorId,
-        subjectId,
+        subjectId: subjectInfo.userId,
         reviewerId,
         requesterInfo,
         subjectInfo,
@@ -283,7 +285,7 @@ router.post('/requests', async (req, res) => {
     }
     res.status(201).json({ success: true, data: created, count: created.length });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to create feedback request' });
+    res.status(error.status || error.statusCode || 500).json({ success: false, error: error.message || 'Failed to create feedback request' });
   }
 });
 
@@ -332,10 +334,10 @@ router.get('/direct-reports', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('feedback:send'), async (req, res) => {
   try {
     const senderId = getActorId(req);
-    const receiverId = String(req.body.receiverId || '');
+    let receiverId = String(req.body.receiverId || '');
     const content = cleanText(req.body.content, 5000);
     if (!receiverId || content.length < 3) return res.status(400).json({ success: false, error: 'Receiver and feedback of at least three characters are required' });
     if (receiverId === senderId) return res.status(400).json({ success: false, error: 'Feedback must be sent to another person' });
@@ -357,8 +359,10 @@ router.post('/', async (req, res) => {
     }
     const [senderInfo, receiverInfo] = await Promise.all([
       resolvePerson(senderId, { name: req.session.user.name, email: req.session.user.email }),
-      resolvePerson(receiverId, { name: req.body.receiverName, email: req.body.receiverEmail })
+      resolvePerformanceColleague(req, receiverId, { action: 'feedback:send' })
     ]);
+    receiverId = receiverInfo.userId;
+    if (receiverId === senderId) return res.status(400).json({ success: false, error: 'Feedback must be sent to another person' });
     const item = await Feedback.create({
       organizationId: req.organizationId,
       senderId,
@@ -401,7 +405,7 @@ router.post('/', async (req, res) => {
     });
     res.status(201).json({ success: true, data: serializeFeedback(item.toObject(), senderId, req.userRole), message: 'Feedback sent successfully' });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to send feedback' });
+    res.status(error.status || error.statusCode || 500).json({ success: false, error: error.message || 'Failed to send feedback' });
   }
 });
 

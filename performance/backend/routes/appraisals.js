@@ -125,6 +125,7 @@ function tenantCyclePopulate(req, select = null) {
   };
 }
 
+router.use('/lifecycle', requireAuth, require('./appraisalLifecycle')({ canManageAppraisal, tenantAppraisalIdFilter, resolveOrganizationId, syncCycleProgress }));
 router.use('/:appraisalId/meetings', requireAuth, require('./appraisalMeetings')({ canManageAppraisal, isAppraisalEmployee, tenantAppraisalIdFilter }));
 
 router.param('appraisalId', (req, res, next, id) => {
@@ -132,7 +133,12 @@ router.param('appraisalId', (req, res, next, id) => {
   return requireAuth(req, res, async () => {
     try {
       const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, id));
-      if (!appraisal || !appraisalFlow.flowFor(appraisal)) return next();
+      if (!appraisal) return next();
+      if (appraisal.status === 'cancelled') {
+        if (!isAppraisalEmployee(req, appraisal) && !(await canManageAppraisal(req, appraisal))) return res.status(403).json({ success: false, error: 'Access denied' });
+        if (!req.path.endsWith('/notifications/read')) return res.status(409).json({ success: false, error: 'This appraisal was cancelled and is read-only. Start a new appraisal to review again.', code: 'APPRAISAL_CANCELLED' });
+      }
+      if (!appraisalFlow.flowFor(appraisal)) return next();
       if (!isAppraisalEmployee(req, appraisal) && !(await canManageAppraisal(req, appraisal))) return res.status(403).json({ success: false, error: 'Access denied' });
       const action = req.path.split('/')[2];
       const expected = { 'self-assessment': 'selfAssessment', conversation: 'selfAssessment', 'manager-review': 'managerReview', discussion: 'discussion', calibration: 'calibration', finalize: 'finalReview', acknowledge: 'acknowledgement' }[action];
@@ -1261,8 +1267,12 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         Object.assign(existingQuery, employeeIdentityMatch);
       }
 
-      const existing = await Appraisal.findOne(existingQuery);
+      const existing = await Appraisal.findOne(existingQuery).withRemoved();
       if (existing) {
+        if (existing.removedAt) {
+          errors.push({ userId: employee.userId, error: 'This review is in Removed appraisals. Restore it to history, or start a new one-off review for a replacement.' });
+          return;
+        }
         if (!(await canManageAppraisal(req, existing))) {
           errors.push({ userId: employee.userId, error: 'A review is already assigned for this person in this cycle. HR can help coordinate it.' });
           return;

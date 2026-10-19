@@ -30,6 +30,7 @@ import {
 } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
 import { resolveOrganizationAuthorization } from '../services/accessControlService.js'
+import { buildPerformanceColleagues } from '../utils/performanceColleagues.js'
 
 const router = express.Router()
 
@@ -185,6 +186,18 @@ async function updateCompletionTracking(account, organizationId) {
  * GET /api/organizations/:orgId/members
  * Accepts both session auth and Bearer token (for API calls from SmartHR)
  */
+router.get('/:orgId/performance-colleagues', requireAuthOrAPIToken, requireOrganizationMember, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.params.orgId)
+      .populate('members.account', 'sub email profile.name isActive').lean()
+    return res.json(buildPerformanceColleagues({ organization, actorId: req.user._id,
+      authorization: req.organizationAuthorization, q: req.query.q, userId: req.query.userId, action: req.query.action, limit: req.query.limit }))
+  } catch (error) {
+    return res.status([400, 403].includes(error.status) ? error.status : 503)
+      .json({ error: [400, 403].includes(error.status) ? error.message : 'Could not refresh Performance colleagues. Please retry.' })
+  }
+})
+
 router.get('/:orgId/performance-directory', requireAuthOrAPIToken, requireOrganizationMember, async (req, res) => {
   try {
     const { buildPerformanceDirectory } = await import('../utils/performanceDirectory.js')

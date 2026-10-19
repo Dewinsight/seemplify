@@ -13,6 +13,7 @@ const ids = Object.fromEntries(actors.map((role) => [role, `acceptance-${role}`]
 const sessions = new Map();
 let accessRoles;
 let buildPerformanceDirectory;
+let buildPerformanceColleagues;
 
 function performancePermissions(actor) {
   const keys = new Set(['employee']);
@@ -39,7 +40,7 @@ function principal(actor) {
     accessToken: `disposable-acceptance-${actor}` };
 }
 
-function directoryFor(actor, view) {
+function directoryFor(actor, view, search) {
   const organizationId = actor === 'foreign' ? FOREIGN_ORG : ORG;
   const members = actors.filter(value => (value === 'foreign') === (actor === 'foreign')).map(value => {
     const user = principal(value);
@@ -49,6 +50,8 @@ function directoryFor(actor, view) {
     departments: [{ _id: 'acceptance-department', name: 'Operations', headAccount: ids.department_head }] };
   const teams = [{ _id: 'acceptance-team', name: 'Acceptance team', organization: organizationId, department: 'acceptance-department',
     members: members.filter(member => member.account.sub !== ids.teamless).map(member => ({ account: member.account.sub, status: 'active', role: member.account.sub === ids.manager ? 'line_manager' : member.account.sub === ids.team_lead ? 'team_lead' : 'member' })) }];
+  if (search) return buildPerformanceColleagues({ organization, actorId: ids[actor],
+    authorization: principal(actor).currentOrganization.authorization, q: search.q, userId: search.userId, action: search.action, limit: search.limit });
   return buildPerformanceDirectory({ organization, teams, actorId: ids[actor], view });
 }
 
@@ -58,6 +61,7 @@ async function start() {
   // authorization bypass. These imports are dependency-free IdP definitions.
   ({ DEFAULT_ACCESS_ROLES: accessRoles } = await import('../../../../Identityprovider/src/config/accessControlCatalog.js'));
   ({ buildPerformanceDirectory } = await import('../../../../Identityprovider/src/utils/performanceDirectory.js'));
+  ({ buildPerformanceColleagues } = await import('../../../../Identityprovider/src/utils/performanceColleagues.js'));
   // Ordinary appraisal + competency links/finalisation are transactional in
   // production. Exercise those fences with a real disposable replica set.
   const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
@@ -87,11 +91,18 @@ async function start() {
     const url = new URL(req.url, 'http://127.0.0.1:5014');
     if (url.pathname.startsWith('/__no_external_identity/api/organizations/')) {
       const actor = actors.find(value => req.headers.authorization === `Bearer disposable-acceptance-${value}`);
-      if (!actor || url.pathname !== `/__no_external_identity/api/organizations/${principal(actor).currentOrganization.id}/performance-directory`) {
+      const prefix = actor && `/__no_external_identity/api/organizations/${principal(actor).currentOrganization.id}`;
+      if (!actor || ![`${prefix}/performance-directory`, `${prefix}/performance-colleagues`].includes(url.pathname)) {
         res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'Synthetic directory access denied' }));
       }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify(directoryFor(actor, url.searchParams.get('scope'))));
+      try {
+        const search = url.pathname.endsWith('/performance-colleagues') ? { q: url.searchParams.get('q'),
+          userId: url.searchParams.get('userId') ?? undefined, action: url.searchParams.get('action') ?? undefined, limit: url.searchParams.get('limit') } : null;
+        const result = directoryFor(actor, url.searchParams.get('scope'), search);
+        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(result));
+      } catch (error) {
+        res.writeHead(error.status || 503, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'Synthetic directory request denied' }));
+      }
     }
     if (url.pathname === '/__test/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ready: true, actors }));

@@ -1631,6 +1631,9 @@ test('keeps analytics and the cycle builder usable on a narrow mobile viewport',
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Review design', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const sectionToggle = page.getByRole('button', { name: /questions/ }).first();
+  await expect(sectionToggle).toHaveAttribute('aria-expanded', 'false'); await sectionToggle.click(); await expect(sectionToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByLabel('Section title', { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('cycle-builder-mobile.png'), fullPage: true });
 });
 
@@ -2302,9 +2305,83 @@ test('completes frozen cycle questions inside guided self-assessment, reviews ex
   });
   await expect(page.getByText('Customer evidence changed the launch decision and avoided two rework cycles.')).toBeVisible();
 
-  await page.locator('label').filter({ hasText: '4 Stars' }).first().click({ force: true });
-  await page.getByRole('button', { name: 'Submit Self-Assessment' }).click();
+  const submitAssessment = page.getByRole('button', { name: 'Submit Self-Assessment', exact: true });
+  await expect(submitAssessment).toBeDisabled();
+  const selfRating = page.getByRole('radio', { name: '4 Stars', exact: true });
+  // Select the actual input through the keyboard instead of forcing a label-coordinate click while scrolling.
+  await selfRating.focus();
+  await selfRating.press('Space');
+  await expect(selfRating).toBeChecked();
+  await expect(submitAssessment).toBeEnabled();
+  await submitAssessment.click();
   await expect.poll(() => state.conversationFinalizeBodies.length).toBe(1);
+  expect(state.conversationFinalizeBodies[0]).toMatchObject({ report: { overallSelfRating: 4 } });
   await expect(page).toHaveURL(/\/appraisals\?submitted=self&appraisalId=/);
   expect(state.conversationReportGenerations).toBeGreaterThanOrEqual(1);
+});
+
+
+test('final review explains the calculated rating and requires a substantive evidence override reason', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = createState(); state.managerMode = true;
+  Object.assign(state.appraisals[0], { status: 'final_review_pending', employee: { userId: 'member-1', name: 'Jordan Lee' }, manager: { userId: currentUser.id, name: currentUser.name }, cycleId: { settings: { enableAiAssist: false } }, managerReview: { overallManagerRating: 4 }, viewerCapabilities: { isEmployee: false, canManage: true } });
+  await installMockApi(page, state);
+  await page.route('**/__mock-api/appraisals/*/scoring', route => route.fulfill({ json: { success: true, data: { suggestedRating: 3.2 } } }));
+  let submitted: Record<string, unknown> | undefined;
+  await page.route('**/__mock-api/appraisals/*/finalize', async route => { submitted = route.request().postDataJSON(); await route.fulfill({ json: { success: true } }); });
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/final-review');
+  await expect(page.getByText('Calculated evidence rating: 3.2/5', { exact: true })).toBeVisible();
+  const complete = page.getByRole('button', { name: 'Complete Appraisal', exact: true });
+  await expect(complete).toBeEnabled();
+  await page.getByRole('radio', { name: '4 Stars', exact: true }).focus(); await page.keyboard.press('Space');
+  await expect(page.getByText('Override evidence rating', { exact: true })).toBeVisible();
+  await expect(complete).toBeDisabled();
+  const reason = page.getByRole('textbox', { name: 'Justification (required when overriding evidence rating)', exact: true });
+  await reason.fill('Too short'); await expect(complete).toBeDisabled();
+  await reason.fill('Retained delivery evidence supports the higher outcome.'); await expect(complete).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('final-rating-mobile.png'), fullPage: true });
+  await complete.click(); await expect.poll(() => submitted).toEqual({ finalRating: 4, justification: 'Retained delivery evidence supports the higher outcome.' });
+});
+
+test('final review fails closed when its evidence rating cannot be loaded', async ({ page }) => {
+  const state = createState(); state.managerMode = true;
+  Object.assign(state.appraisals[0], { status: 'final_review_pending', employee: { userId: 'member-1', name: 'Jordan Lee' }, manager: { userId: currentUser.id, name: currentUser.name }, cycleId: { settings: { enableAiAssist: false } }, viewerCapabilities: { isEmployee: false, canManage: true } });
+  await installMockApi(page, state);
+  await page.route('**/__mock-api/appraisals/*/scoring', route => route.fulfill({ status: 503, json: { error: 'Synthetic scoring outage' } }));
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/final-review');
+  await expect(page.getByText('Evidence score could not be loaded. Refresh before finalizing.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Complete Appraisal', exact: true })).toBeDisabled();
+  Object.assign(state.appraisals[0], { viewerCapabilities: { isEmployee: false, canManage: false } }); await page.reload();
+  await expect(page.getByText('Only an authorized appraiser can access final review.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Complete Appraisal', exact: true })).toHaveCount(0);
+});
+
+test('discussion scheduling preserves a local time through UTC persistence', async ({ browser }) => {
+  const context = await browser.newContext({ timezoneId: 'Asia/Kolkata', viewport: { width: 390, height: 844 } }); const page = await context.newPage();
+  const state = createState(); state.managerMode = true;
+  Object.assign(state.appraisals[0], { status: 'manager_review_submitted', employee: { userId: 'member-1', name: 'Jordan Lee' }, manager: { userId: currentUser.id, name: currentUser.name }, discussion: { scheduledDate: '2026-10-19T09:30:00.000Z', notes: {} }, viewerCapabilities: { isEmployee: false, canManage: true } });
+  await installMockApi(page, state);
+  let submitted: Record<string, unknown> | undefined;
+  await page.route('**/__mock-api/appraisals/*/discussion', async route => { submitted = route.request().postDataJSON(); await route.fulfill({ json: { success: true } }); });
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/discussion');
+  const time = page.getByLabel('Scheduled Date/Time', { exact: true }); await expect(time).toHaveValue('2026-10-19T15:00');
+  await time.fill('2026-10-20T16:00'); await page.getByRole('button', { name: 'Save Draft', exact: true }).click();
+  await expect.poll(() => submitted?.scheduledDate).toBe('2026-10-20T10:30:00.000Z');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await context.close();
+});
+
+test('discussion follows current appraisal capabilities and employee acknowledgement state', async ({ page }) => {
+  const state = createState(); state.managerMode = true;
+  Object.assign(state.appraisals[0], { status: 'discussion_completed', employee: { userId: 'member-1', name: 'Jordan Lee' }, manager: { userId: 'another-manager', name: 'Other manager' }, discussion: { notes: {} }, viewerCapabilities: { isEmployee: false, canManage: false } });
+  await installMockApi(page, state); await page.goto('/appraisals/507f1f77bcf86cd799439011/discussion');
+  await expect(page.getByLabel('Agreed Strengths', { exact: true })).toBeDisabled(); await expect(page.getByRole('button', { name: 'Save Draft', exact: true })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Acknowledge Final Outcome', exact: true })).toHaveCount(0);
+  Object.assign(state.appraisals[0], { employee: { userId: currentUser.id, name: currentUser.name }, viewerCapabilities: { isEmployee: true, canManage: false } }); await page.reload(); await expect(page.getByRole('button', { name: 'Acknowledge Final Outcome', exact: true })).toHaveCount(0);
+  state.appraisals[0].status = 'completed'; await page.reload(); await expect(page.getByRole('button', { name: 'Acknowledge Final Outcome', exact: true })).toBeVisible(); await expect(page.getByLabel('Agreed Strengths', { exact: true })).toBeDisabled();
+});
+
+test('new one-on-one links open scheduling even without a selected employee', async ({ page }) => {
+  const state = createState(); state.managerMode = true; await installMockApi(page, state); await page.goto('/one-on-ones/new?with=member-1');
+  await expect(page).toHaveURL(/\/one-on-ones\?.*compose=true/); await expect(page.getByRole('dialog', { name: 'Schedule 1:1', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Schedule in-app call', exact: true })).toBeDisabled();
 });

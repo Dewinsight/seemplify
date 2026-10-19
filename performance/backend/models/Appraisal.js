@@ -12,6 +12,16 @@ const appraisalSchema = new mongoose.Schema({
     method: { type: String, enum: ['new_review', 'existing_cycle'] },
     createdBy: { userId: String, name: String }
   },
+  // Removal is reversible; evidence and the audit trail are retained.
+  removedAt: { type: Date, default: null, index: true },
+  lifecycle: {
+    cancelledAt: Date,
+    cancelledBy: { userId: String, name: String },
+    reason: { type: String, maxlength: 1000 },
+    cleanupPending: { type: Boolean, default: false },
+    removedBy: { userId: String, name: String },
+    restoredAt: Date
+  },
   // References
   cycleId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -553,6 +563,14 @@ appraisalSchema.index({ organizationId: 1, status: 1 });
 appraisalSchema.index({ 'manager.userId': 1, status: 1 });
 appraisalSchema.index({ cycleId: 1, status: 1 });
 
+appraisalSchema.query.withRemoved = function () { this._withRemoved = true; return this; };
+appraisalSchema.pre(['find', 'findOne', 'countDocuments', 'distinct', 'updateOne', 'updateMany', 'findOneAndUpdate'], function () {
+  if (!this._withRemoved) this.where({ removedAt: null });
+});
+appraisalSchema.pre('aggregate', function () {
+  this.pipeline().unshift({ $match: { removedAt: null } });
+});
+
 // Virtual for computing if overdue
 appraisalSchema.virtual('isCurrentlyOverdue').get(function () {
   const now = new Date();
@@ -597,8 +615,17 @@ appraisalSchema.methods.addChatMessage = function (sender, message, messageType 
 appraisalSchema.add({ completedMeetingSteps: { type: [String], default: undefined } });
 appraisalSchema.pre('save', async function () {
   const flow = require('../services/appraisalFlowService');
+  const original = this.isNew ? null : await this.constructor.findById(this._id).withRemoved().lean();
+  if (original?.status === 'cancelled' && this.status !== 'cancelled') {
+    throw Object.assign(new Error('Cancelled appraisals cannot be restarted. Start a new appraisal instead.'), { statusCode: 409 });
+  }
+  if (original?.status === 'cancelled') {
+    const allowed = new Set(['status', 'lifecycle', 'removedAt', 'auditLog', 'notifications', 'flags', 'updatedAt', '__v']);
+    if (this.modifiedPaths().some(path => !allowed.has(path.split('.')[0]))) {
+      throw Object.assign(new Error('This appraisal was cancelled and its assessment evidence is read-only.'), { statusCode: 409 });
+    }
+  }
   if (!this.isNew && flow.flowFor(this)) {
-    const original = await this.constructor.findById(this._id).lean();
     if (original && JSON.stringify(flow.flowFor(original)) !== JSON.stringify(flow.flowFor(this))) {
       throw Object.assign(new Error('The launched appraisal workflow cannot be changed.'), { statusCode: 409 });
     }
@@ -619,6 +646,7 @@ appraisalSchema.post('find', function (docs) {
 });
 appraisalSchema.pre('updateMany', function () {
   if (this.getUpdate()?.$set?.status) {
+    this.and([{ status: { $ne: 'cancelled' } }]);
     // Legacy calibration batches may advance a whole cycle. Configured flows
     // already advance on individual evidence saves and can have calls next.
     this.where({ 'cycleConfigurationSnapshot.appraisalFlow': { $exists: false } });

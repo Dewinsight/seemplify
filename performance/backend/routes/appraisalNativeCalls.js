@@ -6,6 +6,7 @@ const { pipeline } = require('node:stream/promises');
 const mongoose = require('mongoose');
 const multer = require('multer');
 const Call = require('../models/AppraisalCall');
+const Appraisal = require('../models/Appraisal');
 const OneOnOne = require('../models/OneOnOne');
 const shared = require('../services/sharedAIAccountService');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 1 } }).single('recording');
@@ -32,6 +33,16 @@ module.exports = function nativeCalls(publicMeeting) {
     const role = req.callRole;
     const call = await Call.findOneAndUpdate({ meetingId: req.meeting._id, $or: [{ [`${role}.id`]: id }, { [`${role}.seenAt`]: { $lt: new Date(Date.now() - 30000) } }, { [role]: { $exists: false } }] }, { $set: { [role]: { id, seenAt: new Date(), consentAt: req.body.consent ? new Date() : null } } }, { new: true });
     if (!call) return res.status(409).json({ error: 'You are already in this call in another tab. Leave that tab, or wait 30 seconds after it closes.' });
+    if (req.appraisal) {
+      // The lease exists before this parent fence: cancellation either sees a
+      // live participant or loses its optimistic save. If cancellation won,
+      // release only this caller's lease before disclosing relay credentials.
+      const open = await Appraisal.updateOne({ _id: req.appraisal._id, organizationId: req.appraisal.organizationId, status: { $nin: ['cancelled', 'completed', 'employee_acknowledged'] } }, { $inc: { __v: 1 } });
+      if (!open.matchedCount) {
+        await Call.updateOne({ _id: call._id, [`${role}.id`]: id }, { $unset: { [role]: 1 } });
+        return res.status(409).json({ error: 'This appraisal call is closed.' });
+      }
+    }
     const response = await fetch('https://turn.seemplifyai.com/api/turn-credentials', { signal: AbortSignal.timeout(5000) });
     if (!response.ok) throw new Error('The call relay is unavailable. Please retry.');
     const turn = await response.json();

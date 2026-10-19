@@ -16,6 +16,7 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
       if (!req.appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found.' });
       req.canManageMeeting = await canManageAppraisal(req, req.appraisal);
       if (!req.canManageMeeting && !isAppraisalEmployee(req, req.appraisal)) return res.status(403).json({ success: false, error: 'Access denied.' });
+      if (req.appraisal.status === 'cancelled' && (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path.endsWith('/native/state'))) return res.status(409).json({ success: false, error: 'This appraisal was cancelled. Its calls and notes are read-only.' });
       return next();
     } catch (error) { return next(error); }
   });
