@@ -13,6 +13,7 @@ import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
 import CompetencyRoleSelection from '@/components/competency/setup/CompetencyRoleSelection';
 import { useCompetencyBootstrap } from '@/components/competency/CompetencyPage';
 import { competencyRequest, competencyError, newIdempotencyKey } from '@/lib/competency-api';
+import { oneOffAppraisalPolicy } from '@/lib/one-off-appraisal-policy';
 
 interface Reviewer { userId: string; name: string; email: string; role: string }
 interface Person { userId: string; name: string; email: string; managerName?: string; teamName?: string; teamId?: string; teamIds?: string[]; reviewerOptions?: Reviewer[]; isSelectableForAppraisal?: boolean; selectionBlockedReason?: string }
@@ -57,12 +58,14 @@ export default function StartAppraisalPage() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const competency = useCompetencyBootstrap();
   const [withRole, setWithRole] = useState(false);
+  const [requireApprovedGoals, setRequireApprovedGoals] = useState(true);
   const [competencyCycleId, setCompetencyCycleId] = useState('');
   const [competencyRevision, setCompetencyRevision] = useState(0);
   const [roleVersions, setRoleVersions] = useState<Record<string, string>>({});
   const [rolePending, setRolePending] = useState<Record<string, { payload: unknown; key: string; error: string }>>({});
   const [roleLinked, setRoleLinked] = useState<Record<string, boolean>>({});
   const roleEnabled = !!competency.data?.enabled && !!competency.data?.capabilities.assessmentLaunch;
+  const roleWithoutGoals = cycleId === 'new' && roleEnabled && withRole && !requireApprovedGoals;
   const permitted = isHRAdmin || isManager;
   const openCycles = (cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status) && cycle.periodEnd.slice(0, 10) < dateIn(0));
   const existingCycle = openCycles.find((cycle) => cycle._id === cycleId);
@@ -106,6 +109,7 @@ export default function StartAppraisalPage() {
     if (cycleId !== 'new' && !existingCycle) return 'Choose a completed quarterly cycle or a one-off review.';
     if (cycleId !== 'new') return dateErrors.selfDue || dateErrors.managerDue ? 'Check the response deadlines below. Employees respond before you complete your review.' : '';
     if (!title.trim() || !template) return 'Choose a review name and template.';
+    try { oneOffAppraisalPolicy(template.design, !roleWithoutGoals, roleEnabled && withRole); } catch (failure) { return (failure as Error).message; }
     if (Object.values(dateErrors).some(Boolean)) return 'Check the highlighted dates below. The work period comes before the review, and employee responses come before manager reviews.';
     return '';
   };
@@ -138,7 +142,7 @@ export default function StartAppraisalPage() {
       const employees = participants.map((person) => ({ userId: person.userId, reviewerId: reviewers[person.userId] }));
       const response = cycleId === 'new'
         ? await api.post('/appraisals/cycles', { name: title.trim(), cycleType: reviewType, periodStart, periodEnd, launchNow: true, reviewerMode: 'selected', employees, appraisalFlow,
-          workflowDefinition: template!.design, sourceTemplate: { id: template!.id, name: template!.name, version: template!.version || 1 },
+          ...oneOffAppraisalPolicy(template!.design, !roleWithoutGoals, roleEnabled && withRole), sourceTemplate: { id: template!.id, name: template!.name, version: template!.version || 1 },
           responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } })
         : await api.post(`/appraisals/cycles/${cycleId}/launch`, { employees, reviewerMode: 'selected', appraisalFlow, responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } });
       const launch: Receipt = response.data?.data?.launchSummary || response.data?.data;
@@ -237,12 +241,13 @@ export default function StartAppraisalPage() {
           <TextField label="Reviewer response due" type="date" value={managerDue} onChange={(event) => changeDate(setManagerDue, event.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: dayAfter(selfDue || today) } }} error={!!dateError('managerDue', managerDue)} helperText={dateError('managerDue', managerDue)} fullWidth />
         </Stack>
       </Stack>}
-      {step === 1 && roleEnabled && <Box mt={3}><Divider sx={{ mb: 2 }} /><FormControlLabel control={<Checkbox checked={withRole} onChange={(_, checked) => { setWithRole(checked); setError(''); }} />} label="Assess against an occupational role" /><Typography variant="body2" color="text.secondary" mb={2}>Add a competency assessment using published role expectations. Optional evidence and AI drafts are configured separately; a human reviewer makes the final decision.</Typography>{withRole && <CompetencyRoleSelection cycleId={competencyCycleId} onCycleChange={id => { setCompetencyCycleId(id); setRoleVersions({}); }} onCycleRevisionChange={setCompetencyRevision} roleVersionByParticipant={roleVersions} onRoleChange={(id, version) => setRoleVersions(previous => ({ ...previous, [id]: version }))} participants={participants} disabled={saving} />}</Box>}
+      {step === 1 && roleEnabled && <Box mt={3}><Divider sx={{ mb: 2 }} /><FormControlLabel control={<Checkbox checked={withRole} onChange={(_, checked) => { setWithRole(checked); if (!checked) setRequireApprovedGoals(true); setError(''); }} />} label="Assess against an occupational role" /><Typography variant="body2" color="text.secondary" mb={2}>Add a competency assessment using published role expectations. Optional evidence and AI drafts are configured separately; a human reviewer makes the final decision.</Typography>{withRole && <><CompetencyRoleSelection cycleId={competencyCycleId} onCycleChange={id => { setCompetencyCycleId(id); setRoleVersions({}); }} onCycleRevisionChange={setCompetencyRevision} roleVersionByParticipant={roleVersions} onRoleChange={(id, version) => setRoleVersions(previous => ({ ...previous, [id]: version }))} participants={participants} disabled={saving} />{cycleId === 'new' && <Box mt={3}><Typography component="h3" variant="subtitle1" fontWeight={600}>Goal alignment</Typography><FormControlLabel control={<Checkbox checked={requireApprovedGoals} disabled={saving} onChange={(_, checked) => { setRequireApprovedGoals(checked); setError(''); }} />} label="Require approved, aligned goals" /><Typography variant="body2" color="text.secondary">Keep this on to review approved goal evidence. Turn it off for a role assessment based on competencies, work evidence and the remaining review questions. Shared cycle settings stay unchanged.</Typography>{roleWithoutGoals && <Alert severity="info" sx={{ mt: 1.5 }}>Role assessment without approved goals. Goal questions are omitted and the remaining scored sections are weighted to 100%. All other required questions remain.</Alert>}</Box>}</>}</Box>}
       {step === 1 && <Box mt={3}><Divider sx={{ mb: 3 }} /><AppraisalFlowEditor value={appraisalFlow} onChange={value => { setAppraisalFlow(value); setError(''); }} onReset={() => { setAppraisalFlow(defaultFlow(existingCycle?.workflowDefinition?.stages || template?.design?.stages)); setError(''); }} /></Box>}
       {step === 2 && <Stack spacing={2}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Confirm and start</Typography><Typography fontWeight={600}>{existingCycle?.name || title}</Typography><Typography>{participants.length} participant{participants.length === 1 ? '' : 's'} · {existingCycle ? 'Existing cycle' : template?.name}</Typography>
         <Typography>Assessment period: {shortDate(existingCycle?.periodStart || periodStart)} – {shortDate(existingCycle?.periodEnd || periodEnd)}</Typography>
         {!existingCycle && <Typography>Review starts: {calendarDate(today)} (today)</Typography>}
+        {!existingCycle && <Typography fontWeight={600}>{roleWithoutGoals ? 'Role assessment without approved goals' : 'Approved goals required'}</Typography>}
         <Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography>
         {participants.map((person) => <Typography key={person.userId}>{person.name} · Reviewer: {person.reviewerOptions?.find(reviewer => reviewer.userId === reviewers[person.userId])?.name || 'Choose a reviewer'}</Typography>)}
         {withRole && <Box><Typography fontWeight={600}>Role competency assessment</Typography><Typography>{competency.data?.cycles?.find(cycle => cycle.id === competencyCycleId)?.name} · Configuration revision {competencyRevision}</Typography>{participants.map(person => { const role = competency.data?.roles.find(row => row.versionId === roleVersions[person.userId]); return <Typography key={person.userId}>{person.name}: {role?.name} · Role version {role?.version}</Typography>; })}<Typography variant="body2" color="text.secondary">The selected role and scoring configuration are preserved. Complete this role assessment before finalising the appraisal.</Typography></Box>}

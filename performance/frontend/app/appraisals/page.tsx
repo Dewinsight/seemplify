@@ -178,6 +178,9 @@ export default function AppraisalsPage() {
 
   // NEW: Start appraisal from not_started status
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<string | null>(null);
+  const [resetReason, setResetReason] = useState('');
+  const [resetError, setResetError] = useState('');
 
   const handleStartAppraisal = async (appraisalId: string) => {
     setActionLoading(appraisalId);
@@ -193,18 +196,24 @@ export default function AppraisalsPage() {
   };
 
   // NEW: Reset appraisal (Manager/HR only)
-  const handleResetAppraisal = async (appraisalId: string, resetLevel: 'full' | 'goals_only' | 'self_assessment_only' = 'full') => {
-    if (!confirm(`Are you sure you want to reset this appraisal? This will clear ${resetLevel === 'full' ? 'all progress' : resetLevel === 'goals_only' ? 'goals' : 'self-assessment'}.`)) {
-      return;
-    }
-    setActionLoading(appraisalId);
+  const openResetAppraisal = (appraisalId: string) => {
+    setResetTarget(appraisalId);
+    setResetReason('');
+    setResetError('');
+  };
+  const handleResetAppraisal = async () => {
+    if (!resetTarget || actionLoading === resetTarget || resetReason.trim().length < 10) return;
+    setActionLoading(resetTarget);
+    setResetError('');
     try {
-      await api.post(`/appraisals/${appraisalId}/reset`, { resetLevel });
-      // Refresh appraisals list
-      window.location.reload();
-    } catch (error: any) {
-      console.error('Failed to reset appraisal:', error);
-      alert(error.response?.data?.error || 'Failed to reset appraisal');
+      await api.post(`/appraisals/${resetTarget}/reset`, { resetLevel: 'full', reason: resetReason.trim() });
+      setResetTarget(null);
+      setResetReason('');
+      await Promise.allSettled([mutateMyAppraisals(), mutateTeamAppraisals(), mutateOrganizationAppraisals(), refreshAssigned()]);
+    } catch (error: unknown) {
+      const failure = error as { response?: { data?: { error?: string } } };
+      setResetError(failure.response?.data?.error || 'Could not reset this appraisal. Please try again.');
+    } finally {
       setActionLoading(null);
     }
   };
@@ -505,11 +514,12 @@ export default function AppraisalsPage() {
                 )}
 
                 {/* NEW: Reset button for managers (not for employees viewing their own) */}
-                {!isEmployee && appraisal.status !== 'completed' && appraisal.status !== 'not_started' && (
+                  {!isEmployee && !isFinishedAppraisal(appraisal.status) && appraisal.status !== 'not_started' && (
                   <Tooltip title="Reset Appraisal">
                     <IconButton
                       size="small"
-                      onClick={() => handleResetAppraisal(appraisal._id, 'full')}
+                        aria-label={`Reset appraisal for ${appraisal.employee?.name || 'this employee'}`}
+                        onClick={() => openResetAppraisal(appraisal._id)}
                       disabled={actionLoading === appraisal._id}
                       sx={{
                         ml: 1,
@@ -885,6 +895,23 @@ export default function AppraisalsPage() {
 
       </>}
 
+      <Dialog open={!!resetTarget} onClose={() => { if (actionLoading !== resetTarget) setResetTarget(null); }} aria-labelledby="reset-appraisal-title" maxWidth="sm" fullWidth>
+        <DialogTitle id="reset-appraisal-title">Reset appraisal?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2 }}>This clears the employee assessment and reviewer assessment so they can start again. Goals and audit history are retained. Completed appraisals cannot be reset.</Typography>
+          {resetError && <Alert severity="error" sx={{ mb: 2 }}>{resetError}</Alert>}
+          <TextField autoFocus fullWidth required multiline minRows={3} label="Reason for resetting" value={resetReason}
+            disabled={!!resetTarget && actionLoading === resetTarget}
+            onChange={event => { setResetReason(event.target.value); setResetError(''); }}
+            helperText="Explain why this review needs to restart (at least 10 characters). This reason is saved in the audit history." />
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={!!resetTarget && actionLoading === resetTarget} onClick={() => setResetTarget(null)}>Cancel</Button>
+          <Button variant="contained" color="error" disabled={resetReason.trim().length < 10 || (!!resetTarget && actionLoading === resetTarget)} onClick={() => void handleResetAppraisal()}>
+            {!!resetTarget && actionLoading === resetTarget ? 'Resetting…' : 'Reset appraisal'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
