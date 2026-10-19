@@ -239,7 +239,7 @@ jobs:
         env:
           CI: 'true'
           PERFORMANCE_E2E_PORT: '5025'
-        run: npx playwright test e2e/competency-library.spec.ts e2e/competency-draft-backup.spec.ts e2e/competency-assessment.spec.ts e2e/competency-assessment.fullstack.spec.ts e2e/competency-appraisal-link.spec.ts e2e/competency-recording-consent.spec.ts e2e/competency-cohort-refresh.spec.ts e2e/competency-criteria-filter.spec.ts e2e/appraisal-lifecycle.fullstack.spec.ts e2e/appraisal-draft-refresh.fullstack.spec.ts --project=chrome --output=test-results/competency
+        run: npx playwright test e2e/competency-library.spec.ts e2e/competency-draft-backup.spec.ts e2e/competency-assessment.spec.ts e2e/competency-assessment.fullstack.spec.ts e2e/competency-appraisal-link.spec.ts e2e/competency-recording-consent.spec.ts e2e/competency-cohort-refresh.spec.ts e2e/competency-criteria-filter.spec.ts e2e/appraisal-lifecycle.fullstack.spec.ts e2e/appraisal-draft-refresh.fullstack.spec.ts e2e/embedded-report-recovery.spec.ts --project=chrome --output=test-results/competency
       - name: Preserve Performance browser evidence
         if: always() && matrix.name == 'Performance'
         uses: actions/upload-artifact@v4

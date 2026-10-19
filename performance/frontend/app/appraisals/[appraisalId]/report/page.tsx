@@ -30,7 +30,7 @@ function Narrative({ title, values }: { title: string; values?: Record<string, s
 
 export default function AppraisalResultReportPage() {
   const params = useParams<{ appraisalId: string }>();
-  const { data: competency } = useSWR<{ enabled: boolean }>('/competency/bootstrap', () => competencyRequest<{ enabled: boolean }>('GET', '/bootstrap'), { shouldRetryOnError: false });
+  const { data: competency, error: competencyFailure, isLoading: competencyLoading, isValidating: competencyChecking, mutate: retryCompetency } = useSWR<{ enabled: boolean }>('/competency/bootstrap', () => competencyRequest<{ enabled: boolean }>('GET', '/bootstrap'), { shouldRetryOnError: false });
   const { data: report, error: failure, isLoading: loading, mutate } = useSWR<ResultReport>(`/appraisals/${params.appraisalId}/report`, async (url: string) => (await api.get(url)).data.data, { shouldRetryOnError: false });
   const error = failure ? failure.response?.data?.error || 'Could not load this result report. Please try again.' : '';
   if (loading) return <CircularProgress aria-label="Loading result report" />;
@@ -67,7 +67,21 @@ export default function AppraisalResultReportPage() {
         {!!report.competencies?.length && <Box><Typography variant="h6" mb={1}>Competency assessment</Typography><Stack spacing={2}>{report.competencies.map((item, index) => <Box className="result-row" key={index}><Typography fontWeight={600}>{item.name}</Typography><Typography variant="body2">Employee rating: {item.selfRating ?? 'Not rated'} · Manager rating: {item.managerRating ?? 'Not rated'}</Typography>{item.managerComments && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{item.managerComments}</Typography>}</Box>)}</Stack></Box>}
         {!!report.answers?.length && <Box><Typography variant="h6" mb={1}>Review questions and submitted answers</Typography><Stack spacing={2}>{report.answers.map((item, index) => <Box className="result-row" key={index}><Typography variant="caption" color="text.secondary">{item.section} · {item.respondent === 'manager' ? 'Manager' : 'Employee'}</Typography><Typography fontWeight={600}>{item.question}</Typography><Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.answer || 'No answer recorded.'}</Typography></Box>)}</Stack></Box>}
       </Stack>
-      {competency?.enabled && <Box mt={4}><Divider sx={{mb:4}}/><CompetencyReportSection appraisalId={params.appraisalId}/></Box>}
+      {(competencyLoading || competencyFailure || competency?.enabled) && <Box mt={4}>
+        <Divider sx={{ mb: 4 }} />
+        {competencyLoading && !competency && <Stack role="status" aria-busy="true" direction="row" spacing={2} alignItems="center">
+          <CircularProgress size={24} aria-hidden="true" /><Typography>Checking linked competency report…</Typography>
+        </Stack>}
+        {competencyFailure && <Alert severity="warning" aria-busy={competencyChecking} sx={{ mb: competency?.enabled ? 3 : 0 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+            <Typography variant="body2">Could not check the linked competency report. Your appraisal result is still available.</Typography>
+            <Button color="inherit" disabled={competencyChecking} sx={{ minHeight: 44, flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { void retryCompetency().catch(() => undefined); }}>
+              {competencyChecking ? 'Retrying…' : 'Retry competency report'}
+            </Button>
+          </Stack>
+        </Alert>}
+        {competency?.enabled && <CompetencyReportSection appraisalId={params.appraisalId} />}
+      </Box>}
     </Paper>
   </Box>;
 }
