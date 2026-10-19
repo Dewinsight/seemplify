@@ -1,15 +1,17 @@
 'use strict';
 const OneOnOne = require('../models/OneOnOne');
 const shared = require('./sharedAIAccountService');
+const recordingRevoked = meeting => Boolean(meeting.appraisalMeeting?.recordingConsent?.revokedAt || meeting.appraisalMeeting?.recordingConsent?.manager?.revokedAt || meeting.appraisalMeeting?.recordingConsent?.employee?.revokedAt);
 
 function publicMeeting(meeting) {
   const call = meeting.appraisalMeeting;
+  const sourceRevoked = recordingRevoked(meeting);
   return { _id: meeting._id, title: meeting.title, scheduledDate: meeting.scheduledDate, startedAt: meeting.actualStartTime, duration: meeting.duration,
     status: meeting.status, stepId: meeting.workflowStepId, mode: call?.mode || 'calendar', conferenceUrl: meeting.nylas?.conferenceUrl,
     integration: call ? { recordingRequested: call.recordingRequested, recordingState: call.recordingState, calendarState: call.calendarState,
-      recordingAvailable: Boolean(call.recordingFileId), transcriptionState: call.transcriptionState, recordingUrl: call.recordingUrl,
+      recordingAvailable: !sourceRevoked && Boolean(call.recordingFileId), transcriptionState: call.transcriptionState, recordingUrl: sourceRevoked ? undefined : call.recordingUrl,
       summaryState: call.summaryState, summaryModel: call.summaryModel } : undefined,
-    transcript: meeting.transcript?.content, notes: meeting.sharedNotes, summary: call?.summary };
+    transcript: sourceRevoked ? undefined : meeting.transcript?.content, notes: meeting.sharedNotes, summary: sourceRevoked ? undefined : call?.summary };
 }
 function failure(message, statusCode = 409) { return Object.assign(new Error(message), { statusCode }); }
 function validateLink(value) {
@@ -36,7 +38,9 @@ async function createCalendar(meeting) {
   try {
     const result = await shared.request('meetings/create', meeting.appraisalMeeting.ownerIdentity, { externalId: String(meeting._id),
       title: meeting.title, scheduledDate: meeting.scheduledDate, duration: meeting.duration,
-      meetingLink: meeting.appraisalMeeting.meetingLink, record: meeting.appraisalMeeting.recordingRequested,
+      meetingLink: meeting.appraisalMeeting.meetingLink,
+      record: meeting.appraisalMeeting.recordingRequested && meeting.appraisalMeeting.recordingPolicyVersion !== 'calendar-recording-v1',
+      ...(meeting.appraisalMeeting.recordingPolicyVersion === 'calendar-recording-v1' ? { recordingPolicyVersion: 'calendar-recording-v1', participantSubjects: [String(meeting.managerId), String(meeting.employeeId)] } : {}),
       participants: [meeting.managerInfo, meeting.employeeInfo].map(person => ({ name: person.name, email: person.email })) }, { timeoutMs: 90000 });
     if (!result.eventId || !result.conferenceUrl) throw failure('The calendar has not confirmed a call link. Retry this meeting instead of creating another.', 502);
     await OneOnOne.updateOne({ _id: meeting._id }, { $set: { nylas: { eventId: result.eventId, calendarId: result.calendarId,
@@ -50,4 +54,4 @@ async function createCalendar(meeting) {
     throw error;
   }
 }
-module.exports = { publicMeeting, failure, validateLink, assertNoLiveCall, isProcessable, createCalendar };
+module.exports = { publicMeeting, failure, validateLink, assertNoLiveCall, isProcessable, createCalendar, recordingRevoked };

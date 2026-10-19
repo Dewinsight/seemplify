@@ -4362,7 +4362,7 @@ router.post('/:appraisalId/finalize', requireAuth, async (req, res) => {
       overrideReason: overrideApplied ? overrideReason : null
     });
 
-    await appraisal.save();
+    await require('../services/competency/appraisalBridgeService').saveFinalOutcome(req, appraisal);
     await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId, appraisal.organizationId);
 
     await recordAppraisalEvent(appraisal, acknowledgementRequired ? 'appraisal.finalized' : 'appraisal.finalized_no_ack', req.session.user, {
@@ -4424,6 +4424,7 @@ router.post('/:appraisalId/finalize', requireAuth, async (req, res) => {
 
     res.json({ success: true, data: appraisal, developmentPlan, warning: developmentPlanWarning });
   } catch (error) {
+    if (error instanceof require('../contracts/competency').DomainError) return res.status(error.status).json({ success: false, code: error.code, error: error.message });
     console.error('Finalize appraisal error:', error);
     res.status(500).json({ success: false, error: 'Failed to finalize appraisal' });
   }

@@ -132,8 +132,8 @@ test('HR manager matches admin across products except explicit top-level control
   ]) assert.ok(!getDefaultRolePermissions('hr_manager', appId).includes(permissionId), `HR manager received protected ${appId}:${permissionId}`)
 })
 
-test('schema version three refreshes locked role baselines without replacing custom roles', () => {
-  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 3)
+test('schema version four refreshes locked role baselines without replacing custom roles', () => {
+  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 4)
   const customRole = {
     key: 'project_coordinator', name: 'Project Coordinator', locked: false,
     sourceOrganizationRoles: [], sourceTeamRoles: [],
@@ -152,6 +152,18 @@ test('schema version three refreshes locked role baselines without replacing cus
     row.appId === 'messaging' && row.permissions.includes('messages.read')
   )))
   assert.deepEqual(preservedCustom.grants, customRole.grants)
+})
+
+test('competency defaults separate employee viewing, manager assessment and organisation configuration', () => {
+  for (const sourceRole of ['staff', 'recruiter', 'interviewer']) {
+    const permissions = getDefaultRolePermissions(sourceRole, 'performance-management')
+    for (const action of ['assessment.view', 'evidence.view', 'evidence.create', 'report.view']) assert.ok(permissions.includes(`competency.${action}`))
+    for (const action of ['role.manage', 'framework.manage', 'cycle.manage', 'assessment.launch', 'assessment.edit', 'assessment.finalise', 'assessment.reopen', 'assessment.exception', 'report.export', 'report.cohort', 'audit.view', 'ai.use', 'retention.manage']) assert.ok(!permissions.includes(`competency.${action}`), `${sourceRole} unexpectedly has ${action}`)
+  }
+  for (const sourceRole of ['owner', 'admin', 'hr_manager']) {
+    const permissions = getDefaultRolePermissions(sourceRole, 'performance-management')
+    for (const action of ['role.manage', 'assessment.finalise', 'assessment.reopen', 'report.export', 'audit.view']) assert.ok(permissions.includes(`competency.${action}`))
+  }
 })
 
 test('every organization-managed Hub product has an IdP permission matrix', () => {

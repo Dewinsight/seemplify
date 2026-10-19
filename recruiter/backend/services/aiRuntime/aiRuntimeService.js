@@ -44,7 +44,8 @@ const STRUCTURED_ACTIVITIES = new Set([
   'performance.self_assessment.report', 'performance.self_assessment.coach',
   'performance.document.analysis', 'performance.manager_review.assist', 'performance.review.bias',
   'performance.development_plan.suggest', 'performance.okr.generate', 'performance.feedback.analyze',
-  'performance.team.insights', 'performance.meeting.analysis', 'performance.calibration.insights'
+  'performance.team.insights', 'performance.meeting.analysis', 'performance.calibration.insights',
+  'performance.competency.analysis'
 ]);
 
 class AIRuntimeError extends Error {

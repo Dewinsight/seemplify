@@ -16,6 +16,7 @@ on:
       - 'payroll/frontend/**'
       - 'time-attendance/**'
       - 'deploy/hostinger/core-apps.compose.yml'
+      - 'deploy/hostinger/competency-scanner.compose.yml'
       - 'deploy/hostinger/migrate-recruiter-nomic.sh'
       - 'deploy/hostinger/backup-hostinger.sh'
       - 'deploy/hostinger/restore-smoke-hostinger.sh'
@@ -86,6 +87,7 @@ jobs:
             test/retired-automations.test.mjs \
             test/workspace-platform-integration-auth.test.mjs \
             tests/access-control.test.mjs \
+            tests/access-control-migration.test.mjs \
             src/__tests__/account-profile-schema.test.mjs \
             src/__tests__/organization-access-control-routing.test.mjs \
             src/__tests__/subscription-extension-reactivation.test.mjs \
@@ -155,7 +157,7 @@ jobs:
           - name: Performance
             directory: performance/backend
             install_command: npm install --ignore-scripts --no-package-lock
-            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/colleagueReviews.integration.test.js --runInBand
+            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/colleagueReviews.integration.test.js tests/oneOnOneCalls.integration.test.js tests/competency --runInBand && node --test tests/competencyScoring.test.js tests/competencyFileSafety.test.js tests/competencyUploadBudget.test.js
           - name: Payroll
             directory: payroll/backend
             install_command: npm install --ignore-scripts --no-package-lock
@@ -218,6 +220,28 @@ jobs:
       - name: Verify shared employee assessment routes
         if: matrix.name == 'Recruiter'
         run: node --test scripts/employee-assessments.test.js
+      - name: Install Performance browser test backend
+        if: matrix.name == 'Performance'
+        working-directory: performance/backend
+        run: npm ci --ignore-scripts
+      - name: Install Performance test browser
+        if: matrix.name == 'Performance'
+        run: npx playwright install --with-deps chrome
+      - name: Verify competency browser journeys
+        if: matrix.name == 'Performance'
+        env:
+          CI: 'true'
+          PERFORMANCE_E2E_PORT: '5025'
+        run: npx playwright test e2e/competency-library.spec.ts e2e/competency-draft-backup.spec.ts e2e/competency-assessment.spec.ts e2e/competency-assessment.fullstack.spec.ts e2e/competency-appraisal-link.spec.ts e2e/competency-recording-consent.spec.ts --project=chrome --output=test-results/competency
+      - name: Preserve Performance browser evidence
+        if: always() && matrix.name == 'Performance'
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-competency-browser
+          path: |
+            performance/frontend/test-results/competency
+            performance/frontend/playwright-report
+          retention-days: 7
       - run: npm run build
 
   deploy:
@@ -259,6 +283,7 @@ jobs:
             payroll \
             time-attendance \
             deploy/hostinger/core-apps.compose.yml \
+            deploy/hostinger/competency-scanner.compose.yml \
             deploy/hostinger/migrate-recruiter-nomic.sh \
             deploy/hostinger/backup-hostinger.sh \
             deploy/hostinger/restore-smoke-hostinger.sh \
@@ -350,6 +375,20 @@ jobs:
           cp -a "$release_root/payroll/." /opt/seemplify/source/payroll/
           cp -a "$release_root/time-attendance/." /opt/seemplify/source/time-attendance/
           install -m 644 "$release_root/deploy/hostinger/core-apps.compose.yml" /opt/seemplify/deploy/hostinger/core-apps.compose.yml
+          install -m 644 "$release_root/deploy/hostinger/competency-scanner.compose.yml" /opt/seemplify/deploy/hostinger/competency-scanner.compose.yml
+          install -d -m 700 /opt/seemplify/data/competency
+          scanner=(docker compose -f /opt/seemplify/deploy/hostinger/competency-scanner.compose.yml)
+          "${scanner[@]}" config --quiet
+          "${scanner[@]}" up -d
+          scanner_ready=false
+          for _ in $(seq 1 90); do
+            scanner_state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' seemplify-security-competency-scanner-1)
+            if [[ "$scanner_state" == healthy ]]; then scanner_ready=true; break; fi
+            [[ "$scanner_state" == exited || "$scanner_state" == dead ]] && break
+            sleep 4
+          done
+          [[ "$scanner_ready" == true ]] || { echo 'Competency upload scanner did not become healthy'; exit 1; }
+
           install -m 755 "$release_root/deploy/hostinger/generate-idp-clients.sh" /opt/seemplify/deploy/hostinger/generate-idp-clients.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /opt/seemplify/deploy/hostinger/smoke-hostinger.sh
           install -m 755 "$release_root/deploy/hostinger/smoke-hostinger.sh" /usr/local/sbin/seemplify-smoke

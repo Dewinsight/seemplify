@@ -1,0 +1,10 @@
+{
+  "headline": "Role-aware assessment is implemented and locally verified. Production acceptance remains open.",
+  "mongo": "193 / 193 clean-index checks passed",
+  "pure": "25 / 25 targeted checks passed",
+  "idp": "35 / 35 focused checks passed",
+  "browser": "41 distinct browser cases passed",
+  "providers": "Actual personal AI / new calls pending",
+  "release": "CI and main deployment pending",
+  "revision": "PR135 is open. Source419fbf98 plus reviewed fixture/cohort corrections; CI replay pending. Fresh local sign-in remains blocked by missing OIDC client configuration. Unrelated Experience CI baseline remains failing."
+}

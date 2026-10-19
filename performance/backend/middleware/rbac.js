@@ -74,6 +74,25 @@ const getUserInfoFromIdP = async (accessToken) => {
 
 // Permission definitions
 const PERMISSIONS = {
+  // Competency actions mirror the central IdP catalogue; resource checks remain mandatory.
+  'competency.role.manage': ['hr_admin'],
+  'competency.framework.manage': ['hr_admin'],
+  'competency.cycle.manage': ['hr_admin'],
+  'competency.assessment.launch': ['team_lead', 'line_manager', 'hr_admin'],
+  'competency.assessment.view': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'competency.assessment.edit': ['team_lead', 'line_manager', 'hr_admin'],
+  'competency.assessment.finalise': ['team_lead', 'line_manager', 'hr_admin'],
+  'competency.assessment.reopen': ['hr_admin'],
+  'competency.assessment.exception': ['hr_admin'],
+  'competency.evidence.view': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'competency.evidence.create': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'competency.evidence.delete': ['team_lead', 'line_manager', 'hr_admin'],
+  'competency.report.view': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'competency.report.export': ['team_lead', 'line_manager', 'hr_admin'],
+  'competency.report.cohort': ['team_lead', 'line_manager', 'hr_admin'],
+  'competency.audit.view': ['hr_admin'],
+  'competency.ai.use': ['team_lead', 'line_manager', 'hr_admin'],
+  'competency.retention.manage': ['hr_admin'],
   // OKR Permissions
   'okr:view:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'okr:create:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],

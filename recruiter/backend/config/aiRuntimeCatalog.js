@@ -47,6 +47,7 @@ const activities = {
   'performance.feedback.analyze': ['Feedback analysis', 'Feedback', 'medium', 'performance'],
   'performance.team.insights': ['Team performance insights', 'Team insights', 'high', 'performance'],
   'performance.meeting.analysis': ['Performance meeting analysis', 'Meetings', 'high', 'performance'],
+  'performance.competency.analysis': ['Role and competency evidence analysis', 'Competency assessments', 'high', 'performance'],
   'performance.appraisal.chat': ['Appraisal assistant', 'Appraisals', 'medium', 'performance'],
   'performance.calibration.insights': ['Calibration insights', 'Calibration', 'high', 'performance'],
   'messaging.chat': ['Messaging AI chat', 'Messaging', 'medium', 'messaging'],

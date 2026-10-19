@@ -45,6 +45,59 @@ test('recording failure preserves the confirmed calendar event and is visible se
   const result = await service.create(identity, data); assert.equal(result.state, 'scheduled'); assert.equal(result.recordingState, 'failed');
   await service.create(identity, data); assert.equal(provider.mock.callCount(), 1);
 });
+
+function deferredInput() { return { ...input(), record: false, recordingPolicyVersion: 'calendar-recording-v1', participantSubjects: ['calendar-owner', 'employee'] }; }
+function sourceConsent() { return { noticeVersion: 'calendar-recording-v1', manager: { userId: 'calendar-owner', acceptedAt: new Date().toISOString(), recording: true, transcription: true }, employee: { userId: 'employee', acceptedAt: new Date().toISOString(), recording: true, transcription: true } }; }
+test('prospective participant consent defers recording and concurrent start calls schedule only one bot', async t => {
+  setup(t); const data = deferredInput();
+  let bots = 0;
+  t.mock.method(nylas, 'createStandaloneNotetaker', async () => { bots++; await new Promise(resolve => setTimeout(resolve, 20)); return { notetakerId: 'consented-bot' }; });
+  assert.equal((await service.create(identity, data)).recordingState, 'awaiting_consent'); assert.equal(bots, 0);
+  await assert.rejects(service.startRecording(identity, { ...data, recordingConsent: { ...sourceConsent(), employee: undefined } }), { code: 'RECORDING_CONSENT_REQUIRED' });
+  await assert.rejects(service.startRecording(identity, { ...data, recordingConsent: { ...sourceConsent(), employee: { userId: 'stranger', acceptedAt: new Date() } } }), { code: 'RECORDING_CONSENT_REQUIRED' });
+  await assert.rejects(service.startRecording(identity, { ...data, recordingConsent: { ...sourceConsent(), employee: { ...sourceConsent().employee, transcription: false } } }), { code: 'RECORDING_CONSENT_REQUIRED' });
+  const starts = await Promise.allSettled([service.startRecording(identity, { ...data, recordingConsent: sourceConsent() }), service.startRecording(identity, { ...data, recordingConsent: sourceConsent() })]);
+  assert.equal(starts.filter(result => result.status === 'fulfilled').length, 1); assert.equal(bots, 1);
+  assert.equal((await service.startRecording(identity, { ...data, recordingConsent: sourceConsent() })).recordingState, 'scheduled'); assert.equal(bots, 1);
+});
+test('legacy, past and cross-organizer recording requests cannot be upgraded or dispatched', async t => {
+  setup(t); const legacy = input(); await service.create(identity, legacy);
+  await assert.rejects(service.startRecording(identity, { ...legacy, recordingConsent: sourceConsent() }), { code: 'LEGACY_RECORDING_UNVERIFIED' });
+  const data = deferredInput(); await service.create(identity, data);
+  await assert.rejects(service.startRecording({ ...identity, sub: 'other' }, { ...data, recordingConsent: sourceConsent() }), { code: 'MEETING_NOT_FOUND' });
+  await Meeting.updateOne({ externalId: data.externalId }, { $set: { scheduledDate: new Date(Date.now() - 1000) } });
+  await assert.rejects(service.startRecording(identity, { ...data, recordingConsent: sourceConsent() }), { code: 'RECORDING_WINDOW_CLOSED' });
+});
+test('uncertain recording creation is not repeated and withdrawal preserves the calendar invitation', async t => {
+  setup(t); const data = deferredInput(); await service.create(identity, data);
+  const bot = t.mock.method(nylas, 'createStandaloneNotetaker', async () => { throw new Error('Ambiguous provider response'); });
+  await assert.rejects(service.startRecording(identity, { ...data, recordingConsent: sourceConsent() }), { code: 'RECORDING_CREATION_UNCERTAIN' });
+  await assert.rejects(service.startRecording(identity, { ...data, recordingConsent: sourceConsent() }), { code: 'RECORDING_CREATION_UNCERTAIN' }); assert.equal(bot.mock.callCount(), 1);
+  await assert.rejects(service.stopRecording(identity, data), { code: 'RECORDING_CANCELLATION_PENDING' });
+  await assert.rejects(service.stopRecording(identity, data), { code: 'RECORDING_CANCELLATION_PENDING' });
+  const stopped = await Meeting.findOne({ externalId: data.externalId }); assert.equal(stopped.recordingState, 'revoked'); assert.equal(stopped.eventId, 'provider-event');
+});
+test('withdrawal racing an external bot response cancels that bot and blocks transcript retrieval', async t => {
+  setup(t); const data = deferredInput(); await service.create(identity, data);
+  let entered, release; const started = new Promise(resolve => { entered = resolve; }); const wait = new Promise(resolve => { release = resolve; });
+  t.mock.method(nylas, 'createStandaloneNotetaker', async () => { entered(); await wait; return { notetakerId: 'racing-bot' }; });
+  const cancel = t.mock.method(nylas, 'cancelStandaloneNotetaker', async () => {});
+  const pending = service.startRecording(identity, { ...data, recordingConsent: sourceConsent() }); await started;
+  await assert.rejects(service.stopRecording(identity, data), { code: 'RECORDING_CANCELLATION_PENDING' }); release(); await assert.rejects(pending, { code: 'RECORDING_CONSENT_REVOKED' });
+  assert.equal(cancel.mock.callCount(), 1);
+  const status = t.mock.method(nylas, 'getStandaloneNotetakerStatus', async () => { throw new Error('Must not fetch media'); });
+  assert.equal((await service.sync(identity, data)).recordingState, 'revoked'); assert.equal(status.mock.callCount(), 0);
+});
+test('withdrawal during transcript provider response cannot restore ready state or return transcript', async t => {
+  setup(t); const data = deferredInput(); await service.create(identity, data); await service.startRecording(identity, { ...data, recordingConsent: sourceConsent() });
+  t.mock.method(nylas, 'cancelStandaloneNotetaker', async () => {});
+  t.mock.method(nylas, 'getStandaloneNotetakerStatus', async () => ({ state: 'completed' }));
+  t.mock.method(nylas, 'getStandaloneNotetakerMedia', async () => { await service.stopRecording(identity, data); return { transcript: { url: 'https://example.nylas.com/transcript' } }; });
+  t.mock.method(global, 'fetch', async () => new Response('Synthetic private transcript sentinel'));
+  const result = await service.sync(identity, data);
+  assert.equal(result.recordingState, 'revoked'); assert.equal(result.transcript, undefined);
+  assert.equal((await Meeting.findOne({ externalId: data.externalId })).recordingState, 'revoked');
+});
 test('cancellation is organizer scoped, notetaker first, and safe to repeat', async t => {
   setup(t); const data = input(); await service.create(identity, data);
   const calls = [];

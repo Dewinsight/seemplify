@@ -60,6 +60,19 @@ const FALLBACK_GUIDE: Omit<GuideDefinition, 'matcher'> = {
 
 const PAGE_GUIDES: GuideDefinition[] = [
   {
+    key: 'competency', matcher: /^\/competency(?:\/|$)/, title: 'Competency assessments',
+    summary: 'Use published role expectations, retained evidence and human judgement to complete a fair assessment.',
+    purpose: 'HR prepares versioned roles, framework levels and scoring rules. Eligible reviewers assess each person against the selected occupational role. Employees can submit permitted evidence and view their published results; assessor drafts stay private.',
+    steps: [
+      'Administrators: enable the area, publish framework or strategy definitions, map role expectations, then publish a competency cycle.',
+      'In Start appraisal, select people and eligible reviewers, then enable role comparison and choose the exact cycle and role versions.',
+      'In the assessment workspace, link evidence or submit structured oral findings. Record observed levels or measures and explain each finding.',
+      'Check completion and the score breakdown. Choose the final classification yourself, then finalise to publish the restricted report.'
+    ],
+    success: ['The report identifies the role and source versions, evidence, submitted reviewer feedback, final human classification and dates.', 'Reopening creates an editable revision while preserving the previous final report.'],
+    tips: ['AI and recorded calls are optional. Manual assessment works without either integration.', 'Assessment roles describe work expectations; they do not change identity or app permissions.', 'Private evidence and source transcripts remain subject to current access, consent and retention.']
+  },
+  {
     key: 'login',
     matcher: /^\/login$/,
     title: 'Sign In',

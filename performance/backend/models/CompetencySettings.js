@@ -1,0 +1,3 @@
+const mongoose = require('mongoose');
+const schema = new mongoose.Schema({ organizationId: { type: String, required: true, unique: true }, revision: { type: Number, default: 1 }, callEvidenceEnabled: { type: Boolean, default: false }, aiDraftsEnabled: { type: Boolean, default: false }, mediaRetentionDays: { type: Number, default: null }, evidenceRetentionDays: { type: Number, default: null }, exportRetentionHours: { type: Number, default: 24 }, noticeText: { type: String, default: '' }, noticeVersion: { type: String, default: '' }, policyVersion: { type: String, default: '' }, updatedBy: { userId: String, name: String } }, { timestamps: true, strict: 'throw' });
+module.exports = mongoose.models.CompetencySettings || mongoose.model('CompetencySettings', schema);

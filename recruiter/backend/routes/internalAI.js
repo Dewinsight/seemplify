@@ -36,7 +36,7 @@ router.post('/v1/meetings/transcribe', internalAuth, async (req, res) => {
 
 // Reuse the existing service-bound identity channel. Calendar application keys
 // and personal grants remain in Recruiter and are never returned to consumers.
-for (const operation of ['connection', 'create', 'sync', 'cancel']) {
+for (const operation of ['connection', 'create', 'sync', 'cancel', 'startRecording', 'stopRecording']) {
   router.post(`/v1/meetings/${operation}`, internalAuth, async (req, res) => {
     if (req.internalService !== 'performance-management') return res.status(403).json({ code: 'MEETING_SERVICE_FORBIDDEN', message: 'Service not authorized.' });
     try { return res.json(await require('../services/performanceMeetingService')[operation](req.body?.identity, req.body || {})); }

@@ -17,6 +17,9 @@ function resultReport(appraisal, cycle) {
   const frozen = appraisal.cycleConfigurationSnapshot || {};
   const published = FINAL_STATUSES.has(appraisal.status);
   const overall = appraisal.finalRating?.overall;
+  const managerSubmitted = Boolean(appraisal.managerReview?.submittedAt);
+  const submission = (appraisal.auditLog || []).filter(event => event.action === 'manager_review_submitted').at(-1);
+  const feedbackAuthor = submission?.performedBy?.userId ? { userId: submission.performedBy.userId, name: submission.performedBy.name || 'Not recorded' } : null;
   return {
     id: String(appraisal._id),
     employee: { name: appraisal.employee?.name || '', jobTitle: appraisal.employee?.jobTitle || '', department: appraisal.employee?.department || '' },
@@ -27,10 +30,16 @@ function resultReport(appraisal, cycle) {
     finalRating: published ? { overall: typeof overall === 'number' && Number.isFinite(overall) ? overall : null, ratingLabel: appraisal.finalRating?.ratingLabel || '', justification: appraisal.finalRating?.justification || '', finalizedAt: appraisal.finalRating?.finalizedAt || null } : null,
     ratingScale: frozen.ratingScale || cycle?.ratingScale || { min: 1, max: 5 },
     employeeReflection: appraisal.selfAssessment?.submittedAt ? appraisal.selfAssessment.overallSummary : null,
-    managerSummary: published ? appraisal.managerReview?.overallSummary : null,
+    managerSummary: published && managerSubmitted ? appraisal.managerReview?.overallSummary : null,
+    managerFeedback: published && managerSubmitted ? {
+      author: feedbackAuthor,
+      submittedAt: appraisal.managerReview.submittedAt,
+      overallRating: Number.isFinite(appraisal.managerReview.overallManagerRating) ? appraisal.managerReview.overallManagerRating : null,
+      goals: (appraisal.managerReview.okrAssessment || []).map(goal => ({ id: goal.okrId ? String(goal.okrId) : null, title: goal.okrTitle || 'Goal', comments: goal.managerComments || '', verifiedCompletion: goal.managerVerifiedCompletion ?? null, qualityRating: goal.qualityRating ?? null }))
+    } : null,
     discussion: published ? appraisal.discussion?.notes : null,
     acknowledgedAt: appraisal.discussion?.employeeAcknowledgedAt || null,
-    competencies: published ? (appraisal.managerReview?.competencyRatings || []).map((rating) => ({
+    competencies: published && managerSubmitted ? (appraisal.managerReview?.competencyRatings || []).map((rating) => ({
       name: rating.competencyName || rating.competencyId || 'Competency',
       managerRating: Number.isFinite(rating.managerRating) ? rating.managerRating : null,
       managerComments: rating.managerComments || '',

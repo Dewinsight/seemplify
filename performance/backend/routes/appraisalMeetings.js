@@ -43,18 +43,15 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
       const identity = shared.identityFromRequest(req);
       let meeting = await OneOnOne.findOne({ appraisalId: appraisal._id, workflowStepId: step.id, organizationId: appraisal.organizationId });
       if (!meeting) {
-        try { meeting = await OneOnOne.create({ appraisalId: appraisal._id, workflowStepId: step.id, managerId: appraisal.manager.userId, managerInfo: appraisal.manager, employeeId: appraisal.employee.userId, employeeInfo: appraisal.employee, organizationId: appraisal.organizationId, title: step.label, scheduledDate, duration, meetingType: 'performance_review', meetingFormat: 'video', createdBy: identity.sub, appraisalMeeting: { mode, ownerIdentity: identity, recordingRequested: Boolean(req.body.record), summaryState: 'not_started' } }); }
+        try { meeting = await OneOnOne.create({ appraisalId: appraisal._id, workflowStepId: step.id, managerId: appraisal.manager.userId, managerInfo: appraisal.manager, employeeId: appraisal.employee.userId, employeeInfo: appraisal.employee, organizationId: appraisal.organizationId, title: step.label, scheduledDate, duration, meetingType: 'performance_review', meetingFormat: 'video', createdBy: identity.sub, appraisalMeeting: { mode, ownerIdentity: identity, recordingRequested: Boolean(req.body.record), meetingLink: req.body.meetingLink, summaryState: 'not_started', ...require('../services/calendarRecordingConsentService').initial(mode, Boolean(req.body.record)) } }); }
         catch (error) { if (error.code !== 11000) throw error; meeting = await OneOnOne.findOne({ appraisalId: appraisal._id, workflowStepId: step.id, organizationId: appraisal.organizationId }); }
       }
       if ((meeting.appraisalMeeting.mode || 'calendar') !== mode) return res.status(409).json({ error: 'This call step already uses a different meeting type.' });
       if (mode === 'in_app') return res.status(201).json({ success: true, data: publicMeeting(meeting) });
       if (meeting.nylas?.eventId) return res.json({ success: true, data: publicMeeting(meeting) });
-      const result = await shared.request('meetings/create', meeting.appraisalMeeting.ownerIdentity, { externalId: String(meeting._id), scheduledDate: meeting.scheduledDate, duration: meeting.duration, title: meeting.title, meetingLink: req.body.meetingLink, record: meeting.appraisalMeeting.recordingRequested, participants: [appraisal.manager, appraisal.employee].map(p => ({ name: p.name, email: p.email })) }, { timeoutMs: 90_000 });
-      meeting.nylas = { eventId: result.eventId, calendarId: result.calendarId, conferenceUrl: result.conferenceUrl, syncStatus: 'synced', lastSyncAt: new Date() };
-      meeting.appraisalMeeting = { ...meeting.appraisalMeeting, recordingState: result.recordingState, calendarState: result.state };
-      await meeting.save();
+      const scheduled = await require('../services/meetingCallService').createCalendar(meeting);
       appraisal.addAuditLog('appraisal_meeting_scheduled', req.session.user, { meetingId: meeting._id, stepId: step.id, recordingRequested: Boolean(req.body.record) }); await appraisal.save();
-      return res.status(201).json({ success: true, data: publicMeeting(meeting) });
+      return res.status(201).json({ success: true, data: publicMeeting(scheduled) });
     } catch (error) { return errorResponse(res, error); }
   });
   router.param('meetingId', async (req, res, next, id) => {
@@ -64,6 +61,7 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
       return next();
     } catch (error) { return next(error); }
   });
+  router.use('/:meetingId/recording-consent', require('./calendarRecordingConsent')());
   router.use('/:meetingId/native', require('./appraisalNativeCalls')(publicMeeting));
   router.post('/:meetingId/sync', async (req, res) => {
     try {

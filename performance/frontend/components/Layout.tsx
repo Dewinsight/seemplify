@@ -141,6 +141,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { name: 'Overview', href: '/admin', icon: ShieldCheck, section: 'administration' },
         { name: 'People & teams', href: '/team', icon: Users, section: 'administration' },
         { name: 'Organization OKRs', href: '/okrs?view=organization', icon: Target, section: 'administration' },
+        { name: 'Competency assessments', href: '/competency', icon: ListChecks, section: 'administration' },
         ...(appraisalsEnabled ? [
           { name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'administration' as const },
           { name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'administration' as const },
@@ -169,6 +170,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { name: 'Team Members', href: '/team', icon: Users, section: 'team' },
         { name: 'Team OKRs', href: '/okrs?view=team', icon: Target, section: 'team' },
         ...(appraisalsEnabled ? [{ name: 'Team Appraisals', href: '/appraisals?view=team', icon: FileText, section: 'team' as const }] : []),
+        ...(rolloutVisibilityReady && features.competencyAssessments === true ? [{ name: 'Competency assessments', href: '/competency', icon: ListChecks, section: 'team' as const }] : []),
         { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'insights' },
         ...(talentPlanningEnabled ? [{ name: 'Talent Planning', href: '/talent', icon: GitBranch, section: 'insights' as const }] : []),
         ...(managerPracticeEnabled ? [{ name: 'Coaching', href: '/coaching', icon: Gauge, section: 'insights' as const }] : []),
@@ -180,9 +182,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       dashboard,
       { name: 'My OKRs', href: '/okrs?view=my', icon: Target, section: 'main' },
       ...(appraisalsEnabled ? [{ name: 'My Appraisals', href: '/appraisals?view=personal', icon: FileText, section: 'main' as const }] : []),
+      ...(rolloutVisibilityReady && features.competencyAssessments === true ? [{ name: 'Competency assessments', href: '/competency', icon: ListChecks, section: 'growth' as const }] : []),
       ...growthItems,
     ];
-  }, [features.canonicalAppraisals, features.continuousPerformance, features.managerPracticeInsights, features.performanceSupportPlans, features.projectFeedback, features.recognition, features.talentPlanning, isHRAdmin, isManager, rolloutVisibilityReady, workspace]);
+  }, [features.canonicalAppraisals, features.competencyAssessments, features.continuousPerformance, features.managerPracticeInsights, features.performanceSupportPlans, features.projectFeedback, features.recognition, features.talentPlanning, isHRAdmin, isManager, rolloutVisibilityReady, workspace]);
 
   const handleWorkspaceChange = (nextWorkspace: PerformanceWorkspace) => {
     if (nextWorkspace === workspace) return;

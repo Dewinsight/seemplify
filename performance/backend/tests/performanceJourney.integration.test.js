@@ -126,13 +126,16 @@ test('launch reports missing managers individually and rejects invalid response 
 
 test('history and published reports retain frozen periods while enforcing employee manager and tenant access', async () => {
   const deletedCycleId = new mongoose.Types.ObjectId();
+  const submittedAt = new Date('2025-01-03T10:00:00.000Z');
+  const reviewedGoalId = new mongoose.Types.ObjectId();
   const appraisal = await Appraisal.create({ organizationId: ORG_A, cycleId: deletedCycleId, status: 'completed',
     employee: { userId: EMPLOYEE, name: 'Employee One', email: 'employee@example.com' },
     manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
     cycleConfigurationSnapshot: { cycleName: '2024 historical review', periodStart: '2024-01-01', periodEnd: '2024-12-31', ratingScale: { min: 1, max: 5 }, workflowDefinition: { sections: [{ id: 'learning', title: 'Learning', questions: [{ id: 'applied', prompt: 'What did you apply?' }] }] } },
     finalRating: { overall: 4, ratingLabel: 'Exceeds expectations', justification: 'Published outcome', finalizedAt: new Date() },
     selfAssessment: { submittedAt: new Date(), overallSummary: { achievements: 'Employee reflection' } },
-    managerReview: { overallSummary: { strengths: 'Shared strengths' }, competencyRatings: [{ competencyId: 'delivery', competencyName: 'Delivery', managerRating: 4, managerComments: 'Consistent delivery' }] },
+    managerReview: { submittedAt, overallManagerRating: 4, overallSummary: { strengths: 'Shared strengths' }, competencyRatings: [{ competencyId: 'delivery', competencyName: 'Delivery', managerRating: 4, managerComments: 'Consistent delivery' }], okrAssessment: [{ okrId: reviewedGoalId, okrTitle: 'Historical delivery goal', managerComments: 'Published goal feedback', managerVerifiedCompletion: 90, qualityRating: 4 }] },
+    auditLog: [{ action: 'manager_review_submitted', performedBy: { userId: MANAGER, name: 'Submitting reviewer', role: 'manager' }, timestamp: submittedAt }],
     customResponses: [{ sectionId: 'learning', questionId: 'applied', respondentRole: 'employee', value: 'Published learning', submittedAt: new Date() }, { sectionId: 'learning', questionId: 'applied', respondentRole: 'manager', value: 'PRIVATE DRAFT' }],
     calibration: { justification: 'PRIVATE CALIBRATION' }
   });
@@ -142,6 +145,8 @@ test('history and published reports retain frozen periods while enforcing employ
     expect(response.body.data.finalRating.overall).toBe(4);
     expect(response.body.data.employeeReflection.achievements).toBe('Employee reflection');
     expect(response.body.data.competencies[0]).toMatchObject({ name: 'Delivery', managerRating: 4 });
+    expect(response.body.data.managerSummary).toMatchObject({ strengths: 'Shared strengths' });
+    expect(response.body.data.managerFeedback).toEqual({ author: { userId: MANAGER, name: 'Submitting reviewer' }, submittedAt: submittedAt.toISOString(), overallRating: 4, goals: [{ id: String(reviewedGoalId), title: 'Historical delivery goal', comments: 'Published goal feedback', verifiedCompletion: 90, qualityRating: 4 }] });
     expect(response.body.data.answers).toEqual([{ section: 'Learning', question: 'What did you apply?', respondent: 'employee', answer: 'Published learning' }]);
     expect(JSON.stringify(response.body)).not.toMatch(/PRIVATE CALIBRATION|PRIVATE DRAFT|example.com|calibration|conversationAssessment|auditTrail/);
   }
@@ -152,6 +157,17 @@ test('history and published reports retain frozen periods while enforcing employ
   const organization = await request(app).get('/api/appraisals/organization').set('x-test-actor', 'hr').expect(200);
   expect(organization.body.data).toHaveLength(1);
   await request(app).get('/api/appraisals/organization').set('x-test-actor', 'manager').expect(403);
+  // A completed parent does not publish an unsubmitted or disabled manager stage.
+  await Appraisal.updateOne({ _id: appraisal._id }, { $unset: { 'managerReview.submittedAt': 1 } });
+  for (const actor of ['employee', 'manager', 'hr']) {
+    const response = await request(app).get(`/api/appraisals/${appraisal._id}/report`).set('x-test-actor', actor).expect(200);
+    expect(response.body.data.finalRating.overall).toBe(4);
+    expect(response.body.data.employeeReflection.achievements).toBe('Employee reflection');
+    expect(response.body.data.managerSummary).toBeNull();
+    expect(response.body.data.managerFeedback).toBeNull();
+    expect(response.body.data.competencies).toEqual([]);
+    expect(JSON.stringify(response.body)).not.toMatch(/Shared strengths|Consistent delivery|Published goal feedback/);
+  }
   await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_in_progress' } });
   await request(app).get(`/api/appraisals/${appraisal._id}/report`).expect(409);
 });

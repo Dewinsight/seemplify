@@ -327,8 +327,12 @@ services:
       PERFORMANCE_AI_SHARED_SECRET: ${PERFORMANCE_AI_SHARED_SECRET:?required}
       LOCAL_LLM_BASE_URL: http://chatgpt-gateway:11435
       LOCAL_LLM_SHARED_SECRET: ${CHATGPT_GATEWAY_SHARED_SECRET:?required}
+      COMPETENCY_CLAMAV_HOST: competency-scanner
+      COMPETENCY_CLAMAV_PORT: "3310"
+      COMPETENCY_PRIVATE_STORAGE_ROOT: /var/lib/seemplify/competency
     volumes:
       - /opt/seemplify/secrets/platform-integrations/experience-hmac-secret:/run/seemplify/platform-integration-hmac:ro
+      - /opt/seemplify/data/competency:/var/lib/seemplify/competency
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5004/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s

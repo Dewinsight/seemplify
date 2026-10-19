@@ -126,6 +126,10 @@ test('calls use trusted participants, enforce reviewer access, recover connectio
   expect(provider.mock.calls[1][2].participants.map(p => p.email)).toEqual(['reviewer@example.test', 'employee@example.test']);
   await call('post', base).send(payload).expect(200); expect(provider).toHaveBeenCalledTimes(2);
   await call('post', `${base}/${meetingId}/complete`).send({ notes: 'Not yet' }).expect(409);
+  const consent = { noticeVersion: 'calendar-recording-v1', acknowledged: true, recording: true, transcription: true };
+  provider.mockResolvedValueOnce({ recordingState: 'scheduled' });
+  await call('post', `${base}/${meetingId}/recording-consent`, 'reviewer').send(consent).expect(200);
+  await call('post', `${base}/${meetingId}/recording-consent`, 'employee').send(consent).expect(200);
   await OneOnOne.updateOne({ _id: meetingId }, { $set: { scheduledDate: new Date(Date.now() - 3600000) } });
   provider.mockResolvedValue({ recordingState: 'ready', transcript: JSON.stringify({ segments: [{ speaker: 'Reviewer', text: 'We agreed to document the release.' }] }), recordingUrl: 'https://example.nylas.com/recording.mp4' });
   const completion = jest.spyOn(ai, 'getChatCompletions').mockResolvedValue({ model: 'gpt-5.6-terra', choices: [{ message: { content: 'Agreed: document the release. Owner: not specified.' } }] });
