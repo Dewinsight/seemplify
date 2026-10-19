@@ -41,6 +41,24 @@ for (const actor of actors) {
     page.on('response', response => {
       if (response.url().startsWith('http://127.0.0.1:5014/api/') && response.status() >= 500 && !response.url().includes('/presence/')) failures.push(`${response.status()} ${response.url()}`);
     });
+    // The disposable IdP exposes the actual role catalogue and scoped directory
+    // contracts. Verify them before navigation, including self-only employees;
+    // never hide bootstrap failures or grant every fixture administrative access.
+    const bootstrap = await page.evaluate(async () => {
+      const response = await fetch('http://127.0.0.1:5014/api/competency/bootstrap', { credentials: 'include' });
+      return { status: response.status, body: await response.json() };
+    });
+    expect(bootstrap.status).toBe(200);
+    const { data } = bootstrap.body;
+    expect(data.scope).toBe(hrRoles.has(actor) ? 'organization' : managerRoles.has(actor) ? 'managed_teams' : 'self');
+    expect(data.capabilities.roleManage).toBe(hrRoles.has(actor));
+    expect(data.capabilities.retentionManage).toBe(hrRoles.has(actor));
+    expect(data.capabilities.assessmentLaunch).toBe(managerRoles.has(actor));
+    expect(data.people.some((person: { userId: string }) => person.userId === 'acceptance-foreign')).toBe(false);
+    if (!managerRoles.has(actor)) {
+      expect(data.people.map((person: { userId: string }) => person.userId)).toEqual([`acceptance-${actor}`]);
+      expect(data.reviewers).toEqual([]);
+    }
     const paths = ['/dashboard', '/okrs?view=my', '/appraisals?view=personal', '/feedback', '/one-on-ones', '/check-ins', '/development', '/support-plans', '/recognition', '/project-feedback', '/action-centre', '/tutorial'];
     if (managerRoles.has(actor)) paths.push('/team', '/appraisals?view=team', '/appraisals/start', '/okrs?view=team', '/analytics', '/coaching', '/talent');
     if (hrRoles.has(actor)) paths.push('/admin', '/admin/appraisal-cycles', '/admin/appraisal-cycles/new', '/admin/calibration', '/admin/reports', '/okrs?view=organization');

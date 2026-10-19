@@ -62,3 +62,33 @@ test('repeated migration contention fails boundedly without stale policy writes'
   await assert.rejects(getOrCreateGlobalAccessPolicy(), error => error.code === 'POLICY_MIGRATION_BUSY' && error.statusCode === 503)
   assert.equal(saves, 8)
 })
+
+test('schema four Performance overgrants are removed by locked-role refresh and invalidate cached claims once', async (t) => {
+  const custom = { key: 'deliberate_reviewer', name: 'Deliberate reviewer', locked: false,
+    sourceOrganizationRoles: [], sourceTeamRoles: [], denies: [],
+    grants: [{ appId: 'performance-management', permissions: ['review:view:all'] }, { appId: 'messaging', permissions: ['messages.read'] }] }
+  const stale = { schemaVersion: 4, revision: 23, roles: DEFAULT_ACCESS_ROLES.map(role => ({ ...role,
+    grants: role.key === 'employee' ? [...role.grants, { appId: 'performance-management', permissions: ['succession:manage', 'review:view:all', 'goal:assign:organization'] }] : role.grants
+  })).concat(custom), async save() { return this } }
+  let invalidations = 0
+  t.mock.method(AccessControlPolicy, 'findOne', async () => stale)
+  t.mock.method(Account, 'updateMany', async (filter, update) => {
+    assert.deepEqual(filter, {})
+    assert.equal(update.$inc.authorizationRevision, 1)
+    assert.ok(update.$set.updatedAt instanceof Date)
+    invalidations += 1
+    return { modifiedCount: 3 }
+  })
+  const migrated = await getOrCreateGlobalAccessPolicy()
+  assert.equal(migrated.schemaVersion, 5)
+  assert.equal(migrated.revision, 24)
+  const employee = migrated.roles.find(role => role.key === 'employee')
+  const performance = employee.grants.find(row => row.appId === 'performance-management').permissions
+  for (const id of ['succession:manage', 'review:view:all', 'goal:assign:organization']) assert.ok(!performance.includes(id))
+  for (const id of ['okr:view:own', 'okr:view:organization', 'recognition:create']) assert.ok(performance.includes(id))
+  const preserved = migrated.roles.find(role => role.key === custom.key)
+  for (const [field, value] of Object.entries(custom)) assert.deepEqual(preserved[field], value)
+  assert.equal(await getOrCreateGlobalAccessPolicy(), migrated)
+  assert.equal(invalidations, 1)
+  assert.equal(migrated.revision, 24)
+})

@@ -156,8 +156,8 @@ jobs:
             test_command: npm test -- --runInBand
           - name: Performance
             directory: performance/backend
-            install_command: npm install --ignore-scripts --no-package-lock
-            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/colleagueReviews.integration.test.js tests/oneOnOneCalls.integration.test.js tests/competency --runInBand && node --test tests/competencyScoring.test.js tests/competencyFileSafety.test.js tests/competencyUploadBudget.test.js ../../deploy/hostinger/tests/competency-backup-reference.test.cjs
+            install_command: npm install --ignore-scripts --no-package-lock && npm --prefix ../../Identityprovider ci --ignore-scripts
+            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/colleagueReviews.integration.test.js tests/oneOnOneCalls.integration.test.js tests/competency --runInBand && node --test tests/competencyScoring.test.js tests/competencyFileSafety.test.js tests/competencyUploadBudget.test.js ../../deploy/hostinger/tests/competency-backup-reference.test.cjs && node --test ../../Identityprovider/tests/access-control-performance-migration.integration.mjs
           - name: Payroll
             directory: payroll/backend
             install_command: npm install --ignore-scripts --no-package-lock

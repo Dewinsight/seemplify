@@ -1,6 +1,6 @@
 {
   "environment": "isolated synthetic files on actual Linux/POSIX; disposable real MongoDB",
-  "archiveAndAdversarialChecksPassed": 10,
+  "archiveAndAdversarialChecksPassed": 11,
   "mongoReferenceChecksPassed": 5,
   "independentReviewer": "Solution Architect A",
   "bashSyntax": "both scripts passed bash -n",
@@ -8,5 +8,6 @@
   "fullProductionBackupRun": false,
   "liveRestoreRun": false,
   "safety": "UUID regular members, SHA256/size,0700 root,0600 files/archive; no links/traversal/live overwrite",
-  "limits": "Existing14-day backup retention remains; later withdrawals/deletions must be reconciled before access after an older restore."
+  "limits": "Existing14-day backup retention remains; later withdrawals/deletions must be reconciled before access after an older restore.",
+  "writerPauseFailureChecks": "Actual Bash prefix with fake Docker boundary verifies success, dump failure and archive failure each resume exactly once; no production operation."
 }

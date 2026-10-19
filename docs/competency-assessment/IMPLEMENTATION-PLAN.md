@@ -29,7 +29,7 @@ No automatic employment decision is made. AI cannot finalise scores or suitabili
 | Personal ChatGPT gateway and human-reviewed suggestions | Role-aware, cited competency observations | Central shared AI routing/account ownership |
 | Ratings, custom questions, result report and analytics | Source-aware scoring, suitability, rankings and reports | Existing employee and manager submissions |
 
-Known gap: the current result builder includes manager narrative and competency comments but omits some fields such as individual goal-review comments. A job title is not a versioned role assessment profile.
+Baseline gap, now resolved in this programme: the result builder omitted individual goal-review comments. Submitted overall, goal, competency and custom answers now retain their actual author and submission dates. A job title alone is not a versioned role assessment profile; the new role library supplies that assessment definition.
 
 Unrelated appraisal lifecycle work is already dirty in the shared checkout. Record the baseline status before every integration; never stage/reset another task's changes. Additive competency files belong to this programme. Shared hooks, navigation, auth and app registration have one integration owner.
 
@@ -134,6 +134,8 @@ QA is a role, not a claim that one script tests the whole system. The architect 
 Minimum staging pilot: approximately ten synthetic participants assigned to roles; all seven input combinations; all ranking scopes/ties; no-AI/no-call path; role changes after completion; permission revocation, cross-tenant denial; report/PDF equivalence; consent/retention behaviour. Actual MoMo participant provisioning is a separate data operation and must not be claimed from synthetic pilot results.
 
 Gate before commit: both package owners hand off; no unresolved release-blocking defects; product/architecture/UX review recorded; required tests pass; exact paths reviewed for secrets/unrelated changes. Admin bypass is authorised for branch protection when needed, not for ignoring failed tests, scans or changing security settings.
+
+Default-role migration gate: canonical built-in Performance grants follow personal, managed hierarchy and organisation scopes. Preserve persisted rows belonging to other applications, separate custom roles, organisation overrides and member exceptions. A tightened default must also reach existing sessions: after the new IdP policy is verified, stop the exact Performance backend, expire only its session collection through its configured application connection, restart and verify health, then perform normal SSO sign-in. Business records, saved assessments and IdP sessions remain available. Record actual counts and execution status; a passing fresh-identity fixture alone cannot prove stale-session revocation.
 
 Gate after push: confirm PR/merge and CI separately from deployment. Deploy exact tested main; confirm frontend/backend/IdP image revisions as applicable and public asset freshness. Run authenticated browser smoke against deployed app. Failed deployment or provider tests remain open; do not present a green local test as live acceptance.
 

@@ -188,7 +188,7 @@ async function notifyGlobalAccessControlChanged(policy, actor, action) {
   if (failures.length) console.error(`Failed to queue ${failures.length} global access-control webhook delivery group(s).`)
 }
 
-export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false } = {}) {
+export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false, refreshAppIds = null } = {}) {
   const roles = (existingRoles || []).map((role) => cloneRole(role.toObject ? role.toObject() : role))
   for (const defaultRole of DEFAULT_ACCESS_ROLES) {
     const existingIndex = roles.findIndex((role) => role.key === defaultRole.key)
@@ -198,6 +198,21 @@ export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false } 
     }
     if (!refreshLocked || defaultRole.locked !== true) continue
     const existing = roles[existingIndex]
+    if (refreshAppIds) {
+      // A product-scoped baseline migration must not reset deliberate edits
+      // to another product or the persisted role's identity/metadata.
+      const apps = new Set(refreshAppIds)
+      const replaceRows = (current, canonical) => [
+        ...clonePermissionRows(current).filter((row) => !apps.has(row.appId)),
+        ...clonePermissionRows(canonical).filter((row) => apps.has(row.appId))
+      ]
+      roles[existingIndex] = {
+        ...existing,
+        grants: replaceRows(existing.grants, defaultRole.grants),
+        denies: replaceRows(existing.denies, defaultRole.denies)
+      }
+      continue
+    }
     roles[existingIndex] = {
       ...cloneRole(defaultRole),
       createdAt: existing.createdAt,
@@ -231,7 +246,14 @@ export async function getOrCreateGlobalAccessPolicy() {
     }
 
     const schemaUpgrade = policy.schemaVersion !== ACCESS_CONTROL_SCHEMA_VERSION
-    const mergedRoles = mergeDefaultRoles(policy.roles, { refreshLocked: schemaUpgrade })
+    const mergedRoles = mergeDefaultRoles(policy.roles, {
+      refreshLocked: schemaUpgrade,
+      // Version 5 deliberately normalizes built-in Performance policy only.
+      // Preserve all other product rows, custom role definitions and metadata.
+      refreshAppIds: schemaUpgrade && policy.schemaVersion < 5 && ACCESS_CONTROL_SCHEMA_VERSION === 5
+        ? ['performance-management']
+        : null
+    })
     if (mergedRoles.length !== policy.roles.length || schemaUpgrade) {
       policy.roles = mergedRoles
       policy.schemaVersion = ACCESS_CONTROL_SCHEMA_VERSION

@@ -26,6 +26,11 @@ jobs:
           cache-dependency-path: performance/frontend/package-lock.json
       - run: npm install --legacy-peer-deps
         working-directory: performance/backend
+      - name: Install identity migration test dependencies
+        run: npm ci --ignore-scripts
+        working-directory: Identityprovider
+      - name: Verify persisted Performance default-role migration
+        run: node --test Identityprovider/tests/access-control-performance-migration.integration.mjs
       - run: npm ci --legacy-peer-deps
         working-directory: performance/frontend
       - run: npm test

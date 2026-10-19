@@ -2,10 +2,10 @@
   "headline": "Role-aware assessment is implemented and locally verified. Production acceptance remains open.",
   "mongo": "193 / 193 clean-index checks passed",
   "pure": "25 / 25 targeted checks passed",
-  "idp": "35 / 35 focused checks passed",
-  "browser": "43 distinct local browser cases passed",
+  "idp": "42 / 42 focused checks passed",
+  "browser": "43 focused +29 production API cases",
   "providers": "Actual personal AI / new calls pending",
   "release": "Full CI replay / deployment pending",
-  "revision": "PR135:193 local API checks,43 local browser cases, fresh sign-in and linked launch passed. Call acceptance uses real native media and mocked external STT/AI. Private evidence backup/restore:10 POSIX plus5 Mongo checks passed. Exact-head CI and main deployment pending; Experience CI has unchanged baseline failures.",
-  "backup": "15 isolated backup/restore checks passed"
+  "revision": "PR135:193 local API checks,43 focused browser cases,29 production-mode real-API cases and709 HTTP requests passed. Fresh sign-in and linked launch passed. Call STT/AI are mocked. Backup/restore:16 checks. Exact-head CI/deployment/policy migration/session expiry pending; Experience has unchanged baseline failures.",
+  "backup": "16 isolated backup/restore checks passed"
 }

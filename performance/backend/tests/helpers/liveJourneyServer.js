@@ -11,22 +11,53 @@ const FOREIGN_ORG = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const actors = ['employee', 'peer', 'team_lead', 'manager', 'hr_manager', 'admin', 'owner', 'department_head', 'teamless', 'foreign'];
 const ids = Object.fromEntries(actors.map((role) => [role, `acceptance-${role}`]));
 const sessions = new Map();
+let accessRoles;
+let buildPerformanceDirectory;
+
+function performancePermissions(actor) {
+  const keys = new Set(['employee']);
+  if (['owner', 'admin'].includes(actor)) keys.add(`organization_${actor}`);
+  else if (['hr_manager', 'department_head', 'team_lead'].includes(actor)) keys.add(actor);
+  else if (actor === 'manager') keys.add('line_manager');
+  const selected = accessRoles.filter(role => keys.has(role.key));
+  const denied = new Set(selected.flatMap(role => role.denies.filter(row => row.appId === 'performance-management').flatMap(row => row.permissions)));
+  return [...new Set(selected.flatMap(role => role.grants.filter(row => row.appId === 'performance-management').flatMap(row => row.permissions)))].filter(permission => !denied.has(permission));
+}
 
 function principal(actor) {
   const organizationId = actor === 'foreign' ? FOREIGN_ORG : ORG;
   const role = ['hr_manager', 'admin', 'owner'].includes(actor) ? actor : 'employee';
   const organization = { id: organizationId, name: 'Disposable acceptance organization', role, appAccess: { mode: 'all', appIds: [] },
+    authorization: { permissionsByApp: { 'performance-management': performancePermissions(actor) } },
     ...(actor === 'department_head' ? { departmentHeadPermissions: [{ id: 'acceptance-department', name: 'Operations' }] } : {}) };
   const teams = actor === 'teamless' ? [] : [{ id: 'acceptance-team', name: 'Acceptance team', organizationId, departmentId: 'acceptance-department',
     role: actor === 'manager' ? 'line_manager' : actor === 'team_lead' ? 'team_lead' : 'member',
     isManager: actor === 'manager', managerId: ids.manager, managerName: 'Acceptance Manager', managerEmail: 'manager@example.test',
     ...(['manager', 'team_lead', 'department_head'].includes(actor) ? { directReports: [ids.employee, ids.peer] } : {}) }];
   return { id: ids[actor], sub: ids[actor], name: `Acceptance ${actor.replaceAll('_', ' ')}`, email: `${actor}@example.test`,
-    organizations: [organization], currentOrganization: organization, teams, idpTeams: teams };
+    organizations: [organization], currentOrganization: organization, teams, idpTeams: teams,
+    accessToken: `disposable-acceptance-${actor}` };
+}
+
+function directoryFor(actor, view) {
+  const organizationId = actor === 'foreign' ? FOREIGN_ORG : ORG;
+  const members = actors.filter(value => (value === 'foreign') === (actor === 'foreign')).map(value => {
+    const user = principal(value);
+    return { account: { _id: user.sub, sub: user.sub, email: user.email, profile: { name: user.name } }, role: user.currentOrganization.role, status: 'active', department: 'acceptance-department' };
+  });
+  const organization = { _id: organizationId, owner: actor === 'foreign' ? ids.foreign : ids.owner, members,
+    departments: [{ _id: 'acceptance-department', name: 'Operations', headAccount: ids.department_head }] };
+  const teams = [{ _id: 'acceptance-team', name: 'Acceptance team', organization: organizationId, department: 'acceptance-department',
+    members: members.filter(member => member.account.sub !== ids.teamless).map(member => ({ account: member.account.sub, status: 'active', role: member.account.sub === ids.manager ? 'line_manager' : member.account.sub === ids.team_lead ? 'team_lead' : 'member' })) }];
+  return buildPerformanceDirectory({ organization, teams, actorId: ids[actor], view });
 }
 
 async function start() {
   if (process.env.NODE_ENV === 'production') throw new Error('Acceptance fixtures cannot run in production');
+  // Mirror the actual IdP claim and directory contracts, not a product-side
+  // authorization bypass. These imports are dependency-free IdP definitions.
+  ({ DEFAULT_ACCESS_ROLES: accessRoles } = await import('../../../../Identityprovider/src/config/accessControlCatalog.js'));
+  ({ buildPerformanceDirectory } = await import('../../../../Identityprovider/src/utils/performanceDirectory.js'));
   const mongo = await MongoMemoryServer.create();
   // Set every operational value before loading the application; no local .env services are used.
   Object.assign(process.env, { NODE_ENV: 'test', MONGO_URI: mongo.getUri('performance_acceptance'),
@@ -52,6 +83,14 @@ async function start() {
   await Promise.all(Object.values(mongoose.models).map((model) => model.createIndexes()));
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1:5014');
+    if (url.pathname.startsWith('/__no_external_identity/api/organizations/')) {
+      const actor = actors.find(value => req.headers.authorization === `Bearer disposable-acceptance-${value}`);
+      if (!actor || url.pathname !== `/__no_external_identity/api/organizations/${principal(actor).currentOrganization.id}/performance-directory`) {
+        res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'Synthetic directory access denied' }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(directoryFor(actor, url.searchParams.get('scope'))));
+    }
     if (url.pathname === '/__test/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ready: true, actors }));
     }

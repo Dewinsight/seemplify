@@ -1,0 +1,18 @@
+{
+  "environment": "isolated synthetic IdP policy and real disposable MongoDB",
+  "schemaVersion": 5,
+  "focusedAndDirectoryChecksPassed": 40,
+  "persistedMigrationChecksPassed": 2,
+  "previousSchemasTested": [3, 4],
+  "builtInPerformancePermissionCounts": {"staff": 26, "manager": 54, "departmentHead": 56, "hrAdminOwner": 87},
+  "nonPerformancePersistedRowsPreserved": true,
+  "roleMetadataPreserved": true,
+  "separateCustomRolesPreserved": true,
+  "organizationAndMemberExceptionsPreserved": true,
+  "builtInPerformanceRows": "Intentionally adopt the requested personal, managed hierarchy and organization defaults.",
+  "secondRead": "No repeat normalization or authorization revision increment.",
+  "existingProductionSessions": "Release-only expiry required after policy migration; not yet executed.",
+  "realHttpReplay": {"requests": 709, "failures": 0},
+  "productionModeRealApiBrowserReplay": {"passed": 29, "failed": 0, "retries": 0},
+  "livePolicyMigrationExecuted": false
+}

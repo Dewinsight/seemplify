@@ -132,8 +132,8 @@ test('HR manager matches admin across products except explicit top-level control
   ]) assert.ok(!getDefaultRolePermissions('hr_manager', appId).includes(permissionId), `HR manager received protected ${appId}:${permissionId}`)
 })
 
-test('schema version four refreshes locked role baselines without replacing custom roles', () => {
-  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 4)
+test('schema version five refreshes locked role baselines without replacing custom roles', () => {
+  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 5)
   const customRole = {
     key: 'project_coordinator', name: 'Project Coordinator', locked: false,
     sourceOrganizationRoles: [], sourceTeamRoles: [],
@@ -164,6 +164,83 @@ test('competency defaults separate employee viewing, manager assessment and orga
     const permissions = getDefaultRolePermissions(sourceRole, 'performance-management')
     for (const action of ['role.manage', 'assessment.finalise', 'assessment.reopen', 'report.export', 'audit.view']) assert.ok(permissions.includes(`competency.${action}`))
   }
+})
+
+test('Performance staff defaults match the product employee policy without team or private organization data', () => {
+  const source = fs.readFileSync(new URL('../../performance/backend/middleware/rbac.js', import.meta.url), 'utf8')
+  const definitions = source.slice(source.indexOf('const PERMISSIONS = {'), source.indexOf('\n};', source.indexOf('const PERMISSIONS = {')))
+  const rows = [...definitions.matchAll(/^\s*'([^']+)'\s*:\s*\[([^\]]+)\]/gm)]
+  const expected = rows.filter(([, , roles]) => roles.includes("'employee'")).map(([, id]) => id).sort()
+  assert.ok(expected.length > 20)
+  for (const role of ['staff', 'recruiter', 'interviewer']) {
+    assert.deepEqual(getDefaultRolePermissions(role, 'performance-management'), expected, role)
+  }
+  for (const id of ['goal:assign:organization', 'goal:assign:all', 'okr:edit:all', 'okr:decide:all',
+    'review:view:all', 'feedback:view:all', 'review:calibrate', 'succession:manage',
+    'analytics:view:organization', 'talent_review:manage:organization', 'user:view:all', 'team:view:all']) {
+    assert.ok(!expected.includes(id), `Staff must not inherit ${id}`)
+  }
+  for (const id of ['okr:view:organization', 'goal_period:view', 'review_cycle:view', 'recognition:create']) {
+    assert.ok(expected.includes(id), `Shared capability must remain available: ${id}`)
+  }
+})
+
+test('Performance manager defaults add scoped management without HR-only actions or absolute member denies', () => {
+  const source = fs.readFileSync(new URL('../../performance/backend/middleware/rbac.js', import.meta.url), 'utf8')
+  const definitions = source.slice(source.indexOf('const PERMISSIONS = {'), source.indexOf('\n};', source.indexOf('const PERMISSIONS = {')))
+  const rolesByPermission = new Map([...definitions.matchAll(/^\s*'([^']+)'\s*:\s*\[([^\]]+)\]/gm)].map(([, id, roles]) => [id, roles]))
+  for (const role of ['line_manager', 'team_lead']) {
+    const permissions = getDefaultRolePermissions(role, 'performance-management')
+    for (const id of permissions) {
+      assert.match(rolesByPermission.get(id) || '', /'employee'|'line_manager'|'team_lead'/, `${role} received HR-only ${id}`)
+    }
+    for (const id of ['review:conduct:direct_reports', 'okr:assign:direct_reports', 'team:view:members',
+      'talent_review:manage:team', 'competency.assessment.launch', 'competency.report.cohort']) assert.ok(permissions.includes(id))
+    for (const id of ['okr:view:department', 'goal:assign:department', 'succession:manage', 'review:view:all']) assert.ok(!permissions.includes(id))
+    assert.deepEqual(DEFAULT_ACCESS_ROLES.find(entry => entry.key === role).denies.filter(row => row.appId === 'performance-management'), [])
+  }
+  const department = getDefaultRolePermissions('department_head', 'performance-management')
+  assert.ok(department.includes('okr:view:department'))
+  assert.ok(department.includes('goal:assign:department'))
+  assert.ok(!department.includes('goal:assign:organization'))
+  const allPerformance = PRODUCT_PERMISSION_CATALOG.find(entry => entry.appId === 'performance-management').permissions.map(entry => entry.id).sort()
+  for (const role of ['hr_manager', 'admin', 'owner']) assert.deepEqual(getDefaultRolePermissions(role, 'performance-management'), allPerformance)
+})
+
+test('effective Performance authority follows actual team and department relationships', async () => {
+  const member = { account: 'account-staff', status: 'active', role: 'staff', appAccess: { mode: 'selected', appIds: ['performance-management'] } }
+  const organization = { _id: 'org-current', members: [member], departments: [], accessControl: { revision: 1 } }
+  const resolve = (teams = [], departments = []) => resolveOrganizationAuthorization({
+    account: { _id: member.account, teams }, organization: { ...organization, departments }, member, policy
+  })
+  for (const teams of [[], [{ organization: 'org-other', role: 'line_manager', isActive: true }], [{ organization: 'org-current', role: 'line_manager', isActive: false }]]) {
+    const authorization = await resolve(teams)
+    assert.ok(!authorization.permissionsByApp['performance-management'].includes('review:conduct:direct_reports'))
+  }
+  for (const role of ['line_manager', 'team_lead']) {
+    const authorization = await resolve([{ organization: 'org-current', role, isActive: true }])
+    assert.ok(authorization.permissionsByApp['performance-management'].includes('review:conduct:direct_reports'))
+    assert.ok(!authorization.permissionsByApp['performance-management'].includes('review:view:all'))
+  }
+  const department = await resolve([], [{ headAccount: member.account }])
+  assert.ok(department.permissionsByApp['performance-management'].includes('goal:assign:department'))
+  assert.ok(!department.permissionsByApp['performance-management'].includes('goal:assign:organization'))
+})
+
+test('explicit Performance custom roles, organization overrides and member exceptions remain deliberate authority', async () => {
+  const member = { account: 'account-custom', status: 'active', role: 'staff', appAccess: { mode: 'selected', appIds: ['performance-management'] },
+    accessControl: { roleKeys: ['custom_reviewer'], grants: [{ appId: 'performance-management', permissions: ['goal:assign:organization'] }], denies: [] } }
+  const custom = { key: 'custom_reviewer', name: 'Custom reviewer', sourceOrganizationRoles: [], sourceTeamRoles: [],
+    grants: [{ appId: 'performance-management', permissions: ['feedback:view:all'] }], denies: [], locked: false }
+  const organization = { _id: 'org-custom', members: [member], departments: [], accessControl: { roleOverrides: [
+    { roleKey: 'employee', grants: [{ appId: 'performance-management', permissions: ['review:view:all'] }], denies: [] }
+  ] } }
+  const authorization = await resolveOrganizationAuthorization({ account: { _id: member.account, teams: [] }, organization, member, policy: { ...policy, roles: [...DEFAULT_ACCESS_ROLES, custom] } })
+  for (const id of ['feedback:view:all', 'review:view:all', 'goal:assign:organization']) assert.ok(authorization.permissionsByApp['performance-management'].includes(id))
+  assert.ok(!authorization.permissionsByApp['performance-management'].includes('admin:settings'))
+  member.accessControl.denies = [{ appId: 'performance-management', permissions: ['goal:assign:organization'] }]
+  const denied = await resolveOrganizationAuthorization({ account: { _id: member.account, teams: [] }, organization, member, policy: { ...policy, roles: [...DEFAULT_ACCESS_ROLES, custom] } })
+  assert.ok(!denied.permissionsByApp['performance-management'].includes('goal:assign:organization'))
 })
 
 test('every organization-managed Hub product has an IdP permission matrix', () => {

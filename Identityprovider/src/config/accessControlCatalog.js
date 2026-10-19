@@ -6,7 +6,7 @@
  * responsible for resource-level checks such as "is this a direct report?".
  */
 
-export const ACCESS_CONTROL_SCHEMA_VERSION = 4
+export const ACCESS_CONTROL_SCHEMA_VERSION = 5
 
 const permission = (id, label, scope, description = '', options = {}) => ({
   id,
@@ -472,10 +472,24 @@ const allExcept = (appId, excludedPermissions = []) => {
   return grant(appId, row.permissions.filter((permissionId) => !excluded.has(permissionId)))
 }
 
-// Ordinary organization members receive every delegable product capability by
-// default. Only product administration, cross-person sensitive controls, and
-// policy/security operations are held back. New catalogue entries therefore
-// reach members automatically unless they are deliberately classified here.
+// Performance's staff baseline is explicit: private data stays self-scoped,
+// while published company goals, shared periods/cycles and recognition remain
+// available. Manager/team/department capabilities are added by their own roles.
+// New Performance catalogue entries must be reviewed before reaching staff.
+const performanceMemberPermissions = new Set([
+  'okr:view:own', 'okr:create:own', 'okr:edit:own', 'okr:submit:own',
+  'okr:acknowledge:own', 'okr:request_change:own', 'okr:checkin:own', 'okr:align',
+  'okr:view:organization', 'goal:create:self', 'goal_period:view',
+  'review:view:own', 'review:self_assess', 'review_cycle:view',
+  'feedback:view:received', 'feedback:view:sent', 'feedback:send', 'feedback:request',
+  'support_plan:view:own', 'recognition:create', 'analytics:view:own', 'team:view:own',
+  'competency.assessment.view', 'competency.evidence.view',
+  'competency.evidence.create', 'competency.report.view'
+])
+
+// Other products retain their existing non-administrative member policy.
+// Exclusions remove default grants; they are never absolute denies, so an
+// actual manager role or a deliberate custom policy can add permissions.
 export const MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS = Object.freeze({
   identity: [
     'organization.manage', 'members.invite', 'members.manage', 'members.remove',
@@ -484,11 +498,8 @@ export const MEMBER_RESTRICTED_PERMISSION_EXCLUSIONS = Object.freeze({
     'onboarding.assign', 'subscriptions.request', 'audit.read'
   ],
   smarthr: ['manage_users', 'manage_settings', 'manage_billing', 'manage_licenses'],
-  'performance-management': ['goal_period:manage', 'review_cycle:create', 'review_cycle:manage', 'admin:settings', 'admin:reports',
-    'competency.role.manage', 'competency.framework.manage', 'competency.cycle.manage',
-    'competency.assessment.launch', 'competency.assessment.edit', 'competency.assessment.finalise',
-    'competency.assessment.reopen', 'competency.assessment.exception', 'competency.evidence.delete',
-    'competency.report.export', 'competency.report.cohort', 'competency.audit.view', 'competency.ai.use', 'competency.retention.manage'],
+  'performance-management': all('performance-management').permissions
+    .filter((permissionId) => !performanceMemberPermissions.has(permissionId)),
   'payroll-management': [
     'payslip:view:all', 'compensation:manage:all', 'bonus:view:all', 'salary:approve:team',
     'salary:view:all', 'overtime:approve:team', 'payrollrun:view', 'payrollrun:manage',
@@ -598,7 +609,7 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
   {
     key: 'recruiter',
     name: 'Recruiter',
-    description: 'Full non-administrative product access.',
+    description: 'Personal Performance work and shared goal references; other products retain non-administrative access.',
     sourceOrganizationRoles: ['recruiter'],
     sourceTeamRoles: [],
     grants: memberGrants,
@@ -608,7 +619,7 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
   {
     key: 'interviewer',
     name: 'Interviewer',
-    description: 'Full non-administrative product access.',
+    description: 'Personal Performance work and shared goal references; other products retain non-administrative access.',
     sourceOrganizationRoles: ['interviewer'],
     sourceTeamRoles: [],
     grants: memberGrants,
@@ -618,7 +629,7 @@ export const DEFAULT_ACCESS_ROLES = Object.freeze([
   {
     key: 'employee',
     name: 'Employee',
-    description: 'Full non-administrative product access.',
+    description: 'Personal Performance work and shared goal references; other products retain non-administrative access.',
     sourceOrganizationRoles: ['staff'],
     sourceTeamRoles: [],
     grants: memberGrants,
