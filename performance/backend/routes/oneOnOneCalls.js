@@ -20,6 +20,7 @@ module.exports = ({ completeMeeting, onScheduled }) => {
     next();
   });
   router.get('/', (req, res) => res.json({ success: true, data: [calls.publicMeeting(req.meeting)] }));
+  router.use('/recording-consent', require('./calendarRecordingConsent')());
   router.use('/native', require('./appraisalNativeCalls')(calls.publicMeeting));
   router.post('/retry', wrap(async (req, res) => {
     if (!req.oneOnOneAccess.isManager && !req.oneOnOneAccess.isHrAdmin) return res.status(403).json({ error: 'Only the organizer or HR can retry a calendar invitation.' });
@@ -76,6 +77,7 @@ module.exports.schedule = ({ serializeMeeting, onScheduled }) => wrap(async (req
         title: String(req.body.title || `1:1 with ${employee.name}`).trim().slice(0, 300), meetingType, meetingFormat: 'video',
         location: mode === 'in_app' ? 'In-app call' : 'Calendar meeting', createdBy: identity.sub,
         appraisalMeeting: { source: 'one_on_one', mode, ownerIdentity: identity, recordingRequested: Boolean(req.body.record),
+          ...require('../services/calendarRecordingConsentService').initial(mode, Boolean(req.body.record)),
           meetingLink,
           summaryState: 'not_started', calendarState: mode === 'calendar' ? 'pending' : undefined } });
       created = true;

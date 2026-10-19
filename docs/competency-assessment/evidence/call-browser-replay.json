@@ -1,0 +1,11 @@
+{
+  "programmeBase": "9e589b74a4699997dca4833b3581c10156c69071",
+  "environment": "clean indexed local frontend and backend snapshots, synthetic identities",
+  "passed": 2,
+  "retries": 0,
+  "seconds": 46.7,
+  "port": 5046,
+  "calendar": "real API retry/history; separate actual fixture participant UI consents; no mock bot dispatch before both agree",
+  "native": "real two-peer browser recording, GridFS storage, playback, FFmpeg9.0.1 audio conversion and mobile history",
+  "externalProviders": "calendar delivery, STT and AI are mocked; no new external provider artifact is certified"
+}

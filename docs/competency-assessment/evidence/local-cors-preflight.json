@@ -1,0 +1,16 @@
+{
+  "verifiedAt": "2026-10-18T23:21:12.9502341Z",
+  "status": 204,
+  "allowOrigin": [
+    "http://localhost:5005"
+  ],
+  "allowHeaders": [
+    "Content-Type,Authorization,X-Requested-With,Idempotency-Key,If-Match"
+  ],
+  "allowMethods": [
+    "GET,POST,PUT,DELETE,PATCH,OPTIONS"
+  ],
+  "exposeHeaders": [
+    "ETag,Content-Disposition"
+  ]
+}

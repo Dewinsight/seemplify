@@ -33,6 +33,41 @@ beforeEach(async () => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+async function consentedCalendarFixture() {
+  const response = await call('post', '/').send(payload('calendar')).expect(201);
+  const meeting = await OneOnOne.findById(response.body.data._id);
+  await OneOnOne.updateOne({ _id: meeting._id }, { $set: { status: 'completed',
+    'appraisalMeeting.recordingConsent': { noticeVersion: 'calendar-recording-v1', manager: { userId: 'manager', acceptedAt: new Date() }, employee: { userId: 'employee', acceptedAt: new Date() } },
+    'transcript.content': 'Private source transcript sentinel', 'transcript.rawContent': 'Private raw transcript sentinel',
+    'aiAnalysis.summary': 'Private generated source analysis sentinel', 'appraisalMeeting.summary': 'Private meeting notes sentinel' } });
+  return OneOnOne.findById(meeting._id);
+}
+test('withdrawn recording source is redacted from top-level detail and blocked before ordinary analysis dispatch', async () => {
+  const meeting = await consentedCalendarFixture();
+  await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.recordingConsent.employee.revokedAt': new Date() } });
+  const response = await call('get', `/${meeting._id}`, 'employee').expect(200);
+  for (const sentinel of ['Private source transcript sentinel', 'Private raw transcript sentinel', 'Private generated source analysis sentinel', 'Private meeting notes sentinel']) expect(JSON.stringify(response.body)).not.toContain(sentinel);
+  const provider = jest.spyOn(require('../services/meetingAnalysisService'), 'analyzeTranscript');
+  const denied = await call('post', `/${meeting._id}/analyze`).send({}).expect(409);
+  expect(denied.body.code).toBe('SOURCE_CONSENT_UNVERIFIED'); expect(provider).not.toHaveBeenCalled();
+  const trends = jest.spyOn(require('../services/meetingAnalysisService'), 'analyzeTrends').mockResolvedValue({ trend: 'no_authorised_history' });
+  await call('get', `/${meeting._id}/trends`).expect(200);
+  expect(trends.mock.calls[0][0]).toEqual([]);
+});
+test('withdrawal during ordinary analysis cannot save generated findings or overwrite source revocation', async () => {
+  const meeting = await consentedCalendarFixture();
+  const analysis = require('../services/meetingAnalysisService');
+  jest.spyOn(analysis, 'analyzeTranscript').mockImplementation(async () => {
+    await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.recordingConsent.revokedAt': new Date() } });
+    return { summary: 'Must not publish late ordinary analysis sentinel', sentiment: 'neutral' };
+  });
+  jest.spyOn(analysis, 'scoreEmployeePerformance').mockResolvedValue({}); jest.spyOn(analysis, 'scoreManagerEffectiveness').mockResolvedValue({}); jest.spyOn(analysis, 'extractActionItems').mockResolvedValue({ actionItems: [] });
+  const denied = await call('post', `/${meeting._id}/analyze`).send({}).expect(409);
+  expect(denied.body.code).toBe('SOURCE_CONSENT_UNVERIFIED');
+  const saved = await OneOnOne.findById(meeting._id);
+  expect(saved.appraisalMeeting.recordingConsent.revokedAt).toBeTruthy(); expect(saved.aiAnalysis.summary).toBe('Private generated source analysis sentinel');
+});
+
 test('only authorized managers schedule trusted participants; consent and recording bounds are enforced', async () => {
   await call('post', '/', 'anonymous').send(payload()).expect(401);
   await call('post', '/', 'employee').send(payload()).expect(403);
@@ -87,6 +122,10 @@ test('a missing connection creates no meeting; a provider outage leaves a retrya
 
 test('calendar transcripts and personal-account notes process without requiring an appraisal', async () => {
   const created = await call('post', '/').send(payload('calendar')).expect(201); const id = created.body.data._id;
+  provider.mockResolvedValue({ recordingState: 'scheduled' });
+  const consent = { noticeVersion: 'calendar-recording-v1', acknowledged: true, recording: true, transcription: true };
+  await call('post', `/${id}/call/recording-consent`, 'manager').send(consent).expect(200);
+  await call('post', `/${id}/call/recording-consent`, 'employee').send(consent).expect(200);
   await OneOnOne.updateOne({ _id: id }, { $set: { scheduledDate: new Date(Date.now() - 60000) } });
   provider.mockResolvedValue({ recordingState: 'ready', transcript: JSON.stringify({ segments: [{ speaker: 'Employee', text: 'I will document the release.' }] }), recordingUrl: 'https://recordings.example.test/saved' });
   const completion = jest.spyOn(ai, 'getChatCompletions').mockResolvedValue({ model: 'gpt-5.6-terra', choices: [{ message: { content: 'Employee will document the release.' } }] });

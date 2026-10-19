@@ -188,7 +188,7 @@ async function notifyGlobalAccessControlChanged(policy, actor, action) {
   if (failures.length) console.error(`Failed to queue ${failures.length} global access-control webhook delivery group(s).`)
 }
 
-export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false } = {}) {
+export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false, refreshAppIds = null } = {}) {
   const roles = (existingRoles || []).map((role) => cloneRole(role.toObject ? role.toObject() : role))
   for (const defaultRole of DEFAULT_ACCESS_ROLES) {
     const existingIndex = roles.findIndex((role) => role.key === defaultRole.key)
@@ -198,6 +198,21 @@ export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false } 
     }
     if (!refreshLocked || defaultRole.locked !== true) continue
     const existing = roles[existingIndex]
+    if (refreshAppIds) {
+      // A product-scoped baseline migration must not reset deliberate edits
+      // to another product or the persisted role's identity/metadata.
+      const apps = new Set(refreshAppIds)
+      const replaceRows = (current, canonical) => [
+        ...clonePermissionRows(current).filter((row) => !apps.has(row.appId)),
+        ...clonePermissionRows(canonical).filter((row) => apps.has(row.appId))
+      ]
+      roles[existingIndex] = {
+        ...existing,
+        grants: replaceRows(existing.grants, defaultRole.grants),
+        denies: replaceRows(existing.denies, defaultRole.denies)
+      }
+      continue
+    }
     roles[existingIndex] = {
       ...cloneRole(defaultRole),
       createdAt: existing.createdAt,
@@ -209,31 +224,55 @@ export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false } 
 }
 
 export async function getOrCreateGlobalAccessPolicy() {
-  let policy = await AccessControlPolicy.findOne({ key: 'global' })
-  if (!policy) {
-    try {
-      policy = await AccessControlPolicy.create({
-        key: 'global',
-        schemaVersion: ACCESS_CONTROL_SCHEMA_VERSION,
-        revision: 1,
-        roles: DEFAULT_ACCESS_ROLES.map(cloneRole)
-      })
-    } catch (error) {
-      if (error?.code !== 11000) throw error
-      policy = await AccessControlPolicy.findOne({ key: 'global' })
+  // Concurrent userinfo/session refreshes can read the same pre-migration
+  // policy. A role-array save uses Mongoose's document version guard; retry by
+  // reloading and merging, never by saving the stale roles again. This also
+  // preserves a custom role edited by another request during the migration.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    let policy = await AccessControlPolicy.findOne({ key: 'global' })
+    if (!policy) {
+      try {
+        policy = await AccessControlPolicy.create({
+          key: 'global',
+          schemaVersion: ACCESS_CONTROL_SCHEMA_VERSION,
+          revision: 1,
+          roles: DEFAULT_ACCESS_ROLES.map(cloneRole)
+        })
+      } catch (error) {
+        if (error?.code !== 11000) throw error
+        // Another process won initial creation. Read its persisted policy.
+        continue
+      }
     }
-  }
 
-  const schemaUpgrade = policy.schemaVersion !== ACCESS_CONTROL_SCHEMA_VERSION
-  const mergedRoles = mergeDefaultRoles(policy.roles, { refreshLocked: schemaUpgrade })
-  if (mergedRoles.length !== policy.roles.length || schemaUpgrade) {
-    policy.roles = mergedRoles
-    policy.schemaVersion = ACCESS_CONTROL_SCHEMA_VERSION
-    policy.revision += 1
-    await policy.save()
-    if (schemaUpgrade) await bumpAccountAuthorizationRevisions()
+    const schemaUpgrade = policy.schemaVersion !== ACCESS_CONTROL_SCHEMA_VERSION
+    const mergedRoles = mergeDefaultRoles(policy.roles, {
+      refreshLocked: schemaUpgrade,
+      // Version 5 deliberately normalizes built-in Performance policy only.
+      // Preserve all other product rows, custom role definitions and metadata.
+      refreshAppIds: schemaUpgrade && policy.schemaVersion < 5 && ACCESS_CONTROL_SCHEMA_VERSION === 5
+        ? ['performance-management']
+        : null
+    })
+    if (mergedRoles.length !== policy.roles.length || schemaUpgrade) {
+      policy.roles = mergedRoles
+      policy.schemaVersion = ACCESS_CONTROL_SCHEMA_VERSION
+      policy.revision += 1
+      try {
+        await policy.save()
+      } catch (error) {
+        if (error?.name === 'VersionError') continue
+        throw error
+      }
+      // Only the successful migration writer invalidates account claims.
+      if (schemaUpgrade) await bumpAccountAuthorizationRevisions()
+    }
+    return policy
   }
-  return policy
+  const error = new Error('The global permission policy changed repeatedly. Please retry after the current update finishes.')
+  error.code = 'POLICY_MIGRATION_BUSY'
+  error.statusCode = 503
+  throw error
 }
 
 function findCanonicalMember(organization, accountId) {

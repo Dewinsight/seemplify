@@ -12,6 +12,9 @@ const schema = new mongoose.Schema({
   conferenceUrl: String,
   notetakerId: String,
   recordingState: String,
+  recordingPolicyVersion: String,
+  participantSubjects: [String],
+  recordingCancellationUncertain: Boolean,
   scheduledDate: Date,
   duration: Number
 }, { timestamps: true });

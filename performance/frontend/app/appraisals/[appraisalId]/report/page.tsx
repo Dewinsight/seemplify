@@ -8,6 +8,9 @@ import { Download, Print } from '@mui/icons-material';
 import api from '@/lib/api';
 import { downloadResultsCsv, shortDate } from '@/lib/appraisal-results';
 import ResultPrintStyles from '@/components/appraisals/ResultPrintStyles';
+import CompetencyReportSection from '@/components/competency/reports/CompetencyReportSection';
+import { competencyRequest } from '@/lib/competency-api';
+import { displayDate } from '@/components/competency/assessment/types';
 
 interface ResultReport {
   id: string; status: string; employee: { name: string; jobTitle?: string; department?: string }; manager: { name: string };
@@ -17,6 +20,7 @@ interface ResultReport {
   acknowledgedAt?: string; goals: Array<{ title: string; score: number | null }>;
   competencies?: Array<{ name: string; selfRating: number | null; managerRating: number | null; managerComments: string }>;
   answers?: Array<{ section: string; question: string; respondent: string; answer: string }>;
+  managerFeedback?: { author?: { userId: string; name: string } | null; submittedAt?: string; overallRating?: number | null; goals: Array<{ id?: string; title: string; comments: string; verifiedCompletion?: number | null; qualityRating?: number | null }> } | null;
 }
 const labels: Record<string, string> = { achievements: 'Achievements', challenges: 'Challenges', learnings: 'Learning', improvements: 'Areas for improvement', goals: 'Next goals', strengths: 'Strengths', areasForImprovement: 'Areas for improvement', developmentNeeds: 'Development needs', agreedStrengths: 'Agreed strengths', agreedImprovements: 'Agreed improvements', developmentPlan: 'Development plan', careerAspirations: 'Career aspirations', supportNeeded: 'Support needed', nextSteps: 'Next steps' };
 function Narrative({ title, values }: { title: string; values?: Record<string, string | string[]> }) {
@@ -26,6 +30,7 @@ function Narrative({ title, values }: { title: string; values?: Record<string, s
 
 export default function AppraisalResultReportPage() {
   const params = useParams<{ appraisalId: string }>();
+  const { data: competency } = useSWR<{ enabled: boolean }>('/competency/bootstrap', () => competencyRequest<{ enabled: boolean }>('GET', '/bootstrap'), { shouldRetryOnError: false });
   const { data: report, error: failure, isLoading: loading, mutate } = useSWR<ResultReport>(`/appraisals/${params.appraisalId}/report`, async (url: string) => (await api.get(url)).data.data, { shouldRetryOnError: false });
   const error = failure ? failure.response?.data?.error || 'Could not load this result report. Please try again.' : '';
   if (loading) return <CircularProgress aria-label="Loading result report" />;
@@ -35,6 +40,12 @@ export default function AppraisalResultReportPage() {
     ['Appraisal result report', report.cycle.name], ['Employee', report.employee.name], ['Reviewer', report.manager.name], ['Period start', report.cycle.periodStart || ''], ['Period end', report.cycle.periodEnd || ''], ['Final result', rating], ['Rating label', report.finalRating?.ratingLabel || ''], ['Finalized', shortDate(report.finalRating?.finalizedAt)], ['Justification', report.finalRating?.justification || ''],
     ...Object.entries(report.employeeReflection || {}).map(([key, value]) => [`Employee: ${labels[key] || key}`, value]),
     ...Object.entries(report.managerSummary || {}).map(([key, value]) => [`Manager: ${labels[key] || key}`, value]),
+    ...(report.managerFeedback ? [
+      ['Assessed by', report.managerFeedback.author?.name || 'Not recorded'],
+      ['Reviewer submitted', displayDate(report.managerFeedback.submittedAt)],
+      ['Overall manager rating', String(report.managerFeedback.overallRating ?? 'Not rated')],
+      ...report.managerFeedback.goals.flatMap(goal => [[`Goal reviewer feedback: ${goal.title}`, goal.comments || 'No comment recorded'], [`Goal verified completion: ${goal.title}`, String(goal.verifiedCompletion ?? 'Not rated')], [`Goal quality rating: ${goal.title}`, String(goal.qualityRating ?? 'Not rated')]])
+    ] : []),
     ...Object.entries(report.discussion || {}).filter(([key]) => key !== '_id').map(([key, value]) => [`Discussion: ${labels[key] || key}`, Array.isArray(value) ? value.join('; ') : value]),
     ...report.goals.map((goal) => [`Goal: ${goal.title}`, goal.score == null ? 'Not rated' : `${goal.score}%`]),
     ...(report.competencies || []).flatMap((item) => [[`Competency: ${item.name} - employee rating`, String(item.selfRating ?? 'Not rated')], [`Competency: ${item.name} - manager rating`, String(item.managerRating ?? 'Not rated')], [`Competency: ${item.name} - manager comments`, item.managerComments]]),
@@ -50,11 +61,13 @@ export default function AppraisalResultReportPage() {
       <Stack spacing={3} divider={<Divider />}>
         <Narrative title="Employee reflection" values={report.employeeReflection} />
         <Narrative title="Manager assessment" values={report.managerSummary} />
+        {report.managerFeedback && <Box className="result-row"><Typography variant="h6" mb={1}>Reviewer submission</Typography><Typography><strong>Assessed by:</strong> {report.managerFeedback.author?.name || 'Not recorded'}</Typography><Typography><strong>Submitted:</strong> {displayDate(report.managerFeedback.submittedAt)}</Typography><Typography><strong>Overall manager rating:</strong> {report.managerFeedback.overallRating ?? 'Not rated'}</Typography>{report.managerFeedback.goals.length > 0 && <Stack spacing={2} mt={2}>{report.managerFeedback.goals.map((goal,index) => <Box key={goal.id || index}><Typography fontWeight={600}>{goal.title}</Typography><Typography variant="body2" color="text.secondary">Verified completion: {goal.verifiedCompletion == null ? 'Not rated' : `${goal.verifiedCompletion}%`} · Quality rating: {goal.qualityRating ?? 'Not rated'}</Typography><Typography sx={{ whiteSpace:'pre-wrap', overflowWrap:'anywhere',mt:.5 }}>{goal.comments || 'No reviewer comment recorded.'}</Typography></Box>)}</Stack>}</Box>}
         <Narrative title="Discussion and agreed next steps" values={report.discussion} />
         <Box><Typography variant="h6" mb={1}>Goals reviewed</Typography>{report.goals.length ? report.goals.map((goal, index) => <Typography key={index}>{goal.title}: {goal.score == null ? 'Not rated' : `${Math.round(goal.score)}% achievement`}</Typography>) : <Typography color="text.secondary">No goal evidence was attached to this appraisal.</Typography>}</Box>
         {!!report.competencies?.length && <Box><Typography variant="h6" mb={1}>Competency assessment</Typography><Stack spacing={2}>{report.competencies.map((item, index) => <Box className="result-row" key={index}><Typography fontWeight={600}>{item.name}</Typography><Typography variant="body2">Employee rating: {item.selfRating ?? 'Not rated'} · Manager rating: {item.managerRating ?? 'Not rated'}</Typography>{item.managerComments && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{item.managerComments}</Typography>}</Box>)}</Stack></Box>}
         {!!report.answers?.length && <Box><Typography variant="h6" mb={1}>Review questions and submitted answers</Typography><Stack spacing={2}>{report.answers.map((item, index) => <Box className="result-row" key={index}><Typography variant="caption" color="text.secondary">{item.section} · {item.respondent === 'manager' ? 'Manager' : 'Employee'}</Typography><Typography fontWeight={600}>{item.question}</Typography><Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.answer || 'No answer recorded.'}</Typography></Box>)}</Stack></Box>}
       </Stack>
+      {competency?.enabled && <Box mt={4}><Divider sx={{mb:4}}/><CompetencyReportSection appraisalId={params.appraisalId}/></Box>}
     </Paper>
   </Box>;
 }

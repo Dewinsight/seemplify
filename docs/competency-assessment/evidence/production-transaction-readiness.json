@@ -1,0 +1,9 @@
+{
+  "verifiedAt": "2026-10-18T23:23:31.8920075Z",
+  "environment": "existing production Performance container",
+  "check": "MongoDB hello via existing application connection",
+  "replicaSet": true,
+  "primary": true,
+  "employeeDataRead": false,
+  "featureDeployed": false
+}

@@ -1,0 +1,28 @@
+name: seemplify-security
+services:
+  competency-scanner:
+    image: clamav/clamav@sha256:638d90201ee7ee6a82d249a2fc23b132e578673b5f1f2766852b127676ca1ef6
+    restart: unless-stopped
+    networks:
+      dokploy-network:
+        aliases: [competency-scanner]
+    volumes:
+      - competency-scanner-signatures:/var/lib/clamav
+    # The scanner is reachable only on the existing private Docker network.
+    # No host port, HTTP router or employee document mount is exposed.
+    labels:
+      traefik.enable: "false"
+    security_opt: [no-new-privileges:true]
+    cpus: 1.0
+    mem_limit: 3g
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "2"
+networks:
+  dokploy-network:
+    external: true
+volumes:
+  competency-scanner-signatures:

@@ -97,15 +97,19 @@ async function main() {
     await api('peer', 'POST', 'feedback', { requestId: projectRequest._id, receiverId: 'acceptance-employee', content: 'Duplicate synthetic response', type: 'praise' }, 409);
   });
   for (const actor of ['manager', 'team_lead', 'department_head', 'hr_manager', 'admin', 'owner']) await journey(`${actor}: launch through final published appraisal and employee acknowledgement`, async () => {
+    const { employees: roster } = await api(actor, 'GET', 'appraisals/colleague-roster');
+    assert.ok(roster.find(person => person.userId === 'acceptance-employee')?.reviewerOptions.some(reviewer => reviewer.userId === 'acceptance-manager'), 'Selected manager must be eligible in the current directory');
     const templates = await api(actor, 'GET', 'appraisals/cycle-templates');
     const template = templates.find(item => item.id === 'balanced_performance' || item.templateId === 'balanced_performance') || templates[0];
     assert.ok(template?.design, 'A built-in appraisal design must be available');
     const created = await api(actor, 'POST', 'appraisals/cycles', { name: `Acceptance lifecycle ${actor} ${stamp}`, periodStart: day(-90), periodEnd: day(-1),
       workflowDefinition: template.design, settings: { enableAiAssist: false, requireOkrAlignment: false, requireDocumentUpload: false },
-      launchNow: true, employees: [{ userId: 'acceptance-employee' }], responseDeadlines: { selfAssessmentDue: day(7), managerReviewDue: day(14) } }, 201);
+      // Use the same explicit reviewer selection as the current Start wizard.
+      launchNow: true, reviewerMode: 'selected', employees: [{ userId: 'acceptance-employee', reviewerId: 'acceptance-manager' }], responseDeadlines: { selfAssessmentDue: day(7), managerReviewDue: day(14) } }, 201);
     assert.equal(created.launchSummary.launched, 1);
     const appraisal = (await api('employee', 'GET', 'appraisals/my')).find(item => String(item.cycleId?._id || item.cycleId) === created.cycle._id);
     assert.ok(appraisal?._id, 'Launched appraisal must appear in employee history');
+    assert.equal(appraisal.manager.userId, 'acceptance-manager', 'Persisted reviewer must match the eligible reviewer selected at launch');
     const id = appraisal._id;
     await api('foreign', 'GET', `appraisals/${id}`, null, 404);
     await api('employee', 'GET', `appraisals/${id}/report`, null, 409);

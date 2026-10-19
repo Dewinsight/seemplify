@@ -58,6 +58,13 @@ function meetingAccess(req, meeting) {
 function serializeMeeting(req, meeting, { stripConversation = false } = {}) {
   const access = meetingAccess(req, meeting);
   const value = typeof meeting.toObject === 'function' ? meeting.toObject() : { ...meeting };
+  if (calls.recordingRevoked(value)) {
+    delete value.transcript;
+    delete value.aiAnalysis;
+    delete value.aiScoring;
+    delete value.prepSuggestions;
+    value.actionItems = (value.actionItems || []).filter(item => item.source !== 'ai_extracted');
+  }
   if (value.appraisalMeeting) {
     value.call = calls.publicMeeting(value);
     if (stripConversation) delete value.call.transcript;
@@ -71,6 +78,7 @@ function serializeMeeting(req, meeting, { stripConversation = false } = {}) {
   if (!access.isEmployee && !access.isHrAdmin) delete value.employeeNotes;
   if (stripConversation) {
     if (value.transcript) delete value.transcript.content;
+    if (value.transcript) { delete value.transcript.rawContent; delete value.transcript.segments; }
     delete value.chatThread;
   }
   return value;
@@ -504,7 +512,7 @@ router.get('/with/:userId', requireAuth, async (req, res) => {
     let trends = null;
     const analysisService = getMeetingAnalysisService();
     if (includeHistory === 'true' && meetings.length >= 2 && analysisService) {
-      trends = analysisService.calculateBasicTrends(meetings);
+      trends = analysisService.calculateBasicTrends(meetings.filter(meeting => !calls.recordingRevoked(meeting)));
     }
 
     res.json({
@@ -930,6 +938,8 @@ router.post('/:id/analyze', requireAuth, async (req, res) => {
     if (!req.oneOnOneAccess.isManager && !req.oneOnOneAccess.isHrAdmin) {
       return res.status(403).json({ success: false, error: 'Only the meeting manager can run analysis' });
     }
+    const sourcePolicy = require('../services/appraisalMeetingMediaService');
+    await sourcePolicy.assertSourceAuthority(meeting);
 
     const analysisService = getMeetingAnalysisService();
     if (!analysisService) {
@@ -1014,7 +1024,7 @@ router.post('/:id/analyze', requireAuth, async (req, res) => {
       });
     }
 
-    await meeting.save();
+    await sourcePolicy.saveSourceAnalysis(meeting);
     const extractedActions = meeting.actionItems.slice(firstExtractedActionIndex);
     await Promise.all(extractedActions.map(item => synchronizeActionItemLifecycle(meeting, item, req.session.user)));
 
@@ -1027,6 +1037,7 @@ router.post('/:id/analyze', requireAuth, async (req, res) => {
       }
     });
   } catch (error) {
+    if (error.code === 'SOURCE_CONSENT_UNVERIFIED') return res.status(409).json({ success: false, code: error.code, error: error.message });
     console.error('Error analyzing meeting:', error);
     res.status(500).json({ success: false, error: 'Failed to analyze meeting' });
   }
@@ -1332,7 +1343,8 @@ router.get('/:id/trends', requireAuth, async (req, res) => {
       organizationId: req.organizationId,
       managerId: meeting.managerId,
       employeeId: meeting.employeeId,
-      status: 'completed'
+      status: 'completed',
+      ...require('../services/appraisalMeetingMediaService').recordingAuthority()
     })
       .sort({ scheduledDate: -1 })
       .limit(10)
@@ -1340,12 +1352,14 @@ router.get('/:id/trends', requireAuth, async (req, res) => {
 
     const analysisService = getMeetingAnalysisService();
     const trends = analysisService ? await analysisService.analyzeTrends(history) : { trend: 'analysis_unavailable' };
+    for (const source of history) await require('../services/appraisalMeetingMediaService').assertSourceAuthority({ _id: source._id, organizationId: req.organizationId });
 
     res.json({
       success: true,
       data: { trends, meetingsAnalyzed: history.length }
     });
   } catch (error) {
+    if (error.code === 'SOURCE_CONSENT_UNVERIFIED') return res.status(409).json({ success: false, code: error.code, error: error.message });
     console.error('Error getting trends:', error);
     res.status(500).json({ success: false, error: 'Failed to get trends' });
   }
@@ -1370,7 +1384,8 @@ router.post('/:id/prep', requireAuth, async (req, res) => {
       organizationId: req.organizationId,
       managerId: meeting.managerId,
       employeeId: meeting.employeeId,
-      status: 'completed'
+      status: 'completed',
+      ...require('../services/appraisalMeetingMediaService').recordingAuthority()
     })
       .sort({ scheduledDate: -1 })
       .limit(3)
@@ -1381,6 +1396,7 @@ router.post('/:id/prep', requireAuth, async (req, res) => {
       lastMeetingDate: previousMeetings[0]?.scheduledDate,
       previousTopics: previousMeetings.flatMap(m => m.aiAnalysis?.keyTopics?.map(t => t.topic || t) || []).slice(0, 5)
     });
+    for (const source of previousMeetings) await require('../services/appraisalMeetingMediaService').assertSourceAuthority({ _id: source._id, organizationId: req.organizationId });
 
     meeting.prepSuggestions = { ...prepSuggestions, generatedAt: new Date() };
     await meeting.save();

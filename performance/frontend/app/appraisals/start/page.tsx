@@ -10,6 +10,9 @@ import { CycleTemplateSummary } from '@/components/appraisals/CycleDesignBuilder
 import AppraisalFlowEditor, { AppraisalFlow, defaultFlow, flowError } from '@/components/appraisals/AppraisalFlowEditor';
 import { shortDate, AppraisalResultItem, resultCycleName } from '@/lib/appraisal-results';
 import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
+import CompetencyRoleSelection from '@/components/competency/setup/CompetencyRoleSelection';
+import { useCompetencyBootstrap } from '@/components/competency/CompetencyPage';
+import { competencyRequest, competencyError, newIdempotencyKey } from '@/lib/competency-api';
 
 interface Reviewer { userId: string; name: string; email: string; role: string }
 interface Person { userId: string; name: string; email: string; managerName?: string; teamName?: string; teamId?: string; teamIds?: string[]; reviewerOptions?: Reviewer[]; isSelectableForAppraisal?: boolean; selectionBlockedReason?: string }
@@ -20,7 +23,7 @@ const dateIn = (days: number) => { const date = new Date(); date.setUTCDate(date
 const calendarDate = (value: string) => new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const dayAfter = (value: string) => { const date = new Date(value); date.setUTCDate(date.getUTCDate() + 1); return date.toISOString().slice(0, 10); };
 type DateField = 'periodStart' | 'periodEnd' | 'selfDue' | 'managerDue';
-const apiError = (error: unknown) => (error as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not complete this request. Please try again.';
+const apiError = (error: unknown) => competencyError(error).message;
 
 export default function StartAppraisalPage() {
   const router = useRouter();
@@ -52,6 +55,14 @@ export default function StartAppraisalPage() {
   const [detailsAttempted, setDetailsAttempted] = useState(false);
   const [appraisalFlow, setAppraisalFlow] = useState<AppraisalFlow>(defaultFlow());
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const competency = useCompetencyBootstrap();
+  const [withRole, setWithRole] = useState(false);
+  const [competencyCycleId, setCompetencyCycleId] = useState('');
+  const [competencyRevision, setCompetencyRevision] = useState(0);
+  const [roleVersions, setRoleVersions] = useState<Record<string, string>>({});
+  const [rolePending, setRolePending] = useState<Record<string, { payload: unknown; key: string; error: string }>>({});
+  const [roleLinked, setRoleLinked] = useState<Record<string, boolean>>({});
+  const roleEnabled = !!competency.data?.enabled && !!competency.data?.capabilities.assessmentLaunch;
   const permitted = isHRAdmin || isManager;
   const openCycles = (cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status) && cycle.periodEnd.slice(0, 10) < dateIn(0));
   const existingCycle = openCycles.find((cycle) => cycle._id === cycleId);
@@ -88,7 +99,10 @@ export default function StartAppraisalPage() {
   useEffect(() => { if (!contextLoading && permitted) void loadStaff(); }, [contextLoading, permitted]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!cyclesLoading && !cycleId) setCycleId(openCycles.find((cycle) => cycle._id === query.get('cycleId'))?._id || openCycles[0]?._id || 'new'); }, [cyclesLoading, cycles, cycleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const roleIssue = () => !withRole ? '' : !roleEnabled ? 'Role assessments are unavailable. Refresh your permissions before starting.' : !competencyCycleId || !competencyRevision ? 'Choose a published competency assessment cycle.' : participants.some(person => !competency.data?.cycles?.find(cycle => cycle.id === competencyCycleId)?.roleVersionIds.includes(roleVersions[person.userId])) ? 'Choose an assessment role for each selected person.' : '';
+  const rolePlan = () => ({ cycleId: competencyCycleId, cycleRevision: competencyRevision, assignments: participants.map(person => ({ participantId: person.userId, roleVersionId: roleVersions[person.userId], assessorIds: [reviewers[person.userId]] })) });
   const validateDetails = () => {
+    if (roleIssue()) return roleIssue();
     if (cycleId !== 'new' && !existingCycle) return 'Choose a completed quarterly cycle or a one-off review.';
     if (cycleId !== 'new') return dateErrors.selfDue || dateErrors.managerDue ? 'Check the response deadlines below. Employees respond before you complete your review.' : '';
     if (!title.trim() || !template) return 'Choose a review name and template.';
@@ -120,18 +134,39 @@ export default function StartAppraisalPage() {
     if (flowError(appraisalFlow)) { setError(flowError(appraisalFlow)); moveStep(1); return; }
     setSaving(true); setError('');
     try {
+      if (withRole) await competencyRequest('POST', '/appraisal-links/validate', rolePlan());
       const employees = participants.map((person) => ({ userId: person.userId, reviewerId: reviewers[person.userId] }));
       const response = cycleId === 'new'
         ? await api.post('/appraisals/cycles', { name: title.trim(), cycleType: reviewType, periodStart, periodEnd, launchNow: true, reviewerMode: 'selected', employees, appraisalFlow,
           workflowDefinition: template!.design, sourceTemplate: { id: template!.id, name: template!.name, version: template!.version || 1 },
           responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } })
         : await api.post(`/appraisals/cycles/${cycleId}/launch`, { employees, reviewerMode: 'selected', appraisalFlow, responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } });
-      setReceipt(response.data?.data?.launchSummary || response.data?.data);
+      const launch: Receipt = response.data?.data?.launchSummary || response.data?.data;
+      setReceipt(launch);
+      if (withRole) {
+        const pending: typeof rolePending = {}; const linked: Record<string, boolean> = {};
+        for (const review of [...(launch.appraisals || []), ...(launch.existingAppraisals || [])]) {
+          const participantId = review.employee?.userId;
+          if (!participantId || !roleVersions[participantId]) { pending[review._id] = { payload: null, key: '', error: 'The launch receipt did not identify this participant. Open the appraisal and ask HR to check the role link.' }; continue; }
+          const payload = { appraisalId: review._id, cycleId: competencyCycleId, cycleRevision: competencyRevision, roleVersionId: roleVersions[participantId], assessorIds: [reviewers[participantId]] };
+          const key = newIdempotencyKey();
+          try { await competencyRequest('POST', '/appraisal-links', payload, undefined, key); linked[review._id] = true; }
+          catch (failure) { pending[review._id] = { payload, key, error: competencyError(failure).message }; }
+        }
+        setRolePending(pending); setRoleLinked(linked);
+      }
       focusStep();
     } catch (failure) { setError(apiError(failure)); }
     finally { setSaving(false); }
   };
 
+  const retryRole = async (appraisalId: string) => {
+    const pending = rolePending[appraisalId]; if (!pending?.payload) return;
+    setSaving(true);
+    try { await competencyRequest('POST', '/appraisal-links', pending.payload, undefined, pending.key); setRoleLinked(previous => ({ ...previous, [appraisalId]: true })); setRolePending(previous => { const next = { ...previous }; delete next[appraisalId]; return next; }); }
+    catch (failure) { setRolePending(previous => ({ ...previous, [appraisalId]: { ...pending, error: competencyError(failure).message } })); }
+    finally { setSaving(false); }
+  };
   if (contextLoading) return <CircularProgress aria-label="Loading appraisal access" />;
   if (!permitted) return <Alert severity="info">Your manager or HR starts staff appraisals. You can find your assigned reviews in <Link href="/appraisals">My Appraisals</Link>.</Alert>;
   if (receipt) return <Box sx={{ maxWidth: 900, mx: 'auto' }}>
@@ -143,7 +178,7 @@ export default function StartAppraisalPage() {
           <Typography variant="body2" color="text.secondary">{receipt.appraisals?.some(item => item._id === review._id) ? 'Created in this launch' : 'Already existed — no duplicate created'} · Reviewer: {review.manager?.name || 'Not recorded'}</Typography>
           <Typography variant="body2" color="text.secondary">{review.status === 'meeting_pending' ? 'The one-on-one call is the next step.' : 'Open the appraisal to see the next step.'}</Typography>
         </Box><Button component={Link} href={`/appraisals/${review._id}`}>Open appraisal</Button>
-      </Stack><Box sx={{ mt: 2 }}><AppraisalMetadata appraisal={review} /></Box>
+      </Stack>{roleLinked[review._id] && <Alert severity="success" sx={{ mt: 2 }}>Role assessment linked. Open this appraisal to review the frozen role expectations.</Alert>}{rolePending[review._id] && <Alert severity="warning" sx={{ mt: 2 }} action={rolePending[review._id].payload ? <Button disabled={saving} onClick={() => void retryRole(review._id)}>Retry role link</Button> : undefined}>Appraisal created; role assessment pending. {rolePending[review._id].error} Retrying links this existing appraisal.</Alert>}<Box sx={{ mt: 2 }}><AppraisalMetadata appraisal={review} /></Box>
     </Paper>)}
       {(receipt.errorDetails || []).map((failure, index) => <Alert key={index} severity="warning">{people.find((person) => person.userId === failure.userId)?.name || 'Staff member'}: {failure.error || 'Could not start this review.'}</Alert>)}
     </Stack><Stack direction="row" spacing={2}><Button variant="contained" onClick={() => { router.push('/appraisals?section=conducting'); }}>View appraisals</Button>{receipt.errors > 0 && <Button onClick={() => { setSelected((receipt.errorDetails || []).map((failure) => failure.userId || '')); setReceipt(null); setStep(0); }}>Review blocked staff</Button>}</Stack>
@@ -202,6 +237,7 @@ export default function StartAppraisalPage() {
           <TextField label="Reviewer response due" type="date" value={managerDue} onChange={(event) => changeDate(setManagerDue, event.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: dayAfter(selfDue || today) } }} error={!!dateError('managerDue', managerDue)} helperText={dateError('managerDue', managerDue)} fullWidth />
         </Stack>
       </Stack>}
+      {step === 1 && roleEnabled && <Box mt={3}><Divider sx={{ mb: 2 }} /><FormControlLabel control={<Checkbox checked={withRole} onChange={(_, checked) => { setWithRole(checked); setError(''); }} />} label="Assess against an occupational role" /><Typography variant="body2" color="text.secondary" mb={2}>Add a competency assessment using published role expectations. Optional evidence and AI drafts are configured separately; a human reviewer makes the final decision.</Typography>{withRole && <CompetencyRoleSelection cycleId={competencyCycleId} onCycleChange={id => { setCompetencyCycleId(id); setRoleVersions({}); }} onCycleRevisionChange={setCompetencyRevision} roleVersionByParticipant={roleVersions} onRoleChange={(id, version) => setRoleVersions(previous => ({ ...previous, [id]: version }))} participants={participants} disabled={saving} />}</Box>}
       {step === 1 && <Box mt={3}><Divider sx={{ mb: 3 }} /><AppraisalFlowEditor value={appraisalFlow} onChange={value => { setAppraisalFlow(value); setError(''); }} onReset={() => { setAppraisalFlow(defaultFlow(existingCycle?.workflowDefinition?.stages || template?.design?.stages)); setError(''); }} /></Box>}
       {step === 2 && <Stack spacing={2}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Confirm and start</Typography><Typography fontWeight={600}>{existingCycle?.name || title}</Typography><Typography>{participants.length} participant{participants.length === 1 ? '' : 's'} · {existingCycle ? 'Existing cycle' : template?.name}</Typography>
@@ -209,6 +245,7 @@ export default function StartAppraisalPage() {
         {!existingCycle && <Typography>Review starts: {calendarDate(today)} (today)</Typography>}
         <Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography>
         {participants.map((person) => <Typography key={person.userId}>{person.name} · Reviewer: {person.reviewerOptions?.find(reviewer => reviewer.userId === reviewers[person.userId])?.name || 'Choose a reviewer'}</Typography>)}
+        {withRole && <Box><Typography fontWeight={600}>Role competency assessment</Typography><Typography>{competency.data?.cycles?.find(cycle => cycle.id === competencyCycleId)?.name} · Configuration revision {competencyRevision}</Typography>{participants.map(person => { const role = competency.data?.roles.find(row => row.versionId === roleVersions[person.userId]); return <Typography key={person.userId}>{person.name}: {role?.name} · Role version {role?.version}</Typography>; })}<Typography variant="body2" color="text.secondary">The selected role and scoring configuration are preserved. Complete this role assessment before finalising the appraisal.</Typography></Box>}
         <Typography fontWeight={600}>Your review flow</Typography>
         <Box component="ol" sx={{ pl: 3 }}>{appraisalFlow.steps.map(step => <Typography component="li" key={step.id}>{step.label}</Typography>)}</Box>
         <Typography>Employee assessment: {appraisalFlow.assessmentMode === 'form' ? 'Manual form' : 'AI conversation or form'}</Typography>

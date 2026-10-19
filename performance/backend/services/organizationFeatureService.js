@@ -11,11 +11,12 @@ const ORGANIZATION_FEATURE_KEYS = Object.freeze([
   'projectFeedback',
   'managerPracticeInsights',
   'continuousCoachingAi',
-  'talentPlanning'
+  'talentPlanning',
+  'competencyAssessments'
 ]);
 
 const DEFAULT_ORGANIZATION_FEATURES = Object.freeze(
-  Object.fromEntries(ORGANIZATION_FEATURE_KEYS.map(key => [key, true]))
+  Object.fromEntries(ORGANIZATION_FEATURE_KEYS.map(key => [key, key !== 'competencyAssessments']))
 );
 
 function normalizeOrganizationId(value) {
@@ -27,7 +28,7 @@ function normalizeOrganizationId(value) {
 function effectiveOrganizationFeatures(overrides = {}) {
   return Object.fromEntries(ORGANIZATION_FEATURE_KEYS.map(key => [
     key,
-    overrides?.[key] !== false
+    typeof overrides?.[key] === 'boolean' ? overrides[key] : DEFAULT_ORGANIZATION_FEATURES[key]
   ]));
 }
 

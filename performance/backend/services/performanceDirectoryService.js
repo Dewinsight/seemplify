@@ -1,6 +1,6 @@
 const axios = require('axios');
 const User = require('../models/User');
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const inFlight = new Map();
 
 async function mirrorDirectory(data) {
@@ -20,7 +20,7 @@ async function mirrorDirectory(data) {
 }
 
 async function loadPerformanceDirectory(req) {
-  if (req._performanceDirectory !== undefined) return req._performanceDirectory;
+  if (!req._forcePerformanceDirectoryRefresh && req._performanceDirectory !== undefined) return req._performanceDirectory;
   const user = req.session?.user;
   const organizationId = String(req.currentOrganization?.id || req.session?.currentOrganizationId || user?.currentOrganization?.id || '');
   // requireAuth stores a verified delegated token on the normalized principal.
@@ -32,7 +32,7 @@ async function loadPerformanceDirectory(req) {
     return null;
   }
   try {
-    const key = createHash('sha256').update(`${organizationId}:${req.query?.scope || ''}:${token}`).digest('hex');
+    const key = createHash('sha256').update(`${organizationId}:${req.query?.scope || ''}:${token}${req._forcePerformanceDirectoryRefresh ? ':' + randomUUID() : ''}`).digest('hex');
     if (inFlight.has(key)) {
       req._performanceDirectory = await inFlight.get(key);
       return req._performanceDirectory;

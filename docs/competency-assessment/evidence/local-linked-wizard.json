@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-10-18T23:57:41.994Z",
+  "environment": "local real IdP session, real API and replica-set Mongo; synthetic fixtures",
+  "freshSignIn": "passed with documented application client configuration, no saved credential extraction",
+  "appraisalId": "6ad55ccaa3b7af271b758197",
+  "assessmentId": "6ad55ccaa3b7af271b7581c9",
+  "cycleId": "6ad55c87b0a848051e5cbea4",
+  "roleVersionId": "6ad5536bfa9fa86c02da0f9d",
+  "appraisalName": "Local linked role acceptance - synthetic",
+  "matchingParticipant": true,
+  "matchingSelectedReviewer": true,
+  "exactlyOneLinkedAssessment": true,
+  "roleVersion": 1,
+  "externalEmails": "disabled local mail endpoint"
+}

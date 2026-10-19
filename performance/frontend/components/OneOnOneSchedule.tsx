@@ -9,8 +9,9 @@ import api from '@/lib/api';
 type Person = { userId?: string; id?: string; _id?: string; name?: string; email?: string };
 type Connection = { connected: boolean; email?: string; connectUrl?: string };
 const localTime = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-export default function OneOnOneSchedule({ open, onClose, people, initialEmployeeId, onCreated }: { open: boolean; onClose: () => void; people: Person[]; initialEmployeeId?: string; onCreated: () => void }) {
+export default function OneOnOneSchedule({ open, onClose, people, initialEmployeeId, onCreated, returnTo }: { open: boolean; onClose: () => void; people: Person[]; initialEmployeeId?: string; onCreated: () => void; returnTo?: string }) {
   const router = useRouter();
+  const assessmentReturn = /^\/competency\/assessments\/[a-f\d]{24}$/i.test(returnTo || '') ? returnTo : undefined;
   const [employeeId, setEmployeeId] = useState(''); const [mode, setMode] = useState('in_app');
   const [start, setStart] = useState(''); const [duration, setDuration] = useState(30); const [requestId, setRequestId] = useState('');
   const [meetingType, setMeetingType] = useState('weekly');
@@ -33,7 +34,7 @@ export default function OneOnOneSchedule({ open, onClose, people, initialEmploye
       setSaving(true);
       try {
         const result = await api.post('/one-on-ones', { employeeId, mode, meetingType, scheduledDate: new Date(start).toISOString(), duration, requestId, record, recordingNoticeAccepted: notice, meetingLink: mode === 'calendar' && linkMode === 'existing' ? meetingLink : undefined });
-        onCreated(); onClose(); router.push(`/one-on-ones/${result.data.data._id}`);
+        onCreated(); onClose(); router.push(`/one-on-ones/${result.data.data._id}${assessmentReturn ? `?returnTo=${encodeURIComponent(assessmentReturn)}` : ''}`);
       } catch (failure) {
         const data = (failure as { response?: { data?: { error?: string; data?: { meetingId?: string } } } }).response?.data;
         setError(data?.error || 'The call could not be scheduled. Please retry.'); setPendingId(data?.data?.meetingId || '');
@@ -55,7 +56,8 @@ export default function OneOnOneSchedule({ open, onClose, people, initialEmploye
         {mode === 'calendar' && <><TextField select label="Meeting link" value={linkMode} disabled={saving || Boolean(pendingId)} onChange={event => setLinkMode(event.target.value)}><MenuItem value="new">Create with my calendar provider</MenuItem><MenuItem value="existing">Use an existing Meet, Teams or Zoom link</MenuItem></TextField>{linkMode === 'existing' && <TextField required type="url" label="Existing meeting link" value={meetingLink} disabled={saving || Boolean(pendingId)} onChange={event => setMeetingLink(event.target.value)} />}</>}
         <FormControlLabel control={<Checkbox checked={record} disabled={saving || Boolean(pendingId)} onChange={(_, value) => { setRecord(value); setNotice(false); }} />} label="Record and transcribe this call" />
         {tooLong && <Alert severity="warning">Choose 30 minutes or less for an in-app recording, or turn recording off.</Alert>}
-        {record && <><FormControlLabel control={<Checkbox required checked={notice} disabled={saving || Boolean(pendingId)} onChange={(_, value) => setNotice(value)} />} label={mode === 'in_app' ? 'I will ask both participants to agree before recording starts.' : 'I will inform participants and obtain their consent before admitting the recording notetaker.'} /><Typography variant="body2" color="text.secondary">Recordings, transcripts and notes stay with this meeting in Past calls & history. AI notes use your own connected ChatGPT account.</Typography></>}
+        {record && mode === 'calendar' && <Alert severity="info">The invitation is created first. Both participants must separately agree in the meeting details before the recording notetaker is scheduled.</Alert>}
+        {record && <><FormControlLabel control={<Checkbox required checked={notice} disabled={saving || Boolean(pendingId)} onChange={(_, value) => setNotice(value)} />} label={mode === 'in_app' ? 'I will ask both participants to agree before recording starts.' : 'I will tell the other participant to review recording permissions in the meeting details before the call.'} /><Typography variant="body2" color="text.secondary">Recordings, transcripts and notes stay with this meeting in Past calls & history. AI notes use your own connected ChatGPT account.</Typography></>}
       </Stack></DialogContent>
       <DialogActions sx={{ p: 2, flexWrap: 'wrap', gap: 1 }}><Button onClick={onClose} disabled={saving}>{pendingId ? 'Close' : 'Cancel'}</Button><Button type="submit" variant="contained" disabled={saving || !employeeId || tooLong || Boolean(pendingId) || (record && !notice) || (mode === 'calendar' && (checking || !connection?.connected))}>{saving ? 'Scheduling…' : mode === 'in_app' ? 'Schedule in-app call' : 'Create calendar invitation'}</Button></DialogActions>
     </Box>

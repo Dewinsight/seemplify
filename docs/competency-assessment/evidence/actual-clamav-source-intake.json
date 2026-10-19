@@ -1,0 +1,48 @@
+{
+  "verifiedAt": "2026-10-18T23:11:42.204Z",
+  "environment": "existing production backend container, isolated temporary helper copy",
+  "provider": "actual private ClamAV daemon",
+  "cases": [
+    {
+      "format": "txt",
+      "status": "clean",
+      "bytes": 41,
+      "sha256": "ebf5c79450c17ede7d9b84b8d6aea307bf3740cf56b93544091b9339b9d105fa",
+      "scanner": {
+        "provider": "clamav-instream",
+        "version": "INSTREAM",
+        "scannedAt": "2026-10-18T23:11:41.874Z"
+      },
+      "extractionVerified": true
+    },
+    {
+      "format": "pdf",
+      "status": "clean",
+      "bytes": 616,
+      "sha256": "26f80b749823c0199c70e0badc34efff8bd6fffcb2e04b1d324376b67310affe",
+      "scanner": {
+        "provider": "clamav-instream",
+        "version": "INSTREAM",
+        "scannedAt": "2026-10-18T23:11:41.877Z"
+      },
+      "extractionVerified": true
+    },
+    {
+      "format": "docx",
+      "status": "clean",
+      "bytes": 819,
+      "sha256": "ac4de0bc65b3255121468c2bfe8284dad81b1b733804f92e0748993ca5fb34e5",
+      "scanner": {
+        "provider": "clamav-instream",
+        "version": "INSTREAM",
+        "scannedAt": "2026-10-18T23:11:42.059Z"
+      },
+      "extractionVerified": true
+    }
+  ],
+  "antivirusTest": {
+    "status": 422,
+    "code": "UNSAFE_FILE"
+  },
+  "filesPublished": false
+}

@@ -18,16 +18,22 @@ async function api(request: APIRequestContext, actor: string, method: string, pa
   return (await response.json()).data;
 }
 async function reviewReadyForCalibration(request: APIRequestContext, calibration = true) {
+  const { employees: roster } = await api(request, 'hr_manager', 'GET', 'appraisals/colleague-roster');
+  expect(roster.find((person: { userId: string }) => person.userId === 'acceptance-employee').reviewerOptions.map((reviewer: { userId: string }) => reviewer.userId)).toContain('acceptance-manager');
   const templates = await api(request, 'hr_manager', 'GET', 'appraisals/cycle-templates');
   const design = structuredClone(templates[0].design);
   design.stages.calibration.enabled = calibration;
   design.sections.forEach((section: { questions: Array<{ required: boolean }> }) => { section.questions.forEach(question => { question.required = false; }); });
   const created = await api(request, 'hr_manager', 'POST', 'appraisals/cycles', {
     name: `Browser calibration ${Date.now()}`, periodStart: date(-90), periodEnd: date(-1), workflowDefinition: design,
-    settings: { enableAiAssist: false, requireOkrAlignment: false }, launchNow: true, employees: [{ userId: 'acceptance-employee' }]
+    settings: { enableAiAssist: false, requireOkrAlignment: false }, launchNow: true,
+    // Match the current Start appraisal contract: a reviewer is selected from
+    // the current directory, rather than inferred from legacy mirrored fields.
+    reviewerMode: 'selected', employees: [{ userId: 'acceptance-employee', reviewerId: 'acceptance-manager' }]
   });
   const appraisals = await api(request, 'employee', 'GET', 'appraisals/my');
   const appraisal = appraisals.find((item: { cycleId: { _id: string } }) => item.cycleId._id === created.cycle._id);
+  expect(appraisal.manager.userId).toBe('acceptance-manager');
   await api(request, 'employee', 'POST', `appraisals/${appraisal._id}/self-assessment`, { submit: true, selfAssessment: { overallSelfRating: 4, overallSummary: {
     achievements: 'Delivered a synthetic project with measured results.', challenges: 'Resolved a synthetic dependency through planning.', learnings: 'Applied a structured discovery method to the project.', goals: 'Complete the next milestone with clear evidence.'
   } } });

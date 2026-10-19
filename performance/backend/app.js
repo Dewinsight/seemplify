@@ -108,7 +108,8 @@ app.use(cors({
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'If-Match'],
+  exposedHeaders: ['ETag', 'Content-Disposition'],
 }));
 
 // Body parsing middleware
@@ -130,6 +131,10 @@ mongoose.connect(mongoUri)
       startReminderScheduler();
       require('./services/quarterlyAppraisalService').startQuarterlyCycleScheduler();
       require('./services/appraisalMeetingMediaService').start();
+      const retention = () => require('./services/competency/retentionService').processDue({ limit: 100 }).catch(() => console.error('Competency retention sweep failed; retrying on the next interval'));
+      const retentionTimer = setInterval(retention, 60000);
+      retentionTimer.unref();
+      void retention();
     }
   })
   .catch(err => console.error('MongoDB connection error:', err));
@@ -301,7 +306,9 @@ app.use('/api/talent', requireAuth, requireOrganization, canonicalAppraisalsEnab
 app.use('/api/calibration', requireAuth, requireOrganization, canonicalAppraisalsEnabled, calibrationRoutes);
 app.use('/api/bulk', bulkRoutes);
 app.use('/api/reports', reportsRoutes);
+app.post('/api/appraisals/:appraisalId/finalize', requireAuth, requireOrganization, require('./services/competency/appraisalBridgeService').guardFinalOutcome);
 app.use('/api/appraisals', requireAuth, requireOrganization, canonicalAppraisalsEnabled, appraisalRoutes);
+app.use('/api/competency', requireAuth, requireOrganization, require('./routes/competency'));
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/presence', require('./routes/presenceReporter'));
 
