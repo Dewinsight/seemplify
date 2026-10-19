@@ -321,6 +321,31 @@ journalctl -u seemplify-backup.service --since today
 readlink -f /var/backups/seemplify/latest
 ```
 
+Scheduled and standalone manual backups must use this service so they share
+`/var/lock/seemplify-production-deploy.lock` with deployments. The service waits
+up to 30 minutes for the deployment lock, then the backup script takes its own
+backup lock. The timer cadence and 14-day retention remain unchanged. A lock
+timeout is a failed backup to investigate, not a successful snapshot.
+
+When rebuilding/restoring a host, install the reviewed drop-in from a verified
+repository checkout before enabling the backup timer:
+
+```bash
+install -d -m 755 /etc/systemd/system/seemplify-backup.service.d
+install -m 644 deploy/hostinger/backup-service/production-deploy-lock.conf \
+  /etc/systemd/system/seemplify-backup.service.d/production-deploy-lock.conf
+systemctl daemon-reload
+systemctl show seemplify-backup.service -p ExecStart -p TimeoutStartUSec
+```
+
+The drop-in preserves the existing infinite service start timeout so systemd
+does not terminate a valid lock wait at its usual short default. Individual
+private-file/database snapshot phases remain bounded by the backup script.
+Deployment scripts that **already hold** the deployment lock call
+`/usr/local/sbin/seemplify-backup` directly. They must never synchronously start
+the service or add another deployment-lock acquisition inside the script:
+that would deadlock. Do not run the raw script as an independent manual backup.
+
 The backup includes native dumps of MongoDB, Experience PostgreSQL,
 Dokploy PostgreSQL and MariaDB; a Redis RDB; and archives of
 Weaviate, Postal, Mail API, Experience runtime, Dokploy and gateway
@@ -352,6 +377,14 @@ Run an isolated, non-production restore verification with:
 The restore check uses temporary containers and tmpfs storage. It verifies
 checksums, restores every database, counts restored structures, validates the
 Redis RDB, and removes its temporary containers on exit.
+
+Before reopening a restored Performance database to users, verify the current
+IdP policy and expire the restored Performance login sessions during a
+controlled backend stop/restart. Restored session claims must not reintroduce
+older grants. Retain users, appraisals, evidence and saved drafts. Reconcile
+withdrawals and deletion tombstones newer than the restored snapshot before
+allowing access to private evidence. Do not downgrade a newer IdP policy by
+blindly starting an older application image.
 
 Local backups do not protect against loss of the VPS. Before retiring an old
 host, copy the current restore-tested backup to the private access workspace in

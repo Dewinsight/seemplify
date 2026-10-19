@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-19",
+  "applicationRevision": "e2e57a51e8e8f39f3d68dde3dce5e05ce62ea97f",
+  "environment": "authenticated production UI, current organization, synthetic content and existing smoke identity only",
+  "featureEnabledForCurrentOrganization": true,
+  "readiness": {
+    "models": 18,
+    "declaredIndexes": 32,
+    "missingOptionalProjectionCollectionsCreated": 1,
+    "missingDeclaredIndexesCreated": 1,
+    "ttlIndexesCreated": 0,
+    "applicationBusinessDocumentsUpdatedByInitializer": false
+  },
+  "roleIntake": {
+    "realClamavRoute": true,
+    "txt": {
+      "extractedEditedReviewedSaved": true
+    },
+    "pdf": {
+      "extractedEditedReviewedSaved": true
+    },
+    "docx": {
+      "extractedEditedReviewedSaved": true
+    },
+    "privateOriginalDownloadedAndByteCompared": true,
+    "publishedImportedRoleVersion": 1,
+    "publishedFrameworkVersion": 1
+  },
+  "assessment": {
+    "launchedByOfficialServiceWithFreshVerifiedCurrentOwner": true,
+    "ordinaryAppraisalCreated": false,
+    "emailsDispatched": false,
+    "manualEvidenceSaved": true,
+    "oralFindingSubmitted": true,
+    "humanFindingSavedWithBothEvidenceLinks": true,
+    "humanAssessorFeedbackSubmittedWithAuthorAndDate": true,
+    "publishedReportVersion": 1,
+    "score": 80,
+    "criteriaCovered": 1,
+    "criteriaTotal": 1,
+    "humanClassification": "Suitable",
+    "realEmployeeDecision": false
+  },
+  "downloads": [
+    {
+      "kind": "participant",
+      "pages": 2,
+      "bytes": 5802,
+      "strictReadAndSyntheticContentVerified": true
+    },
+    {
+      "kind": "cohort",
+      "pages": 1,
+      "bytes": 2832,
+      "strictReadAndSyntheticContentVerified": true
+    }
+  ],
+  "existingStartAppraisalWizard": {
+    "currentReviewerEligibilityChecked": true,
+    "publishedCycleAndRoleVersionSelected": true,
+    "finalConfirmationPreflightPassed": true,
+    "productionLaunchButtonNotClicked": true,
+    "freshLocalLinkedLaunchSeparatelyVerified": true
+  },
+  "optionalIntegrations": {
+    "aiEnabled": false,
+    "recordedCallEvidenceEnabled": false,
+    "actualCompetencyAI": "pending final guarded runtime",
+    "newExternalCalendarOrNativeArtifacts": "not certified by this competency acceptance"
+  },
+  "screenshots": "Ignored private working folder only; formal report uses synthetic localhost screenshots.",
+  "downloadsVisuallyInspectedEveryPage": true
+}

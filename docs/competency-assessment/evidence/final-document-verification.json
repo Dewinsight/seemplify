@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-19",
+  "applicationRevision": "3095926ae41bf31e7b883c1e8a83044e1b97c272",
+  "reportPages": 8,
+  "storyIdsVerified": 25,
+  "strictPdfReadPassed": true,
+  "allEightPagesRenderedAndVisuallyInspected": true,
+  "researchAndOutstandingAcceptanceVisible": true,
+  "reportSha256": "ee1a60b2c93871720bfbbbeb40218271f293615c2e56ae502e26b9a73faa27ed",
+  "publicReportImages": "Synthetic localhost examples only",
+  "unrelatedLocalFileFingerprintsPreserved": 15,
+  "evidenceJsonParsed": true
+}

@@ -2,7 +2,7 @@
 
 This guide describes the implemented interface. Check [STATUS.md](STATUS.md) for deployment and provider acceptance; local screenshots use synthetic people.
 
-1. Open **Competency assessments** in Performance. An authorised organisation administrator or HR manager can select **Enable competency assessments**. This enables the tools; it does not start appraisals or turn on AI or recording.
+1. As an owner, administrator or HR manager, choose the **Admin** workspace, then open **Administration → Competency assessments**. Select **Enable competency assessments**. This enables the tools; it does not start appraisals or turn on AI or recording. Once enabled, managers also find the link under **Team**, and employees find it under **Growth**.
 2. In **Frameworks**, create and publish the internal or supplied SFIA definitions you need, including their native level descriptions. In **Strategy**, publish outcomes if you want strategy criteria. You can use any nonempty combination of these three sources.
 3. In **Role library**, create a role manually or upload a TXT, PDF or DOCX role description. Review the extracted draft. Map responsibilities to published criteria and expected levels or numeric targets, then publish the role version.
 4. In **Cycles**, select published sources and role versions. Configure explicit numeric conversions, weights and classification bands. Review validation errors before publishing; native level names do not automatically become comparable scores.
@@ -27,4 +27,4 @@ For a new recorded calendar meeting, each actual participant separately acknowle
 
 ## Operations
 
-After this release is deployed, private originals and generated PDFs are included with the existing protected backups. The backup briefly pauses current Performance file writers while it captures Mongo metadata and the private archive; each of those two phases has a five-minute limit and failure resumes the writers. The schedule and14-day backup retention are unchanged. Restoring an older snapshot requires reconciliation of later consent withdrawals and deletion tombstones before user access. Independent restore checks use temporary files and do not overwrite the live store. See STATUS.md for activation and production verification.
+After this release is deployed, private originals and generated PDFs are included with the existing protected backups. The backup briefly pauses current Performance file writers while it captures Mongo metadata and the private archive; each of those two phases has a five-minute limit and failure resumes the writers. The schedule and 14-day backup retention are unchanged. Restoring an older snapshot requires reconciliation of later consent withdrawals and deletion tombstones before user access. Independent restore checks use temporary files and do not overwrite the live store. See STATUS.md for activation and production verification.

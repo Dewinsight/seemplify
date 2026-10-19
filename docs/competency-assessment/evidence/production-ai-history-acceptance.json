@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-19",
+  "applicationRevision": "3095926ae41bf31e7b883c1e8a83044e1b97c272",
+  "environment": "authenticated production UI; existing smoke identity and synthetic authored content only",
+  "actualCompetencyAIRequest": {
+    "passed": true,
+    "route": "signed current requesting user through shared personal ChatGPT account service; required ChatGPT runtime, no local fallback",
+    "returnedModel": "gpt-5.6-terra",
+    "providerField": null,
+    "providerMetadataBoundary": "Upstream response omits optional provider metadata; UI truthfully shows Not recorded. No provider was inferred or backfilled.",
+    "sourceCount": 1,
+    "onlyNewSyntheticManualEvidenceSelected": true,
+    "sourceCreatedUnderEvidenceRetentionDays": 30,
+    "currentAssessorPolicyAcknowledged": true,
+    "recordedCallSourceUsed": false,
+    "exactSourceCitationVerified": true,
+    "uncertaintyPreserved": true,
+    "findingStatusBeforeHumanRating": "not_started",
+    "observedLevelBeforeHumanRating": null,
+    "humanEditedAndAppliedDraft": true,
+    "ratingAndFinalClassificationSelectedByHuman": true
+  },
+  "reportHistory": {
+    "currentVersion": 2,
+    "previousVersion": 1,
+    "score": 80,
+    "coverage": "1/1",
+    "humanClassification": "Suitable",
+    "historicalReportHashPreserved": true,
+    "historicalRationaleAndSourcesUnchanged": true,
+    "versionTwoEditedRationaleAndEvidenceVerified": true,
+    "participantPdfPages": [
+      2,
+      2
+    ],
+    "versionTwoPdfEveryPageVisuallyInspected": true,
+    "cohortAfterSecondReportVersion": {
+      "assessments": 1,
+      "finalised": 1,
+      "score": 80,
+      "pdfPages": 1,
+      "strictReadAndContentVerified": true
+    }
+  },
+  "restoration": {
+    "allPriorUserEditableOrganizationSettingsRestoredAndCompared": true,
+    "aiDraftsEnabled": false,
+    "recordedCallEvidenceEnabled": false,
+    "noticeAndRetentionSettingsRestored": true,
+    "normalPolicyHistoryRetained": true,
+    "rawPolicyVersionResetPerformed": false
+  },
+  "acceptanceBoundaries": {
+    "realEmployeeDecision": false,
+    "newCalendarOrNativeRecordingTranscriptCertified": false,
+    "actualClientPilotCertified": false,
+    "fullProductionRestoreCertified": false
+  },
+  "screenshots": "Ignored private working folder only; formal report uses synthetic localhost screenshots."
+}

@@ -1,6 +1,6 @@
 # Competency assessment delivery plan
 
-Status: specification/design approved; core implementation and local acceptance complete. Final staged-source release checks are in progress. Product code has not yet been released. See [STATUS.md](STATUS.md) for current verification and release evidence and [USER-GUIDE.md](USER-GUIDE.md) for the operating steps.
+Status: application revision `3095926a` is deployed and verified across all thirteen healthy Core services, with eighteen models/32 indexes ready. Authenticated production manual assessment and actual personal ChatGPT (`gpt-5.6-terra`) acceptance passed; human rating/classification and v1/v2 history/PDF integrity were verified. All prior user-editable organisation settings were restored exactly, leaving AI and recorded-call evidence off. Final-main CI passed106 browser cases first attempt plus one on retry and29 real-API browser cases without retries. Production Start appraisal reached confirmation/preflight only; its launch button was not clicked, while full fresh-local linked launch was separately verified. New external call artifacts, actual client pilot and full production restore remain uncertified. See [RELEASE.md](RELEASE.md), [STATUS.md](STATUS.md) and [USER-GUIDE.md](USER-GUIDE.md).
 
 Owner: Seemplify delivery coordinator. Baseline reviewed: `b401f1b1583be5875cc02462122c83ec9e7311d2`, 18 October 2026. Repository: `E:/GitHub/C-drive/seemplify`.
 
@@ -98,6 +98,40 @@ Primary domain direction: additive `/api/competency` namespace, versioned roles/
 | P6 | Full staging pilot, regression, live release verification, final visual PDF | All above | Every story has proof or a named unresolved gap; no unearned completion label |
 
 Pairs may work on A/B packages together only after shared contracts freeze and path ownership is recorded. Package names are scheduling labels, not separate products or repositories.
+
+### 6.1. Feature-to-app map
+
+This table locates the implemented surfaces. [STATUS.md](STATUS.md) records deployment and verification; optional AI/call provider acceptance remains separate. Administrators enter through **Admin → Administration → Competency assessments**. After enablement, managers use **Team** and employees use **Growth**.
+
+| Story | Feature | Where the user works |
+|---|---|---|
+| CA-001 | Create or upload a role | Role library → New role; review extracted TXT/PDF/DOCX content |
+| CA-002 | Publish, version and archive roles | Role library and the role editor; existing assessments retain their version |
+| CA-003 | Native competency levels and descriptors | Frameworks → framework editor |
+| CA-004 | All seven source combinations | Cycles → Sources; choose SFIA, internal, strategy or their combinations |
+| CA-005 | Strategy outcomes and authorised goal references | Strategy → criterion editor |
+| CA-006 | Role responsibilities, criteria and expected levels | Role library → role editor |
+| CA-007 | Participant, reviewer and role selection | Existing Start appraisal → People and Review details |
+| CA-008 | Expected versus observed role comparison | Assessment → View role expectations; published report → Role comparison |
+| CA-009 | Optional personal-account AI analysis | Assessment → AI assistance; disabled until configuration and consent are satisfied |
+| CA-101 | Private criterion-linked evidence | Assessment → Evidence |
+| CA-102 | Structured oral questions, answers and notes | Assessment → Oral assessment |
+| CA-103 | Permitted calendar or native-call material | Existing call scheduling; assessment → Oral assessment call selector; actual provider acceptance pending |
+| CA-104 | Accept, edit or dismiss cited AI drafts | Assessment → AI assistance; human judgement remains required |
+| CA-105 | Save/resume assessor findings and resolve conflicts | Assessment → Assessment tab and draft-conflict controls |
+| CA-106 | Explainable scores, weights and coverage | Completion & outcome; report → Score & calculation |
+| CA-107 | Direct human final classification | Completion & outcome → final outcome and confirmation |
+| CA-108 | Comparable cohort rankings and tie handling | Cohort reports, using the cycle's ranking configuration |
+| CA-109 | Personal, team and organisation authority | Every assessment surface; access policies remain in IdP, separate from occupational roles |
+| CA-110 | Completion checks and authorised exceptions | Completion & outcome → missing-item checks and exception controls |
+| CA-111 | Complete submitted manager and assessor feedback | Existing manager review; assessment → Assessor feedback; report → Manager & assessor feedback |
+| CA-112 | Participant report and private PDF | Report → Download PDF, subject to the export permission |
+| CA-113 | Scoped cohort completion, gaps and exports | Cohort reports → filters, comparison and PDF export |
+| CA-114 | Activity, reopening and immutable report revisions | Assessment → Activity; report revision selector and authorised reopen |
+| CA-115 | Purpose consent, retention and source withdrawal | Assessment settings; evidence and call-consent controls |
+| CA-116 | Pilot, regression and release acceptance | Delivery test receipts and the illustrated PDF |
+
+Role configuration is an occupational assessment definition. It never changes the person's IdP access role. The submitted manager review is retained independently of oral notes and AI drafts.
 
 ## 7. Design process and artifacts
 

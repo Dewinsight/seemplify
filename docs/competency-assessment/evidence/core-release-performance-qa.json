@@ -1,0 +1,17 @@
+{
+  "releaseRevision": "e2e57a51e8e8f39f3d68dde3dce5e05ce62ea97f",
+  "unchangedApplicationSourceRevision": "cbc547f0f75ea14052dd1adc9be01d7a1b7aa9c7",
+  "workflowRun": 39190929695,
+  "job": 117863340619,
+  "conclusion": "success",
+  "browser": {
+    "passedWithoutRetry": 41,
+    "flakyPassedOnRetry": 0,
+    "finalFailures": 0,
+    "duration": "6.0 minutes"
+  },
+  "productionFrontendBuild": "success",
+  "backendInstall": "npm install --ignore-scripts --no-package-lock; no tracked backend lockfile",
+  "deployment": "Not established by this job alone",
+  "providerBoundary": "Call-consent UI contracts and synthetic real API/Mongo/PDF journey; no new external recording or personal inference established by these tests"
+}
