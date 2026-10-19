@@ -1,0 +1,143 @@
+{
+  "verifiedAt": "2026-10-19T05:57:56.507510+00:00",
+  "baseRevision": "7853b83ba733afa89eaad5cf9985924899b0d2bb",
+  "sourceSHA256": {
+    "performance/backend/routes/appraisals.js": "80fcd4e00f0092287ded3f10a9b89c6bdd573e079183ee0a4fb8cba0ed2f9a82",
+    "performance/backend/services/competency/assessmentService.js": "ecd2400d4cacfa7fa585390c8ed9092f25adb7050e08761559541ba78f9feb51",
+    "performance/backend/services/competency/authorizationService.js": "1b96dba2bb81a843002a5163cfe6fec5bf579af5cc8d59a6478d848438bf1aa5",
+    "performance/backend/tests/helpers/liveJourneyServer.js": "eb3d17494e7a8f908ee3c316e5d30cfb7c40aff1a1b8b076a798a434fd11447a",
+    "performance/backend/tests/competencyRoleJourney.integration.test.js": "0c24718d03beae5202a6da07d94f6d5228ea3bb9348002ac0ff04577bd003bf4",
+    "performance/backend/tests/performanceJourney.integration.test.js": "9e09fb0b2c170ffbbdae878a79c5a9145678f777a1a1e248fff2fbe52925fa4d",
+    "performance/backend/tests/appraisalFlow.integration.test.js": "385d8cfff8182c51ae7dcb6f3980ad3fa20890386b46ee4ece4a17b9ae0b9525",
+    "performance/backend/tests/colleagueReviews.integration.test.js": "27a7523e3d2256497643ae5b001650e7839922ef2fa01dc0677bd0459cc907a4",
+    "performance/frontend/components/appraisals/CustomAssessmentSections.tsx": "ddf0472a4683d83ce3d65ba073b1bf9e4d23ef3fcbcf99c09651122c81ebcb0a",
+    "performance/frontend/components/competency/assessment/AssessmentList.tsx": "04879e7fa464265fdbeafd20b8a9bf17cadd27c1afdd671b4624c8ebacc13af4",
+    "performance/frontend/components/competency/assessment/AssessmentWorkspace.tsx": "912348efe56aba6752f4d6877aeb2f9233be602c6f83015e98260fb5221cf3fa",
+    "performance/frontend/components/competency/assessment/LinkedCompetencyAssessmentPanel.tsx": "5c6d8c072295153ed1d12c4dd5b89bfdede69e628ea54db63bffee78ee072bef",
+    "performance/frontend/e2e/competency-assessment.spec.ts": "3d923028c454b3bad040cc262cbd2b422990863662d87cb4e0b74019c5a09d4e",
+    "performance/frontend/e2e/performance-journeys.spec.ts": "972dc7a644af03f2e51c92d4e9464062429eeed1f7f871b5e84fd28200c8fdde",
+    "performance/frontend/e2e-live/competency-role-journey.spec.ts": "05bc57c06684f9f1bd9158d0c8fbec5b56b1b450994774fe1d98064dfb15ab3b"
+  },
+  "backend": {
+    "integration": 208,
+    "suites": 19,
+    "legacy": 83,
+    "unit": 38,
+    "failures": 0,
+    "skipped": 0,
+    "environment": "Clean tracked-source snapshot plus exact owned overlays; isolated real MongoDB replica set"
+  },
+  "http": {
+    "requests": 709,
+    "expectedStatusMismatches": 0,
+    "completedOrdinaryLifecycles": 6
+  },
+  "browser": {
+    "uiContractDistinctCases": 58,
+    "realAPIRoleJourneyDistinctCases": 1,
+    "retries": 0,
+    "laterAccessibilityRechecks": 2,
+    "laterAccessibilityRechecksAreExistingCases": true,
+    "identityBridge": "Only the disposable real-API browser harness uses a synthetic session bridge; product routes, grants, current directory builder and transactional persistence are real",
+    "managerPDF": {
+      "strictParse": true,
+      "pages": 2
+    }
+  },
+  "actualLocalOIDC": {
+    "identity": "actual local Seemplify OIDC sign-in, no identity fixture or intercepted API",
+    "steps": [
+      {
+        "actor": "admin",
+        "signIn": "passed",
+        "scope": "organization",
+        "visiblePeople": 16,
+        "selectedReviewerVerified": true,
+        "linkedAssessmentVerified": true
+      },
+      {
+        "actor": "lead",
+        "signIn": "passed",
+        "scope": "managed_teams",
+        "visiblePeople": 11,
+        "selectedReviewerVerified": true,
+        "linkedAssessmentVerified": true
+      },
+      {
+        "actor": "product2",
+        "signIn": "passed",
+        "scope": "self",
+        "visiblePeople": 1,
+        "selectedReviewerVerified": true,
+        "linkedAssessmentVerified": true
+      },
+      {
+        "actor": "teamlead",
+        "signIn": "passed",
+        "scope": "managed_teams",
+        "ordinaryAndLinkedAssessmentDenied": true
+      },
+      {
+        "actor": "opsmanager",
+        "signIn": "passed",
+        "scope": "managed_teams",
+        "ordinaryAndLinkedAssessmentDenied": true
+      },
+      {
+        "actor": "product2",
+        "manualForm": "submitted through browser",
+        "requiredQuestionsRetained": true,
+        "customQuestions": 7
+      },
+      {
+        "actor": "lead",
+        "ordinaryManagerReview": "submitted through browser",
+        "customQuestions": 2
+      },
+      {
+        "actor": "lead",
+        "competency": "finalised through browser",
+        "score": 80,
+        "sourceFeedbackAuthorVerified": true
+      },
+      {
+        "actor": "product2",
+        "acknowledgement": "through browser",
+        "finalParentStatus": "employee_acknowledged",
+        "report": "discovered through assessment list",
+        "reportHashUnchanged": true,
+        "defaultPDFExport": "not granted"
+      }
+    ],
+    "expectedValidation": {
+      "missingApprovedGoal": "actual 400 before supported local synthetic cycle configuration change",
+      "requiredCustomQuestions": "retained"
+    }
+  },
+  "actualGoalLaunchBrowser": {
+    "identity": "Actual local administrator OIDC",
+    "browserWizard": "passed",
+    "requiredGoalSetting": true,
+    "launched": 0,
+    "blocked": 1,
+    "appraisalLinkAbsent": true,
+    "organizationReviewListContainsCycle": false,
+    "actionableRecoveryMessage": true
+  },
+  "build": {
+    "productionFrontend": "passed",
+    "typescript": "passed",
+    "snapshotOnlyAdaptation": "Documented Turbopack common root for local dependency junction; product next.config.ts unchanged"
+  },
+  "independentReview": {
+    "authorizationAndNewBackendTest": "coordinator",
+    "frontendAndReplicaSetHarness": "solution_architect_a",
+    "newBrowserTest": "solution_architect_a"
+  },
+  "limits": [
+    "Local multi-role acceptance is separate from deployed production role simulation.",
+    "No real employee outcome or production identity impersonation was used.",
+    "No new external recording, external AI inference, customer pilot or full backup restore is certified by these role tests."
+  ],
+  "preservation": "Only nine-line launch guard staged from dirty appraisal router; existing lifecycle bytes retained and unrelated files unstaged."
+}

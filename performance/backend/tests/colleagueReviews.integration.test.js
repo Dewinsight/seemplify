@@ -78,6 +78,8 @@ test('members cannot launch appraisals; managers see their hierarchy and HR sees
 test('HR explicitly selects a reviewer for a top manager; forged, self and unqualified reviewers are rejected', async () => {
   await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
   const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
+  // Manual reviewer/scope fixture; required-goal preflight is covered in competencyRoleJourney.
+  cycle.settings.requireOkrAlignment = false; await cycle.save();
   const selected = reviewerId => ({ ...launch('leader'), reviewerMode: 'selected', employees: [{ userId: 'leader', reviewerId, managerId: 'forged', managerEmail: 'forged@example.test' }] });
   await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(selected('')).expect(400);
   for (const invalid of ['leader', 'member', 'outsider', 'foreign']) await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(selected(invalid)).expect(403);
@@ -104,6 +106,8 @@ test('HR explicitly selects a reviewer for a top manager; forged, self and unqua
 test('an old reviewer assignment does not retain access after team management authority is removed', async () => {
   await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
   const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
+  // Manual reviewer/scope fixture; required-goal preflight is covered in competencyRoleJourney.
+  cycle.settings.requireOkrAlignment = false; await cycle.save();
   await call('post', `/cycles/${cycle._id}/launch`, 'leader').send({ ...launch('member'), reviewerMode: 'selected', employees: [{ userId: 'member', reviewerId: 'leader' }] }).expect(200);
   const review = await Appraisal.findOne();
   await call('get', `/${review._id}`, 'leader').set('x-role-removed', 'true').expect(403);
@@ -115,6 +119,8 @@ test('creation details survive launch/replay and are visible newest-first to emp
   await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
   const cycles = await AppraisalCycle.find({ defaultQuarterKey: { $in: ['2026-Q2', '2026-Q3'] } }).sort({ periodStart: 1 });
   const payload = { ...launch('member'), reviewerMode: 'selected', employees: [{ userId: 'member', reviewerId: 'leader' }], launchContext: { createdBy: { name: 'Forged Creator' } } };
+  // This history fixture launches goal-optional reviews; required-goal preflight has separate coverage.
+  for (const cycle of cycles) { cycle.settings.requireOkrAlignment = false; await cycle.save(); }
   const created = [];
   for (const cycle of cycles) {
     const response = await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(payload).expect(200);
@@ -137,7 +143,7 @@ test('creation details survive launch/replay and are visible newest-first to emp
   expect(replay.body.data.existingAppraisals[0].launchContext.createdBy.userId).toBe('hr');
   const detail = await call('get', `/${created[1]._id}`, 'member').expect(200);
   expect(detail.body.data.launchContext.createdBy.userId).toBe('hr');
-  const oneOff = await call('post', '/cycles', 'hr').send({ ...payload, name: 'Creation details review', periodStart: '2026-07-01', periodEnd: '2026-09-30', launchNow: true, appraisalFlow: { steps: require('../services/appraisalFlowService').defaultSteps() } }).expect(201);
+  const oneOff = await call('post', '/cycles', 'hr').send({ ...payload, name: 'Creation details review', periodStart: '2026-07-01', periodEnd: '2026-09-30', launchNow: true, settings: { requireOkrAlignment: false }, appraisalFlow: { steps: require('../services/appraisalFlowService').defaultSteps() } }).expect(201);
   expect(oneOff.body.data.launchSummary.appraisals[0].launchContext.method).toBe('new_review');
   const organization = await call('get', '/organization', 'hr').expect(200);
   const launched = organization.body.data.find(item => item._id === oneOff.body.data.launchSummary.appraisals[0]._id);
@@ -150,6 +156,8 @@ test('department heads can review their department without needing a team-manage
   expect(roster.body.data.employees.map((person) => person.userId)).toEqual(['leader']);
   await ensureQuarterlyCycles(org.id, new Date('2026-10-18'));
   const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
+  // Manual reviewer/scope fixture; required-goal preflight is covered in competencyRoleJourney.
+  cycle.settings.requireOkrAlignment = false; await cycle.save();
   await call('post', `/cycles/${cycle._id}/launch`, 'department-head').send(launch('leader')).expect(200);
   await call('post', `/cycles/${cycle._id}/launch`, 'department-head').send(launch('outsider')).expect(403);
 });
@@ -160,6 +168,8 @@ test('future quarters and bad deadlines cannot launch; HR can appraise a leader 
   const future = await AppraisalCycle.create({ name: 'Future', organizationId: org.id, periodStart: '2098-01-01', periodEnd: '2098-03-31', scope: { type: 'organization' } });
   await call('post', `/cycles/${future._id}/launch`, 'hr').send(launch('leader')).expect(400);
   const cycle = await AppraisalCycle.findOne({ defaultQuarterKey: '2026-Q3' });
+  // Manual reviewer/scope fixture; required-goal preflight is covered in competencyRoleJourney.
+  cycle.settings.requireOkrAlignment = false; await cycle.save();
   await call('post', `/cycles/${cycle._id}/launch`, 'hr').send({ ...launch('leader'), responseDeadlines: { selfAssessmentDue: '2020-01-01', managerReviewDue: '2020-01-02' } }).expect(400);
   await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(launch('leader')).expect(200);
   expect(await Appraisal.countDocuments()).toBe(1);

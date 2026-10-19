@@ -12,6 +12,12 @@ This guide describes the implemented interface. Check [STATUS.md](STATUS.md) for
 8. In **Completion & outcome**, resolve missing items or use an authorised, recorded exception. Review the calculated suggestion, choose the human final outcome and finalise. The report preserves the exact role, source definitions, feedback and calculation used.
 9. View or download the participant report with the appropriate permission. Cohort reports filter by the viewer's current scope and only rank comparable assessments. Reopening creates a later report revision; it does not replace earlier published history.
 
+Employees open **Growth → Competency assessments → View report**. Before publication they can review role expectations and contribute permitted evidence; private reviewer findings are hidden. After reopening, **View previous report** retains the last published outcome. Default employee access includes reading their own report; PDF export requires its own explicit permission.
+
+For a linked appraisal, the selected reviewer completes the assessment. Another team manager does not gain private reviewer access merely by managing the same team. Current eligible HR/admin authority remains available according to central permissions.
+
+If the cycle requires goal alignment, approve and align the person's goals for its assessment period before starting. A missing approved snapshot now blocks launch before a review is created. Use a goal-optional cycle only when that is the intended review policy; the system does not silently waive the requirement.
+
 ## Optional integrations
 
 An authorised administrator configures the processing notice and retention periods in **Assessment settings** before enabling AI drafts or recorded-call evidence. Each requester uses their own connected ChatGPT account and applicable consent. AI observations remain editable, cited drafts and do not select a score or final outcome.
