@@ -1,4 +1,4 @@
-# Admin → manager → employee verification
+# Admin â†’ manager â†’ employee verification
 
 19 October 2026. Follow-up acceptance for the competency-assessment programme.
 
@@ -14,7 +14,7 @@ The earlier owner-led walkthrough did not prove the complete handoff between thr
 | 4. Final handoff | Finalise the ordinary review, acknowledge as the employee, discover the competency report from the employee's own list | Discussion/finalisation through real REST; employee acknowledgement and report discovery through the browser. Published competency report hash remains unchanged |
 | 5. Permission boundaries | Deny the unselected same-team manager, another team's manager, another employee and another tenant; hide assessor-only evidence and drafts | Actual local IdP sign-ins for both manager denials; disposable real-route tests for all boundaries |
 | 6. Reports/PDF | Selected reviewer can download the two-page report. Default employees can read their own report but cannot export. An explicit central export grant allows only their own participant-scoped PDF | Browser download, strict PDF parsing and real authorization/receipt/download/revocation tests |
-| 7. Goal-required launch | Reject absent, draft or unapproved goals before creating an appraisal or sending its events; approved aligned goals still launch; a mixed batch reports each outcome; retries reuse successful records | Actual goal create → submit → approve APIs, disposable real Mongo, and normal local administrator OIDC → Start appraisal browser rejection |
+| 7. Goal-required launch | Reject absent, draft or unapproved goals before creating an appraisal or sending its events; approved aligned goals still launch; a mixed batch reports each outcome; retries reuse successful records | Actual goal create â†’ submit â†’ approve APIs, disposable real Mongo, and normal local administrator OIDC â†’ Start appraisal browser rejection |
 
 ## Defects fixed
 
@@ -34,6 +34,7 @@ The earlier owner-led walkthrough did not prove the complete handoff between thr
 | Full application HTTP journeys with final permission and launch guards | **709 requests, zero expected-status mismatches**, including six complete ordinary-review lifecycles |
 | New real-API browser role journey | **1/1 passed, no retry**; real app/routes/indexes, disposable replica set, fixture identity bridge |
 | Focused interface regression suites | **58/58 passed, no retry**:23 competency +35 ordinary Performance cases |
+| Additional real-route browser regressions | **5/5 passed, no retry**: reviewer desktop/mobile, manual workflow desktop/mobile, and actual two-peer native-call consent/recording/upload-retry/private playback |
 | Final accessibility follow-up | **2/2 passed, no retry** after the final label/focus adjustment; these are additional executions of existing cases, not two new distinct cases |
 | Genuine local IdP acceptance | **Five separate accounts**: administrator, selected line manager, employee, unselected team lead and another team's manager |
 | Production frontend build / type check | **Passed** from a clean tracked-source snapshot plus owned overlays. Snapshot-only documented Turbopack common-root configuration accommodates local dependency junctions; product build configuration is unchanged |
@@ -53,3 +54,7 @@ Receipts: [browser/HTTP and local identity proof](evidence/admin-manager-employe
 - The manual local happy path uses an explicitly goal-optional synthetic cycle. Its seven employee and two reviewer custom questions remain required and were completed through browser forms. Goal-required positive/negative paths are separate tests; the requirement was not weakened.
 - Legacy scope/call/load fixtures now explicitly declare goal-optional intent. Existing assertions, production defaults and goal-required policy remain unchanged; the1,000-person test still checks captured goal evidence and duplicate-free replay.
 - Pre-existing appraisal lifecycle work is preserved. Only the nine-line launch guard is staged from the already-dirty appraisal router; unrelated router bytes and other dirty files remain outside this change.
+
+## Full-suite fixture follow-up
+
+Hosted run [39207446373](https://github.com/Dewinsight/seemplify/actions/runs/39207446373) exposed two older real-route browser fixtures that seeded goal-required quarterly cycles without creating goals. Local reproduction confirmed the new launch guard correctly rejected them. Each fixture now explicitly makes its disposable synthetic organization goal-optional for its reviewer/manual-call purpose. All five cases passed locally without retries; every previous assertion remains unchanged and production defaults remain intact. The complete hosted rerun is a separate release gate.

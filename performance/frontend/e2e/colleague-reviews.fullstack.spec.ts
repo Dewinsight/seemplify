@@ -24,6 +24,8 @@ test.beforeAll(async () => {
   await User.create({ idpSub: 'leader', email: 'leader@example.test', profile: { displayName: 'Alex Team Leader' }, currentOrganizationId: organization.id,
     idpTeams: [{ id: 'team', name: 'Product', organizationId: organization.id, role: 'line_manager' }] });
   await ensureQuarterlyCycles(organization.id);
+  // Reviewer selection is tested without goal setup in this synthetic organization.
+  await AppraisalCycle.updateMany({ organizationId: organization.id }, { $set: { 'settings.requireOkrAlignment': false } });
   const app = express(); app.use(express.json());
   // Authentication fixture supplies signed-in identity only. Appraisal endpoints
   // below use the real Express routes, authorization service and MongoDB.

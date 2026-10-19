@@ -53,7 +53,7 @@ for i,(role,action) in enumerate([('ADMIN','Configure and select reviewer'),('MA
     x=36+i*178;box(x,650,166,58)
     text(x+12,687,role,10,True,ACCENT);para(action,x+12,675,142,9)
     if i<2:c.setStrokeColor(ACCENT);c.line(x+167,679,x+177,679)
-for i,(value,label) in enumerate([(DATA['backend']['integration'],'INTEGRATION TESTS'),(DATA['http']['requests'],'HTTP REQUESTS'),(59,'TARGETED BROWSER CASES'),(5,'REAL LOCAL IDP ACCOUNTS')]):
+for i,(value,label) in enumerate([(DATA['backend']['integration'],'INTEGRATION TESTS'),(DATA['http']['requests'],'HTTP REQUESTS'),(64,'TARGETED BROWSER CASES'),(5,'REAL LOCAL IDP ACCOUNTS')]):
     x=36+i*133;box(x,565,124,66,'#E9E4F5');text(x+12,598,value,24,True);text(x+12,579,label,6.7,True,MUTED)
 text(36,540,'Five fixes found by following the journey',13,True)
 fixes=[('Selected reviewer privacy','Unselected team managers can no longer open or change private linked assessments.'),('Explicit employee PDF access','A central export grant now works for the employee\'s own report only; defaults are unchanged.'),('Employee report discovery','Direct report links, retained previous reports and a clear evidence/role view replace empty assessor forms.'),('Accessible review questions','Question names, required text state and label-to-control focus now work in the review forms.'),('Goal-required launch readiness','Missing approved goals are rejected before a review or its notification events are created.')]

@@ -1,5 +1,5 @@
 {
-  "verifiedAt": "2026-10-19T05:57:56.507510+00:00",
+  "verifiedAt": "2026-10-19T06:17:19.224758+00:00",
   "baseRevision": "7853b83ba733afa89eaad5cf9985924899b0d2bb",
   "sourceSHA256": {
     "performance/backend/routes/appraisals.js": "80fcd4e00f0092287ded3f10a9b89c6bdd573e079183ee0a4fb8cba0ed2f9a82",
@@ -16,7 +16,9 @@
     "performance/frontend/components/competency/assessment/LinkedCompetencyAssessmentPanel.tsx": "5c6d8c072295153ed1d12c4dd5b89bfdede69e628ea54db63bffee78ee072bef",
     "performance/frontend/e2e/competency-assessment.spec.ts": "3d923028c454b3bad040cc262cbd2b422990863662d87cb4e0b74019c5a09d4e",
     "performance/frontend/e2e/performance-journeys.spec.ts": "972dc7a644af03f2e51c92d4e9464062429eeed1f7f871b5e84fd28200c8fdde",
-    "performance/frontend/e2e-live/competency-role-journey.spec.ts": "05bc57c06684f9f1bd9158d0c8fbec5b56b1b450994774fe1d98064dfb15ab3b"
+    "performance/frontend/e2e-live/competency-role-journey.spec.ts": "05bc57c06684f9f1bd9158d0c8fbec5b56b1b450994774fe1d98064dfb15ab3b",
+    "performance/frontend/e2e/colleague-reviews.fullstack.spec.ts": "9521d04ce1fb3f4f4445a5d435ccd360d33c0566eca2f8ef70b37907bba93621",
+    "performance/frontend/e2e/appraisal-flow.fullstack.spec.ts": "16342df0d22c203b96bb864dfa6e3df954f99ddc26d995b11ed889f0453f42f5"
   },
   "backend": {
     "integration": 208,
@@ -42,7 +44,10 @@
     "managerPDF": {
       "strictParse": true,
       "pages": 2
-    }
+    },
+    "additionalRealRouteFullstackDistinctCases": 5,
+    "additionalFullstackRetries": 0,
+    "additionalFullstackScope": "Selected reviewer desktop/mobile, manual workflow desktop/mobile and actual two-peer native call consent/recording/failed-upload recovery/private playback; explicit goal-optional synthetic cycle fixtures, all original assertions retained."
   },
   "actualLocalOIDC": {
     "identity": "actual local Seemplify OIDC sign-in, no identity fixture or intercepted API",
@@ -139,5 +144,9 @@
     "No real employee outcome or production identity impersonation was used.",
     "No new external recording, external AI inference, customer pilot or full backup restore is certified by these role tests."
   ],
-  "preservation": "Only nine-line launch guard staged from dirty appraisal router; existing lifecycle bytes retained and unrelated files unstaged."
+  "preservation": "Only nine-line launch guard staged from dirty appraisal router; existing lifecycle bytes retained and unrelated files unstaged.",
+  "hostedFollowup": {
+    "initialRun": 39207446373,
+    "finding": "Two older real-route browser fixtures inherited goal-required quarterly defaults without creating goals. Reproduced launch rejection, corrected fixture intent only, five cases passed locally without retries. Full hosted rerun pending."
+  }
 }
