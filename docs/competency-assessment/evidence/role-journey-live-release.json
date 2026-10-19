@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-19T07:34:51.007682+00:00",
+  "applicationRevision": "92dce5c37824da9c6431d2c56c2a6caef168ae6a",
+  "featurePR": 139,
+  "coreWorkflow": 39211135380,
+  "runtime": {
+    "allThirteenCoreRevisionsMatch": true,
+    "scannerHealthy": true,
+    "privateDirectoryMode": 700,
+    "serviceRevisionsMatched": 13,
+    "allServicesRunningAndHealthyWhereDefined": true
+  },
+  "readOnlyReadiness": {
+    "replicaSetPrimaryVerified": true,
+    "modelSchemasVerified": 18,
+    "declaredIndexesVerified": 32,
+    "uniqueTtlAndPartialOptionsVerified": true,
+    "employeeRecordsRead": false,
+    "databaseWritesPerformed": false
+  },
+  "authenticatedOwnerSmoke": {
+    "identity": "Normal existing owner SSO and existing organization membership; no token injection or staff impersonation",
+    "organizationSelection": "Existing authorized test organization selected in App Hub after session resumed in another organization",
+    "directListReportLinkPassed": true,
+    "reviewerWorkspaceLinkVisible": true,
+    "currentReportVersion": 2,
+    "historicalReportVersionOpened": 1,
+    "restoredCurrentVersion": 2,
+    "bothVersionsScore": 80,
+    "nativeRoleExpectationsVisible": true,
+    "submittedFeedbackAttributionAndDatesVisible": true,
+    "originalVersionRationaleAndDatesVisible": true,
+    "testEmploymentRecordsCreatedOrChanged": false,
+    "organizationPolicyOrAccessGrantsChanged": false,
+    "screenshotsRetainedPrivately": true
+  },
+  "productionEmployeeRoleSimulation": false,
+  "localRoleSimulation": "Five actual local IdP accounts; see admin-manager-employee-acceptance.json",
+  "limits": [
+    "Production smoke used the authenticated owner and an existing synthetic assessment; the complete three-role simulation was local.",
+    "Historical versions were checked through the live UI; this follow-up does not claim a new production report-hash comparison.",
+    "New external provider calls, customer pilot and full backup restoration are not certified by these role-flow checks."
+  ],
+  "privacy": "Actual-account production screenshots remain private. Published screenshots show synthetic local accounts only."
+}

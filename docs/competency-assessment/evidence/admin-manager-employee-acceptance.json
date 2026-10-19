@@ -1,5 +1,5 @@
 {
-  "verifiedAt": "2026-10-19T06:17:19.224758+00:00",
+  "verifiedAt": "2026-10-19T07:34:51.007682+00:00",
   "baseRevision": "7853b83ba733afa89eaad5cf9985924899b0d2bb",
   "sourceSHA256": {
     "performance/backend/routes/appraisals.js": "80fcd4e00f0092287ded3f10a9b89c6bdd573e079183ee0a4fb8cba0ed2f9a82",
@@ -147,6 +147,24 @@
   "preservation": "Only nine-line launch guard staged from dirty appraisal router; existing lifecycle bytes retained and unrelated files unstaged.",
   "hostedFollowup": {
     "initialRun": 39207446373,
-    "finding": "Two older real-route browser fixtures inherited goal-required quarterly defaults without creating goals. Reproduced launch rejection, corrected fixture intent only, five cases passed locally without retries. Full hosted rerun pending."
+    "finding": "Two older real-route browser fixtures inherited goal-required quarterly defaults without creating goals. Reproduced launch rejection, corrected only fixture intent, retained all assertions. Five cases passed twice locally with no retries; trace audit found zero unhandled browser errors and three intentional outage console responses. Exact-head and merged-main hosted suites both passed111 UI and30 real-API browser cases without retries.",
+    "initialConclusion": "cancelled after superseding fixture correction"
+  },
+  "hostedVerification": {
+    "reviewedHead": "28ba4fba598f96d182efea346731e455404478b1",
+    "mergedRevision": "92dce5c37824da9c6431d2c56c2a6caef168ae6a",
+    "identicalTree": "6bdff050cbfa9b4264a93d2e40b9bcb62c926c83",
+    "prReceipt": "role-journey-pr-ci.json",
+    "mainReceipt": "role-journey-main-ci.json"
+  },
+  "release": {
+    "featurePR": 139,
+    "runtimeRevision": "92dce5c37824da9c6431d2c56c2a6caef168ae6a",
+    "liveVerified": true,
+    "coreWorkflow": 39211135380,
+    "liveReceipt": "role-journey-live-release.json",
+    "coreCIReceipt": "role-journey-core-ci.json",
+    "productionSmokeActor": "existing authenticated owner",
+    "completeLocalRoleAccounts": 5
   }
 }

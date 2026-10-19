@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "scope": "PR139 hosted acceptance; distinct from deployed runtime verification",
+  "sourceHead": "28ba4fba598f96d182efea346731e455404478b1",
+  "performanceCI": {
+    "runId": 39209061795,
+    "url": "https://github.com/Dewinsight/seemplify/actions/runs/39209061795",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "requiredScan": {
+    "runId": 39209059687,
+    "conclusion": "success"
+  },
+  "backend": {
+    "integration": {
+      "passed": 208,
+      "total": 208,
+      "suitesPassed": 19,
+      "failed": 0
+    },
+    "legacy": {
+      "passed": 83,
+      "total": 83,
+      "failed": 0
+    },
+    "unit": {
+      "passed": 38,
+      "total": 38,
+      "failed": 0
+    },
+    "persistedIdentityMigrations": {
+      "passed": 2,
+      "total": 2,
+      "failed": 0
+    }
+  },
+  "fullApplicationHTTP": {
+    "requests": 709,
+    "failures": 0,
+    "usesProductionIndexes": true
+  },
+  "browserUI": {
+    "passed": 111,
+    "total": 111,
+    "passedDirectly": 111,
+    "passedAfterRetry": 0,
+    "failed": 0,
+    "retryAttemptLines": 0,
+    "durationAsReported": "13.4m",
+    "scope": "UI contracts plus selected real-route fullstack fixtures; synthetic identities and provider fixtures"
+  },
+  "browserRealAPI": {
+    "passed": 30,
+    "total": 30,
+    "passedDirectly": 30,
+    "passedAfterRetry": 0,
+    "failed": 0,
+    "retryAttemptLines": 0,
+    "durationAsReported": "3.3m",
+    "scope": "Browser with actual local product API, disposable Mongo replica set, actual IdP default policy and directory definitions; synthetic identity transport"
+  },
+  "productionBuild": {
+    "conclusion": "success",
+    "compileDurationAsReported": "1985ms"
+  },
+  "supersededAttempt": {
+    "head": "e04e15b926c89e82cef466ca69ebaa8ecff910f3",
+    "runId": 39207446373,
+    "conclusion": "cancelled",
+    "observedFailedBrowserCases": 5,
+    "reason": "Manual/call/reviewer fixtures inherited goal-required quarterly settings without goals. Fixture-only correction explicitly selected the supported goal-optional mode; required-goal source guard and existing assertions retained.",
+    "finalBrowserTotalsAvailable": false,
+    "laterTargetedLocalVerification": {
+      "passed": 5,
+      "failed": 0,
+      "retries": 0
+    }
+  },
+  "diagnostics": {
+    "developmentServerRequestAbortWindows": 3,
+    "abortedErrorLines": 5,
+    "uncaughtExceptionLines": 2,
+    "code": "ECONNRESET",
+    "observedContext": "Next development web-server logs around the history and OKR test transitions. The first time window contains three aborted-error lines, including two uncaughtException entries; later two windows contain one error line each.",
+    "classification": "Request-abort diagnostics observed; no corresponding failed browser assertion, retry, or failed workflow step.",
+    "limits": "The completed log hides stack frames and supplies no request URL or cause. Temporal proximity to navigation does not prove navigation caused the resets. No claim of zero server-log errors or an established production defect."
+  },
+  "limits": [
+    "Hosted CI is not deployment confirmation.",
+    "No real employee record, private credential, external provider connection or genuine OIDC session is represented in this aggregate.",
+    "Coordinator genuine OIDC role simulation and later exact-release runtime checks are separate evidence."
+  ]
+}
