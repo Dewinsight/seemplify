@@ -51,11 +51,11 @@ features=[
 ('CA-006','Role expectations','Map responsibilities and requirements to native levels or named numeric targets.','Local QA'),
 ('CA-007','People, roles and reviewers','Select roles in existing appraisal setup; recover partial links without duplicate appraisals.','UI / API'),
 ('CA-008','Expected versus observed','Use the same frozen role in findings, score breakdown and report.','UI / API'),
-('CA-009','Role-aware AI assistance','Personal connected account; cited observations remain a human-reviewed draft.','Provider gate'),
+('CA-009','Role-aware AI assistance','Personal connected account; cited observations remain a human-reviewed draft.','Live / CI'),
 ('CA-101','Evidence intake and access','Private, criterion-linked sources; manual notes remain available without integrations.','UI / API'),
 ('CA-102','Structured oral assessment','Questions, answers, notes, date, time zone, participants and submission history.','UI / API'),
 ('CA-103','Calendar and in-app calls','Reuse call scheduling; link permitted transcripts after source and assessment consent.','Provider gate'),
-('CA-104','Review AI drafts','Accept, edit or dismiss cited suggestions; AI cannot choose the final rating.','Provider gate'),
+('CA-104','Review AI drafts','Accept, edit or dismiss cited suggestions; AI cannot choose the final rating.','Live / CI'),
 ('CA-105','Assessor workspace','Save and resume findings; compare concurrent edits instead of silently overwriting.','UI / API'),
 ('CA-106','Explainable scoring','Explicit conversions, weights, coverage, thresholds and decimal rounding.','API / PDF'),
 ('CA-107','Human final classification','Suggestion and decision stay separate; direct publication needs no second approval.','UI / API'),
@@ -67,7 +67,7 @@ features=[
 ('CA-113','Cohort reporting','Scoped completion, gaps, filters and comparable rankings, with private PDF export.','UI / PDF'),
 ('CA-114','History and reopening','Retain earlier final results; publish later revisions without rewriting history.','UI / API'),
 ('CA-115','Consent and retention','Separate purposes, source withdrawal, legal holds, deletion retries and bounded exports.','API / QA'),
-('CA-116','Pilot and release proof','Ten-person synthetic pilot plus layered browser, API, provider and deployment evidence.','Release gate')]
+('CA-116','Pilot and release proof','Ten-person synthetic pilot plus layered browser, API, provider and deployment evidence.','Live / CI')]
 header(1,'Competency assessment\nDelivery report','What was implemented, how it was checked, and what is actually live.')
 rect(M,H-341,CW,164,INK,14);para(meta.get('headline','Implementation complete in core areas. Final acceptance is in progress.'),M+22,H-200,CW-44,'white');para('No automatic employment decisions. AI and recorded calls are optional. Historical role definitions and final reports are preserved.',M+22,H-274,CW-44,'white')
 y=H-380;para('A full team, delivered as a rolling pipeline',M,y,kind='h2');y-=40
@@ -99,5 +99,6 @@ header(8,'Test and release evidence','Passing tests and live operation are separ
 rows=[['Layer','Current result','Evidence boundary'],['Domain / API',meta.get('mongo','Final rerun pending'),'Disposable Mongo, real services and persistence; test authority fixtures.'],['Scoring / files / budgets',meta.get('pure','25 targeted checks passed'),'Deterministic arithmetic, parser/scanner protocol and workload limits.'],['Identity',meta.get('idp','35 focused checks passed'),'Catalog, current team scope and migration concurrency.'],['Browser',meta.get('browser','Final consent/report run pending'),'UI contracts plus a real API/Mongo report/PDF journey.'],['Authenticated local app','Fresh sign-in + linked launch','Actual localhost5005 to API5004; synthetic people, role and saved report.'],['Private backup / restore',meta.get('backup','Acceptance pending'),'Isolated hash/permission and Mongo reference checks; separate backup retention.'],['Actual scanner','TXT / PDF / DOCX accepted','Live signed-in intake, reviewed drafts and original download; isolated AV rejection.'],['Live optional providers',meta.get('providers','Acceptance pending'),'Mocks do not prove live personal inference or new call artifacts.'],['Production release',meta.get('release','Not yet deployed'),'Requires exact reviewed commit, CI, deployment and live smoke.']]
 y=table(rows,H-169,[115,142,CW-257]);y-=27
 para('Release identity',M,y,kind='label');y=para(meta.get('revision','Source baseline b401f1b1 plus uncommitted programme files. Unrelated lifecycle work is excluded from this release.'),M,y-20,kind='small')
-para('Research and source documents',M,y-23,kind='label');para('Full Markdown plan, stories, architecture, UX specifications, role skills, review findings and evidence: docs/competency-assessment/. Research: GOV.UK Service Manual; C4 model; W3C WCAG 2.2; OWASP ASVS; Playwright official testing guidance.',M,y-44,kind='small');end()
+para('Outstanding acceptance',M,y-17,kind='label');y=para(meta.get('outstanding','New calendar/native recording artifacts, the customer pilot and a full production restore remain unverified. The optional provider metadata field was not returned.'),M,y-33,kind='small')
+para('Research and source documents',M,y-17,kind='label');para('Full Markdown plan, stories, architecture, UX specifications, role skills, review findings and evidence: docs/competency-assessment/. Research: GOV.UK Service Manual; C4 model; W3C WCAG 2.2; OWASP ASVS; Playwright official testing guidance.',M,y-33,kind='small');end()
 c.save();print(OUT)

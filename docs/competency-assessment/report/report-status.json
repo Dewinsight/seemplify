@@ -1,12 +1,12 @@
 {
-  "headline": "Manual competency assessment passed authenticated production acceptance.",
-  "releaseLabel": "MANUAL LIVE - FINAL GUARD ROLLOUT PENDING",
-  "mongo": "199 / 199 exact-head CI integration checks passed",
+  "headline": "Role-aware assessment is live. Actual personal AI and report history passed.",
+  "releaseLabel": "LIVE - 3095926a VERIFIED",
+  "mongo": "199 / 199 final-main CI integration checks passed",
   "pure": "25 / 25 targeted checks passed",
   "idp": "42 / 42 focused checks; schema 5 verified live",
-  "browser": "107 / 107; separate real-API suite 29 / 29, no retries",
-  "providers": "AI / recorded-call evidence off; actual providers pending",
-  "release": "Manual live at e2e57a51; final3095926a rollout pending",
-  "revision": "At e2e57a51: current organisation enabled manual; actual UI TXT/PDF/DOCX real-scanner intake/review/edit/confirm and private original byte comparison passed. Synthetic service-launched assessment: no ordinary parent/emails; actual UI score80, coverage1/1, Suitable, participant2-page/cohort1-page PDFs verified. Production Start appraisal confirmation/preflight only; launch not clicked. Fresh local linked launch separate. Final3095926a CI running/Core queued; AI/calls off, client pilot pending. Experience baseline separate.",
+  "browser": "106 first attempt +1 retry; real-API29/29 without retries",
+  "providers": "Actual personal AI passed; new external calls pending",
+  "release": "3095926a live;13 Core services verified healthy",
+  "revision": "3095926a live:13 Core revisions/18 models/32 indexes verified. Actual personal AI gpt-5.6-terra and unchanged v1/history plus v2 PDFs passed. Human rating/outcome preserved; prior AI/call settings restored off. Production wizard preflight only; full linked launch local. New calls, client pilot and production restore pending.",
   "backup": "16 isolated checks; live service lock/timer verified"
 }

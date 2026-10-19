@@ -1,0 +1,44 @@
+{
+  "head": "3095926ae41bf31e7b883c1e8a83044e1b97c272",
+  "run": 39195119875,
+  "conclusion": "success",
+  "source": "completed GitHub Actions log performance-ci-3095926-success.log",
+  "jest": {
+    "testsPassed": 199,
+    "suitesPassed": 18
+  },
+  "nodeLegacyPassed": 83,
+  "unitPassed": 38,
+  "persistedPolicyMigrationPassed": 2,
+  "realApi": {
+    "requests": 709,
+    "failures": 0
+  },
+  "browser": {
+    "executed": 107,
+    "finalFailures": 0,
+    "flakyPassedOnRetry": 1,
+    "passedWithoutRetry": 106,
+    "retryTriage": {
+      "test": "existing team-member OKR wrapped-response navigation",
+      "firstAttempt": "Five-second URL assertion expired while the correct client navigation RSC request remained pending.",
+      "trace": "Correct route requested; Fast Refresh rebuilding recorded during the wait; preceding mocked API responses succeeded.",
+      "classification": "Consistent with cold development-route compilation/navigation timing; no returned product or API error observed.",
+      "retry": "Passed first retry",
+      "recommendedFollowup": "Use an explicit navigation timeout matching nearby deep-link tests; no source change made."
+    }
+  },
+  "realApiBrowser": {
+    "passed": 29,
+    "retries": 0
+  },
+  "productionBuild": "success",
+  "deployment": "not established by this CI evidence",
+  "scope": "three-file runtime policy guard, no competency local fallback",
+  "reviewedPullRequestEvidence": {
+    "browserWithoutRetry": 107,
+    "sourceTreesIdentical": true,
+    "head": "f43677131a6cd42c6cb88e77cc8ee9f7033aed1b",
+    "run": 39193949849
+  }
+}

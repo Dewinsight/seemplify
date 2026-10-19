@@ -1,0 +1,46 @@
+{
+  "releaseRevision": "3095926ae41bf31e7b883c1e8a83044e1b97c272",
+  "workflowRun": 39195119921,
+  "conclusion": "success",
+  "prerequisiteJobsPassed": 13,
+  "frontend": {
+    "job": 117876128321,
+    "browser": {
+      "executed": 41,
+      "passedWithoutRetry": 41,
+      "flakyPassedOnRetry": 0,
+      "finalFailures": 0,
+      "duration": "6.3 minutes"
+    },
+    "productionBuild": "success",
+    "compileDuration": "25.7 seconds"
+  },
+  "deployment": {
+    "job": 117881637246,
+    "hostingerSmoke": "success",
+    "smokeCompletedAt": "2026-10-19T04:22:57Z",
+    "performanceHealth": 200,
+    "performanceOidc": "302 to auth",
+    "containerHealthVerified": true
+  },
+  "independentRunningReleaseVerification": {
+    "source": "final-release-verification.txt",
+    "coreServiceRevisionsMatched": 13,
+    "coreServicesRunningAndHealthyWhereDefined": true,
+    "scannerHealthy": true,
+    "privateDirectoryMode": 700
+  },
+  "independentReadiness": {
+    "source": "final-model-readiness-proof.txt",
+    "replicaSetPrimaryVerified": true,
+    "modelSchemasVerified": 18,
+    "declaredIndexesVerified": 32,
+    "uniqueTtlAndPartialOptionsVerified": true,
+    "employeeRecordsRead": false,
+    "databaseWritesPerformed": false
+  },
+  "boundaries": {
+    "authenticatedFeatureAcceptance": "recorded separately; this aggregate does not certify UI actions or external providers",
+    "fullProductionBackupOrRestoreCertified": false
+  }
+}
