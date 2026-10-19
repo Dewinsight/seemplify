@@ -18,11 +18,29 @@ let mongo: { stop: () => Promise<void> };
 let server: import('node:http').Server;
 let apiURL: string;
 let activePrincipal: typeof principal;
+const originalFetch = globalThis.fetch;
+const turnCredentialsUrl = 'https://turn.seemplifyai.com/api/turn-credentials';
+let turnCredentialRequests = 0;
+const forwardedCredentialRequests: string[] = [];
 const organization = { id: 'review-browser-org', name: 'Browser review QA', role: 'employee', appAccess: { mode: 'all', appIds: [] } };
 const principal = { id: 'member', sub: 'member', name: 'Taylor Member', email: 'member@example.test', organizations: [organization], currentOrganization: organization,
   idpTeams: [{ id: 'team', name: 'Product', organizationId: organization.id, role: 'line_manager' }] };
 
 test.beforeAll(async () => {
+  // Isolate only the external credential HTTP provider. Real browser media,
+  // WebRTC, consent, API leases and recording storage are exercised below;
+  // a loopback discard relay is not acceptance of the actual TURN provider.
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url === turnCredentialsUrl) {
+      turnCredentialRequests += 1;
+      return new Response(JSON.stringify({ urls: ['turn:127.0.0.1:9?transport=udp'],
+        username: `${Math.floor(Date.now() / 1000) + 600}:synthetic-browser`, credential: 'synthetic-fixture-not-a-relay-secret' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.startsWith(turnCredentialsUrl)) forwardedCredentialRequests.push(url);
+    return originalFetch(input, init);
+  };
   activePrincipal = principal;
   mongo = await MongoMemoryServer.create();
   await mongoose.connect((mongo as unknown as { getUri: () => string }).getUri());
@@ -137,8 +155,12 @@ test('two real browser peers connect, obtain consent, record, save and play a pr
     await expect(page.getByText('Recording is in progress. Both participants’ audio and video may be captured.')).toHaveCount(0);
   }
   await Promise.all(contexts.map(context => context.close()));
+  expect(turnCredentialRequests).toBe(3); // Denied media attempt, its retry, and the other participant.
+  expect(forwardedCredentialRequests).toEqual([]);
+  console.info(`[native credential fixture] ${turnCredentialRequests} intercepted; 0 external credential HTTP requests`);
 });
 test.afterAll(async () => {
+  globalThis.fetch = originalFetch;
   if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await mongoose.disconnect(); if (mongo) await mongo.stop();
 });

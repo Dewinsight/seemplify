@@ -13,10 +13,28 @@ let mongo: { stop: () => Promise<void> }, server: import('node:http').Server, ap
 let connected = true, calendarFailure = false;
 const requests: Array<{ operation: string; input: { externalId?: string } }> = [];
 const originalRequest = shared.request, originalCompletions = ai.getChatCompletions;
+const originalFetch = globalThis.fetch;
+const turnCredentialsUrl = 'https://turn.seemplifyai.com/api/turn-credentials';
+let turnCredentialRequests = 0;
+const forwardedCredentialRequests: string[] = [];
 const organization = { id: 'standalone-browser-org', name: 'Local call QA', role: 'staff', appAccess: { mode: 'all', appIds: [] } };
 function actor(name: string) { return { id: name, sub: name, email: `${name}@example.test`, name: name === 'manager' ? 'Morgan Manager' : 'Emery Employee', organizations: [organization], currentOrganization: organization,
   idpTeams: [{ id: 'team', name: 'Product', organizationId: organization.id, role: name === 'manager' ? 'line_manager' : 'member', directReports: name === 'manager' ? ['employee'] : [] }] }; }
 test.beforeAll(async () => {
+  // Only the credential HTTP provider is isolated. A loopback discard relay
+  // does not certify real TURN connectivity; browser media, peer negotiation,
+  // consent, real API leases, recording and playback remain under test.
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url === turnCredentialsUrl) {
+      turnCredentialRequests += 1;
+      return new Response(JSON.stringify({ urls: ['turn:127.0.0.1:9?transport=udp'],
+        username: `${Math.floor(Date.now() / 1000) + 600}:synthetic-browser`, credential: 'synthetic-fixture-not-a-relay-secret' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.startsWith(turnCredentialsUrl)) forwardedCredentialRequests.push(url);
+    return originalFetch(input, init);
+  };
   mongo = await MongoMemoryServer.create(); await mongoose.connect((mongo as unknown as { getUri: () => string }).getUri()); await OneOnOne.createIndexes();
   for (const name of ['manager', 'employee']) await User.create({ idpSub: name, email: `${name}@example.test`, profile: { displayName: actor(name).name }, currentOrganizationId: organization.id, idpTeams: actor(name).idpTeams });
   shared.request = async (operation: string, _identity: unknown, input: { externalId?: string } = {}) => {
@@ -37,6 +55,7 @@ test.beforeAll(async () => {
 });
 test.beforeEach(async () => { connected = true; calendarFailure = false; requests.length = 0; await OneOnOne.deleteMany({}); });
 test.afterAll(async () => {
+  globalThis.fetch = originalFetch;
   shared.request = originalRequest; ai.getChatCompletions = originalCompletions;
   if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await mongoose.disconnect(); if (mongo) await mongo.stop();
@@ -125,6 +144,9 @@ test('standalone native peers record real browser media, play it, process notes 
       await page.getByRole('button', { name: 'Join in-app call', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Leave call', exact: true })).toBeVisible({ timeout: 20000 });
     }
+    expect(turnCredentialRequests).toBe(2);
+    expect(forwardedCredentialRequests).toEqual([]);
+    console.info(`[native credential fixture] ${turnCredentialRequests} intercepted; 0 external credential HTTP requests`);
     for (const page of pages) {
       await expect.poll(() => page.getByLabel('Other participant', { exact: true }).evaluate((video: HTMLVideoElement) => video.readyState), { timeout: 35000 }).toBeGreaterThanOrEqual(2);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
