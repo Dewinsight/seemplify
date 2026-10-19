@@ -427,7 +427,7 @@ function targetResolverConfig(targetType) {
       load: () => require('../models/Appraisal'),
       select: 'status discussion.employeeAcknowledged',
       isComplete: target => Boolean(target.discussion?.employeeAcknowledged)
-        || target.status === 'employee_acknowledged'
+        || ['employee_acknowledged', 'cancelled'].includes(target.status)
     },
     appraisal_cycle: {
       load: () => require('../models/AppraisalCycle'),

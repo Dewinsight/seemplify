@@ -31,6 +31,17 @@ async function isProcessable(meeting) {
   if (meeting.appraisalId) return Boolean(await require('../models/Appraisal').exists({ _id: meeting.appraisalId, organizationId: meeting.organizationId, status: { $ne: 'cancelled' } }));
   return meeting.appraisalMeeting?.source === 'one_on_one';
 }
+async function cancelLateCalendar(meeting, result) {
+  let pending = false;
+  try { await shared.request('meetings/cancel', meeting.appraisalMeeting.ownerIdentity, { externalId: String(meeting._id) }); }
+  catch { pending = true; }
+  await OneOnOne.updateOne({ _id: meeting._id, organizationId: meeting.organizationId }, { $set: {
+    status: 'cancelled', nylas: { eventId: result.eventId, calendarId: result.calendarId, conferenceUrl: result.conferenceUrl, syncStatus: pending ? 'failed' : 'synced', lastSyncAt: new Date() },
+    'appraisalMeeting.calendarState': pending ? 'cancellation_pending' : 'cancelled'
+  } });
+  if (pending && meeting.appraisalId) await require('../models/Appraisal').updateOne({ _id: meeting.appraisalId, organizationId: meeting.organizationId }, { $set: { 'lifecycle.cleanupPending': true } }).withRemoved();
+  throw Object.assign(failure(pending ? 'This review is closed, but its late calendar invitation still needs cancellation. Retry cancellation from the appraisal actions.' : 'This review was closed while its calendar was being scheduled. The late invitation was cancelled.', pending ? 503 : 409), { code: pending ? 'CALENDAR_CANCELLATION_PENDING' : 'APPRAISAL_CLOSED' });
+}
 async function createCalendar(meeting) {
   if (meeting.nylas?.eventId && meeting.nylas?.conferenceUrl) return meeting;
   if (['completed', 'cancelled', 'no_show'].includes(meeting.status)) throw failure('This meeting is closed.');
@@ -43,11 +54,15 @@ async function createCalendar(meeting) {
       ...(meeting.appraisalMeeting.recordingPolicyVersion === 'calendar-recording-v1' ? { recordingPolicyVersion: 'calendar-recording-v1', participantSubjects: [String(meeting.managerId), String(meeting.employeeId)] } : {}),
       participants: [meeting.managerInfo, meeting.employeeInfo].map(person => ({ name: person.name, email: person.email })) }, { timeoutMs: 90000 });
     if (!result.eventId || !result.conferenceUrl) throw failure('The calendar has not confirmed a call link. Retry this meeting instead of creating another.', 502);
-    await OneOnOne.updateOne({ _id: meeting._id }, { $set: { nylas: { eventId: result.eventId, calendarId: result.calendarId,
+    const fresh = await OneOnOne.findById(meeting._id);
+    if (!fresh || ['cancelled', 'completed', 'no_show'].includes(fresh.status) || !await isProcessable(fresh)) return await cancelLateCalendar(meeting, result);
+    const saved = await OneOnOne.updateOne({ _id: meeting._id, organizationId: meeting.organizationId, status: { $nin: ['cancelled', 'completed', 'no_show'] } }, { $set: { nylas: { eventId: result.eventId, calendarId: result.calendarId,
       conferenceUrl: result.conferenceUrl, syncStatus: 'synced', lastSyncAt: new Date() },
       'appraisalMeeting.recordingState': result.recordingState, 'appraisalMeeting.calendarState': result.state || 'scheduled' } });
+    if (!saved.matchedCount) return await cancelLateCalendar(meeting, result);
     return OneOnOne.findById(meeting._id);
   } catch (error) {
+    if (['APPRAISAL_CLOSED', 'CALENDAR_CANCELLATION_PENDING'].includes(error.code)) throw error;
     await OneOnOne.updateOne({ _id: meeting._id, 'nylas.eventId': { $exists: false } }, { $set: { 'appraisalMeeting.calendarState': 'needs_attention', 'nylas.syncStatus': 'failed' } });
     const confirmed = await OneOnOne.findById(meeting._id);
     if (confirmed?.nylas?.eventId && confirmed?.nylas?.conferenceUrl) return confirmed;

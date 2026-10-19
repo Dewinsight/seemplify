@@ -41,13 +41,27 @@ export default function FinalReviewPage() {
     const appraisalId = params.appraisalId as string;
 
     const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
-    const { user, isManager, isHRAdmin } = useUserContext();
+    const { user, isHRAdmin } = useUserContext();
     const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false;
 
     const [aiLoading, setAiLoading] = useState(false);
     const [aiSuggestion, setAiSuggestion] = useState<AIRatingSuggestion | null>(null);
     const [aiSuggestionError, setAiSuggestionError] = useState('');
 
+    const [evidenceScore, setEvidenceScore] = useState<number | null>(null);
+    const [scoreError, setScoreError] = useState('');
+    const [evidenceLoaded, setEvidenceLoaded] = useState(false);
+    useEffect(() => {
+      let active = true;
+      api.get(`/appraisals/${appraisalId}/scoring`).then(response => {
+        const score = response.data?.data?.suggestedRating;
+        if (active) {
+          if (typeof score === 'number' && Number.isFinite(score)) { setEvidenceScore(score); setEvidenceLoaded(true); }
+          else setScoreError('The calculated evidence rating is unavailable. Refresh before finalizing.');
+        }
+      }).catch(() => { if (active) setScoreError('Evidence score could not be loaded. Refresh before finalizing.'); });
+      return () => { active = false; };
+    }, [appraisalId]);
     const [finalRating, setFinalRating] = useState<number>(3);
     const [finalRatingTouched, setFinalRatingTouched] = useState(false);
     const [justification, setJustification] = useState('');
@@ -73,7 +87,12 @@ export default function FinalReviewPage() {
             (managerEmail && requesterEmail && managerEmail === requesterEmail)
         );
     }, [appraisal, user]);
-    const hasManagerAccess = isAssignedManager || (!!isManager && !isHRAdmin);
+    const isEmployee = appraisal?.viewerCapabilities?.isEmployee ?? Boolean(
+        [user?.id, user?.sub, user?.userId].filter(Boolean).map(String).includes(String(appraisal?.employee?.userId)) ||
+        (user?.email && appraisal?.employee?.email && normalizeIdentityEmail(user.email) === normalizeIdentityEmail(appraisal.employee.email))
+    );
+    const hasManagerAccess = appraisal?.viewerCapabilities?.canManage ?? (!isEmployee && (isAssignedManager || isHRAdmin));
+    const overridingEvidence = evidenceScore !== null && Math.abs(Math.round(finalRating * 10) / 10 - evidenceScore) >= 0.05;
 
     const selfRating = appraisal?.selfAssessment?.overallSelfRating;
     const managerRating = appraisal?.managerReview?.overallManagerRating;
@@ -81,7 +100,7 @@ export default function FinalReviewPage() {
     const needsCalibration = appraisal?.status === 'calibration_pending' || appraisal?.status === 'calibration_in_progress';
 
     const fetchAiSuggestion = async () => {
-        if (!aiAssistEnabled) return;
+        if (!aiAssistEnabled || !canFinalize || !hasManagerAccess) return;
         setAiLoading(true);
         setAiSuggestionError('');
         try {
@@ -109,14 +128,14 @@ export default function FinalReviewPage() {
     useEffect(() => {
         if (!appraisal) return;
         if (finalRatingTouched) return;
-        const suggested = aiSuggestion?.suggestedRating || managerRating || 3;
+        const suggested = appraisal.calibration?.calibratedRating ?? evidenceScore ?? managerRating ?? 3;
         setFinalRating(suggested);
-    }, [appraisal, aiSuggestion, managerRating, finalRatingTouched]);
+    }, [appraisal, evidenceScore, managerRating, finalRatingTouched]);
 
     // If there's a notable mismatch, auto-fetch AI arbitration.
     useEffect(() => {
         if (!appraisal) return;
-        if (!aiAssistEnabled) return;
+        if (!aiAssistEnabled || !canFinalize || !hasManagerAccess) return;
         if (aiSuggestion) return;
         const hasDispute = !!appraisal.flags?.hasDispute;
         const hasGap = !!(selfRating && managerRating && Math.abs(selfRating - managerRating) >= 2);
@@ -124,7 +143,7 @@ export default function FinalReviewPage() {
             fetchAiSuggestion();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [appraisal, aiAssistEnabled, aiSuggestion, selfRating, managerRating]);
+    }, [appraisal, aiAssistEnabled, aiSuggestion, selfRating, managerRating, canFinalize, hasManagerAccess]);
 
     return (
         <Box>
@@ -132,7 +151,7 @@ export default function FinalReviewPage() {
                 Back to Appraisal
             </Button>
 
-            <Paper sx={{ p: 4 }}>
+            <Paper sx={{ p: { xs: 2, sm: 4 }, '& .MuiButton-root': { minHeight: 44 } }}>
                 <Typography variant="h5" fontWeight={700} gutterBottom>
                     Final Review
                 </Typography>
@@ -147,11 +166,11 @@ export default function FinalReviewPage() {
                     <Alert severity="error">Appraisal not found</Alert>
                 )}
 
-                {!isLoading && appraisal && !(hasManagerAccess || isHRAdmin) && (
+                {!isLoading && appraisal && !hasManagerAccess && (
                     <Alert severity="error">Only an authorized appraiser can access final review.</Alert>
                 )}
 
-                {!isLoading && appraisal && (hasManagerAccess || isHRAdmin) && (
+                {!isLoading && appraisal && hasManagerAccess && (
                     <>
                         {needsCalibration && (
                             <Alert severity="warning" sx={{ mb: 3 }}>
@@ -206,7 +225,7 @@ export default function FinalReviewPage() {
 
                         <Card sx={{ mb: 3, border: 1, borderColor: 'divider' }}>
                             <CardContent>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 2 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                         <SmartToy color="secondary" />
                                         <Typography variant="subtitle1" fontWeight={700}>
@@ -219,7 +238,7 @@ export default function FinalReviewPage() {
                                             variant="outlined"
                                             startIcon={aiLoading ? <CircularProgress size={16} /> : <SmartToy />}
                                             onClick={fetchAiSuggestion}
-                                            disabled={aiLoading}
+                                            disabled={aiLoading || !canFinalize}
                                         >
                                             Get AI Suggestion
                                         </Button>
@@ -250,7 +269,7 @@ export default function FinalReviewPage() {
                                             size="small"
                                             color="inherit"
                                             onClick={() => void fetchAiSuggestion()}
-                                            disabled={aiLoading}
+                                            disabled={aiLoading || !canFinalize}
                                             sx={{ mt: 1 }}
                                         >
                                             Retry suggestion
@@ -272,9 +291,10 @@ export default function FinalReviewPage() {
                             Final Rating Decision
                         </Typography>
 
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 2 }}>
                             <Rating
                                 value={finalRating}
+                                disabled={!canFinalize || !evidenceLoaded}
                                 onChange={(_, v) => {
                                     setFinalRatingTouched(true);
                                     setFinalRating(v || 3);
@@ -282,16 +302,23 @@ export default function FinalReviewPage() {
                                 size="large"
                             />
                             <Chip label={`${finalRating}/5`} color={finalRating >= 4 ? 'success' : finalRating >= 3 ? 'info' : 'warning'} />
-                            {aiSuggestion?.suggestedRating && finalRating !== aiSuggestion.suggestedRating && (
-                                <Chip color="warning" label="Override AI" />
+                            {overridingEvidence && (
+                                <Chip color="warning" label="Override evidence rating" />
                             )}
                         </Box>
 
+                        {!evidenceLoaded && !scoreError && <Typography role="status">Loading calculated evidence rating…</Typography>}
+                        {scoreError && <Alert severity="error">{scoreError}</Alert>}
+                        {evidenceScore !== null && <Typography>Calculated evidence rating: {evidenceScore}/5</Typography>}
                         <TextField
                             fullWidth
                             multiline
                             minRows={3}
-                            label="Justification (required if overriding AI suggestion)"
+                            label="Justification (required when overriding evidence rating)"
+                            disabled={!canFinalize}
+                            helperText={overridingEvidence ? 'At least 10 characters explaining the difference from the calculated evidence rating.' : 'Explain the final outcome.'}
+                            error={overridingEvidence && justification.length > 0 && justification.trim().length < 10}
+                            slotProps={{ htmlInput: { 'aria-required': overridingEvidence } }}
                             value={justification}
                             onChange={(e) => setJustification(e.target.value)}
                             sx={{ mb: 3 }}
@@ -302,7 +329,7 @@ export default function FinalReviewPage() {
                                 variant="contained"
                                 color="success"
                                 startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : <CheckCircle />}
-                                disabled={!canFinalize || submitting || (aiSuggestion?.suggestedRating && finalRating !== aiSuggestion.suggestedRating && !justification.trim())}
+                                disabled={!canFinalize || !hasManagerAccess || !evidenceLoaded || submitting || !!scoreError || (overridingEvidence && justification.trim().length < 10)}
                                 onClick={async () => {
                                     setSubmitError(null);
                                     setSubmitting(true);

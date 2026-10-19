@@ -30,7 +30,7 @@ jobs:
         run: npm ci --ignore-scripts
         working-directory: Identityprovider
       - name: Verify persisted Performance default-role migration
-        run: node --test Identityprovider/tests/access-control-performance-migration.integration.mjs
+        run: node --test Identityprovider/tests/access-control-performance-migration.integration.mjs Identityprovider/tests/performance-colleagues.test.mjs
       - run: npm ci --legacy-peer-deps
         working-directory: performance/frontend
       - run: npm test

@@ -774,6 +774,13 @@ test('approved and cancelled leave pauses and resumes reminders without changing
 
 test('anonymous 360 feedback stays withheld until five same-tenant responses and is never individual appraisal evidence', async () => {
   const reviewerIds = ['reviewer-1', 'reviewer-2', 'reviewer-3', 'reviewer-4', 'reviewer-5'];
+  // This tokenless fixture resolves contacts through active same-organization
+  // membership, matching the production Identity recipient validation boundary.
+  await User.create([EMPLOYEE, ...reviewerIds].map((idpSub) => ({
+    idpSub, email: `${idpSub}@example.test`, isActive: true,
+    profile: { displayName: `Synthetic ${idpSub}` },
+    organizationMemberships: [{ organization: ORG_A, role: 'staff', isActive: true }]
+  })));
   const dueDate = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000));
   const requested = await request(app)
     .post('/api/feedback/requests')

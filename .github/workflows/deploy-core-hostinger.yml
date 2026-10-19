@@ -66,6 +66,7 @@ jobs:
             production-wiring.test.mjs \
             tests/workspace-oidc-session-policy.test.mjs \
             tests/performance-directory.test.mjs \
+            tests/performance-colleagues.test.mjs \
             tests/session-invalidation-webhook.test.mjs \
             tests/member-import.test.mjs \
             tests/invitation-view-contract.test.mjs \
@@ -157,7 +158,7 @@ jobs:
           - name: Performance
             directory: performance/backend
             install_command: npm install --ignore-scripts --no-package-lock && npm --prefix ../../Identityprovider ci --ignore-scripts
-            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/colleagueReviews.integration.test.js tests/oneOnOneCalls.integration.test.js tests/competency --runInBand && node --test tests/competencyScoring.test.js tests/competencyFileSafety.test.js tests/competencyUploadBudget.test.js ../../deploy/hostinger/tests/competency-backup-reference.test.cjs && node --test ../../Identityprovider/tests/access-control-performance-migration.integration.mjs
+            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/appraisalLifecycle.integration.test.js tests/goalCheckInIndexes.integration.test.js tests/userDirectory.integration.test.js tests/colleagueReviews.integration.test.js tests/oneOnOneCalls.integration.test.js tests/competency --runInBand && node --test tests/competencyScoring.test.js tests/competencyFileSafety.test.js tests/competencyUploadBudget.test.js ../../deploy/hostinger/tests/competency-backup-reference.test.cjs && node --test ../../Identityprovider/tests/access-control-performance-migration.integration.mjs
           - name: Payroll
             directory: payroll/backend
             install_command: npm install --ignore-scripts --no-package-lock
@@ -232,7 +233,7 @@ jobs:
         env:
           CI: 'true'
           PERFORMANCE_E2E_PORT: '5025'
-        run: npx playwright test e2e/competency-library.spec.ts e2e/competency-draft-backup.spec.ts e2e/competency-assessment.spec.ts e2e/competency-assessment.fullstack.spec.ts e2e/competency-appraisal-link.spec.ts e2e/competency-recording-consent.spec.ts --project=chrome --output=test-results/competency
+        run: npx playwright test e2e/competency-library.spec.ts e2e/competency-draft-backup.spec.ts e2e/competency-assessment.spec.ts e2e/competency-assessment.fullstack.spec.ts e2e/competency-appraisal-link.spec.ts e2e/competency-recording-consent.spec.ts e2e/appraisal-lifecycle.fullstack.spec.ts --project=chrome --output=test-results/competency
       - name: Preserve Performance browser evidence
         if: always() && matrix.name == 'Performance'
         uses: actions/upload-artifact@v4
@@ -451,6 +452,8 @@ jobs:
           # partial replacement is built and verified. The job container is disposable.
           "${compose[@]}" run --rm --no-deps -T performance-backend \
             node scripts/migrateGoalIdempotencyIndex.js --apply < /dev/null
+          "${compose[@]}" run --rm --no-deps -T performance-backend \
+            node scripts/migrateGoalCheckInIdempotencyIndex.js --apply < /dev/null
           install -d -m 700 /opt/seemplify/backups/performance-reviews
           "${compose[@]}" run --rm --no-deps -T \
             -v /opt/seemplify/backups/performance-reviews:/review-backups performance-backend \

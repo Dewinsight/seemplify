@@ -2,6 +2,7 @@
 
 import AppraisalMeetings from '@/components/appraisals/AppraisalMeetings';
 import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
+import AppraisalActions from '@/components/appraisals/AppraisalActions';
 import { FlowStep } from '@/components/appraisals/AppraisalFlowEditor';
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -56,6 +57,7 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
   'calibration_completed': { label: 'Calibration Completed', color: 'success', icon: <CheckCircle /> },
   'final_review_pending': { label: 'Final Review Pending', color: 'warning', icon: <AssessmentOutlined /> },
   'completed': { label: 'Completed', color: 'success', icon: <CheckCircle /> },
+  'cancelled': { label: 'Cancelled', color: 'error', icon: <Warning /> },
 };
 
 const ratingLabels: Record<number, string> = {
@@ -128,6 +130,7 @@ export default function AppraisalDetailPage() {
     (managerEmail && requesterEmail && managerEmail === requesterEmail)
   );
   const hasManagerAccess = isAssignedManager || (isManager && !isEmployee) || isHRAdmin;
+  const cancelled = appraisal.status === 'cancelled';
   const config = statusConfig[appraisal.status] || statusConfig['not_started'];
 
   // Determine active workflow step
@@ -167,13 +170,13 @@ export default function AppraisalDetailPage() {
           Back to Appraisals
         </Button>
 
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, maxWidth: '100%' }}>
             <Avatar sx={{ width: 64, height: 64, bgcolor: 'primary.main', fontSize: 28 }}>
               {appraisal.employee?.name?.[0] || 'E'}
             </Avatar>
-            <Box>
-              <Typography variant="h4" fontWeight={700}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.65rem', sm: '2.125rem' }, overflowWrap: 'anywhere' }}>
                 {isEmployee ? 'My Appraisal' : `${appraisal.employee?.name}'s Appraisal`}
               </Typography>
               <Typography variant="body1" color="text.secondary">
@@ -190,7 +193,10 @@ export default function AppraisalDetailPage() {
           </Box>
 
           {/* Action Buttons */}
-          <Box sx={{ display: 'flex', gap: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <AppraisalActions appraisalId={appraisalId} employeeName={appraisal.employee?.name} enabled={hasManagerAccess} onUpdated={() => { void mutate(); }} />
+            {['completed', 'employee_acknowledged'].includes(appraisal.status) && <Button variant="outlined" onClick={() => router.push(`/appraisals/${appraisalId}/report`)}>View result report</Button>}
+            {!cancelled && <>
             {isEmployee && (appraisal.status === 'goal_setting') && (
               <Button
                 variant="contained"
@@ -270,10 +276,12 @@ export default function AppraisalDetailPage() {
                 Review &amp; Acknowledge Outcome
               </Button>
             )}
+            </>}
           </Box>
         </Box>
       </Box>
 
+      {cancelled && <Alert severity="info" sx={{ mb: 3 }}>This appraisal was cancelled{appraisal.lifecycle?.cancelledAt ? ` on ${new Date(appraisal.lifecycle.cancelledAt).toLocaleString()}` : ''}. It is read-only. Its assessments, recordings and notes are retained.{appraisal.lifecycle?.reason && <Typography variant="body2" sx={{ mt: 1 }}>Reason: {appraisal.lifecycle.reason}</Typography>}</Alert>}
       <Paper variant="outlined" sx={{ p: 2.5, mb: 3 }}>
         <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Appraisal details & dates</Typography>
         <AppraisalMetadata appraisal={appraisal} />
@@ -297,9 +305,9 @@ export default function AppraisalDetailPage() {
         </Alert>
       )}
 
-      {customSteps && <AppraisalMeetings appraisalId={appraisalId} steps={customSteps.filter(step => step.type === 'oneOnOne')} canManage={hasManagerAccess && !isEmployee} canJoin={isEmployee || isAssignedManager} participantName={isEmployee ? appraisal.manager?.name : appraisal.employee?.name} ownName={isEmployee ? appraisal.employee?.name : appraisal.manager?.name} currentStepId={customSteps[activeStep]?.id} onUpdated={() => { void mutate(); }} />}
+      {customSteps && <AppraisalMeetings appraisalId={appraisalId} steps={customSteps.filter(step => step.type === 'oneOnOne')} readOnly={cancelled} canManage={!cancelled && hasManagerAccess && !isEmployee} canJoin={!cancelled && (isEmployee || isAssignedManager)} participantName={isEmployee ? appraisal.manager?.name : appraisal.employee?.name} ownName={isEmployee ? appraisal.employee?.name : appraisal.manager?.name} currentStepId={customSteps[activeStep]?.id} onUpdated={() => { void mutate(); }} />}
       {/* Workflow Progress */}
-      <Paper sx={{ p: 3, mb: 3 }}>
+      {!cancelled && <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="subtitle1" fontWeight={600} gutterBottom>
           Appraisal Progress
         </Typography>
@@ -310,10 +318,10 @@ export default function AppraisalDetailPage() {
             </Step>
           ))}
         </Stepper>
-      </Paper>
+      </Paper>}
 
       {/* Deadline Warnings */}
-      {appraisal.deadlines && (
+      {!cancelled && appraisal.deadlines && (
         <Box sx={{ mb: 3, display: 'flex', gap: 2 }}>
           {includesSelf && appraisal.deadlines.selfAssessmentDue && !selfAssessment?.submittedAt && (
             <Alert

@@ -3,6 +3,7 @@ const Recognition = require('../models/Recognition');
 const User = require('../models/User');
 const { requirePermission } = require('../middleware/rbac');
 const { getActorId, tenantFilter } = require('../services/tenantPolicy');
+const { resolvePerformanceColleague } = require('../services/performanceColleagueDirectoryService');
 
 const router = express.Router();
 
@@ -58,6 +59,10 @@ router.post('/', requirePermission('recognition:create'), async (req, res) => {
     const message = text(req.body.message);
     if (!recipient.userId || !message) return res.status(400).json({ success: false, error: 'Recipient and message are required' });
     if (recipient.userId === sender.userId) return res.status(400).json({ success: false, error: 'Recognition must be sent to another person' });
+    const verifiedRecipient = await resolvePerformanceColleague(req, recipient.userId, { action: 'recognition:create' });
+    recipient.userId = verifiedRecipient.userId;
+    recipient.name = verifiedRecipient.name;
+    recipient.email = verifiedRecipient.email;
     const organizationMembership = await User.findOne({
       isActive: { $ne: false },
       $and: [
@@ -65,16 +70,12 @@ router.post('/', requirePermission('recognition:create'), async (req, res) => {
         { $or: [{ 'idpTeams.organizationId': req.organizationId }, { organizationMemberships: { $elemMatch: { organization: req.organizationId, isActive: true } } }] }
       ]
     }).select('idpSub email profile idpTeams').lean();
-    if (!organizationMembership) return res.status(400).json({ success: false, error: 'Choose a colleague in the active organization' });
-    recipient.userId = String(organizationMembership.idpSub || organizationMembership._id);
     if (recipient.userId === sender.userId) return res.status(400).json({ success: false, error: 'Recognition must be sent to another person' });
-    recipient.name = organizationMembership.profile?.displayName || [organizationMembership.profile?.firstName, organizationMembership.profile?.lastName].filter(Boolean).join(' ') || recipient.name;
-    recipient.email = organizationMembership.email || recipient.email;
-    const recipientTeam = (organizationMembership.idpTeams || []).find(team => String(team.organizationId) === req.organizationId);
+    const recipientTeam = (organizationMembership?.idpTeams || []).find(team => String(team.organizationId) === req.organizationId);
     recipient.teamId = recipientTeam?.id || '';
     recipient.teamName = recipientTeam?.name || '';
     const visibility = ['public', 'team', 'private'].includes(req.body.visibility) ? req.body.visibility : 'team';
-    if (visibility === 'team' && !recipient.teamId) return res.status(400).json({ success: false, error: 'Team visibility requires the recipient team' });
+    if (visibility === 'team' && !recipient.teamId) return res.status(400).json({ success: false, error: 'Recipient team could not be verified. Choose Recipient only or Organization.' });
     const recognition = await Recognition.create({
       organizationId: req.organizationId,
       sender,
@@ -99,7 +100,7 @@ router.post('/', requirePermission('recognition:create'), async (req, res) => {
     });
     return res.status(201).json({ success: true, data: recognition });
   } catch (error) {
-    return res.status(400).json({ success: false, error: error.message || 'Failed to send recognition' });
+    return res.status(error.status || 400).json({ success: false, error: error.message || 'Failed to send recognition' });
   }
 });
 

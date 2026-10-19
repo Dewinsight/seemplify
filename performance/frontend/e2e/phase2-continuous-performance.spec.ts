@@ -59,7 +59,7 @@ async function install(page: Page, state: Phase2State) {
     if (method === 'POST' && path.endsWith('/employee-response')) { const posted = await body(request); state.posted.push({ path, body: posted }); state.plans[0].state = 'active'; state.plans[0].employeeResponse = { acknowledgement: String(posted.acknowledgement), comment: String(posted.comment || ''), respondedAt: new Date().toISOString() }; return fulfill(data(state.plans[0])); }
     if (method === 'POST' && path.endsWith('/check-ins')) { const posted = await body(request); state.posted.push({ path, body: posted }); state.plans[0].checkIns.push({ _id: 'plan-check-in-1', authorId: manager.id, authorRole: state.mode, progress: Number(posted.progress), update: String(posted.update), createdAt: new Date().toISOString() }); return fulfill(data(state.plans[0]), 201); }
     if (method === 'GET' && path === '/recognition') return fulfill(data(state.recognition));
-    if (method === 'POST' && path === '/recognition') { const posted = await body(request); state.posted.push({ path, body: posted }); state.recognition.push({ _id: 'recognition-1', message: posted.message, companyValue: posted.companyValue, visibility: posted.visibility, contextType: 'general', sender: { userId: manager.id, name: manager.name }, recipient: posted.recipient, createdAt: new Date().toISOString() }); return fulfill(data(state.recognition[0]), 201); }
+    if (method === 'POST' && path === '/recognition') { const posted = await body(request); state.posted.push({ path, body: posted }); state.recognition.push({ _id: `recognition-${state.recognition.length + 1}`, message: posted.message, companyValue: posted.companyValue, visibility: posted.visibility, contextType: 'general', sender: { userId: manager.id, name: manager.name }, recipient: posted.recipient, createdAt: new Date().toISOString() }); return fulfill(data(state.recognition[0]), 201); }
     if (method === 'POST' && path.endsWith('/acknowledge')) { state.posted.push({ path, body: {} }); state.recognition[0].acknowledgedAt = new Date().toISOString(); return fulfill(data(state.recognition[0])); }
     if (method === 'GET' && path === '/performance-projects') return fulfill(data(state.projects));
     if (method === 'POST' && path === '/performance-projects') { const posted = await body(request); state.posted.push({ path, body: posted }); const project = { _id: 'project-1', name: posted.name, description: posted.description, state: 'active', leads: [{ userId: manager.id, name: manager.name }], participants: posted.participants, startDate: posted.startDate, endDate: posted.endDate }; state.projects.push(project); return fulfill(data(project), 201); }
@@ -101,9 +101,12 @@ test('employee acknowledges a reviewed plan and records a progress check-in', as
 });
 
 test('recognition search, audience selection, send, and acknowledgement are usable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const state = stateFor('employee'); await install(page, state); await page.goto('/recognition'); await page.getByRole('button', { name: 'Recognize a colleague' }).click(); const dialog = page.getByRole('dialog', { name: 'Recognize a colleague' });
   await dialog.getByLabel('Search organization').fill('Jordan'); await dialog.getByRole('button', { name: /Jordan Lee/ }).click(); await dialog.getByLabel('Recognition message').fill('You surfaced the delivery dependency early and kept the customer launch on track.'); await dialog.getByLabel('Company value (optional)').fill('Ownership'); await muiSelect(dialog, 'Audience').click(); await page.getByRole('option', { name: 'Recipient only' }).click(); await dialog.getByRole('button', { name: 'Send recognition' }).click();
   await expect(page.getByText(/Recognition sent/)).toBeVisible(); expect(state.posted[0]).toMatchObject({ path: '/recognition', body: { visibility: 'private', companyValue: 'Ownership' } });
+  await page.getByRole('tab', { name: 'Sent', exact: true }).click(); await expect(page.getByRole('tab', { name: 'Sent', exact: true })).toHaveAttribute('aria-selected', 'true');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test('project lead creates membership and requests feedback between verified participants', async ({ page }) => {
@@ -115,4 +118,50 @@ test('project lead creates membership and requests feedback between verified par
 test('manager coaching queue explains metrics, filters priorities, and remains usable on mobile', async ({ page }) => {
   const state = stateFor('manager'); await install(page, state); await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/coaching'); await expect(page.getByRole('heading', { level: 1, name: 'Manager coaching' })).toBeVisible(); await expect(page.getByText('1 goal needs a progress conversation')).toBeVisible(); await expect(page.getByText(/do not score, rank, diagnose/)).toBeVisible();
   await muiSelect(page.locator('main'), 'Priority').click(); await page.getByRole('option', { name: 'High' }).click(); await expect(page.getByText('No completed 1:1 in the last 45 days')).toHaveCount(0); await expect(page.getByText('Check-in coverage:')).toBeVisible(); expect(await page.locator('body').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
+
+test('minimal colleague results support private and organization recognition without inferring no team', async ({ page }, testInfo) => {
+  const state = stateFor('employee'); await install(page, state);
+  await page.route('**/__mock-api/user/search?*', route => route.fulfill({ json: data([{ id: 'employee-2', name: 'Priya Shah', email: 'priya@example.test' }]) }));
+  await page.goto('/recognition');
+  for (const [index, audience] of ['Recipient only', 'Organization'].entries()) {
+    await page.getByRole('button', { name: 'Recognize a colleague', exact: true }).click(); const dialog = page.getByRole('dialog', { name: 'Recognize a colleague', exact: true });
+    await dialog.getByLabel('Search organization').fill('Priya'); await dialog.getByRole('button', { name: 'Priya Shah', exact: true }).click();
+    await expect(dialog.getByText('This colleague has no assigned team. Choose Recipient only or Organization.', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText("The recipient's team is checked when you send. If team sharing is unavailable, choose Recipient only or Organization.", { exact: true })).toBeVisible();
+    await expect(muiSelect(dialog, 'Audience')).toContainText('Recipient only');
+    await muiSelect(dialog, 'Audience').click(); await expect(page.getByRole('option', { name: "Recipient's team", exact: true })).toBeEnabled(); await page.getByRole('option', { name: audience, exact: true }).click();
+    await dialog.getByLabel('Recognition message').fill('Your early delivery-risk update helped the team plan a reliable launch.');
+    if (!index) await page.screenshot({ path: testInfo.outputPath('minimal-colleague-recognition.png'), fullPage: true });
+    await dialog.getByRole('button', { name: 'Send recognition', exact: true }).click();
+    await expect(dialog).toHaveCount(0); expect(state.posted[index]).toMatchObject({ path: '/recognition', body: { recipient: { userId: 'employee-2' }, visibility: index ? 'public' : 'private' } });
+    expect(Object.keys(state.posted[index].body.recipient as object)).toEqual(['userId']);
+  }
+});
+
+test('team recognition with a minimal colleague result preserves the draft when the server rejects eligibility', async ({ page }, testInfo) => {
+  const state = stateFor('employee'); await install(page, state);
+  await page.route('**/__mock-api/user/search?*', route => route.fulfill({ json: data([{ id: 'employee-2', name: 'Priya Shah', email: 'priya@example.test' }]) }));
+  let attempted = false;
+  await page.route('**/__mock-api/recognition', async route => {
+    if (route.request().method() === 'POST' && route.request().postDataJSON().visibility === 'team') { attempted = true; await route.fulfill({ status: 400, json: { error: 'Recipient team could not be verified. Choose Recipient only or Organization.' } }); } else await route.fallback();
+  });
+  await page.goto('/recognition'); await page.getByRole('button', { name: 'Recognize a colleague', exact: true }).click(); const dialog = page.getByRole('dialog', { name: 'Recognize a colleague', exact: true });
+  await dialog.getByLabel('Search organization').fill('Priya'); await dialog.getByRole('button', { name: 'Priya Shah', exact: true }).click();
+  await dialog.getByLabel('Recognition message').fill('Keep this message while I choose another audience.'); await muiSelect(dialog, 'Audience').click(); await page.getByRole('option', { name: "Recipient's team", exact: true }).click(); await dialog.getByRole('button', { name: 'Send recognition', exact: true }).click();
+  await expect(dialog.getByText('Recipient team could not be verified. Choose Recipient only or Organization.', { exact: true })).toBeVisible(); expect(attempted).toBe(true);
+  await expect(dialog.getByLabel('Recognition message')).toHaveValue('Keep this message while I choose another audience.');
+  await page.screenshot({ path: testInfo.outputPath('minimal-colleague-team-recovery.png'), fullPage: true });
+  await muiSelect(dialog, 'Audience').click(); await page.getByRole('option', { name: 'Recipient only', exact: true }).click(); await dialog.getByRole('button', { name: 'Send recognition', exact: true }).click();
+  await expect(dialog).toHaveCount(0); expect(state.posted.at(-1)).toMatchObject({ path: '/recognition', body: { recipient: { userId: 'employee-2' }, visibility: 'private', message: 'Keep this message while I choose another audience.' } });
+});
+
+test('minimal colleague results can request team recognition when the server accepts current team eligibility', async ({ page }) => {
+  const state = stateFor('employee'); await install(page, state);
+  await page.route('**/__mock-api/user/search?*', route => route.fulfill({ json: data([{ id: 'employee-2', name: 'Priya Shah', email: 'priya@example.test' }]) }));
+  await page.goto('/recognition'); await page.getByRole('button', { name: 'Recognize a colleague', exact: true }).click(); const dialog = page.getByRole('dialog', { name: 'Recognize a colleague', exact: true });
+  await dialog.getByLabel('Search organization').fill('Priya'); await dialog.getByRole('button', { name: 'Priya Shah', exact: true }).click(); await dialog.getByLabel('Recognition message').fill('You helped your team make a reliable delivery decision.');
+  await muiSelect(dialog, 'Audience').click(); await page.getByRole('option', { name: "Recipient's team", exact: true }).click(); await dialog.getByRole('button', { name: 'Send recognition', exact: true }).click();
+  await expect(dialog).toHaveCount(0); expect(state.posted.at(-1)).toMatchObject({ path: '/recognition', body: { recipient: { userId: 'employee-2' }, visibility: 'team' } });
 });

@@ -15,6 +15,8 @@ const {
   resolveAppraisalAccessScope,
   isAppraisalManagerRole
 } = require('../services/appraisalAccessService');
+const { loadPerformanceDirectory } = require('../services/performanceDirectoryService');
+const { loadPerformanceColleagues } = require('../services/performanceColleagueDirectoryService');
 const { getOrganizationFeatureState } = require('../services/organizationFeatureService');
 const { filterPerformanceOrganizations, toOrganizationId } = require('../services/performanceOrganizationAccess');
 
@@ -450,8 +452,9 @@ router.get('/all-employees', requireAuth, async (req, res) => {
       });
     }
 
-    // Get all users in the organization (using cached idpTeams for org membership)
-    const users = await User.find({
+    // Current Identity membership wins over historical local workspace preferences.
+    const directory = await loadPerformanceDirectory(req);
+    const users = await User.find(directory ? { idpSub: { $in: directory.members.map(member => member.userId) } } : {
       $or: [
         { currentOrganizationId: currentOrgId },
         { 'idpTeams.organizationId': currentOrgId }
@@ -461,8 +464,8 @@ router.get('/all-employees', requireAuth, async (req, res) => {
     // Map users with their manager info from teams
     const employees = sortEmployeesForAppraisalSelection(users.map((u) => {
       // Find user's team info to get manager
-      const userTeams = Array.isArray(u.idpTeams) ? u.idpTeams : [];
-      const primaryTeam = userTeams.find((t) => t?.organizationId === currentOrgId) || userTeams[0];
+      const userTeams = (Array.isArray(u.idpTeams) ? u.idpTeams : []).filter(team => String(team.organizationId) === String(currentOrgId));
+      const primaryTeam = userTeams[0];
 
       return decorateEmployeeForAppraisalSelection({
         userId: getPreferredUserId(u),
@@ -495,8 +498,9 @@ router.get('/all-employees', requireAuth, async (req, res) => {
       data: employees
     });
   } catch (error) {
-    console.error('Error fetching all employees:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch employees' });
+    const status = [401, 403, 503].includes(error.status) ? error.status : 500;
+    console.error('Error fetching all employees: request failed');
+    res.status(status).json({ success: false, error: status === 500 ? 'Failed to fetch employees' : error.message });
   }
 });
 
@@ -506,22 +510,34 @@ router.get('/all-employees', requireAuth, async (req, res) => {
 router.get('/search', requireAuth, async (req, res) => {
   try {
     const { q, limit = 10 } = req.query;
+    const search = typeof q === 'string' ? q.trim().slice(0, 120) : '';
     const currentOrgId = resolveOrganizationId(req);
 
-    if (!q || q.length < 2) {
+    if (search.length < 2) {
       return res.json({ success: true, data: [] });
     }
     if (!currentOrgId) return res.status(403).json({ success: false, error: 'Select an organization before searching for colleagues' });
 
-    // Search by email or display name
+    // Colleague discovery is a minimal collaboration directory, separate from
+    // the stricter appraisal/assessor roster. It never grants review authority.
+    const directory = await loadPerformanceColleagues(req, { q: search, limit });
+    if (directory) {
+      const needle = search.toLowerCase();
+      const data = directory.members.filter(member => `${member.name} ${member.email}`.toLowerCase().includes(needle))
+        .slice(0, Math.min(25, Math.max(1, parseInt(limit, 10) || 10)))
+        .map(member => ({ id: member.userId, email: member.email, name: member.name, title: member.jobTitle }));
+      return res.json({ success: true, data });
+    }
+    // Isolated service fixtures may use the local directory. Treat search as text.
+    const literal = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const users = await User.find({
       $and: [
         { $or: [{ 'idpTeams.organizationId': currentOrgId }, { organizationMemberships: { $elemMatch: { organization: currentOrgId, isActive: true } } }] },
         { $or: [
-          { email: { $regex: q, $options: 'i' } },
-          { 'profile.displayName': { $regex: q, $options: 'i' } },
-          { 'profile.firstName': { $regex: q, $options: 'i' } },
-          { 'profile.lastName': { $regex: q, $options: 'i' } }
+          { email: { $regex: literal, $options: 'i' } },
+          { 'profile.displayName': { $regex: literal, $options: 'i' } },
+          { 'profile.firstName': { $regex: literal, $options: 'i' } },
+          { 'profile.lastName': { $regex: literal, $options: 'i' } }
         ] }
       ]
     })
@@ -540,8 +556,9 @@ router.get('/search', requireAuth, async (req, res) => {
       }))
     });
   } catch (error) {
-    console.error('Error searching users:', error);
-    res.status(500).json({ success: false, error: 'Failed to search users' });
+    const status = [401, 403, 503].includes(error.status) ? error.status : 500;
+    console.error('Error searching users: request failed');
+    res.status(status).json({ success: false, error: status === 500 ? 'Failed to search users' : error.message });
   }
 });
 
@@ -882,7 +899,7 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
 
     // Fallback for managers: if scope mapping is empty, try resolving direct reports from
     // current IDP claims + locally synced users (matched by idpSub).
-    if (!scope.isHrPlus && uniqueEmployees.length === 0) {
+    if (!scope.directory && !scope.isHrPlus && uniqueEmployees.length === 0) {
       const effectiveOrgId = scope.organizationId || req.currentOrganization?.id || req.session?.currentOrganizationId;
       const claimDirectReportIds = new Set((req.directReports || []).filter(Boolean).map(String));
       const teams = sessionUser?.idpTeams || sessionUser?.teams || sessionUser?.userinfo?.teams || [];
@@ -1005,8 +1022,9 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching employees for appraisal:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch employees' });
+    const status = [401, 403, 503].includes(error.status) ? error.status : 500;
+    console.error('Error fetching employees for appraisal: request failed');
+    res.status(status).json({ success: false, error: status === 500 ? 'Failed to fetch employees' : error.message });
   }
 });
 

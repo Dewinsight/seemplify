@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { INDEX_KEY, INDEX_OPTIONS } = require('../services/goalCheckInIdempotencyIndex');
 
 const actorSchema = new mongoose.Schema({
   userId: String,
@@ -61,10 +62,8 @@ const GoalCheckInSchema = new mongoose.Schema({
 });
 
 GoalCheckInSchema.index({ organizationId: 1, goalId: 1, sequence: 1 }, { unique: true });
-GoalCheckInSchema.index(
-  { organizationId: 1, goalId: 1, idempotencyKey: 1 },
-  { unique: true, sparse: true }
-);
+// Optional retry keys must not prevent later unkeyed check-ins for the same goal.
+GoalCheckInSchema.index(INDEX_KEY, INDEX_OPTIONS);
 
 // Check-ins are evidence records. Mutations and deletions must be represented by
 // a later check-in, never by rewriting history.

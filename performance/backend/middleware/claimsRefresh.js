@@ -4,6 +4,7 @@
  */
 
 const { Issuer } = require('openid-client')
+const { hasRetiredAuthorization } = require('../services/authorizationPolicyVersion')
 const {
   sanitizePerformancePrincipal,
   toOrganizationId
@@ -40,6 +41,10 @@ async function getOidcClient() {
   return cachedClient
 }
 
+function requireFreshSignIn(res) {
+  return res.status(401).json({ success: false, code: 'CLAIMS_REFRESH_REQUIRED', error: 'Sign in again to refresh access permissions.' })
+}
+
 /**
  * Middleware to refresh claims if marked as stale by webhook
  */
@@ -48,15 +53,18 @@ async function claimsRefreshMiddleware(req, res, next) {
     return next()
   }
 
-  if (req.session.claimsNeedRefresh) {
+  const outdatedPolicy = hasRetiredAuthorization(req.session.user)
+  if (req.session.claimsNeedRefresh || outdatedPolicy) {
     try {
       console.log(`🔄 Refreshing claims for ${req.session.user.email} (triggered by webhook)`)
 
-      const client = await getOidcClient()
       const accessToken = req.session.user.accessToken || req.session.accessToken
+      if (!accessToken) return requireFreshSignIn(res)
+      const client = await getOidcClient()
 
       if (accessToken) {
         const freshUserinfo = await client.userinfo(accessToken)
+        if (hasRetiredAuthorization(freshUserinfo)) return requireFreshSignIn(res)
 
         req.session.user = sanitizePerformancePrincipal({
           ...req.session.user,
@@ -75,7 +83,8 @@ async function claimsRefreshMiddleware(req, res, next) {
         console.log(`✅ Claims refreshed for ${req.session.user.email}`)
       }
     } catch (error) {
-      console.error(`⚠️ Failed to refresh claims:`, error.message)
+      console.warn('Claims refresh failed; sign-in is required.')
+      return requireFreshSignIn(res)
     }
   }
 
