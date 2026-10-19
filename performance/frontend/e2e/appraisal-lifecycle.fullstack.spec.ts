@@ -76,7 +76,28 @@ for (const mobile of [false, true]) test(`cancel, remove and restore a real appr
 test('only an administrator can remove and restore a completed review, preserving its published report', async ({ page, browser }, testInfo) => {
   const cycle = await Cycle.create({ name: 'Preserved completed review', organizationId: organization.id, periodStart: '2026-01-01', periodEnd: '2026-03-31', status: 'active', createdBy: { userId: 'reviewer', name: 'Morgan Reviewer' } });
   const record = await Appraisal.create({ cycleId: cycle._id, organizationId: organization.id, employee: { userId: 'employee', name: 'Emery Employee', email: 'employee@example.test' }, manager: { userId: 'reviewer', name: 'Morgan Reviewer', email: 'reviewer@example.test' }, status: 'employee_acknowledged', selfAssessment: { submittedAt: new Date('2026-04-01'), overallSummary: { achievements: 'Original employee achievement.' } }, managerReview: { submittedAt: new Date('2026-04-02'), overallManagerRating: 4, overallSummary: { strengths: 'Original manager feedback.' } }, finalRating: { overall: 4, ratingLabel: 'Strong performance', finalizedAt: new Date('2026-04-03'), finalizedBy: { userId: 'reviewer', name: 'Morgan Reviewer' }, justification: 'Original final decision.' }, lifecycle: { cleanupPending: true } });
-  const preserved = (await (await fetch(`${apiURL}/api/appraisals/${record._id}/report`, { headers: { 'x-lifecycle-actor': 'reviewer' } })).json()).data;
+  const readPublishedReport = async () => {
+    const response = await fetch(`${apiURL}/api/appraisals/${record._id}/report`, { headers: { 'x-lifecycle-actor': 'reviewer' } });
+    expect(response.status, 'The retained result must remain accessible to its assigned reviewer').toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ success: true, data: { id: String(record._id), status: 'employee_acknowledged', finalRating: { overall: 4 } } });
+    return body.data;
+  };
+  const openPublishedReport = async (viewer: Page) => {
+    const reportPath = `/appraisals/${record._id}/report`;
+    const reportResponse = viewer.waitForResponse(response => new URL(response.url()).pathname === `/__mock-api${reportPath}` && response.request().method() === 'GET');
+    // A router.push button returns before a cold development route commits.
+    // Wait for actual navigation and its real API response, then keep the normal heading/content assertions.
+    await Promise.all([
+      viewer.waitForURL(new RegExp(`${reportPath}$`)),
+      viewer.getByRole('button', { name: 'View result report', exact: true }).click(),
+    ]);
+    const response = await reportResponse;
+    expect(response.status(), 'The report opened through the UI must return its persisted result').toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, data: { id: String(record._id), status: 'employee_acknowledged' } });
+    await expect(viewer.getByRole('heading', { name: 'Appraisal result report', exact: true })).toBeVisible();
+  };
+  const preserved = await readPublishedReport();
   const url = `/appraisals/${record._id}`;
   await setup(page, 'reviewer'); await page.goto(url);
   await expect(page.getByRole('button', { name: 'Manage appraisal', exact: true })).toHaveCount(0);
@@ -98,14 +119,13 @@ test('only an administrator can remove and restore a completed review, preservin
   await expect(admin).toHaveURL(new RegExp(`/appraisals/${record._id}$`));
   const restored = await Appraisal.findById(record._id);
   expect(restored.status).toBe('employee_acknowledged');
-  const restoredReport = (await (await fetch(`${apiURL}/api/appraisals/${record._id}/report`, { headers: { 'x-lifecycle-actor': 'reviewer' } })).json()).data;
+  const restoredReport = await readPublishedReport();
   expect(restoredReport).toEqual(preserved);
-  await admin.getByRole('button', { name: 'View result report', exact: true }).click();
-  await expect(admin.getByRole('heading', { name: 'Appraisal result report', exact: true })).toBeVisible();
+  await openPublishedReport(admin);
   await expect(admin.getByText('Original final decision.', { exact: true })).toBeVisible();
   await expect(admin.getByText('Original employee achievement.', { exact: true })).toBeVisible();
   await expect(admin.getByText('Original manager feedback.', { exact: true })).toBeVisible();
-  await page.reload(); await page.getByRole('button', { name: 'View result report', exact: true }).click();
+  await page.reload(); await openPublishedReport(page);
   await expect(page.getByText('Original final decision.', { exact: true })).toBeVisible();
   await admin.screenshot({ path: testInfo.outputPath('restored-completed-report.png'), fullPage: true, animations: 'disabled' });
   await adminContext.close();

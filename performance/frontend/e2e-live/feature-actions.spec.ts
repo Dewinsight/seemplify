@@ -38,7 +38,18 @@ async function reviewReadyForCalibration(request: APIRequestContext, calibration
     achievements: 'Delivered a synthetic project with measured results.', challenges: 'Resolved a synthetic dependency through planning.', learnings: 'Applied a structured discovery method to the project.', goals: 'Complete the next milestone with clear evidence.'
   } } });
   await api(request, 'manager', 'POST', `appraisals/${appraisal._id}/manager-review/start`);
-  await api(request, 'manager', 'POST', `appraisals/${appraisal._id}/manager-review`, { submit: true, managerReview: { overallManagerRating: 4 } });
+  // An overall opinion alone is not scored evidence. Rate the actual frozen
+  // competencies so the real scoring endpoint can calculate this result.
+  const competencies = appraisal.cycleConfigurationSnapshot.competencies as Array<{ id: string; name: string }>;
+  expect(competencies.length).toBeGreaterThan(0);
+  await api(request, 'manager', 'POST', `appraisals/${appraisal._id}/manager-review`, { submit: true, managerReview: {
+    overallManagerRating: 4,
+    competencyRatings: competencies.map(competency => ({ competencyId: competency.id, competencyName: competency.name,
+      managerRating: 4, managerComments: 'Synthetic delivery evidence demonstrates this capability.' }))
+  } });
+  expect(await api(request, 'manager', 'GET', `appraisals/${appraisal._id}/scoring`)).toMatchObject({
+    competencyScore: 4, suggestedRating: 4, breakdown: { unavailable: { competency: false } }
+  });
   await api(request, 'manager', 'PUT', `appraisals/${appraisal._id}/discussion`, { markCompleted: true });
   return { cycle: created.cycle, appraisal };
 }
@@ -146,9 +157,15 @@ test('manager creates a support plan and employee acknowledges the HR-reviewed p
 test('manager finalizes a result and employee opens historical report and downloads CSV', async ({ page, request }) => {
   const { appraisal, cycle } = await reviewReadyForCalibration(request, false);
   await login(page, 'manager', `/appraisals/${appraisal._id}/final-review`);
-  await page.getByLabel('Justification (required if overriding AI suggestion)').fill('Synthetic browser acceptance: documented evidence supports the final rating.');
-  await page.getByRole('button', { name: 'Complete Appraisal', exact: true }).click();
+  await expect(page.getByText('4/5', { exact: true })).toBeVisible();
+  await page.getByLabel('Justification (required when overriding evidence rating)', { exact: true }).fill('Synthetic browser acceptance: documented evidence supports the final rating.');
+  const complete = page.getByRole('button', { name: 'Complete Appraisal', exact: true });
+  await expect(complete).toBeEnabled();
+  await complete.click();
   await expect(page).toHaveURL(new RegExp(`/appraisals/${appraisal._id}$`), { timeout: 30_000 });
+  expect(await api(request, 'manager', 'GET', `appraisals/${appraisal._id}`)).toMatchObject({
+    status: 'completed', finalRating: { overall: 4 }
+  });
   await login(page, 'employee', '/appraisals?section=history');
   await page.getByLabel('Search past appraisals').fill(cycle.name);
   const download = page.waitForEvent('download');

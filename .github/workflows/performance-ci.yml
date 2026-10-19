@@ -57,6 +57,16 @@ jobs:
           ffmpeg -version
       - run: npm run test:e2e
         working-directory: performance/frontend
+      # Preserve UI traces before the real-API suite replaces Playwright's output directory.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-ui-browser-proof
+          path: |
+            performance/frontend/test-results/
+            performance/frontend/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
       - run: npm run test:e2e:live
         working-directory: performance/frontend
       - run: npm run build

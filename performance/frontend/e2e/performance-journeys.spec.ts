@@ -2305,9 +2305,17 @@ test('completes frozen cycle questions inside guided self-assessment, reviews ex
   });
   await expect(page.getByText('Customer evidence changed the launch decision and avoided two rework cycles.')).toBeVisible();
 
-  await page.locator('label').filter({ hasText: '4 Stars' }).first().click({ force: true });
-  await page.getByRole('button', { name: 'Submit Self-Assessment' }).click();
+  const submitAssessment = page.getByRole('button', { name: 'Submit Self-Assessment', exact: true });
+  await expect(submitAssessment).toBeDisabled();
+  const selfRating = page.getByRole('radio', { name: '4 Stars', exact: true });
+  // Select the actual input through the keyboard instead of forcing a label-coordinate click while scrolling.
+  await selfRating.focus();
+  await selfRating.press('Space');
+  await expect(selfRating).toBeChecked();
+  await expect(submitAssessment).toBeEnabled();
+  await submitAssessment.click();
   await expect.poll(() => state.conversationFinalizeBodies.length).toBe(1);
+  expect(state.conversationFinalizeBodies[0]).toMatchObject({ report: { overallSelfRating: 4 } });
   await expect(page).toHaveURL(/\/appraisals\?submitted=self&appraisalId=/);
   expect(state.conversationReportGenerations).toBeGreaterThanOrEqual(1);
 });
