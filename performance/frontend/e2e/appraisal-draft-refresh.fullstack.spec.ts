@@ -53,6 +53,38 @@ async function setup(page: Page, who: string) {
 async function reconnect(page: Page) { await page.evaluate(() => { window.dispatchEvent(new Event('offline')); window.dispatchEvent(new Event('online')); }); }
 async function chooseFour(page: Page) { for (const radio of await page.getByRole('radio', { name: '4 Stars', exact: true }).all()) { await radio.focus(); await radio.press('Space'); await expect(radio).toBeChecked(); } }
 
+test('reviewer can cancel a reset or submit its audited reason through the real reset route', async ({ page }, testInfo) => {
+  const item = await record('reviewer');
+  await setup(page, 'reviewer');
+  await page.setViewportSize({ width: 390, height: 844 });
+  const resetBodies: unknown[] = [];
+  page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith(`/appraisals/${item._id}/reset`)) resetBodies.push(request.postDataJSON()); });
+  await page.goto('/appraisals?section=conducting');
+  const reset = page.getByRole('button', { name: 'Reset appraisal for Emery Employee', exact: true });
+  await reset.click();
+  const dialog = page.getByRole('dialog', { name: 'Reset appraisal?', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Reset appraisal', exact: true })).toBeDisabled();
+  await dialog.getByRole('textbox', { name: 'Reason for resetting' }).fill('short');
+  await expect(dialog.getByRole('button', { name: 'Reset appraisal', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(resetBodies).toHaveLength(0);
+  expect((await Appraisal.findById(item._id).lean()).status).toBe('manager_review_in_progress');
+  await reset.click();
+  const reason = 'A fictional exercise needs corrected employee evidence before the reviewer continues.';
+  await dialog.getByRole('textbox', { name: 'Reason for resetting' }).fill(reason);
+  await page.screenshot({ path: testInfo.outputPath('mobile-reset-confirmation.png'), fullPage: true });
+  await dialog.getByRole('button', { name: 'Reset appraisal', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(resetBodies).toEqual([{ resetLevel: 'full', reason }]);
+  const saved = await Appraisal.findById(item._id).lean();
+  expect(saved.status).toBe('not_started');
+  expect(saved.managerReview.competencyRatings).toHaveLength(0);
+  expect(saved.auditLog.some((row: { action: string; performedBy: { userId: string }; details: { reason: string } }) => row.action === 'appraisal_reset' && row.performedBy.userId === 'reviewer' && row.details.reason === reason)).toBe(true);
+  await expect(page.getByRole('article').filter({ has: page.getByText('Not Started', { exact: true }) })).toHaveCount(1);
+});
+
 test('manager Next waits for persistence and refresh, then retains typed feedback across a delayed same-review refresh', async ({ page }, testInfo) => {
   const item = await record('reviewer'), fixture = await setup(page, 'reviewer');
   await page.goto(`/appraisals/${item._id}/manager-review`);

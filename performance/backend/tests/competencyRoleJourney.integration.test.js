@@ -23,20 +23,22 @@ const ORG = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const actors = ['admin', 'manager', 'alternate_manager', 'employee', 'peer', 'other_manager', 'outsider', 'foreign', 'foreign_admin'];
 let mongo, app, identities, extraGrants, fixture, storage;
 
-function actualIdentityFixture() {
+function actualIdentityFixture({ movedActors = [], inactiveActors = [] } = {}) {
   // Jest's CommonJS VM cannot import these ESM files directly. A dependency-free
   // child reads the exact current IdP exports, rather than copying permissions.
   const code = `
     import {DEFAULT_ACCESS_ROLES} from './Identityprovider/src/config/accessControlCatalog.js';
     import {buildPerformanceDirectory} from './Identityprovider/src/utils/performanceDirectory.js';
-    const actors=${JSON.stringify(actors)},orgA='${ORG}',orgB='bbbbbbbbbbbbbbbbbbbbbbbb';
+    const actors=${JSON.stringify(actors)},movedActors=${JSON.stringify(movedActors)},inactiveActors=${JSON.stringify(inactiveActors)},orgA='${ORG}',orgB='bbbbbbbbbbbbbbbbbbbbbbbb';
     const id=a=>'role-chain-'+a;
-    const members=actors.filter(a=>!a.startsWith('foreign')).map(a=>({account:{_id:id(a),sub:id(a),email:a+'@example.test',profile:{name:'Synthetic '+a}},role:a==='admin'?'admin':'employee',status:'active'}));
+    const members=actors.filter(a=>!a.startsWith('foreign')).map(a=>({account:{_id:id(a),sub:id(a),email:a+'@example.test',profile:{name:'Synthetic '+a}},role:a==='admin'?'admin':'employee',status:inactiveActors.includes(a)?'inactive':'active'}));
     const organization={_id:orgA,owner:'role-chain-unused-owner',members,departments:[]};
     const teams=[{_id:'team-a',name:'Delivery',organization:orgA,members:['manager','alternate_manager','employee','peer'].map(a=>({account:id(a),status:'active',role:['manager','alternate_manager'].includes(a)?'line_manager':'member'}))},{_id:'team-b',name:'Other team',organization:orgA,members:['other_manager','outsider'].map(a=>({account:id(a),status:'active',role:a==='other_manager'?'line_manager':'member'}))}];
+    for(const actor of movedActors){const position=teams[0].members.findIndex(member=>member.account===id(actor));if(position>=0)teams[1].members.push(teams[0].members.splice(position,1)[0]);}
     const foreign={_id:orgB,owner:'unused-foreign-owner',members:['foreign','foreign_admin'].map(a=>({account:{_id:id(a),sub:id(a),email:a+'@example.test',profile:{name:'Synthetic '+a}},role:a==='foreign_admin'?'admin':'employee',status:'active'})),departments:[]};
     const result={};
     for(const actor of actors){
+      if(inactiveActors.includes(actor))continue;
       const isForeign=actor.startsWith('foreign'),isAdmin=actor==='admin'||actor==='foreign_admin';
       const organizationId=isForeign?orgB:orgA,keys=new Set(['employee',...(isAdmin?['organization_admin']:['manager','alternate_manager','other_manager'].includes(actor)?['line_manager']:[])]);
       const selected=DEFAULT_ACCESS_ROLES.filter(r=>keys.has(r.key)),denies=new Set(selected.flatMap(r=>r.denies.filter(x=>x.appId==='performance-management').flatMap(x=>x.permissions)));
@@ -161,6 +163,69 @@ test('linked appraisal private findings and decisions require the currently elig
   try{await json('manager','get',`competency/assessments/${journey.assessmentId}`,undefined,403);}finally{identities.manager.directory=original;}
   identities.manager.directory={...original,reviewers:original.reviewers.filter(person=>person.userId!=='role-chain-manager')};
   try{await json('manager','get',`competency/assessments/${journey.assessmentId}`,undefined,403);}finally{identities.manager.directory=original;}
+});
+
+test('selected reviewer retains private linked assessment access after both people move to a currently managed team', async () => {
+  const journey = await launchLinked();
+  await submitParentReview(journey);
+  await fill(journey);
+  await json('manager', 'post', `competency/assessments/${journey.assessmentId}/oral-sessions`, {
+    title: 'Private transfer oral source', status: 'submitted', visibility: 'assessors',
+    prompts: [{ criterionId: 'delivery', question: 'Explain the synthetic delivery', answer: 'Private team transfer oral sentinel.' }]
+  }, 201);
+  const original = identities;
+  try {
+    identities = actualIdentityFixture({ movedActors: ['manager', 'employee'] });
+    const current = identities.manager.directory.members.find(person => person.userId === 'role-chain-employee');
+    expect(current.teamIds).toEqual(['team-b']);
+    const saved = await json('manager', 'get', `competency/assessments/${journey.assessmentId}`);
+    expect(saved.participant.teamIds).toEqual(['team-a']); // Historical launch snapshot stays frozen.
+    expect(saved.allowedActions).toContain('competency.assessment.edit');
+    expect(saved.items[0].rationale).toBe('Synthetic public human finding.');
+    expect(saved.managerFeedback[0].text).toBe('Submitted role feedback sentinel.');
+    expect(saved.evidence.some(source => source.text === 'Internal assessor-only source sentinel.')).toBe(true);
+    expect(saved.oralSessions[0].prompts[0].answer).toBe('Private team transfer oral sentinel.');
+    await json('manager', 'post', `competency/assessments/${journey.assessmentId}/evidence`, {
+      title: 'New private transfer evidence', text: 'New current-team private evidence.', criterionIds: ['delivery'], visibility: 'assessors'
+    }, 201);
+    const published = await finalise(journey);
+    expect(published.result.score.overallScore).toBe(80);
+    expect(published.result.visibilityScope).toBe('assessors');
+    const report = await json('manager', 'get', `competency/assessments/${journey.assessmentId}/report`);
+    expect(report.visibilityScope).toBe('assessors');
+    expect(report.oralFindings[0].prompts[0].answer).toBe('Private team transfer oral sentinel.');
+    const own = await json('employee', 'get', `competency/assessments/${journey.assessmentId}/report`);
+    expect(own.visibilityScope).toBe('participant');
+    expect(own.reportHash).toBe(report.reportHash);
+    expect(JSON.stringify(own)).not.toContain('Private team transfer oral sentinel.');
+    expect(JSON.stringify(own)).not.toContain('New current-team private evidence.');
+    for (const actor of ['alternate_manager', 'other_manager']) {
+      await json(actor, 'get', `competency/assessments/${journey.assessmentId}`, undefined, 403);
+      await json(actor, 'get', `competency/assessments/${journey.assessmentId}/report`, undefined, 403);
+    }
+    await json('foreign', 'get', `competency/assessments/${journey.assessmentId}/report`, undefined, 404);
+  } finally { identities = original; }
+});
+
+test('frozen reviewer assignment grants no access after current participant or selected manager eligibility is revoked', async () => {
+  const journey = await launchLinked();
+  await submitParentReview(journey);
+  await fill(journey);
+  await finalise(journey);
+  const original = identities;
+  try {
+    const outside = actualIdentityFixture({ movedActors: ['employee'] });
+    const removed = actualIdentityFixture({ inactiveActors: ['employee'] });
+    const unselected = actualIdentityFixture({ movedActors: ['manager', 'employee'] });
+    unselected.manager.directory.reviewers = unselected.manager.directory.reviewers.filter(person => person.userId !== 'role-chain-manager');
+    for (const current of [outside, removed, unselected]) {
+      identities = current;
+      for (const suffix of ['', '/report']) await json('manager', 'get', `competency/assessments/${journey.assessmentId}${suffix}`, undefined, 403);
+      await json('manager', 'patch', `competency/assessments/${journey.assessmentId}`, { items: [] }, 403, 1);
+      await json('manager', 'post', `competency/assessments/${journey.assessmentId}/exports`, {}, 403);
+      expect(await require('../models/CompetencyEvidence').countDocuments({ assessmentId: journey.assessmentId })).toBe(2);
+    }
+  } finally { identities = original; }
 });
 test('standalone assessments retain the existing managed-team contract without broadening linked appraisal authority',async()=>{
   const result=await json('admin','post','competency/assessments/launch',{cycleId:fixture.cycle.id,cycleRevision:fixture.cycle.revision,assignments:[{participantId:'role-chain-employee',roleVersionId:fixture.role.id,assessorIds:['role-chain-manager']}]},201);

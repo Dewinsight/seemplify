@@ -18,8 +18,9 @@ export async function competencyRequest<T>(method: string, path: string, data?: 
   } });
   return response.data.data as T;
 }
-export async function competencyDownload(path: string, filename = 'assessment-report.pdf'): Promise<void> {
+export async function competencyDownload(path: string, filename = 'assessment-report.pdf', shouldDownload: () => boolean = () => true): Promise<void> {
   const response = await api.get(`/competency${path.startsWith('/') ? path : `/${path}`}`, { responseType: 'blob' });
+  if (!shouldDownload()) return;
   if (String(response.headers['content-type'] || '').includes('application/json')) throw new Error('This download is not ready yet.');
   const url = URL.createObjectURL(response.data);
   const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename.replace(/[\\/\r\n]/g, '_');

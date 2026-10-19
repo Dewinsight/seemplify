@@ -13,7 +13,7 @@ const {retained,effective}=require('./sourcePolicy');
 const editable=['draft','in_progress','reopened'];
 const plain=value=>value?.toObject?value.toObject():value;
 const clone=value=>JSON.parse(JSON.stringify(value));
-function isAssessor(ctx,assessment) { if(ctx.organizationWide)return true;const reviewer=ctx.directory.reviewers?.find(person=>person.userId===ctx.actor.userId);const eligible=reviewer&&(reviewer.organizationWide||(reviewer.eligibleTeamIds||[]).some(teamId=>(assessment.participant.teamIds||[]).includes(String(teamId))));return Boolean(eligible&&(assessment.assessorIds.includes(ctx.actor.userId)||(!assessment.appraisalId&&ctx.directory.scope==='managed_teams'&&ctx.directory.members.some(person=>person.userId===assessment.participant.userId)))); }
+function isAssessor(ctx,assessment) { return auth.isCurrentAssessor(ctx,assessment); }
 const parentWriteActions=new Set(['assessment.edit','assessment.finalise','assessment.reopen','assessment.exception','evidence.create','ai.use'].map(value=>`competency.${value}`));
 async function annotateParentState(records,session=null) {
   const linked=records.filter(record=>record.appraisalId),ids=[...new Set(linked.map(record=>record.appraisalId).filter(value=>mongoose.isValidObjectId(value)))];

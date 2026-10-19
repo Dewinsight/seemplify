@@ -55,11 +55,10 @@ function assertParticipant(ctx, participantId) {
   if (!member) throw new DomainError(404, 'PARTICIPANT_NOT_FOUND', 'This person is not available in your current scope.');
   return member;
 }
-function canAccessAssessment(ctx, assessment, permission = 'assessment.view') {
-  if (!assessment || String(assessment.organizationId) !== ctx.organizationId || !hasAction(ctx, permission)) return false;
+function isCurrentAssessor(ctx, assessment) {
+  if (!assessment || String(assessment.organizationId) !== ctx.organizationId) return false;
   if (ctx.organizationWide) return true;
   const participantId = String(assessment.participant?.userId || assessment.participantId || '');
-  const self = participantId === ctx.actor.userId;
   const reviewer = ctx.directory.reviewers?.find(person => String(person.userId) === ctx.actor.userId);
   const currentParticipant = ctx.directory.members.find(person => String(person.userId) === participantId);
   const targetTeams = currentParticipant?.teamIds || currentParticipant?.teams?.map(team => String(team.id || team.teamId)) || [];
@@ -68,10 +67,17 @@ function canAccessAssessment(ctx, assessment, permission = 'assessment.view') {
   // Linked reviews follow the reviewer explicitly chosen for the ordinary
   // appraisal. Team authority alone must not expose another assessor's draft.
   const managed = !assessment.appraisalId && currentlyEligible && ctx.directory.scope === 'managed_teams' && ctx.directory.members.some(person => String(person.userId) === participantId);
-  const action = fullAction(permission);
-  if (['competency.assessment.view', 'competency.evidence.view', 'competency.report.view', 'competency.report.export'].includes(action)) return self || assigned || managed;
-  if (['competency.evidence.create', 'competency.evidence.delete'].includes(action) && self) return true;
   return assigned || managed;
+}
+function canAccessAssessment(ctx, assessment, permission = 'assessment.view') {
+  if (!assessment || String(assessment.organizationId) !== ctx.organizationId || !hasAction(ctx, permission)) return false;
+  if (ctx.organizationWide) return true;
+  const self = String(assessment.participant?.userId || assessment.participantId || '') === ctx.actor.userId;
+  const assessor = isCurrentAssessor(ctx, assessment);
+  const action = fullAction(permission);
+  if (['competency.assessment.view', 'competency.evidence.view', 'competency.report.view', 'competency.report.export'].includes(action)) return self || assessor;
+  if (['competency.evidence.create', 'competency.evidence.delete'].includes(action) && self) return true;
+  return assessor;
 }
 function assertAssessment(ctx, assessment, permission = 'assessment.view') {
   if (!assessment || String(assessment.organizationId) !== ctx.organizationId) throw new DomainError(404, 'ASSESSMENT_NOT_FOUND', 'This assessment is unavailable.');
@@ -119,4 +125,4 @@ async function operation(ctx, action, key, payload, work) {
     throw error;
   }
 }
-module.exports = { ACTIONS, context, refreshContext, hasAction, requireAction, assertParticipant, canAccessAssessment, assertAssessment, audit, operation };
+module.exports = { ACTIONS, context, refreshContext, hasAction, requireAction, assertParticipant, isCurrentAssessor, canAccessAssessment, assertAssessment, audit, operation };
