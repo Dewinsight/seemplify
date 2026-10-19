@@ -54,11 +54,14 @@ function environmentPolicy() {
 let policyCache = null;
 let policyCacheUntil = 0;
 
-async function runtimePolicy({ force = false } = {}) {
-  if (!force && policyCache && policyCacheUntil > Date.now()) return policyCache;
+async function runtimePolicy({ force = false, strict = false } = {}) {
+  // Security-sensitive consumers must verify today's persisted policy even if
+  // another caller has warmed the normal short-lived/environment cache.
+  if (!strict && !force && policyCache && policyCacheUntil > Date.now()) return policyCache;
   const fallback = environmentPolicy();
   try {
     const Settings = require('../models/AIRuntimeSettings');
+    if (strict && Settings.db.readyState !== 1) throw new Error('AI runtime settings database is unavailable.');
     const saved = Settings.db.readyState === 1
       ? await Settings.findOne({ key: 'global' }).lean()
       : null;
@@ -67,7 +70,13 @@ async function runtimePolicy({ force = false } = {}) {
       chatgptEnabled: saved.chatgptEnabled === true,
       defaultRuntime: saved.defaultRuntime === CHATGPT ? CHATGPT : LOCAL
     } : fallback;
-  } catch {
+  } catch (cause) {
+    if (strict) {
+      throw new PerformanceAIRuntimeError(
+        'AI runtime settings could not be verified. Retry later; manual assessment remains available.',
+        'AI_RUNTIME_POLICY_UNAVAILABLE', 503, { cause }
+      );
+    }
     policyCache = fallback;
   }
   if (policyCache.defaultRuntime === LOCAL && !policyCache.localEnabled && policyCache.chatgptEnabled) policyCache.defaultRuntime = CHATGPT;
