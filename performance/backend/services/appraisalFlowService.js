@@ -61,14 +61,30 @@ function syncFlowStatus(appraisal) {
   const inProgress = { selfAssessment: 'self_assessment_in_progress', managerReview: 'manager_review_in_progress', calibration: 'calibration_in_progress' };
   appraisal.status = step ? (appraisal.status === inProgress[step.type] ? appraisal.status : TYPES[step.type].status) : 'employee_acknowledged';
 }
+function isAiAssistEnabled(appraisal, cycle = appraisal?.cycleId) {
+  // An administrator's current OFF veto applies to existing reviews. A later ON
+  // must not enable processing that was disabled when this review was launched.
+  return cycle?.settings?.enableAiAssist !== false
+    && appraisal?.cycleConfigurationSnapshot?.settings?.enableAiAssist !== false;
+}
 function applySnapshot(appraisal) {
-  if (!appraisal?.cycleId?.settings || !flowFor(appraisal)) return;
+  if (!appraisal?.cycleId?.settings) return;
   const snapshot = appraisal.cycleConfigurationSnapshot;
-  appraisal.cycleId = typeof appraisal.cycleId.$clone === 'function' ? appraisal.cycleId.$clone() : { ...appraisal.cycleId };
+  const configured = Boolean(flowFor(appraisal));
+  if (!configured && snapshot?.settings?.enableAiAssist === undefined) return;
+  const liveSettings = appraisal.cycleId.settings.toObject?.() || { ...appraisal.cycleId.settings };
+  const enableAiAssist = isAiAssistEnabled(appraisal);
+  // Hydrate a fresh populated document: $clone can retain a cached nested-path
+  // getter bound to the original cycle, making property reads disagree with JSON.
+  const cycle = appraisal.cycleId;
+  appraisal.cycleId = typeof cycle.constructor?.hydrate === 'function'
+    ? cycle.constructor.hydrate(cycle.toObject()) : { ...cycle };
   // Populated cycle documents are request-local. Never save these overrides to the shared quarter.
-  appraisal.cycleId.settings = { ...appraisal.cycleId.settings.toObject?.() || appraisal.cycleId.settings, ...snapshot.settings };
-  appraisal.cycleId.workflowDefinition = snapshot.workflowDefinition;
-  appraisal.cycleId.$appraisalDesign = snapshot.workflowDefinition;
+  appraisal.cycleId.settings = { ...liveSettings, ...(configured ? snapshot.settings : {}), enableAiAssist };
+  if (configured) {
+    appraisal.cycleId.workflowDefinition = snapshot.workflowDefinition;
+    appraisal.cycleId.$appraisalDesign = snapshot.workflowDefinition;
+  }
 }
 
-module.exports = { TYPES, defaultSteps, validateFlow, flowFor, currentStep, completed, hasStep, syncFlowStatus, applySnapshot };
+module.exports = { TYPES, defaultSteps, validateFlow, flowFor, currentStep, completed, hasStep, syncFlowStatus, isAiAssistEnabled, applySnapshot };

@@ -244,7 +244,7 @@ test('appraisal finalization does not create development work when continuous pe
   );
   assert.match(
     appraisalSource,
-    /if \(continuousPerformanceEnabled && isAiAssistEnabledForCycle\(cycle\)\)/
+    /if \(continuousPerformanceEnabled && await isAiAssistEnabledForAppraisal\(appraisal\)\)/
   );
 });
 
