@@ -1,0 +1,19 @@
+{
+  "revision": "9e589b74a4699997dca4833b3581c10156c69071",
+  "indexedSnapshotFiles": 1082,
+  "sourceMismatches": [],
+  "fullIntegration": {
+    "passed": 193,
+    "suites": 18,
+    "seconds": 75.65
+  },
+  "legacyPassed": 83,
+  "unitPassed": 38,
+  "idpPassed": 35,
+  "gatewayPassed": 13,
+  "scoringFilesBudgetsPassed": 25,
+  "browserUniquePassed": 41,
+  "frontendProductionBuild": "clean indexed webpack build passed",
+  "providerGenerationAndNewCalls": "not certified",
+  "sourceEquivalence": "Application source matches the fully tested privacy-corrected head; subsequent call-browser fixture and CI dependency corrections require their own targeted and exact-head CI replay."
+}

@@ -45,6 +45,11 @@ jobs:
           node tests/helpers/runLiveJourneys.js
       - run: npx playwright install --with-deps chrome
         working-directory: performance/frontend
+      - name: Install native recording conversion dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ffmpeg
+          ffmpeg -version
       - run: npm run test:e2e
         working-directory: performance/frontend
       - run: npm run test:e2e:live

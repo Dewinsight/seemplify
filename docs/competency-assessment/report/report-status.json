@@ -3,8 +3,8 @@
   "mongo": "193 / 193 clean-index checks passed",
   "pure": "25 / 25 targeted checks passed",
   "idp": "35 / 35 focused checks passed",
-  "browser": "41 distinct browser cases passed",
+  "browser": "43 distinct local browser cases passed",
   "providers": "Actual personal AI / new calls pending",
-  "release": "CI and main deployment pending",
-  "revision": "PR135 is open. Source419fbf98 plus reviewed fixture/cohort corrections; CI replay pending. Fresh local sign-in remains blocked by missing OIDC client configuration. Unrelated Experience CI baseline remains failing."
+  "release": "Full CI replay / deployment pending",
+  "revision": "PR135:193 full local API checks,43 local browser cases, fresh sign-in and linked launch passed. Call tests now verify both-participant calendar consent and real native media conversion; external STT/AI are mocked. Full CI replay and main deployment pending. Experience CI has unchanged baseline failures."
 }

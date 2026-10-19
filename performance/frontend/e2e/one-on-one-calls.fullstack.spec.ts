@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 test.use({ launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] } });
 const backend = createRequire(path.resolve(process.cwd(), '../backend/package.json'));
 const mongoose = backend('mongoose'), express = backend('express');
@@ -21,7 +22,9 @@ test.beforeAll(async () => {
   shared.request = async (operation: string, _identity: unknown, input: { externalId?: string } = {}) => {
     requests.push({ operation, input });
     if (operation === 'meetings/connection') return { connected, email: 'manager@example.test', connectUrl: 'http://localhost:4000/' };
-    if (operation === 'meetings/create') { if (calendarFailure) throw Object.assign(new Error('Synthetic calendar outage. Retry this saved meeting.'), { statusCode: 503 }); return { eventId: 'event-one', calendarId: 'calendar-one', conferenceUrl: 'https://meet.google.com/fixture-call', state: 'scheduled', recordingState: 'scheduled' }; }
+    if (operation === 'meetings/create') { if (calendarFailure) throw Object.assign(new Error('Synthetic calendar outage. Retry this saved meeting.'), { statusCode: 503 }); return { eventId: 'event-one', calendarId: 'calendar-one', conferenceUrl: 'https://meet.google.com/fixture-call', state: 'scheduled', recordingState: 'awaiting_consent' }; }
+    if (operation === 'meetings/startRecording') return { recordingState: 'scheduled' };
+    if (operation === 'meetings/stopRecording') return { recordingState: 'revoked' };
     if (operation === 'meetings/transcribe') return { transcript: 'Synthetic transcript fixture: Emery will document the release.', provider: 'test-fixture', model: 'test-fixture' };
     return { state: 'cancelled' };
   };
@@ -52,7 +55,8 @@ async function setup(page: Page, who: string) {
   });
 }
 
-test('calendar connection, failed invitation retry and cancelled-call history use the real API', async ({ page }, testInfo) => {
+test('calendar connection, failed invitation retry and cancelled-call history use the real API', async ({ page, browser }, testInfo) => {
+  test.setTimeout(90000);
   await setup(page, 'manager'); await page.goto('/one-on-ones');
   await page.getByRole('button', { name: 'Schedule 1:1', exact: true }).click();
   await page.getByRole('combobox', { name: 'Team member', exact: true }).click(); await page.getByRole('option', { name: 'Emery Employee' }).click();
@@ -61,7 +65,7 @@ test('calendar connection, failed invitation retry and cancelled-call history us
   await expect(page.getByText('Connect your calendar, then return here and check again.')).toBeVisible();
   connected = true; await page.getByRole('button', { name: 'Check again', exact: true }).click();
   await expect(page.getByText('Invitation will be sent from: manager@example.test')).toBeVisible();
-  await page.getByRole('checkbox', { name: /I will inform participants/ }).check();
+  await page.getByRole('checkbox', { name: /I will tell the other participant to review recording permissions/ }).check();
   calendarFailure = true; await page.getByRole('button', { name: 'Create calendar invitation' }).click();
   await page.getByRole('link', { name: 'Open saved meeting to retry' }).click();
   await expect(page.getByText('Invitation needs attention', { exact: true })).toBeVisible();
@@ -69,6 +73,23 @@ test('calendar connection, failed invitation retry and cancelled-call history us
   await expect(page.getByRole('link', { name: 'Join call', exact: true })).toHaveAttribute('href', 'https://meet.google.com/fixture-call');
   expect(await OneOnOne.countDocuments()).toBe(1);
   expect(new Set(requests.filter(item => item.operation === 'meetings/create').map(item => item.input.externalId)).size).toBe(1);
+  expect(requests.find(item => item.operation === 'meetings/create')?.input).toMatchObject({ record: false, recordingPolicyVersion: 'calendar-recording-v1' });
+  expect(requests.filter(item => item.operation === 'meetings/startRecording')).toHaveLength(0);
+  await page.getByRole('checkbox', { name: 'I agree to this call being recorded', exact: true }).check();
+  await page.getByRole('checkbox', { name: 'I agree to transcription of this call', exact: true }).check();
+  await page.getByRole('button', { name: 'Save my recording permission', exact: true }).click();
+  await expect(page.getByText('Reviewer: Agreed', { exact: true })).toBeVisible();
+  expect(requests.filter(item => item.operation === 'meetings/startRecording')).toHaveLength(0);
+  const employeeContext = await browser.newContext();
+  try {
+    const employee = await employeeContext.newPage(); await setup(employee, 'employee');
+    await employee.goto(page.url());
+    await employee.getByRole('checkbox', { name: 'I agree to this call being recorded', exact: true }).check();
+    await employee.getByRole('checkbox', { name: 'I agree to transcription of this call', exact: true }).check();
+    await employee.getByRole('button', { name: 'Save my recording permission', exact: true }).click();
+    await expect(employee.getByText('Both participants agreed. The notetaker is scheduled.', { exact: true })).toBeVisible();
+    expect(requests.filter(item => item.operation === 'meetings/startRecording')).toHaveLength(1);
+  } finally { await employeeContext.close(); }
   await page.screenshot({ path: testInfo.outputPath('calendar-call-ready.png'), fullPage: true });
   page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Cancel meeting', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Join call', exact: true })).toHaveCount(0);
@@ -79,6 +100,12 @@ test('calendar connection, failed invitation retry and cancelled-call history us
 
 test('standalone native peers record real browser media, play it, process notes and revisit history on mobile', async ({ browser }, testInfo) => {
   test.setTimeout(150000);
+  // This is a real browser recording/codec test. Only STT and AI are fixtures;
+  // the same ffmpeg executable used by the product must be installed on CI.
+  try {
+    const version = execFileSync('ffmpeg', ['-version'], { timeout: 10000, encoding: 'utf8', maxBuffer: 65536 }).split(/\r?\n/)[0];
+    expect(version).toMatch(/^ffmpeg version /); console.info(`[native-media preflight] ${version}`);
+  } catch { throw new Error('Native media acceptance requires ffmpeg on PATH. Install the product media dependency before running browser tests.'); }
   const contexts = await Promise.all([browser.newContext({ viewport: { width: 1440, height: 1100 } }), browser.newContext({ viewport: { width: 390, height: 844 } })]);
   try {
     const pages = await Promise.all(contexts.map(context => context.newPage()));
@@ -87,8 +114,10 @@ test('standalone native peers record real browser media, play it, process notes 
     await pages[0].getByRole('combobox', { name: 'Team member', exact: true }).click(); await pages[0].getByRole('option', { name: 'Emery Employee' }).click();
     await expect(pages[0].getByRole('button', { name: 'Schedule in-app call', exact: true })).toBeDisabled();
     await pages[0].getByRole('checkbox', { name: /I will ask both participants/ }).check();
+    const scheduled = pages[0].waitForResponse(response => new URL(response.url()).pathname.endsWith('/one-on-ones') && response.request().method() === 'POST');
     await pages[0].getByRole('button', { name: 'Schedule in-app call', exact: true }).click();
-    await expect(pages[0]).toHaveURL(/\/one-on-ones\/[a-f0-9]{24}$/);
+    expect((await scheduled).status()).toBe(201);
+    await expect(pages[0]).toHaveURL(/\/one-on-ones\/[a-f0-9]{24}$/, { timeout: 20000 });
     const id = String((await OneOnOne.findOne())._id);
     for (const [index, page] of pages.entries()) {
       await setup(page, index ? 'employee' : 'manager'); await page.goto(`/one-on-ones/${id}`);

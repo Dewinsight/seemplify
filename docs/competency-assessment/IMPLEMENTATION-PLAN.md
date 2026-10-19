@@ -1,6 +1,6 @@
 # Competency assessment delivery plan
 
-Status: specification/design approved; core implementation and local acceptance complete. Final staged-source release checks are in progress. Product code has not yet been released. See STATUS.md for current verification and release evidence.
+Status: specification/design approved; core implementation and local acceptance complete. Final staged-source release checks are in progress. Product code has not yet been released. See [STATUS.md](STATUS.md) for current verification and release evidence and [USER-GUIDE.md](USER-GUIDE.md) for the operating steps.
 
 Owner: Seemplify delivery coordinator. Baseline reviewed: `b401f1b1583be5875cc02462122c83ec9e7311d2`, 18 October 2026. Repository: `E:/GitHub/C-drive/seemplify`.
 
