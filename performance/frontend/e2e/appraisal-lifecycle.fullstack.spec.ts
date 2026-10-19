@@ -151,3 +151,49 @@ test('a closed linked competency draft explains its read-only state without impl
   await expect(page.getByRole('combobox', { name: 'Finding status', exact: true })).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'Completion & outcome', exact: true })).toHaveCount(0);
 });
+
+for (const acknowledgementStep of [true, false]) test(`acknowledged appraisal detail shows its finished status (${acknowledgementStep ? 'acknowledgement enabled' : 'acknowledgement omitted'})`, async ({ page }, testInfo) => {
+  const cycle = await Cycle.create({ name: 'Acknowledged status review', organizationId: organization.id, periodStart: '2026-01-01', periodEnd: '2026-03-31', status: 'active', createdBy: { userId: 'reviewer', name: 'Morgan Reviewer' } });
+  const record = await Appraisal.create({ cycleId: cycle._id, organizationId: organization.id,
+    employee: { userId: 'employee', name: 'Emery Employee', email: 'employee@example.test' },
+    manager: { userId: 'reviewer', name: 'Morgan Reviewer', email: 'reviewer@example.test' },
+    status: 'employee_acknowledged', finalRating: { overall: 4, finalizedAt: new Date('2026-04-03') },
+    discussion: { employeeAcknowledgedAt: new Date('2026-04-04') },
+    cycleConfigurationSnapshot: { appraisalFlow: { version: 1, assessmentMode: 'form', steps: [
+      { id: 'final', type: 'finalReview', label: 'Final outcome' },
+      ...(acknowledgementStep ? [{ id: 'ack', type: 'acknowledgement', label: 'Acknowledgement' }] : []),
+    ] } },
+  });
+  await setup(page, 'employee');
+  if (acknowledgementStep) await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/appraisals/${record._id}`);
+  await expect(page.getByRole('heading', { name: 'My Appraisal', exact: true })).toBeVisible();
+  const badge = page.locator('.MuiChip-root').filter({ hasText: acknowledgementStep ? /^Employee Acknowledged$/ : /^Completed$/ });
+  await expect(badge).toHaveCount(1); await expect(badge).toBeVisible();
+  await expect(badge).toHaveClass(/MuiChip-colorSuccess/);
+  await expect(page.locator('.MuiChip-root').filter({ hasText: /^Not Started$/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'View result report', exact: true })).toBeVisible();
+  expect((await Appraisal.findById(record._id)).status).toBe('employee_acknowledged');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('acknowledged-status.png'), fullPage: true, animations: 'disabled' });
+});
+
+test('active goal workflow cards and detail preserve their actual status labels', async ({ page }) => {
+  await setup(page, 'employee');
+  const records = [];
+  for (const [status, label] of [['goal_setting', 'Goal Setting'], ['goal_approval_pending', 'Goal Approval Pending']]) {
+    const cycle = await Cycle.create({ name: `Status review: ${label}`, organizationId: organization.id, periodStart: '2026-01-01', periodEnd: '2026-03-31', status: 'active', createdBy: { userId: 'reviewer', name: 'Morgan Reviewer' } });
+    const record = await Appraisal.create({ cycleId: cycle._id, organizationId: organization.id, employee: { userId: 'employee', name: 'Emery Employee', email: 'employee@example.test' }, manager: { userId: 'reviewer', name: 'Morgan Reviewer', email: 'reviewer@example.test' }, status });
+    records.push({ record, label });
+    await page.goto(`/appraisals/${record._id}`);
+    await expect(page.locator('.MuiChip-root').filter({ hasText: new RegExp(`^${label}$`) })).toBeVisible();
+  }
+  await page.goto('/appraisals');
+  for (const { record, label } of records) {
+    const card = page.getByRole('article', { name: `Status review: ${label} — Emery Employee`, exact: true });
+    await expect(card).toBeVisible();
+    await expect(card.locator('.MuiChip-root').filter({ hasText: new RegExp(`^${label}$`) })).toBeVisible();
+    await expect(card.locator('.MuiChip-root').filter({ hasText: /^Not Started$/ })).toHaveCount(0);
+    expect((await Appraisal.findById(record._id)).status).toBe(record.status);
+  }
+});

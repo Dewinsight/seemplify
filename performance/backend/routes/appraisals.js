@@ -546,26 +546,22 @@ function ensureConversationAssessmentState(appraisal) {
     : 0;
 }
 
-function isAiAssistEnabledForCycle(cycle) {
-  return cycle?.settings?.enableAiAssist !== false;
-}
-
 async function isAiAssistEnabledForAppraisal(appraisal) {
   if (!appraisal) return true;
 
   const cycleRef = appraisal.cycleId;
   if (cycleRef && typeof cycleRef === 'object' && cycleRef.settings) {
-    return isAiAssistEnabledForCycle(cycleRef);
+    return appraisalFlow.isAiAssistEnabled(appraisal, cycleRef);
   }
 
   const cycleId = cycleRef?._id || cycleRef;
-  if (!cycleId) return true;
+  if (!cycleId) return appraisalFlow.isAiAssistEnabled(appraisal, null);
 
   const cycle = await AppraisalCycle.findOne({
     _id: cycleId,
     organizationId: appraisal.organizationId
   }).select('settings.enableAiAssist');
-  return isAiAssistEnabledForCycle(cycle);
+  return appraisalFlow.isAiAssistEnabled(appraisal, cycle);
 }
 
 async function isChatEnabledForAppraisal(appraisal) {
@@ -3347,7 +3343,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
       });
     }
 
-    const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
+    const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
     const { selfAssessment = {}, submit } = req.body;
 
     if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
@@ -3562,7 +3558,7 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
       });
     }
 
-    const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
+    const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
     const { managerReview = {}, submit } = req.body;
     if (!phaseHasOpened(appraisal.cycleId, 'managerReview')) {
       return res.status(409).json({ success: false, error: 'Manager review has not opened for this cycle' });
@@ -3672,7 +3668,7 @@ router.post('/:appraisalId/ai-assist', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+    if (!(await isAiAssistEnabledForAppraisal(appraisal))) {
       return res.status(400).json({
         success: false,
         error: 'AI assistance is disabled for this appraisal cycle'
@@ -3921,8 +3917,12 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
           wordCount: extraction.wordCount
         };
 
+        // Manual evidence remains available when appraisal AI is disabled.
+        const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
+        if (!aiAssistEnabled) document.aiAnalysis.status = 'skipped';
+
         // Trigger AI analysis
-        if (extraction.text && extraction.text.length > 100) {
+        if (extraction.text && extraction.text.length > 100 && aiAssistEnabled) {
           document.aiAnalysis.status = 'processing';
           await document.save();
 
@@ -4414,7 +4414,7 @@ router.post('/:appraisalId/finalize', requireAuth, async (req, res) => {
 
     // Do not create inaccessible development work when continuous performance
     // is explicitly disabled for the organization.
-    if (continuousPerformanceEnabled && isAiAssistEnabledForCycle(cycle)) {
+    if (continuousPerformanceEnabled && await isAiAssistEnabledForAppraisal(appraisal)) {
       try {
         const devPlan = await appraisalAIService.suggestDevelopmentPlan(appraisal, appraisal.selfAssessment?.okrAssessment || [], {
           employeeName: appraisal.employee.name,
@@ -4521,7 +4521,7 @@ router.post('/:appraisalId/check-bias', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+    if (!(await isAiAssistEnabledForAppraisal(appraisal))) {
       return res.status(400).json({
         success: false,
         error: 'AI assistance is disabled for this appraisal cycle'
@@ -4733,7 +4733,7 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
       return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
     }
 
-    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+    if (!(await isAiAssistEnabledForAppraisal(appraisal))) {
       return res.status(400).json({
         success: false,
         error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
@@ -4896,7 +4896,7 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
     }
 
-    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+    if (!(await isAiAssistEnabledForAppraisal(appraisal))) {
       return res.status(400).json({
         success: false,
         error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
@@ -5321,7 +5321,7 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
       return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
     }
 
-    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+    if (!(await isAiAssistEnabledForAppraisal(appraisal))) {
       removeRejectedUpload(req.file);
       return res.status(400).json({
         success: false,
@@ -5662,7 +5662,7 @@ router.get('/:appraisalId/conversation/context', requireAuth, async (req, res) =
     res.json({
       success: true,
       data: {
-        aiAssistEnabled: isAiAssistEnabledForCycle(appraisal.cycleId),
+        aiAssistEnabled: await isAiAssistEnabledForAppraisal(appraisal),
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread,
         okrs,
@@ -5710,7 +5710,7 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
     }
 
-    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+    if (!(await isAiAssistEnabledForAppraisal(appraisal))) {
       return res.status(400).json({
         success: false,
         error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
@@ -5834,7 +5834,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
     }
 
     ensureConversationAssessmentState(appraisal);
-    const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
+    const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
 
     const { report, edits } = req.body || {};
 
@@ -6175,7 +6175,7 @@ router.post('/:appraisalId/ai-rating-suggestion', requireAuth, async (req, res) 
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    if (!isAiAssistEnabledForCycle(appraisal.cycleId)) {
+    if (!(await isAiAssistEnabledForAppraisal(appraisal))) {
       return res.status(400).json({
         success: false,
         error: 'AI assistance is disabled for this appraisal cycle'

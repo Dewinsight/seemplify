@@ -72,6 +72,8 @@ interface AppraisalCycle {
 
 const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error'; icon: React.ReactNode; gradient?: string }> = {
   'not_started': { label: 'Not Started', color: 'default', icon: <Schedule /> },
+  'goal_setting': { label: 'Goal Setting', color: 'info', icon: <Edit /> },
+  'goal_approval_pending': { label: 'Goal Approval Pending', color: 'warning', icon: <Schedule /> },
 
   'self_assessment_pending': { label: 'Self-Assessment Pending', color: 'warning', icon: <Assignment />, gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' },
   'self_assessment_in_progress': { label: 'Self-Assessment In Progress', color: 'info', icon: <Edit /> },

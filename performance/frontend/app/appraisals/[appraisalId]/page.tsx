@@ -56,6 +56,7 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
   'calibration_in_progress': { label: 'Calibration In Progress', color: 'info', icon: <TrendingUp /> },
   'calibration_completed': { label: 'Calibration Completed', color: 'success', icon: <CheckCircle /> },
   'final_review_pending': { label: 'Final Review Pending', color: 'warning', icon: <AssessmentOutlined /> },
+  'employee_acknowledged': { label: 'Employee Acknowledged', color: 'success', icon: <CheckCircle /> },
   'completed': { label: 'Completed', color: 'success', icon: <CheckCircle /> },
   'cancelled': { label: 'Cancelled', color: 'error', icon: <Warning /> },
 };
