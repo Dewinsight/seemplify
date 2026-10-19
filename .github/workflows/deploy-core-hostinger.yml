@@ -223,7 +223,7 @@ jobs:
       - name: Install Performance browser test backend
         if: matrix.name == 'Performance'
         working-directory: performance/backend
-        run: npm ci --ignore-scripts
+        run: npm install --ignore-scripts --no-package-lock
       - name: Install Performance test browser
         if: matrix.name == 'Performance'
         run: npx playwright install --with-deps chrome
