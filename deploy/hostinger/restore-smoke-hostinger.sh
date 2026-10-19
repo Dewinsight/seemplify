@@ -118,6 +118,56 @@ for archive in "${LATEST_BACKUP}"/*.gz; do
 done
 echo "checksums and compressed archives ok"
 
+# Restore private bytes only into a fresh, root-only temporary directory.
+# Never extract an archive directly over the live competency bind mount.
+# A real recovery must reconcile later consent withdrawals/deletion tombstones
+# and retention before enabling access; this smoke test never starts the app.
+timeout 300 python3 - "${LATEST_BACKUP}" <<'COMPETENCY_RESTORE_PY'
+import hashlib, json, pathlib, re, shutil, stat, sys, tarfile, tempfile
+backup = pathlib.Path(sys.argv[1])
+archive = backup / 'competency-private.tar.gz'
+manifest_path = backup / 'competency-private.manifest.json'
+assert archive.exists() == manifest_path.exists(), 'Incomplete competency private backup'
+if archive.exists():
+    for item in (archive, manifest_path):
+        assert not item.is_symlink() and item.is_file(), 'Invalid private backup file'
+        assert stat.S_IMODE(item.stat().st_mode) == 0o600, 'Private backup must be mode 0600'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    assert manifest['schemaVersion'] == 1 and manifest['rootMode'] == 0o700
+    expected = {}
+    for item in manifest['files']:
+        key = item['key']
+        assert re.fullmatch(r'[a-fA-F0-9-]{36}', key) and key not in expected, 'Invalid private key'
+        assert item['mode'] == 0o600 and isinstance(item['size'], int) and item['size'] >= 0
+        assert re.fullmatch(r'[0-9a-f]{64}', item['sha256']), 'Invalid private content hash'
+        expected[key] = item
+    with tempfile.TemporaryDirectory(prefix='seemplify-competency-restore-') as name:
+        root = pathlib.Path(name)
+        root.chmod(0o700)
+        assert sum(item['size'] for item in expected.values()) < shutil.disk_usage(root).free
+        seen = set()
+        with tarfile.open(archive, 'r:gz') as stream:
+            members = stream.getmembers()
+            for member in members:
+                assert member.name in expected and member.name not in seen, 'Unknown/duplicate private member'
+                item = expected[member.name]
+                assert member.isfile() and member.mode == 0o600, 'Unsafe private member type/mode'
+                assert member.size == item['size'], 'Private member size mismatch'
+                seen.add(member.name)
+            assert seen == set(expected), 'Private files missing from archive'
+            for member in members:
+                item = expected[member.name]
+                target = root / member.name
+                with stream.extractfile(member) as incoming, target.open('xb') as output:
+                    shutil.copyfileobj(incoming, output)
+                target.chmod(0o600)
+                with target.open('rb') as restored:
+                    assert hashlib.file_digest(restored, 'sha256').hexdigest() == item['sha256'], 'Private hash mismatch'
+                assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        assert stat.S_IMODE(root.stat().st_mode) == 0o700
+    print('competency private isolated restore ok files=' + str(len(expected)))
+COMPETENCY_RESTORE_PY
+
 python3 - "${LATEST_BACKUP}" <<'PY'
 from pathlib import Path, PurePosixPath
 import sqlite3
@@ -168,6 +218,34 @@ MONGO_DATABASES="$(
 )"
 (( MONGO_DATABASES > 0 )) || { echo "MongoDB restore produced no application databases" >&2; exit 1; }
 printf 'mongodb restore ok databases=%s\n' "${MONGO_DATABASES}"
+if [[ -f "${LATEST_BACKUP}/competency-private.manifest.json" ]]; then
+  docker cp "${LATEST_BACKUP}/competency-private.manifest.json" \
+    "${MONGO_CONTAINER}:/tmp/competency-private.manifest.json"
+fi
+# Metadata-only DB restoration is insufficient: every currently usable private
+# reference must have matching bytes in the independently restored manifest.
+# COMPETENCY_REFERENCE_CHECK_START
+docker exec "${MONGO_CONTAINER}" mongosh --quiet \
+  --username restore_admin --password "${MONGO_PASSWORD}" \
+  --authenticationDatabase admin --eval '
+    const fs = require("fs");
+    const p = "/tmp/competency-private.manifest.json";
+    const entries = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")).files : [];
+    const files = new Map(entries.map(item => [item.key, item]));
+    const database = db.getSiblingDB("performance_db");
+    const now = new Date();
+    const references = [
+      ...database.competencyimports.find({storageKey: {$type: "string"}}, {storageKey: 1, sha256: 1}).toArray(),
+      ...database.competencyevidences.find({status: "ready", storageKey: {$type: "string"}, $or: [{"retention.expiresAt": null}, {"retention.expiresAt": {$gt: now}}]}, {storageKey: 1, sha256: 1}).toArray(),
+      ...database.competencyexports.find({status: "ready", expiresAt: {$gt: now}, storageKey: {$type: "string"}}, {storageKey: 1, sha256: 1}).toArray()
+    ];
+    for (const reference of references) {
+      const file = files.get(reference.storageKey);
+      if (!file || file.sha256 !== reference.sha256) throw Error("Competency private reference/hash mismatch");
+    }
+    print("competency restored reference integrity ok references=" + references.length);
+  '
+# COMPETENCY_REFERENCE_CHECK_END
 cleanup_container "${MONGO_CONTAINER}"
 
 restore_postgres \

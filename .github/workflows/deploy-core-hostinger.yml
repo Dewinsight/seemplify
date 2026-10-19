@@ -157,7 +157,7 @@ jobs:
           - name: Performance
             directory: performance/backend
             install_command: npm install --ignore-scripts --no-package-lock
-            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/colleagueReviews.integration.test.js tests/oneOnOneCalls.integration.test.js tests/competency --runInBand && node --test tests/competencyScoring.test.js tests/competencyFileSafety.test.js tests/competencyUploadBudget.test.js
+            test_command: npm run test:legacy && npm run test:unit && npx jest tests/appraisalFlow.integration.test.js tests/colleagueReviews.integration.test.js tests/oneOnOneCalls.integration.test.js tests/competency --runInBand && node --test tests/competencyScoring.test.js tests/competencyFileSafety.test.js tests/competencyUploadBudget.test.js ../../deploy/hostinger/tests/competency-backup-reference.test.cjs
           - name: Payroll
             directory: payroll/backend
             install_command: npm install --ignore-scripts --no-package-lock

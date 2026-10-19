@@ -111,9 +111,64 @@ require_container seemplify-mail-mariadb-1
 require_container seemplify-shared-redis-1
 require_container seemplify-shared-arangodb-1
 
-docker exec seemplify-shared-mongodb-1 sh -lc \
+# Competency originals/PDFs are a bind mount, not a named Docker volume.
+# Briefly pause only its actual running writers while pairing Mongo metadata
+# with private bytes. The EXIT trap resumes them if either bounded step fails.
+# These local snapshots follow the existing backup retention. Live source
+# deletion does not erase older backups or third-party recording providers.
+COMPETENCY_SOURCE="/opt/seemplify/data/competency"
+COMPETENCY_PRESENT=false
+COMPETENCY_CONTAINERS="$(docker ps -a --filter "volume=${COMPETENCY_SOURCE}" --format '{{.Names}}')"
+if [[ -n "${COMPETENCY_CONTAINERS}" && ! -d "${COMPETENCY_SOURCE}" ]]; then
+  echo 'Configured competency private root is missing' >&2
+  exit 1
+fi
+if [[ -d "${COMPETENCY_SOURCE}" ]]; then
+  COMPETENCY_PRESENT=true
+  while IFS= read -r container; do
+    [[ -n "${container}" ]] || continue
+    if [[ "$(docker inspect --format '{{range .Mounts}}{{if and (eq .Source "/opt/seemplify/data/competency") .RW}}writer{{end}}{{end}}' "${container}")" == writer ]]; then
+      pause_container_if_running "${container}"
+    fi
+  done <<<"${COMPETENCY_CONTAINERS}"
+fi
+
+timeout 300 docker exec seemplify-shared-mongodb-1 sh -lc \
   'exec mongodump --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip' \
   >"${DESTINATION}/mongodb.archive.gz"
+
+if [[ "${COMPETENCY_PRESENT}" == true ]]; then
+  timeout 300 python3 - "${DESTINATION}" "${COMPETENCY_SOURCE}" <<'COMPETENCY_ARCHIVE_PY'
+import hashlib, json, os, pathlib, re, stat, sys, tarfile
+destination, source = map(pathlib.Path, sys.argv[1:3])
+assert source.is_dir() and not source.is_symlink(), 'Invalid competency private root'
+assert stat.S_IMODE(source.stat().st_mode) == 0o700, 'Competency root must be mode 0700'
+manifest = {'schemaVersion': 1, 'rootMode': 0o700, 'files': []}
+archive = destination / '.competency-private.tar.gz.partial'
+with tarfile.open(archive, 'w:gz', dereference=False) as output:
+    for item in sorted(source.iterdir()):
+        details = item.lstat()
+        assert re.fullmatch(r'[a-fA-F0-9-]{36}', item.name), 'Unexpected private storage key'
+        assert stat.S_ISREG(details.st_mode), 'Private source must be a regular file'
+        assert stat.S_IMODE(details.st_mode) == 0o600, 'Private source must be mode 0600'
+        with item.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        manifest['files'].append({'key': item.name, 'size': details.st_size,
+            'sha256': digest, 'mode': 0o600, 'uid': details.st_uid, 'gid': details.st_gid})
+        output.add(item, arcname=item.name, recursive=False)
+os.chmod(archive, 0o600)
+manifest_path = destination / '.competency-private.manifest.json.partial'
+with manifest_path.open('x', encoding='utf-8') as stream:
+    json.dump(manifest, stream, sort_keys=True)
+os.chmod(manifest_path, 0o600)
+os.replace(archive, destination / 'competency-private.tar.gz')
+os.replace(manifest_path, destination / 'competency-private.manifest.json')
+print('competency private archive ok files=' + str(len(manifest['files'])))
+COMPETENCY_ARCHIVE_PY
+else
+  printf 'optional_bind_skipped=%s\n' "${COMPETENCY_SOURCE}" >>"${DESTINATION}/SKIPPED"
+fi
+resume_paused_containers
 
 docker exec seemplify-shared-experience-postgres-1 sh -lc \
   'exec pg_dumpall --username "$POSTGRES_USER"' \

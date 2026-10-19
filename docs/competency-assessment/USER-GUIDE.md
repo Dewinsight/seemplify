@@ -24,3 +24,7 @@ For a new recorded calendar meeting, each actual participant separately acknowle
 - If someone else saved first, compare the current version and preserve your draft before reloading.
 - Editing a role creates a new version; an existing assessment retains its frozen version.
 - A missing or withdrawn source is an access issue, not a low performance score. Resolve the source or record an authorised exception.
+
+## Operations
+
+Private originals and generated PDFs are included with the existing protected backups. The backup briefly pauses current Performance file writers while it captures Mongo metadata and the private archive; each of those two phases has a five-minute limit and failure resumes the writers. The schedule and14-day backup retention are unchanged. Restoring an older snapshot requires reconciliation of later consent withdrawals and deletion tombstones before user access. Independent restore checks use temporary files and do not overwrite the live store.
