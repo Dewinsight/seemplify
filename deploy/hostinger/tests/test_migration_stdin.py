@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import re
 import subprocess
 import textwrap
 import unittest
@@ -24,7 +25,13 @@ def migration_commands():
 class MigrationInputTests(unittest.TestCase):
     def test_migrations_do_not_share_the_release_scripts_input(self):
         commands = migration_commands()
-        self.assertEqual(len(commands), 2)
+        self.assertCountEqual(
+            [re.search(r'\bnode (scripts/migrate\w+\.js)\b', command).group(1)
+             for command in commands],
+            ['scripts/migrateGoalIdempotencyIndex.js',
+             'scripts/migrateGoalCheckInIdempotencyIndex.js',
+             'scripts/migrateQuarterlyReviews.js'],
+        )
         for command in commands:
             self.assertIn('< /dev/null', command)
             self.assertIn('--no-deps -T', command)
