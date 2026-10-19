@@ -1,6 +1,6 @@
 'use strict';
 const mongoose = require('mongoose');
-const peer = new mongoose.Schema({ id: String, seenAt: Date, consentAt: Date }, { _id: false });
+const peer = new mongoose.Schema({ id: String, claimId: String, seenAt: Date, consentAt: Date }, { _id: false });
 const schema = new mongoose.Schema({
   meetingId: { type: mongoose.Schema.Types.ObjectId, required: true, unique: true },
   manager: peer, employee: peer,

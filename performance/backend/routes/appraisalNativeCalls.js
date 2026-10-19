@@ -31,24 +31,39 @@ module.exports = function nativeCalls(publicMeeting) {
     await Call.init();
     await Call.updateOne({ meetingId: req.meeting._id }, { $setOnInsert: { expiresAt: new Date(Date.now() + 86400000) } }, { upsert: true });
     const role = req.callRole;
-    const call = await Call.findOneAndUpdate({ meetingId: req.meeting._id, $or: [{ [`${role}.id`]: id }, { [`${role}.seenAt`]: { $lt: new Date(Date.now() - 30000) } }, { [role]: { $exists: false } }] }, { $set: { [role]: { id, seenAt: new Date(), consentAt: req.body.consent ? new Date() : null } } }, { new: true });
+    const claimId = crypto.randomUUID();
+    const call = await Call.findOneAndUpdate({ meetingId: req.meeting._id, $or: [{ [`${role}.id`]: id }, { [`${role}.seenAt`]: { $lt: new Date(Date.now() - 30000) } }, { [role]: { $exists: false } }] }, { $set: { [role]: { id, claimId, seenAt: new Date(Date.now()), consentAt: req.body.consent ? new Date() : null } } }, { new: true });
     if (!call) return res.status(409).json({ error: 'You are already in this call in another tab. Leave that tab, or wait 30 seconds after it closes.' });
-    if (req.appraisal) {
-      // The lease exists before this parent fence: cancellation either sees a
-      // live participant or loses its optimistic save. If cancellation won,
-      // release only this caller's lease before disclosing relay credentials.
-      const open = await Appraisal.updateOne({ _id: req.appraisal._id, organizationId: req.appraisal.organizationId, status: { $nin: ['cancelled', 'completed', 'employee_acknowledged'] } }, { $inc: { __v: 1 } });
-      if (!open.matchedCount) {
-        await Call.updateOne({ _id: call._id, [`${role}.id`]: id }, { $unset: { [role]: 1 } });
-        return res.status(409).json({ error: 'This appraisal call is closed.' });
+    // Each attempt owns one claim, even when the same peer retries within the
+    // same millisecond. Never clear a replacement or heartbeated connection.
+    const releaseClaim = () => Call.updateOne({ _id: call._id, [`${role}.id`]: id,
+      [`${role}.claimId`]: claimId, [`${role}.seenAt`]: call[role].seenAt }, { $unset: { [role]: 1 } });
+    let relayPending = false;
+    try {
+      if (req.appraisal) {
+        // Cancellation either observes the lease or loses its optimistic save.
+        const open = await Appraisal.updateOne({ _id: req.appraisal._id, organizationId: req.appraisal.organizationId, status: { $nin: ['cancelled', 'completed', 'employee_acknowledged'] } }, { $inc: { __v: 1 } });
+        if (!open.matchedCount) {
+          await releaseClaim();
+          return res.status(409).json({ error: 'This appraisal call is closed.' });
+        }
       }
+      relayPending = true;
+      const response = await fetch('https://turn.seemplifyai.com/api/turn-credentials', { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error('Relay unavailable');
+      const turn = await response.json();
+      if (!Array.isArray(turn.urls) || !turn.urls.length || turn.urls.some(url => typeof url !== 'string' || !/^turns?:[^\s]+$/.test(url)) ||
+          typeof turn.username !== 'string' || !turn.username.trim() || typeof turn.credential !== 'string' || !turn.credential.trim()) throw new Error('Invalid relay response');
+      relayPending = false;
+      await OneOnOne.updateOne({ _id: req.meeting._id, status: { $in: ['scheduled', 'rescheduled'] } }, { $set: { status: 'in_progress', actualStartTime: new Date() } });
+      return res.json({ role, peerId: id, recordingRequested: Boolean(req.meeting.appraisalMeeting.recordingRequested), iceServers: [{ urls: 'stun:turn.seemplifyai.com:3478' }, { urls: turn.urls, username: turn.username, credential: turn.credential }] });
+    } catch (_error) {
+      let cleanupFailed = false;
+      try { await releaseClaim(); } catch { cleanupFailed = true; console.warn('Native join claim cleanup could not be completed.'); }
+      const retry = cleanupFailed ? ' Wait 30 seconds, then retry joining.' : ' Retry joining the call.';
+      return res.status(503).json({ code: relayPending ? 'CALL_RELAY_UNAVAILABLE' : 'CALL_JOIN_UNAVAILABLE',
+        error: (relayPending ? 'The call relay is temporarily unavailable.' : 'The call could not be joined.') + retry });
     }
-    const response = await fetch('https://turn.seemplifyai.com/api/turn-credentials', { signal: AbortSignal.timeout(5000) });
-    if (!response.ok) throw new Error('The call relay is unavailable. Please retry.');
-    const turn = await response.json();
-    if (!Array.isArray(turn.urls) || !turn.username || !turn.credential) throw new Error('The call relay is unavailable.');
-    await OneOnOne.updateOne({ _id: req.meeting._id, status: { $in: ['scheduled', 'rescheduled'] } }, { $set: { status: 'in_progress', actualStartTime: new Date() } });
-    return res.json({ role, peerId: id, recordingRequested: Boolean(req.meeting.appraisalMeeting.recordingRequested), iceServers: [{ urls: 'stun:turn.seemplifyai.com:3478' }, { urls: turn.urls, username: turn.username, credential: turn.credential }] });
   }));
   router.use(wrap(async (req, res) => {
     // Recording playback is authorized by the parent appraisal router, without a live-call lease.
