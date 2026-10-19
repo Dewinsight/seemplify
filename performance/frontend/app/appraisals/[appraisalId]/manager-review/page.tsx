@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAppraisal, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
+import { hydrateAppraisalDraft, type AppraisalDraftBaseline } from '@/lib/appraisal-draft-hydration';
 import {
   Box, Typography, Card, CardContent, Grid, Button, TextField, Chip, Alert,
   Paper, Stepper, Step, StepLabel, Rating, LinearProgress,
@@ -117,6 +118,8 @@ export default function ManagerReviewPage() {
   const [biasAcknowledged, setBiasAcknowledged] = useState(false);
   const [managerReviewStarted, setManagerReviewStarted] = useState(false);
   const customSectionsRef = useRef<CustomAssessmentSectionsHandle>(null);
+  const draftBaseline = useRef<AppraisalDraftBaseline<ManagerReviewData> | null>(null);
+  const persistPending = useRef(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
 
   // Form data
@@ -140,7 +143,7 @@ export default function ManagerReviewPage() {
 
   // Initialize form data from appraisal
   useEffect(() => {
-    if (appraisal) {
+    if (appraisal && String(appraisal._id) === appraisalId) {
       const existing = appraisal.managerReview || {};
       const selfAssessment = appraisal.selfAssessment || {};
       const cycle = appraisal.cycleId;
@@ -178,7 +181,7 @@ export default function ManagerReviewPage() {
         };
       }) || [];
 
-      setFormData({
+      const incoming: ManagerReviewData = {
         overallSummary: existing.overallSummary || {
           achievements: '',
           strengths: '',
@@ -189,9 +192,12 @@ export default function ManagerReviewPage() {
         competencyRatings: competencies,
         okrAssessment: okrs,
         overallManagerRating: existing.overallManagerRating || 3
-      });
+      };
+      const previous = draftBaseline.current;
+      draftBaseline.current = { resourceId: appraisalId, value: incoming };
+      setFormData(current => hydrateAppraisalDraft(appraisalId, String(appraisal._id), current, previous, incoming));
     }
-  }, [appraisal]);
+  }, [appraisal, appraisalId]);
   useEffect(() => {
     if (appraisal) {
       fetchFeedback();
@@ -200,9 +206,8 @@ export default function ManagerReviewPage() {
   }, [appraisal]);
 
   useEffect(() => {
-    if (!appraisalId) {
-      setManagerReviewStarted(false);
-    }
+    setManagerReviewStarted(false);
+    setActiveStep(0);
   }, [appraisalId]);
 
   useEffect(() => {
@@ -277,6 +282,8 @@ export default function ManagerReviewPage() {
     }
   };
   const handleSave = async (showNotification = true) => {
+    if (persistPending.current) return false;
+    persistPending.current = true;
     setSaving(true);
     try {
       const customResponsesSaved = await customSectionsRef.current?.save(false);
@@ -292,7 +299,9 @@ export default function ManagerReviewPage() {
         submit: false
       });
       await fetchScoringData();
-      mutate();
+      // Only adopt returned server normalization if no newer typing happened during this save.
+      draftBaseline.current = { resourceId: appraisalId, value: formData };
+      await mutate();
       if (showNotification) {
         setSnackbar({ open: true, message: 'Progress saved successfully!', severity: 'success' });
       }
@@ -306,11 +315,13 @@ export default function ManagerReviewPage() {
       });
       return false;
     } finally {
+      persistPending.current = false;
       setSaving(false);
     }
   };
 
   const handleSubmit = async () => {
+    if (persistPending.current) return;
     let hasPotentialBias = Boolean(biasCheck?.hasPotentialBias);
 
     // Check for bias first when AI assistance is enabled.
@@ -328,6 +339,7 @@ export default function ManagerReviewPage() {
       return;
     }
 
+    persistPending.current = true;
     setSubmitting(true);
     try {
       const customResponsesSaved = await customSectionsRef.current?.save(true);
@@ -352,6 +364,7 @@ export default function ManagerReviewPage() {
         severity: 'error'
       });
     } finally {
+      persistPending.current = false;
       setSubmitting(false);
     }
   };
@@ -1301,7 +1314,7 @@ export default function ManagerReviewPage() {
           variant="outlined"
           startIcon={saving ? <CircularProgress size={16} /> : <Save />}
           onClick={() => handleSave()}
-          disabled={saving}
+          disabled={saving || submitting}
         >
           Save Progress
         </Button>
@@ -1371,7 +1384,7 @@ export default function ManagerReviewPage() {
           variant="outlined"
           startIcon={<ArrowBack />}
           onClick={() => setActiveStep(prev => prev - 1)}
-          disabled={activeStep === 0}
+          disabled={activeStep === 0 || saving || submitting}
         >
           Previous
         </Button>
@@ -1380,6 +1393,7 @@ export default function ManagerReviewPage() {
           <Button
             variant="contained"
             endIcon={<ArrowForward />}
+            disabled={saving || submitting}
             onClick={async () => {
               const saved = await handleSave(false);
               if (saved) {
@@ -1395,7 +1409,7 @@ export default function ManagerReviewPage() {
             color="success"
             startIcon={submitting ? <CircularProgress size={16} /> : <Send />}
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={saving || submitting}
           >
             Submit Review
           </Button>

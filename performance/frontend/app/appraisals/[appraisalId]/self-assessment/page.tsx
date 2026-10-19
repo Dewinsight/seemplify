@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAppraisal } from '@/lib/hooks';
 import api from '@/lib/api';
+import { hydrateAppraisalDraft, type AppraisalDraftBaseline } from '@/lib/appraisal-draft-hydration';
 import {
   Box,
   Typography,
@@ -118,6 +119,8 @@ export default function SelfAssessmentPage() {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const customSectionsRef = useRef<CustomAssessmentSectionsHandle>(null);
+  const draftBaseline = useRef<AppraisalDraftBaseline<ManualSelfAssessmentForm> | null>(null);
+  const persistPending = useRef(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -125,9 +128,12 @@ export default function SelfAssessmentPage() {
   });
 
   useEffect(() => {
-    if (!appraisal) return;
-    setManualForm(buildManualForm(appraisal));
-  }, [appraisal]);
+    if (!appraisal || String(appraisal._id) !== appraisalId) return;
+    const incoming = buildManualForm(appraisal);
+    const previous = draftBaseline.current;
+    draftBaseline.current = { resourceId: appraisalId, value: incoming };
+    setManualForm(current => hydrateAppraisalDraft(appraisalId, String(appraisal._id), current, previous, incoming));
+  }, [appraisal, appraisalId]);
 
   const handleConversationComplete = () => {
     mutate();
@@ -188,11 +194,13 @@ export default function SelfAssessmentPage() {
   }
 
   const persistManualAssessment = async (submit: boolean) => {
+    if (persistPending.current) return;
     if (submit && requireSelfRating && !manualForm.overallSelfRating) {
       setSnackbar({ open: true, message: 'Please choose your overall self-rating before submitting.', severity: 'error' });
       return;
     }
 
+    persistPending.current = true;
     if (submit) {
       setSubmitting(true);
     } else {
@@ -233,6 +241,7 @@ export default function SelfAssessmentPage() {
         submit
       });
 
+      draftBaseline.current = { resourceId: appraisalId, value: manualForm };
       await mutate();
       setSnackbar({
         open: true,
@@ -251,6 +260,7 @@ export default function SelfAssessmentPage() {
         severity: 'error'
       });
     } finally {
+      persistPending.current = false;
       setSaving(false);
       setSubmitting(false);
     }
