@@ -1277,6 +1277,15 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         cycle
       });
 
+      if (cycle.settings?.requireOkrAlignment && goalSnapshot.snapshots.length === 0) {
+        errors.push({
+          userId: employee.userId,
+          code: 'APPROVED_GOALS_REQUIRED',
+          error: 'This cycle requires approved, aligned goals for the assessment period. Approve the goals before starting this review, or choose a cycle that does not require goal alignment.'
+        });
+        return;
+      }
+
       const appraisal = new Appraisal({
         cycleId: cycle._id,
         organizationId: cycle.organizationId,

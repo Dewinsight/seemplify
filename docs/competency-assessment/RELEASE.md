@@ -1,5 +1,7 @@
 # Competency assessment release evidence
 
+Follow-up,19 October: the complete admin → manager → employee acceptance and five fixes are locally verified. See [role-journey QA](ROLE-JOURNEY-QA.md) and its [safe receipt](evidence/admin-manager-employee-acceptance.json). Final local checks passed208 integration,83 legacy,38 unit,709 HTTP,58 interface cases,one real-API browser role journey and two later accessibility rechecks of existing cases. Five actual local IdP accounts independently verified the role handoff and manager denials. The follow-up release's remote CI, deployment and live smoke are recorded after source promotion; the production evidence below describes the earlier3095926a release.
+
 Status: `3095926a` is deployed and all thirteen Core services were verified healthy at that exact revision. Authenticated production manual assessment, actual personal ChatGPT gpt-5.6-terra analysis and immutable v1/v2 report/PDF acceptance passed with synthetic content. AI never selected the human rating/outcome; optional provider metadata was absent and remains Not recorded. All prior user-editable organisation settings were restored exactly, leaving AI/call evidence off. Production Start appraisal confirmation/preflight only was exercised; full fresh-local linked launch is separate. New external call artifacts, actual client pilot and full production restore remain uncertified.
 
 ## Reviewed source

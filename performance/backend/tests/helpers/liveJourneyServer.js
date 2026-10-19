@@ -1,6 +1,6 @@
 // Disposable full-application acceptance environment. Never imported by app.js.
 // The login bridge exists only on this loopback listener, with synthetic IdP claims.
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
@@ -58,7 +58,9 @@ async function start() {
   // authorization bypass. These imports are dependency-free IdP definitions.
   ({ DEFAULT_ACCESS_ROLES: accessRoles } = await import('../../../../Identityprovider/src/config/accessControlCatalog.js'));
   ({ buildPerformanceDirectory } = await import('../../../../Identityprovider/src/utils/performanceDirectory.js'));
-  const mongo = await MongoMemoryServer.create();
+  // Ordinary appraisal + competency links/finalisation are transactional in
+  // production. Exercise those fences with a real disposable replica set.
+  const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   // Set every operational value before loading the application; no local .env services are used.
   Object.assign(process.env, { NODE_ENV: 'test', MONGO_URI: mongo.getUri('performance_acceptance'),
     FRONTEND_URL: 'http://127.0.0.1:5015', SESSION_SECRET: 'disposable-acceptance-only', DISABLE_BACKGROUND_WORKERS: 'true',

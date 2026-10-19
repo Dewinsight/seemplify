@@ -65,9 +65,11 @@ function canAccessAssessment(ctx, assessment, permission = 'assessment.view') {
   const targetTeams = currentParticipant?.teamIds || currentParticipant?.teams?.map(team => String(team.id || team.teamId)) || [];
   const currentlyEligible = Boolean(currentParticipant && reviewer && (reviewer.organizationWide || reviewer.eligibleTeamIds?.some(teamId => targetTeams.map(String).includes(String(teamId)))));
   const assigned = currentlyEligible && (assessment.assessorIds || assessment.assessors?.map(person => person.userId) || []).map(String).includes(ctx.actor.userId);
-  const managed = currentlyEligible && ctx.directory.scope === 'managed_teams' && ctx.directory.members.some(person => String(person.userId) === participantId);
+  // Linked reviews follow the reviewer explicitly chosen for the ordinary
+  // appraisal. Team authority alone must not expose another assessor's draft.
+  const managed = !assessment.appraisalId && currentlyEligible && ctx.directory.scope === 'managed_teams' && ctx.directory.members.some(person => String(person.userId) === participantId);
   const action = fullAction(permission);
-  if (['competency.assessment.view', 'competency.evidence.view', 'competency.report.view'].includes(action)) return self || assigned || managed;
+  if (['competency.assessment.view', 'competency.evidence.view', 'competency.report.view', 'competency.report.export'].includes(action)) return self || assigned || managed;
   if (['competency.evidence.create', 'competency.evidence.delete'].includes(action) && self) return true;
   return assigned || managed;
 }

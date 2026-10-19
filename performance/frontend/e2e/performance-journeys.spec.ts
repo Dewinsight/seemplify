@@ -1590,7 +1590,11 @@ test('refreshes manager scoring after a custom rating autosaves and submits the 
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Cycle-specific questions' })).toBeVisible();
 
-  await page.getByRole('combobox', { name: 'Rating' }).click();
+  const customRating = page.getByRole('combobox', { name: 'How ready is the employee? * Rating', exact: true });
+  await customRating.scrollIntoViewIfNeeded();
+  await page.locator('label').filter({ hasText: /^How ready is the employee\? \*$/ }).click();
+  await expect(customRating).toBeFocused();
+  await customRating.click();
   await page.getByRole('option', { name: '5 / 5' }).click();
   await expect.poll(() => state.customResponseBodies.filter((body) => body.respondentRole === 'manager').length).toBeGreaterThan(0);
   await expect(page.getByText('Growth readiness (20% weight)')).toBeVisible();
@@ -1659,7 +1663,11 @@ test('renders frozen cycle questions in the manual employee appraisal and autosa
 
   await page.goto('/appraisals/507f1f77bcf86cd799439011/self-assessment');
   await expect(page.getByRole('heading', { name: 'Cycle-specific questions' })).toBeVisible();
-  await page.getByPlaceholder('Enter your response').fill('I applied discovery interviewing to improve the launch decision.');
+  const learningResponse = page.getByRole('textbox', { name: 'How did you apply your most important learning? *', exact: true });
+  await expect(learningResponse).toHaveAttribute('aria-required', 'true');
+  await page.locator('label').filter({ hasText: /^How did you apply your most important learning\? \*$/ }).click();
+  await expect(learningResponse).toBeFocused();
+  await learningResponse.fill('I applied discovery interviewing to improve the launch decision.');
   await expect.poll(() => state.customResponseBodies.length, { timeout: 5000 }).toBeGreaterThan(0);
   const saved = state.customResponseBodies.at(-1) as { respondentRole: string; responses: Array<Record<string, unknown>> };
   expect(saved.respondentRole).toBe('employee');

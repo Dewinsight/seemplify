@@ -52,6 +52,11 @@ function responseKey(sectionId: string, questionId: string) {
   return `${sectionId}:${questionId}`;
 }
 
+function responseControlId(section: CycleSection, question: CycleQuestion) {
+  const kind = question.responseType === 'rating' ? 'rating' : ['single_select', 'multi_select'].includes(question.responseType) ? 'answer' : 'response';
+  return `${kind}-${section.id}-${question.id}`;
+}
+
 function hasValue(value: unknown) {
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'number' || typeof value === 'boolean') return true;
@@ -146,6 +151,7 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
 
   const renderQuestion = (section: CycleSection, question: CycleQuestion) => {
     const key = responseKey(section.id, question.id);
+    const questionLabelId = `question-${section.id}-${question.id}-label`;
     const value = values[key];
     if (question.responseType === 'rating') {
       const minimum = question.ratingMin || 1;
@@ -155,7 +161,8 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
         <FormControl fullWidth size="small">
           <InputLabel id={labelId}>Rating</InputLabel>
           <Select
-            labelId={labelId}
+            labelId={questionLabelId}
+            SelectDisplayProps={{ 'aria-labelledby': `${questionLabelId} ${labelId}` }}
             id={`rating-${section.id}-${question.id}`}
             value={typeof value === 'number' ? value : ''}
             label="Rating"
@@ -169,7 +176,7 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
       );
     }
     if (question.responseType === 'boolean') {
-      return <FormControlLabel control={<Checkbox checked={value === true} disabled={readOnly} onChange={(event) => updateValue(section.id, question.id, event.target.checked)} />} label="Yes" />;
+      return <FormControlLabel control={<Checkbox id={responseControlId(section, question)} slotProps={{ input: { 'aria-labelledby': questionLabelId } }} checked={value === true} disabled={readOnly} onChange={(event) => updateValue(section.id, question.id, event.target.checked)} />} label="Yes" />;
     }
     if (['single_select', 'multi_select'].includes(question.responseType)) {
       const multiple = question.responseType === 'multi_select';
@@ -178,7 +185,8 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
         <FormControl fullWidth size="small">
           <InputLabel id={labelId}>Answer</InputLabel>
           <Select
-            labelId={labelId}
+            labelId={questionLabelId}
+            SelectDisplayProps={{ 'aria-labelledby': `${questionLabelId} ${labelId}` }}
             id={`answer-${section.id}-${question.id}`}
             multiple={multiple}
             value={multiple ? (Array.isArray(value) ? value : []) : (value || '')}
@@ -193,6 +201,8 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
     }
     return (
       <TextField
+        id={`response-${section.id}-${question.id}`}
+        slotProps={{ htmlInput: { 'aria-labelledby': questionLabelId, 'aria-required': section.required && question.required } }}
         fullWidth
         size="small"
         type={question.responseType === 'number' ? 'number' : 'text'}
@@ -235,7 +245,7 @@ const CustomAssessmentSections = forwardRef<CustomAssessmentSectionsHandle, Prop
             <Stack spacing={2} sx={{ mt: 2 }}>
               {section.questions.map((question) => (
                 <Box key={question.id}>
-                  <Typography component="label" variant="body2" fontWeight={600} display="block" mb={0.75}>
+                  <Typography component="label" id={`question-${section.id}-${question.id}-label`} htmlFor={responseControlId(section, question)} variant="body2" fontWeight={600} display="block" mb={0.75}>
                     {question.prompt}{section.required && question.required ? ' *' : ''}
                   </Typography>
                   {question.helpText && <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>{question.helpText}</Typography>}

@@ -52,8 +52,9 @@ function launchPayload(employees) {
 
 test('manager and HR launch staff reviews using trusted reviewer details and replay the same cycle', async () => {
   await seedLaunchEmployee();
+  // Manual reviewer/scope coverage; goal-required preflight is exercised in competencyRoleJourney.
   const created = await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'manager')
-    .send(launchPayload([{ userId: EMPLOYEE, managerId: 'forged-manager', managerEmail: 'forged@example.com', name: 'Forged name', teamId: 'other-team' }])).expect(201);
+    .send({ ...launchPayload([{ userId: EMPLOYEE, managerId: 'forged-manager', managerEmail: 'forged@example.com', name: 'Forged name', teamId: 'other-team' }]), settings: { requireOkrAlignment: false } }).expect(201);
   expect(created.body.data.launchSummary).toMatchObject({ launched: 1, replayed: 0, errors: 0 });
   const cycleId = created.body.data.cycle._id;
   const appraisal = await Appraisal.findOne({ cycleId }).lean();
@@ -96,8 +97,9 @@ test('department heads launch only staff in departments granted by the current I
   await User.updateOne({ idpSub: 'other-department' }, { $set: { 'idpTeams.0.departmentId': 'department-b' } });
   await seedLaunchEmployee('foreign-department-staff', 'foreign-team', ORG_B);
   await User.updateOne({ idpSub: 'foreign-department-staff' }, { $set: { 'idpTeams.0.departmentId': 'department-a' } });
+  // Manual department scope coverage; goal-required preflight is exercised in competencyRoleJourney.
   const created = await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'department_head')
-    .send(launchPayload([{ userId: EMPLOYEE }])).expect(201);
+    .send({ ...launchPayload([{ userId: EMPLOYEE }]), settings: { requireOkrAlignment: false } }).expect(201);
   expect(created.body.data.launchSummary.launched).toBe(1);
   for (const userId of ['other-department', 'foreign-department-staff']) {
     await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'department_head')
@@ -114,8 +116,9 @@ test('launch reports missing managers individually and rejects invalid response 
   invalid.responseDeadlines.managerReviewDue = '2027-01-01';
   await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'hr').send(invalid).expect(400);
   expect(await AppraisalCycle.countDocuments()).toBe(0);
+  // Manual partial-launch/deadline coverage; goal-required preflight is exercised in competencyRoleJourney.
   const launched = await request(app).post('/api/appraisals/cycles').set('x-test-actor', 'hr')
-    .send(launchPayload([{ userId: EMPLOYEE }, { userId: 'blocked-staff', managerId: MANAGER, managerEmail: 'manager@example.com' }])).expect(201);
+    .send({ ...launchPayload([{ userId: EMPLOYEE }, { userId: 'blocked-staff', managerId: MANAGER, managerEmail: 'manager@example.com' }]), settings: { requireOkrAlignment: false } }).expect(201);
   expect(launched.body.data.launchSummary).toMatchObject({ launched: 1, errors: 1 });
   expect(launched.body.data.launchSummary.errorDetails[0]).toMatchObject({ userId: 'blocked-staff', error: expect.stringMatching(/manager/i) });
   const cycleId = launched.body.data.cycle._id;
@@ -1917,6 +1920,8 @@ test('1,000-person canonical appraisal launch snapshots tenant goals and replays
   const cycle = await AppraisalCycle.create({
     organizationId: ORG_A,
     name: '1,000-person idempotent appraisal launch',
+    // Optional goals still snapshot below; required-goal preflight has dedicated role-journey coverage.
+    settings: { requireOkrAlignment: false },
     periodStart: new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)),
     periodEnd: new Date(now.getTime() - (24 * 60 * 60 * 1000)),
     status: 'active',

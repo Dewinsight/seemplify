@@ -64,6 +64,8 @@ beforeEach(async () => {
   await mongoose.connection.db.dropDatabase(); await Appraisal.createIndexes(); await OneOnOne.createIndexes(); await AppraisalCycle.createIndexes();
   for (const name of ['reviewer', 'employee', 'outsider']) await User.create({ idpSub: name, email: actor(name).email, currentOrganizationId: org.id, profile: { displayName: name }, idpTeams: actor(name).idpTeams });
   await ensureQuarterlyCycles(org.id); cycle = await AppraisalCycle.findOne({ periodEnd: { $lt: new Date() } }).sort({ periodEnd: -1 });
+  // These manual/call flow fixtures have no goals; required-goal preflight is covered in competencyRoleJourney.
+  cycle.settings.requireOkrAlignment = false;
   cycle.settings.enableAiAssist = false; cycle.settings.allowSelfRating = false; await cycle.save();
 });
 afterEach(() => jest.restoreAllMocks());
