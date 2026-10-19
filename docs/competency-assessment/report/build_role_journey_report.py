@@ -61,6 +61,9 @@ for i,(title,body) in enumerate(fixes):
     y=464-i*65;box(36,y,W-72,57)
     text(48,y+34,f'{i+1:02}',12,True,ACCENT);text(80,y+35,title,11,True);para(body,80,y+25,W-132,9)
 para('Also passed: 83 legacy and 38 unit tests. The final accessibility change re-ran two existing browser cases; those executions are not added to the distinct-case total. Production revision and external-provider acceptance are separate evidence layers.',36,120,W-72,9,MUTED)
+release = DATA.get('release', {})
+if release.get('liveVerified'):
+    text(36,70,f"HOSTED 111 UI + 30 API BROWSER PASSED  |  LIVE {release['runtimeRevision'][:8]} VERIFIED",8,True,ACCENT)
 c.showPage()
 
 base(2,'02  What the employee receives')

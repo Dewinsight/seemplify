@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "scope": "Merged-main hosted acceptance; distinct from deployed runtime verification",
+  "sourceHead": "92dce5c37824da9c6431d2c56c2a6caef168ae6a",
+  "performanceCI": {
+    "runId": 39211135376,
+    "url": "https://github.com/Dewinsight/seemplify/actions/runs/39211135376",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "backend": {
+    "integration": {
+      "passed": 208,
+      "total": 208,
+      "suitesPassed": 19,
+      "failed": 0
+    },
+    "legacy": {
+      "passed": 83,
+      "total": 83,
+      "failed": 0
+    },
+    "unit": {
+      "passed": 38,
+      "total": 38,
+      "failed": 0
+    },
+    "persistedIdentityMigrations": {
+      "passed": 2,
+      "total": 2,
+      "failed": 0
+    }
+  },
+  "fullApplicationHTTP": {
+    "requests": 709,
+    "failures": 0,
+    "usesProductionIndexes": true
+  },
+  "browserUI": {
+    "passed": 111,
+    "total": 111,
+    "passedDirectly": 111,
+    "passedAfterRetry": 0,
+    "failed": 0,
+    "retryAttemptLines": 0,
+    "durationAsReported": "13.2m",
+    "scope": "UI contracts plus selected real-route fullstack fixtures; synthetic identities and provider fixtures"
+  },
+  "browserRealAPI": {
+    "passed": 30,
+    "total": 30,
+    "passedDirectly": 30,
+    "passedAfterRetry": 0,
+    "failed": 0,
+    "retryAttemptLines": 0,
+    "durationAsReported": "3.2m",
+    "scope": "Browser with actual local product API, disposable Mongo replica set, actual IdP default policy and directory definitions; synthetic identity transport"
+  },
+  "productionBuild": {
+    "conclusion": "success",
+    "compileDurationAsReported": "1865ms"
+  },
+  "diagnostics": {
+    "developmentServerRequestAbortWindows": 1,
+    "abortedErrorLines": 3,
+    "uncaughtExceptionLines": 2,
+    "code": "ECONNRESET",
+    "observedContext": "One development web-server time window at the transition into the HR navigation layout test; three aborted-error lines include two uncaughtException entries. No corresponding failed browser assertion or retry.",
+    "classification": "Request-abort diagnostics observed; no corresponding failed browser assertion, retry, or failed workflow step.",
+    "limits": "The completed log hides stack frames and supplies no request URL or cause. Temporal proximity to navigation does not prove navigation caused the resets. No claim of zero server-log errors or an established production defect."
+  },
+  "limits": [
+    "Hosted CI is not deployment confirmation.",
+    "No real employee record, private credential, external provider connection or genuine OIDC session is represented in this aggregate.",
+    "Coordinator genuine OIDC role simulation and later exact-release runtime checks are separate evidence."
+  ],
+  "priorPullRequestReceipt": "role-journey-pr-ci.json",
+  "deploymentConfirmedByThisReceipt": false
+}

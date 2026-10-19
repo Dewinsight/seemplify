@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "scope": "Official core deployment workflow and its prerequisite test/build gates; independent runtime and authenticated browser checks are separate coordinator evidence",
+  "sourceHead": "92dce5c37824da9c6431d2c56c2a6caef168ae6a",
+  "workflow": {
+    "runId": 39211135380,
+    "url": "https://github.com/Dewinsight/seemplify/actions/runs/39211135380",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "prerequisiteJobs": {
+    "passed": 13,
+    "total": 13,
+    "failed": 0,
+    "jobs": [
+      {
+        "name": "Test Identity Provider",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build Leave frontend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test Learning platform configuration",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test Payroll backend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build Time and Attendance frontend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test Leave backend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build Payroll frontend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build Recruiter frontend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build Candidate Portal frontend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test Recruiter gateway",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test Time and Attendance backend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test Performance backend",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build Performance frontend",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "performanceBackendGate": {
+    "integration": {
+      "passed": 134,
+      "total": 134,
+      "suitesPassed": 10,
+      "failed": 0,
+      "scope": "Selected appraisal-flow, reviewer, call and competency suites; full208 integration receipt is role-journey-main-ci.json"
+    },
+    "legacy": {
+      "passed": 83,
+      "total": 83,
+      "failed": 0
+    },
+    "unit": {
+      "passed": 38,
+      "total": 38,
+      "failed": 0
+    },
+    "scoringFileSafetyUploadBudgetBackup": {
+      "passed": 30,
+      "total": 30,
+      "failed": 0
+    },
+    "persistedIdentityMigrations": {
+      "passed": 2,
+      "total": 2,
+      "failed": 0
+    }
+  },
+  "performanceFrontendGate": {
+    "browserJourneys": {
+      "passed": 45,
+      "total": 45,
+      "passedDirectly": 45,
+      "passedAfterRetry": 0,
+      "failed": 0,
+      "retryAttemptLines": 0,
+      "durationAsReported": "7.0m"
+    },
+    "productionBuild": {
+      "conclusion": "success",
+      "compileDurationAsReported": "25.2s"
+    },
+    "requestAbortDiagnosticMarkersObserved": 0,
+    "diagnosticScope": "Completed Performance frontend gate log only; not a claim that every service emits no log errors"
+  },
+  "immutableDeploymentJob": {
+    "jobId": 117932215966,
+    "conclusion": "success",
+    "startedAt": "2026-10-19T07:03:52Z",
+    "completedAt": "2026-10-19T07:30:49Z",
+    "failedSteps": []
+  },
+  "independentRuntimeVerifiedByThisReceipt": false,
+  "authenticatedProductionBrowserVerifiedByThisReceipt": false,
+  "limits": [
+    "Workflow success is reported from completed GitHub metadata and logs.",
+    "Independent live container revision/health, model/index readiness and authenticated production UX proofs are owned separately by the coordinator.",
+    "No employee records, credentials or private provider payloads are included in this aggregate."
+  ]
+}
