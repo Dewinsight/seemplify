@@ -9,6 +9,7 @@ const AppraisalCycle = require('../models/AppraisalCycle');
 const AppraisalCycleTemplate = require('../models/AppraisalCycleTemplate');
 const Appraisal = require('../models/Appraisal');
 const appraisalFlow = require('../services/appraisalFlowService');
+const { normalizeHumanRating, ratingWithinScale } = require('../services/appraisalRatingService');
 const AppraisalDocument = require('../models/AppraisalDocument');
 const OKR = require('../models/OKR');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
@@ -342,7 +343,7 @@ function normalizeNumberInRange(value, minimum, maximum, fallback = null) {
   return Math.min(maximum, Math.max(minimum, numericValue));
 }
 
-function normalizeManagerReviewPayload(managerReview = {}, appraisal = null) {
+function normalizeManagerReviewPayload(managerReview = {}, appraisal = null, { submit = false } = {}) {
   const allowedPromotionReadiness = new Set(['not_ready', 'developing', 'ready', 'overdue']);
   const currentManagerReview = toPlainObject(appraisal?.managerReview);
   const currentSummary = toPlainObject(currentManagerReview?.overallSummary);
@@ -365,16 +366,17 @@ function normalizeManagerReviewPayload(managerReview = {}, appraisal = null) {
         const competencyId = rawRating?.competencyId ? String(rawRating.competencyId) : null;
         if (!competencyId) return null;
 
-        const managerRating = normalizeNumberInRange(rawRating?.managerRating, 1, 5, null);
+        const managerRating = normalizeHumanRating(rawRating?.managerRating, appraisal, { submit, label: 'Competency manager rating' });
         const selfRating = selfCompetencyRatings.find((entry) => entry?.competencyId === competencyId);
-        const selfRatingValue = normalizeNumberInRange(selfRating?.selfRating, 1, 5, null);
+        const selfRatingValue = typeof selfRating?.selfRating === 'number' && ratingWithinScale(selfRating.selfRating, appraisal)
+          ? selfRating.selfRating : undefined;
 
         return {
           competencyId,
           competencyName: typeof rawRating?.competencyName === 'string' ? rawRating.competencyName.trim() : '',
-          ...(managerRating !== null ? { managerRating } : {}),
+          ...(managerRating !== undefined ? { managerRating } : {}),
           managerComments: typeof rawRating?.managerComments === 'string' ? rawRating.managerComments.trim() : '',
-          gapFromSelf: managerRating !== null && selfRatingValue !== null
+          gapFromSelf: managerRating !== undefined && selfRatingValue !== undefined
             ? managerRating - selfRatingValue
             : null
         };
@@ -408,12 +410,10 @@ function normalizeManagerReviewPayload(managerReview = {}, appraisal = null) {
       .filter(Boolean)
     : (Array.isArray(currentManagerReview?.okrAssessment) ? currentManagerReview.okrAssessment : []);
 
-  const overallManagerRating = normalizeNumberInRange(
-    managerReview?.overallManagerRating,
-    1,
-    5,
-    normalizeNumberInRange(currentManagerReview?.overallManagerRating, 1, 5, 3)
-  );
+  const rawOverallManagerRating = !submit && !Object.prototype.hasOwnProperty.call(managerReview, 'overallManagerRating')
+    ? currentManagerReview?.overallManagerRating : managerReview?.overallManagerRating;
+  const overallManagerRating = normalizeHumanRating(rawOverallManagerRating, appraisal,
+    { required: true, submit, label: 'Overall manager rating' });
 
   return {
     overallSummary: {
@@ -3422,10 +3422,13 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
     }
 
     const allowSelfRating = appraisal.cycleId?.settings?.allowSelfRating !== false;
+    const overallSelfRating = allowSelfRating
+      ? normalizeHumanRating(selfAssessment.overallSelfRating, appraisal, { required: true, submit: !!submit, label: 'Overall self-rating' })
+      : undefined;
     const competencyRatings = (Array.isArray(selfAssessment.competencyRatings) ? selfAssessment.competencyRatings : []).map((rating) => ({
       competencyId: String(rating.competencyId || ''),
       competencyName: String(rating.competencyName || ''),
-      selfRating: allowSelfRating && Number.isFinite(Number(rating.selfRating)) ? Number(rating.selfRating) : undefined,
+      selfRating: allowSelfRating ? normalizeHumanRating(rating.selfRating, appraisal, { submit: !!submit, label: 'Competency self-rating' }) : undefined,
       selfComments: String(rating.selfComments || '').slice(0, 5000),
       evidenceDocuments: Array.isArray(rating.evidenceDocuments) ? rating.evidenceDocuments : []
     }));
@@ -3455,9 +3458,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
       overallSummary: normalizedSummary,
       competencyRatings,
       okrAssessment,
-      overallSelfRating: allowSelfRating && Number.isFinite(Number(selfAssessment.overallSelfRating))
-        ? Number(selfAssessment.overallSelfRating)
-        : undefined,
+      overallSelfRating,
       lastSavedAt: new Date()
     };
 
@@ -3522,6 +3523,9 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
 
     res.json({ success: true, data: appraisal });
   } catch (error) {
+    if (error?.code === 'INVALID_APPRAISAL_RATING') {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     console.error('Save self-assessment error:', error);
     res.status(500).json({ success: false, error: 'Failed to save self-assessment' });
   }
@@ -3609,7 +3613,7 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
     if (!phaseHasOpened(appraisal.cycleId, 'managerReview')) {
       return res.status(409).json({ success: false, error: 'Manager review has not opened for this cycle' });
     }
-    const normalizedManagerReview = normalizeManagerReviewPayload(managerReview, appraisal);
+    const normalizedManagerReview = normalizeManagerReviewPayload(managerReview, appraisal, { submit: !!submit });
     const currentManagerReview = toPlainObject(appraisal.managerReview);
 
     appraisal.managerReview = {
@@ -3690,6 +3694,9 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
     }
     res.json({ success: true, data: appraisal });
   } catch (error) {
+    if (error?.code === 'INVALID_APPRAISAL_RATING') {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     console.error('Save manager review error:', error);
     const validationMessage = error?.name === 'ValidationError'
       ? Object.values(error.errors || {}).map((issue) => issue?.message).filter(Boolean).join('; ')

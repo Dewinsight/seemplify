@@ -40,7 +40,7 @@ type ManualSelfAssessmentForm = {
   competencyRatings: Array<{
     competencyId: string;
     competencyName: string;
-    selfRating: number;
+    selfRating: number | null;
     selfComments: string;
   }>;
   okrAssessment: Array<{
@@ -76,14 +76,16 @@ function buildManualForm(appraisal: any): ManualSelfAssessmentForm {
       return {
         competencyId: competency.id,
         competencyName: competency.name,
-        selfRating: existing?.selfRating || 3,
+        selfRating: existing
+          ? (typeof existing.selfRating === 'number' ? existing.selfRating : null)
+          : 3,
         selfComments: existing?.selfComments || ''
       };
     })
     : existingCompetencies.map((item: any) => ({
       competencyId: item.competencyId || '',
       competencyName: item.competencyName || 'Competency',
-      selfRating: item.selfRating || 3,
+      selfRating: typeof item.selfRating === 'number' ? item.selfRating : null,
       selfComments: item.selfComments || ''
     }));
 
@@ -205,7 +207,7 @@ function SelfAssessmentContent() {
 
   const persistManualAssessment = async (submit: boolean) => {
     if (persistPending.current) return;
-    if (submit && requireSelfRating && !manualForm.overallSelfRating) {
+    if (submit && requireSelfRating && manualForm.overallSelfRating === null) {
       setSnackbar({ open: true, message: 'Please choose your overall self-rating before submitting.', severity: 'error' });
       return;
     }
@@ -471,11 +473,10 @@ function SelfAssessmentContent() {
                           <Rating
                             value={competency.selfRating}
                             onChange={(_, value) => {
-                              const nextValue = value || 3;
                               setManualForm((prev) => ({
                                 ...prev,
                                 competencyRatings: prev.competencyRatings.map((item, itemIndex) =>
-                                  itemIndex === index ? { ...item, selfRating: nextValue } : item
+                                  itemIndex === index ? { ...item, selfRating: value } : item
                                 )
                               }));
                             }}
