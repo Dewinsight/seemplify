@@ -3937,6 +3937,9 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
       }
     });
 
+    // Manual mode never queues optional analysis, even if extraction fails.
+    if (req.body.assessmentMode === 'form') document.aiAnalysis.status = 'skipped';
+
     // Extract text if supported
     if (documentExtractionService.isSupported(fileType)) {
       try {

@@ -141,6 +141,39 @@ test('manual uploads preserve exact private bytes and evidence requirements with
   expect(provider).not.toHaveBeenCalled();
 });
 
+test.each(['valid', 'corrupt'])('manual %s PDF preserves private original bytes and never queues optional AI after extraction', async kind => {
+  await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.enableAiAssist': true } });
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  const analyze = jest.spyOn(ai, 'analyzeDocument').mockImplementation(() => new Promise(() => {}));
+  const bytes = kind === 'valid'
+    ? require('node:fs').readFileSync(require('node:path').join(__dirname, 'fixtures/reportlab-synthetic-evidence.pdf'))
+    : Buffer.from('%PDF-1.4\nInvalid synthetic PDF without an xref table.');
+  let captured;
+  jest.spyOn(cloudinary.uploader, 'upload_stream').mockImplementation((options, done) => {
+    const parts = []; return new Writable({ write(chunk, _encoding, callback) { parts.push(chunk); callback(); }, final(callback) {
+      captured = Buffer.concat(parts);
+      done(null, { public_id: options.public_id, resource_type: 'raw', type: 'authenticated', bytes: captured.length }); callback();
+    } });
+  });
+  const uploaded = await call('post', '/documents').field('assessmentMode', 'form')
+    .attach('file', bytes, { filename: 'synthetic-evidence.pdf', contentType: 'application/pdf' }).expect(201);
+  expect(captured).toEqual(bytes);
+  const source = await Document.findById(uploaded.body.data._id);
+  expect(source.storageResourceType).toBe('raw'); expect(source.storageDeliveryType).toBe('authenticated');
+  expect(source.aiAnalysis.status).toBe('skipped'); expect(analyze).not.toHaveBeenCalled();
+  expect(source.textExtraction.status).toBe(kind === 'valid' ? 'completed' : 'failed');
+  if (kind === 'valid') {
+    expect(source.textExtraction.pageCount).toBe(1);
+    expect(source.textExtraction.extractedText).toContain('Record the fictional milestone.');
+  } else expect(source.textExtraction.extractedText).toBeUndefined();
+  expect((await Appraisal.findById(appraisal._id)).documents.map(String)).toEqual([String(source._id)]);
+  const sign = jest.spyOn(cloudinary.utils, 'private_download_url');
+  await call('get', `/documents/${source._id}/content`, 'outsider').expect(403);
+  expect(sign).not.toHaveBeenCalled();
+  await call('get', `/documents/${source._id}/content`).expect(302);
+  expect(sign).toHaveBeenCalledTimes(1);
+});
+
 test('manual mode cannot bypass upload authorization or missing-file checks, and provider failure preserves a safe empty record state', async () => {
   await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.enableAiAssist': true } });
   jest.spyOn(console, 'error').mockImplementation(() => {});

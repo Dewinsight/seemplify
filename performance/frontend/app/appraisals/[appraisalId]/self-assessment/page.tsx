@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useRouter, useParams, usePathname, useSearchParams } from 'next/navigation';
 import { useAppraisal } from '@/lib/hooks';
 import api from '@/lib/api';
 import { hydrateAppraisalDraft, type AppraisalDraftBaseline } from '@/lib/appraisal-draft-hydration';
@@ -104,15 +104,20 @@ function buildManualForm(appraisal: any): ManualSelfAssessmentForm {
   };
 }
 
-export default function SelfAssessmentPage() {
+function SelfAssessmentContent() {
   const theme = useTheme();
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const appraisalId = params.appraisalId as string;
 
   const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
-  const [manualAppraisalId, setManualAppraisalId] = useState<string | null>(null);
-  const chooseManualForm = () => setManualAppraisalId(appraisalId);
+  const chooseManualForm = () => {
+    const query = new URLSearchParams(searchParams.toString());
+    query.set('assessmentMode', 'form');
+    router.replace(`${pathname}?${query.toString()}`, { scroll: false });
+  };
   const [manualForm, setManualForm] = useState<ManualSelfAssessmentForm>({
     overallSummary: EMPTY_SUMMARY,
     overallSelfRating: null,
@@ -161,7 +166,7 @@ export default function SelfAssessmentPage() {
   const editableStatuses = ['self_assessment_pending', 'self_assessment_in_progress'];
   const isEditable = editableStatuses.includes(appraisal.status);
   const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false && appraisal?.cycleConfigurationSnapshot?.appraisalFlow?.assessmentMode !== 'form';
-  const conversationSelected = aiAssistEnabled && manualAppraisalId !== appraisalId;
+  const conversationSelected = aiAssistEnabled && searchParams.get('assessmentMode') !== 'form';
   const requireSelfRating = appraisal?.cycleId?.settings?.allowSelfRating !== false;
 
   if (appraisal.selfAssessment?.submittedAt) {
@@ -595,4 +600,10 @@ export default function SelfAssessmentPage() {
       />
     </Box>
   );
+}
+
+export default function SelfAssessmentPage() {
+  return <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}><CircularProgress /></Box>}>
+    <SelfAssessmentContent />
+  </Suspense>;
 }

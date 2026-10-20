@@ -60,7 +60,9 @@ class DocumentExtractionService {
     try {
       const pdfParse = require('pdf-parse');
       const dataBuffer = await fs.promises.readFile(filePath);
-      const data = await pdfParse(dataBuffer);
+      // Match the parser already used for competency evidence. The package's
+      // older default rejects valid ReportLab xref entries on current Node.
+      const data = await pdfParse(new Uint8Array(dataBuffer), { version: 'v2.0.550' });
 
       return {
         text: data.text,

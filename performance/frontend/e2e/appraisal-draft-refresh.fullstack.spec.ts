@@ -157,7 +157,7 @@ for (const connection of ['disconnected', 'consent-pending'] as const) test(`emp
       routable: false, dataSharingAcknowledgedAt: null, lastError: null }, policy: { chatgptEnabled: true },
   } } }));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/appraisals/${item._id}/self-assessment`);
+  await page.goto(`/appraisals/${item._id}/self-assessment?source=history`);
   const gate = page.getByRole('dialog', { name: 'ChatGPT is required', exact: true });
   await expect(gate).toBeVisible();
   await expect(gate.getByRole('button', { name: connection === 'disconnected' ? 'Connect ChatGPT' : 'Finish ChatGPT setup', exact: true })).toBeVisible();
@@ -183,11 +183,13 @@ for (const connection of ['disconnected', 'consent-pending'] as const) test(`emp
   expect(draft.customResponses[0].value).toBe('The synthetic outcome is evidenced and ready for a human reviewer.');
   expect(draft.selfAssessment.submittedAt).toBeFalsy();
   await page.reload();
-  await expect(gate).toBeVisible();
-  await gate.getByRole('button', { name: 'Use manual form', exact: true }).click();
+  await expect(page.getByText('Manual Mode', { exact: true })).toBeVisible();
+  await expect(gate).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.get('assessmentMode')).toBe('form');
+  expect(new URL(page.url()).searchParams.get('source')).toBe('history');
   for (const [label, value] of Object.entries(reflection)) await expect(page.getByRole('textbox', { name: label, exact: true })).toHaveValue(value);
   await expect(requiredAnswer).toHaveValue('The synthetic outcome is evidenced and ready for a human reviewer.');
-  await page.screenshot({ path: info.outputPath(`manual-form-${connection}-saved.png`), fullPage: true });
+  await page.screenshot({ path: info.outputPath(`manual-form-${connection}-saved.png`), fullPage: true, animations: 'disabled' });
   const submitted = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith(`/appraisals/${item._id}/self-assessment`) && response.request().postDataJSON()?.submit === true);
   await page.getByRole('button', { name: 'Submit Self-Assessment', exact: true }).click();
   expect((await submitted).status()).toBe(200);
@@ -197,6 +199,32 @@ for (const connection of ['disconnected', 'consent-pending'] as const) test(`emp
   expect(stored.selfAssessment.overallSelfRating).toBe(4);
   expect(stored.customResponses[0].submittedAt).toBeTruthy();
   expect(aiCalls).toEqual([]);
+});
+
+test('manual URL choice does not become a stored preference for another appraisal or actor', async ({ page }) => {
+  const disconnectedAccount = () => page.route('**/__mock-api/ai-account', route => route.fulfill({ json: { success: true, data: {
+    account: { status: 'disconnected', routable: false, connectedEmail: null }, policy: { chatgptEnabled: true }
+  } } }));
+  const first = await record('employee');
+  await Cycle.updateOne({ _id: first.cycleId }, { $set: { 'settings.enableAiAssist': true } });
+  await setup(page, 'employee');
+  await disconnectedAccount();
+  await page.goto(`/appraisals/${first._id}/self-assessment`);
+  const gate = page.getByRole('dialog', { name: 'ChatGPT is required', exact: true });
+  await gate.getByRole('button', { name: 'Use manual form', exact: true }).click();
+  await expect(page.getByText('Manual Mode', { exact: true })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('assessmentMode')).toBe('form');
+  const another = await record('employee');
+  await Cycle.updateOne({ _id: another.cycleId }, { $set: { 'settings.enableAiAssist': true } });
+  await page.goto(`/appraisals/${another._id}/self-assessment`);
+  await expect(gate).toBeVisible();
+  expect(new URL(page.url()).searchParams.has('assessmentMode')).toBe(false);
+  await Appraisal.updateOne({ _id: another._id }, { $set: { 'employee.userId': 'reviewer', 'employee.email': 'reviewer@example.test', 'manager.userId': 'employee' } });
+  await setup(page, 'reviewer');
+  await disconnectedAccount();
+  await page.goto(`/appraisals/${another._id}/self-assessment`);
+  await expect(gate).toBeVisible();
+  expect(new URL(page.url()).searchParams.has('assessmentMode')).toBe(false);
 });
 
 async function reviewerWithOptionalAI(page: Page, explicitBiasResult = false) {
