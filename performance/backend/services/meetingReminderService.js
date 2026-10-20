@@ -4,6 +4,9 @@ const failure = (message, statusCode) => Object.assign(new Error(message), { sta
 
 async function queue(meeting, actorId) {
   if (!['scheduled', 'in_progress'].includes(meeting.status) || +meeting.scheduledDate + Number(meeting.duration) * 60000 <= Date.now()) throw failure('This call has ended or was closed. Schedule a new call to send an invitation.', 409);
+  if (!require('./notificationService').isConfigured()) throw failure('Reminder email delivery is not configured. Contact your administrator.', 503);
+  const featureState = await require('./organizationFeatureService').getOrganizationFeatureState(meeting.organizationId);
+  if (!featureState.features.notifications) throw failure('Notifications are disabled for this organization. An administrator must enable them before sending reminders.', 409);
   const recipients = [[meeting.managerId, meeting.managerInfo], [meeting.employeeId, meeting.employeeInfo]].map(([userId, info]) => ({ userId: String(userId), name: info?.name, email: info?.email, channels: ['in_app', 'email'] }));
   if (recipients.some(person => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email || ''))) throw failure('Both participants need a valid email address before sending a reminder.', 409);
   const slot = Math.floor(Date.now() / 300000);

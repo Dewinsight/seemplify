@@ -322,3 +322,20 @@ test('chat delivery fails closed when Zulip is not configured', async () => {
   expect(send).not.toHaveBeenCalled();
   expect(await DomainEvent.countDocuments({ eventId: event.eventId, status: 'processed' })).toBe(1);
 });
+
+
+test('explicit meeting reminder email is immediate and idempotent while ordinary notifications retain opt-in', async () => {
+  const mail = require('../services/notificationService');
+  jest.spyOn(mail, 'isConfigured').mockReturnValue(true);
+  const send = jest.spyOn(mail, 'sendEmail').mockResolvedValue({ success: true, messageId: 'synthetic-reminder' });
+  await NotificationPreference.create({ organizationId: ORG_A, userId: USER_ID, channels: { email: false, chat: false }, digest: { frequency: 'off' }, quietHours: { enabled: true, start: '00:00', end: '23:59' }, timezone: 'UTC' });
+  const ordinary = eventFor(ORG_A, 'ordinary-email-opt-in');
+  const reminder = eventFor(ORG_A, 'explicit-call-email', { eventType: 'one_on_one.call_reminder', actor: { userId: 'reviewer' }, aggregate: { type: 'one_on_one', id: 'synthetic-call' } });
+  await publishDomainEvent(ordinary); await publishDomainEvent(reminder);
+  await runNotificationWorkerOnce({ workerId: 'manual-call-worker', eventBatchSize: 10, deliveryBatchSize: 10 });
+  await runNotificationWorkerOnce({ workerId: 'manual-call-delivery', now: new Date(Date.now() + 1000), eventBatchSize: 0, deliveryBatchSize: 10 });
+  expect(await NotificationDelivery.findOne({ eventId: reminder.eventId, channel: 'email' }).lean()).toMatchObject({ status: 'delivered', deliveryMode: 'immediate', attemptCount: 1 });
+  expect(await NotificationDelivery.findOne({ eventId: ordinary.eventId, channel: 'email' }).lean()).toMatchObject({ status: 'skipped' });
+  await publishDomainEvent(reminder); await runNotificationWorkerOnce({ workerId: 'manual-call-worker-retry', eventBatchSize: 10, deliveryBatchSize: 10 });
+  expect(send).toHaveBeenCalledTimes(1); expect(send.mock.calls[0][0]).toBe('untrusted-event-address@example.com');
+});
