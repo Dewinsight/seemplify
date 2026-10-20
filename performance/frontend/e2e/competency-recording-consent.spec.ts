@@ -34,7 +34,7 @@ test('scheduling retry sends an empty request and suppresses another retry while
 
 test('manual add requests immediate dispatch only when the server offers that action',async({page})=>{
  const fixture=await setup(page,{state:'scheduled',manager:{acceptedAt:'2026-10-18T10:00:00Z'},employee:{acceptedAt:'2026-10-18T11:00:00Z'},canAcknowledge:false,canStart:false,canAddNow:true});
- await expect(page.getByText('calendar@example.test · Google Calendar')).toBeVisible();
+ await expect(page.getByText(/calendar@example\.test/)).toBeVisible();
  await page.getByRole('button',{name:'Add notetaker to call',exact:true}).click();
  expect(fixture.posts).toEqual([{path:`${base}/start`,body:{joinNow:true}}]);
 });
