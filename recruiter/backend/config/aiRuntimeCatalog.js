@@ -50,6 +50,8 @@ const activities = {
   'performance.competency.analysis': ['Role and competency evidence analysis', 'Competency assessments', 'high', 'performance'],
   'performance.appraisal.chat': ['Appraisal assistant', 'Appraisals', 'medium', 'performance'],
   'performance.calibration.insights': ['Calibration insights', 'Calibration', 'high', 'performance'],
+  'performance.support_plan.draft': ['Support-plan drafting', 'Support plans', 'high', 'performance'],
+  'performance.talent.evidence_brief': ['Talent evidence brief', 'Talent', 'high', 'performance'],
   'messaging.chat': ['Messaging AI chat', 'Messaging', 'medium', 'messaging'],
   'messaging.workspace': ['Messaging notes and pages', 'Messaging', 'medium', 'messaging'],
   'experience.general': ['Experience general', 'Experience', 'medium', 'experience'],

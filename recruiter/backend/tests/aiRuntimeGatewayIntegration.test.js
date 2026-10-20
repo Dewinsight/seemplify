@@ -8,6 +8,17 @@ const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 
 const PATH = '/api/internal/ai/v1/complete';
 
+test('support-plan and talent drafting are recognized only in the Performance service scope', () => {
+  const { requireServiceActivity } = require('../routes/internalAI');
+  for (const activity of ['performance.support_plan.draft', 'performance.talent.evidence_brief']) {
+    assert.equal(requireServiceActivity('performance-management', activity).app, 'performance');
+    assert.throws(() => requireServiceActivity('messaging', activity),
+      error => error.code === 'SHARED_AI_ACTIVITY_FORBIDDEN' && error.statusCode === 403);
+    assert.throws(() => requireServiceActivity('ai-interview', activity),
+      error => error.code === 'SHARED_AI_ACTIVITY_FORBIDDEN' && error.statusCode === 403);
+  }
+});
+
 function sign({ body, secret, service = 'ai-interview', timestamp }) {
   return crypto.createHmac('sha256', secret)
     .update([timestamp, service, 'POST', PATH, body].join('\n'))

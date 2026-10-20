@@ -38,10 +38,19 @@ test('every appraisal and performance service completion has an explicit stable 
 
 test('the Performance activity catalogue is stable, unique, and matches the shared action namespace', () => {
   const ids = ACTIVITY_CATALOG.map((item) => item.id);
-  assert.equal(ids.length, 16);
+  assert.equal(ids.length, 17);
   assert.equal(new Set(ids).size, ids.length);
   ids.forEach((id) => assert.match(id, /^performance\.[a-z0-9_.]+$/));
   assert.equal(AI_ACTIVITIES.GENERAL, 'performance.general');
+});
+
+test('Performance actions and the shared gateway have the same scoped activity contract', () => {
+  const { ACTIVITY_DEFINITIONS } = require('../../../recruiter/backend/config/aiRuntimeCatalog');
+  const gatewayIds = Object.entries(ACTIVITY_DEFINITIONS)
+    .filter(([, definition]) => definition.app === 'performance')
+    .map(([id]) => id).sort();
+  assert.deepEqual(ACTIVITY_CATALOG.map(({ id }) => id).sort(), gatewayIds,
+    'Every Performance action must be recognized by the gateway and available in scoped preferences');
 });
 
 test('shared account default precedence is preserved while Recruiter action rows stay out of Performance', () => {
