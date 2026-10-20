@@ -38,12 +38,13 @@ async function status(rawIdentity, input = {}) {
   if (changed) current = changed;
   else await Observation.updateOne(key, { $set: { lastCheckedAt: now } });
   let media;
-  if (['disconnected', 'complete', 'completed', 'processing'].includes(state)) {
+  const mediaExpected = meetingState === 'meeting_ended' || ['disconnected', 'complete', 'completed', 'processing'].includes(state);
+  if (mediaExpected) {
     try { media = await nylas.getStandaloneNotetakerMedia(meeting.notetakerId, credentials); } catch { /* Still processing. */ }
   }
   if (!await Meeting.exists({ ...key, recordingState: { $ne: 'revoked' }, state: { $ne: 'cancelled' } })) return { ...result, state: 'revoked', events: [] };
   return { ...result, state, meetingState, checkedAt: now, events: current.events,
-    transcriptState: media?.transcript?.url ? 'available' : ['disconnected', 'complete', 'completed', 'processing'].includes(state) ? 'processing' : 'after_call',
+    transcriptState: media?.transcript?.url ? 'available' : mediaExpected ? 'processing' : 'after_call',
     recordingAvailable: Boolean(media?.recording?.url || media?.video?.url || media?.audio?.url) };
 }
 async function retry(rawIdentity, input = {}) {

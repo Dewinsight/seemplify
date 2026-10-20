@@ -23,7 +23,7 @@ export default function CalendarAccount({ base, connectionPath, readOnly = false
     } finally { await mutate(); setBusy(false); }
   };
   return <Box sx={{ mb: 2 }}>
-    <Typography component="h3" variant="subtitle2" mb={1}>Your calendar account</Typography>
+    <Typography component="h3" variant="subtitle2" mb={1}>Your Nylas calendar account</Typography>
     {isLoading ? <Typography variant="body2" role="status">Checking your connected email…</Typography> : error ? <Alert severity="warning" action={<Button onClick={() => void mutate()}>Retry</Button>}>Your calendar account could not be checked.</Alert> : data && <Stack gap={1}>
       <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{data.connected ? `${data.email} · ${data.provider === 'google' ? 'Google Calendar' : data.provider === 'microsoft' ? 'Microsoft Calendar' : data.provider || 'Calendar'}` : data.disconnectPending ? 'Calendar disconnect is pending. Retry to revoke access in Nylas.' : 'No verified calendar connected to your account.'}</Typography>
       <Typography variant="body2" color="text.secondary">This is your personal calendar connection, shared with Recruiter. Connect a new email to change the account used for future invitations. Existing invitations stay on their original calendar. Disconnecting can interrupt calendar sync. Manage a running notetaker separately in its call controls.</Typography>

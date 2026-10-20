@@ -45,6 +45,17 @@ test('status cannot cross organization or owner boundaries', async () => {
   await assert.rejects(service.status({ ...identity, sub: 'another-owner' }, input), { statusCode: 404 });
   assert.equal(provider.mock.callCount(), 0);
 });
+
+test('a confirmed meeting end starts media retrieval even before the overall bot state catches up', async () => {
+  state = 'attending'; reason = 'meeting_ended';
+  media.mock.mockImplementation(async () => { throw new Error('Media processing'); });
+  const pending = await service.status(identity, input);
+  assert.equal(pending.transcriptState, 'processing');
+  assert.equal(pending.meetingState, 'meeting_ended');
+  assert.equal(media.mock.callCount(), 1);
+  media.mock.mockImplementation(async () => ({ transcript: { url: 'https://storage.googleapis.com/ready' } }));
+  assert.equal((await service.status(identity, input)).transcriptState, 'available');
+});
 test('a revoked calendar does not hide the independent bot and no fallback grant is used', async t => {
   t.mock.method(nylas, 'getNylasInstance', () => ({ grants: { find: async () => { throw new Error('Revoked'); } } }));
   const result = await service.status(identity, input);

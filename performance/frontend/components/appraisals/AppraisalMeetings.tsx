@@ -7,7 +7,6 @@ import { alpha } from '@mui/material/styles';
 import api from '@/lib/api';
 import { FlowStep } from './AppraisalFlowEditor';
 import AppraisalNativeCall from './AppraisalNativeCall';
-import CalendarRecordingConsent from '../competency/CalendarRecordingConsent';
 import CalendarNotetakerMonitor from './CalendarNotetakerMonitor';
 import CalendarAccount from './CalendarAccount';
 import CalendarConnectButton from './CalendarConnectButton';
@@ -71,7 +70,6 @@ export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canM
           {meeting.integration?.recordingAvailable && <Button startIcon={<PlayArrowRounded />} disabled={!!busy} onClick={() => run(`play-${meeting._id}`, async () => { const result = await api.get(`${actionBase(meeting)}/native/recording`, { responseType: 'blob' }); setPlayback({ [meeting._id]: URL.createObjectURL(result.data) }); })}>Play saved recording</Button>}
         </Stack>
         <MeetingActions base={actionBase(meeting)} link={meeting.conferenceUrl} canRemind={!readOnly && canManage && ['scheduled', 'in_progress'].includes(meeting.status) && new Date(meeting.scheduledDate).getTime() + meeting.duration * 60000 > Date.now()} />
-        {!readOnly && meeting.mode !== 'in_app' && meeting.integration?.recordingRequested && <CalendarRecordingConsent callBase={actionBase(meeting)} onUpdated={() => { void mutate(); onUpdated(); }} />}
         {(expandedCalls[meeting._id] ?? (Boolean(oneOnOneId) || meeting.stepId === currentStepId)) && meeting.mode === 'calendar' && meeting.integration?.recordingRequested && <CalendarNotetakerMonitor readOnly={readOnly} base={actionBase(meeting)} meetingStatus={meeting.status} scheduledDate={meeting.scheduledDate} duration={meeting.duration} hasTranscript={Boolean(meeting.transcript)} canManage={!readOnly && (canManage || canJoin)} onUpdated={() => { void mutate(); }} />}
         {playback[meeting._id] && <Box component="video" controls src={playback[meeting._id]} sx={{ width: '100%', maxHeight: 400, bgcolor: 'grey.900', borderRadius: 2 }} aria-label={oneOnOneId ? 'Saved call recording' : 'Saved appraisal call recording'} />}
         {!readOnly && meeting.mode === 'in_app' && meeting.integration?.recordingAvailable && !meeting.transcript && <Alert severity={meeting.integration.transcriptionState === 'failed' ? 'warning' : 'info'}>Transcript: {(meeting.integration.transcriptionState || 'pending').replaceAll('_', ' ')}. Use Refresh recording and transcript to retry. No speech detected means no transcript or AI notes can be generated.</Alert>}

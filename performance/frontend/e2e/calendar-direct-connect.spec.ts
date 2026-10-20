@@ -94,11 +94,14 @@ test('bot monitor follows provider lobby, recording, ended and delayed transcrip
   events.push({ state, meetingState, observedAt: new Date(Date.now() - 11 * 60000).toISOString() });
   await page.getByRole('button', { name: 'Check live status', exact: true }).click();
   await expect(page.getByText('Call ended', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText(/taking longer than 10 minutes/)).toBeVisible();
+  await expect(page.getByText(/Transcript delayed: more than 10 minutes/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stop notetaker', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Ask notetaker to join now', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Bot activity timeline (2)', exact: true }).click();
   await expect(page.getByText(/observed status changes/)).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.locator('[aria-label="Live calendar notetaker"]').screenshot({ path: info.outputPath('calendar-recording-panel-mobile.png') });
   await page.screenshot({ path: info.outputPath('calendar-bot-status-mobile.png'), fullPage: true });
   transcriptState = 'available';
   await page.getByRole('button', { name: 'Check live status', exact: true }).click();
@@ -120,4 +123,21 @@ test('a confirmed failed bot has a manual retry and unknown provider failures st
   await page.getByRole('button', { name: 'Check live status', exact: true }).click();
   await expect(page.getByText('Status refresh failed. The information below is from the last successful check.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry bot join', exact: true })).toHaveCount(0);
+});
+
+test('a scheduled bot can be dispatched now from the same call controls and stopped without duplicating it', async ({ page }) => {
+  await setup(page, true, false, true);
+  let started = 0, stopped = 0;
+  let state = 'scheduled';
+  await page.route('**/call/recording-consent', route => route.fulfill({ json: { success: true, data: { ownRole: 'manager', canStart: false, canAddNow: state === 'scheduled', canStop: state !== 'revoked', windowClosed: false } } }));
+  await page.route('**/call/notetaker-status', route => route.fulfill({ json: { success: true, data: { state, events: [], realtimeTranscript: false } } }));
+  await page.route('**/call/recording-consent/start', route => { expect(route.request().postDataJSON()).toEqual({ joinNow: true }); started++; state = 'joining'; return route.fulfill({ json: { success: true } }); });
+  await page.route('**/call/recording-consent/stop', route => { stopped++; state = 'revoked'; return route.fulfill({ json: { success: true } }); });
+  await page.goto(`/one-on-ones/${meetingId}`);
+  await page.getByRole('button', { name: 'Ask notetaker to join now', exact: true }).click();
+  await expect(page.getByText('Notetaker joining', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ask notetaker to join now', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Stop notetaker', exact: true }).click();
+  await expect(page.getByText('Notetaker stopped', { exact: true })).toBeVisible();
+  expect(started).toBe(1); expect(stopped).toBe(1);
 });

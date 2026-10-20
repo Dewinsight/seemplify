@@ -4,6 +4,7 @@ import AppraisalMeetings from '@/components/appraisals/AppraisalMeetings';
 import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
 import AppraisalActions from '@/components/appraisals/AppraisalActions';
 import CurrentAIAssessment from '@/components/appraisals/CurrentAIAssessment';
+import CalendarAccountControl from '@/components/appraisals/CalendarAccountControl';
 import { FlowStep } from '@/components/appraisals/AppraisalFlowEditor';
 import { useEffect, useRef, useState } from 'react';
 import ManagerReviewWorkspace from '@/components/appraisals/ManagerReviewWorkspace';
@@ -238,6 +239,7 @@ export default function AppraisalDetailPage() {
           </Box>
 
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {hasManagerAccess && !isEmployee && <CalendarAccountControl connectionPath={`/appraisals/${appraisalId}/meetings/connection`} />}
             <Button variant="outlined" startIcon={<AssessmentOutlined />} onClick={() => setSection(3)}>Current AI assessment</Button>
             <AppraisalActions appraisalId={appraisalId} employeeName={appraisal.employee?.name} enabled={hasManagerAccess} onUpdated={() => { void mutate(); }} />
             {['completed', 'employee_acknowledged'].includes(appraisal.status) && <Button variant="outlined" onClick={() => router.push(`/appraisals/${appraisalId}/report`)}>View result report</Button>}

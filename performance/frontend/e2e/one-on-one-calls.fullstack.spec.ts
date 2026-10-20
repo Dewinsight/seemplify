@@ -11,6 +11,8 @@ const OneOnOne = backend('./models/OneOnOne'), User = backend('./models/User');
 const shared = backend('./services/sharedAIAccountService'), ai = backend('./services/aiGatewayService');
 let mongo: { stop: () => Promise<void> }, server: import('node:http').Server, apiURL: string;
 let connected = true, calendarFailure = false;
+let botState = 'scheduled', botReason = 'unknown', transcriptState = 'after_call';
+let botEvents: Array<{ state: string; meetingState: string; observedAt: string }> = [];
 const requests: Array<{ operation: string; input: { externalId?: string } }> = [];
 const originalRequest = shared.request, originalModels = shared.models, originalCompletions = ai.getChatCompletions;
 const originalFetch = globalThis.fetch;
@@ -39,7 +41,10 @@ test.beforeAll(async () => {
   for (const name of ['manager', 'employee']) await User.create({ idpSub: name, email: `${name}@example.test`, profile: { displayName: actor(name).name }, currentOrganizationId: organization.id, idpTeams: actor(name).idpTeams });
   shared.request = async (operation: string, _identity: unknown, input: { externalId?: string } = {}) => {
     requests.push({ operation, input });
-    if (operation === 'meetings/connection') return { connected, email: 'manager@example.test', connectUrl: 'http://localhost:4000/' };
+    if (operation === 'meetings/connection') return { connected, email: 'manager@example.test', provider: 'google', connectUrl: 'http://localhost:4000/' };
+    if (operation === 'meetings/notetakerStatus') return { state: botState, meetingState: botReason, transcriptState, realtimeTranscript: false, checkedAt: new Date().toISOString(), events: botEvents, calendarEmail: 'manager@example.test', calendarProvider: 'google' };
+    if (operation === 'meetings/disconnectCalendar') { connected = false; return { disconnected: true }; }
+    if (operation === 'meetings/sync') return { recordingState: 'ready', transcript: 'Provider transcript: the handover was agreed.' };
     if (operation === 'meetings/create') { if (calendarFailure) throw Object.assign(new Error('Synthetic calendar outage. Retry this saved meeting.'), { statusCode: 503 }); return { eventId: 'event-one', calendarId: 'calendar-one', conferenceUrl: 'https://meet.google.com/fixture-call', state: 'scheduled', recordingState: 'scheduled' }; }
     if (operation === 'meetings/startRecording') return { recordingState: 'scheduled' };
     if (operation === 'meetings/stopRecording') return { recordingState: 'revoked' };
@@ -55,7 +60,7 @@ test.beforeAll(async () => {
   server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
   apiURL = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
 });
-test.beforeEach(async () => { connected = true; calendarFailure = false; requests.length = 0; await OneOnOne.deleteMany({}); });
+test.beforeEach(async () => { connected = true; calendarFailure = false; botState = 'scheduled'; botReason = 'unknown'; transcriptState = 'after_call'; botEvents = []; requests.length = 0; await OneOnOne.deleteMany({}); });
 test.afterAll(async () => {
   globalThis.fetch = originalFetch;
   shared.request = originalRequest; shared.models = originalModels; ai.getChatCompletions = originalCompletions;
@@ -130,6 +135,12 @@ test('manual transcript import persists, generates notes and feeds the final AI 
   await expect(page.getByText('Synthetic final appraisal report: the submitted assessment and manual transcript confirm the agreed release action. Human rating: 4/5.', { exact: true })).toBeVisible({ timeout: 15000 });
   expect((await Appraisal.findById(appraisal._id)).finalRating.overall).toBe(4);
   await page.goto(`/appraisals/${appraisal._id}`);
+  await page.getByRole('button', { name: 'My calendar account', exact: true }).click();
+  const calendarDialog = page.getByRole('dialog', { name: 'Calendar connected through Nylas', exact: true });
+  await expect(calendarDialog.getByText('manager@example.test · Google Calendar', { exact: true })).toBeVisible();
+  await expect(calendarDialog.getByRole('button', { name: 'Disconnect calendar', exact: true })).toBeVisible();
+  await expect(calendarDialog.getByRole('button', { name: 'Change connected email (opens Nylas)', exact: true })).toBeVisible();
+  await calendarDialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('tab', { name: 'Current AI assessment', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Current AI assessment', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pause automatic updates', exact: true })).toBeVisible();
@@ -175,8 +186,8 @@ test('calendar connection, failed invitation retry and cancelled-call history us
   try {
     const employee = await employeeContext.newPage(); await setup(employee, 'employee');
     await employee.goto(page.url());
-    await expect(employee.getByRole('heading', { name: 'Meeting notetaker', exact: true })).toBeVisible();
-    await expect(employee.getByText('The notetaker is scheduled.', { exact: true })).toBeVisible();
+    await expect(employee.getByRole('heading', { name: 'Call recording status', exact: true })).toBeVisible();
+    await expect(employee.getByText('Notetaker scheduled', { exact: true })).toBeVisible();
     await expect(employee.getByRole('checkbox', { name: /I agree/ })).toHaveCount(0);
     await expect(employee.getByRole('button', { name: /permission/ })).toHaveCount(0);
   } finally { await employeeContext.close(); }

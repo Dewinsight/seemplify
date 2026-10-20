@@ -25,7 +25,7 @@ export default function OneOnOnesPage() {
   const { meetings: upcomingMeetings, isLoading: upcomingLoading, isError: upcomingError, mutate: mutateUpcoming } = useOneOnOnes({ upcoming: true });
   const { meetings: pastMeetings, hasMore: moreHistory, isLoading: pastLoading, isError: pastError, mutate: mutatePast } = useOneOnOnes({ upcoming: false, page: historyPage });
 
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [error, setError] = useState('');
