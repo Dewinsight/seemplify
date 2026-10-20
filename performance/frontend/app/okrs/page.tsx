@@ -1145,7 +1145,7 @@ export default function OKRWorkspacePage() {
         title={emptyTitle}
         description={emptyDescription}
         action={!approvalMode && view === 'my' ? (
-          <Button variant="contained" onClick={() => { resetForm(); setEditingGoal(null); setCreateOpen(true); }}>Create goal</Button>
+          <Button variant="contained" disabled={loading || contextLoading || Boolean(error)} onClick={() => { resetForm(); setEditingGoal(null); setCreateOpen(true); }}>Create goal</Button>
         ) : undefined}
       />
     )
@@ -1185,7 +1185,7 @@ export default function OKRWorkspacePage() {
         </Box>
         <Stack direction="row" spacing={1} alignItems="center">
           <IconButton aria-label="Refresh goals" onClick={loadGoals} disabled={loading}><Refresh /></IconButton>
-          <Button variant="contained" startIcon={<Add />} onClick={() => { resetForm(); setEditingGoal(null); setCreateOpen(true); }}>
+          <Button variant="contained" startIcon={<Add />} disabled={loading || contextLoading || Boolean(error)} onClick={() => { resetForm(); setEditingGoal(null); setCreateOpen(true); }}>
             Create goal
           </Button>
         </Stack>
@@ -1200,8 +1200,10 @@ export default function OKRWorkspacePage() {
         <Divider />
         <Box sx={{ p: 2 }}>
           <FormControl size="small" sx={{ minWidth: 220 }}>
-            <InputLabel>Period</InputLabel>
+            <InputLabel id="goal-page-period-label">Period</InputLabel>
             <Select
+              id="goal-page-period"
+              labelId="goal-page-period-label"
               value={periodsByBand[periodBand].includes(selectedPeriod) ? selectedPeriod : periodsByBand[periodBand][0] || ''}
               label="Period"
               onChange={(event) => { setSelectedGoalId(''); setSelectedPeriod(event.target.value); }}
@@ -1290,8 +1292,10 @@ export default function OKRWorkspacePage() {
             <Grid size={{ xs: 12, md: 4 }}>
               {creatablePeriods.length ? (
                 <FormControl fullWidth>
-                  <InputLabel>Period</InputLabel>
+                  <InputLabel id="goal-editor-period-label">Period</InputLabel>
                   <Select
+                    id="goal-editor-period"
+                    labelId="goal-editor-period-label"
                     value={form.periodId}
                     label="Period"
                     onChange={(event) => {
@@ -1320,8 +1324,10 @@ export default function OKRWorkspacePage() {
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <FormControl fullWidth>
-                <InputLabel>Scope</InputLabel>
+                <InputLabel id="goal-editor-scope-label">Scope</InputLabel>
                 <Select
+                  id="goal-editor-scope"
+                  labelId="goal-editor-scope-label"
                   value={form.type}
                   label="Scope"
                   disabled={!!editingGoal}
@@ -1362,8 +1368,8 @@ export default function OKRWorkspacePage() {
             {form.type === 'team' && (
               <Grid size={{ xs: 12, md: 6 }}>
                 <FormControl fullWidth>
-                  <InputLabel>Team</InputLabel>
-                  <Select value={form.teamId} label="Team" disabled={!!editingGoal} onChange={(event) => setForm({ ...form, teamId: event.target.value })}>
+                  <InputLabel id="goal-editor-team-label">Team</InputLabel>
+                  <Select id="goal-editor-team" labelId="goal-editor-team-label" value={form.teamId} label="Team" disabled={!!editingGoal} onChange={(event) => setForm({ ...form, teamId: event.target.value })}>
                     {(managedTeams?.length ? managedTeams : teams || []).map((team: any) => {
                       const id = String(team.id || team.teamId || team._id || '');
                       return <MenuItem key={id} value={id}>{team.name || team.teamName || 'Team'}</MenuItem>;
@@ -1375,8 +1381,8 @@ export default function OKRWorkspacePage() {
             {form.type === 'department' && (
               <Grid size={{ xs: 12, md: 6 }}>
                 <FormControl fullWidth>
-                  <InputLabel>Department</InputLabel>
-                  <Select value={form.departmentId} label="Department" disabled={!!editingGoal} onChange={(event) => setForm({ ...form, departmentId: event.target.value })}>
+                  <InputLabel id="goal-editor-department-label">Department</InputLabel>
+                  <Select id="goal-editor-department" labelId="goal-editor-department-label" value={form.departmentId} label="Department" disabled={!!editingGoal} onChange={(event) => setForm({ ...form, departmentId: event.target.value })}>
                     {departmentOptions.map((department) => (
                       <MenuItem key={department.id} value={department.id}>{department.name}</MenuItem>
                     ))}
@@ -1431,8 +1437,8 @@ export default function OKRWorkspacePage() {
                       </Grid>
                       <Grid size={{ xs: 6, md: 2 }}>
                         <FormControl fullWidth size="small">
-                          <InputLabel>Metric</InputLabel>
-                          <Select value={keyResult.metricType} label="Metric" onChange={(event) => updateKeyResult(objectiveIndex, keyResultIndex, 'metricType', event.target.value as MetricType)}>
+                          <InputLabel id={`goal-metric-${objectiveIndex}-${keyResultIndex}-label`}>Metric</InputLabel>
+                          <Select id={`goal-metric-${objectiveIndex}-${keyResultIndex}`} labelId={`goal-metric-${objectiveIndex}-${keyResultIndex}-label`} value={keyResult.metricType} label="Metric" onChange={(event) => updateKeyResult(objectiveIndex, keyResultIndex, 'metricType', event.target.value as MetricType)}>
                             <MenuItem value="percentage">Percentage</MenuItem>
                             <MenuItem value="number">Number</MenuItem>
                             <MenuItem value="currency">Currency</MenuItem>
@@ -1524,8 +1530,8 @@ export default function OKRWorkspacePage() {
                 placeholder="What changed, and what needs attention next?"
               />
               <FormControl fullWidth>
-                <InputLabel>Health</InputLabel>
-                <Select value={progressHealth} label="Health" onChange={(event) => setProgressHealth(event.target.value)}>
+                <InputLabel id="goal-progress-health-label">Health</InputLabel>
+                <Select id="goal-progress-health" labelId="goal-progress-health-label" value={progressHealth} label="Health" onChange={(event) => setProgressHealth(event.target.value)}>
                   <MenuItem value="not_set">Not set</MenuItem>
                   <MenuItem value="on_track">On track</MenuItem>
                   <MenuItem value="at_risk">At risk</MenuItem>

@@ -8,6 +8,7 @@ const projectRoutes = require('../routes/performanceProjects');
 const managerInsightRoutes = require('../routes/managerInsights');
 const feedbackRoutes = require('../routes/feedback');
 const userRoutes = require('../routes/user');
+const checkInRoutes = require('../routes/checkIns');
 const PerformanceSupportPlan = require('../models/PerformanceSupportPlan');
 const Recognition = require('../models/Recognition');
 const PerformanceProject = require('../models/PerformanceProject');
@@ -89,6 +90,7 @@ beforeAll(async () => {
   app.use('/api/manager-insights', managerInsightRoutes);
   app.use('/api/feedback', feedbackRoutes);
   app.use('/api/users', userRoutes);
+  app.use('/api/check-ins', checkInRoutes);
 });
 
 beforeEach(async () => {
@@ -101,6 +103,35 @@ beforeEach(async () => {
 afterAll(async () => {
   await mongoose.disconnect();
   await mongo.stop();
+});
+
+test('an employee edits one saved check-in draft without changing its period, then submission freezes those updates', async () => {
+  const periodStart = '2026-01-12T00:00:00.000Z';
+  const periodEnd = '2026-01-25T00:00:00.000Z';
+  const created = await request(app).post('/api/check-ins').set('x-test-actor', 'employee').send({
+    cadence: 'fortnightly', periodStart, periodEnd, wins: ['Original delivery note'],
+    priorities: ['Original next step'], pulse: 3, visibility: 'employee_only'
+  }).expect(201);
+  const id = created.body.data._id;
+  const changed = await request(app).patch(`/api/check-ins/${id}`).set('x-test-actor', 'employee').send({
+    wins: ['Corrected delivery evidence'], priorities: ['Revised next step'], blockers: ['Waiting for a test dependency'],
+    supportNeeded: ['Review the synthetic handoff'], pulse: 4,
+    cadence: 'ad_hoc', periodStart: '2026-02-01', periodEnd: '2026-02-01', visibility: 'employee_manager'
+  }).expect(200);
+  expect(changed.body.data).toMatchObject({ _id: id, cadence: 'fortnightly', periodStart, periodEnd,
+    visibility: 'employee_only', status: 'draft', wins: ['Corrected delivery evidence'],
+    priorities: ['Revised next step'], supportNeeded: ['Review the synthetic handoff'], pulse: 4 });
+  expect(await PerformanceCheckIn.countDocuments({ employeeId: EMPLOYEE })).toBe(1);
+  const reloaded = await request(app).get('/api/check-ins').set('x-test-actor', 'employee').expect(200);
+  expect(reloaded.body.data).toHaveLength(1);
+  expect(reloaded.body.data[0].blockers).toEqual(['Waiting for a test dependency']);
+  await request(app).patch(`/api/check-ins/${id}`).set('x-test-actor', 'reviewer').send({ wins: ['Unauthorized change'] }).expect(403);
+  await request(app).patch(`/api/check-ins/${id}`).set('x-test-organization', ORG_B).send({ wins: ['Foreign change'] }).expect(403);
+  await request(app).post(`/api/check-ins/${id}/submit`).set('x-test-actor', 'employee').expect(200);
+  await request(app).patch(`/api/check-ins/${id}`).set('x-test-actor', 'employee').send({ wins: ['Late edit'] }).expect(409);
+  const persisted = await PerformanceCheckIn.findById(id).lean();
+  expect(persisted).toMatchObject({ status: 'submitted', wins: ['Corrected delivery evidence'], pulse: 4 });
+  expect(persisted.submittedAt).toBeInstanceOf(Date);
 });
 
 test('manager, HR, and employee complete the guarded support-plan handoffs', async () => {

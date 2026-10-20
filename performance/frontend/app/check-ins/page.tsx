@@ -28,7 +28,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { Add, Check, Refresh, Send } from '@mui/icons-material';
+import { Add, Check, Edit, Refresh, Send } from '@mui/icons-material';
 import api from '@/lib/api';
 import { useDirectReports, useUserContext } from '@/lib/hooks';
 
@@ -146,6 +146,7 @@ function CheckInsContent() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<CheckIn | null>(null);
   const [form, setForm] = useState<CheckInForm>(emptyForm());
   const [responseItem, setResponseItem] = useState<CheckIn | null>(null);
   const [managerResponse, setManagerResponse] = useState('');
@@ -207,7 +208,32 @@ function CheckInsContent() {
     setForm((current) => ({ ...current, cadence, ...defaultDates(cadence) }));
   };
 
-  const createCheckIn = async (submit: boolean) => {
+  const openNewCheckIn = () => {
+    setEditingItem(null);
+    setForm(emptyForm());
+    setError('');
+    setCreateOpen(true);
+  };
+
+  const editDraft = (item: CheckIn) => {
+    if (item.status !== 'draft' || item.employeeId !== currentUserId) return;
+    setEditingItem(item);
+    setForm({
+      cadence: item.cadence,
+      periodStart: item.periodStart.slice(0, 10),
+      periodEnd: item.periodEnd.slice(0, 10),
+      wins: (item.wins || []).join('\n'),
+      priorities: (item.priorities || []).join('\n'),
+      blockers: (item.blockers || []).join('\n'),
+      supportNeeded: (item.supportNeeded || []).join('\n'),
+      pulse: item.pulse ?? 3,
+      visibility: item.visibility || 'employee_manager',
+    });
+    setError('');
+    setCreateOpen(true);
+  };
+
+  const saveCheckIn = async (submit: boolean) => {
     const updates = [...lines(form.wins), ...lines(form.priorities), ...lines(form.blockers), ...lines(form.supportNeeded)];
     if (submit && !updates.length) {
       setError('Add at least one update before submitting.');
@@ -216,21 +242,29 @@ function CheckInsContent() {
     setSaving(true);
     setError('');
     try {
-      const response = await api.post('/check-ins', {
-        employeeId: currentUserId,
-        cadence: form.cadence,
-        periodStart: form.periodStart,
-        periodEnd: form.periodEnd,
+      const updates = {
         wins: lines(form.wins),
         priorities: lines(form.priorities),
         blockers: lines(form.blockers),
         supportNeeded: lines(form.supportNeeded),
         pulse: form.pulse,
-        visibility: form.visibility,
-      });
+      };
+      const response = editingItem
+        ? await api.patch(`/check-ins/${editingItem._id}`, updates)
+        : await api.post('/check-ins', {
+          ...updates,
+          employeeId: currentUserId,
+          cadence: form.cadence,
+          periodStart: form.periodStart,
+          periodEnd: form.periodEnd,
+          visibility: form.visibility,
+        });
       const created = response.data?.data || response.data;
+      // Retain the saved ID if submission fails so retry updates this draft.
+      setEditingItem(created);
       if (submit) await api.post(`/check-ins/${created._id}/submit`);
       setCreateOpen(false);
+      setEditingItem(null);
       setForm(emptyForm());
       await load();
       setNotice(submit ? 'Check-in submitted.' : 'Check-in saved as a draft.');
@@ -287,7 +321,7 @@ function CheckInsContent() {
         </Box>
         <Stack direction="row" spacing={1} sx={{ alignSelf: { sm: 'flex-start' } }}>
           <Button variant="outlined" startIcon={<Refresh />} onClick={() => void load()} disabled={loading || !employeeId}>Refresh</Button>
-          {isOwnView && <Button variant="contained" startIcon={<Add />} onClick={() => { setForm(emptyForm()); setCreateOpen(true); }}>New check-in</Button>}
+          {isOwnView && <Button variant="contained" startIcon={<Add />} onClick={openNewCheckIn}>New check-in</Button>}
         </Stack>
       </Stack>
 
@@ -319,7 +353,7 @@ function CheckInsContent() {
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, mb: isOwnView ? 2 : 0 }}>
             {isOwnView ? 'Create a short update to keep priorities and support needs visible.' : 'This employee has not shared a check-in in this view.'}
           </Typography>
-          {isOwnView && <Button variant="outlined" startIcon={<Add />} onClick={() => setCreateOpen(true)}>Create check-in</Button>}
+          {isOwnView && <Button variant="outlined" startIcon={<Add />} onClick={openNewCheckIn}>Create check-in</Button>}
         </Paper>
       ) : (
         <Stack spacing={2}>
@@ -344,7 +378,10 @@ function CheckInsContent() {
                   </Box>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
                     {isOwnView && item.status === 'draft' && (
-                      <Button variant="contained" size="small" startIcon={<Send />} onClick={() => void submitDraft(item)} disabled={saving}>Submit</Button>
+                      <>
+                        <Button variant="outlined" size="small" startIcon={<Edit />} onClick={() => editDraft(item)} disabled={saving}>Edit draft</Button>
+                        <Button variant="contained" size="small" startIcon={<Send />} onClick={() => void submitDraft(item)} disabled={saving}>Submit</Button>
+                      </>
                     )}
                     {!isOwnView && item.status === 'submitted' && !item.managerResponse?.text && (
                       <Button size="small" variant="outlined" onClick={() => setResponseItem(item)}>Respond</Button>
@@ -380,14 +417,14 @@ function CheckInsContent() {
         </Stack>
       )}
 
-      <Dialog open={createOpen} onClose={() => !saving && setCreateOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>New performance check-in</DialogTitle>
+      <Dialog open={createOpen} onClose={() => !saving && setCreateOpen(false)} aria-labelledby="check-in-form-title" fullWidth maxWidth="md">
+        <DialogTitle id="check-in-form-title">{editingItem ? 'Edit performance check-in' : 'New performance check-in'}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
             {error && <Alert severity="error">{error}</Alert>}
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, sm: 4 }}>
-                <FormControl fullWidth>
+                <FormControl fullWidth disabled={Boolean(editingItem)}>
                   <InputLabel>Cadence</InputLabel>
                   <Select value={form.cadence} label="Cadence" onChange={(event) => changeCadence(event.target.value as Cadence)}>
                     <MenuItem value="weekly">Weekly</MenuItem>
@@ -397,10 +434,10 @@ function CheckInsContent() {
                 </FormControl>
               </Grid>
               <Grid size={{ xs: 6, sm: 4 }}>
-                <TextField fullWidth type="date" label="Period start" value={form.periodStart} onChange={(event) => setForm({ ...form, periodStart: event.target.value })} InputLabelProps={{ shrink: true }} />
+                <TextField fullWidth type="date" label="Period start" disabled={Boolean(editingItem)} value={form.periodStart} onChange={(event) => setForm({ ...form, periodStart: event.target.value })} InputLabelProps={{ shrink: true }} />
               </Grid>
               <Grid size={{ xs: 6, sm: 4 }}>
-                <TextField fullWidth type="date" label="Period end" value={form.periodEnd} onChange={(event) => setForm({ ...form, periodEnd: event.target.value })} InputLabelProps={{ shrink: true }} />
+                <TextField fullWidth type="date" label="Period end" disabled={Boolean(editingItem)} value={form.periodEnd} onChange={(event) => setForm({ ...form, periodEnd: event.target.value })} InputLabelProps={{ shrink: true }} />
               </Grid>
             </Grid>
             <Grid container spacing={2}>
@@ -425,7 +462,7 @@ function CheckInsContent() {
               <Grid size={{ xs: 12, sm: 6 }}>
                 <FormControl fullWidth>
                   <InputLabel>Visibility</InputLabel>
-                  <Select value={form.visibility} label="Visibility" onChange={(event) => setForm({ ...form, visibility: event.target.value as CheckInForm['visibility'] })}>
+                  <Select value={form.visibility} label="Visibility" disabled={Boolean(editingItem)} onChange={(event) => setForm({ ...form, visibility: event.target.value as CheckInForm['visibility'] })}>
                     <MenuItem value="employee_manager">Me and my manager</MenuItem>
                     <MenuItem value="employee_only">Only me</MenuItem>
                   </Select>
@@ -436,8 +473,8 @@ function CheckInsContent() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={() => void createCheckIn(false)} disabled={saving}>Save draft</Button>
-          <Button variant="contained" onClick={() => void createCheckIn(true)} disabled={saving}>Save and submit</Button>
+          <Button onClick={() => void saveCheckIn(false)} disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</Button>
+          <Button variant="contained" onClick={() => void saveCheckIn(true)} disabled={saving}>Save and submit</Button>
         </DialogActions>
       </Dialog>
 

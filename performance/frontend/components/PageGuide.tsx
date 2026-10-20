@@ -528,16 +528,16 @@ const PAGE_GUIDES: GuideDefinition[] = [
   {
     key: 'review-detail',
     matcher: /^\/reviews\/[^/]+$/,
-    title: 'Review Detail',
-    summary: 'Use this page to inspect or complete one review in detail.',
-    purpose: 'This is the detailed record for a single review item, including its content, status, and next action.',
+    title: 'Historical review',
+    summary: 'Read a retained review from the earlier review system.',
+    purpose: 'This historical record is read-only. New reviews and their results are managed in Appraisals.',
     steps: [
-      'Review the full record before changing anything.',
-      'Update or complete the review content as required.',
-      'Save or submit so the record reflects the latest state.'
+      'Read the recorded self evaluation, manager evaluation and available peer feedback.',
+      'Use Retry if the historical record could not be loaded.',
+      'Return to appraisal history or current appraisals to continue current work.'
     ],
     success: [
-      'The review is accurate, complete, and ready for the next person.'
+      'The retained review can be read without changing its original content.'
     ]
   },
   {

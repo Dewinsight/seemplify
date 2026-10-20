@@ -220,7 +220,7 @@ test('manager launches from the three-step wizard and employee submits the manua
   expect(persisted.selfAssessment.submittedAt).toBeTruthy();
 });
 
-test('employee writes and submits a real performance check-in', async ({ page, request }) => {
+test('employee saves, reloads, edits and submits the same real performance check-in draft', async ({ page, request }) => {
   const existing = await api(request, 'employee', 'GET', 'check-ins');
   let offset = -9;
   while (existing.some((item: { periodStart: string }) => item.periodStart.slice(0, 10) === date(offset))) offset -= 7;
@@ -231,9 +231,35 @@ test('employee writes and submits a real performance check-in', async ({ page, r
   const win = `Browser verified delivery ${Date.now()}`;
   await dialog.getByLabel('Wins', { exact: true }).fill(win);
   await dialog.getByLabel('Next priorities').fill('Complete the next synthetic delivery milestone');
-  await dialog.getByRole('button', { name: 'Save and submit', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const saved = (await api(request, 'employee', 'GET', 'check-ins')).find((item: { wins: string[] }) => item.wins.includes(win));
+  expect(saved).toMatchObject({ status: 'draft', cadence: 'weekly' });
+  await page.reload();
+  const card = page.locator(`#check-in-${saved._id}`);
+  await card.getByRole('button', { name: 'Edit draft', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit performance check-in' });
+  await expect(editor.getByLabel('Wins', { exact: true })).toHaveValue(win);
+  await expect(editor.getByLabel('Period start')).toHaveValue(date(offset));
+  await expect(editor.getByLabel('Period start')).toBeDisabled();
+  await expect(editor.getByLabel('Period end')).toBeDisabled();
+  const correctedWin = `${win} corrected`;
+  await editor.getByLabel('Wins', { exact: true }).fill(correctedWin);
+  await editor.getByLabel('Support needed', { exact: true }).fill('Review the synthetic handoff before the next milestone');
+  await editor.getByRole('button', { name: 'Save and submit', exact: true }).click();
   await expect(page.getByText('Check-in submitted.', { exact: true })).toBeVisible();
-  await page.reload(); await expect(page.getByText(win, { exact: true })).toBeVisible();
+  const final = await api(request, 'employee', 'GET', 'check-ins');
+  const persisted = final.find((item: { _id: string }) => item._id === saved._id);
+  expect(persisted).toMatchObject({ status: 'submitted', cadence: saved.cadence,
+    periodStart: saved.periodStart, periodEnd: saved.periodEnd,
+    wins: [correctedWin], supportNeeded: ['Review the synthetic handoff before the next milestone'] });
+  expect(final.filter((item: { _id: string }) => !existing.some((old: { _id: string }) => old._id === item._id))).toHaveLength(1);
+  const denied = await request.patch(`http://127.0.0.1:5014/api/check-ins/${saved._id}`, {
+    headers: { 'x-acceptance-actor': 'employee' }, data: { wins: ['Late submitted edit'] }
+  });
+  expect(denied.status()).toBe(409);
+  await page.reload(); await expect(card.getByText(correctedWin, { exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Edit draft', exact: true })).toHaveCount(0);
 });
 
 test('manager creates a development plan including optional skill and learning fields', async ({ page }) => {

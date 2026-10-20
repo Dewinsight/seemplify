@@ -6,7 +6,8 @@ const {
   requireAuth,
   requireManager,
   getUserRole,
-  getDirectReports
+  getDirectReports,
+  hasPermission
 } = require('../middleware/rbac');
 const { requireOrganization } = require('../services/tenantPolicy');
 
@@ -25,10 +26,6 @@ function directReportsFor(req) {
   return (req.directReports || getDirectReports(req.session?.user || {})).map(String);
 }
 
-function isManagerRole(role) {
-  return ['team_lead', 'line_manager', 'hr_admin'].includes(role);
-}
-
 function formatStatus(status) {
   const labels = {
     draft: 'Draft',
@@ -42,15 +39,31 @@ function formatStatus(status) {
 function canReadReview(review, req) {
   const userId = actorId(req);
   const role = roleFor(req);
-  if (role === 'hr_admin') return true;
-  if (String(review.userId) === userId) return true;
-  if (!isManagerRole(role)) return false;
+  const user = req.session?.user;
+  if (hasPermission(role, 'review:view:all', user)) return true;
+  if (String(review.userId) === userId) return hasPermission(role, 'review:view:own', user);
+  if (!hasPermission(role, 'review:view:direct_reports', user)) return false;
   return String(review.managerId) === userId || directReportsFor(req).includes(String(review.userId));
 }
 
 function serializeReview(review, req, { detail = false } = {}) {
   const source = typeof review.toObject === 'function' ? review.toObject() : review;
   const cycle = source.cycleId && typeof source.cycleId === 'object' ? source.cycleId : null;
+  const isParticipant = String(source.userId) === actorId(req);
+  const isManagerAuthor = String(source.managerId) === actorId(req) &&
+    hasPermission(roleFor(req), 'review:conduct:direct_reports', req.session?.user);
+  // Completed legacy records sometimes lack section timestamps. Preserve that
+  // published evidence while keeping unfinished sections private to authors.
+  const selfPublished = Boolean(source.selfEvaluation?.submittedAt) || ['submitted', 'manager-review', 'completed'].includes(source.status);
+  const managerPublished = Boolean(source.managerEvaluation?.submittedAt) || source.status === 'completed';
+  const selfEvaluation = isParticipant || selfPublished ? source.selfEvaluation : undefined;
+  const managerEvaluation = isManagerAuthor || managerPublished ? {
+    content: source.managerEvaluation?.content,
+    rating: source.managerEvaluation?.rating,
+    submittedAt: source.managerEvaluation?.submittedAt,
+    aiSummary: source.managerEvaluation?.aiSummary,
+    ...(isManagerAuthor ? { biasDetection: source.managerEvaluation?.biasDetection } : {})
+  } : undefined;
   const base = {
     _id: source._id,
     cycleId: cycle?._id || source.cycleId,
@@ -62,8 +75,8 @@ function serializeReview(review, req, { detail = false } = {}) {
     userId: source.userId,
     managerId: source.managerId,
     dueDate: cycle?.endDate || null,
-    selfEvaluation: source.selfEvaluation,
-    managerEvaluation: source.managerEvaluation,
+    selfEvaluation,
+    managerEvaluation,
     createdAt: source.createdAt
   };
 
@@ -72,13 +85,13 @@ function serializeReview(review, req, { detail = false } = {}) {
     ...base,
     // Preserve historical evidence without exposing peer identities through
     // the temporary compatibility API.
-    peerReviews: (source.peerReviews || []).map((item) => ({
+    peerReviews: (source.peerReviews || []).filter(item => item.status === 'submitted').map((item) => ({
       status: item.status,
       content: item.content,
       rating: item.rating,
       aiCategorization: item.aiCategorization
     })),
-    aiInsights: source.aiInsights
+    aiInsights: source.status === 'completed' ? source.aiInsights : undefined
   };
 }
 
@@ -90,15 +103,17 @@ async function scopedCycleIds(req) {
 function reviewVisibilityFilter(req) {
   const userId = actorId(req);
   const role = roleFor(req);
-  if (role === 'hr_admin') return {};
-  if (!isManagerRole(role)) return { userId };
+  const user = req.session?.user;
+  if (hasPermission(role, 'review:view:all', user)) return {};
   const directReports = directReportsFor(req);
+  const scopes = [];
+  if (hasPermission(role, 'review:view:own', user)) scopes.push({ userId });
+  if (hasPermission(role, 'review:view:direct_reports', user)) scopes.push(
+    { managerId: userId }, ...(directReports.length ? [{ userId: { $in: directReports } }] : [])
+  );
+  if (!scopes.length) return { _id: { $in: [] } };
   return {
-    $or: [
-      { userId },
-      { managerId: userId },
-      ...(directReports.length ? [{ userId: { $in: directReports } }] : [])
-    ]
+    $or: scopes
   };
 }
 
@@ -159,10 +174,11 @@ router.get('/pending', requireManager, async (req, res) => {
       .populate('cycleId', 'title type startDate endDate status')
       .sort({ 'selfEvaluation.submittedAt': 1 })
       .limit(100);
+    const readableRows = rows.filter(row => canReadReview(row, req));
     return res.json({
       success: true,
-      data: rows.map((row) => serializeReview(row, req)),
-      count: rows.length,
+      data: readableRows.map((row) => serializeReview(row, req)),
+      count: readableRows.length,
       readOnly: true
     });
   } catch (error) {
@@ -189,14 +205,15 @@ router.get('/direct-reports', requireManager, async (req, res) => {
       .populate('cycleId', 'title type startDate endDate status')
       .limit(500);
     const grouped = {};
-    for (const row of rows) {
+    const readableRows = rows.filter(row => canReadReview(row, req));
+    for (const row of readableRows) {
       if (!grouped[row.userId]) grouped[row.userId] = [];
       grouped[row.userId].push(serializeReview(row, req));
     }
     return res.json({
       success: true,
       data: grouped,
-      count: rows.length,
+      count: readableRows.length,
       directReportCount: directReports.length,
       readOnly: true
     });

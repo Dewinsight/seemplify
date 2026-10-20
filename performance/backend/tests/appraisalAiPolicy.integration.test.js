@@ -186,3 +186,69 @@ test('a launched appraisal still completes both required manual forms and human 
   expect(await rawSnapshot(appraisal._id)).toEqual(original);
   for (const provider of providers) expect(provider).not.toHaveBeenCalled();
 });
+
+const manualAssessment = () => ({ overallSelfRating: 4, overallSummary: {
+  achievements: 'Delivered the synthetic project with clearly documented evidence.',
+  challenges: 'Resolved an invented dependency through early planning.',
+  learnings: 'Applied a structured approach to fictional delivery.',
+  improvements: 'Improve the next fictional handover with a checklist.',
+  goals: 'Practice the next synthetic capability with measured evidence.'
+} });
+async function answerEmployeeQuestions(appraisal) {
+  const snapshot = await rawSnapshot(appraisal._id);
+  const responses = snapshot.workflowDefinition.sections.filter(section => ['employee', 'both'].includes(section.respondent))
+    .flatMap(section => section.questions.map(question => ({ sectionId: section.id, questionId: question.id,
+      value: ['number', 'rating'].includes(question.responseType) ? 4 : question.responseType === 'boolean' ? true
+        : question.responseType === 'multi_select' ? [question.options[0]?.value || question.options[0]]
+          : question.responseType === 'single_select' ? question.options[0]?.value || question.options[0]
+            : 'Synthetic evidence documents completed work and the next fictional development step.' })));
+  await call('put', `/${appraisal._id}/custom-responses`, 'employee').send({ respondentRole: 'employee', submit: true, responses }).expect(200);
+}
+
+test('explicit form mode saves drafts and submits without optional AI while preserving questions, ratings and manager handoff', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle), original = await rawSnapshot(appraisal._id);
+  const provider = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({ summary: 'Must not be generated for manual form mode.' });
+  const payload = { assessmentMode: 'form', selfAssessment: manualAssessment() };
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee').send({ ...payload, submit: false }).expect(200);
+  let persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.status).toBe('self_assessment_in_progress');
+  expect(persisted.selfAssessment.overallSummary.achievements).toBe(payload.selfAssessment.overallSummary.achievements);
+  expect(persisted.selfAssessment.submittedAt).toBeUndefined();
+  const missing = await call('post', `/${appraisal._id}/self-assessment`, 'employee').send({ ...payload, submit: true }).expect(400);
+  expect(missing.body.missingQuestions.length).toBeGreaterThan(0);
+  await answerEmployeeQuestions(appraisal);
+  const incomplete = await call('post', `/${appraisal._id}/self-assessment`, 'employee')
+    .send({ ...payload, selfAssessment: { overallSummary: {} }, submit: true }).expect(400);
+  expect(incomplete.body.missingSections.length).toBeGreaterThan(0);
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee').send({ ...payload, submit: true }).expect(200);
+  persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.status).toBe('manager_review_pending');
+  expect(persisted.selfAssessment.overallSelfRating).toBe(4);
+  expect(persisted.selfAssessment.submittedAt).toBeInstanceOf(Date);
+  expect(persisted.selfAssessment.aiInsights?.generatedAt).toBeUndefined();
+  expect(persisted.manager.userId).toBe('reviewer');
+  expect(persisted.notifications.some(row => row.type === 'self_assessment_submitted' && row.message.includes('ready for your review'))).toBe(true);
+  expect(await rawSnapshot(appraisal._id)).toEqual(original);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test('manual mode never bypasses employee or tenant authorization and rejected requests never invoke AI', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const provider = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+  for (const [actor, status] of [['reviewer', 403], ['outsider', 403], ['foreign', 404]]) {
+    await call('post', `/${appraisal._id}/self-assessment`, actor)
+      .send({ assessmentMode: 'form', submit: true, selfAssessment: manualAssessment() }).expect(status);
+  }
+  expect((await Appraisal.findById(appraisal._id)).selfAssessment.submittedAt).toBeUndefined();
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test.each([undefined, 'conversation'])('non-manual mode %s retains optional AI analysis on valid submission', async assessmentMode => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  await answerEmployeeQuestions(appraisal);
+  const provider = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({ summary: 'Synthetic optional analysis.' });
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee')
+    .send({ assessmentMode, submit: true, selfAssessment: manualAssessment() }).expect(200);
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect((await Appraisal.findById(appraisal._id)).selfAssessment.aiInsights.generatedAt).toBeInstanceOf(Date);
+});

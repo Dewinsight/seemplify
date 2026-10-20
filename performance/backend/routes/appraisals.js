@@ -3360,7 +3360,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
     }
 
     const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
-    const { selfAssessment = {}, submit } = req.body;
+    const { selfAssessment = {}, submit, assessmentMode } = req.body;
 
     if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
       return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
@@ -3442,8 +3442,9 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
         'self_assessment_submitted'
       );
 
-      // Generate AI insights when AI assistance is enabled for this cycle.
-      if (aiAssistEnabled) {
+      // A manual form submission opts out of optional AI analysis even when
+      // this cycle offers AI assistance. All submission requirements still apply.
+      if (aiAssistEnabled && assessmentMode !== 'form') {
         try {
           const aiInsights = await appraisalAIService.analyzeSelfAssessment(
             appraisal.selfAssessment,
