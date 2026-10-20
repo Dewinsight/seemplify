@@ -78,7 +78,7 @@ export default function StartAppraisalPage() {
   const openCycles = (cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status) && cycle.periodEnd.slice(0, 10) < dateIn(0));
   const existingCycle = openCycles.find((cycle) => cycle._id === cycleId);
   const template = templates.find((entry) => entry.id === templateId) || templates[0];
-  useEffect(() => { setAppraisalFlow(defaultFlow(existingCycle?.workflowDefinition?.stages || template?.design?.stages)); }, [cycleId, templateId]);
+  useEffect(() => { setAppraisalFlow(defaultFlow()); }, [cycleId, templateId]);
   const participants = people.filter((person) => selected.includes(person.userId) && person.isSelectableForAppraisal !== false);
   const unavailable = people.filter((person) => person.isSelectableForAppraisal === false);
   const shownPeople = useMemo(() => people.filter((person) => (teamFilter === 'all' || (person.teamIds || [person.teamId]).includes(teamFilter)) && `${person.name} ${person.teamName || ''}`.toLowerCase().includes(search.toLowerCase())), [people, search, teamFilter]);
@@ -279,7 +279,7 @@ export default function StartAppraisalPage() {
         </Stack>}
       </Box>}
       {step === 1 && roleEnabled && <Box mt={3}><Divider sx={{ mb: 2 }} /><FormControlLabel control={<Checkbox checked={withRole} onChange={(_, checked) => { setWithRole(checked); setError(''); }} />} label="Assess against an occupational role" /><Typography variant="body2" color="text.secondary" mb={2}>Add a competency assessment using published role expectations. Optional evidence and AI drafts are configured separately; a human reviewer makes the final decision.</Typography>{withRole && <CompetencyRoleSelection cycleId={competencyCycleId} onCycleChange={id => { setCompetencyCycleId(id); setRoleVersions({}); }} onCycleRevisionChange={setCompetencyRevision} roleVersionByParticipant={roleVersions} onRoleChange={(id, version) => setRoleVersions(previous => ({ ...previous, [id]: version }))} participants={participants} cvRequested={cvRequested} onCvRequestedChange={setCvRequested} disabled={saving} />}</Box>}
-      {step === 1 && <Box mt={3}><Divider sx={{ mb: 3 }} /><AppraisalFlowEditor value={appraisalFlow} onChange={value => { setAppraisalFlow(value); setError(''); }} onReset={() => { setAppraisalFlow(defaultFlow(existingCycle?.workflowDefinition?.stages || template?.design?.stages)); setError(''); }} /></Box>}
+      {step === 1 && <Box mt={3}><Divider sx={{ mb: 3 }} /><AppraisalFlowEditor value={appraisalFlow} onChange={value => { setAppraisalFlow(value); setError(''); }} onReset={() => { setAppraisalFlow(defaultFlow()); setError(''); }} /></Box>}
       {step === 2 && <Stack spacing={2}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Confirm and start</Typography><Typography fontWeight={600}>{existingCycle?.name || title}</Typography><Typography>{participants.length} participant{participants.length === 1 ? '' : 's'} · {existingCycle ? 'Existing cycle' : template?.name}</Typography>
         <Typography>Assessment period: {shortDate(existingCycle?.periodStart || periodStart)} – {shortDate(existingCycle?.periodEnd || periodEnd)}</Typography>

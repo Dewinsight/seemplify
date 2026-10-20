@@ -10,9 +10,8 @@ const TYPES = Object.freeze({
   acknowledgement: { label: 'Employee acknowledgement', status: 'completed' }
 });
 
-function defaultSteps(design = {}) {
-  return ['selfAssessment', 'managerReview', 'discussion', 'calibration', 'finalReview', 'acknowledgement']
-    .filter(type => design.stages?.[type]?.enabled !== false && (type !== 'calibration' || design.stages?.calibration?.enabled === true))
+function defaultSteps() {
+  return ['selfAssessment', 'oneOnOne', 'managerReview', 'finalReview']
     .map(type => ({ id: type, type, label: TYPES[type].label }));
 }
 

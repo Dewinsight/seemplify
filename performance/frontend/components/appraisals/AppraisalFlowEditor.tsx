@@ -8,8 +8,8 @@ export interface FlowStep { id: string; type: FlowType; label: string }
 export interface AppraisalFlow { version: number; assessmentMode: 'conversation' | 'form'; steps: FlowStep[] }
 export const flowLabels: Record<FlowType, string> = { selfAssessment: 'Employee assessment', managerReview: 'Reviewer assessment', oneOnOne: 'One-on-one meeting', discussion: 'Performance discussion', calibration: 'Calibration', finalReview: 'Final outcome', acknowledgement: 'Employee acknowledgement' };
 const descriptions: Record<FlowType, string> = { selfAssessment: 'The employee reflects on their work and answers the review questions.', managerReview: 'You record your assessment and supporting evidence.', oneOnOne: 'Schedule a call. Its transcript and meeting notes stay with this review.', discussion: 'Discuss the feedback and record the agreed notes.', calibration: 'An authorized reviewer checks the proposed rating for consistency.', finalReview: 'A person approves and publishes the final result. Required.', acknowledgement: 'The employee reads and acknowledges the published result.' };
-export function defaultFlow(stages?: Record<string, { enabled?: boolean }>): AppraisalFlow {
-  return { version: 1, assessmentMode: 'conversation', steps: (['selfAssessment', 'managerReview', 'discussion', 'calibration', 'finalReview', 'acknowledgement'] as FlowType[]).filter(type => type === 'finalReview' || (stages?.[type]?.enabled !== false && (type !== 'calibration' || stages?.calibration?.enabled === true))).map(type => ({ id: type, type, label: flowLabels[type] })) };
+export function defaultFlow(): AppraisalFlow {
+  return { version: 1, assessmentMode: 'conversation', steps: (['selfAssessment', 'oneOnOne', 'managerReview', 'finalReview'] as FlowType[]).map(type => ({ id: type, type, label: flowLabels[type] })) };
 }
 export function flowError(flow: AppraisalFlow): string {
   const final = flow.steps.findIndex(s => s.type === 'finalReview');
