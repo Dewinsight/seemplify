@@ -98,6 +98,14 @@ function getApiErrorMessage(error: any, fallback: string) {
   return error?.response?.data?.error || fallback;
 }
 
+interface SelectedFeedbackEvidence {
+  feedbackId: string;
+  content?: string;
+  senderDisplay?: string;
+  receivedAt?: string;
+  contextLabel?: string;
+}
+
 export default function ManagerReviewPage() {
   const params = useParams();
   const router = useRouter();
@@ -108,6 +116,7 @@ export default function ManagerReviewPage() {
   const isAssignedReviewer = !!user && !!appraisal && ([user.id, user.sub].filter(Boolean).map(String).includes(String(appraisal.manager?.userId)) || String(user.email || '').toLowerCase() === String(appraisal.manager?.email || '').toLowerCase());
   const isManager = isAssignedReviewer || isHRAdmin || (managerRole && !appraisal?.reviewerInitiated);
   const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false;
+  const selectedFeedbackEvidence: SelectedFeedbackEvidence[] = Array.isArray(appraisal?.feedbackEvidence) ? appraisal.feedbackEvidence : [];
 
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -632,6 +641,28 @@ export default function ManagerReviewPage() {
           ))}
         </AccordionDetails>
       </Accordion>
+
+      {selectedFeedbackEvidence.length > 0 && (
+        <Accordion defaultExpanded>
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography fontWeight={600}>Selected appraisal feedback ({selectedFeedbackEvidence.length})</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              The employee chose this feedback as supporting evidence. It does not set or change a rating.
+            </Typography>
+            {selectedFeedbackEvidence.map(evidence => (
+              <Box key={String(evidence.feedbackId)} sx={{ mb: 2, p: 2, borderRadius: 1, border: 1, borderColor: 'divider' }}>
+                <Typography variant="body2" fontWeight={600}>{evidence.senderDisplay || 'Feedback provider'}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {[evidence.contextLabel, evidence.receivedAt && new Date(evidence.receivedAt).toLocaleDateString()].filter(Boolean).join(' · ')}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{evidence.content}</Typography>
+              </Box>
+            ))}
+          </AccordionDetails>
+        </Accordion>
+      )}
 
       {/* Feedback History */}
       <Accordion>
