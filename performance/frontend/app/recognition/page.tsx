@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useSWRConfig } from 'swr';
 import {
   Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControl, InputLabel, MenuItem, Paper, Select, Stack, Tab, Tabs, TextField, Typography
@@ -41,7 +42,9 @@ export default function RecognitionPage() {
   const [open, setOpen] = useState(false);
   const [working, setWorking] = useState(false);
   const [query, setQuery] = useState('');
-  const { users, isLoading: searching } = useUserSearch(query);
+  const { users, isLoading: searching, isError: searchError } = useUserSearch(query);
+  const { mutate: revalidate } = useSWRConfig();
+  const [retryingSearch, setRetryingSearch] = useState(false);
   const [recipient, setRecipient] = useState<Person | null>(null);
   const [message, setMessage] = useState('');
   const [companyValue, setCompanyValue] = useState('');
@@ -55,6 +58,13 @@ export default function RecognitionPage() {
   }, [view]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const retrySearch = async () => {
+    setRetryingSearch(true);
+    try { await revalidate(`/user/search?q=${encodeURIComponent(query)}`); }
+    catch { /* The search hook keeps the failure visible for another retry. */ }
+    finally { setRetryingSearch(false); }
+  };
 
   const send = async () => {
     if (!recipient || !message.trim()) { setError('Choose a colleague and write a specific recognition message.'); return; }
@@ -92,7 +102,12 @@ export default function RecognitionPage() {
       <Dialog open={open} onClose={() => !working && setOpen(false)} fullWidth maxWidth="sm" aria-labelledby="recognition-dialog-title">
         <DialogTitle id="recognition-dialog-title">Recognize a colleague</DialogTitle><DialogContent dividers><Stack spacing={2}>
           {error && <Alert severity="error">{error}</Alert>}
-          {!recipient ? <><TextField autoFocus label="Search organization" value={query} onChange={event => setQuery(event.target.value)} InputProps={{ startAdornment: <Search fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }} helperText="Search by name or email. Results are limited to your active organization." />{searching && <CircularProgress size={22} />}{query.length >= 2 && !searching && <Paper variant="outlined">{(users as Person[]).length ? (users as Person[]).map(person => <Button key={person.id} fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.25 }} onClick={() => { setRecipient(person); setError(''); setVisibility('private'); }}>{person.name}</Button>) : <Typography color="text.secondary" sx={{ p: 2 }}>No colleagues found.</Typography>}</Paper>}</> : <Paper variant="outlined" sx={{ p: 2 }}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography fontWeight={650}>{recipient.name}</Typography><Typography variant="body2" color="text.secondary">{recipient.email}</Typography></Box><Button onClick={() => setRecipient(null)}>Change</Button></Stack></Paper>}
+          {!recipient ? <>
+            <TextField autoFocus label="Search organization" value={query} onChange={event => setQuery(event.target.value)} InputProps={{ startAdornment: <Search fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }} helperText="Search by name or email. Results are limited to your active organization." />
+            {searching && <CircularProgress size={22} aria-label="Searching colleagues" />}
+            {query.length >= 2 && searchError && <Alert severity="error" aria-busy={retryingSearch} action={<Button color="inherit" disabled={retryingSearch} onClick={() => void retrySearch()}>{retryingSearch ? 'Retrying…' : 'Retry search'}</Button>}>Could not search colleagues. Your recognition draft is still available. Try again.</Alert>}
+            {query.length >= 2 && !searching && !searchError && <Paper variant="outlined">{(users as Person[]).length ? (users as Person[]).map(person => <Button key={person.id} fullWidth sx={{ justifyContent: 'flex-start', px: 2, py: 1.25 }} onClick={() => { setRecipient(person); setError(''); setVisibility('private'); }}>{person.name}</Button>) : <Typography color="text.secondary" sx={{ p: 2 }}>No colleagues found.</Typography>}</Paper>}
+          </> : <Paper variant="outlined" sx={{ p: 2 }}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography fontWeight={650}>{recipient.name}</Typography><Typography variant="body2" color="text.secondary">{recipient.email}</Typography></Box><Button onClick={() => setRecipient(null)}>Change</Button></Stack></Paper>}
           <TextField label="Recognition message" required multiline minRows={4} value={message} onChange={event => setMessage(event.target.value)} helperText="Name the contribution and explain its impact." slotProps={{ htmlInput: { maxLength: 3000 } }} />
           <TextField label="Company value (optional)" value={companyValue} onChange={event => setCompanyValue(event.target.value)} slotProps={{ htmlInput: { maxLength: 160 } }} />
           <FormControl><InputLabel id="recognition-audience-label">Audience</InputLabel><Select labelId="recognition-audience-label" label="Audience" value={visibility} onChange={event => setVisibility(event.target.value as typeof visibility)}><MenuItem value="public">Organization</MenuItem><MenuItem value="team" disabled={!recipient}>Recipient&apos;s team</MenuItem><MenuItem value="private">Recipient only</MenuItem></Select></FormControl>

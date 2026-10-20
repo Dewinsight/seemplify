@@ -3891,6 +3891,8 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
       storageKey: storedFile.storageKey,
       storageContainer: storedFile.storageContainer || null,
       storageResourceType: storedFile.storageResourceType || null,
+      storageDeliveryType: storedFile.storageDeliveryType,
+      storageFormat: storedFile.storageFormat,
       storageUrl: storedFile.storageUrl,
       category: req.body.category || 'other',
       description: req.body.description,
@@ -4008,6 +4010,11 @@ router.get('/:appraisalId/documents/:documentId', requireAuth, async (req, res) 
 
     const safeDocument = document.toObject();
     delete safeDocument.storagePath;
+    delete safeDocument.storageKey;
+    delete safeDocument.storageContainer;
+    delete safeDocument.storageResourceType;
+    delete safeDocument.storageDeliveryType;
+    delete safeDocument.storageFormat;
     delete safeDocument.storageUrl;
     delete safeDocument.publicUrl;
     delete safeDocument.fileName;
@@ -4044,12 +4051,13 @@ router.get('/:appraisalId/documents/:documentId/content', requireAuth, async (re
     if (!canView) return res.status(403).json({ success: false, error: 'Access denied' });
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    if (!document.storageUrl) {
+    const downloadUrl = await createStorageService().getDownloadUrl(document);
+    if (!downloadUrl) {
       const legacyPath = resolveLegacyAppraisalDocumentPath(document);
       if (!legacyPath) return res.status(410).json({ success: false, error: 'Document content is unavailable' });
       return res.download(legacyPath, document.originalName);
     }
-    return res.redirect(302, document.storageUrl);
+    return res.redirect(302, downloadUrl);
   } catch (error) {
     console.error('Download document error:', error);
     return res.status(500).json({ success: false, error: 'Failed to download document' });
@@ -4082,6 +4090,8 @@ router.delete('/:appraisalId/documents/:documentId', requireAuth, async (req, re
         storageKey: document.storageKey || document.storagePath,
         storageContainer: document.storageContainer,
         storageResourceType: document.storageResourceType,
+        storageDeliveryType: document.storageDeliveryType,
+        storageFormat: document.storageFormat,
         storageUrl: document.storageUrl
       });
     }
@@ -5364,6 +5374,8 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
       storageKey: storedFile.storageKey,
       storageContainer: storedFile.storageContainer || null,
       storageResourceType: storedFile.storageResourceType || null,
+      storageDeliveryType: storedFile.storageDeliveryType,
+      storageFormat: storedFile.storageFormat,
       storageUrl: storedFile.storageUrl,
       category: req.body.category || 'achievement_evidence',
       description: req.body.description,

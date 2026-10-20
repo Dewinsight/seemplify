@@ -1,5 +1,13 @@
 const mongoose = require('mongoose');
 
+function redactProviderSnapshot(_document, value) {
+  // Provider snapshots stay available internally for cleanup but are removed
+  // from direct and populated document JSON responses.
+  for (const key of ['fileName', 'storagePath', 'storageKey', 'storageContainer', 'storageResourceType',
+    'storageDeliveryType', 'storageFormat', 'storageUrl', 'publicUrl', 'metadata']) delete value[key];
+  return value;
+}
+
 /**
  * Appraisal Document Schema
  * Handles document uploads with text extraction and AI analysis
@@ -45,6 +53,8 @@ const appraisalDocumentSchema = new mongoose.Schema({
   storageKey: String,
   storageContainer: String,
   storageResourceType: String,
+  storageDeliveryType: { type: String, enum: ['upload', 'private', 'authenticated'] },
+  storageFormat: String,
   storageUrl: String,
   publicUrl: String,
 
@@ -162,7 +172,8 @@ const appraisalDocumentSchema = new mongoose.Schema({
   // Metadata
   metadata: mongoose.Schema.Types.Mixed
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { transform: redactProviderSnapshot }
 });
 
 // Indexes
