@@ -488,6 +488,9 @@ router.patch('/:id/milestones/:milestoneId', async (req, res) => {
     if (actorId !== plan.employee.userId && (!canManage(req, plan) || !hasPermission(req.userRole, 'support_plan:manage:direct_reports', req.session?.user))) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
+    if (!['active', 'review_due', 'extended'].includes(plan.state)) {
+      return res.status(409).json({ success: false, error: 'Milestones can only be updated while the support plan is active, due for review, or extended' });
+    }
     const milestone = plan.milestones.id(req.params.milestoneId);
     if (!milestone) return res.status(404).json({ success: false, error: 'Milestone not found' });
     if (actorId === plan.employee.userId) milestone.employeeUpdate = text(req.body.employeeUpdate, 4000);
@@ -515,9 +518,22 @@ router.post('/:id/outcome', requirePermission('support_plan:manage:direct_report
     if (plan.planType === 'formal_improvement' && req.userRole !== 'hr_admin' && ['escalated', 'cancelled'].includes(decision)) {
       return res.status(403).json({ success: false, error: 'HR must make this formal-plan decision' });
     }
+    // Capture the prior human decision before replacing the current outcome.
+    // Existing extensions may predate date metadata in the append-only audit.
+    const previousOutcome = plan.outcome?.decision ? {
+      decision: plan.outcome.decision,
+      reason: plan.outcome.reason,
+      decidedBy: plan.outcome.decidedBy,
+      decidedAt: plan.outcome.decidedAt,
+      nextReviewDate: plan.outcome.nextReviewDate
+    } : undefined;
     plan.outcome = { decision, reason, decidedBy: getActorId(req), decidedAt: new Date(), nextReviewDate: req.body.nextReviewDate };
     plan.state = decision;
-    audit(plan, req, `outcome_${decision}`, { reason });
+    audit(plan, req, `outcome_${decision}`, {
+      reason,
+      ...(plan.outcome.nextReviewDate ? { nextReviewDate: plan.outcome.nextReviewDate } : {}),
+      ...(previousOutcome ? { previousOutcome } : {})
+    });
     await plan.save();
     await cancelActions(plan);
     await recordEvent({
