@@ -18,7 +18,8 @@ async function validatePlan(ctx, input) {
   if (!Array.isArray(input.assignments) || !input.assignments.length || input.assignments.length > 100) throw new DomainError(422, 'ASSIGNMENTS_REQUIRED', 'Choose participants and their assessment roles.');
   const seen = new Set();
   for (const assignment of input.assignments) {
-    cleanObject(assignment, ['participantId', 'roleVersionId', 'assessorIds']);
+    cleanObject(assignment, ['participantId', 'roleVersionId', 'assessorIds', 'cvRequested']);
+    require('./assessmentService').validateCvRequested(assignment.cvRequested);
     const person = auth.assertParticipant(ctx, assignment.participantId);
     if (seen.has(person.userId)) throw new DomainError(422, 'DUPLICATE_PARTICIPANT', 'Choose each participant once.'); seen.add(person.userId);
     if (!Array.isArray(assignment.assessorIds) || !assignment.assessorIds.length) throw new DomainError(422, 'ASSESSOR_REQUIRED', 'Select an eligible reviewer.');
@@ -33,14 +34,15 @@ async function validatePlan(ctx, input) {
 async function links(ctx, appraisalId) {
   await parent(ctx, appraisalId); auth.requireAction(ctx, 'assessment.view');
   const records = await Assessment.find({ organizationId: ctx.organizationId, appraisalId }).sort({ createdAt: -1 }).lean();
-  return { appraisalId, assessments: records.filter(record => auth.canAccessAssessment(ctx, record)).map(record => ({ id: String(record._id), assessmentId: String(record._id), status: record.status, role: { name: record.definitionSnapshot.role.name, version: record.definitionSnapshot.role.version }, participant: record.participant, createdAt: record.createdAt, currentResultNumber: record.currentResultNumber || null, allowedActions: require('./assessmentService').actions(ctx, record) })) };
+  return { appraisalId, assessments: records.filter(record => auth.canAccessAssessment(ctx, record)).map(record => ({ id: String(record._id), assessmentId: String(record._id), status: record.status, cvRequested: record.definitionSnapshot.cvRequested === true, role: { name: record.definitionSnapshot.role.name, version: record.definitionSnapshot.role.version }, participant: record.participant, createdAt: record.createdAt, currentResultNumber: record.currentResultNumber || null, allowedActions: require('./assessmentService').actions(ctx, record) })) };
 }
 async function link(ctx, input, key) {
-  cleanObject(input, ['appraisalId', 'cycleId', 'cycleRevision', 'roleVersionId', 'assessorIds']);
+  cleanObject(input, ['appraisalId', 'cycleId', 'cycleRevision', 'roleVersionId', 'assessorIds', 'cvRequested']);
+  require('./assessmentService').validateCvRequested(input.cvRequested);
   const appraisal = await parent(ctx, input.appraisalId, true);
   if (['completed', 'employee_acknowledged', 'cancelled'].includes(appraisal.status)) throw new DomainError(409, 'APPRAISAL_CLOSED', 'Add the assessment role before this appraisal is finalised.');
   if (!Array.isArray(input.assessorIds) || input.assessorIds.length !== 1 || String(input.assessorIds[0]) !== String(appraisal.manager?.userId)) throw new DomainError(422, 'REVIEWER_MISMATCH', 'Use the reviewer selected for this appraisal.');
-  return require('./assessmentService').launch(ctx, { cycleId: input.cycleId, cycleRevision: input.cycleRevision, assignments: [{ participantId: appraisal.employee.userId, roleVersionId: input.roleVersionId, assessorIds: input.assessorIds, appraisalId: input.appraisalId }] }, key);
+  return require('./assessmentService').launch(ctx, { cycleId: input.cycleId, cycleRevision: input.cycleRevision, assignments: [{ participantId: appraisal.employee.userId, roleVersionId: input.roleVersionId, assessorIds: input.assessorIds, appraisalId: input.appraisalId, ...(input.cvRequested !== undefined ? {cvRequested: input.cvRequested} : {}) }] }, key);
 }
 async function guardFinalOutcome(req, res, next) {
   try {

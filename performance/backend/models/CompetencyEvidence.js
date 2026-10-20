@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
   organizationId: { type: String, required: true }, assessmentId: { type: String, required: true }, participantId: { type: String, required: true },
   title: String, kind: { type: String, enum: ['manual','file','oral','call'] }, criterionIds: [String],
+  documentType: { type: String, enum: ['cv','supporting_evidence'], default: 'supporting_evidence' },
   visibility: { type: String, enum: ['participant','assessors'], default: 'assessors' },
   status: { type: String, enum: ['draft','ready','deletion_pending','deletion_failed','deleted'], default: 'ready' },
   text: String, spans: [mongoose.Schema.Types.Mixed], sha256: String, storageKey: { type: String, select: false },

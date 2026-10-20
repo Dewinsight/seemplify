@@ -119,15 +119,15 @@ async function extractText(buffer, extension) {
 }
 function privateRoot() { if (process.env.NODE_ENV === 'production' && !process.env.COMPETENCY_PRIVATE_STORAGE_ROOT)
     throw new DomainError(503, 'PRIVATE_STORAGE_UNAVAILABLE', 'Private document storage is unavailable. You can continue manually.'); return path.resolve(process.env.COMPETENCY_PRIVATE_STORAGE_ROOT || path.join(os.tmpdir(), 'seemplify-competency-private')); }
-async function storePrivate(buffer) { const root = privateRoot(); await fs.mkdir(root, { recursive: true, mode: 0o700 }); const key = crypto.randomUUID(); await fs.writeFile(path.join(root, key), buffer, { flag: 'wx', mode: 0o600 }); return key; }
-async function readPrivate(key) { if (!/^[a-f\d-]{36}$/i.test(String(key)))
+async function storePrivate(buffer, options = {}) { if (options.documentType === 'cv') return require('./managedCvStorageService').store(buffer, options); const root = privateRoot(); await fs.mkdir(root, { recursive: true, mode: 0o700 }); const key = crypto.randomUUID(); await fs.writeFile(path.join(root, key), buffer, { flag: 'wx', mode: 0o600 }); return key; }
+async function readPrivate(key) { if (String(key).startsWith('cloudinary-cv:')) return require('./managedCvStorageService').read(key); if (!/^[a-f\d-]{36}$/i.test(String(key)))
     throw new DomainError(404, 'NOT_FOUND', 'Source not found.'); try {
     return await fs.readFile(path.join(privateRoot(), key));
 }
 catch {
     throw new DomainError(404, 'NOT_FOUND', 'Source is no longer available.');
 } }
-async function deletePrivate(key) { if (!/^[a-f\d-]{36}$/i.test(String(key)))
+async function deletePrivate(key) { if (String(key).startsWith('cloudinary-cv:')) return require('./managedCvStorageService').remove(key); if (!/^[a-f\d-]{36}$/i.test(String(key)))
     throw new DomainError(404, 'NOT_FOUND', 'Private source not found.'); try {
     await fs.unlink(path.join(privateRoot(), key));
 }

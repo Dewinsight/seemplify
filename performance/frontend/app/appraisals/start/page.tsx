@@ -62,6 +62,7 @@ export default function StartAppraisalPage() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const competency = useCompetencyBootstrap();
   const [withRole, setWithRole] = useState(false);
+  const [cvRequested, setCvRequested] = useState(false);
   const [requireApprovedGoals, setRequireApprovedGoals] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
   const [goalCheckVersion, setGoalCheckVersion] = useState(0);
@@ -125,7 +126,7 @@ export default function StartAppraisalPage() {
   useEffect(() => { if (!cyclesLoading && !cycleId) setCycleId(openCycles.find((cycle) => cycle._id === query.get('cycleId'))?._id || openCycles[0]?._id || 'new'); }, [cyclesLoading, cycles, cycleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const roleIssue = () => !withRole ? '' : !roleEnabled ? 'Role assessments are unavailable. Refresh your permissions before starting.' : !competencyCycleId || !competencyRevision ? 'Choose a published competency assessment cycle.' : participants.some(person => !competency.data?.cycles?.find(cycle => cycle.id === competencyCycleId)?.roleVersionIds.includes(roleVersions[person.userId])) ? 'Choose an assessment role for each selected person.' : '';
-  const rolePlan = () => ({ cycleId: competencyCycleId, cycleRevision: competencyRevision, assignments: participants.map(person => ({ participantId: person.userId, roleVersionId: roleVersions[person.userId], assessorIds: [reviewers[person.userId]] })) });
+  const rolePlan = () => ({ cycleId: competencyCycleId, cycleRevision: competencyRevision, assignments: participants.map(person => ({ participantId: person.userId, roleVersionId: roleVersions[person.userId], assessorIds: [reviewers[person.userId]], cvRequested })) });
   const validateDetails = () => {
     if (roleIssue()) return roleIssue();
     if (cycleId !== 'new' && !existingCycle) return 'Choose a completed quarterly cycle or a one-off review.';
@@ -175,7 +176,7 @@ export default function StartAppraisalPage() {
         for (const review of [...(launch.appraisals || []), ...(launch.existingAppraisals || [])]) {
           const participantId = review.employee?.userId;
           if (!participantId || !roleVersions[participantId]) { pending[review._id] = { payload: null, key: '', error: 'The launch receipt did not identify this participant. Open the appraisal and ask HR to check the role link.' }; continue; }
-          const payload = { appraisalId: review._id, cycleId: competencyCycleId, cycleRevision: competencyRevision, roleVersionId: roleVersions[participantId], assessorIds: [reviewers[participantId]] };
+          const payload = { appraisalId: review._id, cycleId: competencyCycleId, cycleRevision: competencyRevision, roleVersionId: roleVersions[participantId], assessorIds: [reviewers[participantId]], cvRequested };
           const key = newIdempotencyKey();
           try { await competencyRequest('POST', '/appraisal-links', payload, undefined, key); linked[review._id] = true; }
           catch (failure) { pending[review._id] = { payload, key, error: competencyError(failure).message }; }
@@ -277,7 +278,7 @@ export default function StartAppraisalPage() {
           <Typography variant="body2" color="text.secondary">Organization and team goals provide alignment. Each participant needs an approved individual goal; pending acknowledgement and evidence-only goals are not eligible for scoring.</Typography>
         </Stack>}
       </Box>}
-      {step === 1 && roleEnabled && <Box mt={3}><Divider sx={{ mb: 2 }} /><FormControlLabel control={<Checkbox checked={withRole} onChange={(_, checked) => { setWithRole(checked); setError(''); }} />} label="Assess against an occupational role" /><Typography variant="body2" color="text.secondary" mb={2}>Add a competency assessment using published role expectations. Optional evidence and AI drafts are configured separately; a human reviewer makes the final decision.</Typography>{withRole && <CompetencyRoleSelection cycleId={competencyCycleId} onCycleChange={id => { setCompetencyCycleId(id); setRoleVersions({}); }} onCycleRevisionChange={setCompetencyRevision} roleVersionByParticipant={roleVersions} onRoleChange={(id, version) => setRoleVersions(previous => ({ ...previous, [id]: version }))} participants={participants} disabled={saving} />}</Box>}
+      {step === 1 && roleEnabled && <Box mt={3}><Divider sx={{ mb: 2 }} /><FormControlLabel control={<Checkbox checked={withRole} onChange={(_, checked) => { setWithRole(checked); setError(''); }} />} label="Assess against an occupational role" /><Typography variant="body2" color="text.secondary" mb={2}>Add a competency assessment using published role expectations. Optional evidence and AI drafts are configured separately; a human reviewer makes the final decision.</Typography>{withRole && <CompetencyRoleSelection cycleId={competencyCycleId} onCycleChange={id => { setCompetencyCycleId(id); setRoleVersions({}); }} onCycleRevisionChange={setCompetencyRevision} roleVersionByParticipant={roleVersions} onRoleChange={(id, version) => setRoleVersions(previous => ({ ...previous, [id]: version }))} participants={participants} cvRequested={cvRequested} onCvRequestedChange={setCvRequested} disabled={saving} />}</Box>}
       {step === 1 && <Box mt={3}><Divider sx={{ mb: 3 }} /><AppraisalFlowEditor value={appraisalFlow} onChange={value => { setAppraisalFlow(value); setError(''); }} onReset={() => { setAppraisalFlow(defaultFlow(existingCycle?.workflowDefinition?.stages || template?.design?.stages)); setError(''); }} /></Box>}
       {step === 2 && <Stack spacing={2}>
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Confirm and start</Typography><Typography fontWeight={600}>{existingCycle?.name || title}</Typography><Typography>{participants.length} participant{participants.length === 1 ? '' : 's'} · {existingCycle ? 'Existing cycle' : template?.name}</Typography>
@@ -286,7 +287,7 @@ export default function StartAppraisalPage() {
         {!existingCycle && <Typography fontWeight={600}>{withoutGoals ? 'Review without goals' : 'Approved goals included'}</Typography>}
         <Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography>
         {participants.map((person) => <Typography key={person.userId}>{person.name} · Reviewer: {person.reviewerOptions?.find(reviewer => reviewer.userId === reviewers[person.userId])?.name || 'Choose a reviewer'}</Typography>)}
-        {withRole && <Box><Typography fontWeight={600}>Role competency assessment</Typography><Typography>{competency.data?.cycles?.find(cycle => cycle.id === competencyCycleId)?.name} · Configuration revision {competencyRevision}</Typography>{participants.map(person => { const role = competency.data?.roles.find(row => row.versionId === roleVersions[person.userId]); return <Typography key={person.userId}>{person.name}: {role?.name} · Role version {role?.version}</Typography>; })}<Typography variant="body2" color="text.secondary">The selected role and scoring configuration are preserved. Complete this role assessment before finalising the appraisal.</Typography></Box>}
+        {withRole && <Box><Typography fontWeight={600}>Role competency assessment</Typography><Typography>{competency.data?.cycles?.find(cycle => cycle.id === competencyCycleId)?.name} · Configuration revision {competencyRevision}</Typography>{participants.map(person => { const role = competency.data?.roles.find(row => row.versionId === roleVersions[person.userId]); return <Typography key={person.userId}>{person.name}: {role?.name} · Role version {role?.version}</Typography>; })}<Typography>CV: {cvRequested ? 'Requested as optional evidence' : 'Not requested'}</Typography><Typography variant="body2" color="text.secondary">The selected role and scoring configuration are preserved. Complete this role assessment before finalising the appraisal.</Typography></Box>}
         <Typography fontWeight={600}>Your review flow</Typography>
         <Box component="ol" sx={{ pl: 3 }}>{appraisalFlow.steps.map(step => <Typography component="li" key={step.id}>{step.label}</Typography>)}</Box>
         <Typography>Employee assessment: {appraisalFlow.assessmentMode === 'form' ? 'Manual form' : 'AI conversation or form'}</Typography>

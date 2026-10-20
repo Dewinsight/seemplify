@@ -27,6 +27,7 @@ import ConversationalAssessment from './conversational/ConversationalAssessment'
 import ChatGptConversationGate from './conversational/ChatGptConversationGate';
 import CustomAssessmentSections, { type CustomAssessmentSectionsHandle } from '@/components/appraisals/CustomAssessmentSections';
 import AppraisalDocuments from '@/components/appraisals/AppraisalDocuments';
+import AppraisalCvEvidence from '@/components/competency/assessment/AppraisalCvEvidence';
 
 type ManualSelfAssessmentForm = {
   overallSummary: {
@@ -331,6 +332,8 @@ function SelfAssessmentContent() {
           {new Date(appraisal.deadlines.selfAssessmentDue) < new Date() && ' (OVERDUE)'}
         </Alert>
       )}
+
+      <AppraisalCvEvidence appraisalId={appraisalId} />
 
       {conversationSelected ? (
         <Fade in>

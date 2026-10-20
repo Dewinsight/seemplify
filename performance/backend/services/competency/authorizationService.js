@@ -4,6 +4,13 @@ const { resolveOrganizationId } = require('../tenantPolicy');
 const { DomainError, hash } = require('../../contracts/competency');
 const Audit = require('../../models/CompetencyAuditEvent');
 const Operation = require('../../models/CompetencyOperation');
+// Server-only proof of a failed evidence preflight. A request field or a
+// provider's arbitrary error properties cannot opt into a safe replay.
+const evidenceNoEffectFailures = new WeakSet();
+function confirmEvidenceNoEffect(error) {
+  if (error instanceof DomainError && error.status >= 500) evidenceNoEffectFailures.add(error);
+  return error;
+}
 const ACTIONS = Object.freeze(['role.manage', 'framework.manage', 'cycle.manage', 'assessment.launch', 'assessment.view', 'assessment.edit', 'assessment.finalise', 'assessment.reopen', 'assessment.exception', 'evidence.view', 'evidence.create', 'evidence.delete', 'report.view', 'report.export', 'report.cohort', 'audit.view', 'ai.use', 'retention.manage'].map(value => `competency.${value}`));
 const fullAction = value => value.startsWith('competency.') ? value : `competency.${value}`;
 function hasAction(ctx, permission) { return ctx.permissions.has(fullAction(permission)); }
@@ -120,9 +127,10 @@ async function operation(ctx, action, key, payload, work) {
   } catch (error) {
     // A server failure may follow a successful domain write. Never replay an
     // unknown effect automatically with a new generic operation lease.
-    const uncertain = !(error instanceof DomainError) || error.status >= 500;
+    const confirmedEvidencePreflight = /^evidence\.create:[a-f\d]{24}$/i.test(action) && evidenceNoEffectFailures.has(error);
+    const uncertain = !(error instanceof DomainError) || (error.status >= 500 && !confirmedEvidencePreflight);
     await Operation.updateOne({ _id: entry._id }, uncertain ? { $set: { status: 'pending', leaseUntil: new Date(0) } } : { $set: { status: 'failed' }, $unset: { leaseUntil: 1 } });
     throw error;
   }
 }
-module.exports = { ACTIONS, context, refreshContext, hasAction, requireAction, assertParticipant, isCurrentAssessor, canAccessAssessment, assertAssessment, audit, operation };
+module.exports = { ACTIONS, context, refreshContext, hasAction, requireAction, assertParticipant, isCurrentAssessor, canAccessAssessment, assertAssessment, audit, operation, confirmEvidenceNoEffect };
