@@ -181,3 +181,27 @@ test('history is tenant/participant scoped, paginated and excludes live calls', 
   await call('get', `/${foreign._id}`).expect(404);
   await call('post', `/${foreign._id}/call/native/join`).send({ peerId: randomUUID(), consent: true }).expect(404);
 });
+
+
+test('manual reminders use only saved participants, deduplicate clicks and enforce meeting access', async () => {
+  const { DomainEvent } = { DomainEvent: require('../models/DomainEvent') }; await DomainEvent.createIndexes();
+  const created = await call('post', '/').send(payload()).expect(201); const id = created.body.data._id;
+  const path = `/${id}/call/reminder`;
+  await call('post', path, 'employee').send({}).expect(403);
+  await call('post', path, 'outsider').send({}).expect(403);
+  const reminders = await Promise.all([1, 2].map(() => call('post', path).send({ recipients: [{ email: 'forged@example.test' }], organizationId: 'foreign-org' })));
+  expect(reminders.map(r => r.status)).toEqual([202, 202]);
+  const events = await DomainEvent.find({ eventType: 'one_on_one.call_reminder' });
+  expect(events).toHaveLength(1); expect(events[0].organizationId).toBe(org.id);
+  expect(events[0].recipients.map(r => r.email).sort()).toEqual(['employee@example.test', 'manager@example.test']);
+  expect(events[0].notification.deepLink).toBe(`/one-on-ones/${id}`);
+  expect(events[0].status).toBe('pending');
+  await OneOnOne.updateOne({ _id: id }, { $set: { status: 'completed' } });
+  await call('post', path).send({}).expect(409);
+});
+
+test('personal call connection uses the requesting participant identity', async () => {
+  const created = await call('post', '/').send(payload()).expect(201); const id = created.body.data._id;
+  await call('get', `/${id}/call/connection`, 'employee').expect(200);
+  expect(provider.mock.calls.at(-1)[0]).toBe('meetings/connection'); expect(provider.mock.calls.at(-1)[1].sub).toBe('employee');
+});

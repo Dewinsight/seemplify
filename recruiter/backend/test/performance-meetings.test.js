@@ -17,7 +17,7 @@ test.afterEach(() => test.mock.restoreAll());
 function setup(t, options = {}) {
   t.mock.method(principals, 'resolveSharedPrincipal', async raw => ({ identity: raw, user: { email: raw.email, nylasGrantId: options.noGrant ? null : 'personal-grant', nylasGrantStatus: 'active' } }));
   const createEvent = t.mock.fn(async () => { if (options.eventFailure) throw new Error('Ambiguous provider timeout'); return { data: { id: 'provider-event', conferencing: { details: { url: 'https://meet.google.com/aaa-bbbb-ccc' } } } }; });
-  t.mock.method(nylas, 'getNylasInstance', () => ({ events: { create: createEvent }, grants: { find: async () => ({ data: { provider: 'google' } }) } }));
+  t.mock.method(nylas, 'getNylasInstance', () => ({ events: { create: createEvent }, grants: { find: async () => ({ data: { provider: 'google', email: 'calendar@example.test', grantStatus: 'valid' } }) } }));
   t.mock.method(nylas, 'getCalendars', async () => [{ id: 'calendar', isPrimary: true }]);
   t.mock.method(nylas, 'createStandaloneNotetaker', async () => { if (options.botFailure) throw new Error('Notetaker disabled'); return { notetakerId: 'notetaker' }; });
   return createEvent;
@@ -65,7 +65,7 @@ test('legacy, past and cross-organizer recording requests cannot be upgraded or 
   await assert.rejects(service.startRecording(identity, { ...legacy, recordingConsent: sourceConsent() }), { code: 'LEGACY_RECORDING_UNVERIFIED' });
   const data = deferredInput(); await service.create(identity, data);
   await assert.rejects(service.startRecording({ ...identity, sub: 'other' }, { ...data, recordingConsent: sourceConsent() }), { code: 'MEETING_NOT_FOUND' });
-  await Meeting.updateOne({ externalId: data.externalId }, { $set: { scheduledDate: new Date(Date.now() - 1000) } });
+  await Meeting.updateOne({ externalId: data.externalId }, { $set: { scheduledDate: new Date(Date.now() - 31 * 60000) } });
   await assert.rejects(service.startRecording(identity, { ...data, recordingConsent: sourceConsent() }), { code: 'RECORDING_WINDOW_CLOSED' });
 });
 test('uncertain recording creation is not repeated and withdrawal preserves the calendar invitation', async t => {
@@ -128,4 +128,38 @@ test('Performance Terra default is applied before personal choices and leaves ot
     assert.equal(inherited, 'gpt-5.6-terra'); assert.equal(response.model, personal || 'gpt-5.6-terra');
     if (!personal) assert.equal((await runtime.complete('recruiter.general', {}, { requiredRuntime: 'chatgpt' })).model, 'gpt-5.6-sol');
   }
+});
+
+
+test('connection reports the verified personal grant email rather than the Seemplify login', async t => {
+  setup(t);
+  const result = await service.connection(identity);
+  assert.equal(result.email, 'calendar@example.test'); assert.equal(result.connected, true);
+  assert.equal(result.provider, 'google'); assert.equal(JSON.stringify(result).includes('personal-grant'), false);
+  t.mock.method(nylas, 'getNylasInstance', () => ({ grants: { find: async () => { throw Object.assign(new Error('gone'), { statusCode: 404 }); } } }));
+  assert.equal((await service.connection(identity)).connected, false);
+});
+
+test('active-call consent invites immediately without sending a past join_time', async t => {
+  setup(t); const data = deferredInput(); await service.create(identity, data);
+  await Meeting.updateOne({ externalId: data.externalId }, { $set: { scheduledDate: new Date(Date.now() - 60000) } });
+  const bot = t.mock.method(nylas, 'createStandaloneNotetaker', async () => ({ notetakerId: 'live-bot' }));
+  await service.startRecording(identity, { ...data, recordingConsent: sourceConsent() });
+  assert.equal(bot.mock.calls[0].arguments[2], null);
+  await service.startRecording(identity, { ...data, recordingConsent: sourceConsent() });
+  assert.equal(bot.mock.callCount(), 1);
+});
+
+test('manual add dispatches the existing scheduled bot once under concurrent requests', async t => {
+  setup(t); const data = deferredInput(); await service.create(identity, data);
+  await service.startRecording(identity, { ...data, recordingConsent: sourceConsent() });
+  await Meeting.updateOne({ externalId: data.externalId }, { $set: { scheduledDate: new Date(Date.now() - 60000) } });
+  t.mock.method(nylas, 'getStandaloneNotetakerStatus', async () => ({ data: { state: 'scheduled' } }));
+  const dispatch = t.mock.method(nylas, 'dispatchStandaloneNotetakerNow', async () => {});
+  const results = await Promise.allSettled([1, 2].map(() => service.startRecording(identity, { ...data, joinNow: true, recordingConsent: sourceConsent() })));
+  assert.equal(dispatch.mock.callCount(), 1); assert.ok(results.some(r => r.status === 'fulfilled'));
+  const saved = await Meeting.findOne({ externalId: data.externalId }); assert.equal(saved.notetakerId, 'notetaker'); assert.equal(saved.recordingState, 'joining');
+  t.mock.method(nylas, 'cancelStandaloneNotetaker', async () => {});
+  await service.stopRecording(identity, data);
+  await assert.rejects(service.startRecording(identity, { ...data, joinNow: true, recordingConsent: sourceConsent() }), { code: 'RECORDING_CONSENT_REVOKED' });
 });

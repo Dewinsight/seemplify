@@ -7,6 +7,9 @@ import { alpha } from '@mui/material/styles';
 import api from '@/lib/api';
 import { FlowStep } from './AppraisalFlowEditor';
 import AppraisalNativeCall from './AppraisalNativeCall';
+import CalendarRecordingConsent from '../competency/CalendarRecordingConsent';
+import CalendarAccount from './CalendarAccount';
+import MeetingActions from './MeetingActions';
 
 interface Meeting { _id: string; stepId: string; title: string; mode?: string; scheduledDate: string; startedAt?: string; duration: number; status: string; conferenceUrl?: string; transcript?: string; notes?: string; summary?: string; integration?: { recordingRequested?: boolean; recordingState?: string; recordingUrl?: string; recordingAvailable?: boolean; transcriptionState?: string; summaryState?: string; summaryModel?: string } }
 const getData = async (url: string) => (await api.get(url)).data.data;
@@ -45,6 +48,7 @@ export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canM
     {isLoading && <CircularProgress size={24} aria-label="Loading appraisal meetings" />}
     {loadError && <Alert severity="error" action={<Button onClick={() => mutate()}>Retry</Button>}>Calls could not be loaded.</Alert>}
     {error && <Alert severity="error" sx={{ mb: 2 }} role="alert">{error}</Alert>}
+    {meetings.some(meeting => meeting.mode !== 'in_app') && <CalendarAccount base={base} />}
     {!isLoading && !loadError && !meetings.length && <Stack direction="row" alignItems="center" gap={2} sx={{ py: 2 }}><EventOutlined sx={{ fontSize: 32, color: 'text.secondary' }} /><Box><Typography fontWeight={600} variant="body2">{readOnly ? 'No saved calls' : 'No calls scheduled yet'}</Typography><Typography variant="body2" color="text.secondary">{readOnly ? 'No calls were saved for this appraisal.' : canManage ? 'Choose a calendar meeting or meet directly in this appraisal.' : 'Your reviewer will schedule the call here.'}</Typography></Box></Stack>}
     {meetings.map(meeting => <Accordion key={meeting._id} defaultExpanded={Boolean(oneOnOneId) || meeting.stepId === currentStepId} disableGutters variant="outlined" sx={{ mb: 1.5, '&:before': { display: 'none' }, overflow: 'hidden' }}>
       <AccordionSummary expandIcon={<ExpandMore />} sx={{ px: { xs: 1.5, sm: 2.5 }, '& .MuiAccordionSummary-content': { gap: 1.5, minWidth: 0, my: 2 } }}>
@@ -61,6 +65,8 @@ export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canM
           {meeting.integration?.recordingUrl && <Button component="a" href={meeting.integration.recordingUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">View recording</Button>}
           {meeting.integration?.recordingAvailable && <Button startIcon={<PlayArrowRounded />} disabled={!!busy} onClick={() => run(`play-${meeting._id}`, async () => { const result = await api.get(`${actionBase(meeting)}/native/recording`, { responseType: 'blob' }); setPlayback({ [meeting._id]: URL.createObjectURL(result.data) }); })}>Play saved recording</Button>}
         </Stack>
+        <MeetingActions base={actionBase(meeting)} link={meeting.conferenceUrl} canRemind={!readOnly && canManage && ['scheduled', 'in_progress'].includes(meeting.status) && new Date(meeting.scheduledDate).getTime() + meeting.duration * 60000 > Date.now()} />
+        {!readOnly && meeting.mode !== 'in_app' && meeting.integration?.recordingRequested && <CalendarRecordingConsent callBase={actionBase(meeting)} onUpdated={() => { void mutate(); onUpdated(); }} />}
         {playback[meeting._id] && <Box component="video" controls src={playback[meeting._id]} sx={{ width: '100%', maxHeight: 400, bgcolor: 'grey.900', borderRadius: 2 }} aria-label={oneOnOneId ? 'Saved call recording' : 'Saved appraisal call recording'} />}
         {!readOnly && meeting.mode === 'in_app' && meeting.integration?.recordingAvailable && !meeting.transcript && <Alert severity={meeting.integration.transcriptionState === 'failed' ? 'warning' : 'info'}>Transcript: {(meeting.integration.transcriptionState || 'pending').replaceAll('_', ' ')}. Use Refresh recording and transcript to retry. No speech detected means no transcript or AI notes can be generated.</Alert>}
         {!readOnly && meeting.mode !== 'in_app' && meeting.integration?.recordingRequested && !meeting.transcript && <Typography variant="body2" color="text.secondary">Admit the notetaker when it joins. Media appears after the call ends and Nylas finishes processing. Calendar creation alone does not produce a transcript.</Typography>}

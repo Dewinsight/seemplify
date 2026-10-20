@@ -14,6 +14,6 @@ module.exports = () => {
   };
   router.get('/', route(req => service.current(req.meeting)));
   router.post('/', route((req, actor) => service.acknowledge(req.meeting, actor, req.body || {})));
-  router.post('/start', route((req, actor) => service.start(req.meeting, actor)));
+  router.post('/start', route((req, actor) => service.start(req.meeting, actor, { joinNow: req.body?.joinNow === true })));
   return router;
 };
