@@ -33,6 +33,17 @@ beforeEach(async () => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+test('calendar OAuth starts for the authenticated manager without a Recruiter login and keeps browser proof HttpOnly', async () => {
+  provider.mockResolvedValue({ authUrl: 'https://api.us.nylas.com/v3/connect/auth?state=synthetic', browserProof: 'x'.repeat(43), cookieName: 'pmcal_proof_' + 'y'.repeat(20) });
+  const result = await call('post', '/call-connection/connect').send({ returnPath: '/one-on-ones', identity: { sub: 'other-person' } }).expect(200);
+  expect(provider).toHaveBeenCalledWith('meetings/connectCalendar', expect.objectContaining({ sub: 'manager', organizationId: org.id }), { returnPath: '/one-on-ones', provider: undefined });
+  expect(result.body.data).toEqual({ authUrl: 'https://api.us.nylas.com/v3/connect/auth?state=synthetic' });
+  expect(result.headers['set-cookie'][0]).toContain('HttpOnly');
+  expect(result.headers['set-cookie'][0]).toContain('SameSite=Lax');
+  await call('post', '/call-connection/connect', 'anonymous').send({ returnPath: '/one-on-ones' }).expect(401);
+  await call('post', '/call-connection/connect', 'employee').send({ returnPath: '/one-on-ones' }).expect(403);
+});
+
 async function consentedCalendarFixture() {
   const response = await call('post', '/').send(payload('calendar')).expect(201);
   const meeting = await OneOnOne.findById(response.body.data._id);

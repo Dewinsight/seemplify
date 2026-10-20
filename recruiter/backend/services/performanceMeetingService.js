@@ -49,7 +49,7 @@ async function create(rawIdentity, input) {
   const existing = await PerformanceMeeting.findOne(query);
   if (existing?.eventId) return publicMeeting(existing);
   if (existing) throw failure('Calendar creation is awaiting reconciliation. It will not be repeated, to avoid duplicate invitations.', 'CALENDAR_CREATION_UNCERTAIN');
-  if (!user.nylasGrantId || ['revoked', 'expired', 'invalid', 'stopped'].includes(user.nylasGrantStatus)) throw failure('Connect your own calendar in Recruiter first. Your colleague’s calendar cannot be used.', 'CALENDAR_CONNECTION_REQUIRED');
+  if (!user.nylasGrantId || ['revoked', 'expired', 'invalid', 'stopped'].includes(user.nylasGrantStatus)) throw failure('Connect your own calendar in Performance first. Your colleague’s calendar cannot be used.', 'CALENDAR_CONNECTION_REQUIRED');
   const start = new Date(input.scheduledDate); const duration = Number(input.duration);
   if (!Number.isFinite(+start) || +start <= Date.now() || !Number.isInteger(duration) || duration < 15 || duration > 480) throw failure('Choose a future time and a duration from 15 to 480 minutes.', 'MEETING_DATE_INVALID', 400);
   const link = meetingUrl(input.meetingLink);
@@ -213,4 +213,4 @@ async function cancel(rawIdentity, input) {
   return publicMeeting(record);
 }
 
-module.exports = { connection, create, sync, cancel, startRecording, stopRecording, meetingUrl, boundedTranscript };
+module.exports = { connection, connectCalendar: (...args) => require('./performanceCalendarConnectionService').connect(...args), create, sync, cancel, startRecording, stopRecording, meetingUrl, boundedTranscript };

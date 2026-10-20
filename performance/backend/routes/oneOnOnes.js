@@ -398,6 +398,7 @@ router.get('/call-connection', requireManager, async (req, res) => {
   try { res.json({ success: true, data: await shared.request('meetings/connection', shared.identityFromRequest(req)) }); }
   catch (error) { res.status(error.statusCode || 503).json({ success: false, error: error.message || 'Could not check your calendar connection.' }); }
 });
+router.use('/call-connection', requireManager, require('./calendarConnection')());
 router.use('/:id/call', require('./oneOnOneCalls')({ completeMeeting, onScheduled: scheduleMeetingLifecycle }));
 
 /**

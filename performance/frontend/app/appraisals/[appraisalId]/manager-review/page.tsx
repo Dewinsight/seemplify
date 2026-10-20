@@ -20,6 +20,7 @@ import {
 } from '@mui/icons-material';
 import CustomAssessmentSections, { type CustomAssessmentSectionsHandle } from '@/components/appraisals/CustomAssessmentSections';
 import AppraisalDocuments from '@/components/appraisals/AppraisalDocuments';
+import AppraisalCvEvidence from '@/components/competency/assessment/AppraisalCvEvidence';
 
 interface ManagerReviewData {
   overallSummary: {
@@ -1439,6 +1440,7 @@ export default function ManagerReviewPage() {
         ))}
       </Stepper>
 
+      <AppraisalCvEvidence appraisalId={appraisalId} />
       <AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate}
         readOnly={!isAssignedReviewer && !isHRAdmin} disabled={saving || submitting} onBusyChange={setDocumentsBusy} />
 
