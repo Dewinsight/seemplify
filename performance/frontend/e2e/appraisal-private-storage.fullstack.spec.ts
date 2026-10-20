@@ -1,8 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test as baseTest } from '@playwright/test';
 import { createRequire } from 'node:module';
 import { Writable } from 'node:stream';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
+
+// The backend route captures its storage resolver when first required. Keep
+// these provider substitutes in a dedicated worker rather than inheriting a
+// route loaded by another fullstack file in the shared worker's module cache.
+const test = baseTest.extend<Record<never, never>, { privateStorageWorker: void }>({
+  privateStorageWorker: [async ({ browserName }, use) => {
+    void browserName;
+    await use();
+  }, { scope: 'worker', auto: true }],
+});
 
 // Real UI, FormData, appraisal routes/authorization, Mongo and SDK signing.
 // Cloudinary transport and shared-AI account/incorporation are named substitutes.
