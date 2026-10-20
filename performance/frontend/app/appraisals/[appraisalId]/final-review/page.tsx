@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAppraisal, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
+import LinkedCompetencyAssessmentPanel from '@/components/competency/assessment/LinkedCompetencyAssessmentPanel';
 import {
   Box,
   Typography,
@@ -67,6 +68,7 @@ export default function FinalReviewPage() {
     const [justification, setJustification] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const [blockingAssessmentId, setBlockingAssessmentId] = useState<string | null>(null);
 
     const isAssignedManager = useMemo(() => {
         if (!appraisal || !user) return false;
@@ -285,6 +287,7 @@ export default function FinalReviewPage() {
                             </CardContent>
                         </Card>
 
+                        <LinkedCompetencyAssessmentPanel appraisalId={appraisalId} showCompletionHelp />
                         <Divider sx={{ my: 3 }} />
 
                         <Typography variant="subtitle1" fontWeight={700} gutterBottom>
@@ -332,6 +335,7 @@ export default function FinalReviewPage() {
                                 disabled={!canFinalize || !hasManagerAccess || !evidenceLoaded || submitting || !!scoreError || (overridingEvidence && justification.trim().length < 10)}
                                 onClick={async () => {
                                     setSubmitError(null);
+                                    setBlockingAssessmentId(null);
                                     setSubmitting(true);
                                     try {
                                         await api.post(`/appraisals/${appraisalId}/finalize`, {
@@ -341,8 +345,9 @@ export default function FinalReviewPage() {
                                         mutate();
                                         router.push(`/appraisals/${appraisalId}`);
                                     } catch (e: unknown) {
-                                        const axiosError = e as { response?: { data?: { error?: string } } };
-                                        console.error('Finalize failed', e);
+                                        const axiosError = e as { response?: { data?: { error?: string; code?: string; assessmentId?: string } } };
+                                        const failure = axiosError.response?.data;
+                                        if (failure?.code === 'ROLE_ASSESSMENT_REQUIRED' && /^[a-f0-9]{24}$/i.test(failure.assessmentId || '')) setBlockingAssessmentId(failure.assessmentId!);
                                         setSubmitError(axiosError.response?.data?.error || 'Failed to finalize appraisal');
                                     } finally {
                                         setSubmitting(false);
@@ -355,6 +360,10 @@ export default function FinalReviewPage() {
                         {submitError && (
                             <Alert severity="error" sx={{ mt: 2 }}>
                                 {submitError}
+                                {blockingAssessmentId && <Box sx={{ mt: 1 }}>
+                                    <Button component="a" href={`/competency/assessments/${blockingAssessmentId}`} target="_blank" rel="noopener noreferrer" color="inherit" variant="outlined">Open linked role assessment (new tab)</Button>
+                                    <Typography variant="body2" sx={{ mt: 1 }}>Finalise the assessment with the current reviewer feedback, then return here and complete the appraisal. Your rating and justification stay on this page.</Typography>
+                                </Box>}
                             </Alert>
                         )}
                     </>
