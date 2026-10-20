@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev -p 5300",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start -p 5300",
     "typecheck": "tsc --noEmit --pretty false",
     "test:transition-browser": "node scripts/verifyCandidateBrowserFlow.js",
