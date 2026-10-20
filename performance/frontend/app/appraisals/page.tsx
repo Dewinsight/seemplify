@@ -138,12 +138,12 @@ export default function AppraisalsPage() {
   const teamLoading = conducting ? assignedLoading : selectedTab === 2 ? organizationLoading : directTeamLoading;
   const loadError = conducting ? assignedError : selectedTab === 2 ? organizationError : selectedTab === 1 ? teamError : myError;
   const allVisibleAppraisals: Appraisal[] = selectedTab ? scopedTeamAppraisals : allMyAppraisals;
-  const employeeIdFilter = searchParams.get('employeeId');
+  const employeeIdFilter = searchParams.get('employeeId') || searchParams.get('employee');
   const employeeVisibleAppraisals = allVisibleAppraisals.filter((item) => !employeeIdFilter || item.employee.userId === employeeIdFilter);
   const currentAppraisals = newestAppraisalsFirst(employeeVisibleAppraisals.filter((item) => !isFinishedAppraisal(item.status)));
   const myAppraisals = selectedTab === 0 ? currentAppraisals : [];
   const teamAppraisals = selectedTab > 0 ? currentAppraisals : [];
-  const historyAppraisals = allVisibleAppraisals.filter((item) => isFinishedAppraisal(item.status) && (!searchParams.get('employeeId') || item.employee.userId === searchParams.get('employeeId')));
+  const historyAppraisals = employeeVisibleAppraisals.filter((item) => isFinishedAppraisal(item.status));
 
   // Handle employee filter from query params
   const submittedFlow = searchParams.get('submitted');
