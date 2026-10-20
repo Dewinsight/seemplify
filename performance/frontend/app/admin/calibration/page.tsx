@@ -35,9 +35,9 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 
 export default function CalibrationPage() {
   const { isHRAdmin, isLoading: userLoading } = useUserContext();
-  const { cycles: rawCycles } = useReviewCycles();
+  const { cycles: rawCycles, isLoading: cyclesLoading, isError: cyclesError, mutate: refreshCycles } = useReviewCycles();
   const cycles = rawCycles as CycleSummary[];
-  const { sessions: rawSessions, isLoading, mutate } = useCalibrationSessions();
+  const { sessions: rawSessions, isLoading, isError: sessionsError, mutate } = useCalibrationSessions();
   const sessions = rawSessions as CalibrationSession[];
   
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -53,11 +53,13 @@ export default function CalibrationPage() {
   const [editingReview, setEditingReview] = useState<{ index: number; name: string; originalRating: number } | null>(null);
   const [decisionForm, setDecisionForm] = useState({ rating: '3', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [retryingSessions, setRetryingSessions] = useState(false);
+  const [retryingCycles, setRetryingCycles] = useState(false);
 
-  if (userLoading || isLoading) {
+  if (userLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
-        <CircularProgress />
+        <CircularProgress aria-label="Loading calibration sessions" />
       </Box>
     );
   }
@@ -73,6 +75,7 @@ export default function CalibrationPage() {
   }
 
   const handleCreateSession = async () => {
+    if (cyclesError || cyclesLoading || retryingCycles) return;
     setError('');
     try {
       const cycle = cycles?.find((c: CycleSummary) => c._id === newSession.reviewCycleId);
@@ -86,6 +89,20 @@ export default function CalibrationPage() {
     } catch (error) {
       setError(getApiErrorMessage(error, 'Could not create calibration session.'));
     }
+  };
+
+  const retrySessions = async () => {
+    setRetryingSessions(true);
+    try { await mutate(); }
+    catch { /* The session hook retains the error and existing records. */ }
+    finally { setRetryingSessions(false); }
+  };
+
+  const retryCycles = async () => {
+    setRetryingCycles(true);
+    try { await refreshCycles(); }
+    catch { /* Keep the dialog and its draft available for another retry. */ }
+    finally { setRetryingCycles(false); }
   };
 
   const handleStartSession = async (sessionId: string) => {
@@ -164,6 +181,8 @@ export default function CalibrationPage() {
       </Box>
 
       {error && !dialogOpen && !selectedSession && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+      {isLoading && !sessionsError && <Box sx={{ py: 3 }}><CircularProgress aria-label="Loading calibration sessions" /></Box>}
+      {sessionsError && <Alert severity="error" aria-busy={retryingSessions} sx={{ mb: 2 }} action={<Button color="inherit" disabled={retryingSessions} onClick={() => void retrySessions()}>{retryingSessions ? 'Retrying…' : 'Retry sessions'}</Button>}>Could not load calibration sessions. Try again to see the latest sessions.</Alert>}
 
       {aiInsightsError && (
         <Alert
@@ -181,7 +200,7 @@ export default function CalibrationPage() {
       )}
 
       {/* Summary Cards */}
-      <Grid container spacing={3} mb={4}>
+      {((!sessionsError && !isLoading) || sessions.length > 0) && <Grid container spacing={3} mb={4}>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card>
             <CardContent>
@@ -240,7 +259,7 @@ export default function CalibrationPage() {
             </CardContent>
           </Card>
         </Grid>
-      </Grid>
+      </Grid>}
 
       {/* Active Sessions */}
       {activeSessions.length > 0 && (
@@ -421,17 +440,20 @@ export default function CalibrationPage() {
         </>
       )}
 
-      {sessions?.length === 0 && (
+      {!sessionsError && !isLoading && sessions?.length === 0 && (
         <Alert severity="info">
           No calibration sessions yet. Create one from an active review cycle to start calibrating ratings.
         </Alert>
       )}
 
       {/* Create Session Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Create Calibration Session</DialogTitle>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth aria-labelledby="create-calibration-title">
+        <DialogTitle id="create-calibration-title">Create Calibration Session</DialogTitle>
         <DialogContent>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {cyclesError && <Alert severity="error" aria-busy={retryingCycles} sx={{ mb: 2 }} action={<Button color="inherit" disabled={retryingCycles} onClick={() => void retryCycles()}>{retryingCycles ? 'Retrying…' : 'Retry cycles'}</Button>}>Could not load review cycles. Your session details are still available. Try again before creating a session.</Alert>}
+          {cyclesLoading && <CircularProgress size={24} aria-label="Loading review cycles" />}
+          {!cyclesError && !cyclesLoading && !cycles.some(cycle => cycle.status !== 'closed') && <Alert severity="info" sx={{ mb: 2 }}>No active review cycles are available for calibration.</Alert>}
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
             <TextField
               select
@@ -439,6 +461,7 @@ export default function CalibrationPage() {
               value={newSession.reviewCycleId}
               onChange={(e) => setNewSession({ ...newSession, reviewCycleId: e.target.value })}
               fullWidth
+              disabled={Boolean(cyclesError) || cyclesLoading || retryingCycles}
               SelectProps={{ native: true }}
             >
               <option value="">Select review cycle</option>
@@ -470,7 +493,7 @@ export default function CalibrationPage() {
           <Button 
             onClick={handleCreateSession} 
             variant="contained"
-            disabled={!newSession.reviewCycleId}
+            disabled={!newSession.reviewCycleId || Boolean(cyclesError) || cyclesLoading || retryingCycles}
           >
             Create
           </Button>

@@ -393,6 +393,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
 
   // Upload a document
   const handleUploadFile = async (file: File) => {
+    setError('');
     setIsProcessing(true);
 
     const formData = new FormData();

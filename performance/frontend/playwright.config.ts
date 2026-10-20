@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const port = Number(process.env.PERFORMANCE_E2E_PORT || 5015);
 const baseURL = `http://127.0.0.1:${port}`;
+const productionServer = Boolean(process.env.CI || process.env.PERFORMANCE_E2E_PRODUCTION);
 
 export default defineConfig({
   testDir: './e2e',
@@ -24,10 +25,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npx next dev --webpack -p ${port} -H 127.0.0.1`,
+    command: productionServer ? `npm run build && npx next start -p ${port} -H 127.0.0.1` : `npx next dev --webpack -p ${port} -H 127.0.0.1`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    reuseExistingServer: !process.env.CI && !productionServer,
+    timeout: productionServer ? 180_000 : 120_000,
     env: {
       ...process.env,
       NEXT_PUBLIC_API_URL: `${baseURL}/__mock-api`,
