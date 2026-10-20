@@ -96,6 +96,75 @@ test('ordinary upload persists private snapshot but upload/detail/appraisal JSON
   expect(source.toObject().storageKey).toBe(source.storageKey);
 });
 
+test('manual uploads preserve exact private bytes and evidence requirements without AI; content and delete retain authorization', async () => {
+  await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.enableAiAssist': true, 'settings.requireDocumentUpload': true } });
+  const provider = jest.spyOn(ai, 'analyzeDocument').mockImplementation(() => new Promise(() => {}));
+  const bytes = Buffer.from('Synthetic manual evidence describes completed work without requesting any AI analysis. '.repeat(4));
+  let storedBytes;
+  const upload = jest.spyOn(cloudinary.uploader, 'upload_stream').mockImplementation((options, done) => {
+    const parts = []; return new Writable({ write(chunk, _encoding, callback) { parts.push(chunk); callback(); }, final(callback) {
+      storedBytes = Buffer.concat(parts);
+      done(null, { public_id: options.public_id, resource_type: 'raw', type: 'authenticated', bytes: storedBytes.length }); callback();
+    } });
+  });
+  const selfAssessment = { overallSummary: { achievements: 'Delivered the fictional project with documented evidence.',
+    challenges: 'Resolved the invented dependency through clear planning.', learnings: 'Applied a structured approach to synthetic work.',
+    goals: 'Complete the next fictional milestone with measured evidence.' } };
+  const missing = await call('post', '/self-assessment').send({ assessmentMode: 'form', submit: true, selfAssessment }).expect(400);
+  expect(missing.body.error).toMatch(/evidence document is required/);
+  const uploaded = await call('post', '/documents').field('assessmentMode', 'form').field('visibility', 'employee_manager')
+    .attach('file', bytes, { filename: 'manual-evidence.txt', contentType: 'text/plain' }).expect(201);
+  expect(storedBytes).toEqual(bytes);
+  expect(upload).toHaveBeenCalledTimes(1);
+  const source = await Document.findById(uploaded.body.data._id);
+  expect(source.storageDeliveryType).toBe('authenticated');
+  expect(source.textExtraction).toMatchObject({ status: 'completed', extractedText: bytes.toString('utf8') });
+  expect(source.aiAnalysis.status).toBe('skipped');
+  expect(provider).not.toHaveBeenCalled();
+  expect((await Appraisal.findById(appraisal._id)).documents.map(String)).toEqual([String(source._id)]);
+  for (const key of ['storageKey', 'storageUrl', 'storagePath', 'fileName']) expect(uploaded.body.data[key]).toBeUndefined();
+  const sign = jest.spyOn(cloudinary.utils, 'private_download_url');
+  for (const [who, status] of [['anonymous', 401], ['foreign', 404], ['outsider', 403]]) {
+    await call('get', `/documents/${source._id}/content`, who).expect(status);
+  }
+  expect(sign).not.toHaveBeenCalled();
+  await call('get', `/documents/${source._id}/content`, 'manager').expect(302);
+  expect(sign).toHaveBeenCalledTimes(1);
+  const destroy = jest.spyOn(cloudinary.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
+  await call('delete', `/documents/${source._id}`, 'outsider').expect(403);
+  expect(destroy).not.toHaveBeenCalled();
+  await call('delete', `/documents/${source._id}`).expect(200);
+  expect(destroy).toHaveBeenCalledWith(source.storageKey, expect.objectContaining({ resource_type: 'raw', type: 'authenticated' }));
+  await call('get', `/documents/${source._id}/content`).expect(404);
+  expect((await Appraisal.findById(appraisal._id)).documents).toHaveLength(0);
+  await call('post', '/self-assessment').send({ assessmentMode: 'form', submit: true, selfAssessment }).expect(400);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test('manual mode cannot bypass upload authorization or missing-file checks, and provider failure preserves a safe empty record state', async () => {
+  await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.enableAiAssist': true } });
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  const provider = jest.spyOn(ai, 'analyzeDocument').mockImplementation(() => new Promise(() => {}));
+  const upload = jest.spyOn(cloudinary.uploader, 'upload_stream').mockImplementation((_options, done) => new Writable({
+    write(_chunk, _encoding, callback) { callback(); }, final(callback) { done(new Error('PRIVATE_PROVIDER_FAILURE')); callback(); }
+  }));
+  for (const [who, status] of [['anonymous', 401], ['foreign', 404], ['outsider', 403]]) {
+    await call('post', '/documents', who).field('assessmentMode', 'form')
+      .attach('file', Buffer.from('Synthetic document.'), { filename: 'manual.txt', contentType: 'text/plain' }).expect(status);
+  }
+  await call('post', '/documents').field('assessmentMode', 'form').expect(400);
+  await call('post', '/documents').field('assessmentMode', 'form').field('visibility', 'hr_only')
+    .attach('file', Buffer.from('Synthetic document.'), { filename: 'manual.txt', contentType: 'text/plain' }).expect(403);
+  expect(upload).not.toHaveBeenCalled();
+  const failed = await call('post', '/documents').field('assessmentMode', 'form')
+    .attach('file', Buffer.from('Synthetic document.'), { filename: 'manual.txt', contentType: 'text/plain' }).expect(500);
+  expect(failed.body).toEqual({ success: false, error: 'Failed to upload document' });
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(await Document.countDocuments()).toBe(0);
+  expect((await Appraisal.findById(appraisal._id)).documents).toHaveLength(0);
+  expect(provider).not.toHaveBeenCalled();
+});
+
 test('delete passes captured authenticated type and cannot be repeated by unrelated actors', async () => {
   const source = await document(); appraisal.documents.push(source._id); await appraisal.save();
   const destroy = jest.spyOn(cloudinary.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
@@ -169,4 +238,110 @@ test('generated employee report receives only visible same-parent same-tenant do
     expect(JSON.stringify([context, documents])).not.toContain(source.textExtraction.extractedText);
   }
   expect((await Appraisal.findById(appraisal._id)).documents.map(String)).toEqual(sources.map(source => String(source._id)));
+});
+
+const manualSummary = { achievements: 'Delivered the fictional project with documented evidence.',
+  challenges: 'Resolved an invented delivery dependency through planning.', learnings: 'Applied a structured method to synthetic work.',
+  goals: 'Complete the next fictional milestone with measured evidence.' };
+async function requireSectionEvidence(role) {
+  await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.enableAiAssist': true } });
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: {
+    status: role === 'manager' ? 'manager_review_pending' : 'self_assessment_pending',
+    ...(role === 'manager' ? { 'selfAssessment.submittedAt': new Date() } : {}),
+    cycleConfigurationSnapshot: { workflowDefinition: { version: 1, sections: [{ id: 'proof', title: 'Required proof', type: 'custom',
+      respondent: role, required: true, evidenceRequired: true,
+      questions: [{ id: 'example', prompt: 'Describe the supporting example.', responseType: 'long_text', required: true }] }] } },
+    customResponses: [{ sectionId: 'proof', questionId: 'example', respondentRole: role, respondentId: role,
+      value: 'Synthetic work has a documented supporting example.' }]
+  } });
+}
+function submitAssessment(role) {
+  return role === 'employee'
+    ? call('post', '/self-assessment').send({ assessmentMode: 'form', submit: true, selfAssessment: { overallSummary: manualSummary, overallSelfRating: 4 } })
+    : call('post', '/manager-review', 'manager').send({ assessmentMode: 'form', submit: true, managerReview: { overallManagerRating: 4 } });
+}
+const hiddenEvidenceCases = ['private', 'deleted', 'foreign', 'wrong-parent', 'stale'];
+test.each(['employee', 'manager'].flatMap(role => hiddenEvidenceCases.map(kind => [role, kind])))(
+  '%s required evidence rejects %s documents in custom and assessment submission without AI or reference changes', async (role, kind) => {
+    await requireSectionEvidence(role);
+    const source = kind === 'stale' ? { _id: new mongoose.Types.ObjectId() } : await document({
+      visibility: kind === 'private' ? role === 'employee' ? 'hr_only' : 'employee_only' : 'employee_manager',
+      ...(kind === 'deleted' ? { status: 'deleted' } : {}),
+      ...(kind === 'foreign' ? { organizationId: 'foreign-org' } : {}),
+      ...(kind === 'wrong-parent' ? { appraisalId: new mongoose.Types.ObjectId() } : {})
+    });
+    await Appraisal.updateOne({ _id: appraisal._id }, { $set: { documents: [source._id] } });
+    const analyze = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+    const bias = jest.spyOn(ai, 'checkForBias').mockResolvedValue({});
+    const custom = await call('put', '/custom-responses', role).send({ respondentRole: role, submit: true, responses: [] }).expect(400);
+    expect(custom.body.missingQuestions).toContain('Required proof: attach supporting evidence');
+    const result = await submitAssessment(role).expect(400);
+    expect(result.body.missingQuestions).toContain('Required proof: attach supporting evidence');
+    if (role === 'employee') {
+      const conversation = await call('post', '/conversation/finalize-report').send({ report: { overallSummary: manualSummary, overallSelfRating: 4 } }).expect(400);
+      expect(conversation.body.missingQuestions).toContain('Required proof: attach supporting evidence');
+    }
+    const stored = await Appraisal.findById(appraisal._id);
+    expect(stored.documents.map(String)).toEqual([String(source._id)]);
+    expect(stored.customResponses[0].submittedAt).toBeUndefined();
+    expect(stored.managerReview.submittedAt).toBeUndefined();
+    if (role === 'employee') expect(stored.selfAssessment.submittedAt).toBeUndefined();
+    expect(analyze).not.toHaveBeenCalled(); expect(bias).not.toHaveBeenCalled();
+  }
+);
+
+test.each(['employee', 'manager'])('%s can submit with shared evidence while every hidden document reference stays stored', async role => {
+  await requireSectionEvidence(role);
+  const sources = await mixedDocuments();
+  const originalIds = sources.map(source => String(source._id));
+  const analyze = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+  const bias = jest.spyOn(ai, 'checkForBias').mockResolvedValue({});
+  await call('put', '/custom-responses', role).send({ respondentRole: role, submit: true, responses: [] }).expect(200);
+  await submitAssessment(role).expect(200);
+  const stored = await Appraisal.findById(appraisal._id);
+  expect(stored.documents.map(String)).toEqual(originalIds);
+  expect(stored.customResponses[0].submittedAt).toBeInstanceOf(Date);
+  expect(role === 'employee' ? stored.selfAssessment.submittedAt : stored.managerReview.submittedAt).toBeInstanceOf(Date);
+  expect(analyze).not.toHaveBeenCalled(); expect(bias).not.toHaveBeenCalled();
+});
+
+test('conversation submission accepts shared evidence without dropping hidden references', async () => {
+  await requireSectionEvidence('employee');
+  const sources = await mixedDocuments();
+  const analyze = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+  await call('post', '/conversation/finalize-report').send({ report: { overallSummary: manualSummary, overallSelfRating: 4 } }).expect(200);
+  const stored = await Appraisal.findById(appraisal._id);
+  expect(stored.selfAssessment.submittedAt).toBeInstanceOf(Date);
+  expect(stored.documents.map(String)).toEqual(sources.map(source => String(source._id)));
+  expect(analyze).toHaveBeenCalledTimes(1);
+});
+
+test.each(['/self-assessment', '/conversation/finalize-report'])('%s requires a visible real document for the global upload rule', async endpoint => {
+  await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.requireDocumentUpload': true } });
+  const hidden = await document({ visibility: 'hr_only' });
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { documents: [hidden._id] } });
+  const payload = endpoint === '/self-assessment'
+    ? { assessmentMode: 'form', submit: true, selfAssessment: { overallSummary: manualSummary, overallSelfRating: 4 } }
+    : { report: { overallSummary: manualSummary, overallSelfRating: 4 } };
+  const rejected = await call('post', endpoint).send(payload).expect(400);
+  expect(rejected.body.error).toMatch(/evidence document is required/);
+  const shared = await document({ visibility: 'employee_manager' });
+  await Appraisal.updateOne({ _id: appraisal._id }, { $push: { documents: shared._id } });
+  await call('post', endpoint).send(payload).expect(200);
+  expect((await Appraisal.findById(appraisal._id)).documents.map(String)).toEqual([String(hidden._id), String(shared._id)]);
+});
+
+test('assessment actor and tenant authorization precede document requirement lookups', async () => {
+  await requireSectionEvidence('employee');
+  const source = await document({ visibility: 'employee_manager' });
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { documents: [source._id] } });
+  const find = jest.spyOn(Document, 'find');
+  const analyze = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+  for (const [who, status] of [['outsider', 403], ['foreign', 404]]) {
+    await call('put', '/custom-responses', who).send({ respondentRole: 'employee', submit: true, responses: [] }).expect(status);
+    await call('post', '/self-assessment', who).send({ submit: true, selfAssessment: { overallSummary: manualSummary } }).expect(status);
+    await call('post', '/conversation/finalize-report', who).send({ report: { overallSummary: manualSummary } }).expect(status);
+    await call('post', '/manager-review', who).send({ submit: true, managerReview: {} }).expect(status);
+  }
+  expect(find).not.toHaveBeenCalled(); expect(analyze).not.toHaveBeenCalled();
 });

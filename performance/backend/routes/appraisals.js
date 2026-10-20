@@ -228,6 +228,18 @@ function visibleAppraisalDocuments(req, appraisal, viewer) {
   return (appraisal.documents || []).filter(document => canViewAppraisalDocument(req, appraisal, document, viewer));
 }
 
+async function appraisalForEvidenceValidation(req, appraisal, viewer = {}) {
+  const documentIds = (appraisal.documents || []).map(document => String(document?._id || document)).filter(looksLikeObjectId);
+  const organizationId = String(resolveOrganizationId(req) || '');
+  const documents = documentIds.length ? await AppraisalDocument.find({
+    _id: { $in: documentIds }, appraisalId: appraisal._id, organizationId, status: { $ne: 'deleted' }
+  }).select('_id appraisalId organizationId status visibility').lean() : [];
+  const access = { isEmployee: isAppraisalEmployee(req, appraisal), canManage: false, isHR: req.userRole === 'hr_admin', ...viewer };
+  // Validate a copy: hidden and stale references must not satisfy evidence
+  // requirements, and filtering must never remove them from the saved record.
+  return { ...toPlainObject(appraisal), documents: documents.filter(document => canViewAppraisalDocument(req, appraisal, document, access)) };
+}
+
 function requesterEmployeeIdentityFilters(req) {
   const { userIds, userEmail } = getRequesterIdentity(req);
   const filters = userIds.map((id) => ({ 'employee.userId': id }));
@@ -2924,7 +2936,8 @@ router.put('/:appraisalId/custom-responses', requireAuth, async (req, res) => {
     }
 
     if (req.body?.submit) {
-      const missing = missingRequiredCustomResponses(appraisal, respondentRole);
+      const evidenceAppraisal = await appraisalForEvidenceValidation(req, appraisal, { isEmployee, canManage });
+      const missing = missingRequiredCustomResponses(evidenceAppraisal, respondentRole);
       if (missing.length > 0) {
         return res.status(400).json({
           success: false,
@@ -3368,7 +3381,8 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
 
     const normalizedSummary = normalizeSelfAssessmentSummary(selfAssessment.overallSummary || {});
     if (submit) {
-      const missingCustomResponses = missingRequiredCustomResponses(appraisal, 'employee');
+      const evidenceAppraisal = await appraisalForEvidenceValidation(req, appraisal);
+      const missingCustomResponses = missingRequiredCustomResponses(evidenceAppraisal, 'employee');
       if (missingCustomResponses.length > 0) {
         return res.status(400).json({
           success: false,
@@ -3384,7 +3398,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
           missingSections
         });
       }
-      if (appraisal.cycleId?.settings?.requireDocumentUpload && (!appraisal.documents || appraisal.documents.length === 0)) {
+      if (appraisal.cycleId?.settings?.requireDocumentUpload && evidenceAppraisal.documents.length === 0) {
         return res.status(400).json({ success: false, error: 'At least one evidence document is required for this cycle' });
       }
       if (appraisal.cycleId?.settings?.requireOkrAlignment && (!appraisal.goalSnapshots || appraisal.goalSnapshots.length === 0)) {
@@ -3590,7 +3604,8 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
     };
 
     if (submit) {
-      const missingCustomResponses = missingRequiredCustomResponses(appraisal, 'manager');
+      const evidenceAppraisal = await appraisalForEvidenceValidation(req, appraisal, { canManage });
+      const missingCustomResponses = missingRequiredCustomResponses(evidenceAppraisal, 'manager');
       if (missingCustomResponses.length > 0) {
         return res.status(400).json({
           success: false,
@@ -3936,8 +3951,8 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
           wordCount: extraction.wordCount
         };
 
-        // Manual evidence remains available when appraisal AI is disabled.
-        const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
+        // Manual uploads keep extraction/storage without optional AI analysis.
+        const aiAssistEnabled = req.body.assessmentMode !== 'form' && await isAiAssistEnabledForAppraisal(appraisal);
         if (!aiAssistEnabled) document.aiAnalysis.status = 'skipped';
 
         // Trigger AI analysis
@@ -5885,13 +5900,18 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
         data: cycleQuestionResponseData(appraisal)
       });
     }
-    const missingCustomResponses = missingRequiredCustomResponses(appraisal, 'employee');
+    const evidenceAppraisal = await appraisalForEvidenceValidation(req, appraisal);
+    const missingCustomResponses = missingRequiredCustomResponses(evidenceAppraisal, 'employee');
     if (missingCustomResponses.length > 0) {
       return res.status(400).json({
         success: false,
         error: `Complete the required cycle questions before submitting: ${missingCustomResponses.join('; ')}`,
         missingQuestions: missingCustomResponses
       });
+    }
+
+    if (appraisal.cycleId?.settings?.requireDocumentUpload && evidenceAppraisal.documents.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one evidence document is required for this cycle' });
     }
 
     // Employee must provide their own self-rating. AI rating is stored separately.

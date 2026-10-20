@@ -26,6 +26,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import ConversationalAssessment from './conversational/ConversationalAssessment';
 import ChatGptConversationGate from './conversational/ChatGptConversationGate';
 import CustomAssessmentSections, { type CustomAssessmentSectionsHandle } from '@/components/appraisals/CustomAssessmentSections';
+import AppraisalDocuments from '@/components/appraisals/AppraisalDocuments';
 
 type ManualSelfAssessmentForm = {
   overallSummary: {
@@ -119,6 +120,7 @@ export default function SelfAssessmentPage() {
     okrAssessment: []
   });
   const [saving, setSaving] = useState(false);
+  const [documentsBusy, setDocumentsBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const customSectionsRef = useRef<CustomAssessmentSectionsHandle>(null);
   const draftBaseline = useRef<AppraisalDraftBaseline<ManualSelfAssessmentForm> | null>(null);
@@ -351,6 +353,9 @@ export default function SelfAssessmentPage() {
               This appraisal uses a manual assessment form. Complete and submit your self-assessment here; a ChatGPT connection is not required.
             </Alert>
 
+            <AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate}
+              disabled={saving || submitting} onBusyChange={setDocumentsBusy} />
+
             <Card sx={{ mb: 3 }}>
               <CardContent>
                 <Typography variant="h6" fontWeight={700} gutterBottom>
@@ -564,7 +569,7 @@ export default function SelfAssessmentPage() {
                 variant="outlined"
                 startIcon={saving ? <CircularProgress size={16} /> : <Save />}
                 onClick={() => persistManualAssessment(false)}
-                disabled={saving || submitting}
+                disabled={saving || submitting || documentsBusy}
               >
                 Save Draft
               </Button>
@@ -573,7 +578,7 @@ export default function SelfAssessmentPage() {
                 color="success"
                 startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <Send />}
                 onClick={() => persistManualAssessment(true)}
-                disabled={saving || submitting}
+                disabled={saving || submitting || documentsBusy}
               >
                 Submit Self-Assessment
               </Button>

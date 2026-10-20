@@ -19,6 +19,7 @@ import {
   PieChart, Calculate, SmartToy
 } from '@mui/icons-material';
 import CustomAssessmentSections, { type CustomAssessmentSectionsHandle } from '@/components/appraisals/CustomAssessmentSections';
+import AppraisalDocuments from '@/components/appraisals/AppraisalDocuments';
 
 interface ManagerReviewData {
   overallSummary: {
@@ -120,6 +121,7 @@ export default function ManagerReviewPage() {
 
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [documentsBusy, setDocumentsBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAssist, setAiAssist] = useState<any>(null);
@@ -1350,7 +1352,7 @@ export default function ManagerReviewPage() {
           variant="outlined"
           startIcon={saving ? <CircularProgress size={16} /> : <Save />}
           onClick={() => handleSave()}
-          disabled={saving || submitting}
+          disabled={saving || submitting || documentsBusy}
         >
           Save Progress
         </Button>
@@ -1395,6 +1397,9 @@ export default function ManagerReviewPage() {
         ))}
       </Stepper>
 
+      <AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate}
+        readOnly={!isAssignedReviewer && !isHRAdmin} disabled={saving || submitting} onBusyChange={setDocumentsBusy} />
+
       {/* Content */}
       <Paper sx={{ p: 4, mb: 3 }}>
         {activeStep === 0 && renderSelfAssessmentReview()}
@@ -1420,7 +1425,7 @@ export default function ManagerReviewPage() {
           variant="outlined"
           startIcon={<ArrowBack />}
           onClick={() => setActiveStep(prev => prev - 1)}
-          disabled={activeStep === 0 || saving || submitting}
+          disabled={activeStep === 0 || saving || submitting || documentsBusy}
         >
           Previous
         </Button>
@@ -1429,7 +1434,7 @@ export default function ManagerReviewPage() {
           <Button
             variant="contained"
             endIcon={<ArrowForward />}
-            disabled={saving || submitting}
+            disabled={saving || submitting || documentsBusy}
             onClick={async () => {
               const saved = await handleSave(false);
               if (saved) {
@@ -1445,7 +1450,7 @@ export default function ManagerReviewPage() {
             color="success"
             startIcon={submitting ? <CircularProgress size={16} /> : <Send />}
             onClick={handleSubmit}
-            disabled={saving || submitting}
+            disabled={saving || submitting || documentsBusy}
           >
             Submit Review
           </Button>

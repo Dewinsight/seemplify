@@ -45,9 +45,11 @@ async function setLive(cycle, enabled) {
 const read = async (id, actor = 'reviewer') => (await call('get', `/${id}`, actor).expect(200)).body.data;
 const rawSnapshot = async id => (await Appraisal.collection.findOne({ _id: id })).cycleConfigurationSnapshot;
 function neverCompleteDocumentAnalysis() { return jest.spyOn(ai, 'analyzeDocument').mockImplementation(() => new Promise(() => {})); }
-async function upload(id) {
+async function upload(id, assessmentMode) {
   const text = 'Synthetic work evidence for a fictional performance exercise. '.repeat(5);
-  return call('post', `/${id}/documents`, 'employee').attach('file', Buffer.from(text), { filename: 'synthetic-ai-policy.txt', contentType: 'text/plain' }).expect(201);
+  const pending = call('post', `/${id}/documents`, 'employee');
+  if (assessmentMode) pending.field('assessmentMode', assessmentMode);
+  return pending.attach('file', Buffer.from(text), { filename: 'synthetic-ai-policy.txt', contentType: 'text/plain' }).expect(201);
 }
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
@@ -122,6 +124,20 @@ test.each([[true, false], [false, true], [true, true]])('ordinary manual upload 
   }
   expect((await Appraisal.findById(appraisal._id)).documents.map(String)).toContain(String(document._id));
   expect(await rawSnapshot(appraisal._id)).toEqual(original);
+});
+
+test('explicit manual document upload retains extracted evidence and frozen cycle policy without dispatching optional AI', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle, 'employee', 'conversation'), original = await rawSnapshot(appraisal._id);
+  const provider = neverCompleteDocumentAnalysis();
+  const uploaded = await upload(appraisal._id, 'form');
+  const stored = await Document.findById(uploaded.body.data._id).lean();
+  expect(stored.textExtraction.status).toBe('completed');
+  expect(stored.textExtraction.extractedText).toContain('Synthetic work evidence');
+  expect(stored.aiAnalysis.status).toBe('skipped');
+  expect(stored.aiAnalysis.analyzedAt).toBeUndefined();
+  expect((await Appraisal.findById(appraisal._id)).documents.map(String)).toContain(String(stored._id));
+  expect(await rawSnapshot(appraisal._id)).toEqual(original);
+  expect(provider).not.toHaveBeenCalled();
 });
 
 test('turning live AI off denies scoped provider endpoints and conversation while keeping ordinary chat available', async () => {
