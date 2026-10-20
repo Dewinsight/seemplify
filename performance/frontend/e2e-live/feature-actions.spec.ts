@@ -121,6 +121,34 @@ test('employee sends feedback from the real colleague picker', async ({ page }) 
   await expect(page.getByText(message, { exact: true })).toBeVisible();
 });
 
+for (const actor of ['hr_manager', 'department_head', 'team_lead']) {
+  test(`${actor} exact-email feedback selection persists the intended recipient despite unrelated direct reports`, async ({ page, request }) => {
+    const roster = await api(request, actor, 'GET', 'user/my-team-members');
+    expect(roster.directReports.length).toBeGreaterThan(1);
+    expect(roster.directReports.some((person: { email: string }) => person.email !== 'employee@example.test')).toBeTruthy();
+    await login(page, actor, '/feedback');
+    await page.getByRole('button', { name: 'Give feedback', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Give feedback' });
+    const recipient = dialog.getByRole('combobox', { name: /Recipient/ });
+    await recipient.fill('employee@example.test');
+    await expect(page.getByRole('option')).toHaveCount(1);
+    await expect(page.getByRole('option')).toContainText('Acceptance employee');
+    await recipient.press('ArrowDown');
+    await recipient.press('Enter');
+    await expect(recipient).toHaveValue('Acceptance employee');
+    const message = `Exact-email recipient proof ${actor} ${Date.now()}`;
+    await dialog.getByRole('textbox', { name: /^Feedback/ }).fill(message);
+    const sentRequest = page.waitForRequest(req => req.method() === 'POST' && new URL(req.url()).pathname === '/api/feedback');
+    await dialog.getByRole('button', { name: 'Send feedback', exact: true }).click();
+    expect((await sentRequest).postDataJSON().receiverId).toBe('acceptance-employee');
+    await expect(dialog).not.toBeVisible();
+    const received = await api(request, 'employee', 'GET', 'feedback');
+    expect(received.find((item: { message: string; content?: string }) => item.message === message || item.content === message)).toMatchObject({
+      receiverId: 'acceptance-employee', senderId: `acceptance-${actor}`,
+    });
+  });
+}
+
 test('manager creates a support plan and employee acknowledges the HR-reviewed plan', async ({ page }) => {
   await login(page, 'manager', '/support-plans');
   await page.getByRole('button', { name: 'New support plan', exact: true }).click();

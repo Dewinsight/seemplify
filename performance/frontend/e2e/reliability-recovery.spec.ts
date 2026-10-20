@@ -37,6 +37,48 @@ function heldResponse(data: unknown) {
   return { state, hold, release };
 }
 
+test('feedback recipient queries exclude unrelated reports and editing or clearing removes the old selection', async ({ page }) => {
+  await install(page);
+  const target = { id: 'target-colleague', name: 'Target Colleague', email: 'target@example.test' };
+  const unrelated = { id: 'unrelated-report', name: 'Another Report', email: 'another@example.test' };
+  const aliasMatch = { id: 'directory-alias', name: 'Directory Colleague', email: 'directory@example.test' };
+  await page.route('**/__mock-api/user/my-team-members', route => route.fulfill({ json: {
+    success: true, data: { isManager: true, directReports: [unrelated, target] },
+  } }));
+  await page.route('**/__mock-api/user/search?*', route => {
+    const query = new URL(route.request().url()).searchParams.get('q')?.toLowerCase();
+    const data = query === target.email ? [target] : query === 'directory-alias' ? [aliasMatch] : [];
+    return route.fulfill({ json: { success: true, data } });
+  });
+  await page.goto('/feedback');
+  await page.getByRole('button', { name: 'Give feedback', exact: true }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Give feedback' });
+  const recipient = dialog.getByRole('combobox', { name: /Recipient/ });
+  const send = dialog.getByRole('button', { name: 'Send feedback', exact: true });
+  await dialog.getByRole('textbox', { name: /^Feedback/ }).fill('A synthetic feedback draft retained across recipient searches.');
+  await recipient.fill('TARGET@EXAMPLE.TEST');
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await expect(page.getByRole('option')).toContainText('Target Colleague');
+  await recipient.press('ArrowDown');
+  await recipient.press('Enter');
+  await expect(send).toBeEnabled();
+  await recipient.fill('nobody@example.test');
+  await expect(send).toBeDisabled();
+  await expect(page.getByRole('option')).toHaveCount(0);
+  await expect(page.getByText('No people found', { exact: true })).toBeVisible();
+  // Trust the current server query even when it matched an undisplayed alias.
+  await recipient.fill('directory-alias');
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await page.getByRole('option', { name: /Directory Colleague/ }).click();
+  await expect(send).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(recipient).toHaveValue('');
+  await expect(send).toBeDisabled();
+  await recipient.fill('z');
+  await expect(page.getByRole('option')).toHaveCount(0);
+  await expect(dialog.getByRole('textbox', { name: /^Feedback/ })).toHaveValue('A synthetic feedback draft retained across recipient searches.');
+});
+
 test('recognition search failure preserves the draft and supports an explicit pending retry', async ({ page }, info) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const search = heldResponse([{ id: 'synthetic-colleague', name: 'Synthetic Colleague' }]);

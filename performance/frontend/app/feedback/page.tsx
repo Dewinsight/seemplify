@@ -122,7 +122,8 @@ export default function FeedbackPage() {
   const [open, setOpen] = useState(false);
   const [recipient, setRecipient] = useState<PersonOption | null>(null);
   const [search, setSearch] = useState('');
-  const { users: searchResults, isLoading: searchLoading } = useUserSearch(search);
+  const searchQuery = search.trim();
+  const { users: searchResults, isLoading: searchLoading } = useUserSearch(searchQuery);
   const [type, setType] = useState<FeedbackType>('praise');
   const [visibility, setVisibility] = useState('private');
   const [contextType, setContextType] = useState('general');
@@ -148,13 +149,22 @@ export default function FeedbackPage() {
 
   const suggestions = useMemo(() => {
     const byId = new Map<string, PersonOption>();
-    [...(directReports || []), ...(searchResults || [])].forEach((entry: any) => {
+    const query = searchQuery.toLocaleLowerCase();
+    (directReports || []).forEach((entry: any) => {
+      const person = personFrom(entry);
+      if (person && !currentUserIds.has(person.id)
+        && (!query || [person.name, person.email].some(value => value?.toLocaleLowerCase().includes(query)))) {
+        byId.set(person.id, person);
+      }
+    });
+    // Server results belong to this SWR query and may match directory aliases
+    // that are not present in the displayed name/email.
+    (searchQuery.length >= 2 ? searchResults || [] : []).forEach((entry: any) => {
       const person = personFrom(entry);
       if (person && !currentUserIds.has(person.id)) byId.set(person.id, person);
     });
-    if (recipient) byId.set(recipient.id, recipient);
     return [...byId.values()];
-  }, [currentUserIds, directReports, recipient, searchResults]);
+  }, [currentUserIds, directReports, searchQuery, searchResults]);
 
   const activeAppraisals = useMemo<AppraisalOption[]>(() => {
     const currentOrganizationId = normalizeId(organization);
@@ -493,8 +503,16 @@ export default function FeedbackPage() {
               options={suggestions}
               value={recipient}
               inputValue={search}
-              onInputChange={(_, value) => setSearch(value)}
-              onChange={(_, value) => setRecipient(value)}
+              onInputChange={(_, value, reason) => {
+                if (reason === 'input' || reason === 'clear') {
+                  setSearch(value);
+                  setRecipient(null);
+                }
+              }}
+              onChange={(_, value) => {
+                setRecipient(value);
+                setSearch(value?.name || value?.email || '');
+              }}
               getOptionLabel={(option) => option.name || option.email || ''}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               filterOptions={(options) => options}
