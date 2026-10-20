@@ -309,6 +309,10 @@ function subjectLaunchArgs(homeDir, codexScript = resolveCodexScript()) {
     '--config', 'web_search="disabled"',
     '--config', 'shell_environment_policy.inherit="none"',
     '--config', 'history.persistence="none"',
+    // These are isolated API sessions, not project checkouts. Avoid loading
+    // ambient repository instructions (and the CLI's namespace-based reader)
+    // while retaining the deny-by-default filesystem and network profile.
+    '--config', 'project_doc_max_bytes=0',
     // Without a file credential store the CLI uses the OS keychain, which is
     // machine-wide: every subject on this host would share one ChatGPT login.
     '--config', 'cli_auth_credentials_store="file"',

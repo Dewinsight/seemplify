@@ -47,6 +47,7 @@ function updateMarker(patch) {
 const requiredLaunchConfig = [
   'cli_auth_credentials_store="file"',
   'history.persistence="none"',
+  'project_doc_max_bytes=0',
   'shell_environment_policy.inherit="none"',
   'default_permissions="seemplify-read-only"',
   'permissions.seemplify-read-only.network.enabled=false'

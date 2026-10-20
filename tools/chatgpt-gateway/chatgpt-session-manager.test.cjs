@@ -268,6 +268,7 @@ test('the launch contract carries every credential and sandbox guarantee', () =>
   assert.ok(args.includes('default_permissions="seemplify-read-only"'));
   assert.ok(args.includes('permissions.seemplify-read-only.network.enabled=false'));
   assert.ok(args.includes('history.persistence="none"'));
+  assert.ok(args.includes('project_doc_max_bytes=0'), 'API sessions must not discover ambient project instructions');
   assert.ok(args.includes('shell_environment_policy.inherit="none"'));
   const filesystem = args.find((entry) => entry.startsWith('permissions.seemplify-read-only.filesystem='));
   assert.ok(filesystem.includes('":root"="deny"'));
