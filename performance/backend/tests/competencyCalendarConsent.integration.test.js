@@ -169,3 +169,17 @@ test('CA-112 PDF text preserves oral occurrence, time zone, actual submitter, pa
   for (const expected of ['Session date:', '2026-10-18T14:25:00.000Z', 'Europe/London', 'Synthetic participant sentinel', 'Synthetic assessor sentinel', 'revision 3', 'Submitted by:', 'Actual submitter sentinel', '2026-10-19T11:30:00.000Z', 'Internal framework sentinel', 'version 7', 'Complete native criterion definition sentinel']) expect(parsed.text).toContain(expected);
   expect(parsed.text).not.toContain('opaque-reference-sentinel');
 });
+
+
+test('active call accepts each participant permission and supports a bounded manual add', async () => {
+  const meeting = await fixture({ scheduledDate: new Date(Date.now() - 60000) }), transport = provider();
+  expect(service.status(meeting, 'employee').canAcknowledge).toBe(true);
+  await service.acknowledge(meeting, 'manager', acceptance());
+  const accepted = await service.acknowledge(meeting, 'employee', acceptance());
+  expect(transport).toHaveBeenCalledTimes(1); expect(service.status(accepted, 'manager').canAddNow).toBe(true);
+  await service.start(meeting, 'manager', { joinNow: true });
+  expect(transport.mock.calls.at(-1)[2].joinNow).toBe(true);
+  await expect(service.start(meeting, 'hr-admin', { joinNow: true })).rejects.toMatchObject({ statusCode: 403 });
+  await OneOnOne.updateOne({ _id: meeting._id }, { $set: { scheduledDate: new Date(Date.now() - 31 * 60000) } });
+  await expect(service.start(meeting, 'manager', { joinNow: true })).rejects.toMatchObject({ code: 'RECORDING_CONSENT_REQUIRED' });
+});

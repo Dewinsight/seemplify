@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 interface CalendarStatus {
   connected: boolean;
   provider?: string;
+  email?: string;
   status?: string;
   verified?: boolean;
   error?: string;
@@ -75,6 +76,7 @@ export default function CalendarSettingsPage() {
       
       setCalendarStatus({
         connected: verification.calendarConnected,
+        email: verification.grantInfo?.email,
         provider: normalizeProviderId(verification.grantInfo?.provider || 'google'),
         status: verification.valid ? 'active' : verification.status,
         verified: verification.valid,
@@ -134,9 +136,10 @@ export default function CalendarSettingsPage() {
           
           // Check connection status
           const verification = await grantService.verifyGrantStatus();
-          if (verification.valid && verification.calendarConnected) {
+          if (!forceAccountSelection && verification.valid && verification.calendarConnected) {
             setCalendarStatus({
               connected: true,
+              email: verification.grantInfo?.email,
               provider: normalizeProviderId(verification.grantInfo?.provider || provider),
               status: 'active',
               verified: true
@@ -174,7 +177,7 @@ export default function CalendarSettingsPage() {
   };
 
   const handleDisconnectCalendar = async () => {
-    if (!confirm('Are you sure you want to disconnect your calendar? This will cancel all scheduled interviews.')) {
+    if (!confirm('Are you sure you want to disconnect your calendar? This removes your shared Recruiter and Performance calendar connection and cancels scheduled Recruiter interviews. Existing Performance invitations remain on their original calendar and may need to be removed there.')) {
       return;
     }
     
@@ -327,7 +330,8 @@ export default function CalendarSettingsPage() {
               <Alert className="border-green-200 bg-green-50">
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 <AlertDescription className="text-green-800">
-                  Your calendar is connected and ready for interview scheduling.
+                  Your personal calendar is connected for Recruiter and Performance invitations.
+                  {calendarStatus.email && <span className="block font-medium break-all mt-1">{calendarStatus.email}</span>}
                   {calendarStatus.lastConnected && (
                     <span className="block text-sm mt-1">
                       Last connected: {new Date(calendarStatus.lastConnected).toLocaleString()}
@@ -336,12 +340,13 @@ export default function CalendarSettingsPage() {
                 </AlertDescription>
               </Alert>
               
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="min-h-11" disabled={connecting || switchingAccount} onClick={handleSwitchAccountWithGuidance}>{switchingAccount ? 'Switching account…' : 'Use another email account'}</Button>
                 <Button
                   onClick={() => handleConnectCalendar(normalizeProviderId(calendarStatus.provider), false)}
                   variant="outline"
                   size="sm"
-                  disabled={connecting}
+                  disabled={connecting || switchingAccount}
                 >
                   {connecting ? (
                     <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -353,6 +358,7 @@ export default function CalendarSettingsPage() {
                 
                 <Button
                   onClick={handleDisconnectCalendar}
+                  disabled={connecting || switchingAccount}
                   variant="outline"
                   size="sm"
                   className="text-red-600 hover:text-red-700"
@@ -376,7 +382,7 @@ export default function CalendarSettingsPage() {
                 <div className="flex gap-2">
                   <Button
                     onClick={() => handleConnectCalendar('google')}
-                    disabled={connecting}
+                    disabled={connecting || switchingAccount}
                     className="flex items-center gap-2"
                   >
                     {connecting ? (

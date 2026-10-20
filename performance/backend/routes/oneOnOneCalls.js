@@ -20,6 +20,11 @@ module.exports = ({ completeMeeting, onScheduled }) => {
     next();
   });
   router.get('/', (req, res) => res.json({ success: true, data: [calls.publicMeeting(req.meeting)] }));
+  router.get('/connection', wrap(async (req, res) => res.json({ success: true, data: await shared.request('meetings/connection', shared.identityFromRequest(req)) })));
+  router.post('/reminder', wrap(async (req, res) => {
+    if (!req.oneOnOneAccess.isManager && !req.oneOnOneAccess.isHrAdmin) return res.status(403).json({ error: 'Only the organizer or HR can send a reminder.' });
+    res.status(202).json({ success: true, data: await require('../services/meetingReminderService').queue(req.meeting, shared.identityFromRequest(req).sub) });
+  }));
   router.use('/recording-consent', require('./calendarRecordingConsent')());
   router.use('/native', require('./appraisalNativeCalls')(calls.publicMeeting));
   router.post('/retry', wrap(async (req, res) => {

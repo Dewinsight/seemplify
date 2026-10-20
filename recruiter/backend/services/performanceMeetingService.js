@@ -26,7 +26,15 @@ async function credentials(accountId) {
 }
 async function connection(identity) {
   const { user } = await principal(identity);
-  return { connected: Boolean(user.nylasGrantId && !['revoked', 'expired', 'invalid', 'stopped'].includes(user.nylasGrantStatus)), email: user.email, authority: 'recruiter', connectUrl: `${process.env.FRONTEND_URL || 'https://app.seemplifyai.com'}/settings/calendar` };
+  const result = { connected: false, email: null, provider: null, authority: 'recruiter', connectUrl: `${process.env.FRONTEND_URL || 'https://app.seemplifyai.com'}/settings/calendar` };
+  if (!user.nylasGrantId || ['revoked', 'expired', 'invalid', 'stopped', 'reauth_pending'].includes(user.nylasGrantStatus)) return result;
+  try {
+    const grant = (await nylas.getNylasInstance(await credentials(user.nylasAccountId)).grants.find({ grantId: user.nylasGrantId })).data;
+    return { ...result, connected: Boolean(grant?.email && ['valid', 'active'].includes(grant.grantStatus || grant.grant_status)), email: grant?.email || null, provider: grant?.provider || null };
+  } catch (error) {
+    if ([401, 404].includes(error.statusCode || error.status)) return result;
+    throw failure('Your calendar connection could not be verified. Please retry.', 'CALENDAR_VERIFICATION_UNAVAILABLE', 503);
+  }
 }
 function key(identity, input) {
   if (!/^[a-f0-9]{24}$/i.test(String(input.externalId || ''))) throw failure('A valid meeting reference is required.', 'MEETING_REFERENCE_INVALID', 400);
@@ -92,15 +100,35 @@ async function startRecording(rawIdentity, input) {
   const record = await PerformanceMeeting.findOne(query);
   if (!record) throw failure('Meeting not found.', 'MEETING_NOT_FOUND', 404);
   if (record.recordingPolicyVersion !== 'calendar-recording-v1') throw failure('Older meetings cannot acquire retrospective recording consent. Schedule a new call.', 'LEGACY_RECORDING_UNVERIFIED');
-  if (record.state !== 'scheduled' || +record.scheduledDate <= Date.now()) throw failure('Only a future open meeting can schedule recording.', 'RECORDING_WINDOW_CLOSED');
+  const active = +record.scheduledDate <= Date.now();
+  if (record.state !== 'scheduled' || +record.scheduledDate + record.duration * 60000 <= Date.now()) throw failure('The scheduled recording window has ended. Schedule a new call.', 'RECORDING_WINDOW_CLOSED');
+  if (input.joinNow && !active) throw failure('The notetaker can join now once the scheduled call starts.', 'RECORDING_WINDOW_CLOSED');
   const consent = input.recordingConsent;
   const accepted = [consent?.manager, consent?.employee];
   if (consent?.noticeVersion !== record.recordingPolicyVersion || accepted.some(p => !p?.userId || p.recording !== true || p.transcription !== true || !p.acceptedAt || p.revokedAt || !Number.isFinite(+new Date(p.acceptedAt)) || +new Date(p.acceptedAt) > Date.now()) || new Set(accepted.map(p => p.userId)).size !== 2 || accepted.some((p, index) => record.participantSubjects[index] !== p.userId)) throw failure('Both participants must consent to recording and transcription.', 'RECORDING_CONSENT_REQUIRED');
-  if (record.notetakerId) return publicMeeting(record);
+  if (record.recordingState === 'revoked') throw failure('Recording permission was withdrawn.', 'RECORDING_CONSENT_REVOKED');
+  if (record.notetakerId) {
+    if (!input.joinNow || record.recordingState !== 'scheduled') return publicMeeting(record);
+    const accountCredentials = await credentials(record.accountId);
+    const status = await nylas.getStandaloneNotetakerStatus(record.notetakerId, accountCredentials);
+    const state = String(status.data?.state || status.state || status.status || '');
+    if (!['scheduled', 'pending'].includes(state)) throw failure('The existing notetaker has already started or finished. Refresh recording and transcript to check its status.', 'RECORDING_ALREADY_DISPATCHED');
+    const dispatch = await PerformanceMeeting.findOneAndUpdate({ ...query, recordingState: 'scheduled', notetakerId: record.notetakerId }, { $set: { recordingState: 'dispatching' } }, { new: true });
+    if (!dispatch) throw failure('The notetaker is already being updated. Refresh its status.', 'RECORDING_IN_PROGRESS');
+    try {
+      await nylas.dispatchStandaloneNotetakerNow(record.notetakerId, accountCredentials, { name: 'Seemplify meeting notes' });
+      const saved = await PerformanceMeeting.findOneAndUpdate({ ...query, recordingState: 'dispatching' }, { $set: { recordingState: 'joining' } }, { new: true });
+      if (!saved) { await stopRecording(rawIdentity, input); throw failure('Recording permission was withdrawn.', 'RECORDING_CONSENT_REVOKED'); }
+      return publicMeeting(saved);
+    } catch (error) {
+      await PerformanceMeeting.updateOne({ ...query, recordingState: 'dispatching' }, { $set: { recordingState: 'uncertain' } });
+      throw failure('The existing notetaker could not be confirmed. Refresh recording status before trying again.', 'RECORDING_DISPATCH_UNCERTAIN', 502);
+    }
+  }
   const lease = await PerformanceMeeting.findOneAndUpdate({ ...query, state: 'scheduled', recordingState: 'awaiting_consent', notetakerId: { $exists: false } }, { $set: { recordingState: 'scheduling' } }, { new: true });
   if (!lease) throw failure('Recording creation is awaiting confirmation. It will not be repeated automatically.', 'RECORDING_CREATION_UNCERTAIN');
   try {
-    const bot = await nylas.createStandaloneNotetaker(record.conferenceUrl, { name: 'Seemplify meeting notes', audioRecording: true, videoRecording: true, transcription: true, summary: false }, record.scheduledDate, await credentials(record.accountId));
+    const bot = await nylas.createStandaloneNotetaker(record.conferenceUrl, { name: 'Seemplify meeting notes', audioRecording: true, videoRecording: true, transcription: true, summary: false }, active ? null : record.scheduledDate, await credentials(record.accountId));
     if (!bot.notetakerId) throw new Error('Recording provider did not confirm a reference');
     const saved = await PerformanceMeeting.findOneAndUpdate({ ...query, recordingState: 'scheduling' }, { $set: { notetakerId: bot.notetakerId, recordingState: 'scheduled' } }, { new: true });
     // A withdrawal can arrive while the external provider is responding.

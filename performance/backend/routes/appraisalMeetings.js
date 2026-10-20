@@ -64,6 +64,13 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
   });
   router.use('/:meetingId/recording-consent', require('./calendarRecordingConsent')());
   router.use('/:meetingId/native', require('./appraisalNativeCalls')(publicMeeting));
+  router.post('/:meetingId/reminder', async (req, res) => {
+    try {
+      if (!req.canManageMeeting) return res.status(403).json({ error: 'Only the reviewer or HR can send a reminder.' });
+      if (['completed', 'employee_acknowledged', 'cancelled'].includes(req.appraisal.status)) return res.status(409).json({ error: 'This appraisal is closed.' });
+      return res.status(202).json({ success: true, data: await require('../services/meetingReminderService').queue(req.meeting, shared.identityFromRequest(req).sub) });
+    } catch (error) { return errorResponse(res, error); }
+  });
   router.post('/:meetingId/sync', async (req, res) => {
     try {
       const meeting = req.meeting;

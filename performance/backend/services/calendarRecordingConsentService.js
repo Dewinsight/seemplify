@@ -4,6 +4,7 @@ const shared = require('./sharedAIAccountService');
 const NOTICE = 'calendar-recording-v1';
 const error = (message, code, statusCode = 409) => Object.assign(new Error(message), { code, statusCode });
 const closed = meeting => ['completed', 'cancelled', 'no_show', 'rescheduled'].includes(meeting.status);
+const windowOpen = meeting => !closed(meeting) && Number.isFinite(+meeting.scheduledDate) && +meeting.scheduledDate + Number(meeting.duration) * 60000 > Date.now();
 const roleFor = (meeting, actorId) => String(meeting.managerId) === actorId ? 'manager' : String(meeting.employeeId) === actorId ? 'employee' : null;
 const valid = (person, id) => person?.userId === String(id) && person.acceptedAt && !person.revokedAt;
 const both = meeting => valid(meeting.appraisalMeeting?.calendarConsent?.manager, meeting.managerId) && valid(meeting.appraisalMeeting?.calendarConsent?.employee, meeting.employeeId);
@@ -15,12 +16,14 @@ function status(meeting, actorId) {
   const supported = call.recordingPolicyVersion === NOTICE;
   const consent = call.calendarConsent || {};
   const revoked = Boolean(consent.manager?.revokedAt || consent.employee?.revokedAt);
-  const eligible = required && supported && !closed(meeting) && +meeting.scheduledDate > Date.now();
+  const eligible = required && supported && windowOpen(meeting);
   const person = key => ({ acceptedAt: consent[key]?.acceptedAt || null, revokedAt: consent[key]?.revokedAt || null });
   return { required, noticeVersion: NOTICE, ownRole, manager: person('manager'), employee: person('employee'),
     state: !required ? 'not_requested' : !supported ? 'legacy_unverified' : revoked ? 'revoked' : call.recordingState || 'awaiting_consent',
     canAcknowledge: Boolean(ownRole && eligible && !revoked && !call.recordingConsent && !consent[ownRole]?.acceptedAt),
     canStart: Boolean(ownRole && eligible && !revoked && both(meeting) && !call.recordingConsent),
+    canAddNow: Boolean(ownRole && eligible && !revoked && both(meeting) && +meeting.scheduledDate <= Date.now() && ['awaiting_consent', 'scheduled'].includes(call.recordingState)),
+    windowClosed: required && !windowOpen(meeting),
     canWithdraw: Boolean(ownRole && supported && consent[ownRole]?.acceptedAt && !consent[ownRole]?.revokedAt),
     cancellationPending: Boolean(call.recordingCancellationPending) };
 }
@@ -29,26 +32,26 @@ async function current(meeting) {
   if (!fresh) throw error('Meeting not found.', 'MEETING_NOT_FOUND', 404);
   return fresh;
 }
-async function start(meeting, actorId) {
+async function start(meeting, actorId, { joinNow = false } = {}) {
   const fresh = await current(meeting);
   if (!roleFor(fresh, actorId)) throw error('Only the two participants can authorize recording.', 'RECORDING_PARTICIPANT_REQUIRED', 403);
   const info = status(fresh, actorId);
-  if (info.state === 'scheduled' && both(fresh)) return fresh;
-  if (!info.canStart || !fresh.nylas?.eventId) throw error('Both participants must agree before the future meeting starts.', 'RECORDING_CONSENT_REQUIRED');
+  if (info.state === 'scheduled' && both(fresh) && !joinNow) return fresh;
+  if (!(joinNow ? info.canAddNow : info.canStart) || !fresh.nylas?.eventId) throw error('Both participants must agree while this meeting is still open.', 'RECORDING_CONSENT_REQUIRED');
   const consent = { noticeVersion: NOTICE, manager: fresh.appraisalMeeting.calendarConsent.manager, employee: fresh.appraisalMeeting.calendarConsent.employee };
   let result;
-  try { result = await shared.request('meetings/startRecording', fresh.appraisalMeeting.ownerIdentity, { externalId: String(fresh._id), recordingConsent: consent }, { timeoutMs: 90000 }); }
+  try { result = await shared.request('meetings/startRecording', fresh.appraisalMeeting.ownerIdentity, { externalId: String(fresh._id), recordingConsent: consent, ...(joinNow ? { joinNow: true } : {}) }, { timeoutMs: 90000 }); }
   catch (failure) {
     await OneOnOne.updateOne({ _id: fresh._id, organizationId: fresh.organizationId, 'appraisalMeeting.recordingConsent': { $exists: false }, 'appraisalMeeting.calendarConsent.manager.revokedAt': { $exists: false }, 'appraisalMeeting.calendarConsent.employee.revokedAt': { $exists: false } }, { $set: { 'appraisalMeeting.recordingState': 'uncertain' } });
     throw failure;
   }
-  if (result.recordingState !== 'scheduled') throw error('The provider has not confirmed recording. Consent may have been withdrawn.', 'RECORDING_CONSENT_REVOKED');
+  if (!['scheduled', 'joining', 'attending', 'in_progress'].includes(result.recordingState)) throw error('The provider has not confirmed recording. Refresh the recording status before retrying.', 'RECORDING_NOT_CONFIRMED');
   const saved = await OneOnOne.findOneAndUpdate({ _id: fresh._id, organizationId: fresh.organizationId,
     status: { $nin: ['completed', 'cancelled', 'no_show', 'rescheduled'] },
     'appraisalMeeting.calendarConsent.manager.revokedAt': { $exists: false }, 'appraisalMeeting.calendarConsent.employee.revokedAt': { $exists: false } },
   { $set: { 'appraisalMeeting.recordingState': result.recordingState,
     'appraisalMeeting.recordingConsent': { ...consent, authorizedAt: new Date() } } }, { new: true });
-  if (!saved || result.recordingState !== 'scheduled') {
+  if (!saved) {
     await shared.request('meetings/stopRecording', fresh.appraisalMeeting.ownerIdentity, { externalId: String(fresh._id) });
     throw error('Recording consent changed. The recording request was cancelled.', 'RECORDING_CONSENT_REVOKED');
   }
@@ -76,7 +79,7 @@ async function acknowledge(meeting, actorId, input) {
   const info = status(fresh, actorId);
   if (info.state === 'scheduled' && both(fresh)) return fresh;
   if (!info.canAcknowledge && !valid(fresh.appraisalMeeting.calendarConsent?.[role], actorId)) throw error('This recording request is closed or consent was withdrawn. Schedule a new call.', 'RECORDING_WINDOW_CLOSED');
-  if (closed(fresh) || +fresh.scheduledDate <= Date.now()) throw error('Recording consent must be given before the meeting starts.', 'RECORDING_WINDOW_CLOSED');
+  if (!windowOpen(fresh)) throw error('The scheduled recording window has ended. Schedule a new call to record another discussion.', 'RECORDING_WINDOW_CLOSED');
   await OneOnOne.updateOne({ _id: fresh._id, organizationId: fresh.organizationId,
     'appraisalMeeting.recordingConsent': { $exists: false },
     [`appraisalMeeting.calendarConsent.${role}.acceptedAt`]: { $exists: false },
