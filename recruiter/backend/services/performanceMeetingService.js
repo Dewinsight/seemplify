@@ -55,9 +55,11 @@ async function create(rawIdentity, input) {
   const link = meetingUrl(input.meetingLink);
   const participants = Array.isArray(input.participants) ? input.participants : [];
   if (participants.length < 1 || participants.length > 2 || participants.some(p => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(p.email || '')))) throw failure('Choose the appraisal participants.', 'MEETING_PARTICIPANTS_INVALID', 400);
-  const deferred = input.recordingPolicyVersion === 'calendar-recording-v1';
+  const automatic = input.recordingPolicyVersion === 'calendar-notetaker-v2' && input.record === true;
+  const deferred = input.recordingPolicyVersion === 'calendar-recording-v1' || automatic;
   const subjects = Array.isArray(input.participantSubjects) ? input.participantSubjects.map(String) : [];
-  if (deferred && (input.record || subjects.length !== 2 || new Set(subjects).size !== 2 || subjects.some(s => !s || s.length > 240))) throw failure('Two distinct recording participants are required.', 'RECORDING_PARTICIPANTS_INVALID', 400);
+  if (deferred && ((!automatic && input.record) || subjects.length !== 2 || new Set(subjects).size !== 2 || subjects.some(s => !s || s.length > 240))) throw failure('Two distinct recording participants are required.', 'RECORDING_PARTICIPANTS_INVALID', 400);
+  if (automatic && !subjects.includes(identity.sub)) throw failure('The calendar owner must be a meeting participant.', 'RECORDING_PARTICIPANTS_INVALID', 400);
   const accountCredentials = await credentials(user.nylasAccountId);
   const client = nylas.getNylasInstance(accountCredentials);
   const grant = await client.grants.find({ grantId: user.nylasGrantId });
@@ -71,7 +73,7 @@ async function create(rawIdentity, input) {
   try {
     const event = await client.events.create({ identifier: record.grantId, queryParams: { calendarId: calendar.id, notifyParticipants: true }, requestBody: {
       title: String(input.title || 'Performance one-on-one').slice(0, 300),
-      description: `Performance review one-on-one. ${deferred ? 'Recording is requested but remains off until both participants agree in Seemplify before the call starts. A visible Seemplify notetaker will then request to join.' : input.record ? 'A visible Seemplify notetaker will request to join to record and transcribe this call. Please inform all participants and obtain their consent before admitting it.' : 'Recording is off.'}${link ? `\nJoin: ${link}` : ''}`,
+      description: `Performance review one-on-one. ${automatic ? 'A visible Seemplify notetaker will join to record and transcribe this call for its meeting record.' : deferred ? 'Recording is requested but remains off until both participants agree in Seemplify before the call starts. A visible Seemplify notetaker will then request to join.' : input.record ? 'A visible Seemplify notetaker will request to join to record and transcribe this call. Please inform all participants and obtain their consent before admitting it.' : 'Recording is off.'}${link ? `\nJoin: ${link}` : ''}`,
       when: { startTime: Math.floor(+start / 1000), endTime: Math.floor(+start / 1000) + duration * 60 },
       participants: participants.map(p => ({ email: p.email, name: String(p.name || p.email).slice(0, 160) })),
       metadata: { seemplify_performance_meeting: record.externalId },
@@ -79,9 +81,13 @@ async function create(rawIdentity, input) {
     } });
     record.eventId = event.data.id;
     record.conferenceUrl = meetingUrl(link || event.data.conferencing?.details?.url || event.data.conferencing?.details?.meetingUrl);
-    record.state = 'scheduled'; record.recordingState = deferred ? 'awaiting_consent' : input.record ? 'scheduling' : 'not_requested';
+    record.state = 'scheduled'; record.recordingState = automatic ? 'awaiting_start' : deferred ? 'awaiting_consent' : input.record ? 'scheduling' : 'not_requested';
     await record.save();
   } catch { record.state = 'uncertain'; await record.save(); throw failure('The calendar provider did not confirm creation. Check your calendar before trying again.', 'CALENDAR_CREATION_UNCERTAIN', 502); }
+  if (automatic) {
+    try { return await startRecording(rawIdentity, { externalId: record.externalId, recordingAuthorization: { policyVersion: 'calendar-notetaker-v2', requestedBy: identity.sub, requestedAt: new Date() } }); }
+    catch { return publicMeeting(await PerformanceMeeting.findById(record._id)); }
+  }
   if (input.record && record.conferenceUrl) {
     try {
       const bot = await nylas.createStandaloneNotetaker(record.conferenceUrl, { name: 'Seemplify meeting notes', audioRecording: true, videoRecording: true, transcription: true, summary: false }, start, accountCredentials);
@@ -93,19 +99,22 @@ async function create(rawIdentity, input) {
 }
 
 // The service-authenticated Performance application supplies acknowledgements
-// captured from each participant's own session, never an organizer proxy.
+// for legacy calls. Current calls use an explicit system-policy authorization.
 async function startRecording(rawIdentity, input) {
   const { identity } = await principal(rawIdentity);
   const query = key(identity, input);
   const record = await PerformanceMeeting.findOne(query);
   if (!record) throw failure('Meeting not found.', 'MEETING_NOT_FOUND', 404);
-  if (record.recordingPolicyVersion !== 'calendar-recording-v1') throw failure('Older meetings cannot acquire retrospective recording consent. Schedule a new call.', 'LEGACY_RECORDING_UNVERIFIED');
+  const authorization = input.recordingAuthorization;
+  const automatic = authorization?.policyVersion === 'calendar-notetaker-v2';
+  if (!automatic && record.recordingPolicyVersion !== 'calendar-recording-v1') throw failure('Older meetings cannot acquire retrospective recording consent. Schedule a new call.', 'LEGACY_RECORDING_UNVERIFIED');
   const active = +record.scheduledDate <= Date.now();
   if (record.state !== 'scheduled' || +record.scheduledDate + record.duration * 60000 <= Date.now()) throw failure('The scheduled recording window has ended. Schedule a new call.', 'RECORDING_WINDOW_CLOSED');
   if (input.joinNow && !active) throw failure('The notetaker can join now once the scheduled call starts.', 'RECORDING_WINDOW_CLOSED');
   const consent = input.recordingConsent;
   const accepted = [consent?.manager, consent?.employee];
-  if (consent?.noticeVersion !== record.recordingPolicyVersion || accepted.some(p => !p?.userId || p.recording !== true || p.transcription !== true || !p.acceptedAt || p.revokedAt || !Number.isFinite(+new Date(p.acceptedAt)) || +new Date(p.acceptedAt) > Date.now()) || new Set(accepted.map(p => p.userId)).size !== 2 || accepted.some((p, index) => record.participantSubjects[index] !== p.userId)) throw failure('Both participants must consent to recording and transcription.', 'RECORDING_CONSENT_REQUIRED');
+  if (!automatic && (consent?.noticeVersion !== record.recordingPolicyVersion || accepted.some(p => !p?.userId || p.recording !== true || p.transcription !== true || !p.acceptedAt || p.revokedAt || !Number.isFinite(+new Date(p.acceptedAt)) || +new Date(p.acceptedAt) > Date.now()) || new Set(accepted.map(p => p.userId)).size !== 2 || accepted.some((p, index) => record.participantSubjects[index] !== p.userId))) throw failure('Both participants must consent to recording and transcription.', 'RECORDING_CONSENT_REQUIRED');
+  if (automatic && (!['calendar-recording-v1', 'calendar-notetaker-v2'].includes(record.recordingPolicyVersion) || record.participantSubjects.length !== 2 || !record.participantSubjects.includes(authorization.requestedBy) || !Number.isFinite(+new Date(authorization.requestedAt)) || +new Date(authorization.requestedAt) > Date.now())) throw failure('A valid meeting recording request is required.', 'RECORDING_AUTHORIZATION_INVALID', 400);
   if (record.recordingState === 'revoked') throw failure('Recording permission was withdrawn.', 'RECORDING_CONSENT_REVOKED');
   if (record.notetakerId) {
     if (!input.joinNow || record.recordingState !== 'scheduled') return publicMeeting(record);
@@ -125,7 +134,7 @@ async function startRecording(rawIdentity, input) {
       throw failure('The existing notetaker could not be confirmed. Refresh recording status before trying again.', 'RECORDING_DISPATCH_UNCERTAIN', 502);
     }
   }
-  const lease = await PerformanceMeeting.findOneAndUpdate({ ...query, state: 'scheduled', recordingState: 'awaiting_consent', notetakerId: { $exists: false } }, { $set: { recordingState: 'scheduling' } }, { new: true });
+  const lease = await PerformanceMeeting.findOneAndUpdate({ ...query, state: 'scheduled', recordingState: { $in: ['awaiting_consent', 'awaiting_start'] }, notetakerId: { $exists: false } }, { $set: { recordingState: 'scheduling', ...(automatic ? { recordingPolicyVersion: 'calendar-notetaker-v2', recordingAuthorization: authorization } : {}) } }, { new: true });
   if (!lease) throw failure('Recording creation is awaiting confirmation. It will not be repeated automatically.', 'RECORDING_CREATION_UNCERTAIN');
   try {
     const bot = await nylas.createStandaloneNotetaker(record.conferenceUrl, { name: 'Seemplify meeting notes', audioRecording: true, videoRecording: true, transcription: true, summary: false }, active ? null : record.scheduledDate, await credentials(record.accountId));

@@ -13,6 +13,7 @@ const schema = new mongoose.Schema({
   notetakerId: String,
   recordingState: String,
   recordingPolicyVersion: String,
+  recordingAuthorization: mongoose.Schema.Types.Mixed,
   participantSubjects: [String],
   recordingCancellationUncertain: Boolean,
   scheduledDate: Date,

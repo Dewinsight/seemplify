@@ -8,7 +8,7 @@ const windowOpen = meeting => !closed(meeting) && Number.isFinite(+meeting.sched
 const roleFor = (meeting, actorId) => String(meeting.managerId) === actorId ? 'manager' : String(meeting.employeeId) === actorId ? 'employee' : null;
 const valid = (person, id) => person?.userId === String(id) && person.acceptedAt && !person.revokedAt;
 const both = meeting => valid(meeting.appraisalMeeting?.calendarConsent?.manager, meeting.managerId) && valid(meeting.appraisalMeeting?.calendarConsent?.employee, meeting.employeeId);
-function initial(mode, recordingRequested) { return mode === 'calendar' && recordingRequested ? { recordingPolicyVersion: NOTICE, calendarConsent: {} } : {}; }
+function initial(mode, recordingRequested) { return mode === 'calendar' && recordingRequested ? { recordingPolicyVersion: 'calendar-notetaker-v2' } : {}; }
 function status(meeting, actorId) {
   const call = meeting.appraisalMeeting || {};
   const ownRole = roleFor(meeting, actorId);

@@ -14,7 +14,7 @@ afterEach(() => jest.restoreAllMocks());
 afterAll(async () => { await mongoose.disconnect(); await mongo.stop(); });
 const acceptance = () => ({ noticeVersion: service.NOTICE, acknowledged: true, recording: true, transcription: true });
 async function fixture(extra = {}) {
-  return OneOnOne.create({ organizationId: 'org-a', managerId: 'manager', employeeId: 'employee', managerInfo: { name: 'Synthetic manager', email: 'manager@example.test' }, employeeInfo: { name: 'Synthetic employee', email: 'employee@example.test' }, scheduledDate: new Date(Date.now() + 3600000), duration: 30, title: 'Synthetic consent test', nylas: { eventId: 'event', conferenceUrl: 'https://meet.google.com/aaa-bbbb-ccc' }, appraisalMeeting: { source: 'one_on_one', mode: 'calendar', recordingRequested: true, ownerIdentity: { sub: 'manager', email: 'manager@example.test', organizationId: 'org-a' }, ...service.initial('calendar', true) }, ...extra });
+  return OneOnOne.create({ organizationId: 'org-a', managerId: 'manager', employeeId: 'employee', managerInfo: { name: 'Synthetic manager', email: 'manager@example.test' }, employeeInfo: { name: 'Synthetic employee', email: 'employee@example.test' }, scheduledDate: new Date(Date.now() + 3600000), duration: 30, title: 'Synthetic consent test', nylas: { eventId: 'event', conferenceUrl: 'https://meet.google.com/aaa-bbbb-ccc' }, appraisalMeeting: { source: 'one_on_one', mode: 'calendar', recordingRequested: true, ownerIdentity: { sub: 'manager', email: 'manager@example.test', organizationId: 'org-a' }, recordingPolicyVersion: service.NOTICE, calendarConsent: {} }, ...extra });
 }
 function provider() { return jest.spyOn(shared, 'request').mockImplementation(async operation => ({ recordingState: operation.endsWith('stopRecording') ? 'revoked' : 'scheduled' })); }
 test('CA-103 future calendar creation defers the bot and sends only bounded participant identities', async () => {
@@ -74,11 +74,12 @@ test('CA-103 consent routes bind authenticated subject and selected organization
   const app = express(); app.use(express.json());
   app.use((req, _res, next) => { req.meeting = meeting; req.session = { user: { sub: req.headers['x-test-user'] || 'employee', email: 'employee@example.test' }, currentOrganizationId: req.headers['x-test-org'] || 'org-a' }; next(); });
   app.use('/consent', require('../routes/calendarRecordingConsent')());
-  await request(app).post('/consent').set('x-test-user', 'hr-admin').send(acceptance()).expect(403);
+  await request(app).post('/consent/start').set('x-test-user', 'hr-admin').send({}).expect(403);
   await request(app).get('/consent').set('x-test-org', 'org-b').expect(404);
-  const result = await request(app).post('/consent').send(acceptance()).expect(200);
+  await request(app).post('/consent').send(acceptance()).expect(410);
+  const result = await request(app).get('/consent').expect(200);
   expect(result.body.data.ownRole).toBe('employee');
-  expect(result.body.data.employee.acceptedAt).toBeTruthy(); expect(result.body.data.manager.acceptedAt).toBeNull();
+  expect(result.body.data.canAcknowledge).toBe(false);
 });
 test('CA-103 source recording consent alone never grants assessment-purpose processing', async () => {
   const meeting = await fixture(); provider();
