@@ -319,11 +319,10 @@ export default function ChatInterface({
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Allow the same file to be selected again even if its upload fails.
+    e.currentTarget.value = '';
     if (file) {
       await onUploadFile(file);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     }
   };
 

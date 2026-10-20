@@ -104,12 +104,15 @@ test('private attachment recovers upload failure, persists through reload and do
   const file = { name: 'synthetic-private-evidence.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic attachment bytes. No real employee data.\n') };
   await page.locator('input[type="file"]').setInputFiles(file);
   await expect(page.getByRole('alert').filter({ hasText: 'Failed to upload document' }).first()).toBeVisible();
+  await expect(page.locator('input[type="file"]')).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Attach a document to this self-assessment', exact: true })).toBeEnabled();
   await expect(draft).toHaveValue(typed); expect(await Document.countDocuments()).toBe(0); expect(uploaded).toHaveLength(0);
   await expect(page.getByText(/uploaded and analyzed/)).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('private-attachment-failed.png'), fullPage: true });
   failUpload = false;
   await page.locator('input[type="file"]').setInputFiles(file);
   await expect(page.getByText(`Document "${file.name}" uploaded and analyzed`, { exact: true })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Failed to upload document' })).toHaveCount(0);
   await expect(page.getByText(`Document uploaded: ${file.name}`, { exact: true })).toBeVisible();
   expect(uploads).toHaveLength(2); expect(uploads.every(upload => /multipart\/form-data; boundary=/.test(upload.contentType))).toBe(true);
   expect(uploaded).toHaveLength(1); expect(uploaded[0].bytes).toEqual(file.buffer);
