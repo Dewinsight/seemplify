@@ -4,9 +4,8 @@ const Observation = require('../models/PerformanceNotetakerObservation');
 const Account = require('../models/NylasAccount');
 const shared = require('./aiRuntime/sharedIdentityService');
 const nylas = require('./nylasV3Service');
+const normalize = require('./performanceNotetakerState');
 const fail = (message, statusCode = 503) => Object.assign(new Error(message), { statusCode });
-const permittedStates = new Set(['scheduled', 'pending', 'connecting', 'joining', 'attending', 'in_progress', 'disconnected', 'failed_entry', 'complete', 'completed', 'processing', 'cancelled', 'error', 'failed']);
-const permittedReasons = new Set(['waiting_for_entry', 'entry_denied', 'admission_timeout', 'sign_in_required', 'meeting_capacity_reached', 'bad_meeting_code', 'bad_meeting_link', 'cannot_join', 'recording_active', 'meeting_ended', 'no_participants', 'no_activity', 'kicked', 'api_request', 'cancelled', 'network_error', 'no_response', 'error', 'internal_error', 'unknown']);
 async function status(rawIdentity, input = {}) {
   const { identity } = await shared.resolveSharedPrincipal(rawIdentity);
   if (!identity.organizationId || !/^[a-f0-9]{24}$/i.test(String(input.externalId || ''))) throw fail('A valid meeting is required.', 400);
@@ -26,8 +25,15 @@ async function status(rawIdentity, input = {}) {
   if (!meeting.notetakerId) return result;
   const response = await nylas.getStandaloneNotetakerStatus(meeting.notetakerId, credentials);
   const data = response.data || response;
-  const state = permittedStates.has(data.state || data.status) ? data.state || data.status : 'unknown';
-  const meetingState = permittedReasons.has(data.meeting_state || data.meetingState) ? data.meeting_state || data.meetingState : 'unknown';
+  const { state, meetingState: directReason } = normalize.normalize(data);
+  let providerEvents = prior?.providerEvents || [], historyCheckedAt = prior?.historyCheckedAt;
+  if (!historyCheckedAt || prior?.state !== state || Date.now() - +historyCheckedAt >= 30000) {
+    try { providerEvents = normalize.history(await nylas.getStandaloneNotetakerHistory(meeting.notetakerId, credentials)); historyCheckedAt = new Date(); }
+    catch { /* Keep available status and cached history when history is temporarily unavailable. */ }
+  }
+  const mediaPhase = ['available', 'processing', 'media_error', 'media_deleted', 'complete', 'completed'].includes(state);
+  const historyReason = [...providerEvents].reverse().find(event => (event.state === state || (mediaPhase && event.state === 'disconnected')) && !['unknown', 'worker_finished'].includes(event.meetingState));
+  const meetingState = directReason !== 'unknown' ? directReason : historyReason?.meetingState || 'unknown';
   // A stop/cancel racing provider I/O must not republish recording information.
   if (!await Meeting.exists({ ...key, recordingState: { $ne: 'revoked' }, state: { $ne: 'cancelled' } })) return { ...result, state: 'revoked', events: [] };
   const now = new Date();
@@ -37,14 +43,16 @@ async function status(rawIdentity, input = {}) {
   const changed = await Observation.findOneAndUpdate({ ...key, $or: [{ state: { $ne: state } }, { meetingState: { $ne: meetingState } }] }, { $set: { state, meetingState, lastCheckedAt: now }, $push: { events: { $each: [{ state, meetingState, observedAt: now }], $slice: -30 } } }, { new: true });
   if (changed) current = changed;
   else await Observation.updateOne(key, { $set: { lastCheckedAt: now } });
+  if (historyCheckedAt) await Observation.updateOne(key, { $set: { providerEvents, historyCheckedAt } });
   let media;
-  const mediaExpected = meetingState === 'meeting_ended' || ['disconnected', 'complete', 'completed', 'processing'].includes(state);
+  const mediaExpected = meetingState === 'meeting_ended' || ['disconnected', 'complete', 'completed', 'processing', 'available'].includes(state);
   if (mediaExpected) {
     try { media = await nylas.getStandaloneNotetakerMedia(meeting.notetakerId, credentials); } catch { /* Still processing. */ }
   }
   if (!await Meeting.exists({ ...key, recordingState: { $ne: 'revoked' }, state: { $ne: 'cancelled' } })) return { ...result, state: 'revoked', events: [] };
-  return { ...result, state, meetingState, checkedAt: now, events: current.events,
-    transcriptState: media?.transcript?.url ? 'available' : mediaExpected ? 'processing' : 'after_call',
+  const events = providerEvents.length ? [...providerEvents, ...(providerEvents.at(-1).state !== state ? [{ state, meetingState, observedAt: now }] : [])] : current.events;
+  return { ...result, state, meetingState, checkedAt: now, events,
+    transcriptState: media?.transcript?.url ? 'available' : state === 'media_deleted' ? 'expired' : state === 'media_error' ? 'failed' : mediaExpected ? 'processing' : 'after_call',
     recordingAvailable: Boolean(media?.recording?.url || media?.video?.url || media?.audio?.url) };
 }
 async function retry(rawIdentity, input = {}) {

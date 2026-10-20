@@ -1174,6 +1174,16 @@ class NylasV3Service {
     }
   }
 
+  async getStandaloneNotetakerHistory(notetakerId, accountCredentials = null) {
+    const response = await fetch(`${accountCredentials?.apiUri || this.apiUri}/v3/notetakers/${encodeURIComponent(notetakerId)}/history`, {
+      headers: { Authorization: `Bearer ${accountCredentials?.apiKey || this.apiKey}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok) throw Object.assign(new Error('Notetaker history is unavailable.'), { statusCode: response.status });
+    const result = await response.json();
+    return result.data?.events || [];
+  }
+
   async dispatchStandaloneNotetakerNow(notetakerId, accountCredentials = null, options = {}) {
     try {
       const apiKey = accountCredentials?.apiKey || this.apiKey;

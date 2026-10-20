@@ -125,6 +125,30 @@ test('a confirmed failed bot has a manual retry and unknown provider failures st
   await expect(page.getByRole('button', { name: 'Retry bot join', exact: true })).toHaveCount(0);
 });
 
+test('completed calls show provider history and saved transcripts without a stale lobby state', async ({ page }) => {
+  await setup(page, true, false, true);
+  const created = Date.now() - 20 * 60000;
+  await page.route('**/call/notetaker-status', route => route.fulfill({ json: { success: true, data: {
+    state: 'available', meetingState: 'no_activity', transcriptState: 'available', recordingAvailable: true, realtimeTranscript: false,
+    events: [
+      { state: 'connecting', meetingState: 'waiting_for_entry', observedAt: new Date(created).toISOString(), source: 'provider' },
+      { state: 'attending', meetingState: 'recording_active', observedAt: new Date(created + 60000).toISOString(), source: 'provider' },
+      { state: 'disconnected', meetingState: 'no_activity', observedAt: new Date(created + 10 * 60000).toISOString(), source: 'provider' },
+      { state: 'available', meetingState: 'unknown', observedAt: new Date(created + 11 * 60000).toISOString(), source: 'provider' },
+    ],
+  } } }));
+  await page.route(`**/one-on-ones/${meetingId}/call`, route => route.fulfill({ json: { success: true, data: [{ _id: meetingId, title: 'Calendar QA', mode: 'calendar', status: 'completed', scheduledDate: new Date(created).toISOString(), duration: 30, conferenceUrl: 'https://meet.google.com/aaa-bbbb-ccc', transcript: 'Saved provider transcript.', integration: { recordingRequested: true } }] } }));
+  await page.goto(`/one-on-ones/${meetingId}`);
+  await expect(page.getByText('Call media ready', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Reported by Nylas at/)).toBeVisible();
+  await expect(page.getByText('Completed in Seemplify; the notetaker has finished', { exact: true })).toBeVisible();
+  await expect(page.getByText('Transcript saved. Open Transcript below to read it.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Admit the Seemplify notetaker from the meeting lobby/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Stop notetaker', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Bot activity timeline (4)', exact: true }).click();
+  await expect(page.getByText(/Nylas event ·/)).toHaveCount(4);
+});
+
 test('a scheduled bot can be dispatched now from the same call controls and stopped without duplicating it', async ({ page }) => {
   await setup(page, true, false, true);
   let started = 0, stopped = 0;

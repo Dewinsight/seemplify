@@ -21,6 +21,7 @@ test.beforeEach(async t => {
   t.mock.method(shared, 'resolveSharedPrincipal', async raw => ({ identity: raw, user: {} }));
   t.mock.method(nylas, 'getNylasInstance', () => ({ grants: { find: async () => ({ data: { email: 'original-calendar@example.test', provider: 'google' } }) } }));
   provider = t.mock.method(nylas, 'getStandaloneNotetakerStatus', async () => ({ data: { state, meeting_state: reason } }));
+  t.mock.method(nylas, 'getStandaloneNotetakerHistory', async () => []);
   media = t.mock.method(nylas, 'getStandaloneNotetakerMedia', async () => ({ transcript: { url: 'https://storage.googleapis.com/synthetic-transcript' }, recording: { url: 'https://storage.googleapis.com/synthetic-recording' } }));
 });
 test.afterEach(() => test.mock.restoreAll());
@@ -55,6 +56,40 @@ test('a confirmed meeting end starts media retrieval even before the overall bot
   assert.equal(media.mock.callCount(), 1);
   media.mock.mockImplementation(async () => ({ transcript: { url: 'https://storage.googleapis.com/ready' } }));
   assert.equal((await service.status(identity, input)).transcriptState, 'available');
+});
+
+test('legacy media_available returns real media and sanitized provider history even when no page was open during the call', async t => {
+  state = 'media_available'; reason = undefined;
+  const now = Math.floor(Date.now() / 1000);
+  const history = t.mock.method(nylas, 'getStandaloneNotetakerHistory', async () => [
+    { created_at: now - 10, event_type: 'notetaker.media', data: { state: 'available', media: { transcript: 'PRIVATE_SIGNED_URL' } } },
+    { created_at: now - 30, event_type: 'notetaker.meeting_state', data: { state: 'disconnected', meeting_state: 'meeting_ended', meeting_link: 'PRIVATE_MEETING_LINK' } },
+    { created_at: now - 120, event_type: 'notetaker.meeting_state', data: { state: 'attending', meeting_state: 'recording_active', name: 'PRIVATE_NAME' } },
+    { created_at: now - 130, event_type: 'notetaker.meeting_state', data: { state: 'connecting', meeting_state: 'waiting_for_entry' } }
+  ]);
+  const result = await service.status(identity, input);
+  assert.equal(result.state, 'available'); assert.equal(result.meetingState, 'meeting_ended');
+  assert.equal(result.transcriptState, 'available'); assert.equal(result.recordingAvailable, true);
+  assert.equal(result.events.length, 4); assert.equal(result.events[0].source, 'provider');
+  assert.equal(+result.events[0].observedAt, (now - 130) * 1000);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|storage.googleapis/);
+  assert.doesNotMatch(JSON.stringify(await Observation.findOne()), /PRIVATE_/);
+  await service.status(identity, input); assert.equal(history.mock.callCount(), 1);
+  await Observation.updateOne({}, { $set: { historyCheckedAt: new Date(0) } });
+  history.mock.mockImplementation(async () => { throw new Error('Temporary history outage'); });
+  const cached = await service.status(identity, input);
+  assert.equal(cached.events.length, 4); assert.equal(cached.state, 'available');
+});
+
+test('legacy and current lifecycle states normalize without reusing a stale lobby message after recording finishes', async t => {
+  const normalize = require('../services/performanceNotetakerState').normalize;
+  assert.deepEqual(normalize({ state: 'waiting_for_entry' }), { state: 'connecting', meetingState: 'waiting_for_entry' });
+  for (const value of ['media_processing', 'worker_finished']) assert.equal(normalize({ state: value }).state, 'processing');
+  for (const value of ['available', 'media_error', 'media_deleted']) assert.equal(normalize({ state: value }).state, value);
+  assert.equal(normalize({ state: 'invented-provider-value' }).state, 'unknown');
+  state = 'media_available'; reason = undefined;
+  t.mock.method(nylas, 'getStandaloneNotetakerHistory', async () => [{ created_at: Math.floor(Date.now() / 1000) - 60, data: { state: 'connecting', meeting_state: 'waiting_for_entry' } }]);
+  assert.equal((await service.status(identity, input)).meetingState, 'unknown');
 });
 test('a revoked calendar does not hide the independent bot and no fallback grant is used', async t => {
   t.mock.method(nylas, 'getNylasInstance', () => ({ grants: { find: async () => { throw new Error('Revoked'); } } }));

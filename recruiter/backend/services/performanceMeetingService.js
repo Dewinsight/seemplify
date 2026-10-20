@@ -192,7 +192,7 @@ async function sync(rawIdentity, input) {
   if (!record.notetakerId) return publicMeeting(record);
   const accountCredentials = await credentials(record.accountId);
   const status = await nylas.getStandaloneNotetakerStatus(record.notetakerId, accountCredentials);
-  const state = String(status.data?.state || status.state || status.status || 'processing');
+  const state = require('./performanceNotetakerState').normalize(status.data || status).state;
   const stillOpen = () => PerformanceMeeting.exists({ _id: record._id, state: { $ne: 'cancelled' }, recordingState: { $ne: 'revoked' } });
   if (!await stillOpen()) return publicMeeting(await PerformanceMeeting.findById(record._id));
   let media;
