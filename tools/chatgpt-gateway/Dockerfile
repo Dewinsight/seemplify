@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
-  && npm install --prefix /opt/codex --omit=dev --no-audit --no-fund @openai/codex@0.147.0 \
+  && npm install --prefix /opt/codex --omit=dev --no-audit --no-fund @openai/codex@0.163.0 \
   && mkdir -p /data/codex-subjects \
   && chown -R node:node /data
 

@@ -3,6 +3,7 @@
 import AppraisalMeetings from '@/components/appraisals/AppraisalMeetings';
 import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
 import AppraisalActions from '@/components/appraisals/AppraisalActions';
+import CurrentAIAssessment from '@/components/appraisals/CurrentAIAssessment';
 import { FlowStep } from '@/components/appraisals/AppraisalFlowEditor';
 import { useEffect, useRef, useState } from 'react';
 import ManagerReviewWorkspace from '@/components/appraisals/ManagerReviewWorkspace';
@@ -237,6 +238,7 @@ export default function AppraisalDetailPage() {
           </Box>
 
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Button variant="outlined" startIcon={<AssessmentOutlined />} onClick={() => setSection(3)}>Current AI assessment</Button>
             <AppraisalActions appraisalId={appraisalId} employeeName={appraisal.employee?.name} enabled={hasManagerAccess} onUpdated={() => { void mutate(); }} />
             {['completed', 'employee_acknowledged'].includes(appraisal.status) && <Button variant="outlined" onClick={() => router.push(`/appraisals/${appraisalId}/report`)}>View result report</Button>}
           </Box>
@@ -248,7 +250,11 @@ export default function AppraisalDetailPage() {
         <Tab id="appraisal-task-tab" aria-controls="appraisal-task-panel" label={closed ? 'Outcome' : 'Current task'} />
         <Tab id="appraisal-history-tab" aria-controls="appraisal-history-panel" label="Previous work & analytics" />
         <Tab id="appraisal-details-tab" aria-controls="appraisal-details-panel" label="Details & evidence" />
+        <Tab id="appraisal-ai-tab" aria-controls="appraisal-ai-panel" label="Current AI assessment" />
       </Tabs>
+      <Box id="appraisal-ai-panel" role="tabpanel" aria-labelledby="appraisal-ai-tab" hidden={section !== 3}>
+        {section === 3 && <CurrentAIAssessment appraisalId={appraisalId} />}
+      </Box>
       <Box id="appraisal-task-panel" role="tabpanel" aria-labelledby="appraisal-task-tab" hidden={section !== 0}>
         <Box sx={{ mb: 3 }}>
           <Typography variant="body2" color="text.secondary" mb={.5}>{closed ? 'Appraisal record' : `Step ${Math.min(activeStep + 1, progressSteps.length)} of ${progressSteps.length}`}</Typography>

@@ -357,7 +357,7 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
           requiredRuntime: principal ? 'chatgpt' : undefined,
           sharedAccountRuntime: Boolean(principal),
           consentApp: principal ? accountScope(req) : 'recruiter',
-          defaultCodexModel: req.internalService === 'performance-management' ? 'gpt-5.6-terra' : undefined,
+          defaultCodexModel: req.internalService === 'performance-management' ? 'gpt-6.1-sol' : undefined,
           codexModel: req.body?.codexModel,
           reasoningEffort: req.body?.reasoningEffort
         })
@@ -366,7 +366,7 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
           requiredRuntime: principal ? 'chatgpt' : undefined,
           sharedAccountRuntime: Boolean(principal),
           consentApp: principal ? accountScope(req) : 'recruiter',
-          defaultCodexModel: req.internalService === 'performance-management' ? 'gpt-5.6-terra' : undefined,
+          defaultCodexModel: req.internalService === 'performance-management' ? 'gpt-6.1-sol' : undefined,
           codexModel: req.body?.codexModel,
           reasoningEffort: req.body?.reasoningEffort
         })

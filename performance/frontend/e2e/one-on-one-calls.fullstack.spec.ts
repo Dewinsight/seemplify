@@ -12,7 +12,7 @@ const shared = backend('./services/sharedAIAccountService'), ai = backend('./ser
 let mongo: { stop: () => Promise<void> }, server: import('node:http').Server, apiURL: string;
 let connected = true, calendarFailure = false;
 const requests: Array<{ operation: string; input: { externalId?: string } }> = [];
-const originalRequest = shared.request, originalCompletions = ai.getChatCompletions;
+const originalRequest = shared.request, originalModels = shared.models, originalCompletions = ai.getChatCompletions;
 const originalFetch = globalThis.fetch;
 const turnCredentialsUrl = 'https://turn.seemplifyai.com/api/turn-credentials';
 let turnCredentialRequests = 0;
@@ -46,7 +46,8 @@ test.beforeAll(async () => {
     if (operation === 'meetings/transcribe') return { transcript: 'Synthetic transcript fixture: Emery will document the release.', provider: 'test-fixture', model: 'test-fixture' };
     return { state: 'cancelled' };
   };
-  ai.getChatCompletions = async (_messages: unknown, options: { activity?: string }) => ({ model: 'test-fixture-terra', choices: [{ message: { content: options.activity === 'performance.self_assessment.report' ? 'Synthetic final appraisal report: the submitted assessment and manual transcript confirm the agreed release action. Human rating: 4/5.' : 'Synthetic notes fixture: Emery will document the release.' } }] });
+  shared.models = async () => [{ id: 'gpt-6.1-sol', supportedReasoningEfforts: ['max'] }];
+  ai.getChatCompletions = async (_messages: unknown, options: { activity?: string }) => ({ model: 'gpt-6.1-sol', choices: [{ message: { content: options.activity === 'performance.self_assessment.report' ? 'Synthetic final appraisal report: the submitted assessment and manual transcript confirm the agreed release action. Human rating: 4/5.' : 'Synthetic notes fixture: Emery will document the release.' } }] });
   const app = express(); app.use(express.json());
   app.use((req: { session: unknown; get: (name: string) => string }, _res: unknown, next: () => void) => { req.session = { user: actor(req.get('x-call-actor') || 'manager'), currentOrganizationId: organization.id }; next(); });
   app.use('/api/one-on-ones', backend('./routes/oneOnOnes'));
@@ -57,7 +58,7 @@ test.beforeAll(async () => {
 test.beforeEach(async () => { connected = true; calendarFailure = false; requests.length = 0; await OneOnOne.deleteMany({}); });
 test.afterAll(async () => {
   globalThis.fetch = originalFetch;
-  shared.request = originalRequest; ai.getChatCompletions = originalCompletions;
+  shared.request = originalRequest; shared.models = originalModels; ai.getChatCompletions = originalCompletions;
   if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await mongoose.disconnect(); if (mongo) await mongo.stop();
 });
@@ -128,6 +129,19 @@ test('manual transcript import persists, generates notes and feeds the final AI 
   await backend('./services/appraisalFinalReportService').processDue();
   await expect(page.getByText('Synthetic final appraisal report: the submitted assessment and manual transcript confirm the agreed release action. Human rating: 4/5.', { exact: true })).toBeVisible({ timeout: 15000 });
   expect((await Appraisal.findById(appraisal._id)).finalRating.overall).toBe(4);
+  await page.goto(`/appraisals/${appraisal._id}`);
+  await page.getByRole('tab', { name: 'Current AI assessment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Current AI assessment', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pause automatic updates', exact: true })).toBeVisible();
+  await backend('./services/appraisalCurrentAssessmentService').processDue();
+  await expect(page.getByRole('region', { name: 'Current assessment analysis', exact: true })).toContainText('Synthetic final appraisal report', { timeout: 20000 });
+  await expect(page.getByText(/gpt-6.1-sol · max reasoning/)).toBeVisible();
+  await page.getByRole('button', { name: /Evidence coverage/ }).click();
+  await page.screenshot({ path: testInfo.outputPath('current-ai-assessment-mobile.png'), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Pause automatic updates', exact: true }).click();
+  await expect(page.getByText(/Automatic updates are paused/)).toBeVisible();
+  await page.goto(`/appraisals/${appraisal._id}/report`);
   const employeeContext = await browser.newContext();
   try {
     const employee = await employeeContext.newPage(); await setup(employee, 'employee');

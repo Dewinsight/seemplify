@@ -1,12 +1,14 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { Alert, Box, Button, Stack, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Stack, Typography } from '@mui/material';
+import { ExpandMore } from '@mui/icons-material';
 import api from '@/lib/api';
 import ManualMeetingTranscript from './ManualMeetingTranscript';
 export interface FinalAIReportData {
   state: string; content?: string; generatedAt?: string; model?: string; errorCode?: string; retryScheduled?: boolean;
-  coverage?: { meetings: number; transcripts: number; missingTranscripts: string[]; missingTranscriptMeetings?: Array<{ id: string; title: string }>; documents: number; pendingDocuments: number; roleResults: number; excerptedCategories: string[] };
+  coverage?: { meetings: number; transcripts: number; missingTranscripts: string[]; missingTranscriptMeetings?: Array<{ id: string; title: string }>; documents: number; pendingDocuments: number; roleResults: number; excerptedCategories: string[];
+    sources?: Array<{ id: string; ref: string; title: string; state: string }>; gaps?: string[] };
 }
 export default function FinalAIReport({ appraisalId, report, canGenerate, onQueued }: { appraisalId: string; report?: FinalAIReportData; canGenerate?: boolean; onQueued: () => Promise<void> }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -26,7 +28,7 @@ export default function FinalAIReport({ appraisalId, report, canGenerate, onQueu
     </> : <Alert severity={report?.state === 'failed' ? 'warning' : 'info'} role="status">
       {pending ? 'The final AI report is queued or being generated. This page checks for the completed report automatically.'
         : report?.state === 'stale' ? 'Meeting evidence has changed. The previous report is hidden until it is regenerated using the current evidence.'
-        : report?.state === 'failed' ? `The report could not be generated. The published appraisal is saved. Check your personal ChatGPT connection, then retry.${report.retryScheduled ? ' An automatic retry is also scheduled.' : ''}`
+        : report?.state === 'failed' ? `${['ASSESSMENT_MODEL_UNAVAILABLE', 'ASSESSMENT_MODEL_MISMATCH'].includes(report.errorCode || '') ? 'GPT-6.1 Sol with maximum reasoning is unavailable through this connection. Check the gateway model catalogue or reconnect, then retry; an older model is not substituted.' : 'The report could not be generated. The published appraisal is saved. Check your personal ChatGPT connection, then retry.'}${report.retryScheduled ? ' An automatic retry is also scheduled.' : ''}`
         : 'The combined AI report has not been generated yet.'}
     </Alert>}
     {!!report?.coverage?.missingTranscripts?.length && <Alert severity="info" sx={{ mt: 2 }}>Transcript unavailable for: {report.coverage.missingTranscripts.join(', ')}. The report will identify this gap; agreed meeting notes are still included.</Alert>}
@@ -36,6 +38,7 @@ export default function FinalAIReport({ appraisalId, report, canGenerate, onQueu
     </Stack>}
     {!!report?.coverage?.pendingDocuments && <Typography variant="body2" color="text.secondary" mt={1}>Some shared documents are still awaiting text extraction.</Typography>}
     {!!report?.coverage?.excerptedCategories?.length && <Typography variant="body2" color="text.secondary" mt={1}>Long sources were excerpted for: {report.coverage.excerptedCategories.join(', ')}.</Typography>}
+    {!!report?.coverage?.sources?.length && <Accordion variant="outlined" sx={{ mt: 2 }}><AccordionSummary expandIcon={<ExpandMore />}>Report sources and evidence gaps</AccordionSummary><AccordionDetails><Stack spacing={1}>{report.coverage.sources.map(source => <Typography key={source.id} variant="body2" sx={{ overflowWrap: 'anywhere' }}>[{source.ref}] {source.title} · {source.state.replaceAll('_', ' ')}</Typography>)}{report.coverage.gaps?.map(gap => <Typography key={gap} variant="body2" color="text.secondary">{gap}</Typography>)}</Stack></AccordionDetails></Accordion>}
     {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
     {canGenerate && <Stack className="no-print" direction={{ xs: 'column', sm: 'row' }} spacing={1} mt={2}>
       <Button variant="outlined" disabled={busy || pending} onClick={() => void generate()}>{busy ? 'Queueing…' : report?.state === 'ready' ? 'Regenerate with my ChatGPT account' : 'Generate with my ChatGPT account'}</Button>

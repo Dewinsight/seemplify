@@ -116,7 +116,7 @@ test('transcript downloads reject untrusted URLs and oversized responses', async
   t.mock.method(global, 'fetch', async () => new Response('x'.repeat(2_000_001)));
   await assert.rejects(service.boundedTranscript('https://example.nylas.com/transcript'), { code: 'TRANSCRIPT_TOO_LARGE' });
 });
-test('Performance Terra default is applied before personal choices and leaves other apps unchanged', async () => {
+test('Performance latest Sol default is applied before personal choices and leaves other apps unchanged', async () => {
   for (const personal of [null, 'gpt-5.6-luna']) {
     let inherited;
     const runtime = new AIRuntimeService({ resolveUserRoute: async (_actor, _activity, route) => { inherited = route.codexModel; return { ...route, codexModel: personal || route.codexModel }; } });
@@ -124,8 +124,8 @@ test('Performance Terra default is applied before personal choices and leaves ot
     runtime.resolveRoute = () => ({ provider: 'chatgpt-connect', model: 'chatgpt-connected-account', codexModel: 'gpt-5.6-sol', reasoningEffort: 'medium' });
     runtime.attachChatGptSubject = async route => route;
     runtime.gatewayRequest = async ({ route }) => ({ content: 'Synthetic notes', model: route.codexModel });
-    const response = await runtime.complete('performance.meeting.analysis', { messages: [{ role: 'user', content: 'Synthetic meeting' }] }, { requiredRuntime: 'chatgpt', defaultCodexModel: 'gpt-5.6-terra' });
-    assert.equal(inherited, 'gpt-5.6-terra'); assert.equal(response.model, personal || 'gpt-5.6-terra');
+    const response = await runtime.complete('performance.meeting.analysis', { messages: [{ role: 'user', content: 'Synthetic meeting' }] }, { requiredRuntime: 'chatgpt', defaultCodexModel: 'gpt-6.1-sol' });
+    assert.equal(inherited, 'gpt-6.1-sol'); assert.equal(response.model, personal || 'gpt-6.1-sol');
     if (!personal) assert.equal((await runtime.complete('recruiter.general', {}, { requiredRuntime: 'chatgpt' })).model, 'gpt-5.6-sol');
   }
 });

@@ -3091,7 +3091,32 @@ router.get('/:appraisalId/attendance-context', requireAuth, async (req, res) => 
   }
 });
 
-// A published result deliberately excludes private calibration, AI and audit notes.
+// A published result deliberately excludes private calibration and audit notes.
+async function currentAssessmentContext(req, res, next) {
+  try {
+    const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId)).populate(tenantCyclePopulate(req));
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    const isEmployee = isAppraisalEmployee(req, appraisal), canManage = await canManageAppraisal(req, appraisal);
+    if (!isEmployee && !canManage) return res.status(403).json({ success: false, error: 'Access denied' });
+    req.assessmentAppraisal = appraisal;
+    req.assessmentIdentity = require('../services/sharedAIAccountService').identityFromRequest(req);
+    req.assessmentProfile = await require('../services/appraisalAnalysisEvidenceService').profileFor(req, appraisal, { isEmployee, canManage, isHR: req.userRole === 'hr_admin' });
+    return next();
+  } catch (error) { return res.status(error.statusCode || 503).json({ success: false, error: 'The current assessment evidence could not be checked. Please retry.' }); }
+}
+router.get('/:appraisalId/current-assessment', requireAuth, currentAssessmentContext, async (req, res) => {
+  try { return res.json({ success: true, data: await require('../services/appraisalCurrentAssessmentService').view(req.assessmentAppraisal, req.assessmentIdentity, req.assessmentProfile) }); }
+  catch { return res.status(503).json({ success: false, error: 'The current AI assessment could not be loaded. Please retry.' }); }
+});
+router.post('/:appraisalId/current-assessment', requireAuth, currentAssessmentContext, async (req, res) => {
+  try {
+    const service = require('../services/appraisalCurrentAssessmentService');
+    if (req.body.pause === true) await service.pause(req.assessmentAppraisal, req.assessmentIdentity);
+    else await service.start(req.assessmentAppraisal, req.assessmentIdentity, req.assessmentProfile, { force: req.body.force === true });
+    return res.status(202).json({ success: true });
+  } catch (error) { return res.status(error.statusCode || 503).json({ success: false, error: error.message || 'This assessment could not be queued.' }); }
+});
+
 router.get('/:appraisalId/report', requireAuth, async (req, res) => {
   try {
     const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId))

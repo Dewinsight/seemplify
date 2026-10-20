@@ -42,7 +42,8 @@ beforeEach(async () => {
   await mongoose.connection.db.dropDatabase(); await Job.createIndexes();
   cycle = await Cycle.create({ organizationId: org.id, name: 'Report cycle', periodStart: '2026-01-01', periodEnd: '2026-03-31', status: 'active', createdBy: { userId: 'reviewer' } });
   for (const who of ['reviewer', 'employee', 'outsider']) await User.create({ idpSub: who, email: actor(who).email, profile: { displayName: who }, currentOrganizationId: org.id, idpTeams: actor(who).idpTeams });
-  jest.spyOn(ai, 'getChatCompletions').mockResolvedValue({ model: 'synthetic-personal-model', choices: [{ message: { content: 'Synthetic report based on the submitted evidence. Human final rating: 4/5.' } }] });
+  jest.spyOn(shared, 'models').mockResolvedValue([{ id: 'gpt-6.1-sol', supportedReasoningEfforts: ['max'] }]);
+  jest.spyOn(ai, 'getChatCompletions').mockResolvedValue({ model: 'gpt-6.1-sol', choices: [{ message: { content: 'Synthetic report based on the submitted evidence. Human final rating: 4/5.' } }] });
 });
 afterEach(() => jest.restoreAllMocks());
 afterAll(async () => { await mongoose.disconnect(); await mongo.stop(); });
@@ -118,7 +119,7 @@ test('late transcripts invalidate reports and provider failures are visible, bou
   expect((await reports.view(appraisal))).toMatchObject({ state: 'failed', errorCode: 'SHARED_AI_REAUTH_REQUIRED' });
   expect((await reports.view(appraisal)).content).toBeUndefined();
   await reports.processDue(); expect(ai.getChatCompletions).toHaveBeenCalledTimes(2);
-  ai.getChatCompletions.mockResolvedValue({ choices: [{ message: { content: 'Recovered report' } }] });
+  ai.getChatCompletions.mockResolvedValue({ model: 'gpt-6.1-sol', choices: [{ message: { content: 'Recovered report' } }] });
   await api('post', `/${appraisal._id}/report/ai`).send({}).expect(202);
   await reports.processDue(); expect((await reports.view(appraisal)).content).toBe('Recovered report');
 });
@@ -129,10 +130,11 @@ test('source revocation during report generation prevents publishing the old tra
   await reports.queue(appraisal, identity);
   ai.getChatCompletions.mockImplementation(async () => {
     await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.recordingConsent.revokedAt': new Date() } });
-    return { choices: [{ message: { content: 'Potentially stale provider result' } }] };
+    return { model: 'gpt-6.1-sol', choices: [{ message: { content: 'Potentially stale provider result' } }] };
   });
   await reports.processDue();
   const job = await Job.findOne({ appraisalId: appraisal._id });
+  expect((await reports.evidence(await Appraisal.findById(appraisal._id).populate('cycleId'))).text).toBe((await reports.evidence(appraisal)).text);
   // A second pass may finish using only the currently authorized notes.
   expect(ai.getChatCompletions.mock.calls.at(-1)[0][1].content).not.toContain('Withdrawn private source');
   expect(job.sourceHash).toBe((await reports.evidence(appraisal)).sourceHash);
