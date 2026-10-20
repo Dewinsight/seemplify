@@ -1,5 +1,6 @@
 import useSWR, { SWRConfiguration } from 'swr';
 import api from './api';
+import { useAuth } from '@/context/AuthContext';
 const EMPTY_LIST: never[] = [];
 
 // Default SWR config to prevent too frequent revalidation
@@ -24,7 +25,8 @@ const fetcher = async (url: string) => {
  * This is the primary hook for role-based UI rendering
  */
 export function useUserContext() {
-  const { data, error, isLoading, mutate } = useSWR('/user/context', fetcher, defaultConfig);
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { data, error, isLoading, mutate } = useSWR(!authLoading && isAuthenticated ? '/user/context' : null, fetcher, defaultConfig);
 
   return {
     // User identity
@@ -57,7 +59,7 @@ export function useUserContext() {
     features: data?.features || {},
 
     // SWR state
-    isLoading,
+    isLoading: authLoading || isLoading,
     isError: error,
     mutate,
   };

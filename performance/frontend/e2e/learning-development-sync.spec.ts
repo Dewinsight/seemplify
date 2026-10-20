@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('synchronized Learning activity can be added to a development plan', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('accessToken', 'synthetic-learning-sync-test'));
   const posts: Array<{ path: string; body: Record<string, unknown> }> = [];
   const learningRecord = {
     _id: 'record-1',

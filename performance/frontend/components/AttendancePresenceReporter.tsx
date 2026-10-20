@@ -2,14 +2,16 @@
 
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 
 const APP_ID = 'performance'; const TOKEN_KEY = 'accessToken'; const HEARTBEAT_MS = 120_000;
 const base = () => (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5004/api').replace(/\/$/, '');
 const feature = (path: string) => `${APP_ID}.${path.replace(/[^a-zA-Z0-9/_-]/g, '').replaceAll('/', '.').replace(/^\.+/, '') || 'home'}`.slice(0, 80);
 
 export default function AttendancePresenceReporter() {
+  const { isAuthenticated, isLoading } = useAuth();
   const pathname = usePathname(); const session = useRef<string | null>(null); const lastAction = useRef(0);
-  const reportingAllowed = !pathname.startsWith('/login') && !pathname.startsWith('/api/');
+  const reportingAllowed = !isLoading && isAuthenticated && !pathname.startsWith('/login') && !pathname.startsWith('/api/');
   useEffect(() => {
     if (!reportingAllowed) return;
     let stopped = false; let retry: number | undefined;
@@ -23,6 +25,6 @@ export default function AttendancePresenceReporter() {
     const interval = window.setInterval(beat, HEARTBEAT_MS); document.addEventListener('visibilitychange', visibility); document.addEventListener('click', action, { passive: true });
     return () => { stopped = true; if (retry) clearTimeout(retry); clearInterval(interval); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('click', action); if (session.current) void send(`/sessions/${session.current}/end`, { reason: 'client_unmount' }).catch(() => undefined); session.current = null; };
   }, [reportingAllowed]);
-  useEffect(() => { const token = localStorage.getItem(TOKEN_KEY); if (!session.current || !token) return; void fetch(`${base()}/presence/sessions/${session.current}/activity`, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ activityKind: 'navigation', featureCode: feature(pathname) }) }).catch(() => undefined); }, [pathname]);
+  useEffect(() => { const token = localStorage.getItem(TOKEN_KEY); if (!reportingAllowed || !session.current || !token) return; void fetch(`${base()}/presence/sessions/${session.current}/activity`, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ activityKind: 'navigation', featureCode: feature(pathname) }) }).catch(() => undefined); }, [pathname, reportingAllowed]);
   return null;
 }

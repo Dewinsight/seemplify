@@ -1,6 +1,9 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Box } from '@mui/material';
+import { useAuth } from '@/context/AuthContext';
 import Layout from './Layout';
 import PageGuide from './PageGuide';
 import AppraisalCompetencySlot from './competency/AppraisalCompetencySlot';
@@ -10,6 +13,22 @@ import AppraisalRecordingConsents from './competency/AppraisalRecordingConsents'
 
 export default function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { isLoading, isAuthenticated } = useAuth();
+  const publicRoute = pathname === '/' || pathname === '/login';
+
+  useEffect(() => {
+    if (!publicRoute && !isLoading && !isAuthenticated) router.replace('/login');
+  }, [publicRoute, isLoading, isAuthenticated, router]);
+
+  // Keep private pages and their data requests unmounted until identity is ready.
+  if (!publicRoute && (isLoading || !isAuthenticated)) {
+    return (
+      <Box component="main" role="status" aria-live="polite" sx={{ p: 4, textAlign: 'center' }}>
+        {isLoading ? 'Checking your session…' : 'Opening sign-in…'}
+      </Box>
+    );
+  }
   
   // Don't show Layout on root page (root is just a redirect handler)
   if (pathname === '/') {
