@@ -72,3 +72,74 @@ test('a grant alone does not authorize unrelated or foreign plans, and authentic
   await call('logged-out').send({ managerResponse: 'Anonymous edit' }).expect(401);
   expect(JSON.parse(JSON.stringify(await Plan.findById(plan._id)))).toEqual(before);
 });
+
+describe.each(['completed', 'cancelled', 'escalated'])('%s support plans retain their closed milestone evidence', state => {
+  test.each(['employee', 'manager', 'hr'])('%s receives 409 without changing notes, state, timestamps or audit', async actor => {
+    await Plan.updateOne({ _id: plan._id }, { $set: { state } });
+    const before = JSON.parse(JSON.stringify(await Plan.findById(plan._id)));
+    await call(actor).send({ employeeUpdate: 'Attempted replacement employee note', managerResponse: 'Attempted replacement manager note', status: 'missed' }).expect(409);
+    expect(JSON.parse(JSON.stringify(await Plan.findById(plan._id)))).toEqual(before);
+  });
+});
+
+test.each(['draft', 'hr_review', 'changes_requested', 'employee_review'])('manager cannot update milestones before the %s plan becomes active', async state => {
+  await Plan.updateOne({ _id: plan._id }, { $set: { state } });
+  const before = JSON.parse(JSON.stringify(await Plan.findById(plan._id)));
+  await call('manager').send({ managerResponse: 'Premature response', status: 'completed' }).expect(409);
+  expect(JSON.parse(JSON.stringify(await Plan.findById(plan._id)))).toEqual(before);
+});
+
+describe.each(['review_due', 'extended'])('%s support plans retain legitimate milestone updates', state => {
+  test.each(['employee', 'manager'])('%s can save only their own note and audit', async actor => {
+    await Plan.updateOne({ _id: plan._id }, { $set: { state } });
+    const updated = await call(actor).send({ employeeUpdate: 'Employee progress retained', managerResponse: 'Manager support retained', status: 'completed' }).expect(200);
+    expect(updated.body.data.state).toBe(state);
+    expect(updated.body.data.milestones[0]).toMatchObject({
+      employeeUpdate: actor === 'employee' ? 'Employee progress retained' : 'Original employee progress',
+      managerResponse: actor === 'manager' ? 'Manager support retained' : 'Original manager response',
+      status: 'completed'
+    });
+    const saved = await Plan.findById(plan._id);
+    expect(saved.audit).toHaveLength(1);
+    expect(saved.audit[0]).toMatchObject({ action: 'milestone_updated', actorId: actor });
+  });
+});
+
+test('a closed-state guard retains central grant denial before exposing a milestone', async () => {
+  await Plan.updateOne({ _id: plan._id }, { $set: { state: 'completed' } });
+  const before = JSON.parse(JSON.stringify(await Plan.findById(plan._id)));
+  await call('manager-denied').send({ managerResponse: 'Denied grant response' }).expect(403);
+  expect(JSON.parse(JSON.stringify(await Plan.findById(plan._id)))).toEqual(before);
+});
+
+const outcome = (body) => request(app).post(`/api/support-plans/${plan._id}/outcome`).set('x-support-actor', 'manager').send(body);
+
+test('extension date and human decision history survive completion and employee reload', async () => {
+  await outcome({ decision: 'extended', reason: 'A further fictional support review is agreed.', nextReviewDate: '2026-12-20' }).expect(200);
+  const extended = JSON.parse(JSON.stringify(await Plan.findById(plan._id)));
+  const extensionAudit = extended.audit.find(event => event.action === 'outcome_extended');
+  expect(extensionAudit).toMatchObject({ actorId: 'manager', details: { reason: extended.outcome.reason, nextReviewDate: '2026-12-20T00:00:00.000Z' } });
+  await outcome({ decision: 'completed', reason: 'The fictional support objectives were completed.', previousOutcome: { decision: 'cancelled', nextReviewDate: '2099-01-01' } }).expect(200);
+  const loaded = await request(app).get(`/api/support-plans/${plan._id}`).set('x-support-actor', 'employee').expect(200);
+  expect(loaded.body.data).toMatchObject({ state: 'completed', outcome: { decision: 'completed', reason: 'The fictional support objectives were completed.', decidedBy: 'manager' } });
+  expect(loaded.body.data.audit.find(event => event.action === 'outcome_extended')).toEqual(extensionAudit);
+  expect(loaded.body.data.audit.find(event => event.action === 'outcome_completed')).toMatchObject({ actorId: 'manager', details: { previousOutcome: extended.outcome } });
+  const history = await request(app).get(`/api/support-plans/${plan._id}/history`).set('x-support-actor', 'employee').expect(200);
+  expect(history.body.data.find(event => event.action === 'outcome_extended').details.nextReviewDate).toBe('2026-12-20T00:00:00.000Z');
+  const before = JSON.parse(JSON.stringify(await Plan.findById(plan._id)));
+  await outcome({ decision: 'extended', reason: 'Attempted closed-plan change', nextReviewDate: '2027-01-01' }).expect(409);
+  expect(JSON.parse(JSON.stringify(await Plan.findById(plan._id)))).toEqual(before);
+});
+
+test('completion snapshots an existing extension date even when its legacy audit omitted the date', async () => {
+  await Plan.updateOne({ _id: plan._id }, { $set: {
+    state: 'extended',
+    outcome: { decision: 'extended', reason: 'Existing fictional extension', decidedBy: 'manager', decidedAt: new Date('2026-10-19'), nextReviewDate: new Date('2026-12-20') },
+    audit: [{ action: 'outcome_extended', actorId: 'manager', details: { reason: 'Existing fictional extension' } }]
+  } });
+  const before = JSON.parse(JSON.stringify(await Plan.findById(plan._id)));
+  await outcome({ decision: 'completed', reason: 'The existing extension objectives were completed.' }).expect(200);
+  const after = JSON.parse(JSON.stringify(await Plan.findById(plan._id)));
+  expect(after.audit[0]).toEqual(before.audit[0]);
+  expect(after.audit[1]).toMatchObject({ action: 'outcome_completed', details: { previousOutcome: before.outcome } });
+});
