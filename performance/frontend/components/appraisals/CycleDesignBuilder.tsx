@@ -186,9 +186,11 @@ interface Props {
   onTemplateChange: (template: { id: string; name: string; version: number }) => void;
   canSaveTemplate: boolean;
   readOnly?: boolean;
+  showTemplatePicker?: boolean;
+  showStages?: boolean;
 }
 
-export default function CycleDesignBuilder({ design, sourceTemplate, onChange, onTemplateChange, canSaveTemplate, readOnly = false }: Props) {
+export default function CycleDesignBuilder({ design, sourceTemplate, onChange, onTemplateChange, canSaveTemplate, readOnly = false, showTemplatePicker = true, showStages = true }: Props) {
   const phone = useMediaQuery('(max-width:600px)');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [templates, setTemplates] = useState<CycleTemplateSummary[]>([]);
@@ -212,7 +214,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
     }
   };
 
-  useEffect(() => { loadTemplates(); }, []);
+  useEffect(() => { if (showTemplatePicker || canSaveTemplate) void loadTemplates(); }, [showTemplatePicker, canSaveTemplate]);
 
   const scoredWeight = useMemo(
     () => design.sections.filter((section) => section.scored).reduce((sum, section) => sum + Number(section.weight || 0), 0),
@@ -278,29 +280,29 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
       <Box>
         <Typography variant="h6">Review design</Typography>
         <Typography variant="body2" color="text.secondary">
-          Choose a starting template, then change the stages, sections, questions, evidence, and scoring for this cycle. Learning reflections do not require an LMS connection.
+          Customize sections, questions, instructions, evidence and scoring for this cycle. Learning reflections do not require an LMS connection.
         </Typography>
       </Box>
 
       {templateError && <Alert severity="warning">{templateError}</Alert>}
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
-        <FormControl size="small" sx={{ minWidth: { xs: 0, md: 300 }, width: { xs: '100%', md: 'auto' } }} disabled={loadingTemplates || readOnly}>
+      {(showTemplatePicker || canSaveTemplate) && <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
+        {showTemplatePicker && <FormControl size="small" sx={{ minWidth: { xs: 0, md: 300 }, width: { xs: '100%', md: 'auto' } }} disabled={loadingTemplates || readOnly}>
           <InputLabel id="cycle-template-label">Starting template</InputLabel>
           <Select labelId="cycle-template-label" id="cycle-template" value={templates.some((template) => template.id === sourceTemplate?.id) ? sourceTemplate?.id : ''} label="Starting template" onChange={(event) => applyTemplate(event.target.value)}>
             {templates.map((template) => (
               <MenuItem key={template.id} value={template.id}>{template.name}{template.system ? '' : ' · Organization'}</MenuItem>
             ))}
           </Select>
-        </FormControl>
+        </FormControl>}
         {canSaveTemplate && !readOnly && (
           <Button variant="outlined" startIcon={<SaveOutlined />} onClick={() => setSaveTemplateOpen(true)}>
             Save as reusable template
           </Button>
         )}
-      </Stack>
+      </Stack>}
 
-      <Box>
+      {showStages && <Box>
         <Typography variant="subtitle1" fontWeight={700} gutterBottom>Workflow stages</Typography>
         <Stack divider={<Divider flexItem />} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 2 }}>
           {Object.entries(stageLabels).map(([key, stage]) => (
@@ -321,7 +323,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
             </Box>
           ))}
         </Stack>
-      </Box>
+      </Box>}
 
       <Box>
         <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1.5}>
@@ -349,7 +351,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
             return (
               <Box key={section.id} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 2, '& button': { minHeight: 44, minWidth: 44 } }}>
                 {phone && <Button fullWidth aria-controls={`section-fields-${section.id}`} aria-expanded={!!expandedSections[section.id]} onClick={() => setExpandedSections(current => ({ ...current, [section.id]: !current[section.id] }))} sx={{ justifyContent: 'space-between', textAlign: 'left', mb: 1 }}>
-                  {section.title || 'Untitled section'} · {section.questions.length} questions {expandedSections[section.id] ? '−' : '+'}
+                  {section.title || 'Untitled section'} · {section.questions.length} question{section.questions.length === 1 ? '' : 's'} {expandedSections[section.id] ? '−' : '+'}
                 </Button>}
                 <Box id={`section-fields-${section.id}`} hidden={phone && !expandedSections[section.id]}>
                 <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} mb={2}>
@@ -397,7 +399,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
                     <Stack spacing={1.5}>
                       {section.questions.map((item, questionIndex) => (
                         <Box key={item.id} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(240px, 1fr) 170px auto' }, gap: 1, alignItems: 'start' }}>
-                          <TextField size="small" label={`Question ${questionIndex + 1}`} value={item.prompt} disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { prompt: event.target.value })} />
+                          <TextField multiline minRows={2} size="small" label={`Question ${questionIndex + 1}`} value={item.prompt} disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { prompt: event.target.value })} />
                           <FormControl size="small">
                             <InputLabel id={`question-type-${section.id}-${item.id}-label`}>Answer type</InputLabel>
                             <Select labelId={`question-type-${section.id}-${item.id}-label`} id={`question-type-${section.id}-${item.id}`} value={item.responseType} label="Answer type" disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { responseType: event.target.value as ResponseType })}>
@@ -408,6 +410,7 @@ export default function CycleDesignBuilder({ design, sourceTemplate, onChange, o
                             <FormControlLabel control={<Checkbox size="small" checked={item.required} disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { required: event.target.checked })} />} label="Required" />
                             <IconButton size="small" aria-label="Remove question" disabled={readOnly} onClick={() => patchSection(sectionIndex, { questions: section.questions.filter((_, index) => index !== questionIndex) })}><DeleteOutline fontSize="small" /></IconButton>
                           </Stack>
+                          <TextField fullWidth multiline size="small" label="Question guidance" value={item.helpText || ''} disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { helpText: event.target.value })} helperText="Shown with this question in the guided assessment and form." sx={{ gridColumn: '1 / -1' }} />
                           {['single_select', 'multi_select'].includes(item.responseType) && (
                             <TextField size="small" label="Choices (comma separated)" value={item.options.join(', ')} disabled={readOnly} onChange={(event) => patchQuestion(sectionIndex, questionIndex, { options: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) })} />
                           )}

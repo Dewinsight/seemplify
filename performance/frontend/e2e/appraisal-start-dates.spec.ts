@@ -21,7 +21,15 @@ async function install(page: Page, existingCycle = false, selectedCycle = '') {
     else if (path === '/user/context') response = data({ user: manager, role: { name: 'line_manager', displayName: 'Line Manager', isManager: true, isTeamLead: true, isHRAdmin: false }, organization: { id: 'org-1', name: 'QA Product' }, teams, currentTeam: teams[0], managerData: { directReportCount: 1 }, features: { canonicalAppraisals: true }, stats: {} });
     else if (path === '/user/current-team') response = data({ currentTeam: teams[0], availableTeams: teams });
     else if (path === '/appraisals/colleague-roster') response = data({ employees: [{ userId: 'employee-1', name: 'Jordan Lee', email: 'jordan@example.test', managerName: 'Alex Morgan', isSelectableForAppraisal: true, reviewerOptions: [{ userId: manager.id, name: manager.name, email: manager.email, role: 'team_manager' }] }] });
-    else if (path === '/appraisals/cycle-templates') response = data([{ id: 'balanced_performance', name: 'Balanced performance review', version: 1, description: 'Review completed work and plan development.', design: { version: 1, scoring: { goalsWeight: 40, competenciesWeight: 60 }, stages: {}, sections: [{ id: 'competencies', title: 'Competencies', type: 'competencies', scored: true, weight: 60, questions: [] }] } }]);
+    else if (path === '/appraisals/cycle-templates') {
+      const design = { version: 1, scoring: { goalsWeight: 40, competenciesWeight: 60 }, stages: {}, sections: [
+        { id: 'goals', title: 'Goals', description: '', type: 'goals', respondent: 'both', required: true, scored: true, weight: 40, evidenceRequired: false, questions: [] },
+        { id: 'competencies', title: 'Competencies', description: '', type: 'competencies', respondent: 'both', required: true, scored: true, weight: 60, evidenceRequired: false, questions: [] },
+        { id: 'outcomes', title: 'Outcomes', description: 'Describe completed work.', type: 'custom', respondent: 'employee', required: true, scored: false, weight: 0, evidenceRequired: false, questions: [{ id: 'impact', prompt: 'What impact did your work have?', helpText: '', responseType: 'long_text', required: true, options: [], ratingMin: 1, ratingMax: 5 }] },
+      ] };
+      response = data([{ id: 'balanced_performance', name: 'Balanced performance review', version: 1, description: 'Review completed work and plan development.', design }, { id: 'project_review', name: 'Project review', version: 1, design }]);
+    }
+    else if (path === '/appraisals/goal-readiness') response = data({ ready: true, participants: [{ userId: 'employee-1', name: 'Jordan Lee', ready: true, goals: [{ id: 'goal-1', title: 'Launch customer portal' }] }] });
     else if (path === '/appraisals/cycles' && route.request().method() === 'GET') response = data(existingCycle ? [{ _id: 'existing-cycle', name: 'Completed quarter', status: 'active', periodStart: '2026-07-01', periodEnd: '2026-09-30', responseDeadlines: { selfAssessmentDue: '2026-10-24', managerReviewDue: '2026-10-31' } }, { _id: 'previous-cycle', name: 'Previous quarter', status: 'draft', periodStart: '2026-04-01', periodEnd: '2026-06-30' }] : []);
     else if (route.request().method() === 'POST' && path.startsWith('/appraisals/cycles')) {
       posts.push({ path, ...route.request().postDataJSON() });
@@ -112,4 +120,75 @@ test('keeps the quarterly cycle selected from the HR cycle list', async ({ page 
   await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
   expect(posts[0].path).toBe('/appraisals/cycles/previous-cycle/launch');
+});
+
+test('one-off questions survive navigation and template changes and reach the guided assessment', async ({ page }, testInfo) => {
+  const posts = await install(page);
+  await page.getByRole('button', { name: /Questions and scoring/ }).click();
+  await page.getByLabel('Question 1', { exact: true }).fill('Which customer outcomes did you improve?');
+  await page.getByLabel('Question guidance', { exact: true }).fill('Give a measurable example from this review period.');
+  await page.getByLabel('Instructions', { exact: true }).last().fill('Use evidence from completed projects.');
+  await expect(page.getByText('Workflow stages', { exact: true })).toHaveCount(0);
+  await page.getByRole('combobox', { name: 'Review template' }).click();
+  await page.getByRole('option', { name: 'Project review', exact: true }).click();
+  await expect(page.getByLabel('Question 1', { exact: true })).toHaveValue('What impact did your work have?');
+  await page.getByRole('combobox', { name: 'Review template' }).click();
+  await page.getByRole('option', { name: 'Balanced performance review', exact: true }).click();
+  await expect(page.getByLabel('Question 1', { exact: true })).toHaveValue('Which customer outcomes did you improve?');
+  await page.getByRole('button', { name: 'Previous', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByLabel('Question guidance', { exact: true })).toHaveValue('Give a measurable example from this review period.');
+  await page.getByRole('button', { name: /Questions and scoring/ }).click();
+  await page.screenshot({ path: testInfo.outputPath('one-off-review-design.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByText('Questions and scoring · Customized', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
+  const submitted = posts[0];
+  expect(submitted.settings).toEqual({ requireOkrAlignment: false });
+  const { validateDesign } = require('../../backend/services/appraisalCycleDesignService');
+  const { getConversationQuestionQueue } = require('../../backend/services/appraisalCustomResponseService');
+  const validated = validateDesign(submitted.workflowDefinition);
+  expect(validated.errors).toEqual([]);
+  expect(validated.design.scoring).toEqual({ goalsWeight: 0, competenciesWeight: 100 });
+  const queue = getConversationQuestionQueue({ cycleConfigurationSnapshot: { workflowDefinition: validated.design } });
+  expect(queue).toHaveLength(1);
+  expect(queue[0]).toMatchObject({ prompt: 'Which customer outcomes did you improve?', helpText: 'Give a measurable example from this review period.', sectionDescription: 'Use evidence from completed projects.' });
+});
+
+test('one-off question validation blocks launch and goals keep their configured weights', async ({ page }) => {
+  const posts = await install(page);
+  await page.getByRole('button', { name: /Questions and scoring/ }).click();
+  await page.getByLabel('Question 1', { exact: true }).clear();
+  await page.getByRole('button', { name: /Questions and scoring/ }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByLabel('Question 1', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Check Questions and scoring:/)).toBeVisible();
+  expect(posts).toHaveLength(0);
+  await page.getByLabel('Question 1', { exact: true }).fill('What did you deliver?');
+  await expect(page.getByRole('button', { name: 'Create or link goals', exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Include approved goals' }).check();
+  await expect(page.getByText(/1 eligible approved goal — Launch customer portal/)).toBeVisible();
+  await page.getByLabel('Weight %', { exact: true }).nth(0).fill('30');
+  await page.getByLabel('Weight %', { exact: true }).nth(1).fill('70');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Appraisal launch results' })).toBeVisible();
+  expect(posts[0]).toMatchObject({ settings: { requireOkrAlignment: true }, workflowDefinition: { scoring: { goalsWeight: 30, competenciesWeight: 70 } } });
+});
+
+test('one-off question editor is usable on mobile without losing the draft', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await install(page);
+  await page.getByRole('button', { name: /Questions and scoring/ }).click();
+  await page.getByRole('button', { name: /Outcomes · 1 question/ }).click();
+  await page.getByLabel('Question 1', { exact: true }).fill('What changed for our customers?');
+  await page.getByLabel('Question guidance', { exact: true }).fill('Include a concrete example.');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByLabel('Question 1', { exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('one-off-questions-mobile.png') });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit questions and scoring', exact: true }).click();
+  await page.getByRole('button', { name: /Outcomes · 1 question/ }).click();
+  await expect(page.getByLabel('Question 1', { exact: true })).toHaveValue('What changed for our customers?');
 });

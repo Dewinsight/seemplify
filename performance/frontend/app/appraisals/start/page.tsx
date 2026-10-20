@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, MenuItem, Paper, Stack, Step, StepLabel, Stepper, TextField, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, MenuItem, Paper, Stack, Step, StepLabel, Stepper, TextField, Typography } from '@mui/material';
+import { ExpandMore } from '@mui/icons-material';
 import { useAppraisalCycles, useUserContext } from '@/lib/hooks';
 import api from '@/lib/api';
-import { CycleTemplateSummary } from '@/components/appraisals/CycleDesignBuilder';
+import CycleDesignBuilder, { CycleDesign, CycleTemplateSummary, validateCycleDesign } from '@/components/appraisals/CycleDesignBuilder';
 import AppraisalFlowEditor, { AppraisalFlow, defaultFlow, flowError } from '@/components/appraisals/AppraisalFlowEditor';
 import { shortDate, AppraisalResultItem, resultCycleName } from '@/lib/appraisal-results';
 import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
@@ -51,6 +52,8 @@ export default function StartAppraisalPage() {
   const [error, setError] = useState('');
   const [cycleId, setCycleId] = useState('');
   const [templateId, setTemplateId] = useState('balanced_performance');
+  const [designDrafts, setDesignDrafts] = useState<Record<string, CycleDesign>>({});
+  const [designOpen, setDesignOpen] = useState(false);
   const [title, setTitle] = useState('Performance review');
   const [reviewType, setReviewType] = useState('adhoc');
   const [periodStart, setPeriodStart] = useState(dateIn(-91));
@@ -60,6 +63,7 @@ export default function StartAppraisalPage() {
   const [detailsAttempted, setDetailsAttempted] = useState(false);
   const [appraisalFlow, setAppraisalFlow] = useState<AppraisalFlow>(defaultFlow());
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [startedCycleId, setStartedCycleId] = useState('');
   const competency = useCompetencyBootstrap();
   const [withRole, setWithRole] = useState(false);
   const [cvRequested, setCvRequested] = useState(false);
@@ -78,6 +82,9 @@ export default function StartAppraisalPage() {
   const openCycles = (cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status) && cycle.periodEnd.slice(0, 10) < dateIn(0));
   const existingCycle = openCycles.find((cycle) => cycle._id === cycleId);
   const template = templates.find((entry) => entry.id === templateId) || templates[0];
+  const reviewDesign = template ? designDrafts[template.id] || template.design : undefined;
+  const designErrors = reviewDesign ? validateCycleDesign(reviewDesign) : [];
+  const designCustomized = !!template && !!designDrafts[template.id];
   useEffect(() => { setAppraisalFlow(defaultFlow()); }, [cycleId, templateId]);
   const participants = people.filter((person) => selected.includes(person.userId) && person.isSelectableForAppraisal !== false);
   const unavailable = people.filter((person) => person.isSelectableForAppraisal === false);
@@ -131,8 +138,12 @@ export default function StartAppraisalPage() {
     if (roleIssue()) return roleIssue();
     if (cycleId !== 'new' && !existingCycle) return 'Choose a completed quarterly cycle or a one-off review.';
     if (cycleId !== 'new') return dateErrors.selfDue || dateErrors.managerDue ? 'Check the response deadlines below. Employees respond before you complete your review.' : '';
-    if (!title.trim() || !template) return 'Choose a review name and template.';
-    try { oneOffAppraisalPolicy(template.design, requireApprovedGoals); } catch (failure) { return (failure as Error).message; }
+    if (!title.trim() || !template || !reviewDesign) return 'Choose a review name and template.';
+    try {
+      const effectiveDesign = oneOffAppraisalPolicy(reviewDesign, requireApprovedGoals).workflowDefinition;
+      const issues = [...designErrors, ...validateCycleDesign(effectiveDesign)];
+      if (issues.length) return `Check Questions and scoring: ${issues[0]}`;
+    } catch (failure) { return (failure as Error).message; }
     if (Object.values(dateErrors).some(Boolean)) return 'Check the highlighted dates below. The work period comes before the review, and employee responses come before manager reviews.';
     if (requireApprovedGoals && !checkedGoals?.data?.ready) return checkedGoals?.error || (checkedGoals?.data ? 'Set up approved goals for each selected person below, or turn off Include approved goals.' : 'Checking goals for the selected staff. Please wait.');
     return '';
@@ -146,6 +157,7 @@ export default function StartAppraisalPage() {
     const issue = step === 0 ? peopleError() : (validateDetails() || flowError(appraisalFlow));
     setError(issue); if (!issue) moveStep(step + 1);
     else if (step === 1 && cycleId === 'new') {
+      if (issue.startsWith('Check Questions and scoring:')) setDesignOpen(true);
       const field = (Object.keys(dateErrors) as DateField[]).find((key) => dateErrors[key]);
       if (field) dateInputs.current[field]?.focus();
     }
@@ -155,7 +167,7 @@ export default function StartAppraisalPage() {
     const issue = validateDetails();
     if (issue || !participants.length) {
       setError(issue || 'Choose staff before starting.');
-      if (issue) { setDetailsAttempted(true); moveStep(1); }
+      if (issue) { setDetailsAttempted(true); if (issue.startsWith('Check Questions and scoring:')) setDesignOpen(true); moveStep(1); }
       else moveStep(0);
       return;
     }
@@ -166,10 +178,11 @@ export default function StartAppraisalPage() {
       const employees = participants.map((person) => ({ userId: person.userId, reviewerId: reviewers[person.userId] }));
       const response = cycleId === 'new'
         ? await api.post('/appraisals/cycles', { name: title.trim(), cycleType: reviewType, periodStart, periodEnd, launchNow: true, reviewerMode: 'selected', employees, appraisalFlow,
-          ...oneOffAppraisalPolicy(template!.design, requireApprovedGoals), sourceTemplate: { id: template!.id, name: template!.name, version: template!.version || 1 },
+          ...oneOffAppraisalPolicy(reviewDesign!, requireApprovedGoals), sourceTemplate: { id: template!.id, name: template!.name, version: template!.version || 1 },
           responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } })
         : await api.post(`/appraisals/cycles/${cycleId}/launch`, { employees, reviewerMode: 'selected', appraisalFlow, responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` } });
       const launch: Receipt = response.data?.data?.launchSummary || response.data?.data;
+      setStartedCycleId(response.data?.data?.cycle?._id || (cycleId !== 'new' ? cycleId : ''));
       setReceipt(launch);
       if (withRole) {
         const pending: typeof rolePending = {}; const linked: Record<string, boolean> = {};
@@ -200,6 +213,7 @@ export default function StartAppraisalPage() {
   if (receipt) return <Box sx={{ maxWidth: 900, mx: 'auto' }}>
     <Typography component="h1" variant="h4" ref={stepHeading} tabIndex={-1} fontWeight={700} mb={2}>Appraisal launch results</Typography>
     <Alert severity={receipt.errors ? 'warning' : 'success'}>{receipt.launched} started · {receipt.replayed || 0} already in progress · {receipt.errors} blocked</Alert>
+    {startedCycleId && <Box mt={2}><Button component={Link} href={`/admin/appraisal-cycles/${startedCycleId}`}>View review cycle</Button><Typography variant="body2" color="text.secondary">Questions and scoring are preserved after launch. Use a new cycle for a different question set.</Typography></Box>}
     <Stack spacing={1.5} my={3}>{[...(receipt.appraisals || []), ...(receipt.existingAppraisals || [])].map((review) => <Paper variant="outlined" sx={{ p: 2 }} key={review._id}>
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2}>
         <Box><Typography fontWeight={600}>{review.employee?.name || 'Appraisal'} · {resultCycleName(review)}</Typography>
@@ -231,11 +245,21 @@ export default function StartAppraisalPage() {
         <Typography component="h2" variant="h6" ref={stepHeading} tabIndex={-1}>Review details</Typography>
         {cyclesError && <Alert severity="warning" action={<Button onClick={() => refreshCycles()}>Retry</Button>}>Existing cycles could not be loaded. Retry to choose an existing cycle, or use a new one-off review.</Alert>}
         <TextField select label="Review cycle" value={cycleId || 'new'} onChange={(event) => { setCycleId(event.target.value); setError(''); setDetailsAttempted(false); }} helperText="Choose a completed quarterly cycle, or start a one-off review. You set response deadlines next."><MenuItem value="new">New one-off review</MenuItem>{(cycles as Cycle[]).filter((cycle) => ['active', 'draft'].includes(cycle.status)).map((cycle) => <MenuItem key={cycle._id} value={cycle._id} disabled={cycle.periodEnd.slice(0, 10) >= today}>{cycle.name}{cycle.periodEnd.slice(0, 10) >= today ? ' · available after this quarter ends' : ''}</MenuItem>)}</TextField>
-        {existingCycle ? <Box><Typography fontWeight={600}>{existingCycle.name}</Typography><Typography>Assessment period: {shortDate(existingCycle.periodStart)} – {shortDate(existingCycle.periodEnd)}</Typography><Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography><Alert severity="info" sx={{ mt: 2 }}>This uses the shared cycle’s questions. Choose response deadlines for the employees and their selected reviewers below.</Alert></Box> : <>
+        {existingCycle ? <Box><Typography fontWeight={600}>{existingCycle.name}</Typography><Typography>Assessment period: {shortDate(existingCycle.periodStart)} – {shortDate(existingCycle.periodEnd)}</Typography><Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography><Alert severity="info" sx={{ mt: 2 }}>This uses the shared cycle’s questions. Choose response deadlines for the employees and their selected reviewers below.</Alert><Button component={Link} href={`/admin/appraisal-cycles/${existingCycle._id}`} target="_blank" rel="noopener noreferrer" sx={{ mt: 1 }}>View cycle settings (new tab)</Button></Box> : <>
           <TextField label="Review name" value={title} onChange={(event) => setTitle(event.target.value)} />
           <TextField select label="Review type" value={reviewType} onChange={(event) => setReviewType(event.target.value)}><MenuItem value="adhoc">One-off review</MenuItem><MenuItem value="quarterly">Quarterly review</MenuItem><MenuItem value="probation">Probation review</MenuItem><MenuItem value="project">Project review</MenuItem><MenuItem value="annual">Annual review</MenuItem></TextField>
-          <TextField select label="Review template" value={template?.id || ''} onChange={(event) => setTemplateId(event.target.value)}>{templates.map((entry) => <MenuItem key={entry.id} value={entry.id}>{entry.name}</MenuItem>)}</TextField>
+          <TextField select label="Review template" value={template?.id || ''} onChange={(event) => { setTemplateId(event.target.value); setError(''); }}>{templates.map((entry) => <MenuItem key={entry.id} value={entry.id}>{entry.name}</MenuItem>)}</TextField>
           <Typography variant="body2" color="text.secondary">{template?.description || 'Uses the standard review questions and scoring.'}</Typography>
+          {reviewDesign && template && <Accordion expanded={designOpen} onChange={(_, expanded) => setDesignOpen(expanded)} disableGutters variant="outlined">
+            <AccordionSummary expandIcon={<ExpandMore />} aria-controls="one-off-design-content" id="one-off-design-heading">
+              <Box><Typography fontWeight={600}>Questions and scoring</Typography><Typography variant="body2" color="text.secondary">{reviewDesign.sections.reduce((count, section) => count + section.questions.length, 0)} configured questions · {designCustomized ? 'Customized for this review' : 'Using template questions'} · Edit questions, instructions and rating weights</Typography></Box>
+            </AccordionSummary>
+            <AccordionDetails id="one-off-design-content">
+              <Alert severity="info" sx={{ mb: 2 }}>These questions guide the AI conversation and appear in the assessment form. Changes apply to this new cycle when you start it. The reusable template and existing appraisals stay as they are. Set the step order in Review flow below.</Alert>
+              {!requireApprovedGoals && <Typography variant="body2" color="text.secondary" mb={2}>Goals are currently excluded. Turn on Include approved goals below to use the goals section; otherwise the remaining scored sections are reweighted to 100%.</Typography>}
+              <CycleDesignBuilder design={reviewDesign} sourceTemplate={{ id: template.id, name: template.name, version: template.version || 1 }} onChange={design => { setDesignDrafts(previous => ({ ...previous, [template.id]: design })); setError(''); }} onTemplateChange={source => setTemplateId(source.id)} canSaveTemplate={false} showTemplatePicker={false} showStages={false} />
+            </AccordionDetails>
+          </Accordion>}
           <Alert severity="info"><Typography fontWeight={600}>This review starts today, {calendarDate(today)}.</Typography>First choose the work you are reviewing. Response deadlines are when people complete the review; they are not the end of the work period.</Alert>
           <Box component="section" aria-labelledby="assessment-period-heading">
             <Typography id="assessment-period-heading" component="h3" variant="subtitle1" fontWeight={600}>1. Work being reviewed</Typography>
@@ -267,11 +291,12 @@ export default function StartAppraisalPage() {
       </Stack>}
       {step === 1 && cycleId === 'new' && <Box component="section" aria-labelledby="review-goals-heading" mt={3}>
         <Divider sx={{ mb: 2 }} />
-        <Typography id="review-goals-heading" component="h3" variant="subtitle1" fontWeight={600}>Goals for this review</Typography>
+        <Typography id="review-goals-heading" component="h3" variant="subtitle1" fontWeight={600}>OKRs and goals for this review</Typography>
         <FormControlLabel control={<Checkbox checked={requireApprovedGoals} disabled={saving} onChange={(_, checked) => { setRequireApprovedGoals(checked); setError(''); }} />} label="Include approved goals" />
+        <Box mb={1.5}><Button variant="outlined" disabled={saving} onClick={() => { setRequireApprovedGoals(true); setGoalsOpen(true); setError(''); }}>Create or link goals</Button></Box>
         {withoutGoals ? <Typography variant="body2" color="text.secondary">This one-off review can start without goals. It uses the remaining review questions and competency ratings, weighted to 100%.</Typography> : <Stack spacing={1.5}>
           <Typography variant="body2" color="text.secondary">Create staff goals here and align them to an existing team, department or organization goal. Your role determines which scopes you can create. Eligible approved staff goals for the assessment period are included automatically.</Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}><Button variant="outlined" disabled={saving} onClick={() => setGoalsOpen(true)}>Create or link goals</Button><Button disabled={saving || goalsOpen} onClick={() => setGoalCheckVersion(value => value + 1)}>Refresh goal readiness</Button></Stack>
+          <Box><Button disabled={saving || goalsOpen} onClick={() => setGoalCheckVersion(value => value + 1)}>Refresh goal readiness</Button></Box>
           {!checkedGoals && <Typography role="status" variant="body2">Checking goals…</Typography>}
           {checkedGoals?.error && <Alert severity="error">{checkedGoals.error}</Alert>}
           {checkedGoals?.data?.participants.map(person => <Alert key={person.userId} severity={person.ready ? 'success' : 'warning'}>{person.name}: {person.ready ? `${person.goals.length} eligible approved goal${person.goals.length === 1 ? '' : 's'} — ${person.goals.map(goal => goal.title).join(', ')}` : 'No eligible approved goal for this period. Create or link a staff goal and complete its approval and acknowledgement, or continue without goals.'}</Alert>)}
@@ -285,6 +310,7 @@ export default function StartAppraisalPage() {
         <Typography>Assessment period: {shortDate(existingCycle?.periodStart || periodStart)} – {shortDate(existingCycle?.periodEnd || periodEnd)}</Typography>
         {!existingCycle && <Typography>Review starts: {calendarDate(today)} (today)</Typography>}
         {!existingCycle && <Typography fontWeight={600}>{withoutGoals ? 'Review without goals' : 'Approved goals included'}</Typography>}
+        {!existingCycle && reviewDesign && <Box><Typography fontWeight={600}>Questions and scoring{designCustomized ? ' · Customized' : ''}</Typography><Typography variant="body2">{reviewDesign.sections.filter(section => requireApprovedGoals || section.type !== 'goals').map(section => section.title).join(' · ')}</Typography><Typography variant="body2" color="text.secondary">Your configured questions and instructions are saved with each new appraisal for its AI conversation and assessment form.</Typography><Button onClick={() => { setDesignOpen(true); moveStep(1); }}>Edit questions and scoring</Button></Box>}
         <Typography>Employee deadline: {shortDate(selfDue)}</Typography><Typography>Reviewer deadline: {shortDate(managerDue)}</Typography>
         {participants.map((person) => <Typography key={person.userId}>{person.name} · Reviewer: {person.reviewerOptions?.find(reviewer => reviewer.userId === reviewers[person.userId])?.name || 'Choose a reviewer'}</Typography>)}
         {withRole && <Box><Typography fontWeight={600}>Role competency assessment</Typography><Typography>{competency.data?.cycles?.find(cycle => cycle.id === competencyCycleId)?.name} · Configuration revision {competencyRevision}</Typography>{participants.map(person => { const role = competency.data?.roles.find(row => row.versionId === roleVersions[person.userId]); return <Typography key={person.userId}>{person.name}: {role?.name} · Role version {role?.version}</Typography>; })}<Typography>CV: {cvRequested ? 'Requested as optional evidence' : 'Not requested'}</Typography><Typography variant="body2" color="text.secondary">The selected role and scoring configuration are preserved. Complete this role assessment before finalising the appraisal.</Typography></Box>}
