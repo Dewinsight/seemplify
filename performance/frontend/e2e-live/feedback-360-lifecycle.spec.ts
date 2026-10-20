@@ -14,6 +14,7 @@ test('employee requests anonymous 360 feedback and five real reviewers unlock on
   await page.setViewportSize({ width: 390, height: 844 });
   const actors = ['peer', 'team_lead', 'manager', 'hr_manager', 'department_head'];
   const contextLabel = `Real 360 cohort ${Date.now()}`;
+  const cohortCard = page.getByRole('article', { name: `${contextLabel} for Acceptance employee`, exact: true });
   await login(page, 'employee');
   await page.getByRole('button', { name: 'Request feedback', exact: true }).click();
   let dialog = page.getByRole('dialog', { name: 'Request feedback', exact: true });
@@ -47,7 +48,7 @@ test('employee requests anonymous 360 feedback and five real reviewers unlock on
   for (const field of ['_id', 'reviewerId', 'reviewerInfo', 'fulfilledByFeedbackId', 'createdAt']) expect(createdData[0]).not.toHaveProperty(field);
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('tab', { name: 'Requested by me', exact: true })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByText(/5 invited · Collecting responses/)).toBeVisible();
+  await expect(cohortCard.getByText(/5 invited · Collecting responses/)).toBeVisible();
   await page.screenshot({ path: info.outputPath('anonymous-360-request-created-mobile.png'), fullPage: true });
   const feedbackIds: string[] = [];
   for (const [index, actor] of actors.entries()) {
@@ -73,20 +74,22 @@ test('employee requests anonymous 360 feedback and five real reviewers unlock on
       expect(hr.filter((item: { contextLabel: string }) => item.contextLabel === contextLabel)).toHaveLength(0);
       await login(page, 'employee');
       await page.getByRole('tab', { name: 'About me', exact: true }).click();
-      await expect(page.getByText(/5 invited · Collecting responses/)).toBeVisible();
+      await expect(cohortCard.getByText(/5 invited · Collecting responses/)).toBeVisible();
       const summary = (await api(request, 'employee', 'GET', 'feedback/requests?view=subject')).find((item: { contextLabel: string }) => item.contextLabel === contextLabel);
       expect(summary).toMatchObject({ responseCount: null, reportable: false, state: 'collecting' });
-      await expect(page.getByRole('button', { name: 'View received responses', exact: true })).toHaveCount(0);
+      await expect(cohortCard.getByRole('button', { name: 'View received responses', exact: true })).toHaveCount(0);
       expect((await request.post(`http://127.0.0.1:5014/api/feedback/${feedbackIds[0]}/acknowledge`, { headers: { 'x-acceptance-actor': 'employee' } })).status()).toBe(404);
     }
   }
   await login(page, 'employee');
   await page.getByRole('tab', { name: 'About me', exact: true }).click();
-  await expect(page.getByText(/5 invited · 5 responses available/)).toBeVisible();
-  await page.getByRole('button', { name: 'View received responses', exact: true }).click();
-  await expect(page.getByText('Anonymous', { exact: true })).toHaveCount(5);
-  await expect(page.getByText('Invalid Date', { exact: true })).toHaveCount(0);
-  for (const actor of actors) await expect(page.getByText(`Acceptance ${actor.replaceAll('_', ' ')}`, { exact: true })).toHaveCount(0);
+  await expect(cohortCard.getByText(/5 invited · 5 responses available/)).toBeVisible();
+  await cohortCard.getByRole('button', { name: 'View received responses', exact: true }).click();
+  const cohortResponses = page.locator('[id^="feedback-"]').filter({ has: page.getByText(contextLabel, { exact: true }) });
+  await expect(cohortResponses).toHaveCount(5);
+  await expect(cohortResponses.getByText('Anonymous', { exact: true })).toHaveCount(5);
+  await expect(cohortResponses.getByText('Invalid Date', { exact: true })).toHaveCount(0);
+  for (const actor of actors) await expect(cohortResponses.getByText(`Acceptance ${actor.replaceAll('_', ' ')}`, { exact: true })).toHaveCount(0);
   const received = (await api(request, 'employee', 'GET', 'feedback/received')).filter((item: { contextLabel: string }) => item.contextLabel === contextLabel);
   expect(received).toHaveLength(5);
   for (const item of received) {

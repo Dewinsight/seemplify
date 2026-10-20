@@ -111,7 +111,10 @@ test('AI-enabled manual partial draft and cleared competency stay unrated across
   for (const [label, value] of Object.entries({ 'Challenges Faced': summary.challenges, 'Key Learnings': summary.learnings,
     'Goals for Next Period': summary.goals, 'Areas for Improvement': summary.improvements }))
     await page.getByRole('textbox', { name: label, exact: true }).fill(value);
-  await page.getByRole('textbox', { name: /Describe the synthetic outcome for this manual draft/ }).fill('The documented synthetic outcome is ready for the human reviewer.');
+  const requiredAnswer = page.getByRole('textbox', { name: /Describe the synthetic outcome for this manual draft/ });
+  await requiredAnswer.click();
+  await requiredAnswer.fill('The documented synthetic outcome is ready for the human reviewer.');
+  await expect(page.getByText(/Complete the required cycle questions:/)).toBeHidden();
   await page.screenshot({ path: info.outputPath('manual-unrated-draft-mobile.png'), fullPage: true, animations: 'disabled' });
   const response = page.waitForResponse(value => value.request().method() === 'POST' &&
     value.url().endsWith(`/api/appraisals/${appraisal._id}/self-assessment`) && value.request().postDataJSON()?.submit === true);
