@@ -40,7 +40,7 @@ export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canM
     setDuration(30); setLinkMode('new'); setMeetingLink(''); setNotice(false); setConnection(null); setShowForm(true);
   };
   if (!steps.length && !oneOnOneId) return null;
-  return <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
+  return <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mb: 3, '& .MuiButton-text:not(.Mui-disabled)': { color: 'text.primary' } }}>
     <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} alignItems={{ sm: 'center' }} justifyContent="space-between" mb={2.5}>
       <Box><Typography component="h2" variant="h6">{oneOnOneId ? 'Call, recording and notes' : 'Appraisal calls and notes'}</Typography><Typography variant="body2" color="text.secondary" mt={.5}>{readOnly ? 'Saved recordings, transcripts and agreed notes remain available. This appraisal is closed.' : 'Meet, review the conversation, and agree on next steps.'}</Typography></Box>
       {!readOnly && !oneOnOneId && canManage && available.length > 0 && !showForm && <Button variant="outlined" startIcon={<AddRounded />} sx={{ flexShrink: 0, alignSelf: { xs: 'flex-start', sm: 'auto' }, minHeight: 44 }} disabled={!!busy} onClick={openForm}>Schedule a call</Button>}
