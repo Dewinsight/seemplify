@@ -209,7 +209,7 @@ Employee Self-Assessment:
 ${JSON.stringify(selfAssessment?.overallSummary || {}, null, 2)}
 
 Manager's Notes:
-${managerNotes || 'No notes provided'}
+${typeof managerNotes === 'string' ? managerNotes || 'No notes provided' : JSON.stringify(managerNotes || {}, null, 2)}
 
 OKR Performance:
 ${okrData.map(o => `- ${o.okrTitle}: ${o.completionPercentage}% (Target: ${o.targetValue}, Achieved: ${o.achievedValue})`).join('\n') || 'No OKR data'}

@@ -296,3 +296,81 @@ test('an explicitly requested AI bias warning still requires human confirmation 
   expect(aiRequests).toHaveLength(1);
   expect(fixture.writes.at(-1)).toMatchObject({ assessmentMode: 'form', submit: true });
 });
+
+const assistanceFixture = {
+  suggestedRating: 4,
+  ratingJustification: 'The documented delivery evidence supports this draft.',
+  draftSummary: 'Delivered a fictional release with measurable outcomes.\nDiscuss the next handover with the employee.',
+  strengthsToHighlight: ['Clear planning and communication.'],
+  constructiveFeedback: ['Raise dependencies earlier.'],
+  specificExamples: ['The recorded fictional release milestone.'],
+  developmentRecommendations: ['Practise the next mentoring exercise.'],
+  discussionTips: ['Ask the employee which support would help.'],
+};
+
+async function assistanceReview(page: Page) {
+  const item = await record('reviewer');
+  await Cycle.updateOne({ _id: item.cycleId }, { $set: { 'settings.enableAiAssist': true } });
+  await Appraisal.updateOne({ _id: item._id }, { $set: { 'managerReview.overallSummary.achievements': 'My saved observation of the fictional release.' } });
+  const fixture = await setup(page, 'reviewer');
+  await page.goto(`/appraisals/${item._id}/manager-review`);
+  await expect(page.getByRole('heading', { name: 'Review: Emery Employee', exact: true })).toBeVisible();
+  await expect.poll(() => fixture.ready).toBe(true);
+  return item;
+}
+
+test('review suggestions render the real API envelope and retain the human review on desktop and mobile', async ({ page }, testInfo) => {
+  const ai = backend('./services/appraisalAIService');
+  const previous = { client: ai.client, initialized: ai.initialized };
+  let prompt = '', release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  ai.initialized = true;
+  ai.client = { chat: { completions: { create: async (request: { messages: Array<{ content: string }> }) => {
+    prompt = request.messages[1].content; await pending;
+    return { choices: [{ message: { content: JSON.stringify(assistanceFixture) } }] };
+  } } } };
+  try {
+    const item = await assistanceReview(page);
+    const before = (await Appraisal.findById(item._id).lean()).managerReview;
+    await page.getByRole('button', { name: 'Get AI-Powered Review Suggestions', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Generating review suggestions…', exact: true })).toBeDisabled();
+    release();
+    const panel = page.getByRole('region', { name: 'AI Review Assistance', exact: true });
+    await expect(panel.getByText('Delivered a fictional release with measurable outcomes.', { exact: false })).toBeVisible();
+    await expect(panel.getByText('Suggested Rating: 4/5', { exact: true })).toBeVisible();
+    await expect(panel.getByText(assistanceFixture.ratingJustification, { exact: true })).toBeVisible();
+    for (const text of [...assistanceFixture.strengthsToHighlight, ...assistanceFixture.constructiveFeedback, ...assistanceFixture.specificExamples, ...assistanceFixture.developmentRecommendations, ...assistanceFixture.discussionTips]) await expect(panel.getByText(text, { exact: true })).toBeVisible();
+    expect(prompt).toContain('My saved observation of the fictional release.');
+    expect(prompt).not.toContain('[object Object]');
+    expect((await Appraisal.findById(item._id).lean()).managerReview).toEqual(before);
+    await page.screenshot({ path: testInfo.outputPath('manager-ai-assistance-desktop.png'), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(panel.getByText('Suggested Rating: 4/5', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('manager-ai-assistance-mobile.png'), fullPage: true });
+  } finally { release(); ai.client = previous.client; ai.initialized = previous.initialized; }
+});
+
+test('invalid review AI output shows an actionable error and a retry can recover without saving ratings', async ({ page }) => {
+  const ai = backend('./services/appraisalAIService');
+  const previous = { client: ai.client, initialized: ai.initialized };
+  let content = JSON.stringify({ suggestions: ['Incomplete provider result.'] });
+  ai.initialized = true;
+  ai.client = { chat: { completions: { create: async () => ({ choices: [{ message: { content } }] }) } } };
+  try {
+    const item = await assistanceReview(page);
+    const before = (await Appraisal.findById(item._id).lean()).managerReview;
+    const response = page.waitForResponse(value => value.url().endsWith(`/appraisals/${item._id}/ai-assist`));
+    await page.getByRole('button', { name: 'Get AI-Powered Review Suggestions', exact: true }).click();
+    const failed = await response;
+    expect(failed.status()).toBe(502);
+    expect((await failed.json()).code).toBe('AI_RESPONSE_INVALID');
+    await expect(page.getByRole('alert').filter({ hasText: 'Manager-review assistance was incomplete.' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'AI Review Assistance', exact: true })).toHaveCount(0);
+    content = JSON.stringify(assistanceFixture);
+    await page.getByRole('button', { name: 'Get AI-Powered Review Suggestions', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'AI Review Assistance', exact: true })).toBeVisible();
+    await expect(page.getByText('Manager-review assistance was incomplete.', { exact: true })).toHaveCount(0);
+    expect((await Appraisal.findById(item._id).lean()).managerReview).toEqual(before);
+  } finally { ai.client = previous.client; ai.initialized = previous.initialized; }
+});

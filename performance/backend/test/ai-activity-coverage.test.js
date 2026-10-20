@@ -206,20 +206,26 @@ test('manager review assistance exposes the canonical card contract and rejects 
     strengthsToHighlight: ['Delivery'],
     constructiveFeedback: ['Delegate earlier']
   });
+  let prompt;
   appraisalAIService.client = {
     chat: {
       completions: {
-        create: async () => ({ choices: [{ message: { content } }] })
+        create: async (request) => { prompt = request.messages[1].content; return { choices: [{ message: { content } }] }; }
       }
     }
   };
   appraisalAIService.initialized = true;
 
   try {
-    const result = await appraisalAIService.assistManagerReview({}, '', []);
+    const notes = { achievements: 'Delivered the release with measured evidence.', strengths: 'Coached the delivery team.', improvements: 'Raise dependencies earlier.' };
+    const result = await appraisalAIService.assistManagerReview({}, notes, []);
     assert.equal(result.success, true);
     assert.equal(result.suggestedRating, 4);
     assert.equal(result.overallSuggestion, 'A strong review period with measurable outcomes.');
+    for (const value of Object.values(notes)) assert.ok(prompt.includes(value));
+    assert.ok(!prompt.includes('[object Object]'));
+    await appraisalAIService.assistManagerReview({}, 'Legacy plain-text notes.', []);
+    assert.ok(prompt.includes('Legacy plain-text notes.'));
 
     content = JSON.stringify({ suggestions: ['Generic fallback must not be presented as AI output.'] });
     await assert.rejects(

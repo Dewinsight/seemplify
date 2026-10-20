@@ -67,6 +67,25 @@ beforeEach(async () => {
 afterEach(() => jest.restoreAllMocks());
 afterAll(async () => { await mongoose.disconnect(); if (mongo) await mongo.stop(); });
 
+test('manager assistance returns the data envelope and keeps human review fields unchanged', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const notes = { achievements: 'Delivered a fictional release.', strengths: 'Clear planning.' };
+  const assistance = { success: true, overallSuggestion: 'Use the documented delivery evidence.', suggestedRating: 4, ratingJustification: 'Synthetic evidence only.' };
+  const provider = jest.spyOn(ai, 'assistManagerReview').mockResolvedValue(assistance);
+  const before = (await Appraisal.findById(appraisal._id)).toObject().managerReview;
+  const response = await call('post', `/${appraisal._id}/ai-assist`).send({ managerNotes: notes }).expect(200);
+  expect(response.body).toEqual({ success: true, data: assistance });
+  expect(provider.mock.calls[0][1]).toEqual(notes);
+  expect((await Appraisal.findById(appraisal._id)).toObject().managerReview).toEqual(before);
+});
+
+test('manager assistance preserves actionable gateway errors rather than returning an empty success', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  jest.spyOn(ai, 'assistManagerReview').mockRejectedValue(new PerformanceAIRuntimeError('AI is temporarily unavailable. Please retry.', 'AI_GATEWAY_UNAVAILABLE', 503));
+  const response = await call('post', `/${appraisal._id}/ai-assist`).send({ managerNotes: {} }).expect(503);
+  expect(response.body).toEqual({ success: false, error: 'AI is temporarily unavailable. Please retry.', code: 'AI_GATEWAY_UNAVAILABLE' });
+});
+
 test.each([[true, false], [false, true], [false, false], [true, true]])('AI policy combines frozen %s and current %s without rewriting any snapshot', async (frozen, live) => {
   const cycle = await createCycle(frozen), appraisal = await launch(cycle), original = await rawSnapshot(appraisal._id);
   await setLive(cycle, live);

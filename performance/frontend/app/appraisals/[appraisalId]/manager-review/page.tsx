@@ -80,6 +80,17 @@ interface AISuggestion {
   };
 }
 
+interface AIReviewAssistance {
+  overallSuggestion: string;
+  suggestedRating?: number;
+  ratingJustification?: string;
+  strengthsToHighlight?: string[];
+  constructiveFeedback?: string[];
+  specificExamples?: string[];
+  developmentRecommendations?: string[];
+  discussionTips?: string[];
+}
+
 const ratingLabels: Record<number, string> = {
   1: 'Needs Improvement',
   2: 'Partially Meets',
@@ -126,7 +137,8 @@ export default function ManagerReviewPage() {
   const [documentsBusy, setDocumentsBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiAssist, setAiAssist] = useState<any>(null);
+  const [aiAssist, setAiAssist] = useState<AIReviewAssistance | null>(null);
+  const [aiAssistError, setAiAssistError] = useState('');
   const [biasCheck, setBiasCheck] = useState<any>(null);
   const [biasAcknowledged, setBiasAcknowledged] = useState(false);
   const [managerReviewStarted, setManagerReviewStarted] = useState(false);
@@ -221,6 +233,8 @@ export default function ManagerReviewPage() {
   useEffect(() => {
     setManagerReviewStarted(false);
     setActiveStep(0);
+    setAiAssist(null);
+    setAiAssistError('');
   }, [appraisalId]);
 
   useEffect(() => {
@@ -390,14 +404,21 @@ export default function ManagerReviewPage() {
       return;
     }
     setAiLoading(true);
+    setAiAssist(null);
+    setAiAssistError('');
     try {
       const response = await api.post(`/appraisals/${appraisalId}/ai-assist`, {
         managerNotes: formData.overallSummary
       });
-      setAiAssist(response.data);
+      const assistance = response.data?.data;
+      const draft = assistance?.overallSuggestion || assistance?.draftSummary;
+      if (response.data?.success !== true || assistance?.success === false || typeof draft !== 'string' || !draft.trim()) {
+        throw new Error('AI did not return review suggestions. Try again, or continue your review manually.');
+      }
+      setAiAssist({ ...assistance, overallSuggestion: draft.trim() });
     } catch (error) {
-      console.error('AI assist error:', error);
-      setSnackbar({ open: true, message: 'Could not get AI assistance', severity: 'error' });
+      setAiAssistError(getApiErrorMessage(error, error instanceof Error && !('response' in error)
+        ? error.message : 'Could not get AI assistance. Try again, or continue your review manually.'));
     } finally {
       setAiLoading(false);
     }
@@ -699,20 +720,37 @@ export default function ManagerReviewPage() {
             startIcon={aiLoading ? <CircularProgress size={16} /> : <AutoAwesome />}
             onClick={getAIAssist}
             disabled={aiLoading}
+            aria-busy={aiLoading}
             sx={{ mt: 3 }}
           >
-            Get AI-Powered Review Suggestions
+            {aiLoading ? 'Generating review suggestions…' : 'Get AI-Powered Review Suggestions'}
           </Button>
 
+          {aiAssistError && <Alert severity="error" sx={{ mt: 2 }}>{aiAssistError}</Alert>}
+
           {aiAssist && (
-            <Paper sx={{ p: 2, mt: 2, bgcolor: 'primary.lighter', border: 1, borderColor: 'primary.main' }}>
-              <Typography variant="subtitle1" fontWeight={600} color="primary.main" gutterBottom>
+            <Paper component="section" aria-labelledby="ai-review-assistance-heading" sx={{ p: 2, mt: 2, bgcolor: 'primary.lighter', border: 1, borderColor: 'primary.main' }}>
+              <Typography id="ai-review-assistance-heading" component="h3" variant="subtitle1" fontWeight={600} color="primary.main" gutterBottom>
                 AI Review Assistance
               </Typography>
-              <Typography variant="body2" sx={{ mb: 2 }}>{aiAssist.overallSuggestion}</Typography>
-              {aiAssist.suggestedRating && (
+              <Typography variant="body2" sx={{ mb: 2, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{aiAssist.overallSuggestion}</Typography>
+              {typeof aiAssist.suggestedRating === 'number' && Number.isFinite(aiAssist.suggestedRating) && aiAssist.suggestedRating >= 1 && aiAssist.suggestedRating <= 5 && (
                 <Chip label={`Suggested Rating: ${aiAssist.suggestedRating}/5`} color="primary" />
               )}
+              {typeof aiAssist.ratingJustification === 'string' && <Typography variant="body2" sx={{ mt: 1 }}>{aiAssist.ratingJustification}</Typography>}
+              {([
+                ['Strengths to highlight', aiAssist.strengthsToHighlight],
+                ['Constructive feedback', aiAssist.constructiveFeedback],
+                ['Examples from the evidence', aiAssist.specificExamples],
+                ['Development recommendations', aiAssist.developmentRecommendations],
+                ['Discussion tips', aiAssist.discussionTips],
+              ] as const).map(([label, values]) => {
+                const items = Array.isArray(values) ? values.filter(value => typeof value === 'string' && value.trim()) : [];
+                return items.length ? <Box key={label} sx={{ mt: 2 }}>
+                  <Typography component="h4" variant="subtitle2">{label}</Typography>
+                  <Box component="ul" sx={{ my: 0.5, pl: 3 }}>{items.map((text, index) => <Typography component="li" variant="body2" key={index}>{text}</Typography>)}</Box>
+                </Box> : null;
+              })}
             </Paper>
           )}
         </>

@@ -3767,7 +3767,7 @@ router.post('/:appraisalId/ai-assist', requireAuth, async (req, res) => {
     res.json({ success: true, data: assistance });
   } catch (error) {
     console.error('AI assist error:', error);
-    res.status(500).json({ success: false, error: 'Failed to get AI assistance' });
+    return aiGatewayService.sendPerformanceAIError(res, error, 'Failed to get AI assistance');
   }
 });
 
