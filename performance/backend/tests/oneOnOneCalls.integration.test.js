@@ -184,6 +184,7 @@ test('history is tenant/participant scoped, paginated and excludes live calls', 
 
 
 test('manual reminders use only saved participants, deduplicate clicks and enforce meeting access', async () => {
+  jest.spyOn(require('../services/notificationService'), 'isConfigured').mockReturnValue(true);
   const { DomainEvent } = { DomainEvent: require('../models/DomainEvent') }; await DomainEvent.createIndexes();
   const created = await call('post', '/').send(payload()).expect(201); const id = created.body.data._id;
   const path = `/${id}/call/reminder`;
@@ -204,4 +205,15 @@ test('personal call connection uses the requesting participant identity', async 
   const created = await call('post', '/').send(payload()).expect(201); const id = created.body.data._id;
   await call('get', `/${id}/call/connection`, 'employee').expect(200);
   expect(provider.mock.calls.at(-1)[0]).toBe('meetings/connection'); expect(provider.mock.calls.at(-1)[1].sub).toBe('employee');
+});
+
+
+test('reminder queue rejects missing mail configuration and organization notification disablement', async () => {
+  const created = await call('post', '/').send(payload()).expect(201); const id = created.body.data._id;
+  const configured = jest.spyOn(require('../services/notificationService'), 'isConfigured').mockReturnValue(false);
+  await call('post', `/${id}/call/reminder`).send({}).expect(503);
+  configured.mockReturnValue(true);
+  await require('../models/OrganizationFeatureConfig').create({ organizationId: org.id, features: { notifications: false } });
+  await call('post', `/${id}/call/reminder`).send({}).expect(409);
+  expect(await require('../models/DomainEvent').countDocuments({ eventType: 'one_on_one.call_reminder' })).toBe(0);
 });

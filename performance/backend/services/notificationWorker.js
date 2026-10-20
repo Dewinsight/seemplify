@@ -193,15 +193,18 @@ function deliverySeed({ event, notification, recipient, channel, now, preference
   }
 
   const isEmail = channel === 'email';
+  // A reviewer explicitly sends this transactional meeting email. Optional
+  // digest/channel defaults must not silently discard or delay the request.
+  const callReminder = isEmail && event.eventType === 'one_on_one.call_reminder';
   const prefix = isEmail ? 'EMAIL' : 'CHAT';
   // Email remains an event-requested channel for backwards compatibility.
   // Chat is materialized from the user's own tenant-scoped opt-in, so domain
   // routes never need to know about or call the Zulip transport.
   const requested = isEmail ? recipient.channels.includes('email') : true;
-  const enabled = requested && channelEnabled(preference, event.eventType, channel);
+  const enabled = requested && (callReminder || channelEnabled(preference, event.eventType, channel));
   const destination = isEmail ? recipient.email : preference.chat?.recipientEmail;
   const configured = isEmail ? notificationService.isConfigured() : zulipService.isConfigured();
-  if (!requested || !enabled || !destination || !configured || preference.digest?.frequency === 'off') {
+  if (!requested || !enabled || !destination || !configured || (!callReminder && preference.digest?.frequency === 'off')) {
     const reason = !requested ? `${prefix}_NOT_REQUESTED`
       : !enabled || preference.digest?.frequency === 'off' ? `${prefix}_DISABLED`
         : !destination ? `${prefix}_ADDRESS_MISSING` : `${prefix}_NOT_CONFIGURED`;
@@ -222,7 +225,7 @@ function deliverySeed({ event, notification, recipient, channel, now, preference
   }
 
   const digestFrequency = preference.digest?.frequency;
-  const digestMode = digestFrequency === 'daily' || digestFrequency === 'weekly';
+  const digestMode = !callReminder && (digestFrequency === 'daily' || digestFrequency === 'weekly');
   const scheduledAt = digestMode ? nextDigestAt(preference, now) : now;
   return {
     ...common,
@@ -553,11 +556,12 @@ async function processImmediateDelivery(delivery, now = new Date()) {
 
   const preference = await loadPreference(delivery.organizationId, delivery.userId);
   const channel = delivery.channel;
+  const callReminder = channel === 'email' && notification.eventType === 'one_on_one.call_reminder';
   const prefix = String(channel || 'external').toUpperCase();
   if (!EXTERNAL_CHANNELS.includes(channel)) {
     return markSkipped(delivery, 'CHANNEL_UNSUPPORTED', 'The delivery channel is unsupported.', now);
   }
-  if (!channelEnabled(preference, notification.eventType, channel) || preference.digest?.frequency === 'off') {
+  if (!callReminder && (!channelEnabled(preference, notification.eventType, channel) || preference.digest?.frequency === 'off')) {
     return markSkipped(delivery, `${prefix}_DISABLED`, `${channel} notifications are disabled.`, now);
   }
   if (!delivery.destination) {
@@ -572,7 +576,7 @@ async function processImmediateDelivery(delivery, now = new Date()) {
   if (channel === 'chat' && !zulipService.isConfigured()) {
     return markSkipped(delivery, 'CHAT_NOT_CONFIGURED', 'Optional chat delivery is not configured.', now);
   }
-  const deferredUntil = quietHoursDeferral(preference, now);
+  const deferredUntil = callReminder ? null : quietHoursDeferral(preference, now);
   if (deferredUntil) return markDeferred(delivery, deferredUntil);
 
   const startedAt = new Date();
