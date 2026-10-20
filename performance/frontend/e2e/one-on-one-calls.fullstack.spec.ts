@@ -40,7 +40,7 @@ test.beforeAll(async () => {
   shared.request = async (operation: string, _identity: unknown, input: { externalId?: string } = {}) => {
     requests.push({ operation, input });
     if (operation === 'meetings/connection') return { connected, email: 'manager@example.test', connectUrl: 'http://localhost:4000/' };
-    if (operation === 'meetings/create') { if (calendarFailure) throw Object.assign(new Error('Synthetic calendar outage. Retry this saved meeting.'), { statusCode: 503 }); return { eventId: 'event-one', calendarId: 'calendar-one', conferenceUrl: 'https://meet.google.com/fixture-call', state: 'scheduled', recordingState: 'awaiting_consent' }; }
+    if (operation === 'meetings/create') { if (calendarFailure) throw Object.assign(new Error('Synthetic calendar outage. Retry this saved meeting.'), { statusCode: 503 }); return { eventId: 'event-one', calendarId: 'calendar-one', conferenceUrl: 'https://meet.google.com/fixture-call', state: 'scheduled', recordingState: 'scheduled' }; }
     if (operation === 'meetings/startRecording') return { recordingState: 'scheduled' };
     if (operation === 'meetings/stopRecording') return { recordingState: 'revoked' };
     if (operation === 'meetings/transcribe') return { transcript: 'Synthetic transcript fixture: Emery will document the release.', provider: 'test-fixture', model: 'test-fixture' };
@@ -84,7 +84,7 @@ test('calendar connection, failed invitation retry and cancelled-call history us
   await expect(page.getByText('Connect your calendar, then return here and check again.')).toBeVisible();
   connected = true; await page.getByRole('button', { name: 'Check again', exact: true }).click();
   await expect(page.getByText('Invitation will be sent from: manager@example.test')).toBeVisible();
-  await page.getByRole('checkbox', { name: /I will tell the other participant to review recording permissions/ }).check();
+  await expect(page.getByRole('checkbox', { name: /recording permission|I will tell/ })).toHaveCount(0);
   calendarFailure = true; await page.getByRole('button', { name: 'Create calendar invitation' }).click();
   await page.getByRole('link', { name: 'Open saved meeting to retry' }).click();
   await expect(page.getByText('Invitation needs attention', { exact: true })).toBeVisible();
@@ -92,22 +92,16 @@ test('calendar connection, failed invitation retry and cancelled-call history us
   await expect(page.getByRole('link', { name: 'Join call', exact: true })).toHaveAttribute('href', 'https://meet.google.com/fixture-call');
   expect(await OneOnOne.countDocuments()).toBe(1);
   expect(new Set(requests.filter(item => item.operation === 'meetings/create').map(item => item.input.externalId)).size).toBe(1);
-  expect(requests.find(item => item.operation === 'meetings/create')?.input).toMatchObject({ record: false, recordingPolicyVersion: 'calendar-recording-v1' });
-  expect(requests.filter(item => item.operation === 'meetings/startRecording')).toHaveLength(0);
-  await page.getByRole('checkbox', { name: 'I agree to this call being recorded', exact: true }).check();
-  await page.getByRole('checkbox', { name: 'I agree to transcription of this call', exact: true }).check();
-  await page.getByRole('button', { name: 'Save my recording permission', exact: true }).click();
-  await expect(page.getByText('Reviewer: Agreed', { exact: true })).toBeVisible();
-  expect(requests.filter(item => item.operation === 'meetings/startRecording')).toHaveLength(0);
+  expect(requests.find(item => item.operation === 'meetings/create')?.input).toMatchObject({ record: true, recordingPolicyVersion: 'calendar-notetaker-v2' });
+  await expect(page.getByRole('checkbox', { name: /I agree/ })).toHaveCount(0);
   const employeeContext = await browser.newContext();
   try {
     const employee = await employeeContext.newPage(); await setup(employee, 'employee');
     await employee.goto(page.url());
-    await employee.getByRole('checkbox', { name: 'I agree to this call being recorded', exact: true }).check();
-    await employee.getByRole('checkbox', { name: 'I agree to transcription of this call', exact: true }).check();
-    await employee.getByRole('button', { name: 'Save my recording permission', exact: true }).click();
-    await expect(employee.getByText('Both participants agreed. The notetaker is scheduled.', { exact: true })).toBeVisible();
-    expect(requests.filter(item => item.operation === 'meetings/startRecording')).toHaveLength(1);
+    await expect(employee.getByRole('heading', { name: 'Meeting notetaker', exact: true })).toBeVisible();
+    await expect(employee.getByText('The notetaker is scheduled.', { exact: true })).toBeVisible();
+    await expect(employee.getByRole('checkbox', { name: /I agree/ })).toHaveCount(0);
+    await expect(employee.getByRole('button', { name: /permission/ })).toHaveCount(0);
   } finally { await employeeContext.close(); }
   await page.screenshot({ path: testInfo.outputPath('calendar-call-ready.png'), fullPage: true });
   page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Cancel meeting', exact: true }).click();

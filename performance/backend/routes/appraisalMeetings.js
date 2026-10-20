@@ -41,7 +41,7 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
       const scheduledDate = new Date(req.body.scheduledDate); const duration = Number(req.body.duration || 30);
       if (mode === 'in_app' && req.body.record && duration > 30) return res.status(400).json({ error: 'Recorded in-app calls support up to 30 minutes. Add another call step for a longer discussion.' });
       if (!Number.isFinite(+scheduledDate) || +scheduledDate <= Date.now() || !Number.isInteger(duration) || duration < 15 || duration > 480) return res.status(400).json({ success: false, error: 'Choose a future time and a duration from 15 to 480 minutes.' });
-      if (req.body.record && req.body.recordingNoticeAccepted !== true) return res.status(400).json({ success: false, error: 'Confirm that you will inform participants before recording.' });
+      if (mode === 'in_app' && req.body.record && req.body.recordingNoticeAccepted !== true) return res.status(400).json({ success: false, error: 'Confirm that you will inform participants before recording.' });
       const identity = shared.identityFromRequest(req);
       let meeting = await OneOnOne.findOne({ appraisalId: appraisal._id, workflowStepId: step.id, organizationId: appraisal.organizationId });
       if (!meeting) {

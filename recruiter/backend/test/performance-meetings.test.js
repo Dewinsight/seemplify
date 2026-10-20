@@ -163,3 +163,38 @@ test('manual add dispatches the existing scheduled bot once under concurrent req
   await service.stopRecording(identity, data);
   await assert.rejects(service.startRecording(identity, { ...data, joinNow: true, recordingConsent: sourceConsent() }), { code: 'RECORDING_CONSENT_REVOKED' });
 });
+
+function policyAuthorization(actor = 'calendar-owner') { return { policyVersion: 'calendar-notetaker-v2', requestedBy: actor, requestedAt: new Date().toISOString() }; }
+test('current calendar policy schedules one bot with no participant consent and keeps the recording notice', async t => {
+  const provider = setup(t); const data = { ...deferredInput(), record: true, recordingPolicyVersion: 'calendar-notetaker-v2' };
+  let bots = 0; t.mock.method(nylas, 'createStandaloneNotetaker', async () => { bots++; return { notetakerId: 'automatic-bot' }; });
+  const result = await service.create(identity, data);
+  assert.equal(result.recordingState, 'scheduled'); assert.equal(bots, 1);
+  assert.match(provider.mock.calls[0].arguments[0].requestBody.description, /visible Seemplify notetaker/);
+  assert.equal(provider.mock.calls[0].arguments[0].requestBody.description.includes('both participants agree'), false);
+  const stored = await Meeting.findOne({ externalId: data.externalId });
+  assert.equal(stored.recordingAuthorization.requestedBy, identity.sub);
+  assert.equal(stored.recordingPolicyVersion, 'calendar-notetaker-v2');
+  await service.create(identity, data); assert.equal(bots, 1);
+});
+test('new policy upgrades a still-open deferred call once without forging either participant consent', async t => {
+  setup(t); const data = deferredInput(); await service.create(identity, data);
+  let bots = 0; t.mock.method(nylas, 'createStandaloneNotetaker', async () => { bots++; await new Promise(resolve => setTimeout(resolve, 20)); return { notetakerId: 'policy-bot' }; });
+  const args = { externalId: data.externalId, recordingAuthorization: policyAuthorization('employee') };
+  const results = await Promise.allSettled([service.startRecording(identity, args), service.startRecording(identity, args)]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1); assert.equal(bots, 1);
+  const stored = await Meeting.findOne({ externalId: data.externalId });
+  assert.equal(stored.recordingPolicyVersion, 'calendar-notetaker-v2');
+  assert.equal(stored.recordingAuthorization.requestedBy, 'employee');
+  assert.equal((await service.startRecording(identity, args)).recordingState, 'scheduled'); assert.equal(bots, 1);
+});
+test('new policy retains owner, participant, cancellation and time-window boundaries', async t => {
+  setup(t); const data = deferredInput(); await service.create(identity, data);
+  await assert.rejects(service.startRecording({ ...identity, organizationId: 'other-org' }, { ...data, recordingAuthorization: policyAuthorization() }), { code: 'MEETING_NOT_FOUND' });
+  await assert.rejects(service.startRecording(identity, { ...data, recordingAuthorization: policyAuthorization('outsider') }), { code: 'RECORDING_AUTHORIZATION_INVALID' });
+  await assert.rejects(service.startRecording(identity, { ...data, recordingAuthorization: { ...policyAuthorization(), requestedAt: 'invalid' } }), { code: 'RECORDING_AUTHORIZATION_INVALID' });
+  await service.stopRecording(identity, data);
+  await assert.rejects(service.startRecording(identity, { ...data, recordingAuthorization: policyAuthorization() }), { code: 'RECORDING_CONSENT_REVOKED' });
+  await Meeting.updateOne({ externalId: data.externalId }, { $set: { scheduledDate: new Date(Date.now() - 31 * 60000) } });
+  await assert.rejects(service.startRecording(identity, { ...data, recordingAuthorization: policyAuthorization() }), { code: 'RECORDING_WINDOW_CLOSED' });
+});

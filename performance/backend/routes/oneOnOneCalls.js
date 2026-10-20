@@ -63,7 +63,7 @@ module.exports.schedule = ({ serializeMeeting, onScheduled }) => wrap(async (req
   if (!/^[a-f0-9-]{36}$/i.test(String(requestId || ''))) throw calls.failure('Refresh the scheduling form and try again.', 400);
   if (!Number.isFinite(+scheduledDate) || +scheduledDate <= Date.now() || !Number.isInteger(duration) || duration < 15 || duration > 480) throw calls.failure('Choose a future time and a duration from 15 to 480 minutes.', 400);
   if (mode === 'in_app' && req.body.record && duration > 30) throw calls.failure('Recorded in-app calls support up to 30 minutes.', 400);
-  if (req.body.record && req.body.recordingNoticeAccepted !== true) throw calls.failure('Confirm that you will inform both participants before recording.', 400);
+  if (mode === 'in_app' && req.body.record && req.body.recordingNoticeAccepted !== true) throw calls.failure('Confirm that you will inform both participants before recording.', 400);
   const identity = shared.identityFromRequest(req);
   const scope = await require('../services/appraisalAccessService').resolveAppraisalAccessScope(req);
   const employee = scope.organizationUsers.find(person => person.userId === String(employeeId));

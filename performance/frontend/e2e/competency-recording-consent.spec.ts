@@ -4,7 +4,7 @@ import { expect, test, Page } from '@playwright/test';
 // Participant identity, persistence and provider side effects are tested separately.
 const meetingId='6ad000000000000000000001';
 const base=`/one-on-ones/${meetingId}/call/recording-consent`;
-type State={required:boolean;noticeVersion:string;ownRole:'manager'|'employee'|null;manager:{acceptedAt?:string;revokedAt?:string};employee:{acceptedAt?:string;revokedAt?:string};state:string;canAcknowledge:boolean;canStart:boolean;canWithdraw:boolean;canAddNow?:boolean;windowClosed?:boolean;cancellationPending?:boolean};
+type State={required:boolean;noticeVersion:string;ownRole:'manager'|'employee'|null;manager:{acceptedAt?:string;revokedAt?:string};employee:{acceptedAt?:string;revokedAt?:string};state:string;canAcknowledge:boolean;canStart:boolean;canWithdraw:boolean;canStop?:boolean;canAddNow?:boolean;windowClosed?:boolean;cancellationPending?:boolean};
 async function setup(page:Page,patch:Partial<State>={},options:{readFailure?:boolean;cancelFailure?:boolean}={}){
  const state:State={required:true,noticeVersion:'nylas-recording-v1',ownRole:'manager',manager:{},employee:{},state:'awaiting_consent',canAcknowledge:true,canStart:false,canWithdraw:false,...patch};
  const posts:{path:string;body:Record<string,unknown>}[]=[];let failRead=!!options.readFailure;let failedCancellation=false;
@@ -22,19 +22,41 @@ async function setup(page:Page,patch:Partial<State>={},options:{readFailure?:boo
  });
  await page.goto(`/one-on-ones/${meetingId}`);return{state,posts,allowRead:()=>{failRead=false;}};
 }
-const section=(page:Page)=>page.getByRole('heading',{name:'Calendar recording permissions'});
-test('waiting participants grant only their own recording and transcription consent',async({page})=>{const fixture=await setup(page);await expect(section(page)).toBeVisible();await expect(page.getByText('Reviewer: Waiting for agreement')).toBeVisible();await expect(page.getByText('Employee: Waiting for agreement')).toBeVisible();const save=page.getByRole('button',{name:'Save my recording permission'});await expect(save).toBeDisabled();await page.getByRole('checkbox',{name:'I agree to this call being recorded',exact:true}).check();await expect(save).toBeDisabled();await page.getByRole('checkbox',{name:'I agree to transcription of this call',exact:true}).check();await save.click();await expect(page.getByText('Reviewer: Agreed',{exact:true})).toBeVisible();await expect(page.getByText('Employee: Waiting for agreement')).toBeVisible();expect(fixture.posts).toEqual([{path:base,body:{noticeVersion:'nylas-recording-v1',acknowledged:true,recording:true,transcription:true}}]);expect(fixture.state.employee).toEqual({});});
-test('employee permission preserves the reviewer agreement and names the employee role',async({page})=>{const fixture=await setup(page,{ownRole:'employee',manager:{acceptedAt:'2026-10-18T10:00:00Z'}});await expect(page.getByText('Your permission as the employee')).toBeVisible();await page.getByRole('checkbox',{name:'I agree to this call being recorded',exact:true}).check();await page.getByRole('checkbox',{name:'I agree to transcription of this call',exact:true}).check();await page.getByRole('button',{name:'Save my recording permission'}).click();await expect(page.getByText('Employee: Agreed',{exact:true})).toBeVisible();expect(fixture.state.manager).toEqual({acceptedAt:'2026-10-18T10:00:00Z'});expect(Object.keys(fixture.posts[0].body).sort()).toEqual(['acknowledged','noticeVersion','recording','transcription']);});
-test('scheduled notetaker shows verified agreement without a duplicate start control',async({page})=>{await setup(page,{state:'scheduled',manager:{acceptedAt:'2026-10-18T10:00:00Z'},employee:{acceptedAt:'2026-10-18T11:00:00Z'},canAcknowledge:false,canWithdraw:true});await expect(page.getByText('Both participants agreed. The notetaker is scheduled.')).toBeVisible();await expect(page.getByRole('button',{name:'Retry notetaker scheduling'})).toHaveCount(0);await expect(page.getByRole('checkbox',{name:'I agree to this call being recorded',exact:true})).toHaveCount(0);});
-test('legacy call cannot be authorised retroactively',async({page})=>{await setup(page,{state:'legacy_unverified',canAcknowledge:false,canWithdraw:false});await expect(page.getByText('Earlier recordings cannot be authorised retroactively. Use manual assessment notes or schedule a new call.')).toBeVisible();await expect(page.getByRole('button',{name:'Save my recording permission'})).toHaveCount(0);await expect(page.getByRole('button',{name:'Retry notetaker scheduling'})).toHaveCount(0);});
-test('withdrawal stays withdrawn while provider cancellation is pending and retryable',async({page})=>{const fixture=await setup(page,{state:'scheduled',manager:{acceptedAt:'2026-10-18T10:00:00Z'},employee:{acceptedAt:'2026-10-18T11:00:00Z'},canAcknowledge:false,canWithdraw:true},{cancelFailure:true});await page.getByRole('button',{name:'Withdraw my recording permission'}).click();await expect(page.getByText(/Your permission is withdrawn. Provider cancellation is still pending/)).toBeVisible();await page.getByRole('button',{name:'Retry notetaker cancellation'}).click();await expect(page.getByText('Provider cancellation is pending. Please retry.')).toBeVisible();await page.getByRole('button',{name:'Retry notetaker cancellation'}).click();await expect(page.getByText('Recording permission was withdrawn.',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Retry notetaker cancellation'})).toHaveCount(0);expect(fixture.state.employee).toEqual({acceptedAt:'2026-10-18T11:00:00Z'});expect(fixture.posts.every(post=>post.body.acknowledged===false&&!('userId'in post.body)&&!('actor'in post.body))).toBe(true);});
-test('failed permission read explains the invitation boundary and allows recovery',async({page})=>{const fixture=await setup(page,{}, {readFailure:true});await expect(page.getByText('Recording permissions are unavailable. The meeting invitation is separate from recording permission.')).toBeVisible();await expect(page.getByRole('button',{name:'Save my recording permission'})).toHaveCount(0);fixture.allowRead();await page.getByRole('button',{name:'Retry',exact:true}).click();await expect(section(page)).toBeVisible();});
-test('scheduling retry sends an empty request and suppresses another retry while pending',async({page})=>{const fixture=await setup(page,{state:'awaiting_consent',manager:{acceptedAt:'2026-10-18T10:00:00Z'},employee:{acceptedAt:'2026-10-18T11:00:00Z'},canAcknowledge:false,canStart:true,canWithdraw:true});await page.getByRole('button',{name:'Retry notetaker scheduling'}).click();await expect(page.getByText('Scheduling the notetaker. Please wait before retrying.')).toBeVisible();await expect(page.getByRole('button',{name:'Retry notetaker scheduling'})).toHaveCount(0);expect(fixture.posts).toEqual([{path:`${base}/start`,body:{}}]);});
 
-
-test('manual add requests immediate dispatch only when the server offers that action',async({page})=>{
- const fixture=await setup(page,{state:'scheduled',manager:{acceptedAt:'2026-10-18T10:00:00Z'},employee:{acceptedAt:'2026-10-18T11:00:00Z'},canAcknowledge:false,canStart:false,canAddNow:true});
- await expect(page.getByText(/calendar@example\.test/)).toBeVisible();
- await page.getByRole('button',{name:'Add notetaker to call',exact:true}).click();
- expect(fixture.posts).toEqual([{path:`${base}/start`,body:{joinNow:true}}]);
+for (const ownRole of ['manager', 'employee'] as const) {
+ test(`${ownRole} sees notetaker status without permission prompts`, async ({ page }, info) => {
+  await setup(page, { ownRole, state: 'scheduled', canAcknowledge: false, canStart: false, canStop: true });
+  await expect(page.getByRole('heading', { name: 'Meeting notetaker', exact: true })).toBeVisible();
+  await expect(page.getByText('The notetaker is scheduled.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /I agree/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /permission/ })).toHaveCount(0);
+  await expect(page.getByText(/Reviewer:|Employee:|Waiting for agreement/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Stop notetaker', exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath(`notetaker-${ownRole}.png`), fullPage: true });
+ });
+ test(`${ownRole} can add the notetaker without another participant agreeing`, async ({ page }) => {
+  const fixture = await setup(page, { ownRole, canAcknowledge: false, canStart: true, canAddNow: true });
+  await page.getByRole('button', { name: 'Add notetaker to call', exact: true }).click();
+  expect(fixture.posts).toEqual([{ path: `${base}/start`, body: { joinNow: true } }]);
+  await expect(page.getByText('Scheduling the notetaker. Please wait before retrying.')).toBeVisible();
+ });
+}
+test('stopping a notetaker sends no permission declarations', async ({ page }) => {
+ const fixture = await setup(page, { state: 'scheduled', canStop: true });
+ await page.getByRole('button', { name: 'Stop notetaker', exact: true }).click();
+ expect(fixture.posts).toEqual([{ path: `${base}/stop`, body: {} }]);
+ await expect(page.getByText('The notetaker was stopped.', { exact: true })).toBeVisible();
+});
+test('closed recording window has no scheduling or permission control on mobile', async ({ page }) => {
+ await page.setViewportSize({ width: 390, height: 844 });
+ await setup(page, { canAcknowledge: false, canStart: false, windowClosed: true });
+ await expect(page.getByText(/The scheduled recording window has ended/)).toBeVisible();
+ await expect(page.getByRole('button', { name: /Add notetaker|Schedule notetaker|permission/ })).toHaveCount(0);
+ expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+test('failed notetaker read allows recovery without showing permission prompts', async ({ page }) => {
+ const fixture = await setup(page, {}, { readFailure: true });
+ await expect(page.getByText('Notetaker status is unavailable. Please retry.')).toBeVisible();
+ fixture.allowRead(); await page.getByRole('button', { name: 'Retry', exact: true }).click();
+ await expect(page.getByRole('heading', { name: 'Meeting notetaker', exact: true })).toBeVisible();
 });

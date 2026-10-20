@@ -4,7 +4,7 @@ const Appraisal = require('../models/Appraisal');
 const shared = require('./sharedAIAccountService');
 const ai = require('./aiGatewayService');
 function recordingAuthority() {
-  return { $or: [{ 'appraisalMeeting.recordingPolicyVersion': { $ne: 'calendar-recording-v1' } }, {
+  return { 'appraisalMeeting.recordingConsent.revokedAt': { $exists: false }, 'appraisalMeeting.recordingConsent.manager.revokedAt': { $exists: false }, 'appraisalMeeting.recordingConsent.employee.revokedAt': { $exists: false }, $or: [{ 'appraisalMeeting.recordingPolicyVersion': { $nin: ['calendar-recording-v1', 'calendar-notetaker-v2'] } }, { 'appraisalMeeting.recordingPolicyVersion': 'calendar-notetaker-v2', 'appraisalMeeting.recordingAuthorization.policyVersion': 'calendar-notetaker-v2', 'appraisalMeeting.recordingAuthorization.requestedAt': { $exists: true } }, {
     'appraisalMeeting.recordingConsent.manager.acceptedAt': { $exists: true },
     'appraisalMeeting.recordingConsent.employee.acceptedAt': { $exists: true },
     'appraisalMeeting.recordingConsent.revokedAt': { $exists: false },
@@ -64,6 +64,16 @@ async function summarize(meeting, identity) {
 }
 async function processDueMeetings() {
   await require('./appraisalNativeMediaService').processDue();
+  // Schedule still-open calls made under the former per-participant flow too.
+  const pending = await OneOnOne.find({ status: { $nin: ['completed', 'cancelled', 'no_show', 'rescheduled'] },
+    scheduledDate: { $gte: new Date(Date.now() - 8 * 3600000) }, 'appraisalMeeting.mode': 'calendar', 'appraisalMeeting.recordingRequested': true,
+    'appraisalMeeting.recordingState': { $in: ['awaiting_consent', 'awaiting_start'] }, 'nylas.eventId': { $exists: true } }).sort({ scheduledDate: -1 }).limit(50);
+  for (const meeting of pending) {
+    const notetaker = require('./calendarNotetakerService');
+    if (!notetaker.status(meeting, String(meeting.managerId)).canStart) continue;
+    try { await notetaker.start(meeting, String(meeting.managerId)); }
+    catch (error) { await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.processingErrorCode': error.code || 'NOTETAKER_SCHEDULING_FAILED' } }); }
+  }
   const now = new Date();
   const meetings = await OneOnOne.find({ 'appraisalMeeting.ownerIdentity': { $exists: true }, status: { $ne: 'cancelled' }, scheduledDate: { $lte: now, $gte: new Date(Date.now() - 7 * 86400000) }, 'nylas.eventId': { $exists: true }, 'appraisalMeeting.recordingRequested': true, 'appraisalMeeting.summaryState': { $ne: 'ready' }, $or: [{ 'appraisalMeeting.lastSyncedAt': { $exists: false } }, { 'appraisalMeeting.lastSyncedAt': { $lt: new Date(Date.now() - 5 * 60000) } }] }).limit(20);
   for (const meeting of meetings) {

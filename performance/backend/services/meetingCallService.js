@@ -51,13 +51,14 @@ async function createCalendar(meeting) {
       title: meeting.title, scheduledDate: meeting.scheduledDate, duration: meeting.duration,
       meetingLink: meeting.appraisalMeeting.meetingLink,
       record: meeting.appraisalMeeting.recordingRequested && meeting.appraisalMeeting.recordingPolicyVersion !== 'calendar-recording-v1',
-      ...(meeting.appraisalMeeting.recordingPolicyVersion === 'calendar-recording-v1' ? { recordingPolicyVersion: 'calendar-recording-v1', participantSubjects: [String(meeting.managerId), String(meeting.employeeId)] } : {}),
+      ...(['calendar-recording-v1', 'calendar-notetaker-v2'].includes(meeting.appraisalMeeting.recordingPolicyVersion) ? { recordingPolicyVersion: meeting.appraisalMeeting.recordingPolicyVersion, participantSubjects: [String(meeting.managerId), String(meeting.employeeId)] } : {}),
       participants: [meeting.managerInfo, meeting.employeeInfo].map(person => ({ name: person.name, email: person.email })) }, { timeoutMs: 90000 });
     if (!result.eventId || !result.conferenceUrl) throw failure('The calendar has not confirmed a call link. Retry this meeting instead of creating another.', 502);
     const fresh = await OneOnOne.findById(meeting._id);
     if (!fresh || ['cancelled', 'completed', 'no_show'].includes(fresh.status) || !await isProcessable(fresh)) return await cancelLateCalendar(meeting, result);
     const saved = await OneOnOne.updateOne({ _id: meeting._id, organizationId: meeting.organizationId, status: { $nin: ['cancelled', 'completed', 'no_show'] } }, { $set: { nylas: { eventId: result.eventId, calendarId: result.calendarId,
       conferenceUrl: result.conferenceUrl, syncStatus: 'synced', lastSyncAt: new Date() },
+      ...(meeting.appraisalMeeting.recordingPolicyVersion === 'calendar-notetaker-v2' && meeting.appraisalMeeting.recordingRequested ? { 'appraisalMeeting.recordingAuthorization': { policyVersion: 'calendar-notetaker-v2', requestedBy: meeting.managerId, requestedAt: new Date() } } : {}),
       'appraisalMeeting.recordingState': result.recordingState, 'appraisalMeeting.calendarState': result.state || 'scheduled' } });
     if (!saved.matchedCount) return await cancelLateCalendar(meeting, result);
     return OneOnOne.findById(meeting._id);
