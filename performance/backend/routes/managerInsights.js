@@ -4,6 +4,7 @@ const OKR = require('../models/OKR');
 const PerformanceCheckIn = require('../models/PerformanceCheckIn');
 const OneOnOne = require('../models/OneOnOne');
 const Feedback = require('../models/Feedback');
+const { reportableFeedbackFilter } = require('../services/feedbackPrivacyService');
 const Recognition = require('../models/Recognition');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
 const Appraisal = require('../models/Appraisal');
@@ -45,7 +46,7 @@ router.get('/practices', requirePermission('manager_practice:view:team'), async 
       OKR.find(tenantFilter(req, { ownerId: { $in: employeeIds }, type: 'individual', status: { $in: ['active', 'pending'] } })).select('ownerId title progress objectives updatedAt').lean(),
       PerformanceCheckIn.find(tenantFilter(req, { employeeId: { $in: employeeIds }, status: 'submitted', visibility: 'employee_manager', periodEnd: { $gte: daysAgo(45) } })).select('employeeId periodEnd managerResponse blockers supportNeeded').lean(),
       OneOnOne.find(tenantFilter(req, { employeeId: { $in: employeeIds }, scheduledDate: { $gte: daysAgo(90) } })).select('employeeId scheduledDate status actionItems').lean(),
-      Feedback.find(tenantFilter(req, { receiverId: { $in: employeeIds }, deletedAt: null, createdAt: { $gte: daysAgo(90) } })).select('receiverId createdAt').lean(),
+      Feedback.find(await reportableFeedbackFilter(tenantFilter(req, { receiverId: { $in: employeeIds }, deletedAt: null, createdAt: { $gte: daysAgo(90) } }))).select('receiverId createdAt').lean(),
       Recognition.find(tenantFilter(req, { 'recipient.userId': { $in: employeeIds }, status: 'active', createdAt: { $gte: daysAgo(90) } })).select('recipient.userId createdAt').lean(),
       DevelopmentPlan.find(tenantFilter(req, { userId: { $in: employeeIds }, status: { $in: ['active', 'draft'] } })).select('userId status milestones targetDate').lean(),
       Appraisal.find(tenantFilter(req, { 'employee.userId': { $in: employeeIds }, status: { $nin: ['completed', 'employee_acknowledged', 'cancelled'] } })).select('employee status cycleId').lean(),

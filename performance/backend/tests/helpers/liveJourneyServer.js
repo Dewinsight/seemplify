@@ -8,7 +8,7 @@ const signature = require('cookie-signature');
 
 const ORG = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const FOREIGN_ORG = 'bbbbbbbbbbbbbbbbbbbbbbbb';
-const actors = ['employee', 'peer', 'team_lead', 'manager', 'hr_manager', 'admin', 'owner', 'department_head', 'teamless', 'foreign'];
+const actors = ['employee', 'peer', 'team_lead', 'manager', 'hr_manager', 'admin', 'owner', 'department_head', 'teamless', 'foreign', 'parent_manager', 'child_lead', 'hierarchy_staff', 'unmanaged'];
 const ids = Object.fromEntries(actors.map((role) => [role, `acceptance-${role}`]));
 const sessions = new Map();
 let accessRoles;
@@ -19,7 +19,8 @@ function performancePermissions(actor) {
   const keys = new Set(['employee']);
   if (['owner', 'admin'].includes(actor)) keys.add(`organization_${actor}`);
   else if (['hr_manager', 'department_head', 'team_lead'].includes(actor)) keys.add(actor);
-  else if (actor === 'manager') keys.add('line_manager');
+  else if (['manager', 'parent_manager'].includes(actor)) keys.add('line_manager');
+  else if (actor === 'child_lead') keys.add('team_lead');
   const selected = accessRoles.filter(role => keys.has(role.key));
   const denied = new Set(selected.flatMap(role => role.denies.filter(row => row.appId === 'performance-management').flatMap(row => row.permissions)));
   return [...new Set(selected.flatMap(role => role.grants.filter(row => row.appId === 'performance-management').flatMap(row => row.permissions)))].filter(permission => !denied.has(permission));
@@ -35,8 +36,19 @@ function principal(actor) {
     role: actor === 'manager' ? 'line_manager' : actor === 'team_lead' ? 'team_lead' : 'member',
     isManager: actor === 'manager', managerId: ids.manager, managerName: 'Acceptance Manager', managerEmail: 'manager@example.test',
     ...(['manager', 'team_lead', 'department_head'].includes(actor) ? { directReports: [ids.employee, ids.peer] } : {}) }];
+  // Additional hierarchy actors are isolated from the established flat team.
+  // Parent-manager claims deliberately contain no directReports; authority is
+  // derived by the real IdP directory builder from active nested membership.
+  const hierarchyTeams = {
+    parent_manager: { id: 'hierarchy-parent', role: 'line_manager', isManager: true },
+    child_lead: { id: 'hierarchy-child', parentTeamId: 'hierarchy-parent', role: 'team_lead', isManager: true },
+    hierarchy_staff: { id: 'hierarchy-leaf', parentTeamId: 'hierarchy-child', role: 'member' },
+    unmanaged: { id: 'hierarchy-unmanaged', role: 'member', departmentId: 'unmanaged-department' }
+  };
+  const hierarchy = hierarchyTeams[actor];
+  const selectedTeams = hierarchy ? [{ organizationId, name: hierarchy.id, departmentId: 'acceptance-department', ...hierarchy }] : teams;
   return { id: ids[actor], sub: ids[actor], name: `Acceptance ${actor.replaceAll('_', ' ')}`, email: `${actor}@example.test`,
-    organizations: [organization], currentOrganization: organization, teams, idpTeams: teams,
+    organizations: [organization], currentOrganization: organization, teams: selectedTeams, idpTeams: selectedTeams,
     accessToken: `disposable-acceptance-${actor}` };
 }
 
@@ -48,8 +60,15 @@ function directoryFor(actor, view, search) {
   });
   const organization = { _id: organizationId, owner: actor === 'foreign' ? ids.foreign : ids.owner, members,
     departments: [{ _id: 'acceptance-department', name: 'Operations', headAccount: ids.department_head }] };
-  const teams = [{ _id: 'acceptance-team', name: 'Acceptance team', organization: organizationId, department: 'acceptance-department',
-    members: members.filter(member => member.account.sub !== ids.teamless).map(member => ({ account: member.account.sub, status: 'active', role: member.account.sub === ids.manager ? 'line_manager' : member.account.sub === ids.team_lead ? 'team_lead' : 'member' })) }];
+  const teamMap = new Map();
+  for (const value of actors.filter(value => (value === 'foreign') === (actor === 'foreign'))) {
+    for (const team of principal(value).idpTeams) {
+      if (!teamMap.has(team.id)) teamMap.set(team.id, { _id: team.id, name: team.name, organization: organizationId,
+        department: team.departmentId, parentTeam: team.parentTeamId, members: [] });
+      teamMap.get(team.id).members.push({ account: ids[value], status: 'active', role: team.role });
+    }
+  }
+  const teams = [...teamMap.values()];
   if (search) return buildPerformanceColleagues({ organization, actorId: ids[actor],
     authorization: principal(actor).currentOrganization.authorization, q: search.q, userId: search.userId, action: search.action, limit: search.limit });
   return buildPerformanceDirectory({ organization, teams, actorId: ids[actor], view });

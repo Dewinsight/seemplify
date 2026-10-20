@@ -809,11 +809,19 @@ test('anonymous 360 feedback stays withheld until five same-tenant responses and
     })
     .expect(201);
 
-  expect(requested.body.count).toBe(5);
+  expect(requested.body.count).toBe(1);
   const cohortId = requested.body.data[0].cohortId;
   expect(cohortId).toBeTruthy();
-  expect(new Set(requested.body.data.map((item) => item.cohortId))).toEqual(new Set([cohortId]));
-  expect(requested.body.data.every((item) => item.minimumCohortSize === 5)).toBe(true);
+  expect(requested.body.data[0]).toMatchObject({ kind: 'cohort', minimumCohortSize: 5, reviewerCount: 5, responseCount: null, reportable: false });
+  // Actionable IDs belong to each invited reviewer, not the requester DTO.
+  const invitations = [];
+  for (const reviewerId of reviewerIds) {
+    const inbox = await request(app).get('/api/feedback/requests?view=reviewer')
+      .set('x-test-actor', 'employee').set('x-test-user', reviewerId).expect(200);
+    expect(inbox.body.data).toHaveLength(1);
+    expect(inbox.body.data[0].reviewerId).toBe(reviewerId);
+    invitations.push(inbox.body.data[0]);
+  }
 
   const feedbackIds = [];
   for (let index = 0; index < 4; index += 1) {
@@ -823,7 +831,7 @@ test('anonymous 360 feedback stays withheld until five same-tenant responses and
       .set('x-test-user', reviewerIds[index])
       .send({
         receiverId: EMPLOYEE,
-        requestId: requested.body.data[index]._id,
+        requestId: invitations[index]._id,
         content: `Anonymous response ${index + 1}`,
         type: 'general'
       })
@@ -871,7 +879,7 @@ test('anonymous 360 feedback stays withheld until five same-tenant responses and
     .set('x-test-user', reviewerIds[4])
     .send({
       receiverId: EMPLOYEE,
-      requestId: requested.body.data[4]._id,
+      requestId: invitations[4]._id,
       content: 'Anonymous response 5',
       type: 'general'
     })

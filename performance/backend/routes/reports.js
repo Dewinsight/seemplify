@@ -4,6 +4,7 @@ const OKR = require('../models/OKR');
 const Appraisal = require('../models/Appraisal');
 const AppraisalCycle = require('../models/AppraisalCycle');
 const Feedback = require('../models/Feedback');
+const { reportableFeedbackFilter, filterReportableAnonymous, feedbackHidesSender, countReportableFeedback } = require('../services/feedbackPrivacyService');
 const OneOnOne = require('../models/OneOnOne');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
 const { requireAuth, requireManager, requireHRAdmin } = require('../middleware/rbac');
@@ -46,7 +47,7 @@ router.get('/org-summary', requireHRAdmin, async (req, res) => {
     
     // Feedback stats
     const feedbackStats = await Feedback.aggregate([
-      { $match: { organizationId: orgId, deletedAt: null } },
+      { $match: await reportableFeedbackFilter({ organizationId: orgId, deletedAt: null }) },
       {
         $group: {
           _id: '$type',
@@ -61,7 +62,7 @@ router.get('/org-summary', requireHRAdmin, async (req, res) => {
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
     });
     
-    const recentFeedback = await Feedback.countDocuments({
+    const recentFeedback = await countReportableFeedback({
       organizationId: orgId,
       deletedAt: null,
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
@@ -122,7 +123,7 @@ router.get('/team-performance', requireManager, async (req, res) => {
     
     // Feedback received by team
     const feedbackByMember = await Feedback.aggregate([
-      { $match: { organizationId: req.organizationId, receiverId: { $in: directReports }, deletedAt: null, visibility: { $in: ['public', 'manager-only'] } } },
+      { $match: await reportableFeedbackFilter({ organizationId: req.organizationId, receiverId: { $in: directReports }, deletedAt: null, visibility: { $in: ['public', 'manager-only'] } }) },
       {
         $group: {
           _id: '$receiverId',
@@ -194,9 +195,10 @@ router.get('/individual/:userId', requireAuth, async (req, res) => {
     // Get feedback received
     const feedbackQuery = tenantFilter(req, { receiverId: targetUserId, deletedAt: null });
     if (!isSelf && !isHRAdmin) feedbackQuery.visibility = { $in: ['public', 'manager-only'] };
-    const feedback = await Feedback.find(feedbackQuery)
+    const feedbackItems = await Feedback.find(feedbackQuery)
       .sort({ createdAt: -1 })
       .limit(10);
+    const feedback = await filterReportableAnonymous(feedbackItems, req.organizationId);
     
     // Get 1:1 meetings
     const meetings = await OneOnOne.find(tenantFilter(req, {
@@ -251,7 +253,7 @@ router.get('/individual/:userId', requireAuth, async (req, res) => {
         recentFeedback: feedback.slice(0, 5).map(f => ({
           id: f._id,
           type: f.type,
-          date: f.createdAt
+          ...(!feedbackHidesSender(f, currentUserId, role) ? { date: f.createdAt } : {})
         })),
         developmentPlan: devPlan ? {
           id: devPlan._id,
@@ -388,11 +390,12 @@ router.get('/feedback-analytics', requireHRAdmin, async (req, res) => {
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - parseInt(months));
     
-    const feedback = await Feedback.find({
+    const feedbackItems = await Feedback.find({
       organizationId: req.organizationId,
       deletedAt: null,
       createdAt: { $gte: startDate }
     });
+    const feedback = await filterReportableAnonymous(feedbackItems, req.organizationId);
 
     if (feedback.length > 0 && feedback.length < 5) {
       return res.json({

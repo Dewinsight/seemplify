@@ -2,10 +2,13 @@ const crypto = require('crypto');
 const express = require('express');
 const mongoose = require('mongoose');
 const Feedback = require('../models/Feedback');
+const { filterReportableAnonymous, anonymousFeedbackIsReportable, serializeFeedback, feedbackHidesSender } = require('../services/feedbackPrivacyService');
+const requestIdempotency = require('../services/feedbackRequestIdempotencyService');
 const FeedbackRequest = require('../models/FeedbackRequest');
 const OKR = require('../models/OKR');
 const Appraisal = require('../models/Appraisal');
 const User = require('../models/User');
+const ScheduledReminder = require('../models/ScheduledReminder');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const { resolvePerformanceColleague } = require('../services/performanceColleagueDirectoryService');
 const {
@@ -34,10 +37,6 @@ function normalizeType(value) {
   return ['praise', 'coaching', 'general'].includes(normalized) ? normalized : 'general';
 }
 
-function formatType(type) {
-  return ({ praise: 'Positive', coaching: 'Constructive', general: 'General' })[type] || 'General';
-}
-
 function normalizeVisibility(value) {
   return ['public', 'private', 'manager-only'].includes(value) ? value : 'private';
 }
@@ -52,39 +51,62 @@ function normalizeContextType(value, fallback = 'general') {
     : fallback;
 }
 
-async function filterReportableAnonymous(items, organizationId) {
-  const cohortIds = [...new Set(items
-    .filter((item) => item.anonymity === 'anonymous' && item.cohortId)
-    .map((item) => String(item.cohortId)))];
-  if (cohortIds.length === 0) return items.filter((item) => item.anonymity !== 'anonymous');
-  const counts = await Feedback.aggregate([
-    {
-      $match: {
-        organizationId: String(organizationId),
-        anonymity: 'anonymous',
-        cohortId: { $in: cohortIds },
-        deletedAt: null
-      }
-    },
-    { $group: { _id: '$cohortId', count: { $sum: 1 } } }
-  ]);
-  const countByCohort = new Map(counts.map((row) => [String(row._id), row.count]));
-  return items.filter((item) => (
-    item.anonymity !== 'anonymous'
-      || (item.cohortId && (countByCohort.get(String(item.cohortId)) || 0) >= Number(item.minimumCohortSize || 5))
-  ));
+function requestNeedsPrivacySummary(item, role) {
+  return item.anonymity === 'anonymous' || (item.anonymity === 'confidential' && role !== 'hr_admin');
 }
 
-async function anonymousFeedbackIsReportable(item) {
-  if (item.anonymity !== 'anonymous') return true;
-  if (!item.cohortId) return false;
-  const count = await Feedback.countDocuments({
-    organizationId: item.organizationId,
-    anonymity: 'anonymous',
-    cohortId: item.cohortId,
-    deletedAt: null
-  });
-  return count >= Number(item.minimumCohortSize || 5);
+async function serializeFeedbackRequests(items, req, reviewerView = false) {
+  // Only the reviewer's own inbox retains actionable per-person invitations.
+  // Other anonymous reads use cohort progress, including creation responses.
+  if (reviewerView) return items;
+  const groups = new Map();
+  const output = [];
+  for (const source of items) {
+    const item = source.toObject ? source.toObject() : source;
+    if (!requestNeedsPrivacySummary(item, req.userRole)) { output.push(item); continue; }
+    const key = JSON.stringify([item.anonymity, item.subjectId, item.requesterId, item.cohortId || String(item._id)]);
+    if (!groups.has(key)) { groups.set(key, { item }); output.push(groups.get(key)); }
+  }
+  if (!groups.size) return output;
+  const clauses = [...groups.values()].map(({ item }) => item.cohortId
+    ? { cohortId: item.cohortId, subjectId: item.subjectId, requesterId: item.requesterId, anonymity: item.anonymity }
+    : { _id: item._id });
+  // Count the complete cohort even when the inbox's row limit cuts through it.
+  const requests = await FeedbackRequest.find(tenantFilter(req, { $or: clauses }))
+    .select('_id cohortId subjectId requesterId anonymity minimumCohortSize').lean();
+  const cohortIds = [...new Set(requests.map(item => item.cohortId).filter(Boolean))];
+  const counts = await Feedback.aggregate([
+    { $match: tenantFilter(req, { deletedAt: null, $or: [
+      { cohortId: { $in: cohortIds } }, { requestId: { $in: requests.map(item => item._id) } }
+    ] }) },
+    { $group: { _id: { cohortId: '$cohortId', receiverId: '$receiverId', anonymity: '$anonymity', requestId: '$requestId', senderId: '$senderId' }, count: { $sum: 1 } } }
+  ]);
+  for (const group of groups.values()) {
+    const item = group.item;
+    const members = requests.filter(row => item.cohortId
+      ? row.cohortId === item.cohortId && row.subjectId === item.subjectId && row.requesterId === item.requesterId && row.anonymity === item.anonymity
+      : String(row._id) === String(item._id));
+    const ids = new Set(members.map(row => String(row._id)));
+    const responses = counts.filter(row => row._id.receiverId === item.subjectId && row._id.anonymity === item.anonymity &&
+      (item.cohortId ? row._id.cohortId === item.cohortId : ids.has(String(row._id.requestId))));
+    const responseCount = item.anonymity === 'anonymous'
+      ? new Set(responses.map(row => row._id.senderId).filter(id => typeof id === 'string' && id.trim())).size
+      : responses.reduce((total, row) => total + row.count, 0);
+    const anonymous = item.anonymity === 'anonymous';
+    const minimumCohortSize = Math.max(5, ...members.map(row => Number(row.minimumCohortSize) || 5));
+    const reportable = !anonymous || Boolean(item.cohortId && responseCount >= minimumCohortSize);
+    Object.assign(group, {
+      kind: anonymous ? 'cohort' : 'confidential_summary',
+      ...(item.cohortId ? { cohortId: item.cohortId } : {}),
+      subjectId: item.subjectId, subjectInfo: item.subjectInfo, contextType: item.contextType,
+      contextLabel: item.contextLabel, questions: item.questions, dueDate: item.dueDate,
+      visibility: item.visibility, anonymity: item.anonymity, minimumCohortSize,
+      reviewerCount: members.length, reportable, responseCount: reportable ? responseCount : null,
+      state: reportable ? 'reportable' : 'collecting'
+    });
+    delete group.item;
+  }
+  return output;
 }
 
 async function resolvePerson(userId, fallback = {}) {
@@ -96,29 +118,6 @@ async function resolvePerson(userId, fallback = {}) {
   return {
     name: user?.profile?.displayName || [user?.profile?.firstName, user?.profile?.lastName].filter(Boolean).join(' ') || fallback.name,
     email: user?.email || fallback.email
-  };
-}
-
-function serializeFeedback(item, viewerId, role) {
-  const subjectIsViewer = String(item.receiverId) === String(viewerId);
-  const hideSender = item.anonymity === 'anonymous' || (item.anonymity === 'confidential' && subjectIsViewer && role !== 'hr_admin');
-  return {
-    _id: item._id,
-    sender: hideSender ? 'Anonymous' : item.senderInfo?.name || item.senderInfo?.email || 'Unknown',
-    senderId: hideSender ? null : item.senderId,
-    receiver: item.receiverInfo?.name || item.receiverInfo?.email || 'Unknown',
-    receiverId: item.receiverId,
-    type: formatType(item.type),
-    message: item.content,
-    visibility: item.visibility,
-    contextType: item.contextType,
-    contextLabel: item.contextLabel,
-    relatedOkrId: item.relatedOkrId,
-    projectId: item.projectId,
-    requestId: item.requestId,
-    appraisalEvidence: item.appraisalEvidence,
-    acknowledgedAt: item.acknowledgedAt,
-    date: item.createdAt
   };
 }
 
@@ -217,8 +216,14 @@ router.get('/requests', async (req, res) => {
     const view = req.query.view || 'reviewer';
     const relationship = view === 'requested' ? { requesterId: actorId } : view === 'subject' ? { subjectId: actorId } : { reviewerId: actorId };
     const query = tenantFilter(req, relationship);
-    if (req.query.state) query.state = req.query.state;
-    const data = await FeedbackRequest.find(query).sort({ dueDate: 1, createdAt: -1 }).limit(100).lean();
+    if (req.query.state) {
+      // State filters must not reveal individual anonymous responses through
+      // the presence/absence of a cohort or a changing invitation count.
+      if (!['requested', 'subject'].includes(view)) query.state = req.query.state;
+      else query.$or = [{ anonymity: { $in: req.userRole === 'hr_admin' ? ['anonymous'] : ['anonymous', 'confidential'] } }, { state: req.query.state }];
+    }
+    const items = await FeedbackRequest.find(query).sort({ dueDate: 1, createdAt: -1 }).limit(100).lean();
+    const data = await serializeFeedbackRequests(items, req, !['requested', 'subject'].includes(view));
     res.json({ success: true, data, count: data.length });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to fetch feedback requests' });
@@ -235,7 +240,7 @@ router.post('/requests', requirePermission('feedback:request'), async (req, res)
     if (reviewers.length === 0) return res.status(400).json({ success: false, error: 'At least one reviewer is required' });
 
     const dueDate = new Date(req.body.dueDate);
-    if (Number.isNaN(dueDate.getTime()) || dueDate <= new Date()) {
+    if (Number.isNaN(dueDate.getTime())) {
       return res.status(400).json({ success: false, error: 'Due date must be in the future' });
     }
     const contextType = normalizeContextType(req.body.contextType);
@@ -244,16 +249,32 @@ router.post('/requests', requirePermission('feedback:request'), async (req, res)
       return res.status(400).json({ success: false, error: 'Anonymous 360 feedback requires at least five reviewers' });
     }
 
+    const batch = await requestIdempotency.beginBatch({ organizationId: req.organizationId, actorId,
+      key: req.get('Idempotency-Key'), payload: {
+        subjectId, reviewerIds: [...reviewers].sort(), dueDate: dueDate.toISOString(), contextType, anonymity,
+        contextLabel: cleanText(req.body.contextLabel, 300), questions: cleanQuestions(req.body.questions), visibility: normalizeVisibility(req.body.visibility)
+      } });
+    const replay = await requestIdempotency.completedBatch(batch);
+    if (replay) {
+      const data = await serializeFeedbackRequests(replay, req);
+      return res.status(201).json({ success: true, data, count: data.length });
+    }
+    if (dueDate <= new Date()) return res.status(400).json({ success: false, error: 'Due date must be in the future' });
+
     const [requesterInfo, subjectInfo] = await Promise.all([
       resolvePerson(actorId, { name: req.session.user.name, email: req.session.user.email }),
       resolvePerformanceColleague(req, subjectId, { action: 'feedback:request' })
     ]);
-    const reviewerContacts = await Promise.all(reviewers.map(userId => resolvePerformanceColleague(req, userId, { action: 'feedback:request' })));
-    const cohortId = reviewers.length > 1 ? crypto.randomUUID() : undefined;
+    const contacts = await Promise.all(reviewers.map(userId => resolvePerformanceColleague(req, userId, { action: 'feedback:request' })));
+    const reviewerContacts = [...new Map(contacts.filter(person => person.userId !== subjectInfo.userId).map(person => [person.userId, person])).values()];
+    if (!reviewerContacts.length || (anonymity === 'anonymous' && reviewerContacts.length < 5)) {
+      return res.status(400).json({ success: false, error: anonymity === 'anonymous' ? 'Anonymous 360 feedback requires at least five distinct reviewers' : 'At least one reviewer is required' });
+    }
+    const cohortId = reviewerContacts.length > 1 ? batch?.result?.cohortId || crypto.randomUUID() : undefined;
     const created = [];
     for (const reviewerInfo of reviewerContacts) {
       const reviewerId = reviewerInfo.userId;
-      const request = await FeedbackRequest.create({
+      const document = {
         organizationId: req.organizationId,
         requesterId: actorId,
         subjectId: subjectInfo.userId,
@@ -270,7 +291,21 @@ router.post('/requests', requirePermission('feedback:request'), async (req, res)
         minimumCohortSize: 5,
         cohortId,
         createdBy: actorId
-      });
+      };
+      let request;
+      if (batch) {
+        const id = requestIdempotency.invitationId(batch, reviewerId);
+        try {
+          request = await FeedbackRequest.findOneAndUpdate({ _id: id }, { $setOnInsert: { _id: id, ...document } },
+            { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true });
+        } catch (error) {
+          if (error.code !== 11000) throw error;
+          request = await FeedbackRequest.findById(id);
+        }
+        if (!request || request.organizationId !== req.organizationId || request.requesterId !== actorId || request.subjectId !== subjectInfo.userId || request.reviewerId !== reviewerId) {
+          return res.status(409).json({ success: false, code: 'REQUEST_RECOVERY_REQUIRED', error: 'Check the existing invitations before starting another request.' });
+        }
+      } else request = await FeedbackRequest.create(document);
       created.push(request);
       await recordEvent({
         organizationId: req.organizationId,
@@ -278,14 +313,20 @@ router.post('/requests', requirePermission('feedback:request'), async (req, res)
         aggregateType: 'FeedbackRequest',
         aggregateId: String(request._id),
         actorId,
-        recipients: [{ userId: reviewerId, name: reviewerInfo.name, email: reviewerInfo.email }],
-        data: { subjectName: subjectInfo.name, dueDate, deepLink: `/feedback?request=${request._id}` }
+        recipients: [{ userId: reviewerId, name: request.reviewerInfo?.name, email: request.reviewerInfo?.email }],
+        data: { subjectName: request.subjectInfo?.name, dueDate: request.dueDate, deepLink: `/feedback?request=${request._id}` }
       });
-      await scheduleFeedbackRequestReminders(request);
+      if (['requested', 'accepted'].includes(request.state) && (!batch || !await ScheduledReminder.exists({
+        organizationId: req.organizationId, 'target.type': 'FeedbackRequest', 'target.id': String(request._id), userId: reviewerId
+      }))) await scheduleFeedbackRequestReminders(request);
     }
-    res.status(201).json({ success: true, data: created, count: created.length });
+    await requestIdempotency.finishBatch(batch, created);
+    const data = await serializeFeedbackRequests(created, req);
+    res.status(201).json({ success: true, data, count: data.length });
   } catch (error) {
-    res.status(error.status || error.statusCode || 500).json({ success: false, error: error.message || 'Failed to create feedback request' });
+    const status = error.status || error.statusCode || 500;
+    res.status(status).json({ success: false, ...(error.code && typeof error.code === 'string' ? { code: error.code } : {}),
+      error: status < 500 ? error.message : 'Could not finish this request. Retry it from the original form.' });
   }
 });
 
@@ -297,10 +338,10 @@ router.post('/requests/:id/decision', async (req, res) => {
     if (!['requested', 'accepted'].includes(item.state)) return res.status(409).json({ success: false, error: 'This request is no longer awaiting a decision' });
     const decision = req.body.decision;
     if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ success: false, error: 'Decision must be accept or decline' });
-    item.state = decision === 'accept' ? 'accepted' : 'declined';
-    item.decisionComment = cleanText(req.body.comment, 1000);
-    item.decidedAt = new Date();
-    await item.save();
+    const updated = await FeedbackRequest.findOneAndUpdate({ _id: item._id, organizationId: req.organizationId, reviewerId: actorId,
+      state: { $in: ['requested', 'accepted'] }, $or: [{ fulfilledByFeedbackId: null }, { fulfilledByFeedbackId: { $exists: false } }] },
+    { $set: { state: decision === 'accept' ? 'accepted' : 'declined', decisionComment: cleanText(req.body.comment, 1000), decidedAt: new Date() } }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, error: 'This request changed or a response is being saved. Reload its current status.' });
     if (decision === 'decline') {
       await closeFeedbackAction(
         item.organizationId,
@@ -310,7 +351,7 @@ router.post('/requests/:id/decision', async (req, res) => {
         'feedback_request_declined'
       );
     }
-    res.json({ success: true, data: item });
+    res.json({ success: true, data: updated });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to decide feedback request' });
   }
@@ -343,15 +384,15 @@ router.post('/', requirePermission('feedback:send'), async (req, res) => {
     if (receiverId === senderId) return res.status(400).json({ success: false, error: 'Feedback must be sent to another person' });
 
     const visibility = normalizeVisibility(req.body.visibility);
-    if (visibility === 'manager-only' && !['line_manager', 'team_lead', 'hr_admin'].includes(req.userRole)) {
-      return res.status(403).json({ success: false, error: 'Manager-only feedback requires manager access' });
-    }
     let request = null;
     if (req.body.requestId) {
       request = assertResourceTenant(req, await FeedbackRequest.findById(req.body.requestId));
-      if (request.reviewerId !== senderId || request.subjectId !== receiverId || !['requested', 'accepted'].includes(request.state)) {
+      if (request.reviewerId !== senderId || request.subjectId !== receiverId || !['requested', 'accepted', 'fulfilled'].includes(request.state)) {
         return res.status(409).json({ success: false, error: 'This feedback request cannot be fulfilled by this submission' });
       }
+    }
+    if (!request && visibility === 'manager-only' && !['line_manager', 'team_lead', 'hr_admin'].includes(req.userRole)) {
+      return res.status(403).json({ success: false, error: 'Manager-only feedback requires manager access' });
     }
     if (req.body.relatedOkrId) {
       const goal = await OKR.findOne(tenantFilter(req, { _id: req.body.relatedOkrId }));
@@ -363,7 +404,7 @@ router.post('/', requirePermission('feedback:send'), async (req, res) => {
     ]);
     receiverId = receiverInfo.userId;
     if (receiverId === senderId) return res.status(400).json({ success: false, error: 'Feedback must be sent to another person' });
-    const item = await Feedback.create({
+    const document = {
       organizationId: req.organizationId,
       senderId,
       receiverId,
@@ -380,12 +421,50 @@ router.post('/', requirePermission('feedback:send'), async (req, res) => {
       minimumCohortSize: request?.minimumCohortSize || 5,
       relatedOkrId: req.body.relatedOkrId,
       projectId: request?.projectId
-    });
+    };
+    let item;
     if (request) {
-      request.state = 'fulfilled';
-      request.fulfilledByFeedbackId = item._id;
-      request.fulfilledAt = new Date();
-      await request.save();
+      // One immutable response per invitation, including concurrent sends and
+      // interrupted receipt saves. Existing fulfilled legacy references win.
+      const id = request.state === 'fulfilled' ? request.fulfilledByFeedbackId : new mongoose.Types.ObjectId(
+        crypto.createHash('sha256').update(JSON.stringify(['feedback.response', req.organizationId, String(request._id)])).digest('hex').slice(0, 24));
+      if (!id) return res.status(409).json({ success: false, code: 'RESPONSE_RECOVERY_REQUIRED', error: 'Check the existing response before submitting again.' });
+      if (request.state === 'fulfilled') item = await Feedback.findById(id);
+      else {
+        // Claim the existing invitation before capturing a response. A racing
+        // decline either wins first or observes this claim; no orphan response
+        // can be created after a successful decline. Retries reuse the claim.
+        const claim = await FeedbackRequest.findOneAndUpdate({ _id: request._id, organizationId: req.organizationId,
+          reviewerId: senderId, subjectId: receiverId, state: { $in: ['requested', 'accepted'] },
+          $or: [{ fulfilledByFeedbackId: null }, { fulfilledByFeedbackId: { $exists: false } }, { fulfilledByFeedbackId: id }] },
+        { $set: { fulfilledByFeedbackId: id } }, { new: true });
+        if (!claim) {
+          const current = await FeedbackRequest.findById(request._id);
+          if (current?.state !== 'fulfilled' || String(current.fulfilledByFeedbackId) !== String(id)) {
+            return res.status(409).json({ success: false, error: 'This feedback request changed. Reload its current status.' });
+          }
+        }
+        try {
+          item = await Feedback.findOneAndUpdate({ _id: id }, { $setOnInsert: { _id: id, ...document } },
+            { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true });
+        } catch (error) {
+          if (error.code !== 11000) throw error;
+          item = await Feedback.findById(id);
+        }
+      }
+      if (!item || item.deletedAt || item.organizationId !== req.organizationId || item.senderId !== senderId || item.receiverId !== receiverId ||
+          String(item.requestId) !== String(request._id) || item.content !== content || item.type !== document.type || String(item.relatedOkrId || '') !== String(document.relatedOkrId || '')) {
+        return res.status(409).json({ success: false, code: 'RESPONSE_ALREADY_CAPTURED', error: 'This invitation already has a different response. Its original feedback is preserved.' });
+      }
+      const receipt = await FeedbackRequest.findOneAndUpdate({ _id: request._id, organizationId: req.organizationId,
+        reviewerId: senderId, subjectId: receiverId, state: { $in: ['requested', 'accepted'] } },
+      { $set: { state: 'fulfilled', fulfilledByFeedbackId: item._id, fulfilledAt: new Date() } }, { new: true });
+      if (!receipt) {
+        const current = await FeedbackRequest.findById(request._id);
+        if (current?.state !== 'fulfilled' || String(current.fulfilledByFeedbackId) !== String(item._id)) {
+          return res.status(409).json({ success: false, error: 'This feedback request changed. Reload its current status.' });
+        }
+      }
       await closeFeedbackAction(
         request.organizationId,
         'FeedbackRequest',
@@ -393,19 +472,37 @@ router.post('/', requirePermission('feedback:send'), async (req, res) => {
         senderId,
         'feedback_request_fulfilled'
       );
-    }
+    } else item = await Feedback.create(document);
+    const anonymous = item.anonymity === 'anonymous';
     await recordEvent({
       organizationId: req.organizationId,
       type: 'feedback.received',
       aggregateType: 'Feedback',
       aggregateId: String(item._id),
       actorId: senderId,
-      recipients: [{ userId: receiverId, name: receiverInfo.name, email: receiverInfo.email }],
+      // Keep the per-response audit private. Even a generic subject action
+      // with an individual target/timestamp can reveal anonymous progress.
+      recipients: anonymous ? [] : [{ userId: receiverId, name: item.receiverInfo?.name, email: item.receiverInfo?.email }],
       data: { feedbackType: item.type, deepLink: `/feedback?feedback=${item._id}` }
     });
+    if (anonymous && await anonymousFeedbackIsReportable(item)) {
+      await recordEvent({
+        eventId: `feedback.cohort_available:${crypto.createHash('sha256').update(JSON.stringify([req.organizationId, item.cohortId, receiverId])).digest('hex')}`,
+        organizationId: req.organizationId,
+        type: 'feedback.received',
+        aggregateType: 'FeedbackCohort',
+        aggregateId: item.cohortId,
+        // Stable content keeps concurrent threshold crossings and subsequent
+        // responses idempotent without capturing the last respondent.
+        recipients: [{ userId: receiverId }],
+        data: { deepLink: '/feedback' },
+        notification: { action: { kind: 'view', label: 'View feedback' } }
+      });
+    }
     res.status(201).json({ success: true, data: serializeFeedback(item.toObject(), senderId, req.userRole), message: 'Feedback sent successfully' });
   } catch (error) {
-    res.status(error.status || error.statusCode || 500).json({ success: false, error: error.message || 'Failed to send feedback' });
+    const status = error.status || error.statusCode || 500;
+    res.status(status).json({ success: false, error: status < 500 ? error.message : 'Could not send this feedback. Retry the original response.' });
   }
 });
 
@@ -429,6 +526,9 @@ router.post('/:id/acknowledge', async (req, res) => {
   try {
     const item = assertResourceTenant(req, await Feedback.findById(req.params.id));
     if (item.receiverId !== getActorId(req)) return res.status(403).json({ success: false, error: 'Only the recipient can acknowledge feedback' });
+    if (!(await anonymousFeedbackIsReportable(item))) {
+      return res.status(404).json({ success: false, error: 'Feedback is not available until the anonymous cohort threshold is met' });
+    }
     item.acknowledgedAt = item.acknowledgedAt || new Date();
     await item.save();
     await closeFeedbackAction(
@@ -482,7 +582,7 @@ router.post('/:id/appraisal-evidence', async (req, res) => {
           contextType: item.contextType,
           contextLabel: item.contextLabel,
           senderDisplay: item.anonymity === 'named' ? (item.senderInfo?.name || item.senderInfo?.email || 'Feedback provider') : 'Anonymous',
-          receivedAt: item.createdAt,
+          receivedAt: feedbackHidesSender(item, actorId, req.userRole) ? undefined : item.createdAt,
           selectedAt: new Date(),
           selectedBy: actorId
         });

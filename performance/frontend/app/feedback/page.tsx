@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -32,8 +32,10 @@ import {
 import { Add, Check, Lightbulb, Send, ThumbUp } from '@mui/icons-material';
 import api from '@/lib/api';
 import { useDirectReports, useFeedback, useMyAppraisals, useUserContext, useUserSearch } from '@/lib/hooks';
+import RequestFeedbackDialog from '@/components/feedback/RequestFeedbackDialog';
+import FeedbackRequestProgress from '@/components/feedback/FeedbackRequestProgress';
 
-type FeedbackTab = 'all' | 'received' | 'sent' | 'requests';
+type FeedbackTab = 'all' | 'received' | 'sent' | 'requests' | 'requested' | 'subject';
 type FeedbackType = 'praise' | 'coaching' | 'general';
 
 interface PersonOption {
@@ -112,11 +114,14 @@ function appraisalLabel(appraisal?: AppraisalOption) {
 export default function FeedbackPage() {
   const { feedback, isLoading, isError, mutate } = useFeedback();
   const { appraisals } = useMyAppraisals();
-  const { user, isManager, organization } = useUserContext();
+  const { user, isManager, organization, features } = useUserContext();
   const { directReports } = useDirectReports();
   const [tab, setTab] = useState<FeedbackTab>('all');
   const [requests, setRequests] = useState<FeedbackRequestItem[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
+  const [requestsError, setRequestsError] = useState('');
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
+  const [requestRevision, setRequestRevision] = useState(0);
   const [selectedFeedbackId, setSelectedFeedbackId] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState('');
   const [open, setOpen] = useState(false);
@@ -193,20 +198,19 @@ export default function FeedbackPage() {
     } else if (params.get('compose') === 'true') {
       setOpen(true);
     }
-    const loadRequests = async () => {
-      setRequestsLoading(true);
-      try {
-        const response = await api.get('/feedback/requests', { params: { view: 'reviewer' } });
-        const data = response.data?.data || response.data || [];
-        setRequests(Array.isArray(data) ? data : []);
-      } catch {
-        setRequests([]);
-      } finally {
-        setRequestsLoading(false);
-      }
-    };
-    void loadRequests();
   }, []);
+
+  const loadRequests = useCallback(async () => {
+    setRequestsLoading(true); setRequestsError('');
+    try {
+      const response = await api.get('/feedback/requests', { params: { view: 'reviewer' } });
+      const data = response.data?.data;
+      if (!Array.isArray(data)) throw new Error('Invalid reviewer requests');
+      setRequests(data);
+    } catch { setRequestsError('Could not load your feedback requests. Please retry.'); }
+    finally { setRequestsLoading(false); }
+  }, []);
+  useEffect(() => { void loadRequests(); }, [loadRequests, organization?.id]);
 
   useEffect(() => {
     const id = selectedFeedbackId || selectedRequestId;
@@ -353,27 +357,33 @@ export default function FeedbackPage() {
             Recognize good work and share useful coaching while the context is still fresh.
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<Add />} onClick={() => setOpen(true)} sx={{ alignSelf: { sm: 'flex-start' } }}>
+        <Stack direction="row" gap={1} flexWrap="wrap" sx={{ alignSelf: { sm: 'flex-start' } }}>
+        {features.canRequestFeedback === true && <Button variant="outlined" onClick={() => setRequestDialogOpen(true)}>Request feedback</Button>}
+        <Button variant="contained" startIcon={<Add />} onClick={() => setOpen(true)}>
           Give feedback
         </Button>
+        </Stack>
       </Stack>
 
       {isError && <Alert severity="error" sx={{ mb: 2 }}>Feedback could not be loaded. Try refreshing the page.</Alert>}
       {formError && !open && <Alert severity="error" onClose={() => setFormError('')} sx={{ mb: 2 }}>{formError}</Alert>}
 
       <Paper variant="outlined" sx={{ mb: 2 }}>
-        <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Feedback views">
+        <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Feedback views" variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
           <Tab value="all" label="All" />
           <Tab value="received" label="Received" />
           <Tab value="sent" label="Sent" />
           <Tab value="requests" label={`Requests${requests.length ? ` (${requests.length})` : ''}`} />
+          <Tab value="requested" label="Requested by me" />
+          <Tab value="subject" label="About me" />
         </Tabs>
       </Paper>
 
-      {tab === 'requests' ? (
+      {tab === 'requested' || tab === 'subject' ? <FeedbackRequestProgress key={`${organization?.id}-${tab}`} view={tab} revision={requestRevision}
+        ownIds={currentUserIds} onViewResponses={() => { setTab('received'); void mutate(); }} /> : tab === 'requests' ? (
         requestsLoading ? (
           <LinearProgress />
-        ) : requests.length === 0 ? (
+        ) : requestsError ? <Alert severity="error" action={<Button onClick={() => void loadRequests()}>Retry requests</Button>}>{requestsError}</Alert> : requests.length === 0 ? (
           <Paper variant="outlined" sx={{ px: 3, py: 7, textAlign: 'center' }}>
             <Typography fontWeight={700}>No feedback requests</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>Requests from colleagues and managers will appear here.</Typography>
@@ -494,12 +504,17 @@ export default function FeedbackPage() {
         </Grid>
       )}
 
+      {requestDialogOpen && <RequestFeedbackDialog key={organization?.id} onClose={() => setRequestDialogOpen(false)} onCreated={() => {
+        setRequestDialogOpen(false); setRequestRevision(value => value + 1); setTab('requested'); setNotice('Feedback request sent.');
+      }} />}
+
       <Dialog open={open} onClose={closeDialog} fullWidth maxWidth="sm">
         <DialogTitle>Give feedback</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             {formError && <Alert severity="error">{formError}</Alert>}
             <Autocomplete
+              disabled={Boolean(requestId)}
               options={suggestions}
               value={recipient}
               inputValue={search}
@@ -560,28 +575,29 @@ export default function FeedbackPage() {
               <Grid size={{ xs: 12, sm: 6 }}>
                 <FormControl fullWidth>
                   <InputLabel>Visibility</InputLabel>
-                  <Select value={visibility} label="Visibility" onChange={(event) => setVisibility(event.target.value)}>
+                  <Select value={visibility} label="Visibility" disabled={Boolean(requestId)} onChange={(event) => setVisibility(event.target.value)}>
                     <MenuItem value="private">Private to participants</MenuItem>
                     <MenuItem value="public">Visible to permitted managers</MenuItem>
-                    {isManager && <MenuItem value="manager-only">Manager only</MenuItem>}
+                    {(isManager || (requestId && visibility === 'manager-only')) && <MenuItem value="manager-only">Employee and permitted managers</MenuItem>}
                   </Select>
                 </FormControl>
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <FormControl fullWidth>
                   <InputLabel>Context</InputLabel>
-                  <Select value={contextType} label="Context" onChange={(event) => setContextType(event.target.value)}>
+                  <Select value={contextType} label="Context" disabled={Boolean(requestId)} onChange={(event) => setContextType(event.target.value)}>
                     <MenuItem value="general">General</MenuItem>
                     <MenuItem value="goal">Goal</MenuItem>
                     <MenuItem value="project">Project</MenuItem>
                     <MenuItem value="peer">Peer feedback</MenuItem>
                     <MenuItem value="upward">Upward feedback</MenuItem>
+                    {requestId && contextType === '360' && <MenuItem value="360">360 feedback</MenuItem>}
                   </Select>
                 </FormControl>
               </Grid>
             </Grid>
             {contextType !== 'general' && (
-              <TextField label="Context label (optional)" value={contextLabel} onChange={(event) => setContextLabel(event.target.value)} placeholder="For example, Q3 launch" />
+              <TextField label="Context label (optional)" value={contextLabel} disabled={Boolean(requestId)} onChange={(event) => setContextLabel(event.target.value)} placeholder="For example, Q3 launch" />
             )}
           </Stack>
         </DialogContent>

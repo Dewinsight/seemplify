@@ -3,6 +3,7 @@ const OKR = require('../models/OKR');
 const GoalCheckIn = require('../models/GoalCheckIn');
 const Appraisal = require('../models/Appraisal');
 const Feedback = require('../models/Feedback');
+const { countReportableFeedback } = require('../services/feedbackPrivacyService');
 const AppraisalCycle = require('../models/AppraisalCycle');
 const { requireAuth, requireAnyPermission, hasPermission } = require('../middleware/rbac');
 const requireReportAnalytics = requireAnyPermission('analytics:view:team', 'analytics:view:direct_reports', 'analytics:view:organization');
@@ -418,7 +419,7 @@ router.get('/dashboard', requireAnyPermission('analytics:view:own', 'analytics:v
     const [goals, pendingReviews, recentFeedback] = await Promise.all([
       OKR.find(goalQuery).select('objectives progress scoring status').lean(),
       Appraisal.countDocuments(appraisalQuery),
-      Feedback.countDocuments(feedbackQuery)
+      countReportableFeedback(feedbackQuery)
     ]);
 
     const measuredProgress = goals.map(calculateGoalProgress).filter(Number.isFinite);

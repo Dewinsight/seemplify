@@ -254,14 +254,14 @@ test('effective rollout flags are exposed to ordinary employee context', async (
     userFindOne: User.findOne,
     okrCount: OKR.countDocuments,
     appraisalCount: Appraisal.countDocuments,
-    feedbackCount: Feedback.countDocuments
+    feedbackFind: Feedback.find
   };
   t.after(() => {
     OrganizationFeatureConfig.findOne = originals.configFindOne;
     User.findOne = originals.userFindOne;
     OKR.countDocuments = originals.okrCount;
     Appraisal.countDocuments = originals.appraisalCount;
-    Feedback.countDocuments = originals.feedbackCount;
+    Feedback.find = originals.feedbackFind;
   });
 
   OrganizationFeatureConfig.findOne = () => ({
@@ -274,7 +274,7 @@ test('effective rollout flags are exposed to ordinary employee context', async (
   User.findOne = async () => null;
   OKR.countDocuments = async () => 0;
   Appraisal.countDocuments = async () => 0;
-  Feedback.countDocuments = async () => 0;
+  Feedback.find = () => ({ select() { return this; }, lean: async () => [] });
 
   const app = express();
   app.use((req, res, next) => {

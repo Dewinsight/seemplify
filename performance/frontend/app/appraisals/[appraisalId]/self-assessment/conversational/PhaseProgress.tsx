@@ -2,7 +2,7 @@
 
 import {
   Box, Typography, Stepper, Step, StepLabel, Paper,
-  LinearProgress, Chip, Card, CardContent
+  LinearProgress, Chip, Card, CardContent, CardActionArea
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import {
@@ -57,7 +57,6 @@ const PHASES = [
 const OKRCard = ({ okr, isActive, onClick }: { okr: OKRSummary; isActive: boolean; onClick: () => void }) => (
   <Card
     variant="outlined"
-    onClick={onClick}
     sx={{
       mb: 1,
       cursor: 'pointer',
@@ -74,6 +73,7 @@ const OKRCard = ({ okr, isActive, onClick }: { okr: OKRSummary; isActive: boolea
       }
     }}
   >
+    <CardActionArea onClick={onClick} aria-label={`Reflect on ${okr.title}`} aria-pressed={isActive}>
     <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
       <Typography variant="subtitle2" fontWeight={600} noWrap>
         {okr.title}
@@ -90,6 +90,7 @@ const OKRCard = ({ okr, isActive, onClick }: { okr: OKRSummary; isActive: boolea
         </Typography>
       </Box>
     </CardContent>
+    </CardActionArea>
   </Card>
 );
 

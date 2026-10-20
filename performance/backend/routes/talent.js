@@ -444,6 +444,7 @@ router.patch('/succession-plans/:id/candidates/:candidateId', requirePermission(
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ success: false, error: 'Succession plan not found' });
     const plan = await SuccessionPlan.findOne(tenantFilter(req, { _id: req.params.id }));
     if (!plan) return res.status(404).json({ success: false, error: 'Succession plan not found' });
+    if (plan.state === 'closed') return res.status(409).json({ success: false, error: 'Closed succession plans cannot be changed' });
     const candidate = plan.candidates.id(req.params.candidateId);
     if (!candidate) return res.status(404).json({ success: false, error: 'Candidate not found' });
     const state = text(req.body.state, 30);

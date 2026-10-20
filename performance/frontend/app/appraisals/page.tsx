@@ -16,7 +16,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Stepper, Step, StepLabel, StepContent, Divider, CircularProgress,
   Tooltip, Badge, Select, MenuItem, FormControl, InputLabel, Tabs, Tab,
-  alpha, useTheme
+  alpha, useTheme, useMediaQuery
 } from '@mui/material';
 import {
   Assignment, Person, CheckCircle, Schedule, PlayArrow, Edit,
@@ -105,6 +105,7 @@ export default function AppraisalsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const theme = useTheme();
+  const compactProgress = useMediaQuery(theme.breakpoints.down('sm'));
   const { workspace } = usePerformanceWorkspace();
   const { isManager, isHRAdmin, user, role, organization } = useUserContext();
 
@@ -621,13 +622,15 @@ export default function AppraisalsPage() {
           />
         </Box>
 
-        <Stepper activeStep={activeStepIndex} alternativeLabel sx={{ mt: 3 }}>
+        <Stepper activeStep={activeStepIndex} orientation={compactProgress ? 'vertical' : 'horizontal'} alternativeLabel={!compactProgress}
+          role="group" aria-label="Cycle phases" sx={{ mt: 3 }}>
           {workflowSteps.map((step, index) => {
             const phase = activeCycle.phases?.[step.key];
             return (
-              <Step key={step.key} completed={index < activeStepIndex}>
+              <Step key={step.key} completed={index < activeStepIndex} aria-current={index === activeStepIndex ? 'step' : undefined} sx={{ minWidth: 0 }}>
                 <StepLabel
                   sx={{
+                    '& .MuiStepLabel-label': { overflowWrap: 'anywhere' },
                     '& .MuiStepLabel-iconContainer': {
                       '& .MuiStepIcon-root.Mui-active': {
                         color: 'primary.main',
@@ -673,8 +676,10 @@ export default function AppraisalsPage() {
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
           <FormControl size="small" sx={{ minWidth: 220 }}>
-            <InputLabel shrink>Cycle</InputLabel>
+            <InputLabel id="appraisals-cycle-label" shrink>Cycle</InputLabel>
             <Select
+              id="appraisals-cycle"
+              labelId="appraisals-cycle-label"
               displayEmpty
               value={selectedCycleId}
               label="Cycle"

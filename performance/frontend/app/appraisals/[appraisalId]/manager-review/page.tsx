@@ -10,7 +10,7 @@ import {
   Paper, Stepper, Step, StepLabel, Rating, LinearProgress,
   Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress,
   Accordion, AccordionSummary, AccordionDetails, Divider, Tooltip,
-  Snackbar, Slider, Select, MenuItem, FormControl, InputLabel, Avatar, Badge
+  Snackbar, Slider, Select, MenuItem, FormControl, InputLabel, Avatar, Badge, useTheme, useMediaQuery
 } from '@mui/material';
 import {
   Save, Send, ArrowBack, ArrowForward, Psychology, Lightbulb, Star,
@@ -108,6 +108,8 @@ interface SelectedFeedbackEvidence {
 }
 
 export default function ManagerReviewPage() {
+  const theme = useTheme();
+  const compactProgress = useMediaQuery(theme.breakpoints.down('sm'));
   const params = useParams();
   const router = useRouter();
   const appraisalId = params.appraisalId as string;
@@ -1370,10 +1372,12 @@ export default function ManagerReviewPage() {
       )}
 
       {/* Stepper */}
-      <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 4 }}>
+      <Stepper activeStep={activeStep} orientation={compactProgress ? 'vertical' : 'horizontal'} alternativeLabel={!compactProgress}
+        role="group" aria-label="Review form progress" sx={{ mb: 4 }}>
         {steps.map((step, index) => (
-          <Step key={step.label} completed={index < activeStep}>
+          <Step key={step.label} completed={index < activeStep} aria-current={index === activeStep ? 'step' : undefined} sx={{ minWidth: 0 }}>
             <StepLabel
+              sx={{ '& .MuiStepLabel-label': { overflowWrap: 'anywhere' } }}
               StepIconComponent={() => (
                 <Box
                   sx={{

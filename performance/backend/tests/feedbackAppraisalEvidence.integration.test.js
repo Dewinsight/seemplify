@@ -109,6 +109,23 @@ test('anonymous evidence and disabled feedback sources remain blocked before sna
   expect((await Appraisal.findById(appraisal._id)).feedbackEvidence).toHaveLength(0);
 });
 
+test('confidential recipient selection never restores the hidden source timestamp in appraisal evidence', async () => {
+  await Feedback.updateOne({ _id: feedback._id }, { $set: { anonymity: 'confidential' } });
+  const received = await call('get', '/feedback/received').expect(200);
+  expect(received.body.data[0]).toMatchObject({ sender: 'Anonymous', senderId: null });
+  expect(received.body.data[0]).not.toHaveProperty('date');
+  await select().expect(200);
+  const saved = (await Appraisal.findById(appraisal._id)).feedbackEvidence[0];
+  expect(saved.senderDisplay).toBe('Anonymous');
+  expect(saved.receivedAt).toBeUndefined();
+  expect(saved.selectedAt).toBeInstanceOf(Date);
+  for (const who of ['employee', 'manager']) {
+    const loaded = await call('get', `/appraisals/${appraisal._id}`, who).expect(200);
+    expect(loaded.body.data.feedbackEvidence[0]).not.toHaveProperty('receivedAt');
+    expect(loaded.body.data.feedbackEvidence[0].content).toBe(feedback.content);
+  }
+});
+
 test('validation failures never return the raw snapshot or internal cast diagnostics', async () => {
   const error = new mongoose.Error.ValidationError();
   error.addError('feedbackEvidence', new mongoose.Error.CastError('string', { content: 'PRIVATE_FEEDBACK_SENTINEL' }, 'feedbackEvidence'));
