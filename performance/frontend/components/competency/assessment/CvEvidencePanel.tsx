@@ -29,7 +29,9 @@ function sourceState(source: Evidence) {
 export default function CvEvidencePanel({ assessment, refresh }: CvEvidencePanelProps) {
   const { user } = useAuth();
   const actorId = String(user?.id || user?.sub || '');
-  const isAssessor = assessment.assessors.some(actor => actor.userId === actorId);
+  // The server includes organisation-wide and currently eligible assessor scope.
+  // An explicit false must override a historical assignment in the snapshot.
+  const isAssessor = assessment.viewerIsAssessor ?? assessment.assessors.some(actor => actor.userId === actorId);
   const inputId = useId();
   const helpId = useId();
   const input = useRef<HTMLInputElement>(null);

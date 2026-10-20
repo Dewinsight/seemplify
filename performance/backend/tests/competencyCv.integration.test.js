@@ -235,3 +235,23 @@ test('the no-effect replay proof is server-only and cannot relax other operation
   await expect(auth.operation(ctx,action,evidenceKey,{},async()=>{throw untrusted;})).rejects.toMatchObject({status:503});
   await expect(auth.operation(ctx,action,evidenceKey,{},async()=>({}))).rejects.toMatchObject({code:'OPERATION_RECOVERY_REQUIRED'});
 });
+
+
+test('detail exposes current assessor authority to unassigned HR/admin and denies a revoked assessor',async()=>{
+  const id=await launch({cvRequested:true});
+  for(const actor of ['hr','admin']){
+    const detail=(await call('get',`/assessments/${id}`,actor).expect(200)).body.data;
+    expect(detail.assessors.map(person=>person.userId)).not.toContain(actor);
+    expect(detail.viewerIsAssessor).toBe(true);
+    expect(detail.allowedActions).toContain('competency.evidence.delete');
+  }
+  const participant=(await call('get',`/assessments/${id}`,'employee').expect(200)).body.data;
+  expect(participant.viewerIsAssessor).toBe(false);
+  // The current resource relation, not the frozen assessor list, controls access.
+  const request=principal('manager');request._performanceDirectory.reviewers=[];
+  const revoked=await auth.context(request),stored=await Assessment.findById(id).lean();
+  const assessments=require('../services/competency/assessmentService');
+  expect(stored.assessorIds).toContain('manager');
+  expect(assessments.isAssessor(revoked,stored)).toBe(false);
+  await expect(assessments.get(revoked,id)).rejects.toMatchObject({status:403,code:'ASSESSMENT_DENIED'});
+});

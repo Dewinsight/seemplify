@@ -6,22 +6,23 @@ const role = { name: 'Product operations lead', version: 2 };
 const cv = { id: 'cv-source', documentType: 'cv', kind: 'file', status: 'ready', originalName: 'jordan-fictional-cv.txt', title: 'jordan-fictional-cv.txt', size: 80, mimeType: 'text/plain', criterionIds: ['delivery'], visibility: 'participant', createdBy: { userId: 'employee', name: 'Jordan Ellis' }, createdAt: '2026-10-20T10:00:00Z' };
 const record = { id: 'assessment', cvRequested: true, revision: 1, status: 'in_progress', cycleId: 'cycle', cycleVersion: 1, appraisalId: 'appraisal', participant: { userId: 'employee', name: 'Jordan Ellis' }, assessors: [{ userId: 'reviewer', name: 'Robin Reviewer' }], definitionSnapshot: { cvRequested: true, role, selectedInputTypes: ['strategy'], criteria: [{ id: 'delivery', criterionId: 'native-delivery', name: 'Delivery outcomes', sourceType: 'strategy', sourceVersionId: 'strategy-v1', levels: [], weight: 1, required: false, evidenceRequired: false, rationaleRequired: false }], scoringConfig: { ratingScales: [], normalization: [], thresholds: [] }, rankingConfig: { enabled: false, scope: 'role' } }, items: [], managerFeedback: [], evidence: [] as typeof cv[], oralSessions: [], aiSuggestions: [], allowedActions: ['competency.assessment.view', 'competency.evidence.view', 'competency.evidence.create'], createdAt: '2026-10-20T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' };
 
-async function setup(page: Page, options: { requested?: boolean; existing?: boolean; closed?: boolean; denied?: boolean; failUpload?: boolean } = {}) {
-  const assessment = structuredClone(record);
+async function setup(page: Page, options: { requested?: boolean; existing?: boolean; closed?: boolean; denied?: boolean; failUpload?: boolean; viewer?: 'employee' | 'hr_admin' | 'admin' } = {}) {
+  const assessment = { ...structuredClone(record), viewerIsAssessor: options.viewer === 'hr_admin' || options.viewer === 'admin' };
   assessment.cvRequested = assessment.definitionSnapshot.cvRequested = options.requested !== false;
   if (options.existing) assessment.evidence.push(structuredClone(cv));
   if (options.closed) assessment.status = 'published';
   let deny = options.denied === true;
   const posts: { key: string; body: string }[] = [];
+  const removed: string[] = [];
   let assessmentReads = 0;
-  const user = { id: 'employee', sub: 'employee', name: 'Jordan Ellis', email: 'jordan@example.test' };
-  const organization = { id: 'org', name: 'Atlas Fictional QA', role: 'employee' };
+  const user = options.viewer && options.viewer !== 'employee' ? { id: 'organisation-reviewer', sub: 'organisation-reviewer', name: 'Taylor Organisation Reviewer', email: 'taylor@example.test' } : { id: 'employee', sub: 'employee', name: 'Jordan Ellis', email: 'jordan@example.test' };
+  const organization = { id: 'org', name: 'Atlas Fictional QA', role: options.viewer || 'employee' };
   await page.addInitScript(() => localStorage.setItem('accessToken', 'synthetic-cv-ui-contract'));
   await page.route('**/__mock-api/**', async route => {
     const path = new URL(route.request().url()).pathname.replace('/__mock-api', '');
     const method = route.request().method(); let data: unknown = [];
     if (path === '/auth/me') { await route.fulfill({ json: { success: true, user: { ...user, organizations: [organization] }, currentOrganization: organization, currentOrganizationId: organization.id } }); return; }
-    if (path === '/user/context') data = { user, organization, role: { name: 'employee', isManager: false, isHRAdmin: false }, teams: [], features: {}, stats: {} };
+    if (path === '/user/context') data = { user, organization, role: { name: options.viewer || 'employee', isManager: false, isHRAdmin: options.viewer === 'hr_admin' || options.viewer === 'admin' }, teams: [], features: {}, stats: {} };
     if (path === '/competency/bootstrap') data = { enabled: true, capabilities: {}, people: [], roles: [], frameworks: [], strategies: [], cycles: [] };
     if (path === '/appraisals/appraisal') data = { _id: 'appraisal', status: 'self_assessment_pending', employee: { userId: 'employee', name: 'Jordan Ellis' }, manager: { userId: 'reviewer', name: 'Robin Reviewer' }, cycleId: { name: 'Fictional review', settings: {}, competencies: [] }, selfAssessment: {}, customSections: [] };
     if (path === '/competency/appraisal-links/appraisal') {
@@ -35,9 +36,10 @@ async function setup(page: Page, options: { requested?: boolean; existing?: bool
       assessment.evidence = [structuredClone(cv)]; assessment.revision++; data = cv;
     }
     if (path === '/competency/assessments/assessment/evidence/cv-source/source') { await route.fulfill({ contentType: 'text/plain', body: 'Jordan Ellis — fictional CV for UI testing only.' }); return; }
+    if (path === '/competency/assessments/assessment/evidence/cv-source' && method === 'DELETE') { removed.push(cv.id); assessment.evidence[0].status = 'deleted'; assessment.revision++; data = assessment.evidence[0]; }
     await route.fulfill({ json: { success: true, data } });
   });
-  return { assessment, posts, allowRead: () => { deny = false; }, reads: () => assessmentReads };
+  return { assessment, posts, removed, allowRead: () => { deny = false; }, reads: () => assessmentReads };
 }
 
 test('employee sees optional requested CV in the normal appraisal without a submission blocker', async ({ page }) => {
@@ -188,4 +190,29 @@ test('ordinary appraisal stays quiet when competency assessments are disabled', 
   await expect(page.getByText(/CV evidence could not be loaded/)).toHaveCount(0);
   expect(state.reads()).toBe(0);
   await expect(page.getByRole('button', { name: 'Submit Self-Assessment', exact: true })).toBeEnabled();
+});
+
+for (const viewer of ['hr_admin', 'admin'] as const) {
+  test(`non-assigned ${viewer} can remove employee CV when the server grants assessor scope`, async ({ page }) => {
+    const state = await setup(page, { viewer, existing: true, closed: true });
+    state.assessment.allowedActions.push('competency.evidence.delete', 'competency.retention.manage');
+    expect(state.assessment.assessors.some(actor => actor.userId === 'organisation-reviewer')).toBe(false);
+    await page.goto('/competency/assessments/assessment');
+    const remove = page.getByRole('button', { name: 'Remove CV', exact: true });
+    await expect(remove).toBeEnabled();
+    page.once('dialog', dialog => dialog.accept()); await remove.click();
+    await expect(page.getByText('CV removed. A CV remains optional for this appraisal.', { exact: true })).toBeVisible();
+    expect(state.removed).toEqual([cv.id]);
+  });
+}
+
+test('explicit server assessor denial overrides stale assignment and organisation role labels', async ({ page }) => {
+  const state = await setup(page, { viewer: 'hr_admin', existing: true });
+  state.assessment.viewerIsAssessor = false;
+  state.assessment.assessors.push({ userId: 'organisation-reviewer', name: 'Former assessor' });
+  state.assessment.allowedActions.push('competency.evidence.delete');
+  await page.goto('/competency/assessments/assessment');
+  await expect(page.getByRole('heading', { name: 'CV (optional)', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove CV', exact: true })).toHaveCount(0);
+  expect(state.removed).toHaveLength(0);
 });
