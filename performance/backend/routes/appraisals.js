@@ -3576,7 +3576,7 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
     }
 
     const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
-    const { managerReview = {}, submit } = req.body;
+    const { managerReview = {}, submit, assessmentMode } = req.body;
     if (!phaseHasOpened(appraisal.cycleId, 'managerReview')) {
       return res.status(409).json({ success: false, error: 'Manager review has not opened for this cycle' });
     }
@@ -3613,8 +3613,8 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
         appraisal.flags.disputeReason = `Self vs manager rating gap (${selfRating} vs ${managerRating})`;
       }
 
-      // Check for bias only when AI assistance is enabled for this cycle.
-      if (aiAssistEnabled) {
+      // Manual review submission does not request optional AI analysis.
+      if (aiAssistEnabled && assessmentMode !== 'form') {
         try {
           const biasCheck = await appraisalAIService.checkForBias(
             appraisal.managerReview,
@@ -4563,8 +4563,7 @@ router.post('/:appraisalId/check-bias', requireAuth, async (req, res) => {
 
     res.json({ success: true, ...biasCheck });
   } catch (error) {
-    console.error('Bias check error:', error);
-    res.status(500).json({ success: false, error: 'Failed to check for bias' });
+    return aiGatewayService.sendPerformanceAIError(res, error, 'Failed to check for bias');
   }
 });
 

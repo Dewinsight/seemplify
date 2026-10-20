@@ -296,6 +296,7 @@ export default function ManagerReviewPage() {
 
       await api.post(`/appraisals/${appraisalId}/manager-review`, {
         managerReview: { ...formData, competencyRatings: competenciesWithGaps },
+        assessmentMode: 'form',
         submit: false
       });
       await fetchScoringData();
@@ -322,12 +323,12 @@ export default function ManagerReviewPage() {
 
   const handleSubmit = async () => {
     if (persistPending.current) return;
-    let hasPotentialBias = Boolean(biasCheck?.hasPotentialBias);
-
-    // Check for bias first when AI assistance is enabled.
-    if (aiAssistEnabled && !biasCheck) {
-      hasPotentialBias = await checkForBias();
+    const missingQuestions = customSectionsRef.current?.validate() || [];
+    if (missingQuestions.length) {
+      setSnackbar({ open: true, message: `Complete the required cycle questions: ${missingQuestions.join('; ')}`, severity: 'error' });
+      return;
     }
+    const hasPotentialBias = Boolean(biasCheck?.hasPotentialBias);
 
     if (aiAssistEnabled && hasPotentialBias && !biasAcknowledged) {
       setSnackbar({
@@ -346,6 +347,7 @@ export default function ManagerReviewPage() {
       if (customResponsesSaved === false) return;
       await api.post(`/appraisals/${appraisalId}/manager-review`, {
         managerReview: formData,
+        assessmentMode: 'form',
         submit: true
       });
       mutate();
@@ -412,6 +414,7 @@ export default function ManagerReviewPage() {
       return hasPotentialBias;
     } catch (error) {
       console.error('Bias check error:', error);
+      setSnackbar({ open: true, message: getApiErrorMessage(error, 'The optional AI bias check is unavailable. You can still submit your review.'), severity: 'error' });
       return false;
     } finally {
       setAiLoading(false);
@@ -1274,15 +1277,17 @@ export default function ManagerReviewPage() {
 
       {/* Bias Check Button */}
       {aiAssistEnabled && (
+        <Box sx={{ mt: 3 }}>
         <Button
           variant="outlined"
           startIcon={aiLoading ? <CircularProgress size={16} /> : <Balance />}
           onClick={checkForBias}
           disabled={aiLoading}
-          sx={{ mt: 3 }}
         >
           Run AI Bias Check
         </Button>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Optional. You can submit your review without connecting ChatGPT.</Typography>
+        </Box>
       )}
 
       {/* Submit Warning */}
@@ -1419,6 +1424,7 @@ export default function ManagerReviewPage() {
       {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
+        sx={{ pointerEvents: 'none' }}
         autoHideDuration={3000}
         onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
         message={snackbar.message}

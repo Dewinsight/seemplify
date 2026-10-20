@@ -14,6 +14,8 @@ const Cycle = require('../models/AppraisalCycle');
 const Document = require('../models/AppraisalDocument');
 const User = require('../models/User');
 const ai = require('../services/appraisalAIService');
+const gateway = require('../services/aiGatewayService');
+const { PerformanceAIRuntimeError } = gateway;
 const designService = require('../services/appraisalCycleDesignService');
 const flowService = require('../services/appraisalFlowService');
 const routes = require('../routes/appraisals');
@@ -194,15 +196,16 @@ const manualAssessment = () => ({ overallSelfRating: 4, overallSummary: {
   improvements: 'Improve the next fictional handover with a checklist.',
   goals: 'Practice the next synthetic capability with measured evidence.'
 } });
-async function answerEmployeeQuestions(appraisal) {
+async function answerEmployeeQuestions(appraisal, respondent = 'employee') {
   const snapshot = await rawSnapshot(appraisal._id);
-  const responses = snapshot.workflowDefinition.sections.filter(section => ['employee', 'both'].includes(section.respondent))
+  const responses = snapshot.workflowDefinition.sections.filter(section => [respondent, 'both'].includes(section.respondent))
     .flatMap(section => section.questions.map(question => ({ sectionId: section.id, questionId: question.id,
       value: ['number', 'rating'].includes(question.responseType) ? 4 : question.responseType === 'boolean' ? true
         : question.responseType === 'multi_select' ? [question.options[0]?.value || question.options[0]]
           : question.responseType === 'single_select' ? question.options[0]?.value || question.options[0]
             : 'Synthetic evidence documents completed work and the next fictional development step.' })));
-  await call('put', `/${appraisal._id}/custom-responses`, 'employee').send({ respondentRole: 'employee', submit: true, responses }).expect(200);
+  await call('put', `/${appraisal._id}/custom-responses`, respondent === 'manager' ? 'reviewer' : 'employee')
+    .send({ respondentRole: respondent, submit: true, responses }).expect(200);
 }
 
 test('explicit form mode saves drafts and submits without optional AI while preserving questions, ratings and manager handoff', async () => {
@@ -251,4 +254,78 @@ test.each([undefined, 'conversation'])('non-manual mode %s retains optional AI a
     .send({ assessmentMode, submit: true, selfAssessment: manualAssessment() }).expect(200);
   expect(provider).toHaveBeenCalledTimes(1);
   expect((await Appraisal.findById(appraisal._id)).selfAssessment.aiInsights.generatedAt).toBeInstanceOf(Date);
+});
+
+test.each([
+  ['AI_RUNTIME_ACCOUNT_REQUIRED', 409, 'Connect ChatGPT and complete the data-sharing step before using AI assistance.'],
+  ['SHARED_AI_NOT_CONFIGURED', 503, 'The shared AI account service is not configured.'],
+  ['AI_GATEWAY_UNAVAILABLE', 503, 'AI is temporarily unavailable. Retry later.'],
+  ['AI_RESPONSE_INVALID', 502, 'Bias-review output was incomplete.']
+])('explicit bias check preserves actionable %s failure and never changes the appraisal', async (code, status, message) => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const original = await Appraisal.findById(appraisal._id).lean();
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  const provider = jest.spyOn(gateway, 'getChatCompletions').mockRejectedValue(new PerformanceAIRuntimeError(message, code, status,
+    { retryable: status === 503, retryAfterSeconds: status === 503 ? 30 : undefined, cause: new Error('PRIVATE_PROVIDER_CAUSE') }));
+  const response = await call('post', `/${appraisal._id}/check-bias`).send({ managerReview: { overallManagerRating: 4 } }).expect(status);
+  expect(response.body).toMatchObject({ success: false, code, error: message });
+  if (status === 503) expect(response.body).toMatchObject({ retryable: true, retryAfterSeconds: 30 });
+  expect(JSON.stringify(response.body)).not.toContain('PRIVATE_PROVIDER_CAUSE');
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect(await Appraisal.findById(appraisal._id).lean()).toEqual(original);
+});
+
+test('explicit bias check rejects unauthorized and foreign readers before contacting AI', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const provider = jest.spyOn(gateway, 'getChatCompletions').mockRejectedValue(new Error('Must not contact AI'));
+  for (const [actor, status] of [['employee', 403], ['outsider', 403], ['foreign', 404]]) {
+    await call('post', `/${appraisal._id}/check-bias`, actor).send({ managerReview: {} }).expect(status);
+  }
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test('manual manager form saves and submits without implicit bias analysis while keeping required questions and authorization', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle), snapshot = await rawSnapshot(appraisal._id);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date() } });
+  const provider = jest.spyOn(ai, 'checkForBias').mockResolvedValue({ hasPotentialBias: false, overallRisk: 'low' });
+  const payload = { assessmentMode: 'form', managerReview: { overallManagerRating: 4,
+    competencyRatings: [{ competencyId: 'delivery', competencyName: 'Delivery', managerRating: 4, managerComments: 'Documented synthetic delivery.' }],
+    overallSummary: { achievements: 'Completed fictional deliverables.', strengths: 'Clear structured delivery.',
+      improvements: 'Practice the next synthetic capability.', recommendations: 'Continue the fictional exercise.' } } };
+  for (const [actor, status] of [['employee', 403], ['outsider', 403], ['foreign', 404]]) {
+    await call('post', `/${appraisal._id}/manager-review`, actor).send({ ...payload, submit: true }).expect(status);
+  }
+  await call('post', `/${appraisal._id}/manager-review`).send({ ...payload, submit: false }).expect(200);
+  expect((await Appraisal.findById(appraisal._id)).status).toBe('manager_review_in_progress');
+  const missing = await call('post', `/${appraisal._id}/manager-review`).send({ ...payload, submit: true }).expect(400);
+  expect(missing.body.missingQuestions.length).toBeGreaterThan(0);
+  await answerEmployeeQuestions(appraisal, 'manager');
+  await call('post', `/${appraisal._id}/manager-review`).send({ ...payload, submit: true }).expect(200);
+  const persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.managerReview.submittedAt).toBeInstanceOf(Date);
+  expect(persisted.managerReview.overallManagerRating).toBe(4);
+  expect(persisted.status).not.toMatch(/manager_review_(pending|in_progress)/);
+  expect(persisted.auditLog.some(row => row.action === 'manager_review_submitted')).toBe(true);
+  expect(persisted.managerReview.aiAssist?.generatedAt).toBeUndefined();
+  expect(await rawSnapshot(appraisal._id)).toEqual(snapshot);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test.each([undefined, 'conversation'])('non-manual manager mode %s retains optional bias analysis on valid submission', async assessmentMode => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date() } });
+  await answerEmployeeQuestions(appraisal, 'manager');
+  const provider = jest.spyOn(ai, 'checkForBias').mockResolvedValue({ hasPotentialBias: false, overallRisk: 'low' });
+  await call('post', `/${appraisal._id}/manager-review`)
+    .send({ assessmentMode, submit: true, managerReview: { overallManagerRating: 4 } }).expect(200);
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect((await Appraisal.findById(appraisal._id)).managerReview.aiAssist.generatedAt).toBeInstanceOf(Date);
+});
+
+test('unexpected explicit bias-check errors return a generic response without internal causes', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  jest.spyOn(ai, 'checkForBias').mockRejectedValue(new Error('PRIVATE_INTERNAL_FAILURE'));
+  const response = await call('post', `/${appraisal._id}/check-bias`).send({ managerReview: {} }).expect(500);
+  expect(response.body).toEqual({ success: false, code: 'AI_REQUEST_FAILED', error: 'Failed to check for bias' });
+  expect(JSON.stringify(response.body)).not.toContain('PRIVATE_INTERNAL_FAILURE');
 });
