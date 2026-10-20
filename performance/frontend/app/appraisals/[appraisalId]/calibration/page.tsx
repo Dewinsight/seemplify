@@ -59,18 +59,20 @@ export default function CalibrationPage() {
     );
   }, [appraisal, user]);
   const hasManagerAccess = isAssignedManager || (!!isManager && !isHRAdmin);
+  const canEditCalibration = ['calibration_pending', 'calibration_in_progress', 'final_review_pending'].includes(appraisal?.status ?? '');
 
   const minRating = appraisal?.cycleId?.ratingScale?.min ?? 1;
   const maxRating = appraisal?.cycleId?.ratingScale?.max ?? 5;
 
   useEffect(() => {
     if (!appraisal) return;
-    const defaultRating = appraisal.calibration?.calibratedRating || appraisal.managerReview?.overallManagerRating || 3;
+    const defaultRating = appraisal.calibration?.calibratedRating ?? appraisal.managerReview?.overallManagerRating ?? 3;
     setCalibratedRating(defaultRating);
     setJustification(appraisal.calibration?.justification || '');
   }, [appraisal]);
 
   const persistCalibration = async (submit: boolean) => {
+    if (!canEditCalibration) return;
     if (calibratedRating < minRating || calibratedRating > maxRating) {
       setSnackbar({
         open: true,
@@ -169,6 +171,12 @@ export default function CalibrationPage() {
           />
         </Box>
 
+        {!canEditCalibration && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            Calibration is read-only at this appraisal stage. Saved ratings and justification remain available.
+          </Alert>
+        )}
+
         {appraisal.status === 'final_review_pending' && appraisal.calibration?.calibratedAt && (
           <Alert severity="success" sx={{ mb: 3 }}>
             Calibration already submitted on {new Date(appraisal.calibration.calibratedAt).toLocaleDateString()}.
@@ -217,7 +225,8 @@ export default function CalibrationPage() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
           <Rating
             value={calibratedRating}
-            onChange={(_, value) => setCalibratedRating(value || calibratedRating)}
+            readOnly={!canEditCalibration}
+            onChange={(_, value) => setCalibratedRating(value ?? calibratedRating)}
             max={maxRating}
             sx={{ '& .MuiRating-iconFilled': { color: 'primary.main' } }}
           />
@@ -229,17 +238,18 @@ export default function CalibrationPage() {
           multiline
           minRows={4}
           label="Calibration Justification"
+          slotProps={{ input: { readOnly: !canEditCalibration } }}
           placeholder="Explain why the rating is being adjusted (or confirmed) based on cross-team calibration context."
           value={justification}
           onChange={(e) => setJustification(e.target.value)}
           sx={{ mb: 3 }}
         />
 
-        <Alert severity="info" sx={{ mb: 3 }}>
+        {canEditCalibration && <Alert severity="info" sx={{ mb: 3 }}>
           Submit calibration to move this appraisal to Final Review.
-        </Alert>
+        </Alert>}
 
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+        {canEditCalibration && <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
           <Button
             variant="outlined"
             startIcon={saving ? <CircularProgress size={18} /> : <Save />}
@@ -257,7 +267,7 @@ export default function CalibrationPage() {
           >
             Submit Calibration
           </Button>
-        </Box>
+        </Box>}
       </Paper>
 
       <Snackbar
