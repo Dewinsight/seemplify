@@ -83,7 +83,7 @@ async function collect(appraisal, profile = { shared: true }) {
     add('meetings', id(meeting), meeting.title, { date: meeting.scheduledDate, status: meeting.status, transcript: safe.transcript || null, transcriptSource: meeting.transcript?.source, agreedNotes: safe.notes, aiMeetingNotes: safe.summary }, safe.transcript ? 'transcript_ready' : 'transcript_missing');
     if (!safe.transcript) gaps.push(`Transcript unavailable: ${meeting.title}`);
   }
-  for (const goal of appraisal.goalSnapshots || []) add('personal_okrs', id(goal.sourceGoalId), goal.definition?.title || 'Frozen personal OKR', { definition: goal.definition, achievement: goal.achievement, period: goal.period, alignment: goal.alignment, cutoffAt: goal.cutoffAt }, 'frozen_scoring_evidence');
+  for (const goal of appraisal.goalSnapshots || []) add('personal_okrs', `frozen:${id(goal.sourceGoalId)}`, goal.definition?.title || 'Frozen personal OKR', { definition: goal.definition, achievement: goal.achievement, period: goal.period, alignment: goal.alignment, cutoffAt: goal.cutoffAt }, 'frozen_scoring_evidence');
   const goalIds = (appraisal.goalSnapshots || []).flatMap(goal => [goal.sourceGoalId, goal.alignment?.parentOKRId]).filter(Boolean);
   const periods = await require('../models/GoalPeriod').find({ organizationId: org, startDate: { $lte: snapshot.periodEnd || cycle?.periodEnd || new Date() }, endDate: { $gte: snapshot.periodStart || cycle?.periodStart || new Date() } }).select('_id').lean();
   const teams = profile.competency?.directory?.members?.find(member => String(member.userId) === String(appraisal.employee?.userId))?.teamIds || profile.participantTeamIds || [];
@@ -103,7 +103,7 @@ async function collect(appraisal, profile = { shared: true }) {
       if (!ancestors.length) break;
       for (const goal of ancestors) { seen.add(id(goal)); goals.push(goal); }
     }
-    for (const goal of goals) add(goal.type === 'individual' ? 'personal_okrs' : 'aligned_okrs', id(goal), goal.title || 'Aligned goal', { type: goal.type, period: goal.period, objectives: goal.objectives,
+    for (const goal of goals) add(goal.type === 'individual' ? 'personal_okrs' : 'aligned_okrs', `live:${id(goal)}`, goal.title || 'Aligned goal', { type: goal.type, period: goal.period, objectives: goal.objectives,
       approvalStatus: goal.approvalStatus, status: goal.status, progress: goal.progress, team: goal.teamHierarchy?.teamName, alignment: goal.alignment,
       scoringEligibility: goal.scoringEligibility, note: 'Live alignment context. Preserved appraisal snapshots remain the source for the official rating.' }, 'live_context');
   }

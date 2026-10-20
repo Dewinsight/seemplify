@@ -125,3 +125,17 @@ test('appending discussion during generation publishes a labelled snapshot inste
   expect(result.content).toBe('Completed snapshot of the earlier saved evidence.');
   expect(result.isCurrent).toBe(false); expect(result.state).toBe('stale');
 });
+
+test('frozen and live versions of the same OKR retain distinct references during discussion updates', async () => {
+  const goal = await require('../models/OKR').findOne({ organizationId: org.id, type: 'individual' });
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { goalSnapshots: [{ sourceGoalId: goal._id, definition: { title: goal.title }, cutoffAt: new Date('2026-03-31') }] } });
+  await api('post').send({}).expect(202); await service.processDue();
+  const first = (await api('get').expect(200)).body.data;
+  const goals = first.coverage.sources.filter(source => source.category === 'personal_okrs');
+  expect(goals).toHaveLength(2);
+  expect(new Set(goals.map(source => source.id)).size).toBe(2);
+  expect(new Set(goals.map(source => source.ref)).size).toBe(2);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $push: { chatThread: { sender: { role: 'employee' }, message: 'Additional discussion after frozen goals.', phase: 'achievements' } } });
+  const next = (await api('get').expect(200)).body.data;
+  expect(next.isCurrent).toBe(false); expect(next.content).toBe(first.content);
+});
