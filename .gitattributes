@@ -5,3 +5,4 @@ coturn/*.sh text eol=lf
 deploy/hostinger/*.sh text eol=lf
 lms/docker/*.sh text eol=lf
 lms/docker/Dockerfile* text eol=lf
+performance/backend/tests/fixtures/*.pdf binary
