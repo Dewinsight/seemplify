@@ -395,10 +395,17 @@ export default function EditAppraisalCyclePage() {
 
         setSaving(true);
         try {
+            const draftConfiguration = {
+                ...formData,
+                settings: {
+                    ...formData.settings,
+                    requireOkrAlignment: formData.workflowDefinition.stages.goalSetting?.enabled !== false
+                }
+            };
             if (isNewCycle) {
                 const scope = buildScopeFromEmployees(isHRAdmin, selectedParticipants);
                 await api.post('/appraisals/cycles', {
-                    ...formData,
+                    ...draftConfiguration,
                     scope,
                     launchNow: true,
                     reviewerMode: 'selected',
@@ -423,7 +430,7 @@ export default function EditAppraisalCyclePage() {
                 });
             } else {
                 const updatePayload = cycleStatus === 'draft'
-                    ? formData
+                    ? draftConfiguration
                     : Object.fromEntries(Object.entries(formData).filter(([key]) => !['workflowDefinition', 'sourceTemplate', 'okrWeight'].includes(key)));
                 await api.put(`/appraisals/cycles/${cycleId}`, updatePayload);
             }
