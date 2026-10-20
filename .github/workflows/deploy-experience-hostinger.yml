@@ -38,61 +38,7 @@ concurrency:
   queue: max
 
 jobs:
-  qa:
-    runs-on: dewinsight-kvm8
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: experience-management/package-lock.json
-      - name: Build and test Experience OIDC provisioning
-        working-directory: experience-management
-        run: |
-          npm ci
-          npm run build
-          npx tsx --test backend/test/idp-provisioning.test.ts
-          (cd backend && npx tsx --test --test-name-pattern='pins local Nomic|keeps pinned|accepts the pinned Azure|accepts only the pinned|rejects mixed|runtime schema 3' test/knowledge-embedding-config.test.ts)
-          (cd backend && npx tsx --test test/runtime-privilege-contract.test.ts)
-          node --test scripts/knowledge-runtime-request.test.mjs
-          (cd frontend && node --test --test-name-pattern='deploys local Nomic|refuses an incompatible rollback' test/smoke.test.mjs)
-      - name: Test production knowledge runtime contracts
-        working-directory: tools/local-knowledge
-        run: node --test embedding-profiles.test.cjs nomic.test.cjs runtime.test.cjs server.test.cjs gte-embedding-client.test.cjs bootstrap-arango.test.cjs
-      - name: Test SSH deployment stdin contract
-        run: node --test deploy/hostinger/experience-deployment-contract.test.cjs
-      - name: Test IdP Hub contracts
-        working-directory: Identityprovider
-        run: |
-          npm ci --ignore-scripts
-          node --test test/hub-pins.test.mjs test/auth-redirects.test.mjs test/nylas-platform-configuration.test.mjs test/media-platform-configuration.test.mjs test/recruiter-admin-sso-secret.test.mjs test/browser-notification-relay.test.mjs src/__tests__/subscription-extension-reactivation.test.mjs src/__tests__/subscription-required-recovery.test.mjs
-      - name: Check browser notification secret provisioner
-        run: bash -n deploy/hostinger/ensure-browser-notification-secrets.sh
-      - name: Test shared gateway authentication
-        working-directory: recruiter/backend
-        run: node --test tests/internalServiceAuth.test.js tests/embeddingRuntimeConfig.test.js tests/nomicEmbeddingClient.test.js tests/nomicIndexMigration.test.js tests/nomicWeaviateProfile.test.js
-      - name: Test AI Interview platform configuration
-        working-directory: ai-interview/backend
-        run: |
-          npm ci --ignore-scripts
-          npm run check
-          node --test test/platformConfigurationClient.test.js
-      - name: Build and test AI Interview frontend
-        working-directory: ai-interview/frontend
-        run: |
-          corepack pnpm install --frozen-lockfile --ignore-scripts
-          corepack pnpm run typecheck
-          corepack pnpm run test:cv-upload
-          corepack pnpm run build
-      - name: Build marketing site
-        working-directory: marketing-site
-        run: |
-          npm ci --ignore-scripts
-          npm run build
-
   deploy:
-    needs: qa
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4

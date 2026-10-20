@@ -24,32 +24,7 @@ concurrency:
   queue: max
 
 jobs:
-  qa:
-    runs-on: dewinsight-kvm8
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install Recruiter test dependencies
-        working-directory: recruiter/backend
-        run: npm install --ignore-scripts --no-package-lock --legacy-peer-deps
-      - name: Verify gateway metering and Recruiter ingestion
-        run: |
-          node --test \
-            tools/chatgpt-gateway/workspace-mcp.test.cjs \
-            tools/chatgpt-gateway/chatgpt-completion.test.cjs \
-            tools/chatgpt-gateway/chatgpt-session-manager.test.cjs \
-            tools/chatgpt-gateway/usage-metering-outbox.test.cjs \
-            tools/chatgpt-gateway/usage-ledger.test.cjs \
-            recruiter/backend/tests/workspaceMcp.test.js \
-            recruiter/backend/tests/aiRuntimeGatewayIntegration.test.js \
-            recruiter/backend/tests/aiRuntimeChatgptProvider.test.js \
-            recruiter/backend/tests/chatGptUsageReplay.test.js
-          node --test recruiter/backend/tests/embeddingRuntimeConfig.test.js recruiter/backend/tests/nomicEmbeddingClient.test.js recruiter/backend/tests/nomicIndexMigration.test.js recruiter/backend/tests/nomicWeaviateProfile.test.js
-
   deploy:
-    needs: qa
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4

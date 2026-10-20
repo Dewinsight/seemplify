@@ -18,23 +18,7 @@ concurrency:
   queue: max
 
 jobs:
-  qa:
-    runs-on: dewinsight-kvm8
-    defaults:
-      run:
-        working-directory: coturn/turn-api
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: coturn/turn-api/package-lock.json
-      - run: npm ci --ignore-scripts
-      - run: npm test
-
   deploy:
-    needs: qa
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4

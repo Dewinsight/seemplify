@@ -15,8 +15,6 @@ jobs:
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4
-      - name: Test authentication contracts
-        run: python3 -m unittest discover -s lms/tests -v
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}

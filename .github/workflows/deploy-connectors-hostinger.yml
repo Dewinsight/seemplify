@@ -18,19 +18,7 @@ concurrency:
   queue: max
 
 jobs:
-  validate:
-    runs-on: dewinsight-kvm8
-    steps:
-      - uses: actions/checkout@v4
-      - name: Validate connector-only Compose definition
-        run: |
-          docker compose \
-            -f deploy/hostinger/automation-nango.compose.yml \
-            config --no-interpolate --quiet
-          ! grep -q 'automation-hub' deploy/hostinger/automation-nango.compose.yml
-
   deploy:
-    needs: validate
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4

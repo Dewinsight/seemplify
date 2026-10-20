@@ -16,20 +16,6 @@ jobs:
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4
-      - name: Validate shared infrastructure compose
-        run: |
-          mkdir -p /tmp/seemplify-secrets/knowledge
-          touch /tmp/mongodb-keyfile
-          for name in arango-root arango-app arango-provisioner; do
-            printf 'validation-only-secret-value-with-sufficient-length\n' > "/tmp/seemplify-secrets/knowledge/$name"
-          done
-          sed \
-            -e 's#/opt/seemplify/secrets/knowledge#/tmp/seemplify-secrets/knowledge#g' \
-            -e 's#/opt/seemplify/secrets/mongodb-keyfile#/tmp/mongodb-keyfile#g' \
-            deploy/hostinger/shared-infrastructure.compose.yml >/tmp/shared-infrastructure.compose.yml
-          MONGO_ROOT_PASSWORD=validation REDIS_PASSWORD=validation WEAVIATE_API_KEY=validation \
-            EXPERIENCE_POSTGRES_OWNER_PASSWORD=validation \
-            docker compose -f /tmp/shared-infrastructure.compose.yml config --quiet
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}

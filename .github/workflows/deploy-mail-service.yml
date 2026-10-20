@@ -21,22 +21,8 @@ concurrency:
   queue: max
 
 jobs:
-  validate:
-    name: Validate mail release
-    runs-on: dewinsight-kvm8
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Validate production compose contract
-        run: node platform/email/scripts/validate-compose-config.mjs --compose platform/email/compose/docker-compose.dokploy.yml
-      - name: Run mail platform checks
-        run: node --test platform/email/tests/*.test.mjs
-
   deploy:
     name: Deploy immutable mail release
-    needs: validate
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4

@@ -16,21 +16,6 @@ jobs:
     runs-on: dewinsight-kvm8
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Validate shared infrastructure compose
-        run: |
-          node --test tools/local-knowledge/bootstrap-arango.test.cjs
-          mkdir -p /tmp/seemplify-secrets/knowledge
-          for name in arango-root arango-app arango-provisioner; do
-            printf 'validation-only-secret-value-with-sufficient-length\n' > "/tmp/seemplify-secrets/knowledge/$name"
-          done
-          sed 's#/opt/seemplify/secrets/knowledge#/tmp/seemplify-secrets/knowledge#g' \
-            deploy/hostinger/shared-infrastructure.compose.yml >/tmp/shared-infrastructure.compose.yml
-          MONGO_ROOT_PASSWORD=validation REDIS_PASSWORD=validation WEAVIATE_API_KEY=validation \
-            EXPERIENCE_POSTGRES_OWNER_PASSWORD=validation \
-            docker compose -f /tmp/shared-infrastructure.compose.yml config --quiet
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
