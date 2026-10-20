@@ -416,10 +416,10 @@ export default function OneOnOnesPage() {
                   <Grid size={12}>
                     <Typography variant="h6" gutterBottom>Employee Mood</Typography>
                     <Box display="flex" alignItems="center" gap={2}>
-                      <Chip
+                      {typeof selectedMeeting.employeeMood.score === 'number' && Number.isFinite(selectedMeeting.employeeMood.score) ? <Chip
                         label={`${selectedMeeting.employeeMood.score}/5`}
                         color={selectedMeeting.employeeMood.score >= 4 ? 'success' : selectedMeeting.employeeMood.score >= 3 ? 'warning' : 'error'}
-                      />
+                      /> : <Typography variant="body2" color="text.secondary">Not shared yet</Typography>}
                       {selectedMeeting.employeeMood.comment && (
                         <Typography variant="body2">{selectedMeeting.employeeMood.comment}</Typography>
                       )}

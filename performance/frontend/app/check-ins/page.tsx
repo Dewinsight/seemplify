@@ -144,6 +144,8 @@ function CheckInsContent() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [retryRevision, setRetryRevision] = useState(0);
   const [notice, setNotice] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CheckIn | null>(null);
@@ -162,12 +164,12 @@ function CheckInsContent() {
   const load = useCallback(async () => {
     if (!employeeId) return;
     setLoading(true);
-    setError('');
+    setLoadError('');
     try {
       setItems(await fetchForEmployee(employeeId));
     } catch (requestError: any) {
       setItems([]);
-      setError(requestError?.response?.data?.error || 'Could not load check-ins.');
+      setLoadError(requestError?.response?.data?.error || 'Could not load check-ins.');
     } finally {
       setLoading(false);
     }
@@ -179,7 +181,7 @@ function CheckInsContent() {
       resolvedDeepLink.current = linkedCheckInId;
       const findLinkedItem = async () => {
         setLoading(true);
-        setError('');
+        setLoadError('');
         try {
           const results = await Promise.all(people.map(async (person) => ({ person, items: await fetchForEmployee(person.id) })));
           const match = results.find((result) => result.items.some((item) => item._id === linkedCheckInId));
@@ -188,10 +190,12 @@ function CheckInsContent() {
             setItems(match.items);
             window.setTimeout(() => document.getElementById(`check-in-${linkedCheckInId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
           } else {
-            setError('This check-in is unavailable or you do not have access to it.');
+            setItems([]);
+            setLoadError('This check-in is unavailable or you do not have access to it.');
           }
         } catch (requestError: any) {
-          setError(requestError?.response?.data?.error || 'Could not open this check-in.');
+          setItems([]);
+          setLoadError(requestError?.response?.data?.error || 'Could not open this check-in.');
         } finally {
           setLoading(false);
         }
@@ -200,7 +204,7 @@ function CheckInsContent() {
       return;
     }
     void load();
-  }, [contextLoading, fetchForEmployee, linkedCheckInId, load, people, reportsLoading]);
+  }, [contextLoading, fetchForEmployee, linkedCheckInId, load, people, reportsLoading, retryRevision]);
 
   const filteredItems = filter === 'all' ? items : items.filter((item) => item.cadence === filter);
 
@@ -326,11 +330,15 @@ function CheckInsContent() {
       </Stack>
 
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
+      {loadError && <Alert severity="error" sx={{ mb: 2 }} action={<Button disabled={loading} onClick={() => {
+        if (linkedCheckInId) { resolvedDeepLink.current = ''; setRetryRevision(value => value + 1); }
+        else void load();
+      }}>Retry check-ins</Button>}>{loadError}</Alert>}
 
       {isManager && people.length > 1 && (
         <FormControl size="small" sx={{ minWidth: 260, mb: 2 }}>
-          <InputLabel>Employee</InputLabel>
-          <Select value={employeeId} label="Employee" onChange={(event) => { resolvedDeepLink.current = linkedCheckInId; setSelectedEmployeeId(event.target.value); }}>
+          <InputLabel id="check-in-employee-label">Employee</InputLabel>
+          <Select id="check-in-employee" labelId="check-in-employee-label" value={employeeId} label="Employee" onChange={(event) => { resolvedDeepLink.current = linkedCheckInId; setSelectedEmployeeId(event.target.value); }}>
             {people.map((person) => <MenuItem key={person.id} value={person.id}>{person.id === currentUserId ? 'My check-ins' : person.name}</MenuItem>)}
           </Select>
         </FormControl>
@@ -347,7 +355,7 @@ function CheckInsContent() {
 
       {loading ? (
         <LinearProgress />
-      ) : filteredItems.length === 0 ? (
+      ) : loadError ? null : filteredItems.length === 0 ? (
         <Paper variant="outlined" sx={{ px: 3, py: 7, textAlign: 'center' }}>
           <Typography fontWeight={700}>No {filter === 'all' ? '' : `${cadenceLabel(filter)} `}check-ins yet</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, mb: isOwnView ? 2 : 0 }}>

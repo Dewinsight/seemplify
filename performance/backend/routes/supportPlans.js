@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const PerformanceSupportPlan = require('../models/PerformanceSupportPlan');
 const User = require('../models/User');
-const { requirePermission, requireHRAdmin } = require('../middleware/rbac');
+const { requirePermission, requireHRAdmin, hasPermission } = require('../middleware/rbac');
 const { getActorId, canAccessEmployee, tenantFilter } = require('../services/tenantPolicy');
 const { requireOrganizationFeature } = require('../services/organizationFeatureService');
 const aiGatewayService = require('../services/aiGatewayService');
@@ -485,7 +485,9 @@ router.patch('/:id/milestones/:milestoneId', async (req, res) => {
     const plan = await loadPlan(req, res);
     if (!plan) return;
     const actorId = getActorId(req);
-    if (actorId !== plan.employee.userId && !canManage(req, plan)) return res.status(403).json({ success: false, error: 'Access denied' });
+    if (actorId !== plan.employee.userId && (!canManage(req, plan) || !hasPermission(req.userRole, 'support_plan:manage:direct_reports', req.session?.user))) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
     const milestone = plan.milestones.id(req.params.milestoneId);
     if (!milestone) return res.status(404).json({ success: false, error: 'Milestone not found' });
     if (actorId === plan.employee.userId) milestone.employeeUpdate = text(req.body.employeeUpdate, 4000);

@@ -210,9 +210,14 @@ test('manual required-evidence assessment uploads retries downloads and removes 
   for (const [label, value] of Object.entries(reflection)) await expect(page.getByRole('textbox', { name: label, exact: true })).toHaveValue(value);
   await expect(page.getByRole('textbox', { name: /Describe the documented delivery/ })).toHaveValue('A documented synthetic delivery with a supporting file.');
   await page.getByRole('button', { name: 'Save Draft', exact: true }).click();
+  await expect(page.getByText('Progress saved.', { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole('dialog', { name: 'ChatGPT is required', exact: true }).getByRole('button', { name: 'Use manual form', exact: true }).click();
+  await expect(page.getByText('Manual Mode', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'ChatGPT is required', exact: true })).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.get('assessmentMode')).toBe('form');
   await expect(row).toBeVisible();
+  for (const [label, value] of Object.entries(reflection)) await expect(page.getByRole('textbox', { name: label, exact: true })).toHaveValue(value);
+  await expect(page.getByRole('textbox', { name: /Describe the documented delivery/ })).toHaveValue('A documented synthetic delivery with a supporting file.');
   await request.get(`${apiURL}/api/appraisals/${appraisal._id}/documents/${source._id}/content`, { headers: { 'x-attachment-actor': 'outsider' }, maxRedirects: 0 }).then(response => expect(response.status()).toBe(403));
   expect(signed).toBe(0);
   const downloadEvent = page.waitForEvent('download');

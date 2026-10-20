@@ -1,6 +1,7 @@
 const express = require('express');
 const OKR = require('../models/OKR');
 const Feedback = require('../models/Feedback');
+const { countReportableFeedback, feedbackHidesSender } = require('../services/feedbackPrivacyService');
 const Appraisal = require('../models/Appraisal');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
 const PerformanceCheckIn = require('../models/PerformanceCheckIn');
@@ -57,9 +58,12 @@ router.get('/:userId/timeline', requireAuth, requireOrganization, async (req, re
         organizationId: req.organizationId,
         receiverId: userId,
         deletedAt: null,
+        // Individual chronological entries would disclose response timing.
+        // Released anonymous content remains in the cohort-safe Feedback view.
+        anonymity: { $ne: 'anonymous' },
         createdAt: dateRange,
         ...(isSelf ? { visibility: { $ne: 'manager-only' } } : { visibility: { $in: ['public', 'manager-only'] } })
-      }).select('senderId senderInfo type visibility contextType contextLabel anonymity content acknowledgedAt createdAt').lean(),
+      }).select('senderId senderInfo receiverId type visibility contextType contextLabel anonymity content acknowledgedAt createdAt').lean(),
       Appraisal.find({
         organizationId: req.organizationId,
         'employee.userId': userId,
@@ -110,6 +114,7 @@ router.get('/:userId/timeline', requireAuth, requireOrganization, async (req, re
       }));
     }
     for (const item of feedback) {
+      if (feedbackHidesSender(item, actorId, req.userRole)) continue;
       const anonymous = item.anonymity === 'anonymous';
       entries.push(timelineEntry('feedback', item.createdAt, {
         id: item._id,
@@ -220,7 +225,7 @@ router.get('/:userId/performance-summary', internalServiceAuth, async (req, res)
         .select('cycleId status finalRating goalEvidenceSummary deadlines')
         .populate('cycleId', 'name periodStart periodEnd')
         .lean(),
-      Feedback.countDocuments({ organizationId, receiverId: userId, deletedAt: null }),
+      countReportableFeedback({ organizationId, receiverId: userId, deletedAt: null }),
       DevelopmentPlan.findOne({ organizationId, userId, status: { $in: ['draft', 'active'] } })
         .sort({ updatedAt: -1 })
         .select('title status targetDate overallProgress reviewDates')

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 const date = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
 function muiSelect(scope: Page | Locator, label: string) {
   return scope.locator('label').filter({ hasText: label }).first().locator('..').getByRole('combobox');
@@ -260,6 +261,30 @@ test('manager finalizes a result and employee opens historical report and downlo
   await expect(page.getByText(cycle.name, { exact: true })).toBeVisible();
 });
 
+test('analytics shows unavailable goals rather than zero for a finalized unrated appraisal', async ({ page, request }) => {
+  const { appraisal, cycle } = await reviewReadyForCalibration(request, false);
+  expect(appraisal.goalEvidenceSummary).toMatchObject({ rated: false, score: null });
+  await api(request, 'manager', 'POST', `appraisals/${appraisal._id}/finalize`, {
+    finalRating: 3, justification: 'Synthetic acceptance: the final rating reflects the documented review decision.'
+  });
+  const analytics = await api(request, 'hr_manager', 'GET', `analytics/performance?cycleId=${cycle._id}`);
+  expect(analytics.summary).toMatchObject({ participants: 1, completed: 1, rated: 1, averageRating: 3 });
+  expect(analytics.topPerformers).toEqual([expect.objectContaining({ appraisalId: appraisal._id, finalRating: 3, goalAchievement: null })]);
+  await login(page, 'hr_manager', '/analytics');
+  await page.getByRole('combobox', { name: 'Cycle', exact: true }).click();
+  await page.getByRole('option', { name: cycle.name, exact: true }).click();
+  await page.getByRole('tab', { name: 'Top performers (1)', exact: true }).click();
+  const row = page.getByTestId('top-performers-table').getByRole('row').filter({ hasText: cycle.name });
+  await expect(row).toHaveCount(1);
+  await expect(row.getByRole('cell').nth(4)).toHaveText('Not available');
+  await expect(row.getByRole('cell').nth(5)).toContainText('3/5');
+  await page.reload();
+  await page.getByRole('combobox', { name: 'Cycle', exact: true }).click();
+  await page.getByRole('option', { name: cycle.name, exact: true }).click();
+  await page.getByRole('tab', { name: 'Top performers (1)', exact: true }).click();
+  await expect(page.getByTestId('top-performers-table').getByRole('row').filter({ hasText: cycle.name }).getByRole('cell').nth(4)).toHaveText('Not available');
+});
+
 test('HR nominates a synthetic succession candidate from active colleague search', async ({ page }) => {
   await login(page, 'hr_manager', '/talent');
   await page.getByRole('tab', { name: 'Succession coverage', exact: true }).click();
@@ -492,19 +517,39 @@ test('HR records calibration decisions, completes the session and downloads the 
   await create.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(create).not.toBeVisible();
   const card = page.locator('.MuiCard-root').filter({ has: page.getByText(title, { exact: true }) });
+  await expect(page.locator('.MuiCard-root').filter({ has: page.getByText('Reviews in sessions', { exact: true }) }).getByRole('heading')).toHaveText('1');
+  await expect(page.getByText('Reviews Calibrated', { exact: true })).toHaveCount(0);
   await card.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(card.getByText('0 of 1 reviewed', { exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Continue', exact: true }).click();
   const details = page.getByRole('dialog');
   await details.getByRole('button', { name: 'Review rating', exact: true }).click();
   const review = page.getByRole('dialog', { name: /Review rating:/ });
-  await review.getByLabel('Calibration reason').fill('Synthetic browser acceptance evidence reviewed.');
+  const reason = 'Synthetic browser acceptance evidence reviewed, including "delivery" context.';
+  await review.getByLabel('Calibrated rating', { exact: true }).fill('3');
+  await review.getByLabel('Calibration reason').fill(reason);
   await review.getByRole('button', { name: 'Save decision', exact: true }).click();
   await expect(review).not.toBeVisible();
   await details.getByRole('button', { name: 'Complete calibration', exact: true }).click();
   await expect(details.getByText('completed', { exact: true })).toBeVisible();
+  const session = (await api(request, 'hr_manager', 'GET', 'calibration')).find((item: { title: string }) => item.title === title);
+  expect(session.reviewsUnderCalibration[0]).toMatchObject({ employeeName: 'Acceptance employee', employeeId: 'acceptance-employee', originalManagerRating: 4, calibratedRating: 3, decision: 'adjusted', calibrationNotes: reason });
+  // Reopen the completed session after a real reload so export joins the
+  // authorized session snapshot, including the retained original rating.
+  await page.reload();
+  const completed = page.getByRole('row').filter({ has: page.getByText(title, { exact: true }) });
+  await completed.getByRole('button', { name: 'View Report', exact: true }).click();
+  await expect(details.getByText('completed', { exact: true })).toBeVisible();
+  await expect(details.getByRole('button', { name: 'Review rating', exact: true })).toHaveCount(0);
+  await expect(details.getByRole('button', { name: 'Complete calibration', exact: true })).toHaveCount(0);
+  const report = await api(request, 'hr_manager', 'GET', `calibration/${session._id}/export`);
+  expect(report.reviews[0]).not.toHaveProperty('employeeName');
   const download = page.waitForEvent('download');
   await details.getByRole('button', { name: 'Export Report', exact: true }).click();
-  expect((await download).suggestedFilename()).toMatch(/^calibration-.*\.csv$/);
+  const exported = await download;
+  expect(exported.suggestedFilename()).toMatch(/^calibration-.*\.csv$/);
+  const csv = await readFile((await exported.path())!, 'utf8');
+  expect(csv.replace(/^\uFEFF/, '')).toBe('"Employee","Employee ID","Original rating","Calibrated rating","Decision","Notes"\r\n"Acceptance employee","acceptance-employee","4","3","adjusted","Synthetic browser acceptance evidence reviewed, including ""delivery"" context."');
 });
 
 test('HR downloads actual OKR and appraisal CSV exports', async ({ page }) => {

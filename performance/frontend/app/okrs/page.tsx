@@ -126,6 +126,10 @@ interface Goal {
     state?: string;
     updatedAt?: string;
     comment?: string;
+    decision?: 'approve' | 'request_changes' | 'reject';
+    decisionComment?: string;
+    decidedBy?: { name?: string };
+    decidedAt?: string;
   };
   assignment?: {
     assignedBy?: { userId?: string; name?: string; email?: string };
@@ -273,6 +277,20 @@ function readableState(value?: string) {
   return String(value || 'active')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function GoalDecisionReason({ goal }: { goal: Goal }) {
+  const state = lifecycleState(goal);
+  const lifecycle = goal.lifecycle;
+  if (!lifecycle?.decisionComment?.trim() || !['changes_requested', 'rejected'].includes(state)) return null;
+  if (lifecycle.decision && lifecycle.decision !== (state === 'rejected' ? 'reject' : 'request_changes')) return null;
+  const decidedAt = lifecycle.decidedAt ? new Date(lifecycle.decidedAt) : null;
+  const attribution = [lifecycle.decidedBy?.name, decidedAt && Number.isFinite(decidedAt.getTime()) ? decidedAt.toLocaleDateString() : ''].filter(Boolean).join(' · ');
+  return <Alert severity={state === 'rejected' ? 'warning' : 'info'} sx={{ my: 2, '& .MuiAlert-message': { minWidth: 0 } }}>
+    <Typography variant="subtitle2">Decision reason</Typography>
+    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{lifecycle.decisionComment}</Typography>
+    {attribution && <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>{attribution}</Typography>}
+  </Alert>;
 }
 
 function goalTitle(goal: Goal) {
@@ -1072,6 +1090,7 @@ export default function OKRWorkspacePage() {
                   {goal.lifecycle.comment}
                 </Alert>
               )}
+              <GoalDecisionReason goal={goal} />
             </Box>
 
             <Box sx={{ width: { xs: '100%', md: 240 }, flexShrink: 0 }}>
@@ -1285,6 +1304,7 @@ export default function OKRWorkspacePage() {
               Saving creates an audited goal version. An assigned active goal will need employee acknowledgement again.
             </Alert>
           )}
+          {editingGoal && <GoalDecisionReason goal={editingGoal} />}
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 8 }}>
               <TextField fullWidth label="Goal title" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />

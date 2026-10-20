@@ -253,7 +253,7 @@ export default function CalibrationPage() {
                   <Typography variant="h4" fontWeight="bold">
                     {sessions?.reduce((sum: number, s: CalibrationSession) => sum + (s.reviewsUnderCalibration?.length || 0), 0) || 0}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">Reviews Calibrated</Typography>
+                  <Typography variant="body2" color="text.secondary">Reviews in sessions</Typography>
                 </Box>
               </Box>
             </CardContent>
@@ -649,8 +649,10 @@ export default function CalibrationPage() {
                     try {
                       const res = await api.get(`/calibration/${selectedSession._id}/export`);
                       const report = res.data.data;
-                      downloadResultsCsv([['Employee', 'Original rating', 'Calibrated rating', 'Decision', 'Notes'],
-                        ...report.reviews.map((review: ExportReview) => [review.employeeId, String(review.originalRating ?? ''), String(review.calibratedRating ?? ''), review.decision, review.notes || ''])], `calibration-${selectedSession._id}.csv`);
+                      const employeeNames = new Map(selectedSession.reviewsUnderCalibration.map(review => [String(review.employeeId), review.employeeName]));
+                      downloadResultsCsv([['Employee', 'Employee ID', 'Original rating', 'Calibrated rating', 'Decision', 'Notes'],
+                        ...report.reviews.map((review: ExportReview) => [employeeNames.get(String(review.employeeId)) || 'Name unavailable', review.employeeId,
+                          String(review.originalRating ?? ''), String(review.calibratedRating ?? ''), review.decision, review.notes || ''])], `calibration-${selectedSession._id}.csv`);
                     } catch (requestError) { setError(getApiErrorMessage(requestError, 'Could not export this calibration report.')); }
                   }}
                 >

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { useUserContext } from '@/lib/hooks';
 import {
   Alert,
@@ -43,7 +44,7 @@ type AiBrief = { _id: string; status: 'suggested' | 'accepted' | 'rejected'; out
 type TalentEntry = { _id: string; employee: Employee; managerId?: string; evidenceSnapshot: EvidenceSnapshot; performanceBand: 'developing' | 'effective' | 'strong'; potential: 'not_assessed' | 'limited' | 'moderate' | 'high'; readiness: 'not_assessed' | 'ready_now' | 'ready_1_2_years' | 'ready_3_plus_years'; nextRole?: string; criticalRole?: boolean; rationale?: string; strengths?: string[]; developmentPriorities?: string[]; decisionState: string; aiBriefs?: AiBrief[] };
 type TalentReview = { _id: string; name: string; description?: string; state: 'draft' | 'open' | 'calibration' | 'closed' | 'cancelled'; sourceCycle: { name: string; periodStart?: string; periodEnd?: string }; entries: TalentEntry[]; updatedAt: string };
 type AppraisalCycle = { _id: string; name: string; periodStart?: string; periodEnd?: string; status?: string };
-type SuccessionCandidate = { _id: string; employee: Employee; readiness: string; rationale: string; state: string };
+type SuccessionCandidate = { _id: string; employee: Employee; readiness: string; rationale: string; state: string; strengths?: string[]; developmentGaps?: string[]; confirmedAt?: string };
 type SuccessionPlan = { _id: string; role: { title: string; departmentName?: string; teamName?: string; criticality: string }; state: string; reviewDate?: string; candidates: SuccessionCandidate[] };
 type Signal = { type: string; severity: 'medium' | 'high'; employee: Employee; appraisalId: string; status: string; reasons: string[]; definition: string };
 
@@ -105,16 +106,27 @@ export default function TalentPage() {
   const [employeeOptions, setEmployeeOptions] = useState<Employee[]>([]);
   const [candidateForm, setCandidateForm] = useState<{ employee: Employee | null; readiness: string; rationale: string; strengths: string; developmentGaps: string }>({ employee: null, readiness: 'ready_1_2_years', rationale: '', strengths: '', developmentGaps: '' });
   const [saving, setSaving] = useState(false);
+  const { user: authUser, currentOrganization } = useAuth();
+  const organizationClaim = [...(authUser?.organizations || []), ...(authUser?.idpOrganizations || [])].find(org => String(org.id || org._id) === String(currentOrganization?.id)) || currentOrganization;
+  const grants = organizationClaim?.authorization?.permissionsByApp?.['performance-management'] ?? organizationClaim?.appPermissions?.['performance-management'];
+  const canManageSuccession = isHRAdmin && (!Array.isArray(grants) || grants.includes('succession:manage'));
+  const [coverageId, setCoverageId] = useState('');
+  const coverage = succession.find(plan => plan._id === coverageId) || null;
+  const [coverageEdit, setCoverageEdit] = useState(false);
+  const [coverageForm, setCoverageForm] = useState({ state: 'active', criticality: 'standard', reviewDate: '' });
+  const [candidateDecision, setCandidateDecision] = useState<{ id: string; state: 'confirmed' | 'removed' } | null>(null);
+  const [successionError, setSuccessionError] = useState('');
 
   const selectedReview = reviews.find((review) => review._id === selectedReviewId) || reviews[0] || null;
 
   const load = useCallback(async () => {
-    if (!isManager && !isHRAdmin) return;
+    if (!currentOrganization?.id) return;
+    if (!isManager && !isHRAdmin) { setLoading(false); return; }
     setLoading(true);
     setError('');
     try {
       const requests: Promise<unknown>[] = [api.get('/talent/reviews'), api.get('/talent/signals')];
-      if (isHRAdmin) requests.push(api.get('/talent/succession-plans'), api.get('/appraisals/cycles'));
+      if (isHRAdmin) requests.push(canManageSuccession ? api.get('/talent/succession-plans') : Promise.resolve({ data: { data: [] } }), api.get('/appraisals/cycles'));
       const responses = await Promise.all(requests) as Array<{ data?: unknown }>;
       const reviewData = responseData<TalentReview[]>(responses[0], []);
       const signalData = responseData<{ signals?: Signal[]; methodology?: string }>(responses[1], {});
@@ -132,7 +144,7 @@ export default function TalentPage() {
     } finally {
       setLoading(false);
     }
-  }, [isHRAdmin, isManager]);
+  }, [isHRAdmin, isManager, canManageSuccession, currentOrganization?.id]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -146,6 +158,8 @@ export default function TalentPage() {
     }
     return cells;
   }, [selectedReview]);
+
+  const reviewEditable = Boolean(selectedReview && ['open', 'calibration'].includes(selectedReview.state));
 
   const unassessed = (selectedReview?.entries || []).filter((entry) => entry.potential === 'not_assessed');
 
@@ -175,17 +189,17 @@ export default function TalentPage() {
   };
 
   const openAssessment = (entry: TalentEntry) => {
-    setEditingEntry(entry);
+    setError(''); setEditingEntry(entry);
     setEntryForm({
-      potential: entry.potential === 'not_assessed' ? 'moderate' : entry.potential,
-      readiness: entry.readiness === 'not_assessed' ? 'ready_1_2_years' : entry.readiness,
+      potential: entry.potential === 'not_assessed' && reviewEditable ? 'moderate' : entry.potential,
+      readiness: entry.readiness === 'not_assessed' && reviewEditable ? 'ready_1_2_years' : entry.readiness,
       nextRole: entry.nextRole || '', criticalRole: Boolean(entry.criticalRole), rationale: entry.rationale || '',
       strengths: (entry.strengths || []).join('\n'), developmentPriorities: (entry.developmentPriorities || []).join('\n')
     });
   };
 
   const saveAssessment = async () => {
-    if (!selectedReview || !editingEntry) return;
+    if (!selectedReview || !editingEntry || !reviewEditable) return;
     setSaving(true); setError('');
     try {
       await api.patch(`/talent/reviews/${selectedReview._id}/entries/${editingEntry.employee.userId}`, {
@@ -199,7 +213,7 @@ export default function TalentPage() {
   };
 
   const requestAiBrief = async () => {
-    if (!selectedReview || !editingEntry) return;
+    if (!selectedReview || !editingEntry || !reviewEditable) return;
     setSaving(true); setError('');
     try {
       const response = await api.post(`/talent/reviews/${selectedReview._id}/entries/${editingEntry.employee.userId}/ai-brief`);
@@ -212,7 +226,7 @@ export default function TalentPage() {
   };
 
   const reviewAiBrief = async (briefId: string, decision: 'accepted' | 'rejected') => {
-    if (!selectedReview || !editingEntry) return;
+    if (!selectedReview || !editingEntry || !reviewEditable) return;
     setSaving(true);
     try {
       await api.post(`/talent/reviews/${selectedReview._id}/entries/${editingEntry.employee.userId}/ai-briefs/${briefId}/review`, { decision });
@@ -256,6 +270,34 @@ export default function TalentPage() {
     finally { setSaving(false); }
   };
 
+  const editCoverage = () => {
+    if (!coverage || !canManageSuccession) return;
+    setCoverageForm({ state: coverage.state, criticality: coverage.role.criticality, reviewDate: coverage.reviewDate?.slice(0, 10) || '' });
+    setSuccessionError(''); setCoverageEdit(true);
+  };
+  const saveCoverage = async () => {
+    if (!coverage || !canManageSuccession || saving) return;
+    setSaving(true); setSuccessionError('');
+    try {
+      const response = await api.patch(`/talent/succession-plans/${coverage._id}`, { ...coverageForm, reviewDate: coverageForm.reviewDate || null });
+      const updated = responseData<SuccessionPlan>(response, coverage);
+      setSuccession(current => current.map(plan => plan._id === updated._id ? updated : plan));
+      setCoverageEdit(false); setNotice('Coverage updated. The decision is recorded in its audit history.');
+    } catch (saveError) { setSuccessionError(errorMessage(saveError, 'Coverage could not be updated. Your changes are retained.')); }
+    finally { setSaving(false); }
+  };
+  const decideCandidate = async () => {
+    if (!coverage || !candidateDecision || !canManageSuccession || coverage.state === 'closed' || saving) return;
+    setSaving(true); setSuccessionError('');
+    try {
+      const response = await api.patch(`/talent/succession-plans/${coverage._id}/candidates/${candidateDecision.id}`, { state: candidateDecision.state });
+      const updated = responseData<SuccessionPlan>(response, coverage);
+      setSuccession(current => current.map(plan => plan._id === updated._id ? updated : plan));
+      setCandidateDecision(null); setNotice('Candidate decision recorded. The original rationale is retained.');
+    } catch (saveError) { setSuccessionError(errorMessage(saveError, 'Candidate decision could not be saved. Retry your retained decision.')); }
+    finally { setSaving(false); }
+  };
+
   if (contextLoading || loading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
   if (features.talentPlanning === false) return <Alert severity="info">Talent planning is not enabled for this organization.</Alert>;
   if (!isManager && !isHRAdmin) return <Alert severity="info">Talent planning is available in Manager or Admin workspace.</Alert>;
@@ -264,7 +306,7 @@ export default function TalentPage() {
     <Box>
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'flex-start' }} gap={2} mb={2.5}>
         <Box><Typography component="h1" variant="h4" fontWeight={700}>Talent planning</Typography><Typography color="text.secondary">Calibrate potential and readiness from finalized evidence, then maintain succession coverage without automated people decisions.</Typography></Box>
-        <Stack direction="row" gap={1}><Button variant="outlined" startIcon={<Refresh />} onClick={() => void load()}>Refresh</Button>{isHRAdmin && tab === 0 && <Button variant="contained" startIcon={<Add />} onClick={() => setCreateReviewOpen(true)}>New talent review</Button>}{isHRAdmin && tab === 1 && <Button variant="contained" startIcon={<Add />} onClick={() => setCreateRoleOpen(true)}>Add critical role</Button>}</Stack>
+        <Stack direction="row" gap={1}><Button variant="outlined" startIcon={<Refresh />} onClick={() => void load()}>Refresh</Button>{isHRAdmin && tab === 0 && <Button variant="contained" startIcon={<Add />} onClick={() => { setError(''); setCreateReviewOpen(true); }}>New talent review</Button>}{canManageSuccession && tab === 1 && <Button variant="contained" startIcon={<Add />} onClick={() => { setError(''); setCreateRoleOpen(true); }}>Add critical role</Button>}</Stack>
       </Stack>
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice('')} sx={{ mb: 2 }}>{notice}</Alert>}
@@ -285,17 +327,54 @@ export default function TalentPage() {
         </Stack>
       )}
 
-      {isHRAdmin && tab === 1 && <Paper variant="outlined" sx={{ overflow: 'hidden' }}>{succession.length === 0 ? <Alert severity="info" sx={{ m: 2 }}>No critical-role succession coverage has been recorded.</Alert> : <TableContainer><Table size="small" sx={{ minWidth: 760 }}><TableHead><TableRow><TableCell>Role</TableCell><TableCell>Criticality</TableCell><TableCell>Candidates</TableCell><TableCell>Coverage</TableCell><TableCell>Review date</TableCell><TableCell align="right">Action</TableCell></TableRow></TableHead><TableBody>{succession.map((plan) => { const active = plan.candidates.filter((candidate) => candidate.state !== 'removed'); const ready = active.filter((candidate) => candidate.readiness === 'ready_now').length; return <TableRow key={plan._id}><TableCell><Typography variant="body2" fontWeight={600}>{plan.role.title}</Typography><Typography variant="caption" color="text.secondary">{plan.role.departmentName || plan.role.teamName || 'Organization-wide'}</Typography></TableCell><TableCell><Chip size="small" label={formatState(plan.role.criticality)} color={plan.role.criticality === 'critical' ? 'warning' : 'default'} /></TableCell><TableCell>{active.length}</TableCell><TableCell>{ready > 0 ? `${ready} ready now` : active.length > 0 ? 'Pipeline only' : 'No coverage'}</TableCell><TableCell>{plan.reviewDate ? new Date(plan.reviewDate).toLocaleDateString() : 'Not set'}</TableCell><TableCell align="right"><Button size="small" onClick={() => setCandidatePlan(plan)}>Add candidate</Button></TableCell></TableRow>; })}</TableBody></Table></TableContainer>}</Paper>}
+      {isHRAdmin && tab === 1 && !canManageSuccession && <Alert severity="info">Your current permissions do not allow succession management.</Alert>}
+      {canManageSuccession && tab === 1 && <Paper variant="outlined" sx={{ overflow: 'hidden' }}>{succession.length === 0 ? <Alert severity="info" sx={{ m: 2 }}>No critical-role succession coverage has been recorded.</Alert> : <TableContainer><Table size="small" sx={{ minWidth: 760 }}><TableHead><TableRow><TableCell>Role</TableCell><TableCell>Criticality</TableCell><TableCell>Candidates</TableCell><TableCell>Coverage</TableCell><TableCell>Review date</TableCell><TableCell align="right">Action</TableCell></TableRow></TableHead><TableBody>{succession.map((plan) => { const active = plan.candidates.filter((candidate) => candidate.state !== 'removed'); const ready = active.filter((candidate) => candidate.state === 'confirmed' && candidate.readiness === 'ready_now').length; return <TableRow key={plan._id}><TableCell><Typography variant="body2" fontWeight={600}>{plan.role.title}</Typography><Typography variant="caption" color="text.secondary">{plan.role.departmentName || plan.role.teamName || 'Organization-wide'}</Typography></TableCell><TableCell><Chip size="small" label={formatState(plan.role.criticality)} color={plan.role.criticality === 'critical' ? 'warning' : 'default'} /></TableCell><TableCell>{active.length}</TableCell><TableCell>{ready > 0 ? `${ready} ready now` : active.length > 0 ? 'Pipeline only' : 'No coverage'}</TableCell><TableCell>{plan.reviewDate ? new Date(plan.reviewDate).toLocaleDateString() : 'Not set'}</TableCell><TableCell align="right"><Stack direction="row" gap={1} justifyContent="flex-end" flexWrap="wrap"><Button size="small" onClick={() => { setCoverageId(plan._id); setSuccessionError(''); }}>Manage coverage</Button>{plan.state !== 'closed' && <Button size="small" onClick={() => { setError(''); setCandidatePlan(plan); }}>Add candidate</Button>}<Chip size="small" label={formatState(plan.state)} /></Stack></TableCell></TableRow>; })}</TableBody></Table></TableContainer>}</Paper>}
 
       {tab === (isHRAdmin ? 2 : 1) && <Stack gap={2}><Alert severity="info">{methodology || 'Signals use explainable workflow rules only.'}</Alert>{signals.length === 0 ? <Alert severity="success">No stalled appraisal workflow signals are currently visible in this scope.</Alert> : <Paper variant="outlined" sx={{ overflow: 'hidden' }}><TableContainer><Table size="small" sx={{ minWidth: 700 }}><TableHead><TableRow><TableCell>Employee</TableCell><TableCell>Stage</TableCell><TableCell>Why it is flagged</TableCell><TableCell>Severity</TableCell></TableRow></TableHead><TableBody>{signals.map((signal) => <TableRow key={signal.appraisalId}><TableCell>{signal.employee.name}</TableCell><TableCell>{formatState(signal.status)}</TableCell><TableCell>{signal.reasons.join(' · ')}</TableCell><TableCell><Chip size="small" color={signal.severity === 'high' ? 'error' : 'warning'} label={formatState(signal.severity)} /></TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>}<Typography variant="caption" color="text.secondary">No predictive model is enabled. Production ML remains gated on validation, drift monitoring, privacy review, and an organization-approved rollback plan.</Typography></Stack>}
 
       <Dialog open={createReviewOpen} onClose={() => setCreateReviewOpen(false)} fullWidth maxWidth="sm" aria-labelledby="create-talent-review-title"><DialogTitle id="create-talent-review-title">Create talent review</DialogTitle><DialogContent>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Stack gap={2} mt={1}><FormControl fullWidth><InputLabel id="source-cycle-label">Completed appraisal cycle</InputLabel><Select labelId="source-cycle-label" label="Completed appraisal cycle" value={reviewForm.sourceAppraisalCycleId} onChange={(event) => { const source = cycles.find((cycle) => cycle._id === event.target.value); setReviewForm((current) => ({ ...current, sourceAppraisalCycleId: event.target.value, name: current.name || (source ? `${source.name} talent review` : '') })); }}>{cycles.map((cycle) => <MenuItem key={cycle._id} value={cycle._id}>{cycle.name}</MenuItem>)}</Select></FormControl><TextField label="Review name" value={reviewForm.name} onChange={(event) => setReviewForm((current) => ({ ...current, name: event.target.value }))} required /><TextField label="Purpose (optional)" multiline minRows={3} value={reviewForm.description} onChange={(event) => setReviewForm((current) => ({ ...current, description: event.target.value }))} /><Alert severity="info">Only finalized appraisal records are copied. The source rating and goal evidence cannot be edited here.</Alert></Stack></DialogContent><DialogActions><Button onClick={() => setCreateReviewOpen(false)}>Cancel</Button><Button variant="contained" disabled={saving || !reviewForm.sourceAppraisalCycleId || !reviewForm.name.trim()} onClick={() => void createReview()}>Create review</Button></DialogActions></Dialog>
 
-      <Dialog open={Boolean(editingEntry)} onClose={() => setEditingEntry(null)} fullWidth maxWidth="md" aria-labelledby="talent-assessment-title"><DialogTitle id="talent-assessment-title">Assess {editingEntry?.employee.name}</DialogTitle><DialogContent>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Stack gap={2} mt={1}>{editingEntry && <Paper variant="outlined" sx={{ p: 1.5 }}><Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between"><Box><Typography variant="body2" color="text.secondary">Frozen performance evidence</Typography><Typography fontWeight={650}>{editingEntry.evidenceSnapshot.finalRating}/5 · {PERFORMANCE_LABELS[editingEntry.performanceBand]}</Typography></Box><Box><Typography variant="body2" color="text.secondary">Goal achievement</Typography><Typography fontWeight={650}>{editingEntry.evidenceSnapshot.goalAchievement === undefined ? 'Not rated' : `${editingEntry.evidenceSnapshot.goalAchievement}%`}</Typography></Box><Box><Typography variant="body2" color="text.secondary">Finalized</Typography><Typography fontWeight={650}>{new Date(editingEntry.evidenceSnapshot.finalizedAt).toLocaleDateString()}</Typography></Box></Stack></Paper>}<Stack direction={{ xs: 'column', sm: 'row' }} gap={2}><FormControl fullWidth><InputLabel id="potential-label">Potential</InputLabel><Select labelId="potential-label" label="Potential" value={entryForm.potential} onChange={(event) => setEntryForm((current) => ({ ...current, potential: event.target.value }))}>{POTENTIAL.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}</Select></FormControl><FormControl fullWidth><InputLabel id="readiness-label">Readiness</InputLabel><Select labelId="readiness-label" label="Readiness" value={entryForm.readiness} onChange={(event) => setEntryForm((current) => ({ ...current, readiness: event.target.value }))}>{READINESS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}</Select></FormControl></Stack><TextField label="Possible next role (optional)" value={entryForm.nextRole} onChange={(event) => setEntryForm((current) => ({ ...current, nextRole: event.target.value }))} /><TextField label="Evidence-based rationale" required multiline minRows={3} helperText="Use observed capability and agreed evidence. Do not include protected characteristics or unsupported assumptions." value={entryForm.rationale} onChange={(event) => setEntryForm((current) => ({ ...current, rationale: event.target.value }))} /><Stack direction={{ xs: 'column', sm: 'row' }} gap={2}><TextField fullWidth label="Strengths (one per line)" multiline minRows={3} value={entryForm.strengths} onChange={(event) => setEntryForm((current) => ({ ...current, strengths: event.target.value }))} /><TextField fullWidth label="Development priorities (one per line)" multiline minRows={3} value={entryForm.developmentPriorities} onChange={(event) => setEntryForm((current) => ({ ...current, developmentPriorities: event.target.value }))} /></Stack><FormControlLabel control={<Switch checked={entryForm.criticalRole} onChange={(event) => setEntryForm((current) => ({ ...current, criticalRole: event.target.checked }))} />} label="Employee currently holds a critical role" /><Divider /><Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}><Button startIcon={<AutoAwesome />} variant="outlined" disabled={saving} onClick={() => void requestAiBrief()}>Create evidence brief with AI</Button><Typography variant="caption" color="text.secondary">Summarizes source evidence only; it cannot select potential or readiness.</Typography></Stack>{editingEntry?.aiBriefs?.map((brief) => <Paper key={brief._id} variant="outlined" sx={{ p: 1.5 }}><Stack direction="row" justifyContent="space-between"><Typography fontWeight={650}>AI evidence brief</Typography><Chip size="small" label={formatState(brief.status)} /></Stack><Typography variant="body2" mt={1}>{brief.output.summary}</Typography>{brief.status === 'suggested' && <Stack direction="row" gap={1} mt={1}><Button size="small" onClick={() => void reviewAiBrief(brief._id, 'accepted')}>Accept as discussion aid</Button><Button size="small" color="inherit" onClick={() => void reviewAiBrief(brief._id, 'rejected')}>Reject</Button></Stack>}</Paper>)}</Stack></DialogContent><DialogActions><Button onClick={() => setEditingEntry(null)}>Cancel</Button><Button variant="contained" disabled={saving || entryForm.rationale.trim().length < 20} onClick={() => void saveAssessment()}>{isHRAdmin && selectedReview?.state === 'calibration' ? 'Save calibrated decision' : 'Save proposal'}</Button></DialogActions></Dialog>
+      <Dialog open={Boolean(editingEntry)} onClose={() => setEditingEntry(null)} fullWidth maxWidth="md" aria-labelledby="talent-assessment-title"><DialogTitle id="talent-assessment-title">{reviewEditable ? 'Assess' : 'View'} {editingEntry?.employee.name}</DialogTitle><DialogContent>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Stack gap={2} mt={1}>{!reviewEditable && <Alert severity="info">This review is {selectedReview?.state}. Its saved decisions and evidence are read-only.</Alert>}{editingEntry && <Paper variant="outlined" sx={{ p: 1.5 }}><Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between"><Box><Typography variant="body2" color="text.secondary">Frozen performance evidence</Typography><Typography fontWeight={650}>{editingEntry.evidenceSnapshot.finalRating}/5 · {PERFORMANCE_LABELS[editingEntry.performanceBand]}</Typography></Box><Box><Typography variant="body2" color="text.secondary">Goal achievement</Typography><Typography fontWeight={650}>{editingEntry.evidenceSnapshot.goalAchievement === undefined ? 'Not rated' : `${editingEntry.evidenceSnapshot.goalAchievement}%`}</Typography></Box><Box><Typography variant="body2" color="text.secondary">Finalized</Typography><Typography fontWeight={650}>{new Date(editingEntry.evidenceSnapshot.finalizedAt).toLocaleDateString()}</Typography></Box></Stack></Paper>}<Stack direction={{ xs: 'column', sm: 'row' }} gap={2}><FormControl fullWidth disabled={!reviewEditable}><InputLabel id="potential-label">Potential</InputLabel><Select labelId="potential-label" label="Potential" value={entryForm.potential} onChange={(event) => setEntryForm((current) => ({ ...current, potential: event.target.value }))}>{!reviewEditable && entryForm.potential === 'not_assessed' && <MenuItem value="not_assessed">Not assessed</MenuItem>}{POTENTIAL.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}</Select></FormControl><FormControl fullWidth disabled={!reviewEditable}><InputLabel id="readiness-label">Readiness</InputLabel><Select labelId="readiness-label" label="Readiness" value={entryForm.readiness} onChange={(event) => setEntryForm((current) => ({ ...current, readiness: event.target.value }))}>{!reviewEditable && entryForm.readiness === 'not_assessed' && <MenuItem value="not_assessed">Not assessed</MenuItem>}{READINESS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}</Select></FormControl></Stack><TextField disabled={!reviewEditable} label="Possible next role (optional)" value={entryForm.nextRole} onChange={(event) => setEntryForm((current) => ({ ...current, nextRole: event.target.value }))} /><TextField disabled={!reviewEditable} label="Evidence-based rationale" required multiline minRows={3} helperText="Use observed capability and agreed evidence. Do not include protected characteristics or unsupported assumptions." value={entryForm.rationale} onChange={(event) => setEntryForm((current) => ({ ...current, rationale: event.target.value }))} /><Stack direction={{ xs: 'column', sm: 'row' }} gap={2}><TextField disabled={!reviewEditable} fullWidth label="Strengths (one per line)" multiline minRows={3} value={entryForm.strengths} onChange={(event) => setEntryForm((current) => ({ ...current, strengths: event.target.value }))} /><TextField disabled={!reviewEditable} fullWidth label="Development priorities (one per line)" multiline minRows={3} value={entryForm.developmentPriorities} onChange={(event) => setEntryForm((current) => ({ ...current, developmentPriorities: event.target.value }))} /></Stack><FormControlLabel control={<Switch disabled={!reviewEditable} checked={entryForm.criticalRole} onChange={(event) => setEntryForm((current) => ({ ...current, criticalRole: event.target.checked }))} />} label="Employee currently holds a critical role" /><Divider />{reviewEditable && <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}><Button startIcon={<AutoAwesome />} variant="outlined" disabled={saving} onClick={() => void requestAiBrief()}>Create evidence brief with AI</Button><Typography variant="caption" color="text.secondary">Summarizes source evidence only; it cannot select potential or readiness.</Typography></Stack>}{editingEntry?.aiBriefs?.map((brief) => <Paper key={brief._id} variant="outlined" sx={{ p: 1.5 }}><Stack direction="row" justifyContent="space-between"><Typography fontWeight={650}>AI evidence brief</Typography><Chip size="small" label={formatState(brief.status)} /></Stack><Typography variant="body2" mt={1}>{brief.output.summary}</Typography>{reviewEditable && brief.status === 'suggested' && <Stack direction="row" gap={1} mt={1}><Button size="small" onClick={() => void reviewAiBrief(brief._id, 'accepted')}>Accept as discussion aid</Button><Button size="small" color="inherit" onClick={() => void reviewAiBrief(brief._id, 'rejected')}>Reject</Button></Stack>}</Paper>)}</Stack></DialogContent><DialogActions><Button onClick={() => setEditingEntry(null)}>{reviewEditable ? 'Cancel' : 'Close'}</Button>{reviewEditable && <Button variant="contained" disabled={saving || entryForm.rationale.trim().length < 20} onClick={() => void saveAssessment()}>{isHRAdmin && selectedReview?.state === 'calibration' ? 'Save calibrated decision' : 'Save proposal'}</Button>}</DialogActions></Dialog>
 
       <Dialog open={createRoleOpen} onClose={() => setCreateRoleOpen(false)} fullWidth maxWidth="sm" aria-labelledby="create-role-title"><DialogTitle id="create-role-title">Add critical role coverage</DialogTitle><DialogContent>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Stack gap={2} mt={1}><TextField label="Role title" required value={roleForm.title} onChange={(event) => setRoleForm((current) => ({ ...current, title: event.target.value }))} /><TextField label="Department (optional)" value={roleForm.departmentName} onChange={(event) => setRoleForm((current) => ({ ...current, departmentName: event.target.value }))} /><FormControl><InputLabel id="criticality-label">Criticality</InputLabel><Select labelId="criticality-label" label="Criticality" value={roleForm.criticality} onChange={(event) => setRoleForm((current) => ({ ...current, criticality: event.target.value }))}><MenuItem value="standard">Standard</MenuItem><MenuItem value="important">Important</MenuItem><MenuItem value="critical">Critical</MenuItem></Select></FormControl><TextField label="Review date" type="date" slotProps={{ inputLabel: { shrink: true } }} value={roleForm.reviewDate} onChange={(event) => setRoleForm((current) => ({ ...current, reviewDate: event.target.value }))} /></Stack></DialogContent><DialogActions><Button onClick={() => setCreateRoleOpen(false)}>Cancel</Button><Button variant="contained" disabled={saving || !roleForm.title.trim()} onClick={() => void createRole()}>Create coverage</Button></DialogActions></Dialog>
 
       <Dialog open={Boolean(candidatePlan)} onClose={() => setCandidatePlan(null)} fullWidth maxWidth="sm" aria-labelledby="add-candidate-title"><DialogTitle id="add-candidate-title">Add candidate for {candidatePlan?.role.title}</DialogTitle><DialogContent>{error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}<Stack gap={2} mt={1}><Autocomplete options={employeeOptions} getOptionLabel={(option) => option.name} value={candidateForm.employee} onInputChange={(_, value) => void searchEmployees(value)} onChange={(_, value) => setCandidateForm((current) => ({ ...current, employee: value }))} renderInput={(params) => <TextField {...params} label="Search active employee" required />} /><FormControl><InputLabel id="candidate-readiness-label">Readiness</InputLabel><Select labelId="candidate-readiness-label" label="Readiness" value={candidateForm.readiness} onChange={(event) => setCandidateForm((current) => ({ ...current, readiness: event.target.value }))}>{READINESS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}</Select></FormControl><TextField label="Evidence-based rationale" required multiline minRows={3} value={candidateForm.rationale} onChange={(event) => setCandidateForm((current) => ({ ...current, rationale: event.target.value }))} /><TextField label="Strengths (one per line)" multiline minRows={2} value={candidateForm.strengths} onChange={(event) => setCandidateForm((current) => ({ ...current, strengths: event.target.value }))} /><TextField label="Development gaps (one per line)" multiline minRows={2} value={candidateForm.developmentGaps} onChange={(event) => setCandidateForm((current) => ({ ...current, developmentGaps: event.target.value }))} /></Stack></DialogContent><DialogActions><Button onClick={() => setCandidatePlan(null)}>Cancel</Button><Button variant="contained" disabled={saving || !candidateForm.employee || candidateForm.rationale.trim().length < 20} onClick={() => void addCandidate()}>Add candidate</Button></DialogActions></Dialog>
+
+      <Dialog open={Boolean(coverage) && canManageSuccession} onClose={() => !saving && setCoverageId('')} fullWidth maxWidth="md" aria-labelledby="succession-coverage-title">
+        <DialogTitle id="succession-coverage-title">Succession coverage: {coverage?.role.title}</DialogTitle>
+        <DialogContent dividers><Stack gap={2}>
+          <Stack direction="row" gap={1} flexWrap="wrap"><Chip label={formatState(coverage?.state || '')} /><Chip label={formatState(coverage?.role.criticality || '')} /></Stack>
+          <Typography color="text.secondary">{coverage?.role.departmentName || coverage?.role.teamName || 'Organization-wide'} · Review: {coverage?.reviewDate ? new Date(coverage.reviewDate).toLocaleDateString() : 'Not set'}</Typography>
+          <Typography variant="body2">Review the saved rationale before making a human decision. Proposals remain in the pipeline until confirmed. Removing a candidate retains its nomination and history.</Typography>
+          {coverage?.state === 'closed' && <Alert severity="info">This coverage is closed. Reopen it before changing its candidate slate.</Alert>}
+          {coverage?.candidates.length === 0 && <Typography>No candidates have been nominated.</Typography>}
+          {coverage?.candidates.map(candidate => <Paper key={candidate._id} variant="outlined" sx={{ p: 2 }}><Stack gap={1}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} justifyContent="space-between"><Typography fontWeight={600}>{candidate.employee.name}</Typography><Chip size="small" label={formatState(candidate.state)} /></Stack>
+            <Typography variant="body2">{readinessLabel(candidate.readiness)}</Typography><Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{candidate.rationale}</Typography>
+            {Boolean(candidate.strengths?.length) && <Typography variant="body2">Strengths: {candidate.strengths?.join('; ')}</Typography>}
+            {Boolean(candidate.developmentGaps?.length) && <Typography variant="body2">Development gaps: {candidate.developmentGaps?.join('; ')}</Typography>}
+            {candidate.confirmedAt && <Typography variant="caption" color="text.secondary">Decision recorded {new Date(candidate.confirmedAt).toLocaleString()}</Typography>}
+            {coverage.state !== 'closed' && candidate.state !== 'removed' && <Stack direction="row" gap={1} flexWrap="wrap">{candidate.state === 'proposed' && <Button size="small" onClick={() => { setSuccessionError(''); setCandidateDecision({ id: candidate._id, state: 'confirmed' }); }}>Confirm candidate</Button>}<Button size="small" color="error" onClick={() => { setSuccessionError(''); setCandidateDecision({ id: candidate._id, state: 'removed' }); }}>Remove candidate</Button></Stack>}
+          </Stack></Paper>)}
+        </Stack></DialogContent><DialogActions><Button disabled={saving} onClick={() => setCoverageId('')}>Close</Button><Button disabled={saving} onClick={editCoverage}>Edit coverage</Button></DialogActions>
+      </Dialog>
+      <Dialog open={coverageEdit && Boolean(coverage) && canManageSuccession} onClose={() => !saving && setCoverageEdit(false)} fullWidth maxWidth="sm" aria-labelledby="edit-coverage-title">
+        <DialogTitle id="edit-coverage-title">Edit succession coverage</DialogTitle><DialogContent><Stack gap={2} sx={{ pt: 1 }}>
+          {successionError && <Alert severity="error">{successionError}</Alert>}<Typography>{coverage?.role.title}</Typography>
+          <TextField select label="Criticality" value={coverageForm.criticality} onChange={event => setCoverageForm(current => ({ ...current, criticality: event.target.value }))}>{['standard', 'important', 'critical'].map(value => <MenuItem key={value} value={value}>{formatState(value)}</MenuItem>)}</TextField>
+          <TextField label="Review date" type="date" value={coverageForm.reviewDate} slotProps={{ inputLabel: { shrink: true } }} onChange={event => setCoverageForm(current => ({ ...current, reviewDate: event.target.value }))} />
+          <TextField select label="Coverage state" value={coverageForm.state} onChange={event => setCoverageForm(current => ({ ...current, state: event.target.value }))}>{['draft', 'active', 'closed'].map(value => <MenuItem key={value} value={value}>{formatState(value)}</MenuItem>)}</TextField>
+          {coverageForm.state === 'closed' && <Alert severity="warning">Closing retains candidates and history. Candidate decisions are disabled until you reopen coverage.</Alert>}
+        </Stack></DialogContent><DialogActions><Button disabled={saving} onClick={() => setCoverageEdit(false)}>Keep current coverage</Button><Button variant="contained" disabled={saving} onClick={() => void saveCoverage()}>{saving ? 'Saving…' : coverageForm.state === 'closed' ? 'Close coverage' : 'Save coverage'}</Button></DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(candidateDecision) && Boolean(coverage) && canManageSuccession} onClose={() => !saving && setCandidateDecision(null)} fullWidth maxWidth="sm" aria-labelledby="candidate-decision-title">
+        <DialogTitle id="candidate-decision-title">{candidateDecision?.state === 'confirmed' ? 'Confirm succession candidate?' : 'Remove succession candidate?'}</DialogTitle><DialogContent><Stack gap={2}>
+          {successionError && <Alert severity="error">{successionError}</Alert>}
+          <Typography fontWeight={600}>{coverage?.candidates.find(candidate => candidate._id === candidateDecision?.id)?.employee.name}</Typography>
+          <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{coverage?.candidates.find(candidate => candidate._id === candidateDecision?.id)?.rationale}</Typography>
+          <Typography variant="body2">This records your explicit HR decision with the saved rationale, actor and time. The nomination and appraisal rating are retained.</Typography>
+        </Stack></DialogContent><DialogActions><Button disabled={saving} onClick={() => setCandidateDecision(null)}>Keep current decision</Button><Button variant="contained" color={candidateDecision?.state === 'removed' ? 'error' : 'primary'} disabled={saving} onClick={() => void decideCandidate()}>{saving ? 'Saving…' : candidateDecision?.state === 'confirmed' ? 'Confirm candidate' : 'Remove candidate'}</Button></DialogActions>
+      </Dialog>
     </Box>
   );
 }

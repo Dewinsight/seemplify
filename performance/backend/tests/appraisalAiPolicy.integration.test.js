@@ -212,6 +212,128 @@ const manualAssessment = () => ({ overallSelfRating: 4, overallSummary: {
   improvements: 'Improve the next fictional handover with a checklist.',
   goals: 'Practice the next synthetic capability with measured evidence.'
 } });
+
+test.each([undefined, null, '', 0])('an unrated partial manual draft (%s) saves without manufacturing overall or competency ratings', async placeholder => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const provider = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+  const selfAssessment = { overallSummary: { achievements: 'A retained partial achievement before choosing ratings.' },
+    overallSelfRating: placeholder, competencyRatings: [{ competencyId: 'delivery', competencyName: 'Delivery', selfRating: placeholder, selfComments: 'Partial notes.' }] };
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee')
+    .send({ assessmentMode: 'form', submit: false, selfAssessment }).expect(200);
+  const persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.status).toBe('self_assessment_in_progress');
+  expect(persisted.selfAssessment.overallSummary.achievements).toBe(selfAssessment.overallSummary.achievements);
+  expect(persisted.selfAssessment.lastSavedAt).toBeInstanceOf(Date);
+  expect(persisted.selfAssessment.submittedAt).toBeUndefined();
+  expect(persisted.selfAssessment.overallSelfRating).toBeUndefined();
+  expect(persisted.selfAssessment.competencyRatings[0].selfRating).toBeUndefined();
+  const reloaded = await read(appraisal._id, 'employee');
+  expect(reloaded.selfAssessment.overallSelfRating).toBeUndefined();
+  expect(reloaded.selfAssessment.overallSummary.achievements).toBe(selfAssessment.overallSummary.achievements);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test.each([undefined, null, '', 0, -1, 6, 'invalid'])('enabled self rating cannot submit an absent or invalid human overall rating (%s)', async rating => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  await answerEmployeeQuestions(appraisal);
+  const before = await Appraisal.collection.findOne({ _id: appraisal._id });
+  const provider = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+  const response = await call('post', `/${appraisal._id}/self-assessment`, 'employee')
+    .send({ assessmentMode: 'form', submit: true, selfAssessment: { ...manualAssessment(), overallSelfRating: rating } }).expect(400);
+  expect(response.body.error).toMatch(/rating/i);
+  expect(await Appraisal.collection.findOne({ _id: appraisal._id })).toEqual(before);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test('an explicitly configured zero remains a real human rating on draft and submission', async () => {
+  const cycle = await createCycle(true);
+  cycle.ratingScale.min = 0; await cycle.save();
+  const appraisal = await launch(cycle);
+  const selfAssessment = { ...manualAssessment(), overallSelfRating: 0,
+    competencyRatings: [{ competencyId: 'delivery', competencyName: 'Delivery', selfRating: 0 }] };
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee').send({ assessmentMode: 'form', submit: false, selfAssessment }).expect(200);
+  await Cycle.updateOne({ _id: cycle._id }, { $set: { 'ratingScale.min': 1 } });
+  await answerEmployeeQuestions(appraisal);
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee').send({ assessmentMode: 'form', submit: true, selfAssessment }).expect(200);
+  const persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.selfAssessment.overallSelfRating).toBe(0);
+  expect(persisted.selfAssessment.competencyRatings[0].selfRating).toBe(0);
+  expect(persisted.status).toBe('manager_review_pending');
+});
+
+test.each([undefined, null, '', 0])('reviewer partial draft (%s) does not fabricate an overall or competency rating', async placeholder => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date() } });
+  const provider = jest.spyOn(ai, 'checkForBias').mockResolvedValue({});
+  await call('post', `/${appraisal._id}/manager-review`).send({ assessmentMode: 'form', submit: false,
+    managerReview: { overallSummary: { strengths: 'A partial retained reviewer note.' }, overallManagerRating: placeholder,
+      competencyRatings: [{ competencyId: 'delivery', managerRating: placeholder }] } }).expect(200);
+  const persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.managerReview.overallSummary.strengths).toBe('A partial retained reviewer note.');
+  expect(persisted.managerReview.overallManagerRating).toBeUndefined();
+  expect(persisted.managerReview.competencyRatings[0].managerRating).toBeUndefined();
+  expect(persisted.managerReview.competencyRatings[0].gapFromSelf).toBeNull();
+  expect(persisted.managerReview.submittedAt).toBeUndefined();
+  expect((await read(appraisal._id)).managerReview.overallManagerRating).toBeUndefined();
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test.each([undefined, null, '', 0, -1, 6, 'invalid'])('reviewer submission rejects absent or invalid human overall rating (%s) without writes', async rating => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date() } });
+  await answerEmployeeQuestions(appraisal, 'manager');
+  const before = await Appraisal.collection.findOne({ _id: appraisal._id });
+  const provider = jest.spyOn(ai, 'checkForBias').mockResolvedValue({});
+  const response = await call('post', `/${appraisal._id}/manager-review`).send({ assessmentMode: 'form', submit: true,
+    managerReview: { overallManagerRating: rating } }).expect(400);
+  expect(response.body.error).toMatch(/rating/i);
+  expect(await Appraisal.collection.findOne({ _id: appraisal._id })).toEqual(before);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test('reviewer explicit zero is retained when the frozen scale allows zero', async () => {
+  const cycle = await createCycle(true); cycle.ratingScale.min = 0; await cycle.save();
+  const appraisal = await launch(cycle);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date() } });
+  const managerReview = { overallManagerRating: 0, competencyRatings: [{ competencyId: 'delivery', managerRating: 0 }] };
+  await call('post', `/${appraisal._id}/manager-review`).send({ assessmentMode: 'form', submit: false, managerReview }).expect(200);
+  await Cycle.updateOne({ _id: cycle._id }, { $set: { 'ratingScale.min': 1 } });
+  await answerEmployeeQuestions(appraisal, 'manager');
+  await call('post', `/${appraisal._id}/manager-review`).send({ assessmentMode: 'form', submit: true, managerReview }).expect(200);
+  const persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.managerReview.overallManagerRating).toBe(0);
+  expect(persisted.managerReview.competencyRatings[0].managerRating).toBe(0);
+  expect(persisted.managerReview.submittedAt).toBeInstanceOf(Date);
+});
+
+test.each(['employee', 'reviewer'])('invalid %s draft rating returns an actionable error without changing a prior human score', async actor => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const manager = actor === 'reviewer';
+  if (manager) await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date() } });
+  const endpoint = manager ? 'manager-review' : 'self-assessment';
+  const section = manager ? 'managerReview' : 'selfAssessment';
+  const ratingField = manager ? 'overallManagerRating' : 'overallSelfRating';
+  await call('post', `/${appraisal._id}/${endpoint}`, actor).send({ assessmentMode: 'form', submit: false,
+    [section]: { [ratingField]: 4 } }).expect(200);
+  const before = await Appraisal.collection.findOne({ _id: appraisal._id });
+  for (const invalid of [-1, 6, 'invalid', false]) {
+    const response = await call('post', `/${appraisal._id}/${endpoint}`, actor).send({ assessmentMode: 'form', submit: false,
+      [section]: { [ratingField]: invalid } }).expect(400);
+    expect(response.body.error).toMatch(/rating.*1.*5/i);
+    expect(await Appraisal.collection.findOne({ _id: appraisal._id })).toEqual(before);
+  }
+});
+
+test('reviewer partial draft omission preserves an existing human score but explicit clearing stays unrated', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date(), 'managerReview.overallManagerRating': 4 } });
+  await call('post', `/${appraisal._id}/manager-review`).send({ assessmentMode: 'form', submit: false,
+    managerReview: { overallSummary: { strengths: 'Partial note preserves a score already selected by the reviewer.' } } }).expect(200);
+  expect((await Appraisal.findById(appraisal._id)).managerReview.overallManagerRating).toBe(4);
+  await call('post', `/${appraisal._id}/manager-review`).send({ assessmentMode: 'form', submit: false,
+    managerReview: { overallManagerRating: null } }).expect(200);
+  expect((await Appraisal.findById(appraisal._id)).managerReview.overallManagerRating).toBeUndefined();
+});
 async function answerEmployeeQuestions(appraisal, respondent = 'employee') {
   const snapshot = await rawSnapshot(appraisal._id);
   const responses = snapshot.workflowDefinition.sections.filter(section => [respondent, 'both'].includes(section.respondent))

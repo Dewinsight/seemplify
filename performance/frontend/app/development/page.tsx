@@ -15,8 +15,15 @@ import {
   RadioButtonUnchecked, Star, MenuBook, Person
 } from '@mui/icons-material';
 
+type ProgressRow = { _id?: string; title?: string; skillName?: string; progress?: number; currentLevel?: string; notes?: string; [key: string]: unknown };
+type EditableDevelopmentPlan = { _id: string; userId: string; managerId: string; status: string; careerGoals: ProgressRow[]; skillDevelopment: ProgressRow[] };
+function progressFailure(error: unknown, fallback: string) {
+  const failure = error as { response?: { data?: { error?: string } }; message?: string };
+  return failure.response?.data?.error || failure.message || fallback;
+}
+
 export default function DevelopmentPlansPage() {
-  const { isManager, user, isLoading: userLoading } = useUserContext();
+  const { isManager, isHRAdmin, user, isLoading: userLoading } = useUserContext();
   const { directReports } = useDirectReports();
   const { plans, isLoading, isError, mutate } = useDevelopmentPlans();
   const [learningEmployeeId, setLearningEmployeeId] = useState('');
@@ -41,6 +48,10 @@ export default function DevelopmentPlansPage() {
   const [linkingRecord, setLinkingRecord] = useState<{ _id: string; courseTitle: string } | null>(null);
   const [linkPlanId, setLinkPlanId] = useState('');
   const [checkIn, setCheckIn] = useState({ notes: '', progressUpdate: 0, blockers: '' });
+  const [progressEditor, setProgressEditor] = useState<{ kind: 'goal' | 'skill'; index: number; rowId?: string; name: string; progress: string; currentLevel: string; notes: string } | null>(null);
+  const [progressError, setProgressError] = useState('');
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [completeError, setCompleteError] = useState('');
   const [newPlan, setNewPlan] = useState({
     userId: '',
     title: '',
@@ -72,6 +83,8 @@ export default function DevelopmentPlansPage() {
   }
 
   const currentUserIds = new Set([user?.id, user?._id, user?.userId, user?.idpSub, user?.sub].filter(Boolean).map(String));
+  const canManagePlan = (plan: EditableDevelopmentPlan | null) => Boolean(plan && (isHRAdmin || (isManager && currentUserIds.has(String(plan.managerId)))));
+  const canUpdatePlan = (plan: EditableDevelopmentPlan | null) => Boolean(plan && !['completed', 'cancelled'].includes(plan.status) && (currentUserIds.has(String(plan.userId)) || canManagePlan(plan)));
   const myPlans = plans?.filter((p: any) => currentUserIds.has(String(p.userId))) || [];
   const teamPlans = plans?.filter((p: any) => !currentUserIds.has(String(p.userId))) || [];
   const reportNames = new Map<string, string>((directReports || []).map((report: any) => [
@@ -163,6 +176,51 @@ export default function DevelopmentPlansPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openProgressEditor = (kind: 'goal' | 'skill', index: number) => {
+    if (!canUpdatePlan(selectedPlan)) return;
+    const row = (kind === 'goal' ? selectedPlan.careerGoals : selectedPlan.skillDevelopment)[index];
+    setProgressError('');
+    setProgressEditor({ kind, index, rowId: row._id, name: row.title || row.skillName, progress: String(row.progress || 0), currentLevel: row.currentLevel || 'beginner', notes: row.notes || '' });
+  };
+
+  const saveProgress = async () => {
+    if (!selectedPlan || !progressEditor || !canUpdatePlan(selectedPlan)) return;
+    const progress = Number(progressEditor.progress);
+    if (!progressEditor.progress.trim() || !Number.isFinite(progress) || progress < 0 || progress > 100) {
+      setProgressError('Enter progress from 0 to 100.'); return;
+    }
+    setSaving(true); setProgressError('');
+    try {
+      // Goals use a whole-array API. Refresh first and retain every sibling and
+      // definition field; a reordered or removed row must not update a neighbour.
+      const freshResponse = await api.get(`/development-plans/${selectedPlan._id}`);
+      const fresh: EditableDevelopmentPlan = freshResponse.data?.data || freshResponse.data;
+      if (!canUpdatePlan(fresh)) throw new Error('This plan is no longer editable. Reopen its current details.');
+      const rows = progressEditor.kind === 'goal' ? fresh.careerGoals : fresh.skillDevelopment;
+      const index = progressEditor.rowId ? rows.findIndex(row => String(row._id) === String(progressEditor.rowId)) : progressEditor.index;
+      if (index < 0 || !rows[index] || (rows[index].title || rows[index].skillName) !== progressEditor.name) throw new Error('This item changed. Close the dialog and reopen it from the current plan.');
+      const response = progressEditor.kind === 'goal'
+        ? await api.put(`/development-plans/${fresh._id}`, { careerGoals: rows.map((row, position) => position === index ? { ...row, progress } : row) })
+        : await api.put(`/development-plans/${fresh._id}/skills/${index}`, { progress, currentLevel: progressEditor.currentLevel, notes: progressEditor.notes.trim() });
+      setSelectedPlan(response.data?.data || response.data);
+      await mutate(); setProgressEditor(null); setNotice('Progress updated.');
+    } catch (requestError) {
+      setProgressError(progressFailure(requestError, 'Could not save progress. Your changes are retained; retry when ready.'));
+    } finally { setSaving(false); }
+  };
+
+  const completePlan = async () => {
+    if (!selectedPlan || !canManagePlan(selectedPlan)) return;
+    setSaving(true); setCompleteError('');
+    try {
+      const response = await api.post(`/development-plans/${selectedPlan._id}/complete`, {});
+      setSelectedPlan(response.data?.data || response.data);
+      await mutate(); setCompleteOpen(false); setNotice('Development plan completed.');
+    } catch (requestError) {
+      setCompleteError(progressFailure(requestError, 'Could not complete this plan. Retry when ready.'));
+    } finally { setSaving(false); }
   };
 
   const linkCourseToPlan = async () => {
@@ -542,7 +600,7 @@ export default function DevelopmentPlansPage() {
       </Dialog>
 
       {/* Plan Details Dialog */}
-      <Dialog 
+      <Dialog
         open={!!selectedPlan} 
         onClose={() => setSelectedPlan(null)} 
         maxWidth="md" 
@@ -584,11 +642,12 @@ export default function DevelopmentPlansPage() {
                   <AccordionDetails>
                     <List dense>
                       {selectedPlan.careerGoals.map((goal: any, idx: number) => (
-                        <ListItem key={idx}>
+                        <ListItem key={goal._id || idx} sx={{ flexWrap: 'wrap', gap: 1 }}>
                           <ListItemIcon>
                             <Star color="primary" />
                           </ListItemIcon>
                           <ListItemText 
+                            slotProps={{ secondary: { component: 'div' } }}
                             primary={goal.title}
                             secondary={
                               <Box>
@@ -603,6 +662,7 @@ export default function DevelopmentPlansPage() {
                               </Box>
                             }
                           />
+                          {canUpdatePlan(selectedPlan) && <Button size="small" disabled={saving} onClick={() => openProgressEditor('goal', idx)}>Update progress</Button>}
                         </ListItem>
                       ))}
                     </List>
@@ -622,8 +682,9 @@ export default function DevelopmentPlansPage() {
                   <AccordionDetails>
                     <List dense>
                       {selectedPlan.skillDevelopment.map((skill: any, idx: number) => (
-                        <ListItem key={idx}>
+                        <ListItem key={skill._id || idx} sx={{ flexWrap: 'wrap', gap: 1 }}>
                           <ListItemText 
+                            slotProps={{ primary: { component: 'div' }, secondary: { component: 'div' } }}
                             primary={
                               <Box display="flex" justifyContent="space-between">
                                 <Typography>{skill.skillName}</Typography>
@@ -643,6 +704,7 @@ export default function DevelopmentPlansPage() {
                               </Box>
                             }
                           />
+                          {canUpdatePlan(selectedPlan) && <Button size="small" disabled={saving} onClick={() => openProgressEditor('skill', idx)}>Update skill</Button>}
                         </ListItem>
                       ))}
                     </List>
@@ -734,6 +796,7 @@ export default function DevelopmentPlansPage() {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSelectedPlan(null)}>Close</Button>
+              {canManagePlan(selectedPlan) && ['active', 'on_hold'].includes(selectedPlan.status) && <Button variant="outlined" disabled={saving} onClick={() => { setCompleteError(''); setCompleteOpen(true); }}>Complete plan</Button>}
               {selectedPlan.status === 'active' && (
                 <Button variant="contained" onClick={() => { setCheckInPlan(selectedPlan); setCheckInOpen(true); }}>
                   Add check-in
@@ -820,6 +883,30 @@ export default function DevelopmentPlansPage() {
         </DialogActions>
       </Dialog>
 
+      <Dialog open={Boolean(progressEditor)} onClose={() => !saving && setProgressEditor(null)} fullWidth maxWidth="sm" aria-labelledby="development-progress-title">
+        <DialogTitle id="development-progress-title">{progressEditor?.kind === 'goal' ? 'Update goal progress' : 'Update skill'}</DialogTitle>
+        <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
+          {progressError && <Alert severity="error">{progressError}</Alert>}
+          <Typography>{progressEditor?.name}</Typography>
+          <TextField label="Progress %" type="number" required disabled={saving} value={progressEditor?.progress || ''} inputProps={{ min: 0, max: 100 }} onChange={event => setProgressEditor(current => current && ({ ...current, progress: event.target.value }))} />
+          {progressEditor?.kind === 'skill' && <>
+            <TextField select label="Current level" disabled={saving} value={progressEditor.currentLevel} onChange={event => setProgressEditor(current => current && ({ ...current, currentLevel: event.target.value }))}>
+              {['beginner', 'intermediate', 'advanced', 'expert'].map(level => <MenuItem key={level} value={level}>{level[0].toUpperCase() + level.slice(1)}</MenuItem>)}
+            </TextField>
+            <TextField label="Progress notes" multiline minRows={3} disabled={saving} value={progressEditor.notes} onChange={event => setProgressEditor(current => current && ({ ...current, notes: event.target.value }))} />
+          </>}
+        </Stack></DialogContent>
+        <DialogActions><Button disabled={saving} onClick={() => setProgressEditor(null)}>Cancel</Button><Button variant="contained" disabled={saving} onClick={() => void saveProgress()}>{saving ? 'Saving…' : 'Save progress'}</Button></DialogActions>
+      </Dialog>
+      <Dialog open={completeOpen} onClose={() => !saving && setCompleteOpen(false)} fullWidth maxWidth="sm" aria-labelledby="development-complete-title">
+        <DialogTitle id="development-complete-title">Complete development plan?</DialogTitle>
+        <DialogContent><Stack spacing={2}>
+          {completeError && <Alert severity="error">{completeError}</Alert>}
+          <Typography>{selectedPlan?.title}</Typography>
+          <Typography>Record that this development plan is complete. Its saved progress ({selectedPlan?.overallProgress || 0}%) and activity history stay unchanged.</Typography>
+        </Stack></DialogContent>
+        <DialogActions><Button disabled={saving} onClick={() => setCompleteOpen(false)}>Keep active</Button><Button variant="contained" disabled={saving} onClick={() => void completePlan()}>{saving ? 'Completing…' : 'Complete plan'}</Button></DialogActions>
+      </Dialog>
       <Snackbar open={Boolean(notice)} autoHideDuration={4000} onClose={() => setNotice('')} message={notice} />
     </Box>
   );

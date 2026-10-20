@@ -11,7 +11,7 @@ import {
   Box, Typography, Card, CardContent, Grid, Button, Chip, Alert,
   Paper, Stepper, Step, StepLabel, Rating, LinearProgress,
   Accordion, AccordionSummary, AccordionDetails, Divider, Avatar,
-  CircularProgress, Tabs, Tab, List, ListItem, ListItemText, ListItemAvatar
+  CircularProgress, Tabs, Tab, List, ListItem, ListItemText, ListItemAvatar, useTheme, useMediaQuery
 } from '@mui/material';
 import {
   ArrowBack, Edit, PlayArrow, CheckCircle, Schedule, Person,
@@ -79,6 +79,8 @@ const workflowSteps = [
 ];
 
 export default function AppraisalDetailPage() {
+  const theme = useTheme();
+  const compactProgress = useMediaQuery(theme.breakpoints.down('sm'));
   const params = useParams();
   const router = useRouter();
   const appraisalId = params.appraisalId as string;
@@ -160,6 +162,12 @@ export default function AppraisalDetailPage() {
   const cycle = appraisal.cycleId;
   const includesSelf = !customSteps || customSteps.some(step => step.type === 'selfAssessment');
   const includesReviewer = !customSteps || customSteps.some(step => step.type === 'managerReview');
+  const includesDiscussion = !customSteps || customSteps.some(step => step.type === 'discussion');
+  const discussionCompleted = Boolean(appraisal.discussion?.completedDate);
+  const discussionIsCurrent = customSteps ? customSteps[activeStep]?.type === 'discussion' : activeStep === 3;
+  const showDiscussion = discussionCompleted || (includesDiscussion && (discussionIsCurrent ||
+    ['discussion_scheduled', 'discussion_in_progress', 'discussion_completed'].includes(appraisal.status) ||
+    (!customSteps && appraisal.status === 'manager_review_submitted')));
   const visibleTabs = [...(includesSelf ? [0] : []), ...(includesReviewer ? [1] : []), ...(appraisal.finalRating?.overall ? [2] : [])];
   const selectedTab = visibleTabs.includes(tabValue) ? tabValue : visibleTabs[0] ?? -1;
 
@@ -227,13 +235,13 @@ export default function AppraisalDetailPage() {
               </Button>
             )}
 
-            {(activeStep === 3 || appraisal.status === 'manager_review_submitted') && (
+            {showDiscussion && (
               <Button
                 variant="contained"
                 startIcon={<Groups />}
                 onClick={() => router.push(`/appraisals/${appraisalId}/discussion`)}
               >
-                {appraisal.status === 'discussion_completed' ? 'View Discussion' : 'Open Discussion'}
+                {discussionCompleted ? 'View Discussion' : 'Open Discussion'}
               </Button>
             )}
             {hasManagerAccess && (appraisal.status === 'self_assessment_submitted' || appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
@@ -312,10 +320,11 @@ export default function AppraisalDetailPage() {
         <Typography variant="subtitle1" fontWeight={600} gutterBottom>
           Appraisal Progress
         </Typography>
-        <Stepper activeStep={activeStep} orientation={customSteps ? "vertical" : "horizontal"} alternativeLabel={!customSteps}>
+        <Stepper activeStep={activeStep} orientation={customSteps || compactProgress ? 'vertical' : 'horizontal'} alternativeLabel={!customSteps && !compactProgress}
+          role="group" aria-label="Appraisal progress">
           {(customSteps ? customSteps.map(step => ({ key: step.id, label: step.label })) : workflowSteps).map((step, index) => (
-            <Step key={step.key} completed={index < activeStep}>
-              <StepLabel>{step.label}</StepLabel>
+            <Step key={step.key} completed={index < activeStep} aria-current={index === activeStep ? 'step' : undefined} sx={{ minWidth: 0 }}>
+              <StepLabel sx={{ '& .MuiStepLabel-label': { overflowWrap: 'anywhere' } }}>{step.label}</StepLabel>
             </Step>
           ))}
         </Stepper>
@@ -349,7 +358,8 @@ export default function AppraisalDetailPage() {
 
       {/* Tabs */}
       {visibleTabs.length > 0 && <Paper sx={{ mb: 3 }}>
-        <Tabs value={selectedTab} onChange={(_, v) => setTabValue(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs value={selectedTab} onChange={(_, v) => setTabValue(v)} aria-label="Appraisal review sections"
+          variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ borderBottom: 1, borderColor: 'divider' }}>
           {/* <Tab label="Overview" /> REMOVED */}
           {includesSelf && <Tab value={0} label="Self-Assessment" disabled={!selfAssessment?.submittedAt && !isEmployee} />}
           {includesReviewer && <Tab value={1} label="Manager Review" disabled={!managerReview?.submittedAt && !hasManagerAccess} />}

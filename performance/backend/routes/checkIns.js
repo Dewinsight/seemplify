@@ -3,17 +3,32 @@ const mongoose = require('mongoose');
 const PerformanceCheckIn = require('../models/PerformanceCheckIn');
 const OKR = require('../models/OKR');
 const Appraisal = require('../models/Appraisal');
-const { requireAuth } = require('../middleware/rbac');
+const { requireAuth, hasPermission } = require('../middleware/rbac');
+const { resolveAppraisalAccessScope } = require('../services/appraisalAccessService');
 const {
   requireOrganization,
   tenantFilter,
   getActorId,
-  canAccessEmployee,
   assertResourceTenant
 } = require('../services/tenantPolicy');
 
 const router = express.Router();
 router.use(requireAuth, requireOrganization);
+
+async function canAccessCheckInEmployee(req, employeeId) {
+  if (String(employeeId) === getActorId(req)) return true;
+  // Match the employee picker's resolved hierarchy, while retaining the
+  // existing manager authority and explicit central permission denials.
+  const user = req.session?.user;
+  if (!['review:conduct:direct_reports', 'analytics:view:team', 'analytics:view:organization']
+    .some(permission => hasPermission(req.userRole, permission, user))) return false;
+  const scope = await resolveAppraisalAccessScope(req);
+  return scope.canManageAppraisals && scope.directReports.some(person => String(person.userId) === String(employeeId));
+}
+
+function canViewCheckIn(req, item) {
+  return item.visibility !== 'employee_only' || item.employeeId === getActorId(req) || req.userRole === 'hr_admin';
+}
 
 function cleanList(value, limit = 20) {
   if (!Array.isArray(value)) return [];
@@ -66,18 +81,16 @@ async function resolveEmployeeManager(req, employeeId) {
 router.get('/', async (req, res) => {
   try {
     const employeeId = String(req.query.employeeId || getActorId(req));
-    if (!canAccessEmployee(req, employeeId)) {
+    if (!await canAccessCheckInEmployee(req, employeeId)) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
     const query = tenantFilter(req, { employeeId });
     if (req.query.status) query.status = req.query.status;
     const data = await PerformanceCheckIn.find(query).sort({ periodStart: -1 }).limit(100).lean();
-    const visible = data.filter((item) =>
-      item.visibility !== 'employee_only' || item.employeeId === getActorId(req) || req.userRole === 'hr_admin'
-    );
+    const visible = data.filter(item => canViewCheckIn(req, item));
     res.json({ success: true, data: visible, count: visible.length });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to fetch check-ins' });
+    res.status(error.statusCode || error.status || 500).json({ success: false, error: error.message || 'Failed to fetch check-ins' });
   }
 });
 
@@ -85,7 +98,7 @@ router.post('/', async (req, res) => {
   try {
     const actorId = getActorId(req);
     const employeeId = String(req.body.employeeId || actorId);
-    if (!canAccessEmployee(req, employeeId)) {
+    if (!await canAccessCheckInEmployee(req, employeeId)) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
     const periodStart = new Date(req.body.periodStart);
@@ -120,7 +133,7 @@ router.post('/', async (req, res) => {
     });
     res.status(201).json({ success: true, data: item });
   } catch (error) {
-    const status = error.code === 11000 ? 409 : error.statusCode || 500;
+    const status = error.code === 11000 ? 409 : error.statusCode || error.status || 500;
     res.status(status).json({ success: false, error: status === 409 ? 'A check-in already exists for this period' : error.message });
   }
 });
@@ -130,8 +143,8 @@ router.patch('/:id', async (req, res) => {
     const item = assertResourceTenant(req, await PerformanceCheckIn.findById(req.params.id));
     const actorId = getActorId(req);
     const isEmployee = item.employeeId === actorId;
-    const isManager = (req.directReports || []).map(String).includes(item.employeeId) || req.userRole === 'hr_admin';
-    if (!isEmployee && !isManager) return res.status(403).json({ success: false, error: 'Access denied' });
+    const isManager = !isEmployee && await canAccessCheckInEmployee(req, item.employeeId);
+    if ((!isEmployee && !isManager) || !canViewCheckIn(req, item)) return res.status(403).json({ success: false, error: 'Access denied' });
 
     if (isManager && !isEmployee) {
       const response = String(req.body.managerResponse || '').trim();
@@ -160,7 +173,7 @@ router.patch('/:id', async (req, res) => {
     }
     res.json({ success: true, data: item });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to update check-in' });
+    res.status(error.statusCode || error.status || 500).json({ success: false, error: error.message || 'Failed to update check-in' });
   }
 });
 

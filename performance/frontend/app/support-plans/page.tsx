@@ -8,6 +8,7 @@ import {
 } from '@mui/material';
 import { Add, AutoAwesome, Check, History, Send } from '@mui/icons-material';
 import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { useDirectReports, useUserContext } from '@/lib/hooks';
 import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 
@@ -27,7 +28,7 @@ interface SupportPlan {
   checkIns: Array<{ _id: string; authorId: string; authorRole: string; progress?: number; update: string; createdAt: string }>;
   employeeResponse?: { acknowledgement?: string; comment?: string; respondedAt?: string };
   hrReview?: { decision?: string; comment?: string; decidedAt?: string };
-  outcome?: { decision?: string; reason?: string; decidedAt?: string };
+  outcome?: { decision?: string; reason?: string; decidedAt?: string; nextReviewDate?: string };
   updatedAt: string;
 }
 
@@ -82,9 +83,12 @@ function dateText(value?: string) {
 export default function SupportPlansPage() {
   const { workspace } = usePerformanceWorkspace();
   const { user, isManager, isHRAdmin } = useUserContext();
+  const { user: authUser, currentOrganization } = useAuth();
   const { directReports } = useDirectReports();
   const actorId = String(user?.id || user?.sub || '');
-  const view = workspace === 'admin' && isHRAdmin ? 'hr_review' : workspace === 'manager' && isManager ? 'team' : 'mine';
+  const defaultView = workspace === 'admin' && isHRAdmin ? 'hr_review' : workspace === 'manager' && isManager ? 'team' : 'mine';
+  const [chosenView, setChosenView] = useState('');
+  const view = chosenView || defaultView;
   const [plans, setPlans] = useState<SupportPlan[]>([]);
   const [selected, setSelected] = useState<SupportPlan | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,6 +101,13 @@ export default function SupportPlansPage() {
   const [comment, setComment] = useState('');
   const [progress, setProgress] = useState(50);
   const [amendment, setAmendment] = useState<PlanAmendment | null>(null);
+  const [milestoneEdit, setMilestoneEdit] = useState<{ id: string; title: string; status: string; comment: string } | null>(null);
+  const [outcomeOpen, setOutcomeOpen] = useState(false);
+  const [outcomeForm, setOutcomeForm] = useState({ decision: 'completed', reason: '', nextReviewDate: '' });
+  const [actionError, setActionError] = useState('');
+  const claimedOrganization = [...(authUser?.organizations || []), ...(authUser?.idpOrganizations || [])].find(org => String(org.id || org._id) === String(currentOrganization?.id)) || currentOrganization;
+  const grants = claimedOrganization?.authorization?.permissionsByApp?.['performance-management'] ?? claimedOrganization?.appPermissions?.['performance-management'];
+  const canManageGrant = Array.isArray(grants) ? grants.includes('support_plan:manage:direct_reports') : isManager || isHRAdmin;
 
   const people = useMemo(() => (directReports || []).map((person: Record<string, unknown>) => ({
     id: String(person.userId || person.id || person._id || ''),
@@ -115,6 +126,14 @@ export default function SupportPlansPage() {
   }, [selected, view]);
 
   useEffect(() => { void load(); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setChosenView(''); }, [workspace, currentOrganization?.id]);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('plan');
+    if (!id || !actorId) return;
+    let active = true;
+    void api.get(`/support-plans/${encodeURIComponent(id)}`).then(response => { if (active) setSelected(dataOf<SupportPlan>(response)); }).catch(requestError => { if (active) setError(errorText(requestError, 'This support plan is unavailable.')); });
+    return () => { active = false; };
+  }, [actorId, currentOrganization?.id]);
 
   const runAction = async (name: string, endpoint: string, body: Record<string, unknown>, message: string) => {
     setWorking(name); setError(''); setNotice('');
@@ -192,7 +211,35 @@ export default function SupportPlansPage() {
 
   const canCreate = workspace !== 'personal' && (isManager || isHRAdmin);
   const ownSelected = selected?.employee.userId === actorId;
+  const managesSelected = Boolean(selected && (isHRAdmin || selected.manager.userId === actorId || people.some(person => person.id === selected.employee.userId)));
+  const activeSelected = Boolean(selected && ['active', 'review_due', 'extended'].includes(selected.state));
+  const canUpdateMilestones = activeSelected && (ownSelected || (managesSelected && canManageGrant));
+  const canRecordOutcome = activeSelected && managesSelected && canManageGrant;
   const canAmendSelected = Boolean(selected && !ownSelected && (isManager || isHRAdmin) && ['draft', 'changes_requested'].includes(selected.state));
+
+  const saveMilestone = async () => {
+    if (!selected || !milestoneEdit || !canUpdateMilestones || !milestoneEdit.comment.trim()) return;
+    setWorking('milestone'); setActionError('');
+    try {
+      const item = dataOf<SupportPlan>(await api.patch(`/support-plans/${selected._id}/milestones/${milestoneEdit.id}`, {
+        status: milestoneEdit.status, [ownSelected ? 'employeeUpdate' : 'managerResponse']: milestoneEdit.comment.trim()
+      }));
+      await load(); setSelected(item); setMilestoneEdit(null); setNotice('Milestone updated.');
+    } catch (requestError) { setActionError(errorText(requestError, 'Could not update the milestone. Your changes are retained.')); }
+    finally { setWorking(''); }
+  };
+
+  const saveOutcome = async () => {
+    if (!selected || !canRecordOutcome || !outcomeForm.reason.trim()) return;
+    setWorking('outcome'); setActionError('');
+    try {
+      const item = dataOf<SupportPlan>(await api.post(`/support-plans/${selected._id}/outcome`, {
+        decision: outcomeForm.decision, reason: outcomeForm.reason.trim(), nextReviewDate: outcomeForm.nextReviewDate || undefined
+      }));
+      await load(); setSelected(item); setOutcomeOpen(false); setNotice('Support plan outcome recorded.');
+    } catch (requestError) { setActionError(errorText(requestError, 'Could not record the outcome. Your decision is retained for retry.')); }
+    finally { setWorking(''); }
+  };
 
   return (
     <Box sx={{ maxWidth: 1120, mx: 'auto', px: { xs: 2, md: 3 }, py: 3 }}>
@@ -205,7 +252,9 @@ export default function SupportPlansPage() {
       {notice && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice('')}>{notice}</Alert>}
 
       <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-        <Box sx={{ px: 2.5, py: 1.5, borderBottom: 1, borderColor: 'divider' }}><Typography fontWeight={650}>{view === 'hr_review' ? 'HR review queue' : view === 'team' ? 'Team support plans' : 'My support plans'}</Typography></Box>
+        <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" sx={{ px: 2.5, py: 1.5, borderBottom: 1, borderColor: 'divider' }}><Typography fontWeight={650}>{view === 'hr_review' ? 'HR review queue' : view === 'team' ? isHRAdmin ? 'All support plans' : 'Team support plans' : 'My support plans'}</Typography>
+          {workspace === 'admin' && isHRAdmin && <TextField select size="small" label="Plan view" value={view} sx={{ minWidth: 200 }} onChange={event => setChosenView(event.target.value)}><MenuItem value="hr_review">Awaiting HR review</MenuItem><MenuItem value="team">All support plans</MenuItem><MenuItem value="mine">My support plans</MenuItem></TextField>}
+        </Stack>
         {loading ? <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress size={28} /></Box> : plans.length === 0 ? <Box sx={{ p: 4 }}><Typography fontWeight={600}>No support plans in this view</Typography><Typography color="text.secondary" mt={0.5}>{view === 'mine' ? 'Any plan shared with you will appear here with its next action.' : 'There is no review work waiting right now.'}</Typography></Box> : plans.map((plan, index) => (
           <Box component="article" aria-label={plan.title} key={plan._id} sx={{ p: 2.5, borderTop: index ? 1 : 0, borderColor: 'divider' }}>
             <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2}>
@@ -262,7 +311,12 @@ export default function SupportPlansPage() {
             {selected.employeeResponse?.respondedAt && <Alert severity="info"><strong>Employee response:</strong> {selected.employeeResponse.acknowledgement?.replaceAll('_', ' ')}{selected.employeeResponse.comment ? ` — ${selected.employeeResponse.comment}` : ''}</Alert>}
             {selected.state === 'hr_review' && isHRAdmin && <TextField fullWidth multiline minRows={3} label="HR review comments" disabled={Boolean(working)} value={comment} onChange={event => setComment(event.target.value)} helperText="Explain the changes needed before requesting changes. Comments are optional when approving." slotProps={{ htmlInput: { maxLength: 4000 } }} />}
             {selected.state === 'employee_review' && ownSelected && <TextField fullWidth multiline minRows={3} label="Your comments" disabled={Boolean(working)} value={comment} onChange={event => setComment(event.target.value)} helperText="Add comments to acknowledge with comments, or acknowledge without comments below." slotProps={{ htmlInput: { maxLength: 4000 } }} />}
-            {selected.state === 'active' && <Box><Typography fontWeight={650} mb={1}>Add progress check-in</Typography><TextField fullWidth multiline minRows={2} label="Progress update" value={comment} onChange={event => setComment(event.target.value)} /><TextField sx={{ mt: 1.5, width: 180 }} type="number" label="Progress %" value={progress} inputProps={{ min: 0, max: 100 }} onChange={event => setProgress(Number(event.target.value))} /><Button sx={{ mt: 1.5, ml: 1.5 }} variant="outlined" disabled={!comment || Boolean(working)} onClick={() => void runAction('checkin', `/support-plans/${selected._id}/check-ins`, { update: comment, progress }, 'Progress check-in added.')}>Add check-in</Button></Box>}
+            {activeSelected && <Box><Typography fontWeight={650} mb={1}>Add progress check-in</Typography><TextField fullWidth multiline minRows={2} label="Progress update" value={comment} onChange={event => setComment(event.target.value)} /><TextField sx={{ mt: 1.5, width: 180 }} type="number" label="Progress %" value={progress} inputProps={{ min: 0, max: 100 }} onChange={event => setProgress(Number(event.target.value))} /><Button sx={{ mt: 1.5, ml: 1.5 }} variant="outlined" disabled={!comment || Boolean(working)} onClick={() => void runAction('checkin', `/support-plans/${selected._id}/check-ins`, { update: comment, progress }, 'Progress check-in added.')}>Add check-in</Button></Box>}
+            {selected.milestones.length > 0 && <Box><Typography fontWeight={650} mb={1}>Milestones</Typography>{selected.milestones.map(milestone => <Paper key={milestone._id} variant="outlined" sx={{ p: 2, mb: 1 }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} justifyContent="space-between"><Box><Typography fontWeight={600}>{milestone.title}</Typography><Typography variant="caption">{dateText(milestone.dueDate)} · {milestone.status}</Typography></Box>{canUpdateMilestones && <Button size="small" disabled={Boolean(working)} onClick={() => { setActionError(''); setMilestoneEdit({ id: milestone._id, title: milestone.title, status: milestone.status, comment: (ownSelected ? milestone.employeeUpdate : milestone.managerResponse) || '' }); }}>Update milestone</Button>}</Stack>
+              {milestone.employeeUpdate && <Typography variant="body2" mt={1}><strong>Employee update:</strong> {milestone.employeeUpdate}</Typography>}
+              {milestone.managerResponse && <Typography variant="body2" mt={1}><strong>Manager response:</strong> {milestone.managerResponse}</Typography>}
+            </Paper>)}</Box>}
             {selected.checkIns.length > 0 && <Box><Typography fontWeight={650} mb={1}>Check-in history</Typography>{selected.checkIns.slice().reverse().map(item => <Box key={item._id} sx={{ borderLeft: 2, borderColor: 'divider', pl: 2, py: 0.5, mb: 1 }}><Typography variant="body2">{item.update}</Typography><Typography variant="caption" color="text.secondary">{item.authorRole} · {dateText(item.createdAt)}{item.progress !== undefined ? ` · ${item.progress}%` : ''}</Typography></Box>)}</Box>}
             {selected.outcome?.decision && <Alert severity="success"><strong>Outcome:</strong> {selected.outcome.decision} — {selected.outcome.reason}</Alert>}
             <Stack direction="row" spacing={1} alignItems="center"><History fontSize="small" /><Typography variant="caption" color="text.secondary">Every edit, decision, response, and outcome remains in the audit history.</Typography></Stack>
@@ -272,7 +326,30 @@ export default function SupportPlansPage() {
           {amendment ? <><Button disabled={Boolean(working)} onClick={() => { setAmendment(null); setError(''); }}>Cancel editing</Button><Button variant="contained" disabled={Boolean(working)} onClick={() => void saveAmendment()}>{working === 'amend' ? 'Saving…' : 'Save changes'}</Button></> : canAmendSelected && <><Button disabled={Boolean(working)} onClick={editPlan}>Edit plan</Button><Button variant="contained" startIcon={<Send />} disabled={Boolean(working)} onClick={() => void runAction('submit', `/support-plans/${selected._id}/submit-for-hr-review`, {}, 'Plan sent to HR for review.')}>{selected.state === 'changes_requested' ? 'Resubmit to HR' : 'Send to HR'}</Button></>}
           {selected.state === 'hr_review' && isHRAdmin && <><Button color="warning" disabled={!comment.trim() || Boolean(working)} onClick={() => void runAction('changes', `/support-plans/${selected._id}/hr-decision`, { decision: 'request_changes', comment }, 'Changes sent to the manager.')}>Request changes</Button><Button variant="contained" startIcon={<Check />} disabled={Boolean(working)} onClick={() => void runAction('approve', `/support-plans/${selected._id}/hr-decision`, { decision: 'approve', comment }, 'Plan approved and sent to the employee.')}>Approve for employee review</Button></>}
           {selected.state === 'employee_review' && ownSelected && <><Button variant="outlined" disabled={!comment.trim() || Boolean(working)} onClick={() => void runAction('respond', `/support-plans/${selected._id}/employee-response`, { acknowledgement: 'acknowledged_with_comments', comment }, 'Your response was recorded and the plan is active.')}>Acknowledge with comments</Button><Button variant="contained" disabled={Boolean(working)} onClick={() => void runAction('respond', `/support-plans/${selected._id}/employee-response`, { acknowledgement: 'acknowledged' }, 'Your acknowledgement was recorded and the plan is active.')}>Acknowledge</Button></>}
+          {canRecordOutcome && <Button variant="outlined" disabled={Boolean(working)} onClick={() => { setActionError(''); setOutcomeForm({ decision: 'completed', reason: '', nextReviewDate: '' }); setOutcomeOpen(true); }}>Record outcome</Button>}
         </DialogActions></>}
+      </Dialog>
+      <Dialog open={Boolean(milestoneEdit)} onClose={() => !working && setMilestoneEdit(null)} fullWidth maxWidth="sm" aria-labelledby="support-milestone-title">
+        <DialogTitle id="support-milestone-title">Update milestone</DialogTitle>
+        <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
+          {actionError && <Alert severity="error">{actionError}</Alert>}
+          <Typography>{milestoneEdit?.title}</Typography>
+          <TextField select label="Milestone status" disabled={Boolean(working)} value={milestoneEdit?.status || 'upcoming'} onChange={event => setMilestoneEdit(current => current && ({ ...current, status: event.target.value }))}>{['upcoming', 'due', 'completed', 'missed'].map(status => <MenuItem key={status} value={status}>{status[0].toUpperCase() + status.slice(1)}</MenuItem>)}</TextField>
+          <TextField label={ownSelected ? 'Employee update' : 'Manager response'} required multiline minRows={3} disabled={Boolean(working)} value={milestoneEdit?.comment || ''} onChange={event => setMilestoneEdit(current => current && ({ ...current, comment: event.target.value }))} />
+        </Stack></DialogContent>
+        <DialogActions><Button disabled={Boolean(working)} onClick={() => setMilestoneEdit(null)}>Cancel</Button><Button variant="contained" disabled={Boolean(working) || !milestoneEdit?.comment.trim()} onClick={() => void saveMilestone()}>{working === 'milestone' ? 'Saving…' : 'Save milestone'}</Button></DialogActions>
+      </Dialog>
+      <Dialog open={outcomeOpen} onClose={() => !working && setOutcomeOpen(false)} fullWidth maxWidth="sm" aria-labelledby="support-outcome-title">
+        <DialogTitle id="support-outcome-title">Record support plan outcome</DialogTitle>
+        <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
+          {actionError && <Alert severity="error">{actionError}</Alert>}
+          <Typography>{selected?.title}</Typography><Typography variant="body2" color="text.secondary">Record your decision and reason in the plan history. Appraisal ratings stay unchanged.</Typography>
+          <TextField select label="Outcome" disabled={Boolean(working)} value={outcomeForm.decision} onChange={event => setOutcomeForm(current => ({ ...current, decision: event.target.value }))}>{['completed', 'extended', ...(selected?.planType !== 'formal_improvement' || isHRAdmin ? ['escalated', 'cancelled'] : [])].map(decision => <MenuItem key={decision} value={decision}>{stateLabel[decision as PlanState]}</MenuItem>)}</TextField>
+          {selected?.planType === 'formal_improvement' && !isHRAdmin && <Typography variant="caption">HR records escalation or cancellation for a formal plan.</Typography>}
+          <TextField label="Outcome reason" required multiline minRows={3} disabled={Boolean(working)} value={outcomeForm.reason} onChange={event => setOutcomeForm(current => ({ ...current, reason: event.target.value }))} />
+          {outcomeForm.decision === 'extended' && <TextField type="date" label="Next review date (optional)" InputLabelProps={{ shrink: true }} disabled={Boolean(working)} value={outcomeForm.nextReviewDate} onChange={event => setOutcomeForm(current => ({ ...current, nextReviewDate: event.target.value }))} />}
+        </Stack></DialogContent>
+        <DialogActions><Button disabled={Boolean(working)} onClick={() => setOutcomeOpen(false)}>Keep current state</Button><Button variant="contained" disabled={Boolean(working) || !outcomeForm.reason.trim()} onClick={() => void saveOutcome()}>{working === 'outcome' ? 'Saving…' : 'Record outcome'}</Button></DialogActions>
       </Dialog>
     </Box>
   );

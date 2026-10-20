@@ -3,6 +3,7 @@ const OKR = require('../models/OKR');
 const GoalCheckIn = require('../models/GoalCheckIn');
 const Appraisal = require('../models/Appraisal');
 const Feedback = require('../models/Feedback');
+const { countReportableFeedback } = require('../services/feedbackPrivacyService');
 const AppraisalCycle = require('../models/AppraisalCycle');
 const { requireAuth, requireAnyPermission, hasPermission } = require('../middleware/rbac');
 const requireReportAnalytics = requireAnyPermission('analytics:view:team', 'analytics:view:direct_reports', 'analytics:view:organization');
@@ -169,7 +170,9 @@ router.get('/performance', requireReportAnalytics, async (req, res) => {
         cycleName: cycleMap.get(String(item.cycleId))?.name || 'Performance review',
         finalRating: round(item.finalRating?.overall, 2),
         ratingLabel: item.finalRating?.ratingLabel || '',
-        goalAchievement: round(item.goalEvidenceSummary?.score, 1)
+        goalAchievement: item.goalEvidenceSummary?.rated === true &&
+          item.goalEvidenceSummary.score != null && Number.isFinite(item.goalEvidenceSummary.score)
+          ? round(item.goalEvidenceSummary.score, 1) : null
       }));
 
     const groupRows = (keySelector, labelSelector, records = appraisals) => {
@@ -418,7 +421,7 @@ router.get('/dashboard', requireAnyPermission('analytics:view:own', 'analytics:v
     const [goals, pendingReviews, recentFeedback] = await Promise.all([
       OKR.find(goalQuery).select('objectives progress scoring status').lean(),
       Appraisal.countDocuments(appraisalQuery),
-      Feedback.countDocuments(feedbackQuery)
+      countReportableFeedback(feedbackQuery)
     ]);
 
     const measuredProgress = goals.map(calculateGoalProgress).filter(Number.isFinite);

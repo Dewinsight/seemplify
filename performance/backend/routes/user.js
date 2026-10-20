@@ -4,11 +4,13 @@ const User = require('../models/User');
 const OKR = require('../models/OKR');
 const Appraisal = require('../models/Appraisal');
 const Feedback = require('../models/Feedback');
+const { countReportableFeedback, feedbackHidesSender } = require('../services/feedbackPrivacyService');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
 const OneOnOne = require('../models/OneOnOne');
 const {
   requireAuth,
-  getCurrentTeam
+  getCurrentTeam,
+  hasPermission
 } = require('../middleware/rbac');
 const { verifySubscriptionAccess } = require('../services/idpSubscriptionService');
 const {
@@ -166,7 +168,7 @@ router.get('/context', requireAuth, async (req, res) => {
         organizationId: String(organizationId),
         $or: [{ 'employee.userId': userId }, { 'manager.userId': userId }]
       }),
-      Feedback.countDocuments({ organizationId: String(organizationId), receiverId: userId, deletedAt: null })
+      countReportableFeedback({ organizationId: String(organizationId), receiverId: userId, deletedAt: null })
     ]);
 
     // Get pending items for managers
@@ -311,6 +313,7 @@ router.get('/context', requireAuth, async (req, res) => {
         // Feature flags based on role
         features: {
           ...organizationFeatureState.features,
+          canRequestFeedback: hasPermission(role, 'feedback:request', sessionUser),
           canCreateTeamOkr: role === 'line_manager' || role === 'hr_admin',
           canCreateOrgOkr: role === 'hr_admin',
           canConductReviews: isManagerRole,
@@ -1483,7 +1486,7 @@ router.get('/:userId/performance-summary', requireAuth, async (req, res) => {
         deletedAt: null,
         visibility: { $in: ['public', 'manager-only'] },
         anonymity: { $ne: 'anonymous' }
-      }).select('senderInfo type content createdAt').sort({ createdAt: -1 }).limit(20).lean(),
+      }).select('senderId senderInfo receiverId anonymity type content createdAt').sort({ createdAt: -1 }).limit(20).lean(),
       OneOnOne.find({ organizationId: String(organizationId), ...meetingScope })
         .select('scheduledDate status sharedNotes aiScoring.employee.overallScore').sort({ scheduledDate: -1 }).limit(20).lean(),
       DevelopmentPlan.findOne({
@@ -1518,8 +1521,8 @@ router.get('/:userId/performance-summary', requireAuth, async (req, res) => {
           status: goal.lifecycle?.state || goal.status
         })),
         feedbackReceived: feedback.map((item) => ({
-          from: item.senderInfo?.name || 'Colleague',
-          date: item.createdAt,
+          from: feedbackHidesSender(item, actorId, req.userRole) ? 'Anonymous' : item.senderInfo?.name || 'Colleague',
+          ...(!feedbackHidesSender(item, actorId, req.userRole) ? { date: item.createdAt } : {}),
           type: item.type,
           summary: item.content
         })),

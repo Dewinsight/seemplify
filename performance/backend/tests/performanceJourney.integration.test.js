@@ -809,11 +809,19 @@ test('anonymous 360 feedback stays withheld until five same-tenant responses and
     })
     .expect(201);
 
-  expect(requested.body.count).toBe(5);
+  expect(requested.body.count).toBe(1);
   const cohortId = requested.body.data[0].cohortId;
   expect(cohortId).toBeTruthy();
-  expect(new Set(requested.body.data.map((item) => item.cohortId))).toEqual(new Set([cohortId]));
-  expect(requested.body.data.every((item) => item.minimumCohortSize === 5)).toBe(true);
+  expect(requested.body.data[0]).toMatchObject({ kind: 'cohort', minimumCohortSize: 5, reviewerCount: 5, responseCount: null, reportable: false });
+  // Actionable IDs belong to each invited reviewer, not the requester DTO.
+  const invitations = [];
+  for (const reviewerId of reviewerIds) {
+    const inbox = await request(app).get('/api/feedback/requests?view=reviewer')
+      .set('x-test-actor', 'employee').set('x-test-user', reviewerId).expect(200);
+    expect(inbox.body.data).toHaveLength(1);
+    expect(inbox.body.data[0].reviewerId).toBe(reviewerId);
+    invitations.push(inbox.body.data[0]);
+  }
 
   const feedbackIds = [];
   for (let index = 0; index < 4; index += 1) {
@@ -823,7 +831,7 @@ test('anonymous 360 feedback stays withheld until five same-tenant responses and
       .set('x-test-user', reviewerIds[index])
       .send({
         receiverId: EMPLOYEE,
-        requestId: requested.body.data[index]._id,
+        requestId: invitations[index]._id,
         content: `Anonymous response ${index + 1}`,
         type: 'general'
       })
@@ -871,7 +879,7 @@ test('anonymous 360 feedback stays withheld until five same-tenant responses and
     .set('x-test-user', reviewerIds[4])
     .send({
       receiverId: EMPLOYEE,
-      requestId: requested.body.data[4]._id,
+      requestId: invitations[4]._id,
       content: 'Anonymous response 5',
       type: 'general'
     })
@@ -2243,6 +2251,35 @@ test('canonical analytics ranks finalized performers and supports team drilldown
       expect(response.body.data.summary.participants).toBe(0);
       expect(response.body.data.topPerformers).toEqual([]);
     });
+});
+
+test('canonical analytics distinguishes unavailable goal evidence from a rated zero', async () => {
+  const now = new Date();
+  const cycle = await AppraisalCycle.create({ organizationId: ORG_A, name: 'Goal evidence availability',
+    periodStart: new Date(now.getTime() - 86400000), periodEnd: now, status: 'completed' });
+  const cases = [
+    { id: 'unrated', summary: { rated: false, score: null, ratedGoals: 0, totalGoals: 1 }, expected: null },
+    { id: 'missing', summary: undefined, expected: null },
+    { id: 'rated-null', summary: { rated: true, score: null }, expected: null },
+    { id: 'unrated-stale-score', summary: { rated: false, score: 75 }, expected: null },
+    { id: 'rated-zero', summary: { rated: true, score: 0, ratedGoals: 1, totalGoals: 1 }, expected: 0 },
+    { id: 'rated-positive', summary: { rated: true, score: 82.25, ratedGoals: 1, totalGoals: 1 }, expected: 82.3 }
+  ];
+  await Appraisal.create(cases.map(({ id, summary }) => ({
+    organizationId: ORG_A, cycleId: cycle._id,
+    employee: { userId: id, name: id, email: `${id}@example.com`, teamId: 'team-a', teamName: 'Team A' },
+    manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+    status: 'completed', finalRating: { overall: 3, finalizedAt: now }, goalEvidenceSummary: summary
+  })));
+  const response = await request(app).get(`/api/analytics/performance?cycleId=${cycle._id}`)
+    .set('x-test-actor', 'hr').expect(200);
+  expect(response.body.data.summary).toMatchObject({ participants: cases.length, completed: cases.length,
+    rated: cases.length, averageRating: 3 });
+  expect(response.body.data.topPerformers).toHaveLength(cases.length);
+  for (const { id, expected } of cases) {
+    expect(response.body.data.topPerformers.find((item) => item.employeeId === id))
+      .toMatchObject({ finalRating: 3, goalAchievement: expected });
+  }
 });
 
 test('1,000-person goal assignment completes in bounded batches and replays idempotently', async () => {

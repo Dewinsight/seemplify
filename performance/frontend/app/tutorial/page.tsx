@@ -4,16 +4,16 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserContext } from '@/lib/hooks';
 import {
-  Box, Typography, Card, CardContent, Grid, Button, Chip, Paper,
-  Stepper, Step, StepLabel, StepContent, Accordion, AccordionSummary,
-  AccordionDetails, Divider, Avatar, List, ListItem, ListItemIcon,
-  ListItemText, Alert
+  Box, Typography, Card, CardContent, Grid, Button, Paper,
+  Stepper, Step, StepLabel, Accordion, AccordionSummary,
+  AccordionDetails, Avatar, List, ListItem, ListItemIcon,
+  ListItemText, Alert, useTheme, useMediaQuery
 } from '@mui/material';
 import {
-  Assessment, Person, Groups, Feedback, EventNote, Star, Flag,
-  CheckCircle, PlayArrow, ArrowForward, ExpandMore, Lightbulb,
+  Assessment, Person, Groups, Feedback, Flag,
+  CheckCircle, ArrowForward, ExpandMore, Lightbulb,
   Psychology, TrendingUp, VideoCall, Chat, Description, Settings,
-  Timeline, School, Rocket, EmojiEvents
+  Timeline, Rocket
 } from '@mui/icons-material';
 
 interface TutorialStep {
@@ -23,6 +23,33 @@ interface TutorialStep {
   details: string[];
   action?: { label: string; href: string };
 }
+
+const historyStep: TutorialStep = {
+  title: 'Find Historical Appraisals and Results',
+  description: 'Open completed reviews and their published results',
+  icon: <Description color="secondary" />,
+  details: [
+    'Open Appraisals, then choose History & results',
+    'Search and filter the completed appraisals you are allowed to view',
+    'Open View result report to read the published feedback and final rating',
+    'Download the filtered history as CSV or print a result report'
+  ],
+  action: { label: 'History & results', href: '/appraisals?section=history' }
+};
+
+const startAppraisalStep: TutorialStep = {
+  title: 'Start an Appraisal',
+  description: 'Managers and HR can begin reviews for staff in their authorized scope',
+  icon: <Rocket color="primary" />,
+  details: [
+    'Open Appraisals and choose Start appraisal',
+    'Select staff and choose an eligible reviewer for each person',
+    'Choose an available cycle configured by HR, or create a one-off review',
+    'Check the review period, required steps and response deadlines before starting',
+    'Open the launch results to see reviews that started and any people who need attention'
+  ],
+  action: { label: 'Start appraisal', href: '/appraisals/start' }
+};
 
 const employeeSteps: TutorialStep[] = [
   {
@@ -57,7 +84,7 @@ const employeeSteps: TutorialStep[] = [
       'Schedule recurring 1:1s with your manager (weekly or bi-weekly)',
       'Prepare talking points and updates before each meeting',
       'Discuss progress, blockers, and development goals',
-      'AI analysis helps identify patterns and areas for improvement'
+      'Record agreed notes and follow-up actions'
     ],
     action: { label: 'View 1:1s', href: '/one-on-ones' }
   },
@@ -68,7 +95,9 @@ const employeeSteps: TutorialStep[] = [
     details: [
       'When an appraisal cycle starts, you\'ll be notified to begin',
       'Review your OKRs, feedback, and 1:1 notes',
-      'Use AI suggestions to articulate your accomplishments',
+      'Choose Use manual form to complete the review without ChatGPT',
+      'Answer the required cycle questions and attach supporting documents when required',
+      'Optional AI assistance requires a connected account and data-sharing consent',
       'Be honest about challenges and areas for improvement',
       'Submit before the deadline'
     ],
@@ -84,10 +113,12 @@ const employeeSteps: TutorialStep[] = [
       'Discuss development plan and next steps',
       'Acknowledge the appraisal to complete the process'
     ]
-  }
+  },
+  historyStep
 ];
 
 const managerSteps: TutorialStep[] = [
+  startAppraisalStep,
   {
     title: 'View Your Team',
     description: 'Get an overview of all your direct reports',
@@ -106,9 +137,9 @@ const managerSteps: TutorialStep[] = [
     icon: <VideoCall color="info" />,
     details: [
       'Schedule recurring 1:1s with each direct report',
-      'Use chat or video meetings (integrated with Nylas)',
-      'AI analyzes meeting transcripts for insights',
-      'Score meetings to track coaching effectiveness'
+      'Prepare the agenda and discuss progress, blockers and support',
+      'Record agreed notes and follow-up actions',
+      'Appraisal ratings are recorded and approved by people'
     ],
     action: { label: 'View 1:1s', href: '/one-on-ones' }
   },
@@ -122,18 +153,19 @@ const managerSteps: TutorialStep[] = [
       'Document specific examples and observations',
       'Feedback informs the appraisal process'
     ],
-    action: { label: 'Give Feedback', href: '/feedback/new' }
+    action: { label: 'Give Feedback', href: '/feedback?compose=true' }
   },
   {
     title: 'Complete Manager Reviews',
     description: 'Evaluate your team during appraisal cycles',
     icon: <Assessment color="warning" />,
     details: [
-      'Wait for employees to complete self-assessments first',
+      'Open Reviews I’m conducting and follow the steps configured for that cycle',
       'Review their self-assessment and OKR achievement',
       'Rate competencies and verify OKR completion',
-      'AI provides insights and checks for potential bias',
-      'Submit your review for calibration'
+      'Complete required cycle questions and supporting documents in the manual form',
+      'AI assistance and Run AI Bias Check are optional; ChatGPT is not required for a manual review',
+      'Submit your review to continue the configured discussion and approval steps'
     ],
     action: { label: 'View Appraisals', href: '/appraisals' }
   },
@@ -142,12 +174,13 @@ const managerSteps: TutorialStep[] = [
     description: 'Meet with employees to discuss results',
     icon: <Chat color="secondary" />,
     details: [
-      'Schedule a meeting after calibration is complete',
+      'Follow the cycle’s discussion step and record the agreed notes',
       'Discuss ratings, achievements, and development areas',
       'Create a development plan together',
       'Employee acknowledges to complete the process'
     ]
-  }
+  },
+  historyStep
 ];
 
 const hrAdminSteps: TutorialStep[] = [
@@ -161,9 +194,21 @@ const hrAdminSteps: TutorialStep[] = [
       'Set competencies to evaluate',
       'Choose OKR vs competency weight for final rating',
       'Enable or disable AI features, chat, and peer feedback',
-      'Select the employees who should participate before you create the cycle'
+      'Use Start appraisal to select staff and reviewers when you are ready to begin'
     ],
     action: { label: 'Create Cycle', href: '/admin/appraisal-cycles/new' }
+  },
+  startAppraisalStep,
+  {
+    title: 'Set Organization-wide OKRs',
+    description: 'HR managers and organization administrators set shared organization goals',
+    icon: <Flag color="primary" />,
+    details: [
+      'Open Goals in the Admin workspace and choose the organization view',
+      'Create organization goals in an open goal period',
+      'Teams and individuals can align their goals to these organization priorities'
+    ],
+    action: { label: 'Organization goals', href: '/okrs?view=organization' }
   },
   {
     title: 'Monitor Progress',
@@ -199,12 +244,15 @@ const hrAdminSteps: TutorialStep[] = [
       'Identify high performers and development needs'
     ],
     action: { label: 'Reports', href: '/admin/reports' }
-  }
+  },
+  historyStep
 ];
 
 export default function TutorialPage() {
   const router = useRouter();
-  const { isManager, isHRAdmin, user, roleDisplay } = useUserContext();
+  const { isManager, isHRAdmin } = useUserContext();
+  const theme = useTheme();
+  const compactProgress = useMediaQuery(theme.breakpoints.down('sm'));
   const [activeSection, setActiveSection] = useState<'employee' | 'manager' | 'hr'>('employee');
 
   const renderSteps = (steps: TutorialStep[]) => (
@@ -276,28 +324,28 @@ export default function TutorialPage() {
           <Psychology color="primary" sx={{ fontSize: 40 }} />
           <Box>
             <Typography variant="h6" fontWeight={600} color="primary.main">
-              AI-Powered Performance Management
+              Appraisals with Optional AI Support
             </Typography>
             <Typography variant="body2" sx={{ mb: 2 }}>
-              Our system uses AI to help you throughout the performance management process:
+              Employees and reviewers can complete manual forms without ChatGPT. People review and approve the final ratings.
             </Typography>
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Lightbulb color="warning" />
-                  <Typography variant="body2"><strong>Self-Assessment:</strong> Get AI suggestions for writing achievements</Typography>
+                  <Typography variant="body2"><strong>Self-Assessment:</strong> Complete the manual form or choose optional AI assistance</Typography>
                 </Box>
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <TrendingUp color="info" />
-                  <Typography variant="body2"><strong>Manager Review:</strong> AI-powered insights and bias detection</Typography>
+                  <Typography variant="body2"><strong>Manager Review:</strong> Record your judgment; AI insights and bias checks are optional</Typography>
                 </Box>
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <VideoCall color="success" />
-                  <Typography variant="body2"><strong>1:1 Meetings:</strong> Automatic transcript analysis and scoring</Typography>
+                  <Typography variant="body2"><strong>1:1 Meetings:</strong> Record agreed notes, support and follow-up actions</Typography>
                 </Box>
               </Grid>
             </Grid>
@@ -378,49 +426,25 @@ export default function TutorialPage() {
       <Paper sx={{ p: 3, mt: 4 }}>
         <Typography variant="h6" fontWeight={600} gutterBottom>
           <Timeline sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Typical Appraisal Cycle Phases
+          Example Appraisal Workflow
         </Typography>
-        <Stepper alternativeLabel sx={{ mt: 3 }}>
-          <Step completed>
-            <StepLabel>
-              <Typography variant="caption">Goal Setting</Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Define OKRs
-              </Typography>
+        <Typography variant="body2" color="text.secondary">HR configures the required steps. Open your appraisal to see its actual workflow; calibration and acknowledgement depend on that cycle.</Typography>
+        <Stepper activeStep={-1} orientation={compactProgress ? 'vertical' : 'horizontal'} alternativeLabel={!compactProgress}
+          role="group" aria-label="Example appraisal workflow" sx={{ mt: 3 }}>
+          {[
+            ['Goal Setting', 'Agree the goals for the period'],
+            ['Self-Assessment', 'Employee reflects and adds evidence'],
+            ['Manager Review', 'Reviewer records a human assessment'],
+            ['Discussion', 'Discuss the findings and next steps'],
+            ['Calibration', 'Check ratings when enabled'],
+            ['Final Review', 'Approve and publish the result'],
+            ['Acknowledgement', 'Employee reads the published outcome'],
+          ].map(([label, description]) => <Step key={label} sx={{ minWidth: 0 }}>
+            <StepLabel sx={{ '& .MuiStepLabel-label': { overflowWrap: 'anywhere' } }}>
+              <Typography variant="caption">{label}</Typography>
+              <Typography variant="caption" display="block" color="text.secondary">{description}</Typography>
             </StepLabel>
-          </Step>
-          <Step>
-            <StepLabel>
-              <Typography variant="caption">Self-Assessment</Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Employee reflects
-              </Typography>
-            </StepLabel>
-          </Step>
-          <Step>
-            <StepLabel>
-              <Typography variant="caption">Manager Review</Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Manager evaluates
-              </Typography>
-            </StepLabel>
-          </Step>
-          <Step>
-            <StepLabel>
-              <Typography variant="caption">Calibration</Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                HR ensures fairness
-              </Typography>
-            </StepLabel>
-          </Step>
-          <Step>
-            <StepLabel>
-              <Typography variant="caption">Final Review</Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Discussion & sign-off
-              </Typography>
-            </StepLabel>
-          </Step>
+          </Step>)}
         </Stepper>
       </Paper>
 

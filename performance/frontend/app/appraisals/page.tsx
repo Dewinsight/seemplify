@@ -16,7 +16,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Stepper, Step, StepLabel, StepContent, Divider, CircularProgress,
   Tooltip, Badge, Select, MenuItem, FormControl, InputLabel, Tabs, Tab,
-  alpha, useTheme
+  alpha, useTheme, useMediaQuery
 } from '@mui/material';
 import {
   Assignment, Person, CheckCircle, Schedule, PlayArrow, Edit,
@@ -105,6 +105,7 @@ export default function AppraisalsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const theme = useTheme();
+  const compactProgress = useMediaQuery(theme.breakpoints.down('sm'));
   const { workspace } = usePerformanceWorkspace();
   const { isManager, isHRAdmin, user, role, organization } = useUserContext();
 
@@ -134,15 +135,17 @@ export default function AppraisalsPage() {
   const scopedTeamAppraisals = conducting ? assignedReviews.filter((item) => !selectedCycleId || item.cycleId?._id === selectedCycleId) : selectedTab === 2
     ? organizationAppraisals.filter((item: Appraisal) => !selectedCycleId || item.cycleId?._id === selectedCycleId)
     : allTeamAppraisals;
-  const myAppraisals = newestAppraisalsFirst((allMyAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status)));
-  const teamAppraisals = newestAppraisalsFirst((scopedTeamAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status)));
   const teamLoading = conducting ? assignedLoading : selectedTab === 2 ? organizationLoading : directTeamLoading;
   const loadError = conducting ? assignedError : selectedTab === 2 ? organizationError : selectedTab === 1 ? teamError : myError;
   const allVisibleAppraisals: Appraisal[] = selectedTab ? scopedTeamAppraisals : allMyAppraisals;
-  const historyAppraisals = allVisibleAppraisals.filter((item) => isFinishedAppraisal(item.status) && (!searchParams.get('employeeId') || item.employee.userId === searchParams.get('employeeId')));
+  const employeeIdFilter = searchParams.get('employeeId') || searchParams.get('employee');
+  const employeeVisibleAppraisals = allVisibleAppraisals.filter((item) => !employeeIdFilter || item.employee.userId === employeeIdFilter);
+  const currentAppraisals = newestAppraisalsFirst(employeeVisibleAppraisals.filter((item) => !isFinishedAppraisal(item.status)));
+  const myAppraisals = selectedTab === 0 ? currentAppraisals : [];
+  const teamAppraisals = selectedTab > 0 ? currentAppraisals : [];
+  const historyAppraisals = employeeVisibleAppraisals.filter((item) => isFinishedAppraisal(item.status));
 
   // Handle employee filter from query params
-  const employeeIdFilter = searchParams.get('employeeId');
   const submittedFlow = searchParams.get('submitted');
   const submittedAppraisalId = searchParams.get('appraisalId');
 
@@ -621,13 +624,15 @@ export default function AppraisalsPage() {
           />
         </Box>
 
-        <Stepper activeStep={activeStepIndex} alternativeLabel sx={{ mt: 3 }}>
+        <Stepper activeStep={activeStepIndex} orientation={compactProgress ? 'vertical' : 'horizontal'} alternativeLabel={!compactProgress}
+          role="group" aria-label="Cycle phases" sx={{ mt: 3 }}>
           {workflowSteps.map((step, index) => {
             const phase = activeCycle.phases?.[step.key];
             return (
-              <Step key={step.key} completed={index < activeStepIndex}>
+              <Step key={step.key} completed={index < activeStepIndex} aria-current={index === activeStepIndex ? 'step' : undefined} sx={{ minWidth: 0 }}>
                 <StepLabel
                   sx={{
+                    '& .MuiStepLabel-label': { overflowWrap: 'anywhere' },
                     '& .MuiStepLabel-iconContainer': {
                       '& .MuiStepIcon-root.Mui-active': {
                         color: 'primary.main',
@@ -673,8 +678,10 @@ export default function AppraisalsPage() {
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
           <FormControl size="small" sx={{ minWidth: 220 }}>
-            <InputLabel shrink>Cycle</InputLabel>
+            <InputLabel id="appraisals-cycle-label" shrink>Cycle</InputLabel>
             <Select
+              id="appraisals-cycle"
+              labelId="appraisals-cycle-label"
               displayEmpty
               value={selectedCycleId}
               label="Cycle"
@@ -774,7 +781,7 @@ export default function AppraisalsPage() {
         </Paper>
       )}
 
-      <Paper variant="outlined" sx={{ mb: 3 }}><Tabs value={historyMode ? 'history' : 'current'} onChange={(_, value: string) => changeSection(value)} variant="fullWidth"><Tab value="current" label={`Current (${allVisibleAppraisals.filter((item) => !isFinishedAppraisal(item.status)).length})`} /><Tab value="history" label={`History & results (${historyAppraisals.length})`} /></Tabs></Paper>
+      <Paper variant="outlined" sx={{ mb: 3 }}><Tabs value={historyMode ? 'history' : 'current'} onChange={(_, value: string) => changeSection(value)} variant="fullWidth"><Tab value="current" label={`Current (${currentAppraisals.length})`} /><Tab value="history" label={`History & results (${historyAppraisals.length})`} /></Tabs></Paper>
       {loadError && <Alert severity="error" action={<Button onClick={() => { mutateMyAppraisals(); mutateTeamAppraisals(); mutateOrganizationAppraisals(); refreshAssigned(); }}>Retry</Button>}>Could not load your appraisals. Please try again.</Alert>}
       {historyMode && !loadError && ((selectedTab ? teamLoading : myLoading) ? <CircularProgress aria-label="Loading appraisal history" /> : <AppraisalHistory appraisals={historyAppraisals} showEmployee={selectedTab > 0} organizationName={organization?.name} />)}
       {!historyMode && !loadError && <>
@@ -882,14 +889,7 @@ export default function AppraisalsPage() {
                 ))}
               </Grid>
 
-              {/* Filter by employee if specified */}
-              {employeeIdFilter ? (
-                teamAppraisals
-                  .filter((a: Appraisal) => a.employee.userId === employeeIdFilter)
-                  .map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, false, index === 0))
-              ) : (
-                teamAppraisals.map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, false, index === 0))
-              )}
+              {teamAppraisals.map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, false, index === 0))}
             </>
           )}
         </Box>

@@ -1,4 +1,9 @@
 const mongoose = require('mongoose');
+const { ratingWithinScale } = require('../services/appraisalRatingService');
+
+function validHumanRating(value) {
+  return ratingWithinScale(value, this.ownerDocument?.() || this);
+}
 
 /**
  * Appraisal Schema
@@ -256,7 +261,7 @@ const appraisalSchema = new mongoose.Schema({
     competencyRatings: [{
       competencyId: String,
       competencyName: String,
-      selfRating: { type: Number, min: 1, max: 5 },
+      selfRating: { type: Number, validate: { validator: validHumanRating, message: 'Self-rating must be within the configured appraisal scale' } },
       selfComments: String,
       evidenceDocuments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AppraisalDocument' }]
     }],
@@ -275,8 +280,7 @@ const appraisalSchema = new mongoose.Schema({
     // Overall self-rating
     overallSelfRating: {
       type: Number,
-      min: 1,
-      max: 5
+      validate: { validator: validHumanRating, message: 'Overall self-rating must be within the configured appraisal scale' }
     },
 
     // AI rating suggestion shown to the employee (not the employee's final self-rating)
@@ -325,7 +329,7 @@ const appraisalSchema = new mongoose.Schema({
     competencyRatings: [{
       competencyId: String,
       competencyName: String,
-      managerRating: { type: Number, min: 1, max: 5 },
+      managerRating: { type: Number, validate: { validator: validHumanRating, message: 'Manager rating must be within the configured appraisal scale' } },
       managerComments: String,
       gapFromSelf: Number // Difference from self-rating
     }],
@@ -342,8 +346,7 @@ const appraisalSchema = new mongoose.Schema({
     // Overall manager rating
     overallManagerRating: {
       type: Number,
-      min: 1,
-      max: 5
+      validate: { validator: validHumanRating, message: 'Overall manager rating must be within the configured appraisal scale' }
     },
 
     // AI-assisted review

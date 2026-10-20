@@ -9,6 +9,7 @@ const AppraisalCycle = require('../models/AppraisalCycle');
 const AppraisalCycleTemplate = require('../models/AppraisalCycleTemplate');
 const Appraisal = require('../models/Appraisal');
 const appraisalFlow = require('../services/appraisalFlowService');
+const { normalizeHumanRating, ratingWithinScale } = require('../services/appraisalRatingService');
 const AppraisalDocument = require('../models/AppraisalDocument');
 const OKR = require('../models/OKR');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
@@ -342,7 +343,7 @@ function normalizeNumberInRange(value, minimum, maximum, fallback = null) {
   return Math.min(maximum, Math.max(minimum, numericValue));
 }
 
-function normalizeManagerReviewPayload(managerReview = {}, appraisal = null) {
+function normalizeManagerReviewPayload(managerReview = {}, appraisal = null, { submit = false } = {}) {
   const allowedPromotionReadiness = new Set(['not_ready', 'developing', 'ready', 'overdue']);
   const currentManagerReview = toPlainObject(appraisal?.managerReview);
   const currentSummary = toPlainObject(currentManagerReview?.overallSummary);
@@ -365,16 +366,17 @@ function normalizeManagerReviewPayload(managerReview = {}, appraisal = null) {
         const competencyId = rawRating?.competencyId ? String(rawRating.competencyId) : null;
         if (!competencyId) return null;
 
-        const managerRating = normalizeNumberInRange(rawRating?.managerRating, 1, 5, null);
+        const managerRating = normalizeHumanRating(rawRating?.managerRating, appraisal, { submit, label: 'Competency manager rating' });
         const selfRating = selfCompetencyRatings.find((entry) => entry?.competencyId === competencyId);
-        const selfRatingValue = normalizeNumberInRange(selfRating?.selfRating, 1, 5, null);
+        const selfRatingValue = typeof selfRating?.selfRating === 'number' && ratingWithinScale(selfRating.selfRating, appraisal)
+          ? selfRating.selfRating : undefined;
 
         return {
           competencyId,
           competencyName: typeof rawRating?.competencyName === 'string' ? rawRating.competencyName.trim() : '',
-          ...(managerRating !== null ? { managerRating } : {}),
+          ...(managerRating !== undefined ? { managerRating } : {}),
           managerComments: typeof rawRating?.managerComments === 'string' ? rawRating.managerComments.trim() : '',
-          gapFromSelf: managerRating !== null && selfRatingValue !== null
+          gapFromSelf: managerRating !== undefined && selfRatingValue !== undefined
             ? managerRating - selfRatingValue
             : null
         };
@@ -408,12 +410,10 @@ function normalizeManagerReviewPayload(managerReview = {}, appraisal = null) {
       .filter(Boolean)
     : (Array.isArray(currentManagerReview?.okrAssessment) ? currentManagerReview.okrAssessment : []);
 
-  const overallManagerRating = normalizeNumberInRange(
-    managerReview?.overallManagerRating,
-    1,
-    5,
-    normalizeNumberInRange(currentManagerReview?.overallManagerRating, 1, 5, 3)
-  );
+  const rawOverallManagerRating = !submit && !Object.prototype.hasOwnProperty.call(managerReview, 'overallManagerRating')
+    ? currentManagerReview?.overallManagerRating : managerReview?.overallManagerRating;
+  const overallManagerRating = normalizeHumanRating(rawOverallManagerRating, appraisal,
+    { required: true, submit, label: 'Overall manager rating' });
 
   return {
     overallSummary: {
@@ -816,6 +816,7 @@ async function cancelAppraisalReminders(appraisal, reminderTargetType, userId = 
 }
 
 const APPRAISAL_COMPLETED_STATUSES = ['completed', 'employee_acknowledged'];
+const APPRAISAL_EVIDENCE_LOCKED_STATUSES = new Set([...APPRAISAL_COMPLETED_STATUSES, 'cancelled']);
 const SELF_ASSESSMENT_EDITABLE_STATUSES = ['self_assessment_pending', 'self_assessment_in_progress'];
 const SELF_ASSESSMENT_PENDING_STATUSES = ['self_assessment_pending', 'self_assessment_in_progress'];
 const MANAGER_REVIEW_EDITABLE_STATUSES = ['manager_review_pending', 'manager_review_in_progress', 'self_assessment_submitted'];
@@ -1015,17 +1016,17 @@ async function buildCycleStatsMap(cycleIds = [], orgId = null, referenceDate = n
         },
         selfAssessmentSubmitted: {
           $sum: {
-            $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+            $cond: [{ $ne: [{ $ifNull: ['$selfAssessment.submittedAt', null] }, null] }, 1, 0]
           }
         },
         managerReviewSubmitted: {
           $sum: {
-            $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+            $cond: [{ $ne: [{ $ifNull: ['$managerReview.submittedAt', null] }, null] }, 1, 0]
           }
         },
         finalized: {
           $sum: {
-            $cond: [{ $ne: ['$finalRating.overall', null] }, 1, 0]
+            $cond: [{ $ne: [{ $ifNull: ['$finalRating.overall', null] }, null] }, 1, 0]
           }
         },
         overdueAppraisals: {
@@ -2253,10 +2254,11 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
     const analyticsComputedAt = new Date();
     const overdueExpression = buildOverdueExpression(analyticsComputedAt);
 
-    const trendStart = new Date();
-    trendStart.setMonth(trendStart.getMonth() - 11);
-    trendStart.setDate(1);
-    trendStart.setHours(0, 0, 0, 0);
+    // Mongo groups UTC calendar months; build the matching boundaries and labels
+    // in UTC too, including across local daylight-saving transitions.
+    const trendStart = new Date(Date.UTC(
+      analyticsComputedAt.getUTCFullYear(), analyticsComputedAt.getUTCMonth() - 11, 1
+    ));
 
     const [
       cycles,
@@ -2287,17 +2289,17 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
             _id: null,
             selfSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$selfAssessment.submittedAt', null] }, null] }, 1, 0]
               }
             },
             managerSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$managerReview.submittedAt', null] }, null] }, 1, 0]
               }
             },
             finalized: {
               $sum: {
-                $cond: [{ $ne: ['$finalRating.overall', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$finalRating.overall', null] }, null] }, 1, 0]
               }
             },
             completed: {
@@ -2395,12 +2397,12 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
             },
             selfSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$selfAssessment.submittedAt', null] }, null] }, 1, 0]
               }
             },
             managerSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$managerReview.submittedAt', null] }, null] }, 1, 0]
               }
             },
             overdue: {
@@ -2429,12 +2431,12 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
             launched: { $sum: 1 },
             selfSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$selfAssessment.submittedAt', null] }, null] }, 1, 0]
               }
             },
             managerSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$managerReview.submittedAt', null] }, null] }, 1, 0]
               }
             },
             completed: {
@@ -2532,9 +2534,9 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
     const trendMap = new Map(trendRows.map((row) => [row._id.month, row]));
     const monthlyTrend = [];
     const iter = new Date(trendStart);
-    const endMonth = new Date();
-    endMonth.setDate(1);
-    endMonth.setHours(0, 0, 0, 0);
+    const endMonth = new Date(Date.UTC(
+      analyticsComputedAt.getUTCFullYear(), analyticsComputedAt.getUTCMonth(), 1
+    ));
     while (iter <= endMonth) {
       const monthKey = iter.toISOString().slice(0, 7);
       const row = trendMap.get(monthKey);
@@ -2545,7 +2547,7 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
         managerSubmitted: row?.managerSubmitted || 0,
         completed: row?.completed || 0
       });
-      iter.setMonth(iter.getMonth() + 1);
+      iter.setUTCMonth(iter.getUTCMonth() + 1);
     }
 
     const uniqueEmployees = uniqueEmployeesRows[0]?.count || 0;
@@ -3074,7 +3076,20 @@ router.get('/:appraisalId/report', requireAuth, async (req, res) => {
     const hrAccess = hasPermission(req.userRole, 'review:view:all', req.session.user);
     if (!employeeAccess && !managerAccess && !hrAccess) return res.status(403).json({ success: false, error: 'Access denied' });
     if (!APPRAISAL_COMPLETED_STATUSES.includes(appraisal.status)) return res.status(409).json({ success: false, error: 'The final result report will be available when this appraisal is completed.' });
-    return res.json({ success: true, data: resultReport(appraisal, appraisal.cycleId) });
+    const documents = appraisal.documents?.length ? await AppraisalDocument.find({
+      _id: { $in: appraisal.documents }, appraisalId: appraisal._id,
+      organizationId: appraisal.organizationId, status: { $ne: 'deleted' }
+    }).select('_id appraisalId organizationId visibility originalName fileType fileSize category status').lean() : [];
+    const report = resultReport(appraisal, appraisal.cycleId);
+    // History exposes only the current viewer's authorized metadata. Content
+    // authorization and fresh provider signing remain on the content route.
+    report.documents = visibleAppraisalDocuments(req, { ...appraisal.toObject(), documents }, {
+      isEmployee: isAppraisalEmployee(req, appraisal), canManage: managerAccess, isHR: req.userRole === 'hr_admin'
+    }).map(document => ({
+      _id: String(document._id), originalName: document.originalName, fileType: document.fileType,
+      fileSize: document.fileSize, category: document.category, status: document.status
+    }));
+    return res.json({ success: true, data: report });
   } catch (error) {
     return res.status(500).json({ success: false, error: 'Could not load the appraisal result report' });
   }
@@ -3407,10 +3422,13 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
     }
 
     const allowSelfRating = appraisal.cycleId?.settings?.allowSelfRating !== false;
+    const overallSelfRating = allowSelfRating
+      ? normalizeHumanRating(selfAssessment.overallSelfRating, appraisal, { required: true, submit: !!submit, label: 'Overall self-rating' })
+      : undefined;
     const competencyRatings = (Array.isArray(selfAssessment.competencyRatings) ? selfAssessment.competencyRatings : []).map((rating) => ({
       competencyId: String(rating.competencyId || ''),
       competencyName: String(rating.competencyName || ''),
-      selfRating: allowSelfRating && Number.isFinite(Number(rating.selfRating)) ? Number(rating.selfRating) : undefined,
+      selfRating: allowSelfRating ? normalizeHumanRating(rating.selfRating, appraisal, { submit: !!submit, label: 'Competency self-rating' }) : undefined,
       selfComments: String(rating.selfComments || '').slice(0, 5000),
       evidenceDocuments: Array.isArray(rating.evidenceDocuments) ? rating.evidenceDocuments : []
     }));
@@ -3440,9 +3458,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
       overallSummary: normalizedSummary,
       competencyRatings,
       okrAssessment,
-      overallSelfRating: allowSelfRating && Number.isFinite(Number(selfAssessment.overallSelfRating))
-        ? Number(selfAssessment.overallSelfRating)
-        : undefined,
+      overallSelfRating,
       lastSavedAt: new Date()
     };
 
@@ -3507,6 +3523,9 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
 
     res.json({ success: true, data: appraisal });
   } catch (error) {
+    if (error?.code === 'INVALID_APPRAISAL_RATING') {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     console.error('Save self-assessment error:', error);
     res.status(500).json({ success: false, error: 'Failed to save self-assessment' });
   }
@@ -3594,7 +3613,7 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
     if (!phaseHasOpened(appraisal.cycleId, 'managerReview')) {
       return res.status(409).json({ success: false, error: 'Manager review has not opened for this cycle' });
     }
-    const normalizedManagerReview = normalizeManagerReviewPayload(managerReview, appraisal);
+    const normalizedManagerReview = normalizeManagerReviewPayload(managerReview, appraisal, { submit: !!submit });
     const currentManagerReview = toPlainObject(appraisal.managerReview);
 
     appraisal.managerReview = {
@@ -3675,6 +3694,9 @@ router.post('/:appraisalId/manager-review', requireAuth, async (req, res) => {
     }
     res.json({ success: true, data: appraisal });
   } catch (error) {
+    if (error?.code === 'INVALID_APPRAISAL_RATING') {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     console.error('Save manager review error:', error);
     const validationMessage = error?.name === 'ValidationError'
       ? Object.values(error.errors || {}).map((issue) => issue?.message).filter(Boolean).join('; ')
@@ -3889,6 +3911,11 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
+    if (APPRAISAL_EVIDENCE_LOCKED_STATUSES.has(appraisal.status)) {
+      removeRejectedUpload(req.file);
+      return res.status(409).json({ success: false, error: 'Supporting documents are read-only after this appraisal is finalized or cancelled.' });
+    }
+
     const file = req.file;
     if (!file) {
       return res.status(400).json({ success: false, error: 'A document file is required' });
@@ -3936,6 +3963,9 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
         role: isEmployee ? 'employee' : 'manager'
       }
     });
+
+    // Manual mode never queues optional analysis, even if extraction fails.
+    if (req.body.assessmentMode === 'form') document.aiAnalysis.status = 'skipped';
 
     // Extract text if supported
     if (documentExtractionService.isSupported(fileType)) {
@@ -4105,6 +4135,9 @@ router.delete('/:appraisalId/documents/:documentId', requireAuth, async (req, re
     const canManage = await canManageAppraisal(req, appraisal);
     if (!isOwner && !canManage && req.userRole !== 'hr_admin') {
       return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    if (APPRAISAL_EVIDENCE_LOCKED_STATUSES.has(appraisal.status)) {
+      return res.status(409).json({ success: false, error: 'Supporting documents are read-only after this appraisal is finalized or cancelled.' });
     }
     if (document.storageProvider === 'local' || (!document.storageProvider && !document.storageUrl)) {
       const legacyPath = resolveLegacyAppraisalDocumentPath(document);
