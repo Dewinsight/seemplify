@@ -173,6 +173,21 @@ test('HR change request returns the plan to the manager without exposing it to t
   const decision = await request(app).post(`/api/support-plans/${id}/hr-decision`).set('x-test-actor', 'hr').send({ decision: 'request_changes', comment: 'Make the target more specific.' }).expect(200);
   expect(decision.body.data.state).toBe('changes_requested');
   await request(app).get(`/api/support-plans/${id}`).set('x-test-actor', 'employee').expect(403);
+  await request(app).patch(`/api/support-plans/${id}`).set('x-test-actor', 'employee').send({ summary: 'Unauthorized edit' }).expect(403);
+  const amendment = await request(app).patch(`/api/support-plans/${id}`).set('x-test-actor', 'manager')
+    .send({ summary: 'Amended manager summary with a clearer measurable target.', objectives: decision.body.data.objectives.map(objective => ({ ...objective, target: 'All risks documented two working days early' })) }).expect(200);
+  expect(amendment.body.data._id).toBe(id);
+  expect(amendment.body.data.objectives[0]._id).toBe(decision.body.data.objectives[0]._id);
+  expect(amendment.body.data.employee.userId).toBe(decision.body.data.employee.userId);
+  expect(amendment.body.data.state).toBe('changes_requested');
+  await request(app).post(`/api/support-plans/${id}/submit-for-hr-review`).set('x-test-actor', 'manager').send({}).expect(200);
+  await request(app).post(`/api/support-plans/${id}/hr-decision`).set('x-test-actor', 'hr').send({ decision: 'approve' }).expect(200);
+  await request(app).post(`/api/support-plans/${id}/employee-response`).set('x-test-actor', 'employee')
+    .send({ acknowledgement: 'acknowledged_with_comments', comment: 'The revised target and planned support are clear.' }).expect(200);
+  await request(app).patch(`/api/support-plans/${id}`).set('x-test-actor', 'manager').send({ title: 'Late edit' }).expect(409);
+  const stored = await PerformanceSupportPlan.findById(id).lean();
+  expect(stored.employeeResponse.comment).toBe('The revised target and planned support are clear.');
+  expect(stored.audit.map(item => item.action)).toEqual(expect.arrayContaining(['hr_requested_changes', 'updated', 'hr_approved', 'employee_acknowledged']));
 });
 
 test('support plans reject unrelated managers and cross-organization IDs', async () => {

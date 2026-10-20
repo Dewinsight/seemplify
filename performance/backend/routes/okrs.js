@@ -1072,7 +1072,7 @@ router.get('/hierarchy', requireAuth, async (req, res) => {
     const byId = new Map(goals.map((goal) => [String(goal._id), { ...serializeGoal(goal, req), children: [] }]));
     const roots = [];
     byId.forEach((node) => {
-      const parentId = normalizeId(node.alignment?.parentOKRId);
+      const parentId = idFingerprint(node.alignment?.parentOKRId);
       if (parentId && byId.has(parentId)) byId.get(parentId).children.push(node);
       else roots.push(node);
     });

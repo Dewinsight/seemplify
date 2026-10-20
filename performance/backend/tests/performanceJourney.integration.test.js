@@ -328,6 +328,19 @@ test.each(['edit', 'align'])('aligns existing goals in the same populated period
   // Replay and a later content edit retain the alignment and draft workflow.
   await request(app).put(`/api/okrs/${child._id}`).send({ parentOKRId: parent._id, title: 'Updated employee priority' }).expect(200);
   expect((await OKR.findById(child._id)).lifecycle.state).toBe('draft');
+  // Read the real Mongo ObjectId link before JSON serialization. The employee
+  // must see their aligned goal nested under the visible organization parent.
+  const hierarchy = await request(app).get('/api/okrs/hierarchy').expect(200);
+  expect(hierarchy.body.summary).toMatchObject({ total: 2, organization: 1, individual: 1, aligned: 1 });
+  expect(hierarchy.body.data.organization).toHaveLength(1);
+  expect(hierarchy.body.data.organization[0]._id).toBe(parent._id);
+  expect(hierarchy.body.data.organization[0].children.map(goal => goal._id)).toEqual([child._id]);
+  expect(hierarchy.body.data.tree.map(goal => goal._id)).toEqual([parent._id]);
+  expect(hierarchy.body.data.unalignedIndividual).toEqual([]);
+  const foreign = await request(app).get('/api/okrs/hierarchy').set('x-test-organization', ORG_B).expect(200);
+  expect(foreign.body.summary.total).toBe(0);
+  expect(JSON.stringify(foreign.body)).not.toContain(child._id);
+  expect(JSON.stringify(foreign.body)).not.toContain(parent._id);
 });
 
 test('alignment rejects different period IDs even when their labels match and rejects moving an aligned goal away', async () => {

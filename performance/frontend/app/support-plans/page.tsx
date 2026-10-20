@@ -52,6 +52,8 @@ interface AiDraft {
   supportCommitments: string[];
 }
 
+type PlanAmendment = Pick<SupportPlan, 'title' | 'summary' | 'objectives' | 'supportCommitments'>;
+
 const initialForm: DraftForm = {
   employeeId: '', planType: 'informal_support', title: '', summary: '', concern: '', expectedStandard: '',
   objectiveTitle: '', measure: '', target: '', dueDate: '', supportCommitment: ''
@@ -94,6 +96,7 @@ export default function SupportPlansPage() {
   const [aiSuggestion, setAiSuggestion] = useState<{ suggestionId: string; draft: AiDraft } | null>(null);
   const [comment, setComment] = useState('');
   const [progress, setProgress] = useState(50);
+  const [amendment, setAmendment] = useState<PlanAmendment | null>(null);
 
   const people = useMemo(() => (directReports || []).map((person: Record<string, unknown>) => ({
     id: String(person.userId || person.id || person._id || ''),
@@ -119,6 +122,32 @@ export default function SupportPlansPage() {
       const item = dataOf<SupportPlan>(await api.post(endpoint, body));
       setSelected(item); setComment(''); setNotice(message); await load();
     } catch (requestError) { setError(errorText(requestError, 'The action could not be completed.')); }
+    finally { setWorking(''); }
+  };
+
+  const openPlan = (plan: SupportPlan) => {
+    setSelected(plan); setComment(''); setAmendment(null); setError('');
+  };
+
+  const editPlan = () => {
+    if (!selected) return;
+    setError('');
+    setAmendment({ title: selected.title, summary: selected.summary,
+      objectives: selected.objectives.map(objective => ({ ...objective })),
+      supportCommitments: selected.supportCommitments.map(commitment => ({ ...commitment })) });
+  };
+
+  const saveAmendment = async () => {
+    if (!selected || !amendment) return;
+    if (!amendment.title.trim() || !amendment.summary.trim() || amendment.objectives.some(objective => !objective.title.trim() || !objective.measure.trim() || !objective.target.trim() || !objective.dueDate)
+      || amendment.supportCommitments.some(commitment => !commitment.description.trim())) {
+      setError('Complete the title, summary, every measurable objective and support commitment.'); return;
+    }
+    setWorking('amend'); setError('');
+    try {
+      const item = dataOf<SupportPlan>(await api.patch(`/support-plans/${selected._id}`, amendment));
+      setSelected(item); setAmendment(null); setNotice('Support plan changes saved. Send the plan to HR when it is ready.'); await load();
+    } catch (requestError) { setError(errorText(requestError, 'Could not save the support plan changes.')); }
     finally { setWorking(''); }
   };
 
@@ -163,6 +192,7 @@ export default function SupportPlansPage() {
 
   const canCreate = workspace !== 'personal' && (isManager || isHRAdmin);
   const ownSelected = selected?.employee.userId === actorId;
+  const canAmendSelected = Boolean(selected && !ownSelected && (isManager || isHRAdmin) && ['draft', 'changes_requested'].includes(selected.state));
 
   return (
     <Box sx={{ maxWidth: 1120, mx: 'auto', px: { xs: 2, md: 3 }, py: 3 }}>
@@ -171,7 +201,7 @@ export default function SupportPlansPage() {
         {canCreate && <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>New support plan</Button>}
       </Stack>
       <Alert severity="info" sx={{ mb: 2 }}>Support plans organize fair coaching and improvement work. They never calculate appraisal ratings or automatic employment outcomes.</Alert>
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}{/AI_|ChatGPT|inference/i.test(error) && <> <Link href="/settings/ai">Review AI settings</Link>.</>}</Alert>}
+      {error && !selected && !createOpen && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}{/AI_|ChatGPT|inference/i.test(error) && <> <Link href="/settings/ai">Review AI settings</Link>.</>}</Alert>}
       {notice && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice('')}>{notice}</Alert>}
 
       <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -180,7 +210,7 @@ export default function SupportPlansPage() {
           <Box component="article" aria-label={plan.title} key={plan._id} sx={{ p: 2.5, borderTop: index ? 1 : 0, borderColor: 'divider' }}>
             <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2}>
               <Box><Stack direction="row" spacing={1} flexWrap="wrap"><Chip size="small" label={stateLabel[plan.state]} color={['hr_review', 'review_due', 'changes_requested'].includes(plan.state) ? 'warning' : plan.state === 'active' ? 'success' : 'default'} /><Chip size="small" variant="outlined" label={plan.planType === 'formal_improvement' ? 'Formal improvement' : 'Informal support'} /></Stack><Typography variant="h6" mt={1}>{plan.title}</Typography><Typography color="text.secondary" variant="body2">{view === 'mine' ? `Manager: ${plan.manager.name || plan.manager.email || 'Assigned manager'}` : `Employee: ${plan.employee.name || plan.employee.email || plan.employee.userId}`}</Typography></Box>
-              <Stack alignItems={{ md: 'flex-end' }} justifyContent="space-between"><Typography variant="caption" color="text.secondary">Updated {dateText(plan.updatedAt)}</Typography><Button size="small" onClick={() => setSelected(plan)}>Open plan</Button></Stack>
+              <Stack alignItems={{ md: 'flex-end' }} justifyContent="space-between"><Typography variant="caption" color="text.secondary">Updated {dateText(plan.updatedAt)}</Typography><Button size="small" onClick={() => openPlan(plan)}>Open plan</Button></Stack>
             </Stack>
           </Box>
         ))}
@@ -189,6 +219,7 @@ export default function SupportPlansPage() {
       <Dialog open={createOpen} onClose={() => !working && setCreateOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>Create a support plan</DialogTitle>
         <DialogContent dividers><Stack spacing={2.2} pt={0.5}>
+          {error && <Alert severity="error">{error}{/AI_|ChatGPT|inference/i.test(error) && <> <Link href="/settings/ai">Review AI settings</Link>.</>}</Alert>}
           <Alert severity="info">Write observable expectations and the support the organization will provide. HR reviews the plan before the employee sees it.</Alert>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <FormControl fullWidth><InputLabel id="support-plan-employee-label">Employee</InputLabel><Select labelId="support-plan-employee-label" label="Employee" value={form.employeeId} onChange={event => setForm(current => ({ ...current, employeeId: String(event.target.value) }))}>{people.map(person => <MenuItem key={person.id} value={person.id}>{person.name}</MenuItem>)}</Select></FormControl>
@@ -209,24 +240,38 @@ export default function SupportPlansPage() {
         <DialogActions><Button onClick={() => { setCreateOpen(false); setAiSuggestion(null); }}>Cancel</Button><Button variant="contained" disabled={Boolean(working)} onClick={() => void createPlan()}>{working === 'create' ? 'Saving…' : 'Save draft'}</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(selected)} onClose={() => !working && setSelected(null)} fullWidth maxWidth="md">
+      <Dialog open={Boolean(selected)} onClose={() => { if (!working) { setSelected(null); setAmendment(null); } }} fullWidth maxWidth="md">
         {selected && <><DialogTitle><Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}><span>{selected.title}</span><Chip size="small" label={stateLabel[selected.state]} /></Stack></DialogTitle><DialogContent dividers>
           <Stack spacing={2.5}>
+            {error && <Alert severity="error">{error}</Alert>}
+            {amendment ? <Stack spacing={2}>
+              <Alert severity="info">Update this existing plan, then send it to HR for review. The employee and plan type stay the same.</Alert>
+              <TextField label="Plan title" required disabled={Boolean(working)} value={amendment.title} onChange={event => setAmendment(current => current && ({ ...current, title: event.target.value }))} />
+              <TextField label="Plan summary" required disabled={Boolean(working)} multiline minRows={3} value={amendment.summary} onChange={event => setAmendment(current => current && ({ ...current, summary: event.target.value }))} />
+              {amendment.objectives.map((objective, index) => <Stack spacing={1.5} key={objective._id || index}>
+                <Typography fontWeight={650}>Objective {index + 1}</Typography>
+                {(['title', 'measure', 'target', 'dueDate'] as const).map(field => <TextField key={field} required disabled={Boolean(working)} type={field === 'dueDate' ? 'date' : 'text'} label={`${field === 'title' ? 'Objective' : field === 'measure' ? 'Measure' : field === 'target' ? 'Target' : 'Objective due date'} ${index + 1}`} value={field === 'dueDate' ? objective.dueDate.slice(0, 10) : objective[field]} helperText={field === 'dueDate' ? 'Objective deadline only; plan review and milestone dates stay the same.' : undefined} slotProps={field === 'dueDate' ? { inputLabel: { shrink: true } } : undefined} onChange={event => setAmendment(current => current && ({ ...current, objectives: current.objectives.map((item, position) => position === index ? { ...item, [field]: event.target.value } : item) }))} />)}
+              </Stack>)}
+              {amendment.supportCommitments.map((commitment, index) => <TextField key={index} label={`Support commitment ${index + 1}`} required disabled={Boolean(working)} multiline minRows={2} value={commitment.description} onChange={event => setAmendment(current => current && ({ ...current, supportCommitments: current.supportCommitments.map((item, position) => position === index ? { ...item, description: event.target.value } : item) }))} />)}
+            </Stack> : <>
             <Box><Typography variant="overline" color="text.secondary">Plan summary</Typography><Typography sx={{ whiteSpace: 'pre-wrap' }}>{selected.summary}</Typography></Box>
             <Divider /><Box><Typography fontWeight={650} mb={1}>Measurable objectives</Typography>{selected.objectives.map((objective, index) => <Paper variant="outlined" sx={{ p: 2, mb: 1 }} key={objective._id || index}><Typography fontWeight={600}>{objective.title}</Typography><Typography variant="body2" color="text.secondary" mt={0.5}>{objective.measure} · Target: {objective.target}</Typography><Typography variant="caption">Review by {dateText(objective.dueDate)}</Typography></Paper>)}</Box>
             <Box><Typography fontWeight={650} mb={1}>Support commitments</Typography>{selected.supportCommitments.map((item, index) => <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}><Typography variant="body2">• {item.description}</Typography><Chip size="small" variant="outlined" label={item.status} /></Box>)}</Box>
+            </>}
             {selected.hrReview?.comment && <Alert severity={selected.hrReview.decision === 'approved' ? 'success' : 'warning'}><strong>HR review:</strong> {selected.hrReview.comment}</Alert>}
             {selected.employeeResponse?.respondedAt && <Alert severity="info"><strong>Employee response:</strong> {selected.employeeResponse.acknowledgement?.replaceAll('_', ' ')}{selected.employeeResponse.comment ? ` — ${selected.employeeResponse.comment}` : ''}</Alert>}
+            {selected.state === 'hr_review' && isHRAdmin && <TextField fullWidth multiline minRows={3} label="HR review comments" disabled={Boolean(working)} value={comment} onChange={event => setComment(event.target.value)} helperText="Explain the changes needed before requesting changes. Comments are optional when approving." slotProps={{ htmlInput: { maxLength: 4000 } }} />}
+            {selected.state === 'employee_review' && ownSelected && <TextField fullWidth multiline minRows={3} label="Your comments" disabled={Boolean(working)} value={comment} onChange={event => setComment(event.target.value)} helperText="Add comments to acknowledge with comments, or acknowledge without comments below." slotProps={{ htmlInput: { maxLength: 4000 } }} />}
             {selected.state === 'active' && <Box><Typography fontWeight={650} mb={1}>Add progress check-in</Typography><TextField fullWidth multiline minRows={2} label="Progress update" value={comment} onChange={event => setComment(event.target.value)} /><TextField sx={{ mt: 1.5, width: 180 }} type="number" label="Progress %" value={progress} inputProps={{ min: 0, max: 100 }} onChange={event => setProgress(Number(event.target.value))} /><Button sx={{ mt: 1.5, ml: 1.5 }} variant="outlined" disabled={!comment || Boolean(working)} onClick={() => void runAction('checkin', `/support-plans/${selected._id}/check-ins`, { update: comment, progress }, 'Progress check-in added.')}>Add check-in</Button></Box>}
             {selected.checkIns.length > 0 && <Box><Typography fontWeight={650} mb={1}>Check-in history</Typography>{selected.checkIns.slice().reverse().map(item => <Box key={item._id} sx={{ borderLeft: 2, borderColor: 'divider', pl: 2, py: 0.5, mb: 1 }}><Typography variant="body2">{item.update}</Typography><Typography variant="caption" color="text.secondary">{item.authorRole} · {dateText(item.createdAt)}{item.progress !== undefined ? ` · ${item.progress}%` : ''}</Typography></Box>)}</Box>}
             {selected.outcome?.decision && <Alert severity="success"><strong>Outcome:</strong> {selected.outcome.decision} — {selected.outcome.reason}</Alert>}
             <Stack direction="row" spacing={1} alignItems="center"><History fontSize="small" /><Typography variant="caption" color="text.secondary">Every edit, decision, response, and outcome remains in the audit history.</Typography></Stack>
           </Stack>
         </DialogContent><DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
-          <Button onClick={() => setSelected(null)}>Close</Button>
-          {selected.state === 'draft' && !ownSelected && <Button variant="contained" startIcon={<Send />} disabled={Boolean(working)} onClick={() => void runAction('submit', `/support-plans/${selected._id}/submit-for-hr-review`, {}, 'Plan sent to HR for review.')}>Send to HR</Button>}
-          {selected.state === 'hr_review' && isHRAdmin && <><Button color="warning" disabled={!comment || Boolean(working)} onClick={() => void runAction('changes', `/support-plans/${selected._id}/hr-decision`, { decision: 'request_changes', comment }, 'Changes sent to the manager.')}>Request changes</Button><Button variant="contained" startIcon={<Check />} disabled={Boolean(working)} onClick={() => void runAction('approve', `/support-plans/${selected._id}/hr-decision`, { decision: 'approve', comment }, 'Plan approved and sent to the employee.')}>Approve for employee review</Button></>}
-          {selected.state === 'employee_review' && ownSelected && <><Button variant="outlined" disabled={!comment || Boolean(working)} onClick={() => void runAction('respond', `/support-plans/${selected._id}/employee-response`, { acknowledgement: 'acknowledged_with_comments', comment }, 'Your response was recorded and the plan is active.')}>Acknowledge with comments</Button><Button variant="contained" disabled={Boolean(working)} onClick={() => void runAction('respond', `/support-plans/${selected._id}/employee-response`, { acknowledgement: 'acknowledged' }, 'Your acknowledgement was recorded and the plan is active.')}>Acknowledge</Button></>}
+          <Button disabled={Boolean(working)} onClick={() => { setSelected(null); setAmendment(null); }}>Close</Button>
+          {amendment ? <><Button disabled={Boolean(working)} onClick={() => { setAmendment(null); setError(''); }}>Cancel editing</Button><Button variant="contained" disabled={Boolean(working)} onClick={() => void saveAmendment()}>{working === 'amend' ? 'Saving…' : 'Save changes'}</Button></> : canAmendSelected && <><Button disabled={Boolean(working)} onClick={editPlan}>Edit plan</Button><Button variant="contained" startIcon={<Send />} disabled={Boolean(working)} onClick={() => void runAction('submit', `/support-plans/${selected._id}/submit-for-hr-review`, {}, 'Plan sent to HR for review.')}>{selected.state === 'changes_requested' ? 'Resubmit to HR' : 'Send to HR'}</Button></>}
+          {selected.state === 'hr_review' && isHRAdmin && <><Button color="warning" disabled={!comment.trim() || Boolean(working)} onClick={() => void runAction('changes', `/support-plans/${selected._id}/hr-decision`, { decision: 'request_changes', comment }, 'Changes sent to the manager.')}>Request changes</Button><Button variant="contained" startIcon={<Check />} disabled={Boolean(working)} onClick={() => void runAction('approve', `/support-plans/${selected._id}/hr-decision`, { decision: 'approve', comment }, 'Plan approved and sent to the employee.')}>Approve for employee review</Button></>}
+          {selected.state === 'employee_review' && ownSelected && <><Button variant="outlined" disabled={!comment.trim() || Boolean(working)} onClick={() => void runAction('respond', `/support-plans/${selected._id}/employee-response`, { acknowledgement: 'acknowledged_with_comments', comment }, 'Your response was recorded and the plan is active.')}>Acknowledge with comments</Button><Button variant="contained" disabled={Boolean(working)} onClick={() => void runAction('respond', `/support-plans/${selected._id}/employee-response`, { acknowledgement: 'acknowledged' }, 'Your acknowledgement was recorded and the plan is active.')}>Acknowledge</Button></>}
         </DialogActions></>}
       </Dialog>
     </Box>

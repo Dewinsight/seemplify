@@ -7,7 +7,7 @@ async function login(page: Page, actor: string, path: string) {
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(path)}`);
   await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
   if (['manager', 'team_lead', 'department_head', 'hr_manager', 'admin', 'owner'].includes(actor)) {
-    await page.getByRole('button', { name: 'Personal', exact: true }).click();
+    await page.getByRole('button', { name: /^(Personal|Manager|Admin)$/ }).click();
     await page.getByRole('menuitemradio', { name: ['hr_manager', 'admin', 'owner'].includes(actor) ? /^Admin/ : /^Manager/ }).click();
     await page.goto(path);
   }
@@ -152,6 +152,62 @@ test('manager creates a support plan and employee acknowledges the HR-reviewed p
   await page.getByLabel('Progress %').fill('50');
   await page.getByRole('button', { name: 'Add check-in', exact: true }).click();
   await expect(page.getByText('Progress check-in added.', { exact: true })).toBeVisible();
+});
+
+test('HR requests support-plan changes, manager amends the same plan, and employee acknowledges with comments', async ({ page, request }, info) => {
+  const title = `Support revision ${Date.now()}`;
+  const created = await api(request, 'manager', 'POST', 'support-plans', {
+    employee: { userId: 'acceptance-employee' }, planType: 'informal_support', title, summary: 'Synthetic support with two measurable objectives and two commitments.',
+    objectives: [{ title: 'Raise risks early', measure: 'Weekly risk review', target: 'Two days before the deadline', dueDate: date(30) },
+      { title: 'Document the handover', measure: 'Handover checklist', target: 'Every delivery', dueDate: date(40) }],
+    supportCommitments: [{ description: 'Weekly manager priority review', ownerType: 'manager' }, { description: 'Protected practice time', ownerType: 'organization' }],
+    milestones: [{ title: 'Review progress', dueDate: date(30) }], reviewDates: [date(30)],
+  });
+  await api(request, 'manager', 'POST', `support-plans/${created._id}/submit-for-hr-review`, {});
+  await login(page, 'hr_manager', '/support-plans');
+  await page.getByRole('article', { name: title, exact: true }).getByRole('button', { name: 'Open plan', exact: true }).click();
+  let details = page.getByRole('dialog', { name: new RegExp(title) });
+  await expect(details.getByRole('button', { name: 'Request changes', exact: true })).toBeDisabled();
+  await details.getByRole('textbox', { name: 'HR review comments', exact: true }).fill('Make both measures explicit and preserve the planned organization support.');
+  await details.getByRole('button', { name: 'Request changes', exact: true }).click();
+  const changed = await api(request, 'manager', 'GET', `support-plans/${created._id}`);
+  expect(changed.state).toBe('changes_requested');
+  expect((await request.get(`http://127.0.0.1:5014/api/support-plans/${created._id}`, { headers: { 'x-acceptance-actor': 'employee' } })).status()).toBe(403);
+  await login(page, 'manager', '/support-plans');
+  await page.getByRole('article', { name: title, exact: true }).getByRole('button', { name: 'Open plan', exact: true }).click();
+  details = page.getByRole('dialog', { name: new RegExp(title) });
+  await expect(details.getByText(/Make both measures explicit/)).toBeVisible();
+  await details.getByRole('button', { name: 'Edit plan', exact: true }).click();
+  await details.getByRole('textbox', { name: 'Plan summary', exact: false }).fill('Amended synthetic support with clearer measures and retained commitments.');
+  await details.getByRole('textbox', { name: 'Target 1', exact: false }).fill('All material risks recorded two working days before delivery');
+  await details.getByRole('textbox', { name: 'Measure 2', exact: false }).fill('A reviewed handover checklist for every delivery');
+  await details.getByRole('textbox', { name: 'Support commitment 2', exact: false }).fill('One protected practice hour each week');
+  await details.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(details.getByRole('button', { name: 'Resubmit to HR', exact: true })).toBeVisible();
+  const amended = await api(request, 'manager', 'GET', `support-plans/${created._id}`);
+  expect(amended._id).toBe(created._id);
+  expect(amended.employee.userId).toBe(created.employee.userId);
+  expect(amended.manager.userId).toBe(created.manager.userId);
+  expect(amended.objectives.map((item: { _id: string }) => item._id)).toEqual(created.objectives.map((item: { _id: string }) => item._id));
+  expect(amended.supportCommitments.map((item: { _id: string }) => item._id)).toEqual(created.supportCommitments.map((item: { _id: string }) => item._id));
+  expect(amended.objectives[1].measure).toBe('A reviewed handover checklist for every delivery');
+  expect(amended.supportCommitments[1].description).toBe('One protected practice hour each week');
+  await details.getByRole('button', { name: 'Resubmit to HR', exact: true }).click();
+  await login(page, 'hr_manager', '/support-plans');
+  await page.getByRole('article', { name: title, exact: true }).getByRole('button', { name: 'Open plan', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve for employee review', exact: true }).click();
+  await login(page, 'employee', '/support-plans');
+  await page.getByRole('article', { name: title, exact: true }).getByRole('button', { name: 'Open plan', exact: true }).click();
+  details = page.getByRole('dialog', { name: new RegExp(title) });
+  await expect(details.getByRole('button', { name: 'Acknowledge with comments', exact: true })).toBeDisabled();
+  await details.getByRole('textbox', { name: 'Your comments', exact: true }).fill('I understand the amended expectations and will use the protected practice time.');
+  await page.screenshot({ path: info.outputPath('support-plan-employee-comments.png'), fullPage: true });
+  await details.getByRole('button', { name: 'Acknowledge with comments', exact: true }).click();
+  await expect(details.getByRole('textbox', { name: 'Progress update', exact: true })).toBeVisible();
+  const active = await api(request, 'employee', 'GET', `support-plans/${created._id}`);
+  expect(active.state).toBe('active');
+  expect(active.employeeResponse).toMatchObject({ acknowledgement: 'acknowledged_with_comments', comment: 'I understand the amended expectations and will use the protected practice time.' });
+  expect(active.audit.map((row: { action: string }) => row.action)).toEqual(expect.arrayContaining(['hr_requested_changes', 'updated', 'hr_approved', 'employee_acknowledged']));
 });
 
 test('manager finalizes a result and employee opens historical report and downloads CSV', async ({ page, request }) => {
