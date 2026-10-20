@@ -215,6 +215,19 @@ function isAppraisalEmployee(req, appraisal) {
   return Boolean(appraisalEmail && userEmail && appraisalEmail === userEmail);
 }
 
+function canViewAppraisalDocument(req, appraisal, document, { isEmployee, canManage, isHR }) {
+  const organizationId = String(resolveOrganizationId(req) || '');
+  if (!organizationId || !document || document.status === 'deleted' ||
+    String(appraisal.organizationId) !== organizationId || String(document.organizationId) !== organizationId ||
+    String(document.appraisalId) !== String(appraisal._id)) return false;
+  return document.visibility === 'employee_only' ? isEmployee
+    : document.visibility === 'hr_only' ? isHR : Boolean(isEmployee || canManage || isHR);
+}
+
+function visibleAppraisalDocuments(req, appraisal, viewer) {
+  return (appraisal.documents || []).filter(document => canViewAppraisalDocument(req, appraisal, document, viewer));
+}
+
 function requesterEmployeeIdentityFilters(req) {
   const { userIds, userEmail } = getRequesterIdentity(req);
   const filters = userIds.map((id) => ({ 'employee.userId': id }));
@@ -3094,9 +3107,12 @@ router.get('/:appraisalId', requireAuth, async (req, res) => {
         status: { $in: ['active', 'closed', 'completed'] }
       });
 
+    const readableAppraisal = appraisal.toJSON();
+    readableAppraisal.documents = visibleAppraisalDocuments(req, appraisal, { isEmployee, canManage: hasManagerAccess, isHR })
+      .map(document => document.toJSON());
     res.json({
       success: true,
-      data: appraisal,
+      data: readableAppraisal,
       okrs,
       accessLevel: isHR ? 'hr' : hasManagerAccess ? 'manager' : 'employee'
     });
@@ -3999,11 +4015,7 @@ router.get('/:appraisalId/documents/:documentId', requireAuth, async (req, res) 
     const isEmployee = isAppraisalEmployee(req, appraisal);
     const canManage = await canManageAppraisal(req, appraisal);
     const isHR = req.userRole === 'hr_admin';
-    const canView = document.visibility === 'employee_only'
-      ? isEmployee
-      : document.visibility === 'hr_only'
-        ? isHR
-        : (isEmployee || canManage || isHR);
+    const canView = canViewAppraisalDocument(req, appraisal, document, { isEmployee, canManage, isHR });
     if (!canView) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
@@ -4046,8 +4058,7 @@ router.get('/:appraisalId/documents/:documentId/content', requireAuth, async (re
     const isEmployee = isAppraisalEmployee(req, appraisal);
     const canManage = await canManageAppraisal(req, appraisal);
     const isHR = req.userRole === 'hr_admin';
-    const canView = document.visibility === 'employee_only' ? isEmployee
-      : document.visibility === 'hr_only' ? isHR : (isEmployee || canManage || isHR);
+    const canView = canViewAppraisalDocument(req, appraisal, document, { isEmployee, canManage, isHR });
     if (!canView) return res.status(403).json({ success: false, error: 'Access denied' });
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -5678,7 +5689,7 @@ router.get('/:appraisalId/conversation/context', requireAuth, async (req, res) =
         conversationState: appraisal.conversationAssessment,
         chatThread: appraisal.chatThread,
         okrs,
-        documents: appraisal.documents,
+        documents: visibleAppraisalDocuments(req, appraisal, { isEmployee, canManage, isHR: req.userRole === 'hr_admin' }),
         selfAssessment: appraisal.selfAssessment,
         employee: appraisal.employee,
         cycle: appraisal.cycleId,
@@ -5756,13 +5767,19 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       status: { $in: ['active', 'closed'] }
     });
 
+    // Filter a separate AI context; never trim the populated Mongoose array
+    // that is saved below, which would permanently remove hidden references.
+    const reportDocuments = visibleAppraisalDocuments(req, appraisal, {
+      isEmployee, canManage: false, isHR: req.userRole === 'hr_admin'
+    }).map(document => document.toJSON());
+    const reportAppraisal = { ...appraisal.toObject(), documents: reportDocuments };
     // Generate report
     const report = await withAIRequestContext(
       { runtimePreference: 'chatgpt', actorId: chatGpt.actorId },
       () => appraisalAIService.generateSelfAssessmentReport(
-        appraisal,
+        reportAppraisal,
         okrs,
-        appraisal.documents,
+        reportDocuments,
         { requireChatGpt: true }
       )
     );
