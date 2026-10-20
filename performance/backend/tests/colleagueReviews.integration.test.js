@@ -8,6 +8,7 @@ const path = require('node:path');
 const User = require('../models/User');
 const Appraisal = require('../models/Appraisal');
 const AppraisalCycle = require('../models/AppraisalCycle');
+const OKR = require('../models/OKR');
 const routes = require('../routes/appraisals');
 const { ensureQuarterlyCycles } = require('../services/quarterlyAppraisalService');
 const { migrateQuarterlyReviews } = require('../scripts/migrateQuarterlyReviews');
@@ -73,6 +74,28 @@ test('members cannot launch appraisals; managers see their hierarchy and HR sees
   for (const target of ['member', 'outsider', 'foreign', 'unknown']) await call('post', `/cycles/${cycle._id}/launch`).send(launch(target)).expect(403);
   for (const target of ['outsider', 'foreign', 'unknown']) await call('post', `/cycles/${cycle._id}/launch`, 'leader').send({ ...launch(target), reviewerMode: 'selected', employees: [{ userId: target, reviewerId: 'hr' }] }).expect(403);
   expect(await Appraisal.countDocuments()).toBe(0);
+});
+
+test('goal readiness is read-only, scoped like launch and excludes pending or evidence-only staff goals', async () => {
+  const body = { reviewerMode: 'selected', employees: [{ userId: 'member', reviewerId: 'leader' }], periodStart: '2026-07-01', periodEnd: '2026-09-30' };
+  await call('post', '/goal-readiness', 'anonymous').send(body).expect(401);
+  await call('post', '/goal-readiness', 'member').send(body).expect(403);
+  for (const userId of ['outsider', 'foreign', 'unknown']) await call('post', '/goal-readiness', 'leader').send({ ...body, employees: [{ userId, reviewerId: 'leader' }] }).expect(403);
+  await call('post', '/goal-readiness', 'leader').send({ ...body, periodStart: '2026-02-31' }).expect(400);
+  let result = await call('post', '/goal-readiness', 'leader').send(body).expect(200);
+  expect(result.body.data).toMatchObject({ ready: false, participants: [{ userId: 'member', ready: false, goals: [] }] });
+  const goal = await OKR.create({ organizationId: org.id, ownerId: 'member', type: 'individual', title: 'Review delivery evidence', period: 'Q3 2026', status: 'active', approvalStatus: 'approved', lifecycle: { state: 'active' }, assignment: { acknowledgementStatus: 'pending' }, objectives: [{ title: 'Delivery', weight: 100, keyResults: [{ title: 'Completed work', targetValue: 100 }] }] });
+  result = await call('post', '/goal-readiness', 'leader').send(body).expect(200);
+  expect(result.body.data.ready).toBe(false);
+  goal.assignment.acknowledgementStatus = 'acknowledged'; await goal.save();
+  result = await call('post', '/goal-readiness', 'leader').send(body).expect(200);
+  expect(result.body.data).toMatchObject({ ready: true, participants: [{ userId: 'member', ready: true, goals: [{ id: String(goal._id), title: goal.title }] }] });
+  goal.scoringEligibility.mode = 'evidence_only'; await goal.save();
+  result = await call('post', '/goal-readiness', 'hr').send(body).expect(200);
+  expect(result.body.data.ready).toBe(false);
+  expect(await Appraisal.countDocuments()).toBe(0);
+  expect(await AppraisalCycle.countDocuments()).toBe(0);
+  expect(await OKR.countDocuments()).toBe(1);
 });
 
 test('HR explicitly selects a reviewer for a top manager; forged, self and unqualified reviewers are rejected', async () => {

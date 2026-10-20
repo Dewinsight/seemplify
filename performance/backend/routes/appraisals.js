@@ -1616,6 +1616,32 @@ router.get('/colleague-roster', requireAuth, async (req, res) => {
   }
 });
 
+// Read-only preflight uses the same participant scope and goal eligibility as launch.
+router.post('/goal-readiness', requireAuth, requireLaunchAccess, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    const selections = normalizeLaunchEmployees(req.body?.employees);
+    const start = String(req.body?.periodStart || '');
+    const end = String(req.body?.periodEnd || '');
+    const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(value).getTime())
+      && new Date(value).toISOString().slice(0, 10) === value;
+    if (!organizationId) return res.status(403).json({ success: false, error: 'Select an organization first.' });
+    if (!validDate(start) || !validDate(end) || start > end || !selections.length || selections.length > 100) {
+      return res.status(400).json({ success: false, error: 'Choose staff and a valid assessment period before checking goals.' });
+    }
+    const employees = await launchParticipants(req, selections);
+    const participants = await Promise.all(employees.map(async employee => {
+      const result = await buildGoalSnapshots({ organizationId, employeeId: employee.userId, cycle: { periodStart: start, periodEnd: end } });
+      return { userId: employee.userId, name: employee.name, ready: result.snapshots.length > 0,
+        goals: result.snapshots.map(goal => ({ id: String(goal.sourceGoalId), title: goal.definition.title })) };
+    }));
+    return res.json({ success: true, data: { ready: participants.length === selections.length && participants.every(person => person.ready), participants } });
+  } catch (error) {
+    const status = error.status || error.statusCode || 500;
+    return res.status(status).json({ success: false, error: status < 500 ? error.message : 'Could not check goals. Try again.' });
+  }
+});
+
 router.get('/assigned-reviews', requireAuth, async (req, res) => {
   try {
     const org = resolveOrganizationId(req);
