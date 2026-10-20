@@ -261,6 +261,30 @@ test('manager finalizes a result and employee opens historical report and downlo
   await expect(page.getByText(cycle.name, { exact: true })).toBeVisible();
 });
 
+test('analytics shows unavailable goals rather than zero for a finalized unrated appraisal', async ({ page, request }) => {
+  const { appraisal, cycle } = await reviewReadyForCalibration(request, false);
+  expect(appraisal.goalEvidenceSummary).toMatchObject({ rated: false, score: null });
+  await api(request, 'manager', 'POST', `appraisals/${appraisal._id}/finalize`, {
+    finalRating: 3, justification: 'Synthetic acceptance: the final rating reflects the documented review decision.'
+  });
+  const analytics = await api(request, 'hr_manager', 'GET', `analytics/performance?cycleId=${cycle._id}`);
+  expect(analytics.summary).toMatchObject({ participants: 1, completed: 1, rated: 1, averageRating: 3 });
+  expect(analytics.topPerformers).toEqual([expect.objectContaining({ appraisalId: appraisal._id, finalRating: 3, goalAchievement: null })]);
+  await login(page, 'hr_manager', '/analytics');
+  await page.getByRole('combobox', { name: 'Cycle', exact: true }).click();
+  await page.getByRole('option', { name: cycle.name, exact: true }).click();
+  await page.getByRole('tab', { name: 'Top performers (1)', exact: true }).click();
+  const row = page.getByTestId('top-performers-table').getByRole('row').filter({ hasText: cycle.name });
+  await expect(row).toHaveCount(1);
+  await expect(row.getByRole('cell').nth(4)).toHaveText('Not available');
+  await expect(row.getByRole('cell').nth(5)).toContainText('3/5');
+  await page.reload();
+  await page.getByRole('combobox', { name: 'Cycle', exact: true }).click();
+  await page.getByRole('option', { name: cycle.name, exact: true }).click();
+  await page.getByRole('tab', { name: 'Top performers (1)', exact: true }).click();
+  await expect(page.getByTestId('top-performers-table').getByRole('row').filter({ hasText: cycle.name }).getByRole('cell').nth(4)).toHaveText('Not available');
+});
+
 test('HR nominates a synthetic succession candidate from active colleague search', async ({ page }) => {
   await login(page, 'hr_manager', '/talent');
   await page.getByRole('tab', { name: 'Succession coverage', exact: true }).click();

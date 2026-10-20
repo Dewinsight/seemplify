@@ -96,6 +96,30 @@ test('shows HR organization results and start action in the Admin workspace', as
   await expect(page.getByText('Archived staff review', { exact: true })).toBeVisible();
 });
 
+test('employee-filtered appraisal counts match current cards and history, then clear consistently', async ({ page }) => {
+  const state = createState(); state.hrAdminMode = true;
+  const record = (id: string, userId: string, status: string) => ({ _id: id, status,
+    employee: { userId, name: userId === 'member-1' ? 'Jordan Lee' : 'Other Employee' },
+    manager: { userId: 'user-1', name: 'Alex Morgan' },
+    cycleId: { _id: id, name: id, periodStart: '2026-01-01', periodEnd: '2026-12-31' },
+    finalRating: status === 'completed' ? { overall: 4 } : undefined });
+  state.appraisals = [record('Target past one', 'member-1', 'completed'), record('Target past two', 'member-1', 'completed'),
+    record('Other current one', 'member-2', 'self_assessment_pending'), record('Other current two', 'member-2', 'self_assessment_pending')];
+  await installMockApi(page, state); await page.goto('/dashboard'); await switchPerformanceWorkspace(page, 'Admin');
+  await page.goto('/appraisals?employeeId=member-1');
+  await expect(page.getByRole('tab', { name: 'Current (0)', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'History & results (2)', exact: true })).toBeVisible();
+  await expect(page.getByText('No team appraisals found', { exact: true })).toBeVisible();
+  await expect(page.getByText('Other current one', { exact: true })).toHaveCount(0);
+  await page.getByRole('tab', { name: 'History & results (2)', exact: true }).click();
+  await expect(page.getByText('Target past one', { exact: true })).toBeVisible();
+  await expect(page.getByText('Target past two', { exact: true })).toBeVisible();
+  await page.goto('/appraisals');
+  await expect(page.getByRole('tab', { name: 'Current (2)', exact: true })).toBeVisible();
+  await expect(page.getByText('Other current one', { exact: true })).toBeVisible();
+  await expect(page.getByText('Other current two', { exact: true })).toBeVisible();
+});
+
 test('recovers from a history error and explains when an employee has no eligible colleagues', async ({ page }) => {
   const state = createState(); state.appraisals = [];
   await installMockApi(page, state);

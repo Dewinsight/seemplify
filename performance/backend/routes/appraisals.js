@@ -1016,17 +1016,17 @@ async function buildCycleStatsMap(cycleIds = [], orgId = null, referenceDate = n
         },
         selfAssessmentSubmitted: {
           $sum: {
-            $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+            $cond: [{ $ne: [{ $ifNull: ['$selfAssessment.submittedAt', null] }, null] }, 1, 0]
           }
         },
         managerReviewSubmitted: {
           $sum: {
-            $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+            $cond: [{ $ne: [{ $ifNull: ['$managerReview.submittedAt', null] }, null] }, 1, 0]
           }
         },
         finalized: {
           $sum: {
-            $cond: [{ $ne: ['$finalRating.overall', null] }, 1, 0]
+            $cond: [{ $ne: [{ $ifNull: ['$finalRating.overall', null] }, null] }, 1, 0]
           }
         },
         overdueAppraisals: {
@@ -2254,10 +2254,11 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
     const analyticsComputedAt = new Date();
     const overdueExpression = buildOverdueExpression(analyticsComputedAt);
 
-    const trendStart = new Date();
-    trendStart.setMonth(trendStart.getMonth() - 11);
-    trendStart.setDate(1);
-    trendStart.setHours(0, 0, 0, 0);
+    // Mongo groups UTC calendar months; build the matching boundaries and labels
+    // in UTC too, including across local daylight-saving transitions.
+    const trendStart = new Date(Date.UTC(
+      analyticsComputedAt.getUTCFullYear(), analyticsComputedAt.getUTCMonth() - 11, 1
+    ));
 
     const [
       cycles,
@@ -2288,17 +2289,17 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
             _id: null,
             selfSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$selfAssessment.submittedAt', null] }, null] }, 1, 0]
               }
             },
             managerSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$managerReview.submittedAt', null] }, null] }, 1, 0]
               }
             },
             finalized: {
               $sum: {
-                $cond: [{ $ne: ['$finalRating.overall', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$finalRating.overall', null] }, null] }, 1, 0]
               }
             },
             completed: {
@@ -2396,12 +2397,12 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
             },
             selfSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$selfAssessment.submittedAt', null] }, null] }, 1, 0]
               }
             },
             managerSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$managerReview.submittedAt', null] }, null] }, 1, 0]
               }
             },
             overdue: {
@@ -2430,12 +2431,12 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
             launched: { $sum: 1 },
             selfSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$selfAssessment.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$selfAssessment.submittedAt', null] }, null] }, 1, 0]
               }
             },
             managerSubmitted: {
               $sum: {
-                $cond: [{ $ne: ['$managerReview.submittedAt', null] }, 1, 0]
+                $cond: [{ $ne: [{ $ifNull: ['$managerReview.submittedAt', null] }, null] }, 1, 0]
               }
             },
             completed: {
@@ -2533,9 +2534,9 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
     const trendMap = new Map(trendRows.map((row) => [row._id.month, row]));
     const monthlyTrend = [];
     const iter = new Date(trendStart);
-    const endMonth = new Date();
-    endMonth.setDate(1);
-    endMonth.setHours(0, 0, 0, 0);
+    const endMonth = new Date(Date.UTC(
+      analyticsComputedAt.getUTCFullYear(), analyticsComputedAt.getUTCMonth(), 1
+    ));
     while (iter <= endMonth) {
       const monthKey = iter.toISOString().slice(0, 7);
       const row = trendMap.get(monthKey);
@@ -2546,7 +2547,7 @@ router.get('/admin/analytics', requireAuth, requireHRAdmin, async (req, res) => 
         managerSubmitted: row?.managerSubmitted || 0,
         completed: row?.completed || 0
       });
-      iter.setMonth(iter.getMonth() + 1);
+      iter.setUTCMonth(iter.getUTCMonth() + 1);
     }
 
     const uniqueEmployees = uniqueEmployeesRows[0]?.count || 0;

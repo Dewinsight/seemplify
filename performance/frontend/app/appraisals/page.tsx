@@ -135,15 +135,17 @@ export default function AppraisalsPage() {
   const scopedTeamAppraisals = conducting ? assignedReviews.filter((item) => !selectedCycleId || item.cycleId?._id === selectedCycleId) : selectedTab === 2
     ? organizationAppraisals.filter((item: Appraisal) => !selectedCycleId || item.cycleId?._id === selectedCycleId)
     : allTeamAppraisals;
-  const myAppraisals = newestAppraisalsFirst((allMyAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status)));
-  const teamAppraisals = newestAppraisalsFirst((scopedTeamAppraisals as Appraisal[]).filter((item) => !isFinishedAppraisal(item.status)));
   const teamLoading = conducting ? assignedLoading : selectedTab === 2 ? organizationLoading : directTeamLoading;
   const loadError = conducting ? assignedError : selectedTab === 2 ? organizationError : selectedTab === 1 ? teamError : myError;
   const allVisibleAppraisals: Appraisal[] = selectedTab ? scopedTeamAppraisals : allMyAppraisals;
+  const employeeIdFilter = searchParams.get('employeeId');
+  const employeeVisibleAppraisals = allVisibleAppraisals.filter((item) => !employeeIdFilter || item.employee.userId === employeeIdFilter);
+  const currentAppraisals = newestAppraisalsFirst(employeeVisibleAppraisals.filter((item) => !isFinishedAppraisal(item.status)));
+  const myAppraisals = selectedTab === 0 ? currentAppraisals : [];
+  const teamAppraisals = selectedTab > 0 ? currentAppraisals : [];
   const historyAppraisals = allVisibleAppraisals.filter((item) => isFinishedAppraisal(item.status) && (!searchParams.get('employeeId') || item.employee.userId === searchParams.get('employeeId')));
 
   // Handle employee filter from query params
-  const employeeIdFilter = searchParams.get('employeeId');
   const submittedFlow = searchParams.get('submitted');
   const submittedAppraisalId = searchParams.get('appraisalId');
 
@@ -779,7 +781,7 @@ export default function AppraisalsPage() {
         </Paper>
       )}
 
-      <Paper variant="outlined" sx={{ mb: 3 }}><Tabs value={historyMode ? 'history' : 'current'} onChange={(_, value: string) => changeSection(value)} variant="fullWidth"><Tab value="current" label={`Current (${allVisibleAppraisals.filter((item) => !isFinishedAppraisal(item.status)).length})`} /><Tab value="history" label={`History & results (${historyAppraisals.length})`} /></Tabs></Paper>
+      <Paper variant="outlined" sx={{ mb: 3 }}><Tabs value={historyMode ? 'history' : 'current'} onChange={(_, value: string) => changeSection(value)} variant="fullWidth"><Tab value="current" label={`Current (${currentAppraisals.length})`} /><Tab value="history" label={`History & results (${historyAppraisals.length})`} /></Tabs></Paper>
       {loadError && <Alert severity="error" action={<Button onClick={() => { mutateMyAppraisals(); mutateTeamAppraisals(); mutateOrganizationAppraisals(); refreshAssigned(); }}>Retry</Button>}>Could not load your appraisals. Please try again.</Alert>}
       {historyMode && !loadError && ((selectedTab ? teamLoading : myLoading) ? <CircularProgress aria-label="Loading appraisal history" /> : <AppraisalHistory appraisals={historyAppraisals} showEmployee={selectedTab > 0} organizationName={organization?.name} />)}
       {!historyMode && !loadError && <>
@@ -887,14 +889,7 @@ export default function AppraisalsPage() {
                 ))}
               </Grid>
 
-              {/* Filter by employee if specified */}
-              {employeeIdFilter ? (
-                teamAppraisals
-                  .filter((a: Appraisal) => a.employee.userId === employeeIdFilter)
-                  .map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, false, index === 0))
-              ) : (
-                teamAppraisals.map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, false, index === 0))
-              )}
+              {teamAppraisals.map((appraisal: Appraisal, index: number) => renderAppraisalCard(appraisal, false, index === 0))}
             </>
           )}
         </Box>

@@ -170,7 +170,9 @@ router.get('/performance', requireReportAnalytics, async (req, res) => {
         cycleName: cycleMap.get(String(item.cycleId))?.name || 'Performance review',
         finalRating: round(item.finalRating?.overall, 2),
         ratingLabel: item.finalRating?.ratingLabel || '',
-        goalAchievement: round(item.goalEvidenceSummary?.score, 1)
+        goalAchievement: item.goalEvidenceSummary?.rated === true &&
+          item.goalEvidenceSummary.score != null && Number.isFinite(item.goalEvidenceSummary.score)
+          ? round(item.goalEvidenceSummary.score, 1) : null
       }));
 
     const groupRows = (keySelector, labelSelector, records = appraisals) => {
