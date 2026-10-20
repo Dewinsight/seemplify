@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import CalendarAccount from '@/components/appraisals/CalendarAccount';
 import OneOnOneSchedule from '@/components/OneOnOneSchedule';
 import { useOneOnOnes, useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
@@ -24,6 +25,7 @@ export default function OneOnOnesPage() {
   const { meetings: upcomingMeetings, isLoading: upcomingLoading, isError: upcomingError, mutate: mutateUpcoming } = useOneOnOnes({ upcoming: true });
   const { meetings: pastMeetings, hasMore: moreHistory, isLoading: pastLoading, isError: pastError, mutate: mutatePast } = useOneOnOnes({ upcoming: false, page: historyPage });
 
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [error, setError] = useState('');
@@ -136,6 +138,7 @@ export default function OneOnOnesPage() {
         )}
       </Box>
 
+      {isManager && <Box sx={{ mb: 3 }}><Button color="inherit" variant="outlined" sx={{ minHeight: 44 }} aria-expanded={calendarOpen} onClick={() => setCalendarOpen(value => !value)}>{calendarOpen ? 'Hide calendar account' : 'Manage my calendar account'}</Button>{calendarOpen && <Box sx={{ mt: 2 }}><CalendarAccount connectionPath="/one-on-ones/call-connection" /></Box>}</Box>}
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
 
       <Tabs value={tabValue} onChange={(_, v) => { setTabValue(v); const url = new URL(window.location.href); if (v === 1) url.searchParams.set("tab", "history"); else url.searchParams.delete("tab"); window.history.replaceState(null, "", url.pathname + url.search); }} sx={{ mb: 3 }}>

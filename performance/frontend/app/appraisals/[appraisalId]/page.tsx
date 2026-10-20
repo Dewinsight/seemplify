@@ -4,19 +4,21 @@ import AppraisalMeetings from '@/components/appraisals/AppraisalMeetings';
 import AppraisalMetadata from '@/components/appraisals/AppraisalMetadata';
 import AppraisalActions from '@/components/appraisals/AppraisalActions';
 import { FlowStep } from '@/components/appraisals/AppraisalFlowEditor';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import ManagerReviewWorkspace from '@/components/appraisals/ManagerReviewWorkspace';
+import AppraisalCompetencySlot from '@/components/competency/AppraisalCompetencySlot';
 import { useParams, useRouter } from 'next/navigation';
 import { useAppraisal, useUserContext } from '@/lib/hooks';
 import {
   Box, Typography, Card, CardContent, Grid, Button, Chip, Alert,
-  Paper, Stepper, Step, StepLabel, Rating, LinearProgress,
-  Accordion, AccordionSummary, AccordionDetails, Divider, Avatar,
-  CircularProgress, Tabs, Tab, List, ListItem, ListItemText, ListItemAvatar, useTheme, useMediaQuery
+  Paper, Stepper, Step, StepLabel, Rating,
+  Accordion, AccordionSummary, AccordionDetails, Avatar,
+  CircularProgress, Tabs, Tab, useTheme, useMediaQuery
 } from '@mui/material';
 import {
-  ArrowBack, Edit, PlayArrow, CheckCircle, Schedule, Person,
-  ExpandMore, Star, Assignment, TrendingUp, Chat, Description,
-  Psychology, Flag, Warning, Groups, ArrowForward, AssessmentOutlined
+  ArrowBack, Edit, CheckCircle, Schedule, Person,
+  ExpandMore, Assignment, TrendingUp, Chat,
+  Psychology, Warning, Groups, ArrowForward, AssessmentOutlined
 } from '@mui/icons-material';
 
 interface TabPanelProps {
@@ -88,6 +90,19 @@ export default function AppraisalDetailPage() {
 
   const { appraisal, isLoading, isError, mutate } = useAppraisal(appraisalId);
   const [tabValue, setTabValue] = useState(0);
+  const [view, setView] = useState<{ key: string | null; section: number }>({ key: null, section: 0 });
+  const taskHeading = useRef<HTMLHeadingElement>(null);
+  const previousStage = useRef<string | null>(null);
+  const stageKey = appraisal ? `${appraisalId}:${String(appraisal.status).replace(/_(pending|in_progress)$/, '')}:${(appraisal.completedMeetingSteps || []).join(',')}` : null;
+  const section = view.key === stageKey ? view.section : 0;
+  const setSection = (section: number) => setView({ key: stageKey, section });
+  useEffect(() => {
+    if (!stageKey) return;
+    if (previousStage.current && previousStage.current !== stageKey) {
+      requestAnimationFrame(() => taskHeading.current?.focus());
+    }
+    previousStage.current = stageKey;
+  }, [stageKey]);
 
   if (isLoading) {
     return (
@@ -132,14 +147,16 @@ export default function AppraisalDetailPage() {
     (managerUserId && requesterIds.includes(managerUserId)) ||
     (managerEmail && requesterEmail && managerEmail === requesterEmail)
   );
-  const hasManagerAccess = isAssignedManager || (isManager && !isEmployee) || isHRAdmin;
+  const hasManagerAccess = typeof appraisal.viewerCapabilities?.canManage === 'boolean' ? appraisal.viewerCapabilities.canManage : isAssignedManager || (isManager && !isEmployee) || isHRAdmin;
   const cancelled = appraisal.status === 'cancelled';
   const config = statusConfig[appraisal.status] || statusConfig['not_started'];
 
   // Determine active workflow step
   const getActiveStep = () => {
     const status = appraisal.status || '';
-    if (status === 'not_started' || status.includes('goal_setting')) return 0;
+    if (status === 'not_started' || status.includes('goal_setting') || status === 'goal_approval_pending') return 0;
+    if (status === 'self_assessment_submitted') return 2;
+    if (status === 'manager_review_submitted') return 3;
     if (status.includes('self_assessment')) return 1;
     if (status.includes('manager_review')) return 2;
     if (status.includes('discussion')) return 3;
@@ -162,14 +179,32 @@ export default function AppraisalDetailPage() {
   const cycle = appraisal.cycleId;
   const includesSelf = !customSteps || customSteps.some(step => step.type === 'selfAssessment');
   const includesReviewer = !customSteps || customSteps.some(step => step.type === 'managerReview');
-  const includesDiscussion = !customSteps || customSteps.some(step => step.type === 'discussion');
-  const discussionCompleted = Boolean(appraisal.discussion?.completedDate);
-  const discussionIsCurrent = customSteps ? customSteps[activeStep]?.type === 'discussion' : activeStep === 3;
-  const showDiscussion = discussionCompleted || (includesDiscussion && (discussionIsCurrent ||
-    ['discussion_scheduled', 'discussion_in_progress', 'discussion_completed'].includes(appraisal.status) ||
-    (!customSteps && appraisal.status === 'manager_review_submitted')));
   const visibleTabs = [...(includesSelf ? [0] : []), ...(includesReviewer ? [1] : []), ...(appraisal.finalRating?.overall ? [2] : [])];
   const selectedTab = visibleTabs.includes(tabValue) ? tabValue : visibleTabs[0] ?? -1;
+
+  const progressSteps = customSteps || workflowSteps;
+  const currentType = customSteps?.[activeStep]?.type || workflowSteps[activeStep]?.key;
+  const acknowledgement = !cancelled && ((customSteps?.[activeStep]?.type === 'acknowledgement') || (!customSteps && appraisal.status === 'completed' && !appraisal.discussion?.employeeAcknowledged));
+  const closed = cancelled || (!acknowledgement && ['completed', 'employee_acknowledged'].includes(appraisal.status)) || (!!customSteps && activeStep >= customSteps.length);
+  const reviewerTask = !closed && currentType === 'managerReview';
+  const callTask = !closed && currentType === 'oneOnOne';
+  const employeeTask = ['selfAssessment', 'goalSetting', 'acknowledgement'].includes(currentType || '') || acknowledgement;
+  const canWork = !closed && appraisal.status !== 'goal_approval_pending' && (employeeTask ? isEmployee : currentType === 'discussion' ? (isEmployee || hasManagerAccess) : hasManagerAccess && !isEmployee);
+  const taskLabel = closed ? (cancelled ? 'Appraisal cancelled' : 'Appraisal completed') : acknowledgement ? 'Review and acknowledge the outcome' : progressSteps[activeStep]?.label || config.label;
+  const taskRoute = acknowledgement ? 'discussion' : ({ selfAssessment: 'self-assessment', goalSetting: 'goal-setting', managerReview: 'manager-review', discussion: 'discussion', calibration: 'calibration', finalReview: 'final-review' } as Record<string, string>)[currentType || ''];
+  const taskAction = acknowledgement ? 'Review and acknowledge outcome' : ({ selfAssessment: 'Open employee assessment', goalSetting: 'Set goals', discussion: 'Open Discussion', calibration: 'Open calibration', finalReview: 'Finalize appraisal' } as Record<string, string>)[currentType || ''] || 'Continue appraisal';
+  const taskDescription = closed ? 'Your saved assessments, call notes and evidence remain available in the other views.' : ({
+    selfAssessment: 'Reflect on the review period and submit your employee assessment.',
+    managerReview: 'Record your ratings and feedback below. Open the employee submission and review context when you need supporting information.',
+    oneOnOne: 'Join the scheduled call, save the agreed notes and complete this call step. The next task will appear here.',
+    discussion: 'Review the feedback together and record the agreed discussion notes.',
+    calibration: 'Check the proposed rating and record the calibration decision.',
+    finalReview: 'Review the evidence and approve the final outcome.',
+    acknowledgement: 'Read the published outcome and acknowledge it.',
+    goalSetting: 'Set the goals for this appraisal period.'
+  } as Record<string, string>)[acknowledgement ? 'acknowledgement' : currentType || ''] || 'Continue the current appraisal stage.';
+  const waitingMessage = appraisal.status === 'goal_approval_pending' ? 'Waiting for the goals to be approved before the employee assessment begins.' : employeeTask ? 'Waiting for the employee to complete this step. You can view submitted work in Previous work & analytics.' : 'Your reviewer is completing this stage. Your submitted work remains available in Previous work & analytics.';
+  const nextLabel = progressSteps[activeStep + 1]?.label;
 
   return (
     <Box>
@@ -201,120 +236,40 @@ export default function AppraisalDetailPage() {
             </Box>
           </Box>
 
-          {/* Action Buttons */}
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <AppraisalActions appraisalId={appraisalId} employeeName={appraisal.employee?.name} enabled={hasManagerAccess} onUpdated={() => { void mutate(); }} />
             {['completed', 'employee_acknowledged'].includes(appraisal.status) && <Button variant="outlined" onClick={() => router.push(`/appraisals/${appraisalId}/report`)}>View result report</Button>}
-            {!cancelled && <>
-            {isEmployee && (appraisal.status === 'goal_setting') && (
-              <Button
-                variant="contained"
-                startIcon={<Flag />}
-                onClick={() => router.push(`/appraisals/${appraisalId}/goal-setting`)}
-              >
-                Set Goals
-              </Button>
-            )}
-            {isEmployee && (appraisal.status === 'goal_approval_pending') && (
-              <Button
-                variant="outlined"
-                color="warning"
-                disabled
-                startIcon={<Schedule />}
-              >
-                Waiting for Goal Approval
-              </Button>
-            )}
-            {isEmployee && (appraisal.status === 'self_assessment_pending' || appraisal.status === 'self_assessment_in_progress') && (
-              <Button
-                variant="contained"
-                startIcon={<PlayArrow />}
-                onClick={() => router.push(`/appraisals/${appraisalId}/self-assessment`)}
-              >
-                {appraisal.status === 'self_assessment_in_progress' ? 'Continue' : 'Start'} Self-Assessment
-              </Button>
-            )}
-
-            {showDiscussion && (
-              <Button
-                variant="contained"
-                startIcon={<Groups />}
-                onClick={() => router.push(`/appraisals/${appraisalId}/discussion`)}
-              >
-                {discussionCompleted ? 'View Discussion' : 'Open Discussion'}
-              </Button>
-            )}
-            {hasManagerAccess && (appraisal.status === 'self_assessment_submitted' || appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
-              <Button
-                variant="contained"
-                startIcon={<PlayArrow />}
-                onClick={() => router.push(`/appraisals/${appraisalId}/manager-review`)}
-              >
-                {appraisal.status === 'manager_review_in_progress' ? 'Continue' : 'Start'} Review
-              </Button>
-            )}
-
-            {hasManagerAccess && (appraisal.status === 'calibration_pending' || appraisal.status === 'calibration_in_progress') && (
-              <Button
-                variant="contained"
-                color="secondary"
-                startIcon={<TrendingUp />}
-                onClick={() => router.push(`/appraisals/${appraisalId}/calibration`)}
-              >
-                {appraisal.status === 'calibration_in_progress' ? 'Continue Calibration' : 'Start Calibration'}
-              </Button>
-            )}
-
-            {hasManagerAccess && appraisal.status === 'final_review_pending' && (
-              <Button
-                variant="contained"
-                color="success"
-                startIcon={<CheckCircle />}
-                onClick={() => router.push(`/appraisals/${appraisalId}/final-review`)}
-              >
-                Finalize Appraisal
-              </Button>
-            )}
-
-            {isEmployee && appraisal.status === 'completed' && !appraisal.discussion?.employeeAcknowledged && (
-              <Button
-                variant="contained"
-                startIcon={<CheckCircle />}
-                onClick={() => router.push(`/appraisals/${appraisalId}/discussion`)}
-              >
-                Review &amp; Acknowledge Outcome
-              </Button>
-            )}
-            </>}
           </Box>
         </Box>
       </Box>
 
       {cancelled && <Alert severity="info" sx={{ mb: 3 }}>This appraisal was cancelled{appraisal.lifecycle?.cancelledAt ? ` on ${new Date(appraisal.lifecycle.cancelledAt).toLocaleString()}` : ''}. It is read-only. Its assessments, recordings and notes are retained.{appraisal.lifecycle?.reason && <Typography variant="body2" sx={{ mt: 1 }}>Reason: {appraisal.lifecycle.reason}</Typography>}</Alert>}
-      <Paper variant="outlined" sx={{ p: 2.5, mb: 3 }}>
-        <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Appraisal details & dates</Typography>
-        <AppraisalMetadata appraisal={appraisal} />
-      </Paper>
-
-      {isEmployee && (appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
-        <Alert severity="success" sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" fontWeight={700}>Self-assessment completed</Typography>
-          <Typography variant="body2">
-            The reviewer is now handling the review stage. Your appraisal progress below shows any remaining steps.
-          </Typography>
-        </Alert>
-      )}
-
-      {hasManagerAccess && !isEmployee && (appraisal.status === 'manager_review_pending' || appraisal.status === 'self_assessment_submitted') && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" fontWeight={700}>Manager action required</Typography>
-          <Typography variant="body2">
-            Start your assessment to continue the appraisal workflow.
-          </Typography>
-        </Alert>
-      )}
-
-      {customSteps && <AppraisalMeetings appraisalId={appraisalId} steps={customSteps.filter(step => step.type === 'oneOnOne')} readOnly={cancelled} canManage={!cancelled && hasManagerAccess && !isEmployee} canJoin={!cancelled && (isEmployee || isAssignedManager)} participantName={isEmployee ? appraisal.manager?.name : appraisal.employee?.name} ownName={isEmployee ? appraisal.employee?.name : appraisal.manager?.name} currentStepId={customSteps[activeStep]?.id} onUpdated={() => { void mutate(); }} />}
+      <Tabs value={section} onChange={(_, value) => setSection(value)} aria-label="Appraisal workspace" variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tab id="appraisal-task-tab" aria-controls="appraisal-task-panel" label={closed ? 'Outcome' : 'Current task'} />
+        <Tab id="appraisal-history-tab" aria-controls="appraisal-history-panel" label="Previous work & analytics" />
+        <Tab id="appraisal-details-tab" aria-controls="appraisal-details-panel" label="Details & evidence" />
+      </Tabs>
+      <Box id="appraisal-task-panel" role="tabpanel" aria-labelledby="appraisal-task-tab" hidden={section !== 0}>
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="body2" color="text.secondary" mb={.5}>{closed ? 'Appraisal record' : `Step ${Math.min(activeStep + 1, progressSteps.length)} of ${progressSteps.length}`}</Typography>
+          <Typography ref={taskHeading} tabIndex={-1} component="h2" variant="h5" fontWeight={600} sx={{ outline: 'none' }}>{taskLabel}</Typography>
+          <Typography color="text.secondary" sx={{ mt: 1, maxWidth: '75ch' }}>{taskDescription}</Typography>
+          {!closed && nextLabel && <Typography variant="body2" color="text.secondary" mt={1}>Next: {nextLabel}</Typography>}
+        </Box>
+        {reviewerTask && canWork && <ManagerReviewWorkspace key={appraisalId} embedded />}
+        {callTask && customSteps && <AppraisalMeetings appraisalId={appraisalId} steps={customSteps.filter(step => step.type === 'oneOnOne')} focusCurrentStep readOnly={cancelled} canManage={hasManagerAccess && !isEmployee} canJoin={isEmployee || isAssignedManager} participantName={isEmployee ? appraisal.manager?.name : appraisal.employee?.name} ownName={isEmployee ? appraisal.employee?.name : appraisal.manager?.name} currentStepId={customSteps[activeStep]?.id} onUpdated={() => { void mutate(); }} />}
+        {!reviewerTask && !callTask && canWork && taskRoute && <Button variant="contained" endIcon={<ArrowForward />} onClick={() => router.push(`/appraisals/${appraisalId}/${taskRoute}`)} sx={{ minHeight: 44, mb: 3 }}>{taskAction}</Button>}
+        {!closed && !canWork && !callTask && <Alert severity="info" sx={{ mb: 3 }}>{waitingMessage}</Alert>}
+        {closed && <Alert severity={cancelled ? 'info' : 'success'} sx={{ mb: 3 }}>{cancelled ? 'This appraisal is read-only. Its saved work is available in Previous work & analytics.' : 'The appraisal outcome is published. View the result report or open Previous work & analytics for the supporting work.'}</Alert>}
+      </Box>
+      <Box id="appraisal-details-panel" role="tabpanel" aria-labelledby="appraisal-details-tab" hidden={section !== 2}>
+        <Paper variant="outlined" sx={{ p: 2.5, mb: 3 }}><Typography variant="h6" component="h2" fontWeight={600} sx={{ mb: 2 }}>Appraisal details & dates</Typography><AppraisalMetadata appraisal={appraisal} /></Paper>
+        {reviewerTask && canWork && <Button variant="outlined" sx={{ minHeight: 44 }} onClick={() => { setSection(0); requestAnimationFrame(() => taskHeading.current?.focus()); }}>CV & supporting documents are in Current task</Button>}
+        <AppraisalCompetencySlot appraisalId={appraisalId} includeCv={!reviewerTask || !canWork} />
+      </Box>
+      <Box id="appraisal-history-panel" role="tabpanel" aria-labelledby="appraisal-history-tab" hidden={section !== 1}>
+      {customSteps && section === 1 && <AppraisalMeetings appraisalId={appraisalId} steps={customSteps.filter(step => step.type === 'oneOnOne')} readOnly={cancelled} canManage={!cancelled && hasManagerAccess && !isEmployee} canJoin={!cancelled && (isEmployee || isAssignedManager)} participantName={isEmployee ? appraisal.manager?.name : appraisal.employee?.name} ownName={isEmployee ? appraisal.employee?.name : appraisal.manager?.name} currentStepId={customSteps[activeStep]?.id} onUpdated={() => { void mutate(); }} />}
+      {appraisal.discussion?.completedDate && <Button variant="outlined" sx={{ mb: 3, minHeight: 44 }} onClick={() => router.push(`/appraisals/${appraisalId}/discussion`)}>View Discussion</Button>}
       {/* Workflow Progress */}
       {!cancelled && <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="subtitle1" fontWeight={600} gutterBottom>
@@ -656,6 +611,8 @@ export default function AppraisalDetailPage() {
           </TabPanel>
         )}
       </Paper>}
+      {!closed && <Button variant="outlined" endIcon={<ArrowForward />} sx={{ minHeight: 44, mb: 3 }} onClick={() => { setSection(0); requestAnimationFrame(() => taskHeading.current?.focus()); }}>Return to current task</Button>}
+      </Box>
     </Box>
   );
 }

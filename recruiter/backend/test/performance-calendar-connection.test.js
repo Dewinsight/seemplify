@@ -12,7 +12,7 @@ const nylas = require('../services/nylasV3Service');
 const service = require('../services/performanceCalendarConnectionService');
 const identity = { sub: 'calendar-test-manager', email: 'manager@example.test', organizationId: 'org-a' };
 const path = '/appraisals/507f1f77bcf86cd799439011';
-let mongo, user, account, exchanged;
+let mongo, user, account, exchanged, revoked;
 test.before(async () => { mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri()); });
 test.beforeEach(async t => {
   await mongoose.connection.db.dropDatabase(); await Intent.createIndexes();
@@ -21,8 +21,9 @@ test.beforeEach(async t => {
   t.mock.method(principals, 'resolveSharedPrincipal', async raw => ({ identity: raw, user: await User.findById(user._id) }));
   t.mock.method(pool, 'findAvailableAccount', async () => ({ account, credentials: { clientId: account.clientId, apiKey: 'synthetic-key', clientSecret: 'synthetic-secret' } }));
   t.mock.method(pool, 'updateGrantCount', async () => {});
+  revoked = t.mock.fn(async () => ({}));
   exchanged = t.mock.fn(async () => ({ grantId: 'new-personal-grant', accessToken: 'never-expose-this-token' }));
-  t.mock.method(nylas, 'getNylasInstance', () => ({ auth: { urlForOAuth2: input => `https://api.us.nylas.com/v3/connect/auth?${new URLSearchParams({ client_id: input.clientId, state: input.state, redirect_uri: input.redirectUri, provider: input.provider })}`, exchangeCodeForToken: exchanged }, grants: { find: async () => ({ data: { email: 'chosen-calendar@example.test', provider: 'google', grantStatus: 'valid' } }) } }));
+  t.mock.method(nylas, 'getNylasInstance', () => ({ auth: { urlForOAuth2: input => `https://api.us.nylas.com/v3/connect/auth?${new URLSearchParams({ client_id: input.clientId, state: input.state, redirect_uri: input.redirectUri, provider: input.provider })}`, exchangeCodeForToken: exchanged }, grants: { destroy: revoked, find: async () => ({ data: { email: 'chosen-calendar@example.test', provider: 'google', grantStatus: 'valid' } }) } }));
 });
 test.afterEach(() => test.mock.restoreAll());
 test.after(async () => { await mongoose.disconnect(); await mongo.stop(); });
@@ -100,4 +101,32 @@ test('capacity failure never disconnects another user to make room', async t => 
   t.mock.method(pool, 'findAvailableAccount', async () => null);
   await assert.rejects(start(), { code: 'CALENDAR_CAPACITY_UNAVAILABLE' });
   assert.equal(await Intent.countDocuments(), 0); assert.equal((await User.findById(user._id)).nylasGrantId, 'original-grant');
+});
+
+
+test('disconnect revokes only the authenticated personal grant and clears its mapping', async () => {
+  await User.updateOne({ _id: user._id }, { $set: { nylasAccountId: account._id, calendarConnected: true } });
+  const other = await User.create({ email: 'separate@example.test', password: 'synthetic', idpSubject: 'separate', nylasGrantId: 'separate-grant', nylasAccountId: account._id });
+  const result = await service.disconnect(identity);
+  assert.equal(result.disconnected, true);
+  assert.deepEqual(revoked.mock.calls[0].arguments, [{ grantId: 'original-grant' }]);
+  const fresh = await User.findById(user._id);
+  assert.equal(fresh.nylasGrantId, undefined); assert.equal(fresh.calendarConnected, false);
+  assert.equal((await User.findById(other._id)).nylasGrantId, 'separate-grant');
+  assert.equal((await service.disconnect(identity)).disconnected, true);
+  assert.equal(revoked.mock.callCount(), 1);
+});
+
+test('failed provider revocation quarantines the grant, blocks old callbacks and permits retry', async () => {
+  await User.updateOne({ _id: user._id }, { $set: { nylasAccountId: account._id } });
+  const pending = await start();
+  revoked.mock.mockImplementation(async () => { throw Object.assign(new Error('Synthetic outage'), { statusCode: 503 }); });
+  await assert.rejects(service.disconnect(identity), { code: 'CALENDAR_DISCONNECT_PENDING' });
+  const quarantined = await User.findById(user._id);
+  assert.equal(quarantined.nylasGrantStatus, 'stopped'); assert.equal(quarantined.nylasGrantId, 'original-grant');
+  await assert.rejects(start(), { code: 'CALENDAR_DISCONNECT_PENDING' });
+  assert.equal(new URL((await callback(pending)).redirectUrl).searchParams.get('calendarConnection'), 'failed');
+  assert.equal(exchanged.mock.callCount(), 0);
+  revoked.mock.mockImplementation(async () => { throw Object.assign(new Error('Already revoked'), { statusCode: 404 }); });
+  assert.equal((await service.disconnect(identity)).disconnected, true);
 });

@@ -62,6 +62,7 @@ for (const mode of ['employee', 'reviewer', 'hr'] as const) test(`${mode} can id
   await expect(results.first().getByText('Earlier completed review', { exact: true })).toBeVisible();
   if (mode === 'employee') {
     await page.goto('/appraisals/latest');
+    await page.getByRole('tab', { name: 'Details & evidence', exact: true }).click();
     await expect(page.getByText('Appraisal details & dates', { exact: true })).toBeVisible();
     await expect(page.getByText('Harper HR', { exact: true })).toBeVisible();
   }

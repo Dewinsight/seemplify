@@ -1,6 +1,49 @@
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
+test('goal details show current objectives and targets without requiring edit permission or changing progress', async ({ page }) => {
+  const state = createState();
+  Object.assign(state.goals[0], { permissions: { view: true, edit: false, checkIn: false, requestChange: false } });
+  await installMockApi(page, state);
+  const writes: string[] = [];
+  page.on('request', request => { if (new URL(request.url()).pathname.includes('/okrs') && request.method() !== 'GET') writes.push(request.method()); });
+  await page.route('**/__mock-api/okrs/future-goal-1', route => route.fulfill({ json: { success: true, data: { ...state.goals[0], assignment: { assignedBy: { name: 'Synthetic Reviewer' }, acknowledgementStatus: 'acknowledged' }, objectives: [{ title: 'Prepare a reliable launch', description: 'Confirm readiness with every delivery owner.', keyResults: [{ title: 'Complete launch checklist', description: 'Each owner confirms their section.', metricType: 'percentage', startValue: 0, targetValue: 100, currentValue: 25, dueDate: '2026-12-15T12:00:00Z' }] }] } } }));
+  await page.goto('/okrs');
+  await page.getByRole('tab', { name: 'Upcoming', exact: true }).click();
+  const view = page.getByRole('button', { name: 'View details', exact: true });
+  await view.click();
+  const dialog = page.getByRole('dialog', { name: 'Goal details', exact: true });
+  await expect(dialog.getByRole('heading', { name: '1. Prepare a reliable launch', exact: true })).toBeVisible();
+  await expect(dialog.getByText('Confirm readiness with every delivery owner.', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Each owner confirms their section.', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Baseline: 0% · Target: 100% · Current: 25%', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Synthetic Reviewer', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Not rated', { exact: true })).toBeVisible();
+  expect(writes).toEqual([]);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(view).toBeFocused();
+});
+
+test('goal details recover from a failed read and remain usable on mobile', async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = createState(); await installMockApi(page, state);
+  let unavailable = true;
+  await page.route('**/__mock-api/okrs/future-goal-1', route => unavailable
+    ? route.fulfill({ status: 503, json: { error: 'Synthetic details outage' } })
+    : route.fulfill({ json: { success: true, data: { ...state.goals[0], objectives: [] } } }));
+  await page.goto('/okrs'); await page.getByRole('tab', { name: 'Upcoming', exact: true }).click();
+  await page.getByRole('button', { name: 'View details', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Goal details', exact: true });
+  await expect(dialog.getByText('Goal details could not be loaded. Please retry.', { exact: true })).toBeVisible();
+  unavailable = false; await dialog.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(dialog.getByText('No objectives have been recorded.', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath('goal-details-mobile.png') });
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
 test('starts a manager appraisal in three steps and displays partial launch results', async ({ page }) => {
   const state = createState(); state.managerMode = true;
   await installMockApi(page, state);

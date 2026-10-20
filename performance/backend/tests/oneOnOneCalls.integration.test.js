@@ -236,3 +236,43 @@ test('reminder queue rejects missing mail configuration and organization notific
   await call('post', `/${id}/call/reminder`).send({}).expect(409);
   expect(await require('../models/DomainEvent').countDocuments({ eventType: 'one_on_one.call_reminder' })).toBe(0);
 });
+
+
+test('calendar disconnect uses only the authenticated caller identity', async () => {
+  provider.mockResolvedValue({ disconnected: true });
+  await call('post', '/call-connection/disconnect').send({ identity: { sub: 'someone-else' }, grantId: 'foreign-grant' }).expect(200);
+  expect(provider).toHaveBeenCalledWith('meetings/disconnectCalendar', expect.objectContaining({ sub: 'manager', organizationId: org.id }));
+  await call('post', '/call-connection/disconnect', 'anonymous').send({}).expect(401);
+  await call('post', '/call-connection/disconnect', 'employee').send({}).expect(403);
+});
+
+test('notetaker monitoring is participant scoped and queries the calendar owner for this invitation', async () => {
+  const result = await call('post', '/').send(payload('calendar')).expect(201); const id = result.body.data._id;
+  provider.mockClear(); provider.mockResolvedValue({ state: 'attending', meetingState: 'recording_active', events: [] });
+  const status = await call('get', `/${id}/call/notetaker-status`, 'employee').expect(200);
+  expect(status.body.data.state).toBe('attending');
+  expect(provider).toHaveBeenCalledWith('meetings/notetakerStatus', expect.objectContaining({ sub: 'manager', organizationId: org.id }), { externalId: id });
+  const count = provider.mock.calls.length;
+  await call('get', `/${id}/call/notetaker-status`, 'outsider').expect(403);
+  expect(provider).toHaveBeenCalledTimes(count);
+  await OneOnOne.updateOne({ _id: id }, { $set: { 'appraisalMeeting.recordingState': 'revoked' } });
+  expect((await call('get', `/${id}/call/notetaker-status`, 'employee').expect(200)).body.data.state).toBe('revoked');
+  expect(provider).toHaveBeenCalledTimes(count);
+});
+
+test('manual bot retry binds its authorization to a participant and respects a concurrent stop', async () => {
+  const result = await call('post', '/').send(payload('calendar')).expect(201); const id = result.body.data._id;
+  await OneOnOne.updateOne({ _id: id }, { $set: { scheduledDate: new Date(Date.now() - 60000) } });
+  provider.mockClear(); provider.mockResolvedValue({ recordingState: 'scheduled' });
+  await call('post', `/${id}/call/notetaker-status/retry`, 'hr').send({}).expect(403);
+  expect(provider).not.toHaveBeenCalled();
+  await call('post', `/${id}/call/notetaker-status/retry`, 'employee').send({ recordingAuthorization: { requestedBy: 'someone-else' } }).expect(200);
+  expect(provider.mock.calls[0]).toEqual(['meetings/retryNotetaker', expect.objectContaining({ sub: 'manager' }), { externalId: id, recordingAuthorization: expect.objectContaining({ requestedBy: 'employee', policyVersion: 'calendar-notetaker-v2' }) }, { timeoutMs: 90000 }]);
+  provider.mockImplementation(async operation => {
+    if (operation === 'meetings/retryNotetaker') await OneOnOne.updateOne({ _id: id }, { $set: { 'appraisalMeeting.recordingState': 'revoked' } });
+    return { recordingState: 'scheduled' };
+  });
+  await call('post', `/${id}/call/notetaker-status/retry`, 'employee').send({}).expect(409);
+  expect(provider.mock.calls.some(([operation]) => operation === 'meetings/stopRecording')).toBe(true);
+  expect((await OneOnOne.findById(id)).appraisalMeeting.recordingState).toBe('revoked');
+});

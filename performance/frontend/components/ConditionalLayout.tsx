@@ -6,7 +6,6 @@ import { Box } from '@mui/material';
 import { useAuth } from '@/context/AuthContext';
 import Layout from './Layout';
 import PageGuide from './PageGuide';
-import AppraisalCompetencySlot from './competency/AppraisalCompetencySlot';
 import AssessmentMeetingReturn from './competency/AssessmentMeetingReturn';
 
 export default function ConditionalLayout({ children }: { children: React.ReactNode }) {
@@ -42,9 +41,8 @@ export default function ConditionalLayout({ children }: { children: React.ReactN
     );
   }
   
-  const appraisalId = /^\/appraisals\/([a-fA-F0-9]{24})$/.exec(pathname)?.[1];
   const oneOnOneId = /^\/one-on-ones\/([a-fA-F0-9]{24})$/.exec(pathname)?.[1];
-  return <Layout>{oneOnOneId && <AssessmentMeetingReturn />}{children}{appraisalId && <AppraisalCompetencySlot appraisalId={appraisalId} />}</Layout>;
+  return <Layout>{oneOnOneId && <AssessmentMeetingReturn />}{children}</Layout>;
 }
 
 

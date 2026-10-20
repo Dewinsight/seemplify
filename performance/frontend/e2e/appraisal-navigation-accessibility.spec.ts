@@ -83,6 +83,7 @@ test('390px cycle and fallback appraisal phases fit and Final Rating is reachabl
   await page.getByRole('option', { name: /Synthetic mobile cycle/ }).click();
   await labelsFit(page.getByRole('group', { name: 'Cycle phases', exact: true }), ['Self-Assessment', 'Manager Review', 'Discussion', 'Calibration', 'Final Review']);
   await page.goto(`/appraisals/${appraisalId}`);
+  await page.getByRole('tab', { name: 'Previous work & analytics', exact: true }).click();
   await labelsFit(page.getByRole('group', { name: 'Appraisal progress', exact: true }), phases);
   const selfTab = page.getByRole('tab', { name: 'Self-Assessment', exact: true });
   await selfTab.focus();
@@ -181,6 +182,7 @@ test('future or omitted discussion stays hidden while a completed discussion rem
       discussion: completed ? { completedDate: '2026-10-03' } : {},
       cycleConfigurationSnapshot: { appraisalFlow: { version: 1, assessmentMode: 'form', steps: flow } } });
     await page.goto(`/appraisals/${appraisalId}`);
+    await page.getByRole('tab', { name: 'Previous work & analytics', exact: true }).click();
     await expect(page.getByRole('group', { name: 'Appraisal progress', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open Discussion', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'View Discussion', exact: true })).toHaveCount(completed ? 1 : 0);

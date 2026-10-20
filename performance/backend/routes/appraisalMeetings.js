@@ -65,6 +65,7 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
   });
   router.use('/:meetingId/recording-consent', require('./calendarRecordingConsent')());
   router.use('/:meetingId/native', require('./appraisalNativeCalls')(publicMeeting));
+  router.use('/:meetingId/notetaker-status', require('./notetakerStatus')());
   router.post('/:meetingId/reminder', async (req, res) => {
     try {
       if (!req.canManageMeeting) return res.status(403).json({ error: 'Only the reviewer or HR can send a reminder.' });

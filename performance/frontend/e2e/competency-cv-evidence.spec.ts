@@ -226,6 +226,7 @@ for (const suffix of ['', '/manager-review']) {
     await page.route(`**/__mock-api/appraisals/${id}`, route => route.fulfill({ json: { success: true, data: { _id: id, status: 'manager_review_pending', employee: { userId: 'employee', name: 'Jordan Ellis' }, manager: { userId: 'organisation-reviewer', name: 'Taylor Organisation Reviewer' }, cycleId: { name: 'Fictional review', settings: { enableAiAssist: false }, competencies: [] }, selfAssessment: { overallSelfRating: 3, submittedAt: '2026-10-20T10:00:00Z' }, managerReview: {}, customSections: [], documents: [], viewerCapabilities: { isEmployee: false, canManage: true } } } }));
     await page.route(`**/__mock-api/competency/appraisal-links/${id}`, route => route.fulfill({ json: { success: true, data: { assessments: [{ assessmentId: state.assessment.id, cvRequested: false, role, status: state.assessment.status }] } } }));
     await page.goto(`/appraisals/${id}${suffix}`);
+    if (!suffix) await page.getByRole('button', { name: 'CV & supporting documents', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'CV (optional)', exact: true })).toBeVisible();
     await page.getByLabel('Choose CV file').setInputFiles({ name: 'reviewer-optional-cv.txt', mimeType: 'text/plain', buffer: Buffer.from('Fictional reviewer-provided employee CV.') });
     await page.getByRole('button', { name: 'Upload CV', exact: true }).click();

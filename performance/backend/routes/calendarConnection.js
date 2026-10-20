@@ -3,6 +3,10 @@ const express = require('express');
 const shared = require('../services/sharedAIAccountService');
 module.exports = () => {
   const router = express.Router();
+  router.post('/disconnect', async (req, res) => {
+    try { return res.json({ success: true, data: await shared.request('meetings/disconnectCalendar', shared.identityFromRequest(req)) }); }
+    catch (error) { return res.status(error.statusCode || 503).json({ success: false, error: error.message || 'Calendar disconnect failed.', code: error.code }); }
+  });
   router.post('/connect', async (req, res) => {
     try {
       res.set('Cache-Control', 'no-store');

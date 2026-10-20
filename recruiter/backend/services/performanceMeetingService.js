@@ -26,7 +26,7 @@ async function credentials(accountId) {
 }
 async function connection(identity) {
   const { user } = await principal(identity);
-  const result = { connected: false, email: null, provider: null, authority: 'recruiter', connectUrl: `${process.env.FRONTEND_URL || 'https://app.seemplifyai.com'}/settings/calendar` };
+  const result = { connected: false, email: null, provider: null, disconnectPending: user.nylasGrantStatus === 'stopped' && Boolean(user.nylasGrantId), authority: 'recruiter', connectUrl: `${process.env.FRONTEND_URL || 'https://app.seemplifyai.com'}/settings/calendar` };
   if (!user.nylasGrantId || ['revoked', 'expired', 'invalid', 'stopped', 'reauth_pending'].includes(user.nylasGrantStatus)) return result;
   try {
     const grant = (await nylas.getNylasInstance(await credentials(user.nylasAccountId)).grants.find({ grantId: user.nylasGrantId })).data;
@@ -222,4 +222,4 @@ async function cancel(rawIdentity, input) {
   return publicMeeting(record);
 }
 
-module.exports = { connection, connectCalendar: (...args) => require('./performanceCalendarConnectionService').connect(...args), create, sync, cancel, startRecording, stopRecording, meetingUrl, boundedTranscript };
+module.exports = { connection, connectCalendar: (...args) => require('./performanceCalendarConnectionService').connect(...args), disconnectCalendar: (...args) => require('./performanceCalendarConnectionService').disconnect(...args), retryNotetaker: (...args) => require('./performanceNotetakerStatusService').retry(...args), notetakerStatus: (...args) => require('./performanceNotetakerStatusService').status(...args), create, sync, cancel, startRecording, stopRecording, meetingUrl, boundedTranscript };

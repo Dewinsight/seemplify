@@ -28,6 +28,7 @@ module.exports = ({ completeMeeting, onScheduled }) => {
   }));
   router.use('/recording-consent', require('./calendarRecordingConsent')());
   router.use('/native', require('./appraisalNativeCalls')(calls.publicMeeting));
+  router.use('/notetaker-status', require('./notetakerStatus')());
   router.post('/retry', wrap(async (req, res) => {
     if (!req.oneOnOneAccess.isManager && !req.oneOnOneAccess.isHrAdmin) return res.status(403).json({ error: 'Only the organizer or HR can retry a calendar invitation.' });
     if (req.meeting.appraisalMeeting.mode !== 'calendar') return res.status(409).json({ error: 'This is an in-app call.' });

@@ -28,6 +28,7 @@ function accountCredentials(account) {
 }
 async function connect(rawIdentity, input = {}) {
   const { user, identity } = await shared.resolveSharedPrincipal(rawIdentity);
+  if (user.nylasGrantStatus === 'stopped' && user.nylasGrantId) throw fail('Finish disconnecting your previous calendar before adding another.', 'CALENDAR_DISCONNECT_PENDING');
   if (!identity.organizationId) throw fail('Choose an organization first.', 'ORGANIZATION_REQUIRED', 400);
   const path = returnPath(input.returnPath);
   const provider = input.provider || 'google';
@@ -63,7 +64,7 @@ async function callback(query = {}, browserProof) {
   if (typeof query.code !== 'string' || !query.code || query.code.length > 4096) return { redirectUrl: returnUrl(intent.returnPath, 'failed') };
   try {
     const { user } = await shared.resolveSharedPrincipal(intent.identity);
-    if (String(user._id) !== String(intent.userId) || (user.nylasGrantId || null) !== intent.previousGrantId) throw fail('Calendar changed while connecting.', 'CALENDAR_CONNECTION_CHANGED');
+    if (user.nylasGrantStatus === 'stopped' || String(user._id) !== String(intent.userId) || (user.nylasGrantId || null) !== intent.previousGrantId) throw fail('Calendar changed while connecting.', 'CALENDAR_CONNECTION_CHANGED');
     const account = await Account.findOne({ _id: intent.accountId, active: true }).select('+apiKey +clientSecret');
     if (!account) throw fail('Calendar application unavailable.', 'CALENDAR_APPLICATION_UNAVAILABLE');
     const client = nylas.getNylasInstance(accountCredentials(account));
@@ -74,7 +75,7 @@ async function callback(query = {}, browserProof) {
     const grant = (await client.grants.find({ grantId })).data;
     if (!grant?.email || !['valid', 'active'].includes(grant.grantStatus || grant.grant_status)) throw fail('Calendar authorization is not active.', 'CALENDAR_GRANT_INVALID');
     if (await User.exists({ _id: { $ne: user._id }, nylasGrantId: grantId, nylasAccountId: account._id })) throw fail('This calendar is already connected to another user.', 'CALENDAR_GRANT_IN_USE');
-    const saved = await User.updateOne({ _id: intent.userId, idpSubject: intent.identity.sub, nylasGrantId: intent.previousGrantId }, { $set: { nylasGrantId: grantId, nylasAccountId: account._id, nylasGrantStatus: 'active', calendarConnected: true, calendarProvider: grant.provider, grantConnectedAt: new Date() } });
+    const saved = await User.updateOne({ _id: intent.userId, idpSubject: intent.identity.sub, nylasGrantId: intent.previousGrantId, nylasGrantStatus: { $ne: 'stopped' } }, { $set: { nylasGrantId: grantId, nylasAccountId: account._id, nylasGrantStatus: 'active', calendarConnected: true, calendarProvider: grant.provider, grantConnectedAt: new Date() } });
     if (saved.matchedCount !== 1) throw fail('Calendar changed while connecting.', 'CALENDAR_CONNECTION_CHANGED');
     // Keep old grants usable by invitations already pinned to those calendars.
     // No other person's connection or existing meeting is changed here.
@@ -84,4 +85,19 @@ async function callback(query = {}, browserProof) {
     return { redirectUrl: returnUrl(intent.returnPath, 'failed') };
   }
 }
-module.exports = { connect, callback, PREFIX, cookieName };
+async function disconnect(rawIdentity) {
+  const { user } = await shared.resolveSharedPrincipal(rawIdentity);
+  if (!user.nylasGrantId) return { disconnected: true };
+  const filter = { _id: user._id, nylasGrantId: user.nylasGrantId, nylasAccountId: user.nylasAccountId };
+  const account = await Account.findOne({ _id: user.nylasAccountId, active: true }).select('+apiKey +clientSecret');
+  if (!account) throw fail('The calendar application is unavailable. Contact your administrator.', 'CALENDAR_APPLICATION_UNAVAILABLE', 503);
+  // Quarantine this grant while revocation is pending. New connect attempts must wait.
+  const claimed = await User.updateOne(filter, { $set: { calendarConnected: false, nylasGrantStatus: 'stopped' } });
+  if (!claimed.matchedCount) return { disconnected: false, connectionChanged: true };
+  try { await nylas.getNylasInstance(accountCredentials(account)).grants.destroy({ grantId: user.nylasGrantId }); }
+  catch (error) { if (![404, 410].includes(error.statusCode || error.status)) throw fail('Calendar access has not yet been revoked by Nylas. Retry disconnect.', 'CALENDAR_DISCONNECT_PENDING', 503); }
+  const updated = await User.updateOne(filter, { $unset: { nylasGrantId: 1, nylasAccountId: 1, calendarProvider: 1 }, $set: { calendarConnected: false, nylasGrantStatus: 'revoked' } });
+  await pool.updateGrantCount(account._id).catch(() => undefined);
+  return { disconnected: updated.matchedCount === 1, connectionChanged: updated.matchedCount !== 1 };
+}
+module.exports = { connect, disconnect, callback, PREFIX, cookieName };

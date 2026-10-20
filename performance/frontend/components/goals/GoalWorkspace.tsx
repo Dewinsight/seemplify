@@ -53,6 +53,7 @@ import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import { useDirectReports, useUserContext } from '@/lib/hooks';
+import GoalDetailsDialog from './GoalDetailsDialog';
 
 type MetricType = 'percentage' | 'number' | 'currency' | 'boolean' | 'milestone';
 type GoalType = 'individual' | 'team' | 'department' | 'organization';
@@ -100,7 +101,7 @@ interface DepartmentOption {
   name: string;
 }
 
-interface Goal {
+export interface Goal {
   _id: string;
   title?: string;
   type: GoalType;
@@ -357,6 +358,7 @@ export default function GoalWorkspace({ embedded = false, reviewPeriod, particip
   const [selectedPeriod, setSelectedPeriod] = useState(currentQuarterLabel());
   const [view, setView] = useState<WorkspaceView>('my');
   const [selectedGoalId, setSelectedGoalId] = useState('');
+  const [detailsGoalId, setDetailsGoalId] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [editLoading, setEditLoading] = useState(false);
@@ -1143,6 +1145,9 @@ export default function GoalWorkspace({ embedded = false, reviewPeriod, particip
 
           <Divider sx={{ my: 2 }} />
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button size="small" variant="outlined" color="inherit" sx={{ minHeight: 44 }} onClick={() => setDetailsGoalId(goal._id)}>
+              View details
+            </Button>
             {needsAcknowledgement && (
               <Button size="small" variant="contained" startIcon={<Check />} disabled={saving} onClick={() => performAction(goal, 'acknowledge')}>
                 Acknowledge
@@ -1225,6 +1230,7 @@ export default function GoalWorkspace({ embedded = false, reviewPeriod, particip
 
   return (
     <Box>
+      {detailsGoalId && <GoalDetailsDialog key={`${authOrganization?.id || authOrganization?._id}:${detailsGoalId}`} goalId={detailsGoalId} ownerLabel={ownerName} onClose={() => setDetailsGoalId('')} />}
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2} sx={{ mb: 3 }}>
         <Box>
           <Typography component={embedded ? 'h3' : 'h4'} variant={embedded ? 'h6' : 'h4'} fontWeight={700}>Goals</Typography>

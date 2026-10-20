@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { FlowStep } from './AppraisalFlowEditor';
 import AppraisalNativeCall from './AppraisalNativeCall';
 import CalendarRecordingConsent from '../competency/CalendarRecordingConsent';
+import CalendarNotetakerMonitor from './CalendarNotetakerMonitor';
 import CalendarAccount from './CalendarAccount';
 import CalendarConnectButton from './CalendarConnectButton';
 import MeetingActions from './MeetingActions';
@@ -17,11 +18,12 @@ const getData = async (url: string) => (await api.get(url)).data.data;
 const problem = (error: unknown) => (error as { response?: { data?: { error?: string } } })?.response?.data?.error || 'This request could not be completed. Please retry.';
 const localDateTime = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
-export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canManage, canJoin = true, readOnly = false, onUpdated, currentStepId, participantName, ownName }: { appraisalId?: string; oneOnOneId?: string; steps: FlowStep[]; canManage: boolean; canJoin?: boolean; readOnly?: boolean; onUpdated: () => void; currentStepId?: string; participantName?: string; ownName?: string }) {
+export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canManage, canJoin = true, readOnly = false, onUpdated, currentStepId, participantName, ownName, focusCurrentStep = false }: { focusCurrentStep?: boolean; appraisalId?: string; oneOnOneId?: string; steps: FlowStep[]; canManage: boolean; canJoin?: boolean; readOnly?: boolean; onUpdated: () => void; currentStepId?: string; participantName?: string; ownName?: string }) {
   const base = oneOnOneId ? `/one-on-ones/${oneOnOneId}/call` : `/appraisals/${appraisalId}/meetings`;
   const notStarted = (meeting: Meeting) => new Date(meeting.scheduledDate).getTime() > Date.now() && (!oneOnOneId || !meeting.startedAt);
   const actionBase = (meeting: Meeting) => oneOnOneId ? base : `${base}/${meeting._id}`;
   const { data: meetings = [], error: loadError, isLoading, mutate } = useSWR<Meeting[]>(base, getData, { refreshInterval: 30000 });
+  const [expandedCalls, setExpandedCalls] = useState<Record<string, boolean>>({});
   const [error, setError] = useState(''); const [busy, setBusy] = useState(''); const [showForm, setShowForm] = useState(false);
   const [stepId, setStepId] = useState(''); const [scheduledDate, setScheduledDate] = useState(''); const [duration, setDuration] = useState(30);
   const [linkMode, setLinkMode] = useState('new'); const [meetingLink, setMeetingLink] = useState('');
@@ -30,7 +32,8 @@ export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canM
   const [record, setRecord] = useState(true); const [notice, setNotice] = useState(false); const [notes, setNotes] = useState<Record<string, string>>({});
   const [connection, setConnection] = useState<{ connected: boolean; email: string; connectUrl: string } | null>(null);
   const [connectionBusy, setConnectionBusy] = useState(false); const [connectionError, setConnectionError] = useState(false);
-  const available = steps.filter(step => !meetings.some(meeting => meeting.stepId === step.id && (meeting.conferenceUrl || meeting.mode === 'in_app')));
+  const visibleMeetings = meetings.filter(meeting => !focusCurrentStep || meeting.stepId === currentStepId);
+  const available = steps.filter(step => (!focusCurrentStep || step.id === currentStepId) && !meetings.some(meeting => meeting.stepId === step.id && (meeting.conferenceUrl || meeting.mode === 'in_app')));
   const run = async (key: string, action: () => Promise<unknown>) => { setBusy(key); setError(''); try { await action(); await mutate(); onUpdated(); } catch (error) { setError(problem(error)); } finally { setBusy(''); } };
   const loadConnection = async () => {
     setConnectionBusy(true); setConnectionError(false); setConnection(null);
@@ -49,9 +52,9 @@ export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canM
     {isLoading && <CircularProgress size={24} aria-label="Loading appraisal meetings" />}
     {loadError && <Alert severity="error" action={<Button onClick={() => mutate()}>Retry</Button>}>Calls could not be loaded.</Alert>}
     {error && <Alert severity="error" sx={{ mb: 2 }} role="alert">{error}</Alert>}
-    {meetings.some(meeting => meeting.mode !== 'in_app') && <CalendarAccount base={base} />}
-    {!isLoading && !loadError && !meetings.length && <Stack direction="row" alignItems="center" gap={2} sx={{ py: 2 }}><EventOutlined sx={{ fontSize: 32, color: 'text.secondary' }} /><Box><Typography fontWeight={600} variant="body2">{readOnly ? 'No saved calls' : 'No calls scheduled yet'}</Typography><Typography variant="body2" color="text.secondary">{readOnly ? 'No calls were saved for this appraisal.' : canManage ? 'Choose a calendar meeting or meet directly in this appraisal.' : 'Your reviewer will schedule the call here.'}</Typography></Box></Stack>}
-    {meetings.map(meeting => <Accordion key={meeting._id} defaultExpanded={Boolean(oneOnOneId) || meeting.stepId === currentStepId} disableGutters variant="outlined" sx={{ mb: 1.5, '&:before': { display: 'none' }, overflow: 'hidden' }}>
+    {focusCurrentStep ? <Accordion variant="outlined" sx={{ mb: 2 }}><AccordionSummary expandIcon={<ExpandMore />}>Calendar account settings</AccordionSummary><AccordionDetails><CalendarAccount base={base} readOnly={readOnly} /></AccordionDetails></Accordion> : <CalendarAccount base={base} readOnly={readOnly} />}
+    {!isLoading && !loadError && !visibleMeetings.length && <Stack direction="row" alignItems="center" gap={2} sx={{ py: 2 }}><EventOutlined sx={{ fontSize: 32, color: 'text.secondary' }} /><Box><Typography fontWeight={600} variant="body2">{readOnly ? 'No saved calls' : 'No calls scheduled yet'}</Typography><Typography variant="body2" color="text.secondary">{readOnly ? 'No calls were saved for this appraisal.' : canManage ? 'Choose a calendar meeting or meet directly in this appraisal.' : 'Your reviewer will schedule the call here.'}</Typography></Box></Stack>}
+    {visibleMeetings.map(meeting => <Accordion key={meeting._id} onChange={(_, expanded) => setExpandedCalls(previous => ({ ...previous, [meeting._id]: expanded }))} defaultExpanded={Boolean(oneOnOneId) || meeting.stepId === currentStepId} disableGutters variant="outlined" sx={{ mb: 1.5, '&:before': { display: 'none' }, overflow: 'hidden' }}>
       <AccordionSummary expandIcon={<ExpandMore />} sx={{ px: { xs: 1.5, sm: 2.5 }, '& .MuiAccordionSummary-content': { gap: 1.5, minWidth: 0, my: 2 } }}>
         <Box sx={{ pt: .25, color: 'text.secondary' }}>{meeting.mode === 'in_app' ? <VideocamOutlined /> : <EventOutlined />}</Box>
         <Box sx={{ flex: 1, minWidth: 0 }}><Typography fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>{meeting.title}</Typography><Typography variant="body2" color="text.secondary" mt={.25}>{new Date(meeting.scheduledDate).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · {meeting.duration} min</Typography><Stack direction="row" gap={.75} flexWrap="wrap" mt={1}><Chip size="small" variant="outlined" label={meeting.mode === 'in_app' ? 'In-app call' : 'Calendar meeting'} /><Chip size="small" color={meeting.status === 'completed' ? 'success' : 'default'} label={meeting.status.replaceAll('_', ' ')} sx={{ textTransform: 'capitalize' }} /></Stack></Box>
@@ -68,6 +71,7 @@ export default function AppraisalMeetings({ appraisalId, oneOnOneId, steps, canM
         </Stack>
         <MeetingActions base={actionBase(meeting)} link={meeting.conferenceUrl} canRemind={!readOnly && canManage && ['scheduled', 'in_progress'].includes(meeting.status) && new Date(meeting.scheduledDate).getTime() + meeting.duration * 60000 > Date.now()} />
         {!readOnly && meeting.mode !== 'in_app' && meeting.integration?.recordingRequested && <CalendarRecordingConsent callBase={actionBase(meeting)} onUpdated={() => { void mutate(); onUpdated(); }} />}
+        {(expandedCalls[meeting._id] ?? (Boolean(oneOnOneId) || meeting.stepId === currentStepId)) && meeting.mode === 'calendar' && meeting.integration?.recordingRequested && <CalendarNotetakerMonitor readOnly={readOnly} base={actionBase(meeting)} meetingStatus={meeting.status} scheduledDate={meeting.scheduledDate} duration={meeting.duration} hasTranscript={Boolean(meeting.transcript)} canManage={!readOnly && (canManage || canJoin)} onUpdated={() => { void mutate(); }} />}
         {playback[meeting._id] && <Box component="video" controls src={playback[meeting._id]} sx={{ width: '100%', maxHeight: 400, bgcolor: 'grey.900', borderRadius: 2 }} aria-label={oneOnOneId ? 'Saved call recording' : 'Saved appraisal call recording'} />}
         {!readOnly && meeting.mode === 'in_app' && meeting.integration?.recordingAvailable && !meeting.transcript && <Alert severity={meeting.integration.transcriptionState === 'failed' ? 'warning' : 'info'}>Transcript: {(meeting.integration.transcriptionState || 'pending').replaceAll('_', ' ')}. Use Refresh recording and transcript to retry. No speech detected means no transcript or AI notes can be generated.</Alert>}
         {!readOnly && meeting.mode !== 'in_app' && meeting.integration?.recordingRequested && !meeting.transcript && <Typography variant="body2" color="text.secondary">Admit the notetaker when it joins. Media appears after the call ends and Nylas finishes processing. Calendar creation alone does not produce a transcript.</Typography>}
