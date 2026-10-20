@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 // Synthetic UI transport contracts. These tests do not certify live Identity,
 // backend persistence or the cause of a production outage.
-type Endpoint = '/user/search' | '/calibration' | '/appraisals/cycles' | `/reviews/${string}` | '/okrs' | '/goal-periods';
+type Endpoint = '/user/search' | '/calibration' | '/appraisals/cycles' | `/reviews/${string}` | '/okrs' | '/goal-periods' | '/okrs/hierarchy';
 interface ResponseState { fail: boolean; data: unknown; hold?: Promise<void>; reads: number }
 
 async function install(page: Page, overrides: Partial<Record<Endpoint, ResponseState>> = {}, hr = true) {
@@ -258,4 +258,42 @@ test('a failed goal load retains a working Retry before creation becomes availab
   await retry.click();
   await expect(page.getByRole('button', { name: 'Create goal', exact: true }).first()).toBeEnabled();
   await expect(retry).toHaveCount(0);
+});
+
+function graphGoal(id: string, title: string, type: 'organization' | 'team' | 'individual', parentId?: string) {
+  return { _id: id, title, type, ownerId: 'reliability-reviewer', period: 'Synthetic graph period', status: 'active', progress: null,
+    objectives: [{ title, keyResults: [{ title: `${title} result`, targetValue: 100 }] }],
+    ...(parentId ? { alignment: { parentOKRId: parentId } } : {}), children: [] as ReturnType<typeof graphGoal>[] };
+}
+
+test('alignment goal deep links expand the authorized organization-to-child path', async ({ page }) => {
+  const parent = graphGoal('visible-organization', 'Visible organization direction', 'organization');
+  const child = graphGoal('visible-team', 'Visible team delivery', 'team', parent._id);
+  parent.children = [child];
+  await install(page, { '/okrs/hierarchy': { fail: false, reads: 0, data: { organization: [parent], unalignedDepartment: [], unalignedTeam: [], unalignedIndividual: [], tree: [parent] } } }, false);
+  await page.goto(`/okrs/alignment?goal=${child._id}&period=${encodeURIComponent(child.period)}`);
+  await expect(page.getByRole('button', { name: 'Collapse Visible organization direction', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator(`#goal-${child._id}`)).toBeVisible();
+  await expect(page.locator(`#goal-${child._id}`)).toHaveCSS('outline-style', 'solid');
+  await expect(page.getByText('Visible team delivery result', { exact: true })).toBeVisible();
+});
+
+test('alignment retains a visible linked root and descendants when its parent is unavailable without fetching that parent', async ({ page }, info) => {
+  const linkedRoot = graphGoal('visible-linked-team', 'Visible linked team goal', 'team', 'unavailable-parent-id');
+  const child = graphGoal('visible-linked-employee', 'Visible employee contribution', 'individual', linkedRoot._id);
+  linkedRoot.children = [child];
+  const goalReads: string[] = [];
+  await install(page, { '/okrs/hierarchy': { fail: false, reads: 0, data: { organization: [], unalignedDepartment: [], unalignedTeam: [], unalignedIndividual: [], tree: [linkedRoot] } } }, false);
+  page.on('request', request => { const path = new URL(request.url()).pathname; if (path.startsWith('/__mock-api/okrs')) goalReads.push(path); });
+  await page.goto(`/okrs/alignment?goal=${child._id}`);
+  await expect(page.getByText('Linked goals with an unavailable parent', { exact: true })).toBeVisible();
+  await expect(page.getByText(/their parent goal is not available in this view/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Collapse Visible linked team goal', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator(`#goal-${linkedRoot._id}`)).toBeVisible();
+  await expect(page.locator(`#goal-${child._id}`)).toBeVisible();
+  await expect(page.getByText('unavailable-parent-id', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('Unaligned OKRs', { exact: true })).toHaveCount(0);
+  expect(goalReads.length).toBeGreaterThan(0);
+  expect(goalReads.every(path => path === '/__mock-api/okrs/hierarchy')).toBe(true);
+  await page.screenshot({ path: info.outputPath('authorized-alignment-unavailable-parent.png'), fullPage: true });
 });

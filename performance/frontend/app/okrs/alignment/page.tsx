@@ -34,6 +34,7 @@ interface OKRNode {
     }>;
   }>;
   children?: OKRNode[];
+  alignment?: { parentOKRId?: string | null };
 }
 
 interface HierarchyData {
@@ -41,6 +42,12 @@ interface HierarchyData {
   unalignedDepartment: OKRNode[];
   unalignedTeam: OKRNode[];
   unalignedIndividual: OKRNode[];
+  tree?: OKRNode[];
+}
+
+function hierarchyRoots(data: HierarchyData | null | undefined): OKRNode[] {
+  if (!data) return [];
+  return Array.isArray(data.tree) ? data.tree : [...(data.organization || []), ...(data.unalignedDepartment || []), ...(data.unalignedTeam || []), ...(data.unalignedIndividual || [])];
 }
 
 export default function OKRAlignmentPage() {
@@ -78,7 +85,7 @@ export default function OKRAlignmentPage() {
             }
             return null;
           };
-          const path = findPath(res.data.data?.organization || []);
+          const path = findPath(hierarchyRoots(res.data.data));
           if (path) setExpandedNodes(new Set(path));
           window.setTimeout(() => document.getElementById(`goal-${goalId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
         }
@@ -110,6 +117,11 @@ export default function OKRAlignmentPage() {
     }
     setExpandedNodes(newExpanded);
   };
+
+  const roots = hierarchyRoots(hierarchy);
+  const organizationRoots = roots.filter(node => node.type === 'organization');
+  const unavailableParentRoots = roots.filter(node => node.type !== 'organization' && node.alignment?.parentOKRId);
+  const unalignedRoots = roots.filter(node => node.type !== 'organization' && !node.alignment?.parentOKRId);
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -149,7 +161,7 @@ export default function OKRAlignmentPage() {
         >
           <Box display="flex" alignItems="center" gap={2}>
             {hasChildren && (
-              <IconButton size="small" onClick={() => toggleExpand(okr._id)}>
+              <IconButton size="small" aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${okr.title || okr.objectives?.[0]?.title || 'goal'}`} aria-expanded={isExpanded} aria-controls={`goal-children-${okr._id}`} onClick={() => toggleExpand(okr._id)}>
                 {isExpanded ? <ExpandLess /> : <ExpandMore />}
               </IconButton>
             )}
@@ -228,7 +240,7 @@ export default function OKRAlignmentPage() {
 
         {/* Children */}
         {hasChildren && (
-          <Collapse in={isExpanded}>
+          <Collapse id={`goal-children-${okr._id}`} in={isExpanded} aria-hidden={!isExpanded}>
             <Box sx={{ mt: 1, borderLeft: 2, borderColor: 'divider' }}>
               {okr.children?.map(child => renderOKRNode(child, depth + 1))}
             </Box>
@@ -327,18 +339,25 @@ export default function OKRAlignmentPage() {
           </Typography>
           <Divider sx={{ my: 2 }} />
 
-          {hierarchy?.organization && hierarchy.organization.length > 0 ? (
-            hierarchy.organization.map(okr => renderOKRNode(okr))
+          {organizationRoots.length > 0 ? (
+            organizationRoots.map(okr => renderOKRNode(okr))
           ) : (
             <Alert severity="info">
-              No organization-level OKRs found. Create organization OKRs first to build a cascade.
+              No organization-level OKRs are available in this view.
             </Alert>
           )}
         </CardContent>
       </Card>
 
+      {unavailableParentRoots.length > 0 && <Card sx={{ mb: 3 }}><CardContent>
+        <Typography variant="h6" gutterBottom>Linked goals with an unavailable parent</Typography>
+        <Typography variant="body2" color="text.secondary" mb={2}>These goals are available to you, but their parent goal is not available in this view. Their visible child goals are retained below.</Typography>
+        <Divider sx={{ my: 2 }} />
+        {unavailableParentRoots.map(okr => renderOKRNode(okr))}
+      </CardContent></Card>}
+
       {/* Unaligned OKRs */}
-      {((hierarchy?.unalignedDepartment?.length || 0) > 0 || (hierarchy?.unalignedTeam?.length || 0) > 0 || (hierarchy?.unalignedIndividual?.length || 0) > 0) && (
+      {unalignedRoots.length > 0 && (
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom color="warning.main">
@@ -350,58 +369,7 @@ export default function OKRAlignmentPage() {
             </Typography>
             <Divider sx={{ my: 2 }} />
 
-            {hierarchy?.unalignedDepartment?.map(okr => (
-              <Box key={okr._id} sx={{ mb: 1 }}>
-                <Paper id={`goal-${okr._id}`} variant="outlined" sx={{ p: 2, borderColor: selectedGoalId === okr._id ? 'primary.main' : 'info.main' }}>
-                  <Box display="flex" alignItems="center" gap={2}>
-                    <AccountTree color="info" />
-                    <Box flex={1}>
-                      <Typography variant="subtitle2">{okr.title || okr.objectives?.[0]?.title || 'Untitled'}</Typography>
-                      <Typography variant="caption" color="text.secondary">Department OKR · {okr.period}</Typography>
-                    </Box>
-                    <Chip size="small" label="Unaligned" color="warning" />
-                  </Box>
-                </Paper>
-              </Box>
-            ))}
-
-            {hierarchy?.unalignedTeam?.map(okr => (
-              <Box key={okr._id} sx={{ mb: 1 }}>
-                <Paper id={`goal-${okr._id}`} variant="outlined" sx={{ p: 2, borderColor: selectedGoalId === okr._id ? 'primary.main' : 'warning.main' }}>
-                  <Box display="flex" alignItems="center" gap={2}>
-                    <Groups color="secondary" />
-                    <Box flex={1}>
-                      <Typography variant="subtitle2">
-                        {okr.objectives?.[0]?.title || 'Untitled'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Team OKR • {okr.period}
-                      </Typography>
-                    </Box>
-                    <Chip size="small" label="Unaligned" color="warning" />
-                  </Box>
-                </Paper>
-              </Box>
-            ))}
-
-            {hierarchy?.unalignedIndividual?.map(okr => (
-              <Box key={okr._id} sx={{ mb: 1 }}>
-                <Paper id={`goal-${okr._id}`} variant="outlined" sx={{ p: 2, borderColor: selectedGoalId === okr._id ? 'primary.main' : 'warning.light' }}>
-                  <Box display="flex" alignItems="center" gap={2}>
-                    <Person color="action" />
-                    <Box flex={1}>
-                      <Typography variant="subtitle2">
-                        {okr.objectives?.[0]?.title || 'Untitled'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Individual OKR • {okr.period}
-                      </Typography>
-                    </Box>
-                    <Chip size="small" label="Unaligned" variant="outlined" />
-                  </Box>
-                </Paper>
-              </Box>
-            ))}
+            {unalignedRoots.map(okr => renderOKRNode(okr))}
           </CardContent>
         </Card>
       )}
