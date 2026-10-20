@@ -1976,6 +1976,18 @@ const connectCalendar = async (req, res) => {
 
 // Handle OAuth callback
 const handleOAuthCallback = async (req, res) => {
+  if (typeof req.query.state === 'string' && req.query.state.startsWith('pmcal_')) {
+    res.set('Cache-Control', 'no-store');
+    res.set('Referrer-Policy', 'no-referrer');
+    try {
+      const connection = require('../services/performanceCalendarConnectionService');
+      const name = connection.cookieName(req.query.state);
+      const proof = req.cookies?.[name];
+      const result = await connection.callback(req.query, proof);
+      res.clearCookie(name, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/api/interviews/oauth/callback', ...(process.env.NODE_ENV === 'production' ? { domain: '.seemplifyai.com' } : {}) });
+      return res.redirect(303, result.redirectUrl);
+    } catch (error) { return res.status(error.statusCode || 400).json({ error: 'Calendar connection expired. Start again from Performance.', code: error.code || 'CALENDAR_STATE_INVALID' }); }
+  }
   try {
     console.log('=== OAuth Callback Handler ===');
     console.log('Query params:', req.query);

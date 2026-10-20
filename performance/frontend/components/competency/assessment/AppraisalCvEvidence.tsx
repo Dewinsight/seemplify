@@ -5,6 +5,7 @@ import { competencyError, competencyRequest } from '@/lib/competency-api';
 import CvEvidencePanel from './CvEvidencePanel';
 import type { LinkedCompetencyAssessment } from './LinkedCompetencyAssessmentPanel';
 import type { Assessment } from './types';
+import { permitted } from './types';
 import { Failure, Loading } from './ui';
 
 export interface AppraisalCvEvidenceProps { appraisalId: string }
@@ -45,7 +46,7 @@ function AppraisalCvEvidenceContent({ appraisalId }: AppraisalCvEvidenceProps) {
   }
   if (error) return <Box mb={3}><Failure message={`CV evidence could not be loaded. ${error}`} retry={() => { setAssessments(null); setError(''); setAttempt(value => value + 1); }}/></Box>;
   if (!assessments) return <Box mb={3}><Loading label="Checking optional CV evidence…"/></Box>;
-  const visible = assessments.filter(assessment => assessment.definitionSnapshot.cvRequested === true || assessment.cvRequested === true || assessment.evidence?.some(source => source.documentType === 'cv'));
+  const visible = assessments.filter(assessment => assessment.definitionSnapshot.cvRequested === true || assessment.cvRequested === true || assessment.evidence?.some(source => source.documentType === 'cv') || (permitted(assessment.allowedActions, 'evidence.create') && ['draft', 'in_progress', 'reopened'].includes(assessment.status)));
   if (!visible.length) return null;
   return <Stack gap={2} mb={3}>{visible.map(assessment => <CvEvidencePanel key={`${appraisalId}:${assessment.id}`} assessment={assessment} refresh={() => refresh(assessment.id)}/>)}</Stack>;
 }

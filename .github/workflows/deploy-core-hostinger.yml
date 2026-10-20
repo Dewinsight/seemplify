@@ -121,7 +121,7 @@ jobs:
             tests/idpAdminSsoService.test.js
           node --test tests/platformConfigurationClient.test.js tests/embeddingRuntimeConfig.test.js tests/nomicEmbeddingClient.test.js tests/nomicIndexMigration.test.js tests/nomicWeaviateProfile.test.js
           node --test tests/employeeAssessments.test.js
-          node --test test/performance-meetings.test.js
+          node --test test/performance-meetings.test.js test/performance-calendar-connection.test.js
 
   learning-qa:
     name: Test Learning platform configuration

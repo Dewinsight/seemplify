@@ -28,6 +28,7 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
     try { return res.json({ success: true, data: await shared.request('meetings/connection', shared.identityFromRequest(req)) }); }
     catch (error) { return errorResponse(res, error); }
   });
+  router.use('/connection', require('./calendarConnection')());
   router.post('/', async (req, res) => {
     try {
       if (!req.canManageMeeting) return res.status(403).json({ success: false, error: 'Only the assigned reviewer or HR can schedule this call.' });
