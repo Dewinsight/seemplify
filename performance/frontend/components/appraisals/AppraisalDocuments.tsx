@@ -89,7 +89,8 @@ export default function AppraisalDocuments({ appraisalId, documents = [], disabl
   return <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
     <Typography variant="h6" component="h2" fontWeight={600}>Supporting documents</Typography>
     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-      Documents uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.
+      {readOnly ? 'Retained supporting documents available to your role. Download access follows each document’s original audience restrictions.'
+        : 'Documents uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.'}
     </Typography>
     {error && !remove && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
     <Stack spacing={1.5}>

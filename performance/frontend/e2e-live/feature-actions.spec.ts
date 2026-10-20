@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 const date = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
 function muiSelect(scope: Page | Locator, label: string) {
   return scope.locator('label').filter({ hasText: label }).first().locator('..').getByRole('combobox');
@@ -492,19 +493,39 @@ test('HR records calibration decisions, completes the session and downloads the 
   await create.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(create).not.toBeVisible();
   const card = page.locator('.MuiCard-root').filter({ has: page.getByText(title, { exact: true }) });
+  await expect(page.locator('.MuiCard-root').filter({ has: page.getByText('Reviews in sessions', { exact: true }) }).getByRole('heading')).toHaveText('1');
+  await expect(page.getByText('Reviews Calibrated', { exact: true })).toHaveCount(0);
   await card.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(card.getByText('0 of 1 reviewed', { exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Continue', exact: true }).click();
   const details = page.getByRole('dialog');
   await details.getByRole('button', { name: 'Review rating', exact: true }).click();
   const review = page.getByRole('dialog', { name: /Review rating:/ });
-  await review.getByLabel('Calibration reason').fill('Synthetic browser acceptance evidence reviewed.');
+  const reason = 'Synthetic browser acceptance evidence reviewed, including "delivery" context.';
+  await review.getByLabel('Calibrated rating', { exact: true }).fill('3');
+  await review.getByLabel('Calibration reason').fill(reason);
   await review.getByRole('button', { name: 'Save decision', exact: true }).click();
   await expect(review).not.toBeVisible();
   await details.getByRole('button', { name: 'Complete calibration', exact: true }).click();
   await expect(details.getByText('completed', { exact: true })).toBeVisible();
+  const session = (await api(request, 'hr_manager', 'GET', 'calibration')).find((item: { title: string }) => item.title === title);
+  expect(session.reviewsUnderCalibration[0]).toMatchObject({ employeeName: 'Acceptance employee', employeeId: 'acceptance-employee', originalManagerRating: 4, calibratedRating: 3, decision: 'adjusted', calibrationNotes: reason });
+  // Reopen the completed session after a real reload so export joins the
+  // authorized session snapshot, including the retained original rating.
+  await page.reload();
+  const completed = page.getByRole('row').filter({ has: page.getByText(title, { exact: true }) });
+  await completed.getByRole('button', { name: 'View Report', exact: true }).click();
+  await expect(details.getByText('completed', { exact: true })).toBeVisible();
+  await expect(details.getByRole('button', { name: 'Review rating', exact: true })).toHaveCount(0);
+  await expect(details.getByRole('button', { name: 'Complete calibration', exact: true })).toHaveCount(0);
+  const report = await api(request, 'hr_manager', 'GET', `calibration/${session._id}/export`);
+  expect(report.reviews[0]).not.toHaveProperty('employeeName');
   const download = page.waitForEvent('download');
   await details.getByRole('button', { name: 'Export Report', exact: true }).click();
-  expect((await download).suggestedFilename()).toMatch(/^calibration-.*\.csv$/);
+  const exported = await download;
+  expect(exported.suggestedFilename()).toMatch(/^calibration-.*\.csv$/);
+  const csv = await readFile((await exported.path())!, 'utf8');
+  expect(csv.replace(/^\uFEFF/, '')).toBe('"Employee","Employee ID","Original rating","Calibrated rating","Decision","Notes"\r\n"Acceptance employee","acceptance-employee","4","3","adjusted","Synthetic browser acceptance evidence reviewed, including ""delivery"" context."');
 });
 
 test('HR downloads actual OKR and appraisal CSV exports', async ({ page }) => {

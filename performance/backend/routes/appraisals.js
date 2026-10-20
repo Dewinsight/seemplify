@@ -816,6 +816,7 @@ async function cancelAppraisalReminders(appraisal, reminderTargetType, userId = 
 }
 
 const APPRAISAL_COMPLETED_STATUSES = ['completed', 'employee_acknowledged'];
+const APPRAISAL_EVIDENCE_LOCKED_STATUSES = new Set([...APPRAISAL_COMPLETED_STATUSES, 'cancelled']);
 const SELF_ASSESSMENT_EDITABLE_STATUSES = ['self_assessment_pending', 'self_assessment_in_progress'];
 const SELF_ASSESSMENT_PENDING_STATUSES = ['self_assessment_pending', 'self_assessment_in_progress'];
 const MANAGER_REVIEW_EDITABLE_STATUSES = ['manager_review_pending', 'manager_review_in_progress', 'self_assessment_submitted'];
@@ -3074,7 +3075,20 @@ router.get('/:appraisalId/report', requireAuth, async (req, res) => {
     const hrAccess = hasPermission(req.userRole, 'review:view:all', req.session.user);
     if (!employeeAccess && !managerAccess && !hrAccess) return res.status(403).json({ success: false, error: 'Access denied' });
     if (!APPRAISAL_COMPLETED_STATUSES.includes(appraisal.status)) return res.status(409).json({ success: false, error: 'The final result report will be available when this appraisal is completed.' });
-    return res.json({ success: true, data: resultReport(appraisal, appraisal.cycleId) });
+    const documents = appraisal.documents?.length ? await AppraisalDocument.find({
+      _id: { $in: appraisal.documents }, appraisalId: appraisal._id,
+      organizationId: appraisal.organizationId, status: { $ne: 'deleted' }
+    }).select('_id appraisalId organizationId visibility originalName fileType fileSize category status').lean() : [];
+    const report = resultReport(appraisal, appraisal.cycleId);
+    // History exposes only the current viewer's authorized metadata. Content
+    // authorization and fresh provider signing remain on the content route.
+    report.documents = visibleAppraisalDocuments(req, { ...appraisal.toObject(), documents }, {
+      isEmployee: isAppraisalEmployee(req, appraisal), canManage: managerAccess, isHR: req.userRole === 'hr_admin'
+    }).map(document => ({
+      _id: String(document._id), originalName: document.originalName, fileType: document.fileType,
+      fileSize: document.fileSize, category: document.category, status: document.status
+    }));
+    return res.json({ success: true, data: report });
   } catch (error) {
     return res.status(500).json({ success: false, error: 'Could not load the appraisal result report' });
   }
@@ -3889,6 +3903,11 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
+    if (APPRAISAL_EVIDENCE_LOCKED_STATUSES.has(appraisal.status)) {
+      removeRejectedUpload(req.file);
+      return res.status(409).json({ success: false, error: 'Supporting documents are read-only after this appraisal is finalized or cancelled.' });
+    }
+
     const file = req.file;
     if (!file) {
       return res.status(400).json({ success: false, error: 'A document file is required' });
@@ -4108,6 +4127,9 @@ router.delete('/:appraisalId/documents/:documentId', requireAuth, async (req, re
     const canManage = await canManageAppraisal(req, appraisal);
     if (!isOwner && !canManage && req.userRole !== 'hr_admin') {
       return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    if (APPRAISAL_EVIDENCE_LOCKED_STATUSES.has(appraisal.status)) {
+      return res.status(409).json({ success: false, error: 'Supporting documents are read-only after this appraisal is finalized or cancelled.' });
     }
     if (document.storageProvider === 'local' || (!document.storageProvider && !document.storageUrl)) {
       const legacyPath = resolveLegacyAppraisalDocumentPath(document);

@@ -8,6 +8,7 @@ import { Download, Print } from '@mui/icons-material';
 import api from '@/lib/api';
 import { downloadResultsCsv, shortDate } from '@/lib/appraisal-results';
 import ResultPrintStyles from '@/components/appraisals/ResultPrintStyles';
+import AppraisalDocuments from '@/components/appraisals/AppraisalDocuments';
 import CompetencyReportSection from '@/components/competency/reports/CompetencyReportSection';
 import { competencyRequest } from '@/lib/competency-api';
 import { displayDate } from '@/components/competency/assessment/types';
@@ -17,6 +18,7 @@ interface ResultReport {
   cycle: { name: string; periodStart?: string; periodEnd?: string }; ratingScale: { min?: number; max?: number };
   finalRating: { overall: number | null; ratingLabel?: string; justification?: string; finalizedAt?: string };
   employeeReflection?: Record<string, string>; managerSummary?: Record<string, string>; discussion?: Record<string, string | string[]>;
+  documents: Array<{ _id: string; originalName: string; fileType: string; fileSize?: number; category?: string; status: string }>;
   acknowledgedAt?: string; goals: Array<{ title: string; score: number | null }>;
   competencies?: Array<{ name: string; selfRating: number | null; managerRating: number | null; managerComments: string }>;
   answers?: Array<{ section: string; question: string; respondent: string; answer: string }>;
@@ -38,6 +40,8 @@ export default function AppraisalResultReportPage() {
   const rating = report.finalRating?.overall == null ? 'No final rating recorded' : `${report.finalRating.overall} / ${report.ratingScale?.max ?? 5}`;
   const csv = () => downloadResultsCsv([
     ['Appraisal result report', report.cycle.name], ['Employee', report.employee.name], ['Reviewer', report.manager.name], ['Period start', report.cycle.periodStart || ''], ['Period end', report.cycle.periodEnd || ''], ['Final result', rating], ['Rating label', report.finalRating?.ratingLabel || ''], ['Finalized', shortDate(report.finalRating?.finalizedAt)], ['Justification', report.finalRating?.justification || ''],
+    ['Acknowledgement', report.status === 'employee_acknowledged' ? 'Recorded' : 'Awaiting employee acknowledgement'], ['Acknowledged at', shortDate(report.acknowledgedAt)],
+    ...(report.documents || []).map(document => [`Supporting document: ${document.originalName}`, [document.fileType.toUpperCase(), document.category?.replaceAll('_', ' ')].filter(Boolean).join(' / ')]),
     ...Object.entries(report.employeeReflection || {}).map(([key, value]) => [`Employee: ${labels[key] || key}`, value]),
     ...Object.entries(report.managerSummary || {}).map(([key, value]) => [`Manager: ${labels[key] || key}`, value]),
     ...(report.managerFeedback ? [
@@ -58,6 +62,9 @@ export default function AppraisalResultReportPage() {
       <Typography variant="h4" fontWeight={700}>Appraisal result report</Typography><Typography variant="h6" mt={1}>{report.cycle.name}</Typography><Typography color="text.secondary">{shortDate(report.cycle.periodStart)} – {shortDate(report.cycle.periodEnd)}</Typography>
       <Stack spacing={1} my={3}><Typography><strong>Employee:</strong> {report.employee.name}{report.employee.jobTitle ? ` · ${report.employee.jobTitle}` : ''}</Typography><Typography><strong>Reviewer:</strong> {report.manager.name || 'Not recorded'}</Typography><Typography><strong>Final result:</strong> {rating}{report.finalRating?.ratingLabel ? ` · ${report.finalRating.ratingLabel}` : ''}</Typography><Typography><strong>Finalized:</strong> {shortDate(report.finalRating?.finalizedAt)}</Typography><Typography><strong>Acknowledgement:</strong> {report.status === 'employee_acknowledged' ? `Recorded${report.acknowledgedAt ? ` on ${shortDate(report.acknowledgedAt)}` : ''}` : 'Awaiting employee acknowledgement'}</Typography></Stack>
       {report.finalRating?.justification && <Box mb={3}><Typography variant="h6">Final outcome</Typography><Typography sx={{ whiteSpace: 'pre-wrap' }}>{report.finalRating.justification}</Typography></Box>}
+      <Box sx={{ '@media print': { '& button': { display: 'none' } } }}>
+        <AppraisalDocuments appraisalId={report.id} documents={report.documents || []} readOnly onChanged={async () => undefined} />
+      </Box>
       <Stack spacing={3} divider={<Divider />}>
         <Narrative title="Employee reflection" values={report.employeeReflection} />
         <Narrative title="Manager assessment" values={report.managerSummary} />

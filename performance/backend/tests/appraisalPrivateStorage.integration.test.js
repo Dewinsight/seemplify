@@ -253,6 +253,91 @@ test.each([['employee', ['private.txt', 'shared.txt']], ['manager', ['shared.txt
   }
 );
 
+test.each([['employee', ['private.txt', 'shared.txt']], ['manager', ['shared.txt']], ['hr', ['shared.txt', 'hr.txt']]])(
+  '%s published history exposes only authorized document metadata and retains original private references', async (who, expectedNames) => {
+    const sources = await mixedDocuments();
+    const stale = new mongoose.Types.ObjectId();
+    await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'employee_acknowledged' }, $push: { documents: stale } });
+    const before = JSON.parse(JSON.stringify(await Appraisal.findById(appraisal._id)));
+    const sign = jest.spyOn(cloudinary.utils, 'private_download_url');
+    const response = await call('get', '/report', who).expect(200);
+    expect(response.body.data.documents.map(value => value.originalName).sort()).toEqual([...expectedNames].sort());
+    for (const value of response.body.data.documents) {
+      expect(value).toMatchObject({ _id: expect.any(String), originalName: expect.any(String), fileType: 'txt', category: 'other', status: 'active' });
+      expect(Object.keys(value).every(key => ['_id', 'originalName', 'fileType', 'fileSize', 'category', 'status'].includes(key))).toBe(true);
+    }
+    expect(JSON.stringify(response.body.data)).not.toMatch(/Synthetic confidential marker|server-private-key|storageKey|storageUrl|textExtraction|aiAnalysis/);
+    expect(sign).not.toHaveBeenCalled();
+    expect(JSON.parse(JSON.stringify(await Appraisal.findById(appraisal._id)))).toEqual(before);
+    for (const source of sources.filter(value => expectedNames.includes(value.originalName))) {
+      await call('get', `/documents/${source._id}/content`, who).expect(302);
+    }
+  }
+);
+
+test('published history without supporting documents supplies an empty metadata list', async () => {
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'completed' } });
+  expect((await call('get', '/report').expect(200)).body.data.documents).toEqual([]);
+});
+
+test('history document lookup never precedes report authorization and publication gates', async () => {
+  const find = jest.spyOn(Document, 'find');
+  const sign = jest.spyOn(cloudinary.utils, 'private_download_url');
+  for (const [who, code] of [['anonymous', 401], ['foreign', 404], ['outsider', 403], ['employee', 409]]) {
+    await call('get', '/report', who).expect(code);
+  }
+  expect(find).not.toHaveBeenCalled(); expect(sign).not.toHaveBeenCalled();
+});
+
+test.each(['completed', 'employee_acknowledged', 'cancelled'])('%s evidence cannot be uploaded or deleted by employee, manager or HR', async status => {
+  const source = await document();
+  appraisal.documents = [source._id]; appraisal.status = status; await appraisal.save();
+  const beforeParent = JSON.parse(JSON.stringify(await Appraisal.findById(appraisal._id)));
+  const beforeDocument = JSON.parse(JSON.stringify(await Document.findById(source._id)));
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  const upload = jest.spyOn(cloudinary.uploader, 'upload_stream').mockImplementation(() => { throw new Error('Synthetic unexpected provider write'); });
+  const destroy = jest.spyOn(cloudinary.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
+  for (const who of ['employee', 'manager', 'hr']) {
+    const added = await call('post', '/documents', who).field('assessmentMode', 'form')
+      .attach('file', Buffer.from('Synthetic late evidence'), { filename: 'late.txt', contentType: 'text/plain' });
+    const removed = await call('delete', `/documents/${source._id}`, who);
+    expect([added.status, removed.status]).toEqual([409, 409]);
+  }
+  expect(upload).not.toHaveBeenCalled(); expect(destroy).not.toHaveBeenCalled();
+  expect(JSON.parse(JSON.stringify(await Appraisal.findById(appraisal._id)))).toEqual(beforeParent);
+  expect(JSON.parse(JSON.stringify(await Document.findById(source._id)))).toEqual(beforeDocument);
+  expect(await Document.countDocuments()).toBe(1);
+});
+
+test.each(['manager_review_pending', 'discussion_completed', 'final_review_pending'])('%s retains the existing authorized upload/delete workflow', async status => {
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status } });
+  const bytes = Buffer.from('Synthetic pre-publication evidence');
+  const upload = jest.spyOn(cloudinary.uploader, 'upload_stream').mockImplementation((options, done) => {
+    const parts = []; return new Writable({ write(chunk, _encoding, callback) { parts.push(chunk); callback(); }, final(callback) {
+      expect(Buffer.concat(parts)).toEqual(bytes);
+      done(null, { public_id: options.public_id, resource_type: 'raw', type: 'authenticated', bytes: bytes.length }); callback();
+    } });
+  });
+  const destroy = jest.spyOn(cloudinary.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
+  const added = await call('post', '/documents', 'manager').field('assessmentMode', 'form')
+    .attach('file', bytes, { filename: 'pre-publication.txt', contentType: 'text/plain' }).expect(201);
+  await call('delete', `/documents/${added.body.data._id}`, 'manager').expect(200);
+  expect(upload).toHaveBeenCalledTimes(1); expect(destroy).toHaveBeenCalledTimes(1);
+  expect((await Appraisal.findById(appraisal._id)).documents).toHaveLength(0);
+});
+
+test('a published write fence does not disclose status to unauthorized or foreign viewers', async () => {
+  const source = await document(); appraisal.documents = [source._id]; appraisal.status = 'completed'; await appraisal.save();
+  const upload = jest.spyOn(cloudinary.uploader, 'upload_stream');
+  const destroy = jest.spyOn(cloudinary.uploader, 'destroy');
+  for (const [who, code] of [['anonymous', 401], ['foreign', 404], ['outsider', 403]]) {
+    await call('post', '/documents', who).field('assessmentMode', 'form')
+      .attach('file', Buffer.from('Denied evidence'), { filename: 'denied.txt', contentType: 'text/plain' }).expect(code);
+    await call('delete', `/documents/${source._id}`, who).expect(code);
+  }
+  expect(upload).not.toHaveBeenCalled(); expect(destroy).not.toHaveBeenCalled();
+});
+
 test('generated employee report receives only visible same-parent same-tenant documents and preserves hidden refs on save', async () => {
   const sources = await mixedDocuments();
   await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.enableAiAssist': true } });
