@@ -145,3 +145,15 @@ test('finalization durably queues the AI report without making the provider part
   expect(['completed', 'employee_acknowledged']).toContain(response.body.data.status);
   expect((await Job.findOne({ appraisalId: appraisal._id }).select('+identity')).identity.sub).toBe('reviewer');
 });
+
+test('queue retries coalesce and unchanged evidence does not cause another paid generation', async () => {
+  const { appraisal } = await fixture('completed');
+  const first = await reports.queue(appraisal, identity);
+  const second = await reports.queue(appraisal, identity);
+  expect(second.revision).toBe(first.revision);
+  await reports.processDue();
+  await reports.invalidate(appraisal._id, org.id); await reports.processDue();
+  expect(ai.getChatCompletions).toHaveBeenCalledTimes(1);
+  await reports.queue(appraisal, identity); await reports.processDue();
+  expect(ai.getChatCompletions).toHaveBeenCalledTimes(2);
+});
