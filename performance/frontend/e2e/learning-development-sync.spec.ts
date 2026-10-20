@@ -54,7 +54,7 @@ test('synchronized Learning activity can be added to a development plan', async 
     if (method === 'GET' && path === '/auth/me') {
       return fulfill({
         success: true,
-        user: { id: 'user-1', sub: 'user-1', email: 'alex@example.com', profile: { displayName: 'Alex Morgan' } },
+        user: { id: 'user-1', sub: 'user-1', email: 'alex@example.com', profile: { displayName: 'Alex Morgan' }, organizations: [{ id: 'org-1', name: 'Acme Ltd', role: 'employee' }] },
         currentOrganizationId: 'org-1',
         currentOrganization: { id: 'org-1', name: 'Acme Ltd', role: 'employee' },
       });
