@@ -19,6 +19,7 @@ import {
   PieChart, Calculate, SmartToy
 } from '@mui/icons-material';
 import CustomAssessmentSections, { type CustomAssessmentSectionsHandle } from '@/components/appraisals/CustomAssessmentSections';
+import AppraisalDocuments from '@/components/appraisals/AppraisalDocuments';
 
 interface ManagerReviewData {
   overallSummary: {
@@ -98,6 +99,14 @@ function getApiErrorMessage(error: any, fallback: string) {
   return error?.response?.data?.error || fallback;
 }
 
+interface SelectedFeedbackEvidence {
+  feedbackId: string;
+  content?: string;
+  senderDisplay?: string;
+  receivedAt?: string;
+  contextLabel?: string;
+}
+
 export default function ManagerReviewPage() {
   const params = useParams();
   const router = useRouter();
@@ -108,9 +117,11 @@ export default function ManagerReviewPage() {
   const isAssignedReviewer = !!user && !!appraisal && ([user.id, user.sub].filter(Boolean).map(String).includes(String(appraisal.manager?.userId)) || String(user.email || '').toLowerCase() === String(appraisal.manager?.email || '').toLowerCase());
   const isManager = isAssignedReviewer || isHRAdmin || (managerRole && !appraisal?.reviewerInitiated);
   const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false;
+  const selectedFeedbackEvidence: SelectedFeedbackEvidence[] = Array.isArray(appraisal?.feedbackEvidence) ? appraisal.feedbackEvidence : [];
 
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [documentsBusy, setDocumentsBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAssist, setAiAssist] = useState<any>(null);
@@ -296,6 +307,7 @@ export default function ManagerReviewPage() {
 
       await api.post(`/appraisals/${appraisalId}/manager-review`, {
         managerReview: { ...formData, competencyRatings: competenciesWithGaps },
+        assessmentMode: 'form',
         submit: false
       });
       await fetchScoringData();
@@ -322,12 +334,12 @@ export default function ManagerReviewPage() {
 
   const handleSubmit = async () => {
     if (persistPending.current) return;
-    let hasPotentialBias = Boolean(biasCheck?.hasPotentialBias);
-
-    // Check for bias first when AI assistance is enabled.
-    if (aiAssistEnabled && !biasCheck) {
-      hasPotentialBias = await checkForBias();
+    const missingQuestions = customSectionsRef.current?.validate() || [];
+    if (missingQuestions.length) {
+      setSnackbar({ open: true, message: `Complete the required cycle questions: ${missingQuestions.join('; ')}`, severity: 'error' });
+      return;
     }
+    const hasPotentialBias = Boolean(biasCheck?.hasPotentialBias);
 
     if (aiAssistEnabled && hasPotentialBias && !biasAcknowledged) {
       setSnackbar({
@@ -346,6 +358,7 @@ export default function ManagerReviewPage() {
       if (customResponsesSaved === false) return;
       await api.post(`/appraisals/${appraisalId}/manager-review`, {
         managerReview: formData,
+        assessmentMode: 'form',
         submit: true
       });
       mutate();
@@ -412,6 +425,7 @@ export default function ManagerReviewPage() {
       return hasPotentialBias;
     } catch (error) {
       console.error('Bias check error:', error);
+      setSnackbar({ open: true, message: getApiErrorMessage(error, 'The optional AI bias check is unavailable. You can still submit your review.'), severity: 'error' });
       return false;
     } finally {
       setAiLoading(false);
@@ -629,6 +643,28 @@ export default function ManagerReviewPage() {
           ))}
         </AccordionDetails>
       </Accordion>
+
+      {selectedFeedbackEvidence.length > 0 && (
+        <Accordion defaultExpanded>
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography fontWeight={600}>Selected appraisal feedback ({selectedFeedbackEvidence.length})</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              The employee chose this feedback as supporting evidence. It does not set or change a rating.
+            </Typography>
+            {selectedFeedbackEvidence.map(evidence => (
+              <Box key={String(evidence.feedbackId)} sx={{ mb: 2, p: 2, borderRadius: 1, border: 1, borderColor: 'divider' }}>
+                <Typography variant="body2" fontWeight={600}>{evidence.senderDisplay || 'Feedback provider'}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {[evidence.contextLabel, evidence.receivedAt && new Date(evidence.receivedAt).toLocaleDateString()].filter(Boolean).join(' · ')}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{evidence.content}</Typography>
+              </Box>
+            ))}
+          </AccordionDetails>
+        </Accordion>
+      )}
 
       {/* Feedback History */}
       <Accordion>
@@ -1274,15 +1310,17 @@ export default function ManagerReviewPage() {
 
       {/* Bias Check Button */}
       {aiAssistEnabled && (
+        <Box sx={{ mt: 3 }}>
         <Button
           variant="outlined"
           startIcon={aiLoading ? <CircularProgress size={16} /> : <Balance />}
           onClick={checkForBias}
           disabled={aiLoading}
-          sx={{ mt: 3 }}
         >
           Run AI Bias Check
         </Button>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Optional. You can submit your review without connecting ChatGPT.</Typography>
+        </Box>
       )}
 
       {/* Submit Warning */}
@@ -1314,7 +1352,7 @@ export default function ManagerReviewPage() {
           variant="outlined"
           startIcon={saving ? <CircularProgress size={16} /> : <Save />}
           onClick={() => handleSave()}
-          disabled={saving || submitting}
+          disabled={saving || submitting || documentsBusy}
         >
           Save Progress
         </Button>
@@ -1359,6 +1397,9 @@ export default function ManagerReviewPage() {
         ))}
       </Stepper>
 
+      <AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate}
+        readOnly={!isAssignedReviewer && !isHRAdmin} disabled={saving || submitting} onBusyChange={setDocumentsBusy} />
+
       {/* Content */}
       <Paper sx={{ p: 4, mb: 3 }}>
         {activeStep === 0 && renderSelfAssessmentReview()}
@@ -1384,7 +1425,7 @@ export default function ManagerReviewPage() {
           variant="outlined"
           startIcon={<ArrowBack />}
           onClick={() => setActiveStep(prev => prev - 1)}
-          disabled={activeStep === 0 || saving || submitting}
+          disabled={activeStep === 0 || saving || submitting || documentsBusy}
         >
           Previous
         </Button>
@@ -1393,7 +1434,7 @@ export default function ManagerReviewPage() {
           <Button
             variant="contained"
             endIcon={<ArrowForward />}
-            disabled={saving || submitting}
+            disabled={saving || submitting || documentsBusy}
             onClick={async () => {
               const saved = await handleSave(false);
               if (saved) {
@@ -1409,7 +1450,7 @@ export default function ManagerReviewPage() {
             color="success"
             startIcon={submitting ? <CircularProgress size={16} /> : <Send />}
             onClick={handleSubmit}
-            disabled={saving || submitting}
+            disabled={saving || submitting || documentsBusy}
           >
             Submit Review
           </Button>
@@ -1419,6 +1460,7 @@ export default function ManagerReviewPage() {
       {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
+        sx={{ pointerEvents: 'none' }}
         autoHideDuration={3000}
         onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
         message={snackbar.message}

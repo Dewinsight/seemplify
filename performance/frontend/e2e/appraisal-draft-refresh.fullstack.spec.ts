@@ -140,3 +140,131 @@ test('employee mobile draft survives same-review refresh and initializes the nex
   await expect(page.getByRole('textbox', { name: 'Key Achievements', exact: true })).toHaveValue('Saved employee reflection.');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+for (const connection of ['disconnected', 'consent-pending'] as const) test(`employee can complete the manual form with ${connection} ChatGPT without bypassing required questions`, async ({ page }, info) => {
+  const item = await record('employee');
+  const design = { version: 1, scoring: { goalsWeight: 40, competenciesWeight: 60 },
+    stages: { selfAssessment: { enabled: true }, managerReview: { enabled: true }, finalReview: { enabled: true } },
+    sections: [{ id: 'required-reflection', title: 'Required cycle reflection', type: 'custom', respondent: 'employee', required: true, scored: false, weight: 0,
+      questions: [{ id: 'impact', prompt: 'Describe the required synthetic outcome.', responseType: 'long_text', required: true }] }] };
+  await Cycle.updateOne({ _id: item.cycleId }, { $set: { 'settings.enableAiAssist': true } });
+  await Appraisal.updateOne({ _id: item._id }, { $set: { cycleConfigurationSnapshot: { settings: { enableAiAssist: true }, workflowDefinition: design } } });
+  const fixture = await setup(page, 'employee');
+  const aiCalls: string[] = [];
+  page.on('request', request => { if (/\/appraisals\/[^/]+\/(?:conversation|ai-)/.test(request.url())) aiCalls.push(request.url()); });
+  await page.route('**/__mock-api/ai-account', route => route.fulfill({ json: { success: true, data: {
+    account: { status: connection === 'disconnected' ? 'disconnected' : 'connected', connectedEmail: connection === 'disconnected' ? null : 'employee@example.test',
+      routable: false, dataSharingAcknowledgedAt: null, lastError: null }, policy: { chatgptEnabled: true },
+  } } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/appraisals/${item._id}/self-assessment`);
+  const gate = page.getByRole('dialog', { name: 'ChatGPT is required', exact: true });
+  await expect(gate).toBeVisible();
+  await expect(gate.getByRole('button', { name: connection === 'disconnected' ? 'Connect ChatGPT' : 'Finish ChatGPT setup', exact: true })).toBeVisible();
+  await gate.getByRole('button', { name: 'Use manual form', exact: true }).click();
+  await expect(gate).toHaveCount(0);
+  await expect(page.getByText('Manual Mode', { exact: true })).toBeVisible();
+  const reflection = { 'Key Achievements': 'Saved manual completion with an optional AI account.', 'Challenges Faced': 'A synthetic dependency needed replanning.',
+    'Key Learnings': 'Raised the dependency earlier.', 'Goals for Next Period': 'Plan the next synthetic handover.', 'Areas for Improvement': 'Improve the handover notes.' };
+  for (const [label, value] of Object.entries(reflection)) await page.getByRole('textbox', { name: label, exact: true }).fill(value);
+  await chooseFour(page);
+  await page.getByRole('button', { name: 'Submit Self-Assessment', exact: true }).click();
+  await expect(page.getByText(/Complete the required cycle questions:/)).toBeVisible();
+  expect(fixture.writes).toHaveLength(0);
+  const requiredAnswer = page.getByRole('textbox', { name: 'Describe the required synthetic outcome.', exact: false });
+  await requiredAnswer.fill('The synthetic outcome is evidenced and ready for a human reviewer.');
+  const saved = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith(`/appraisals/${item._id}/self-assessment`) && response.request().postDataJSON()?.submit === false);
+  await page.getByRole('button', { name: 'Save Draft', exact: true }).click();
+  expect((await saved).status()).toBe(200);
+  expect(fixture.writes.at(-1)).toMatchObject({ assessmentMode: 'form', submit: false });
+  await expect(page.getByText('Progress saved.', { exact: true })).toBeVisible();
+  const draft = await Appraisal.findById(item._id).lean();
+  expect(draft.selfAssessment.overallSummary.achievements).toBe(reflection['Key Achievements']);
+  expect(draft.customResponses[0].value).toBe('The synthetic outcome is evidenced and ready for a human reviewer.');
+  expect(draft.selfAssessment.submittedAt).toBeFalsy();
+  await page.reload();
+  await expect(gate).toBeVisible();
+  await gate.getByRole('button', { name: 'Use manual form', exact: true }).click();
+  for (const [label, value] of Object.entries(reflection)) await expect(page.getByRole('textbox', { name: label, exact: true })).toHaveValue(value);
+  await expect(requiredAnswer).toHaveValue('The synthetic outcome is evidenced and ready for a human reviewer.');
+  await page.screenshot({ path: info.outputPath(`manual-form-${connection}-saved.png`), fullPage: true });
+  const submitted = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith(`/appraisals/${item._id}/self-assessment`) && response.request().postDataJSON()?.submit === true);
+  await page.getByRole('button', { name: 'Submit Self-Assessment', exact: true }).click();
+  expect((await submitted).status()).toBe(200);
+  expect(fixture.writes.at(-1)).toMatchObject({ assessmentMode: 'form', submit: true });
+  const stored = await Appraisal.findById(item._id).lean();
+  expect(stored.selfAssessment.submittedAt).toBeTruthy();
+  expect(stored.selfAssessment.overallSelfRating).toBe(4);
+  expect(stored.customResponses[0].submittedAt).toBeTruthy();
+  expect(aiCalls).toEqual([]);
+});
+
+async function reviewerWithOptionalAI(page: Page, explicitBiasResult = false) {
+  const item = await record('reviewer');
+  const design = { version: 1, scoring: { goalsWeight: 0, competenciesWeight: 100 },
+    stages: { selfAssessment: { enabled: true }, managerReview: { enabled: true }, finalReview: { enabled: true } },
+    sections: [{ id: 'reviewer-required', title: 'Required reviewer questions', type: 'custom', respondent: 'manager', required: true, scored: false, weight: 0,
+      questions: [{ id: 'evidence', prompt: 'Explain the required reviewer evidence.', responseType: 'long_text', required: true }] }] };
+  await Cycle.updateOne({ _id: item.cycleId }, { $set: { 'settings.enableAiAssist': true } });
+  await Appraisal.updateOne({ _id: item._id }, { $set: { cycleConfigurationSnapshot: { settings: { enableAiAssist: true }, workflowDefinition: design } } });
+  const fixture = await setup(page, 'reviewer');
+  const aiRequests: string[] = [];
+  page.on('request', request => { if (/\/appraisals\/[^/]+\/(?:check-bias|ai-)/.test(request.url())) aiRequests.push(request.url()); });
+  await page.route(`**/__mock-api/appraisals/${item._id}/check-bias`, route => route.fulfill(explicitBiasResult
+    ? { json: { success: true, hasPotentialBias: true, biasType: 'Synthetic review warning', suggestion: 'Review the fictional wording before confirming.' } }
+    : { status: 409, json: { code: 'CHATGPT_NOT_CONNECTED', error: 'Connect ChatGPT before running the optional AI bias check.' } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/appraisals/${item._id}/manager-review`);
+  await expect.poll(() => fixture.ready).toBe(true);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Rate Competencies', exact: true })).toBeVisible();
+  await chooseFour(page);
+  await page.getByRole('textbox', { name: 'Your Comments & Evidence', exact: true }).fill('Observed clear, specific synthetic delivery evidence.');
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Verify OKR Achievement', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Overall Assessment', exact: true })).toBeVisible();
+  await chooseFour(page);
+  for (const [label, value] of Object.entries({ 'Key Achievements Observed': 'Delivered the synthetic review objective.', 'Key Strengths': 'Specific evidence and clear communication.',
+    'Areas for Improvement': 'Improve the next synthetic handover.', 'Development Recommendations': 'Practice the next fictional coaching exercise.' })) await page.getByRole('textbox', { name: label, exact: true }).fill(value);
+  return { item, fixture, aiRequests, requiredAnswer: page.getByRole('textbox', { name: 'Explain the required reviewer evidence.', exact: false }) };
+}
+
+test('reviewer manual submit validates required questions and finishes without automatically invoking optional AI', async ({ page }, info) => {
+  const { item, fixture, aiRequests, requiredAnswer } = await reviewerWithOptionalAI(page);
+  const priorSaves = fixture.writes.length;
+  await page.getByRole('button', { name: 'Submit Review', exact: true }).click();
+  await expect(page.getByText(/Complete the required cycle questions:/)).toBeVisible();
+  expect(fixture.writes).toHaveLength(priorSaves);
+  expect(aiRequests).toEqual([]);
+  await requiredAnswer.fill('The required evidence supports the human reviewer judgment.');
+  await expect(page.getByText('Optional. You can submit your review without connecting ChatGPT.', { exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('reviewer-manual-submit-no-ai.png'), fullPage: true });
+  const submitted = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith(`/appraisals/${item._id}/manager-review`) && response.request().postDataJSON()?.submit === true);
+  await page.getByRole('button', { name: 'Submit Review', exact: true }).click();
+  expect((await submitted).status()).toBe(200);
+  expect(fixture.writes.at(-1)).toMatchObject({ assessmentMode: 'form', submit: true });
+  const stored = await Appraisal.findById(item._id).lean();
+  expect(stored.managerReview.submittedAt).toBeTruthy();
+  expect(stored.managerReview.overallManagerRating).toBe(4);
+  expect(stored.managerReview.aiAssist?.generatedAt).toBeFalsy();
+  expect(stored.customResponses.find((answer: { questionId: string }) => answer.questionId === 'evidence').submittedAt).toBeTruthy();
+  expect(aiRequests).toEqual([]);
+});
+
+test('an explicitly requested AI bias warning still requires human confirmation before manual submission', async ({ page }) => {
+  const { item, fixture, aiRequests, requiredAnswer } = await reviewerWithOptionalAI(page, true);
+  await requiredAnswer.fill('A synthetic human reviewer evaluated the required evidence.');
+  await page.getByRole('button', { name: 'Run AI Bias Check', exact: true }).click();
+  await expect(page.getByText('Potential Bias Detected', { exact: true })).toBeVisible();
+  expect(aiRequests).toHaveLength(1);
+  const priorSaves = fixture.writes.length;
+  await page.getByRole('button', { name: 'Submit Review', exact: true }).click();
+  await expect(page.getByText('Potential bias detected. Review it, then click submit again to confirm.', { exact: true })).toBeVisible();
+  expect(fixture.writes).toHaveLength(priorSaves);
+  const submitted = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith(`/appraisals/${item._id}/manager-review`) && response.request().postDataJSON()?.submit === true);
+  await page.getByRole('button', { name: 'Submit Review', exact: true }).click();
+  expect((await submitted).status()).toBe(200);
+  expect(aiRequests).toHaveLength(1);
+  expect(fixture.writes.at(-1)).toMatchObject({ assessmentMode: 'form', submit: true });
+});

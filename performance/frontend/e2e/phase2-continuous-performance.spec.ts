@@ -7,7 +7,9 @@ interface Phase2State {
   plans: Plan[];
   recognition: Array<Record<string, unknown>>;
   projects: Array<Record<string, unknown>>;
-  posted: Array<{ path: string; body: Record<string, unknown> }>;
+  checkIns: Array<Record<string, unknown>>;
+  checkInSaveFailures: number;
+  posted: Array<{ path: string; method?: string; body: Record<string, unknown> }>;
 }
 
 const employee = { userId: 'employee-1', id: 'employee-1', name: 'Jordan Lee', email: 'jordan@example.com', teamId: 'team-1', teamName: 'Customer Success', jobTitle: 'Customer Success Manager' };
@@ -19,7 +21,7 @@ function plan(state = 'draft'): Plan {
   return { _id: 'plan-1', planType: 'formal_improvement', state, title: 'Delivery reliability support', summary: 'A clear plan for raising delivery risks early, with weekly manager support.', employee, manager: { userId: manager.id, name: manager.name }, objectives: [{ _id: 'objective-1', title: 'Raise delivery risks early', measure: 'Weekly delivery review record', target: 'All material risks raised two working days early', dueDate: due, status: 'not_started' }], supportCommitments: [{ description: 'Manager holds a weekly priority review.', ownerType: 'manager', status: 'open' }], milestones: [], checkIns: [], updatedAt: '2026-08-11T08:00:00.000Z' };
 }
 
-function stateFor(mode: Mode, plans: Plan[] = []): Phase2State { return { mode, plans, recognition: [], projects: [], posted: [] }; }
+function stateFor(mode: Mode, plans: Plan[] = []): Phase2State { return { mode, plans, recognition: [], projects: [], checkIns: [], checkInSaveFailures: 0, posted: [] }; }
 function data<T>(value: T) { return { success: true, data: value }; }
 async function body(request: Request) { return request.postDataJSON() as Record<string, unknown>; }
 function muiSelect(scope: Locator, label: string) { return scope.locator('label').filter({ hasText: label }).first().locator('..').getByRole('combobox'); }
@@ -48,6 +50,21 @@ async function install(page: Page, state: Phase2State) {
     if (method === 'GET' && path === '/dashboard/summary') return fulfill({ okrProgress: 50, pendingReviews: 0, recentFeedback: 0 });
     if (method === 'GET' && path === '/appraisals/notifications/manager') return fulfill(data({ notifications: [] }));
     if (method === 'GET' && path === '/notifications/count') return fulfill(data({ unread: 0, actionable: 0 }));
+    if (method === 'GET' && path === '/check-ins') return fulfill(data(state.checkIns.filter(item => item.employeeId === url.searchParams.get('employeeId'))));
+    if (method === 'PATCH' && /^\/check-ins\/[^/]+$/.test(path)) {
+      const posted = await body(request); state.posted.push({ path, method, body: posted });
+      if (state.checkInSaveFailures > 0) { state.checkInSaveFailures -= 1; return fulfill({ success: false, error: 'Check-in save is temporarily unavailable. Please retry.' }, 503); }
+      const item = state.checkIns.find(value => path === `/check-ins/${value._id}`);
+      if (!item) return fulfill({ success: false, error: 'Not found' }, 404);
+      if (item.status === 'submitted') return fulfill({ success: false, error: 'Submitted check-ins cannot be edited' }, 409);
+      Object.assign(item, posted); return fulfill(data(item));
+    }
+    if (method === 'POST' && /^\/check-ins\/[^/]+\/submit$/.test(path)) {
+      state.posted.push({ path, method, body: {} });
+      const item = state.checkIns.find(value => path === `/check-ins/${value._id}/submit`);
+      if (!item) return fulfill({ success: false, error: 'Not found' }, 404);
+      item.status = 'submitted'; item.submittedAt = new Date().toISOString(); return fulfill(data(item));
+    }
     if (method === 'GET' && path.startsWith('/support-plans')) return fulfill(data(state.plans));
     if (method === 'POST' && path === '/support-plans/ai-draft') { state.posted.push({ path, body: await body(request) }); return fulfill(data({ suggestionId: 'ai-suggestion-1', draft: { title: 'Delivery reliability support', summary: 'A measurable support plan with weekly review.', objectives: [{ title: 'Raise delivery risks early', measure: 'Weekly delivery review record', target: '100% raised two working days early' }], supportCommitments: ['Manager holds a weekly priority review.'] }, advisory: true })); }
     if (method === 'POST' && path === '/support-plans') {
@@ -164,4 +181,62 @@ test('minimal colleague results can request team recognition when the server acc
   await dialog.getByLabel('Search organization').fill('Priya'); await dialog.getByRole('button', { name: 'Priya Shah', exact: true }).click(); await dialog.getByLabel('Recognition message').fill('You helped your team make a reliable delivery decision.');
   await muiSelect(dialog, 'Audience').click(); await page.getByRole('option', { name: "Recipient's team", exact: true }).click(); await dialog.getByRole('button', { name: 'Send recognition', exact: true }).click();
   await expect(dialog).toHaveCount(0); expect(state.posted.at(-1)).toMatchObject({ path: '/recognition', body: { recipient: { userId: 'employee-2' }, visibility: 'team' } });
+});
+
+function savedCheckInDraft() {
+  return { _id: 'check-in-draft-1', employeeId: employee.id, cadence: 'fortnightly',
+    periodStart: '2026-01-12T00:00:00.000Z', periodEnd: '2026-01-25T00:00:00.000Z',
+    wins: ['Original delivery note'], priorities: ['Original priority'], blockers: [],
+    supportNeeded: ['Original support'], pulse: 3, visibility: 'employee_only', status: 'draft' };
+}
+
+test('employee resumes a check-in draft, preserves its period and retries a failed save before submission', async ({ page }, info) => {
+  const state = stateFor('employee'); state.checkIns = [savedCheckInDraft()]; state.checkInSaveFailures = 1;
+  await install(page, state); await page.goto('/check-ins');
+  await page.getByRole('button', { name: 'Edit draft', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Edit performance check-in', exact: true });
+  await expect(dialog.getByLabel('Wins', { exact: true })).toHaveValue('Original delivery note');
+  await expect(dialog.getByLabel('Support needed', { exact: true })).toHaveValue('Original support');
+  await expect(dialog.getByLabel('Period start')).toHaveValue('2026-01-12');
+  await expect(dialog.getByLabel('Period start')).toBeDisabled();
+  await expect(dialog.getByLabel('Period end')).toHaveValue('2026-01-25');
+  await expect(dialog.getByLabel('Period end')).toBeDisabled();
+  await expect(muiSelect(dialog, 'Cadence')).toBeDisabled();
+  await expect(muiSelect(dialog, 'Visibility')).toBeDisabled();
+  await dialog.getByLabel('Wins', { exact: true }).fill('Corrected delivery evidence');
+  await dialog.getByLabel('Support needed', { exact: true }).fill('Review the revised handoff');
+  await dialog.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('temporarily unavailable');
+  await expect(dialog.getByLabel('Wins', { exact: true })).toHaveValue('Corrected delivery evidence');
+  await dialog.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(state.checkIns).toHaveLength(1);
+  expect(state.checkIns[0]).toMatchObject({ cadence: 'fortnightly', periodStart: '2026-01-12T00:00:00.000Z',
+    periodEnd: '2026-01-25T00:00:00.000Z', visibility: 'employee_only', status: 'draft',
+    wins: ['Corrected delivery evidence'], supportNeeded: ['Review the revised handoff'] });
+  expect(state.posted.filter(item => item.method === 'PATCH')).toHaveLength(2);
+  expect(Object.keys(state.posted[0].body).sort()).toEqual(['blockers', 'priorities', 'pulse', 'supportNeeded', 'wins']);
+  await page.reload(); await expect(page.getByText('Corrected delivery evidence', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit draft', exact: true }).click();
+  await expect(dialog.getByLabel('Support needed', { exact: true })).toHaveValue('Review the revised handoff');
+  await dialog.getByLabel('Next priorities').fill('Complete the revised next step');
+  await dialog.getByRole('button', { name: 'Save and submit', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Edit draft', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+  expect(state.checkIns).toHaveLength(1); expect(state.checkIns[0].status).toBe('submitted');
+  expect(state.posted.at(-1)).toMatchObject({ method: 'POST', path: '/check-ins/check-in-draft-1/submit' });
+  await expect(page.locator('.MuiDialog-root')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('edited-check-in-submitted.png'), fullPage: true });
+});
+
+test('manager viewing another employee check-in cannot edit or submit their draft', async ({ page }) => {
+  const state = stateFor('manager'); state.checkIns = [savedCheckInDraft()];
+  await install(page, state); await page.goto('/check-ins');
+  await muiSelect(page.locator('main'), 'Employee').click();
+  await page.getByRole('option', { name: employee.name, exact: true }).click();
+  await expect(page.getByText('Original delivery note', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit draft', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+  expect(state.posted).toHaveLength(0);
 });

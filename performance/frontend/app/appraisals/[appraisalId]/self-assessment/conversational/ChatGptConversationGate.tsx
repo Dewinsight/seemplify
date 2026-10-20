@@ -49,9 +49,11 @@ function errorMessage(reason: unknown) {
 
 export default function ChatGptConversationGate({
   appraisalId,
+  onUseManualForm,
   children,
 }: {
   appraisalId: string;
+  onUseManualForm?: () => void;
   children: (controls: GateControls) => ReactNode;
 }) {
   const router = useRouter();
@@ -141,7 +143,7 @@ export default function ChatGptConversationGate({
                 flexShrink: 0,
               }}
             >
-              <OpenAILogo fontSize="small" />
+              <OpenAILogo fontSize="small" aria-hidden="true" />
             </Box>
             <Typography component="span" variant="h6" fontWeight={700}>{title}</Typography>
           </Stack>
@@ -172,18 +174,20 @@ export default function ChatGptConversationGate({
               )}
 
               {state === 'unavailable' && detail && <Alert severity="warning">{detail}</Alert>}
+              {onUseManualForm && <Typography color="text.secondary">You can complete the assessment with the manual form without connecting ChatGPT.</Typography>}
             </Stack>
           )}
         </DialogContent>
 
-        <DialogActions sx={{ px: 3, pb: 2.5, justifyContent: 'space-between' }}>
+        <DialogActions sx={{ px: 3, pb: 2.5, justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
           <Button startIcon={<ArrowBack />} color="inherit" onClick={() => router.push('/appraisals')}>
             Go back
           </Button>
+          {onUseManualForm && <Button variant="outlined" onClick={onUseManualForm}>Use manual form</Button>}
           {state === 'required' && (
             <Button
               variant="contained"
-              startIcon={<OpenAILogo fontSize="small" />}
+              startIcon={<OpenAILogo fontSize="small" aria-hidden="true" />}
               onClick={() => router.push(`/ai-account?connect=1&returnTo=${encodeURIComponent(returnTo)}`)}
             >
               {needsConsent ? 'Finish ChatGPT setup' : 'Connect ChatGPT'}

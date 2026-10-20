@@ -14,6 +14,8 @@ const Cycle = require('../models/AppraisalCycle');
 const Document = require('../models/AppraisalDocument');
 const User = require('../models/User');
 const ai = require('../services/appraisalAIService');
+const gateway = require('../services/aiGatewayService');
+const { PerformanceAIRuntimeError } = gateway;
 const designService = require('../services/appraisalCycleDesignService');
 const flowService = require('../services/appraisalFlowService');
 const routes = require('../routes/appraisals');
@@ -43,9 +45,11 @@ async function setLive(cycle, enabled) {
 const read = async (id, actor = 'reviewer') => (await call('get', `/${id}`, actor).expect(200)).body.data;
 const rawSnapshot = async id => (await Appraisal.collection.findOne({ _id: id })).cycleConfigurationSnapshot;
 function neverCompleteDocumentAnalysis() { return jest.spyOn(ai, 'analyzeDocument').mockImplementation(() => new Promise(() => {})); }
-async function upload(id) {
+async function upload(id, assessmentMode) {
   const text = 'Synthetic work evidence for a fictional performance exercise. '.repeat(5);
-  return call('post', `/${id}/documents`, 'employee').attach('file', Buffer.from(text), { filename: 'synthetic-ai-policy.txt', contentType: 'text/plain' }).expect(201);
+  const pending = call('post', `/${id}/documents`, 'employee');
+  if (assessmentMode) pending.field('assessmentMode', assessmentMode);
+  return pending.attach('file', Buffer.from(text), { filename: 'synthetic-ai-policy.txt', contentType: 'text/plain' }).expect(201);
 }
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
@@ -122,6 +126,20 @@ test.each([[true, false], [false, true], [true, true]])('ordinary manual upload 
   expect(await rawSnapshot(appraisal._id)).toEqual(original);
 });
 
+test('explicit manual document upload retains extracted evidence and frozen cycle policy without dispatching optional AI', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle, 'employee', 'conversation'), original = await rawSnapshot(appraisal._id);
+  const provider = neverCompleteDocumentAnalysis();
+  const uploaded = await upload(appraisal._id, 'form');
+  const stored = await Document.findById(uploaded.body.data._id).lean();
+  expect(stored.textExtraction.status).toBe('completed');
+  expect(stored.textExtraction.extractedText).toContain('Synthetic work evidence');
+  expect(stored.aiAnalysis.status).toBe('skipped');
+  expect(stored.aiAnalysis.analyzedAt).toBeUndefined();
+  expect((await Appraisal.findById(appraisal._id)).documents.map(String)).toContain(String(stored._id));
+  expect(await rawSnapshot(appraisal._id)).toEqual(original);
+  expect(provider).not.toHaveBeenCalled();
+});
+
 test('turning live AI off denies scoped provider endpoints and conversation while keeping ordinary chat available', async () => {
   const cycle = await createCycle(true), appraisal = await launch(cycle, 'employee', 'conversation'); await setLive(cycle, false);
   const methods = ['assistManagerReview', 'checkForBias', 'generateAISuggestedRating', 'startSelfAssessmentConversation', 'generateChatResponse'];
@@ -185,4 +203,145 @@ test('a launched appraisal still completes both required manual forms and human 
   expect((await Appraisal.findById(appraisal._id)).customResponses.filter(row => row.submittedAt).length).toBeGreaterThan(0);
   expect(await rawSnapshot(appraisal._id)).toEqual(original);
   for (const provider of providers) expect(provider).not.toHaveBeenCalled();
+});
+
+const manualAssessment = () => ({ overallSelfRating: 4, overallSummary: {
+  achievements: 'Delivered the synthetic project with clearly documented evidence.',
+  challenges: 'Resolved an invented dependency through early planning.',
+  learnings: 'Applied a structured approach to fictional delivery.',
+  improvements: 'Improve the next fictional handover with a checklist.',
+  goals: 'Practice the next synthetic capability with measured evidence.'
+} });
+async function answerEmployeeQuestions(appraisal, respondent = 'employee') {
+  const snapshot = await rawSnapshot(appraisal._id);
+  const responses = snapshot.workflowDefinition.sections.filter(section => [respondent, 'both'].includes(section.respondent))
+    .flatMap(section => section.questions.map(question => ({ sectionId: section.id, questionId: question.id,
+      value: ['number', 'rating'].includes(question.responseType) ? 4 : question.responseType === 'boolean' ? true
+        : question.responseType === 'multi_select' ? [question.options[0]?.value || question.options[0]]
+          : question.responseType === 'single_select' ? question.options[0]?.value || question.options[0]
+            : 'Synthetic evidence documents completed work and the next fictional development step.' })));
+  await call('put', `/${appraisal._id}/custom-responses`, respondent === 'manager' ? 'reviewer' : 'employee')
+    .send({ respondentRole: respondent, submit: true, responses }).expect(200);
+}
+
+test('explicit form mode saves drafts and submits without optional AI while preserving questions, ratings and manager handoff', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle), original = await rawSnapshot(appraisal._id);
+  const provider = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({ summary: 'Must not be generated for manual form mode.' });
+  const payload = { assessmentMode: 'form', selfAssessment: manualAssessment() };
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee').send({ ...payload, submit: false }).expect(200);
+  let persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.status).toBe('self_assessment_in_progress');
+  expect(persisted.selfAssessment.overallSummary.achievements).toBe(payload.selfAssessment.overallSummary.achievements);
+  expect(persisted.selfAssessment.submittedAt).toBeUndefined();
+  const missing = await call('post', `/${appraisal._id}/self-assessment`, 'employee').send({ ...payload, submit: true }).expect(400);
+  expect(missing.body.missingQuestions.length).toBeGreaterThan(0);
+  await answerEmployeeQuestions(appraisal);
+  const incomplete = await call('post', `/${appraisal._id}/self-assessment`, 'employee')
+    .send({ ...payload, selfAssessment: { overallSummary: {} }, submit: true }).expect(400);
+  expect(incomplete.body.missingSections.length).toBeGreaterThan(0);
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee').send({ ...payload, submit: true }).expect(200);
+  persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.status).toBe('manager_review_pending');
+  expect(persisted.selfAssessment.overallSelfRating).toBe(4);
+  expect(persisted.selfAssessment.submittedAt).toBeInstanceOf(Date);
+  expect(persisted.selfAssessment.aiInsights?.generatedAt).toBeUndefined();
+  expect(persisted.manager.userId).toBe('reviewer');
+  expect(persisted.notifications.some(row => row.type === 'self_assessment_submitted' && row.message.includes('ready for your review'))).toBe(true);
+  expect(await rawSnapshot(appraisal._id)).toEqual(original);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test('manual mode never bypasses employee or tenant authorization and rejected requests never invoke AI', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const provider = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+  for (const [actor, status] of [['reviewer', 403], ['outsider', 403], ['foreign', 404]]) {
+    await call('post', `/${appraisal._id}/self-assessment`, actor)
+      .send({ assessmentMode: 'form', submit: true, selfAssessment: manualAssessment() }).expect(status);
+  }
+  expect((await Appraisal.findById(appraisal._id)).selfAssessment.submittedAt).toBeUndefined();
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test.each([undefined, 'conversation'])('non-manual mode %s retains optional AI analysis on valid submission', async assessmentMode => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  await answerEmployeeQuestions(appraisal);
+  const provider = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({ summary: 'Synthetic optional analysis.' });
+  await call('post', `/${appraisal._id}/self-assessment`, 'employee')
+    .send({ assessmentMode, submit: true, selfAssessment: manualAssessment() }).expect(200);
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect((await Appraisal.findById(appraisal._id)).selfAssessment.aiInsights.generatedAt).toBeInstanceOf(Date);
+});
+
+test.each([
+  ['AI_RUNTIME_ACCOUNT_REQUIRED', 409, 'Connect ChatGPT and complete the data-sharing step before using AI assistance.'],
+  ['SHARED_AI_NOT_CONFIGURED', 503, 'The shared AI account service is not configured.'],
+  ['AI_GATEWAY_UNAVAILABLE', 503, 'AI is temporarily unavailable. Retry later.'],
+  ['AI_RESPONSE_INVALID', 502, 'Bias-review output was incomplete.']
+])('explicit bias check preserves actionable %s failure and never changes the appraisal', async (code, status, message) => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const original = await Appraisal.findById(appraisal._id).lean();
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  const provider = jest.spyOn(gateway, 'getChatCompletions').mockRejectedValue(new PerformanceAIRuntimeError(message, code, status,
+    { retryable: status === 503, retryAfterSeconds: status === 503 ? 30 : undefined, cause: new Error('PRIVATE_PROVIDER_CAUSE') }));
+  const response = await call('post', `/${appraisal._id}/check-bias`).send({ managerReview: { overallManagerRating: 4 } }).expect(status);
+  expect(response.body).toMatchObject({ success: false, code, error: message });
+  if (status === 503) expect(response.body).toMatchObject({ retryable: true, retryAfterSeconds: 30 });
+  expect(JSON.stringify(response.body)).not.toContain('PRIVATE_PROVIDER_CAUSE');
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect(await Appraisal.findById(appraisal._id).lean()).toEqual(original);
+});
+
+test('explicit bias check rejects unauthorized and foreign readers before contacting AI', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  const provider = jest.spyOn(gateway, 'getChatCompletions').mockRejectedValue(new Error('Must not contact AI'));
+  for (const [actor, status] of [['employee', 403], ['outsider', 403], ['foreign', 404]]) {
+    await call('post', `/${appraisal._id}/check-bias`, actor).send({ managerReview: {} }).expect(status);
+  }
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test('manual manager form saves and submits without implicit bias analysis while keeping required questions and authorization', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle), snapshot = await rawSnapshot(appraisal._id);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date() } });
+  const provider = jest.spyOn(ai, 'checkForBias').mockResolvedValue({ hasPotentialBias: false, overallRisk: 'low' });
+  const payload = { assessmentMode: 'form', managerReview: { overallManagerRating: 4,
+    competencyRatings: [{ competencyId: 'delivery', competencyName: 'Delivery', managerRating: 4, managerComments: 'Documented synthetic delivery.' }],
+    overallSummary: { achievements: 'Completed fictional deliverables.', strengths: 'Clear structured delivery.',
+      improvements: 'Practice the next synthetic capability.', recommendations: 'Continue the fictional exercise.' } } };
+  for (const [actor, status] of [['employee', 403], ['outsider', 403], ['foreign', 404]]) {
+    await call('post', `/${appraisal._id}/manager-review`, actor).send({ ...payload, submit: true }).expect(status);
+  }
+  await call('post', `/${appraisal._id}/manager-review`).send({ ...payload, submit: false }).expect(200);
+  expect((await Appraisal.findById(appraisal._id)).status).toBe('manager_review_in_progress');
+  const missing = await call('post', `/${appraisal._id}/manager-review`).send({ ...payload, submit: true }).expect(400);
+  expect(missing.body.missingQuestions.length).toBeGreaterThan(0);
+  await answerEmployeeQuestions(appraisal, 'manager');
+  await call('post', `/${appraisal._id}/manager-review`).send({ ...payload, submit: true }).expect(200);
+  const persisted = await Appraisal.findById(appraisal._id);
+  expect(persisted.managerReview.submittedAt).toBeInstanceOf(Date);
+  expect(persisted.managerReview.overallManagerRating).toBe(4);
+  expect(persisted.status).not.toMatch(/manager_review_(pending|in_progress)/);
+  expect(persisted.auditLog.some(row => row.action === 'manager_review_submitted')).toBe(true);
+  expect(persisted.managerReview.aiAssist?.generatedAt).toBeUndefined();
+  expect(await rawSnapshot(appraisal._id)).toEqual(snapshot);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test.each([undefined, 'conversation'])('non-manual manager mode %s retains optional bias analysis on valid submission', async assessmentMode => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { status: 'manager_review_pending', 'selfAssessment.submittedAt': new Date() } });
+  await answerEmployeeQuestions(appraisal, 'manager');
+  const provider = jest.spyOn(ai, 'checkForBias').mockResolvedValue({ hasPotentialBias: false, overallRisk: 'low' });
+  await call('post', `/${appraisal._id}/manager-review`)
+    .send({ assessmentMode, submit: true, managerReview: { overallManagerRating: 4 } }).expect(200);
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect((await Appraisal.findById(appraisal._id)).managerReview.aiAssist.generatedAt).toBeInstanceOf(Date);
+});
+
+test('unexpected explicit bias-check errors return a generic response without internal causes', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  jest.spyOn(ai, 'checkForBias').mockRejectedValue(new Error('PRIVATE_INTERNAL_FAILURE'));
+  const response = await call('post', `/${appraisal._id}/check-bias`).send({ managerReview: {} }).expect(500);
+  expect(response.body).toEqual({ success: false, code: 'AI_REQUEST_FAILED', error: 'Failed to check for bias' });
+  expect(JSON.stringify(response.body)).not.toContain('PRIVATE_INTERNAL_FAILURE');
 });

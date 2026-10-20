@@ -26,6 +26,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import ConversationalAssessment from './conversational/ConversationalAssessment';
 import ChatGptConversationGate from './conversational/ChatGptConversationGate';
 import CustomAssessmentSections, { type CustomAssessmentSectionsHandle } from '@/components/appraisals/CustomAssessmentSections';
+import AppraisalDocuments from '@/components/appraisals/AppraisalDocuments';
 
 type ManualSelfAssessmentForm = {
   overallSummary: {
@@ -110,6 +111,8 @@ export default function SelfAssessmentPage() {
   const appraisalId = params.appraisalId as string;
 
   const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
+  const [manualAppraisalId, setManualAppraisalId] = useState<string | null>(null);
+  const chooseManualForm = () => setManualAppraisalId(appraisalId);
   const [manualForm, setManualForm] = useState<ManualSelfAssessmentForm>({
     overallSummary: EMPTY_SUMMARY,
     overallSelfRating: null,
@@ -117,6 +120,7 @@ export default function SelfAssessmentPage() {
     okrAssessment: []
   });
   const [saving, setSaving] = useState(false);
+  const [documentsBusy, setDocumentsBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const customSectionsRef = useRef<CustomAssessmentSectionsHandle>(null);
   const draftBaseline = useRef<AppraisalDraftBaseline<ManualSelfAssessmentForm> | null>(null);
@@ -157,6 +161,7 @@ export default function SelfAssessmentPage() {
   const editableStatuses = ['self_assessment_pending', 'self_assessment_in_progress'];
   const isEditable = editableStatuses.includes(appraisal.status);
   const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false && appraisal?.cycleConfigurationSnapshot?.appraisalFlow?.assessmentMode !== 'form';
+  const conversationSelected = aiAssistEnabled && manualAppraisalId !== appraisalId;
   const requireSelfRating = appraisal?.cycleId?.settings?.allowSelfRating !== false;
 
   if (appraisal.selfAssessment?.submittedAt) {
@@ -238,6 +243,7 @@ export default function SelfAssessmentPage() {
 
       await api.post(`/appraisals/${appraisalId}/self-assessment`, {
         selfAssessment: payload,
+        assessmentMode: 'form',
         submit
       });
 
@@ -296,13 +302,16 @@ export default function SelfAssessmentPage() {
               {appraisal.cycleId?.name || 'Performance Review'}
             </Typography>
           </Box>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+          {conversationSelected && <Button variant="outlined" onClick={chooseManualForm}>Use manual form</Button>}
           <Chip
-            icon={aiAssistEnabled ? <AutoAwesome /> : <EditNote />}
-            color={aiAssistEnabled ? 'primary' : 'default'}
+            icon={conversationSelected ? <AutoAwesome /> : <EditNote />}
+            color={conversationSelected ? 'primary' : 'default'}
             variant="outlined"
-            label={aiAssistEnabled ? 'Conversational Mode' : 'Manual Mode'}
+            label={conversationSelected ? 'Conversational Mode' : 'Manual Mode'}
             sx={{ fontWeight: 600 }}
           />
+          </Box>
         </Box>
       </Paper>
 
@@ -316,10 +325,10 @@ export default function SelfAssessmentPage() {
         </Alert>
       )}
 
-      {aiAssistEnabled ? (
+      {conversationSelected ? (
         <Fade in>
           <Box>
-            <ChatGptConversationGate appraisalId={appraisalId}>
+            <ChatGptConversationGate appraisalId={appraisalId} onUseManualForm={chooseManualForm}>
               {({ requireChatGptConnection }) => (
                 <ConversationalAssessment
                   appraisalId={appraisalId}
@@ -341,8 +350,11 @@ export default function SelfAssessmentPage() {
             />
 
             <Alert severity="info" sx={{ mb: 3 }}>
-              This appraisal uses a manual assessment form. Use this manual form to complete and submit your self-assessment.
+              This appraisal uses a manual assessment form. Complete and submit your self-assessment here; a ChatGPT connection is not required.
             </Alert>
+
+            <AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate}
+              disabled={saving || submitting} onBusyChange={setDocumentsBusy} />
 
             <Card sx={{ mb: 3 }}>
               <CardContent>
@@ -557,7 +569,7 @@ export default function SelfAssessmentPage() {
                 variant="outlined"
                 startIcon={saving ? <CircularProgress size={16} /> : <Save />}
                 onClick={() => persistManualAssessment(false)}
-                disabled={saving || submitting}
+                disabled={saving || submitting || documentsBusy}
               >
                 Save Draft
               </Button>
@@ -566,7 +578,7 @@ export default function SelfAssessmentPage() {
                 color="success"
                 startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <Send />}
                 onClick={() => persistManualAssessment(true)}
-                disabled={saving || submitting}
+                disabled={saving || submitting || documentsBusy}
               >
                 Submit Self-Assessment
               </Button>

@@ -8,8 +8,9 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // The legacy ReviewCycle/PerformanceReview interface is read-only during
-  // migration and no longer has a writable UI. Preserve old bookmarks by
-  // taking users to the canonical Appraisal screens.
+  // migration and no longer has a writable UI. Move legacy lists/settings to
+  // canonical screens, but retain historical review detail IDs: they are not
+  // Appraisal IDs and must not be rewritten to a different record engine.
   if (pathname === '/team/reviews' || pathname.startsWith('/team/reviews/')) {
     const destination = request.nextUrl.clone();
     destination.pathname = pathname.replace(/^\/team\/reviews/, '/team/appraisals');
@@ -20,7 +21,7 @@ export function proxy(request: NextRequest) {
     destination.pathname = pathname.replace(/^\/admin\/review-cycles/, '/admin/appraisal-cycles');
     return NextResponse.redirect(destination);
   }
-  if (pathname === '/reviews' || pathname.startsWith('/reviews/')) {
+  if (pathname === '/reviews') {
     const destination = request.nextUrl.clone();
     destination.pathname = pathname.replace(/^\/reviews/, '/appraisals');
     return NextResponse.redirect(destination);

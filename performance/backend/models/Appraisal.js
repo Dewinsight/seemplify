@@ -92,7 +92,7 @@ const appraisalSchema = new mongoose.Schema({
   }],
   feedbackEvidence: [{
     feedbackId: { type: mongoose.Schema.Types.ObjectId, ref: 'Feedback', required: true },
-    type: String,
+    type: { type: String },
     content: String,
     contextType: String,
     contextLabel: String,

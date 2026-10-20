@@ -504,7 +504,16 @@ router.post('/:id/appraisal-evidence', async (req, res) => {
     await item.save();
     res.json({ success: true, data: serializeFeedback(item.toObject(), actorId, req.userRole) });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Failed to update appraisal evidence' });
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, code: 'INVALID_EVIDENCE_REFERENCE', error: 'Choose valid feedback and an appraisal.' });
+    }
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ success: false, code: 'INVALID_APPRAISAL_EVIDENCE', error: 'Feedback evidence could not be saved. Reload the appraisal and retry.' });
+    }
+    if (Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode < 500) {
+      return res.status(error.statusCode).json({ success: false, error: error.message });
+    }
+    return res.status(500).json({ success: false, code: 'FEEDBACK_EVIDENCE_SAVE_FAILED', error: 'Failed to update appraisal evidence. Please retry.' });
   }
 });
 

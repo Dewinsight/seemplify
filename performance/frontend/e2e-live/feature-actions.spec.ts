@@ -7,7 +7,7 @@ async function login(page: Page, actor: string, path: string) {
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(path)}`);
   await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
   if (['manager', 'team_lead', 'department_head', 'hr_manager', 'admin', 'owner'].includes(actor)) {
-    await page.getByRole('button', { name: 'Personal', exact: true }).click();
+    await page.getByRole('button', { name: /^(Personal|Manager|Admin)$/ }).click();
     await page.getByRole('menuitemradio', { name: ['hr_manager', 'admin', 'owner'].includes(actor) ? /^Admin/ : /^Manager/ }).click();
     await page.goto(path);
   }
@@ -121,6 +121,34 @@ test('employee sends feedback from the real colleague picker', async ({ page }) 
   await expect(page.getByText(message, { exact: true })).toBeVisible();
 });
 
+for (const actor of ['hr_manager', 'department_head', 'team_lead']) {
+  test(`${actor} exact-email feedback selection persists the intended recipient despite unrelated direct reports`, async ({ page, request }) => {
+    const roster = await api(request, actor, 'GET', 'user/my-team-members');
+    expect(roster.directReports.length).toBeGreaterThan(1);
+    expect(roster.directReports.some((person: { email: string }) => person.email !== 'employee@example.test')).toBeTruthy();
+    await login(page, actor, '/feedback');
+    await page.getByRole('button', { name: 'Give feedback', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Give feedback' });
+    const recipient = dialog.getByRole('combobox', { name: /Recipient/ });
+    await recipient.fill('employee@example.test');
+    await expect(page.getByRole('option')).toHaveCount(1);
+    await expect(page.getByRole('option')).toContainText('Acceptance employee');
+    await recipient.press('ArrowDown');
+    await recipient.press('Enter');
+    await expect(recipient).toHaveValue('Acceptance employee');
+    const message = `Exact-email recipient proof ${actor} ${Date.now()}`;
+    await dialog.getByRole('textbox', { name: /^Feedback/ }).fill(message);
+    const sentRequest = page.waitForRequest(req => req.method() === 'POST' && new URL(req.url()).pathname === '/api/feedback');
+    await dialog.getByRole('button', { name: 'Send feedback', exact: true }).click();
+    expect((await sentRequest).postDataJSON().receiverId).toBe('acceptance-employee');
+    await expect(dialog).not.toBeVisible();
+    const received = await api(request, 'employee', 'GET', 'feedback');
+    expect(received.find((item: { message: string; content?: string }) => item.message === message || item.content === message)).toMatchObject({
+      receiverId: 'acceptance-employee', senderId: `acceptance-${actor}`,
+    });
+  });
+}
+
 test('manager creates a support plan and employee acknowledges the HR-reviewed plan', async ({ page }) => {
   await login(page, 'manager', '/support-plans');
   await page.getByRole('button', { name: 'New support plan', exact: true }).click();
@@ -152,6 +180,62 @@ test('manager creates a support plan and employee acknowledges the HR-reviewed p
   await page.getByLabel('Progress %').fill('50');
   await page.getByRole('button', { name: 'Add check-in', exact: true }).click();
   await expect(page.getByText('Progress check-in added.', { exact: true })).toBeVisible();
+});
+
+test('HR requests support-plan changes, manager amends the same plan, and employee acknowledges with comments', async ({ page, request }, info) => {
+  const title = `Support revision ${Date.now()}`;
+  const created = await api(request, 'manager', 'POST', 'support-plans', {
+    employee: { userId: 'acceptance-employee' }, planType: 'informal_support', title, summary: 'Synthetic support with two measurable objectives and two commitments.',
+    objectives: [{ title: 'Raise risks early', measure: 'Weekly risk review', target: 'Two days before the deadline', dueDate: date(30) },
+      { title: 'Document the handover', measure: 'Handover checklist', target: 'Every delivery', dueDate: date(40) }],
+    supportCommitments: [{ description: 'Weekly manager priority review', ownerType: 'manager' }, { description: 'Protected practice time', ownerType: 'organization' }],
+    milestones: [{ title: 'Review progress', dueDate: date(30) }], reviewDates: [date(30)],
+  });
+  await api(request, 'manager', 'POST', `support-plans/${created._id}/submit-for-hr-review`, {});
+  await login(page, 'hr_manager', '/support-plans');
+  await page.getByRole('article', { name: title, exact: true }).getByRole('button', { name: 'Open plan', exact: true }).click();
+  let details = page.getByRole('dialog', { name: new RegExp(title) });
+  await expect(details.getByRole('button', { name: 'Request changes', exact: true })).toBeDisabled();
+  await details.getByRole('textbox', { name: 'HR review comments', exact: true }).fill('Make both measures explicit and preserve the planned organization support.');
+  await details.getByRole('button', { name: 'Request changes', exact: true }).click();
+  const changed = await api(request, 'manager', 'GET', `support-plans/${created._id}`);
+  expect(changed.state).toBe('changes_requested');
+  expect((await request.get(`http://127.0.0.1:5014/api/support-plans/${created._id}`, { headers: { 'x-acceptance-actor': 'employee' } })).status()).toBe(403);
+  await login(page, 'manager', '/support-plans');
+  await page.getByRole('article', { name: title, exact: true }).getByRole('button', { name: 'Open plan', exact: true }).click();
+  details = page.getByRole('dialog', { name: new RegExp(title) });
+  await expect(details.getByText(/Make both measures explicit/)).toBeVisible();
+  await details.getByRole('button', { name: 'Edit plan', exact: true }).click();
+  await details.getByRole('textbox', { name: 'Plan summary', exact: false }).fill('Amended synthetic support with clearer measures and retained commitments.');
+  await details.getByRole('textbox', { name: 'Target 1', exact: false }).fill('All material risks recorded two working days before delivery');
+  await details.getByRole('textbox', { name: 'Measure 2', exact: false }).fill('A reviewed handover checklist for every delivery');
+  await details.getByRole('textbox', { name: 'Support commitment 2', exact: false }).fill('One protected practice hour each week');
+  await details.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(details.getByRole('button', { name: 'Resubmit to HR', exact: true })).toBeVisible();
+  const amended = await api(request, 'manager', 'GET', `support-plans/${created._id}`);
+  expect(amended._id).toBe(created._id);
+  expect(amended.employee.userId).toBe(created.employee.userId);
+  expect(amended.manager.userId).toBe(created.manager.userId);
+  expect(amended.objectives.map((item: { _id: string }) => item._id)).toEqual(created.objectives.map((item: { _id: string }) => item._id));
+  expect(amended.supportCommitments.map((item: { _id: string }) => item._id)).toEqual(created.supportCommitments.map((item: { _id: string }) => item._id));
+  expect(amended.objectives[1].measure).toBe('A reviewed handover checklist for every delivery');
+  expect(amended.supportCommitments[1].description).toBe('One protected practice hour each week');
+  await details.getByRole('button', { name: 'Resubmit to HR', exact: true }).click();
+  await login(page, 'hr_manager', '/support-plans');
+  await page.getByRole('article', { name: title, exact: true }).getByRole('button', { name: 'Open plan', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve for employee review', exact: true }).click();
+  await login(page, 'employee', '/support-plans');
+  await page.getByRole('article', { name: title, exact: true }).getByRole('button', { name: 'Open plan', exact: true }).click();
+  details = page.getByRole('dialog', { name: new RegExp(title) });
+  await expect(details.getByRole('button', { name: 'Acknowledge with comments', exact: true })).toBeDisabled();
+  await details.getByRole('textbox', { name: 'Your comments', exact: true }).fill('I understand the amended expectations and will use the protected practice time.');
+  await page.screenshot({ path: info.outputPath('support-plan-employee-comments.png'), fullPage: true });
+  await details.getByRole('button', { name: 'Acknowledge with comments', exact: true }).click();
+  await expect(details.getByRole('textbox', { name: 'Progress update', exact: true })).toBeVisible();
+  const active = await api(request, 'employee', 'GET', `support-plans/${created._id}`);
+  expect(active.state).toBe('active');
+  expect(active.employeeResponse).toMatchObject({ acknowledgement: 'acknowledged_with_comments', comment: 'I understand the amended expectations and will use the protected practice time.' });
+  expect(active.audit.map((row: { action: string }) => row.action)).toEqual(expect.arrayContaining(['hr_requested_changes', 'updated', 'hr_approved', 'employee_acknowledged']));
 });
 
 test('manager finalizes a result and employee opens historical report and downloads CSV', async ({ page, request }) => {
@@ -220,7 +304,7 @@ test('manager launches from the three-step wizard and employee submits the manua
   expect(persisted.selfAssessment.submittedAt).toBeTruthy();
 });
 
-test('employee writes and submits a real performance check-in', async ({ page, request }) => {
+test('employee saves, reloads, edits and submits the same real performance check-in draft', async ({ page, request }) => {
   const existing = await api(request, 'employee', 'GET', 'check-ins');
   let offset = -9;
   while (existing.some((item: { periodStart: string }) => item.periodStart.slice(0, 10) === date(offset))) offset -= 7;
@@ -231,9 +315,35 @@ test('employee writes and submits a real performance check-in', async ({ page, r
   const win = `Browser verified delivery ${Date.now()}`;
   await dialog.getByLabel('Wins', { exact: true }).fill(win);
   await dialog.getByLabel('Next priorities').fill('Complete the next synthetic delivery milestone');
-  await dialog.getByRole('button', { name: 'Save and submit', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const saved = (await api(request, 'employee', 'GET', 'check-ins')).find((item: { wins: string[] }) => item.wins.includes(win));
+  expect(saved).toMatchObject({ status: 'draft', cadence: 'weekly' });
+  await page.reload();
+  const card = page.locator(`#check-in-${saved._id}`);
+  await card.getByRole('button', { name: 'Edit draft', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit performance check-in' });
+  await expect(editor.getByLabel('Wins', { exact: true })).toHaveValue(win);
+  await expect(editor.getByLabel('Period start')).toHaveValue(date(offset));
+  await expect(editor.getByLabel('Period start')).toBeDisabled();
+  await expect(editor.getByLabel('Period end')).toBeDisabled();
+  const correctedWin = `${win} corrected`;
+  await editor.getByLabel('Wins', { exact: true }).fill(correctedWin);
+  await editor.getByLabel('Support needed', { exact: true }).fill('Review the synthetic handoff before the next milestone');
+  await editor.getByRole('button', { name: 'Save and submit', exact: true }).click();
   await expect(page.getByText('Check-in submitted.', { exact: true })).toBeVisible();
-  await page.reload(); await expect(page.getByText(win, { exact: true })).toBeVisible();
+  const final = await api(request, 'employee', 'GET', 'check-ins');
+  const persisted = final.find((item: { _id: string }) => item._id === saved._id);
+  expect(persisted).toMatchObject({ status: 'submitted', cadence: saved.cadence,
+    periodStart: saved.periodStart, periodEnd: saved.periodEnd,
+    wins: [correctedWin], supportNeeded: ['Review the synthetic handoff before the next milestone'] });
+  expect(final.filter((item: { _id: string }) => !existing.some((old: { _id: string }) => old._id === item._id))).toHaveLength(1);
+  const denied = await request.patch(`http://127.0.0.1:5014/api/check-ins/${saved._id}`, {
+    headers: { 'x-acceptance-actor': 'employee' }, data: { wins: ['Late submitted edit'] }
+  });
+  expect(denied.status()).toBe(409);
+  await page.reload(); await expect(card.getByText(correctedWin, { exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Edit draft', exact: true })).toHaveCount(0);
 });
 
 test('manager creates a development plan including optional skill and learning fields', async ({ page }) => {
@@ -269,6 +379,106 @@ test('project lead saves participants and sends a real project feedback request'
   await muiSelect(feedback, 'Reviewer').click(); await page.getByRole('option', { name: 'Acceptance manager', exact: true }).click();
   await feedback.getByLabel('Due date').fill(date(7)); await feedback.getByRole('button', { name: 'Send request', exact: true }).click();
   await expect(page.getByText(/Project feedback request sent/)).toBeVisible();
+});
+
+test('project feedback is accepted, acknowledged and selected as real appraisal evidence visible to its reviewer until removed', async ({ page, request }, info) => {
+  const stamp = Date.now();
+  const templates = await api(request, 'hr_manager', 'GET', 'appraisals/cycle-templates');
+  const design = structuredClone(templates[0].design);
+  design.sections.forEach((section: { questions: Array<{ required: boolean }> }) => section.questions.forEach(question => { question.required = false; }));
+  const cycleName = `Feedback evidence cycle ${stamp}`;
+  const created = await api(request, 'hr_manager', 'POST', 'appraisals/cycles', {
+    name: cycleName, periodStart: date(-90), periodEnd: date(-1), workflowDefinition: design,
+    settings: { enableAiAssist: false, requireOkrAlignment: false }, launchNow: true,
+    reviewerMode: 'selected', employees: [{ userId: 'acceptance-employee', reviewerId: 'acceptance-manager' }],
+  });
+  const appraisal = (await api(request, 'employee', 'GET', 'appraisals/my')).find((item: { cycleId: { _id: string } }) => item.cycleId._id === created.cycle._id);
+  await api(request, 'employee', 'POST', `appraisals/${appraisal._id}/self-assessment`, {
+    assessmentMode: 'form', submit: true, selfAssessment: { overallSelfRating: 4, overallSummary: {
+      achievements: 'Delivered the project with a measured handover outcome.', challenges: 'Resolved a delivery dependency through early planning.',
+      learnings: 'Applied a structured planning method.', goals: 'Document the next project milestone with clear evidence.',
+    } },
+  });
+  const projectName = `Project evidence handoff ${stamp}`;
+  await api(request, 'manager', 'POST', 'performance-projects', {
+    name: projectName, startDate: date(-7), state: 'active',
+    participants: [{ userId: 'acceptance-employee' }, { userId: 'acceptance-peer' }],
+  });
+  await login(page, 'manager', '/project-feedback');
+  const project = page.locator('.MuiPaper-root').filter({ has: page.getByText(projectName, { exact: true }) });
+  await project.getByRole('button', { name: 'Request feedback', exact: true }).click();
+  const requestDialog = page.getByRole('dialog', { name: 'Request project feedback' });
+  await muiSelect(requestDialog, 'Feedback about').click();
+  await page.getByRole('option', { name: 'Acceptance employee', exact: true }).click();
+  await muiSelect(requestDialog, 'Reviewer').click();
+  await page.getByRole('option', { name: 'Acceptance peer', exact: true }).click();
+  await requestDialog.getByLabel('Due date').fill(date(7));
+  await requestDialog.getByRole('button', { name: 'Send request', exact: true }).click();
+  await expect(page.getByText('Project feedback request sent to the reviewer.', { exact: true })).toBeVisible();
+  const feedbackRequest = (await api(request, 'peer', 'GET', 'feedback/requests')).find((item: { contextLabel: string }) => item.contextLabel === projectName);
+  expect(feedbackRequest).toMatchObject({ state: 'requested', subjectId: 'acceptance-employee', reviewerId: 'acceptance-peer', contextType: 'project' });
+  await login(page, 'peer', `/feedback?request=${feedbackRequest._id}`);
+  const requestCard = page.locator(`#feedback-${feedbackRequest._id}`);
+  await requestCard.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(requestCard.getByText('accepted', { exact: true })).toBeVisible();
+  await requestCard.getByRole('button', { name: 'Give feedback', exact: true }).click();
+  const compose = page.getByRole('dialog', { name: 'Give feedback' });
+  await expect(compose.getByRole('combobox', { name: /Recipient/ })).toHaveValue('Acceptance employee');
+  const message = `Project-specific private evidence ${stamp}: the handover checklist made the delivery measurable.`;
+  await compose.getByRole('textbox', { name: /^Feedback/ }).fill(message);
+  await compose.getByRole('button', { name: 'Send feedback', exact: true }).click();
+  await expect(compose).toBeHidden();
+  expect((await api(request, 'peer', 'GET', 'feedback/requests')).find((item: { _id: string }) => item._id === feedbackRequest._id).state).toBe('fulfilled');
+  const feedback = (await api(request, 'employee', 'GET', 'feedback')).find((item: { message: string }) => item.message === message);
+  expect(feedback).toMatchObject({ contextType: 'project', contextLabel: projectName, visibility: 'private' });
+  await login(page, 'employee', `/feedback?feedback=${feedback._id}`);
+  await page.getByRole('tab', { name: 'Received', exact: true }).click();
+  const feedbackCard = page.locator(`#feedback-${feedback._id}`);
+  await feedbackCard.getByRole('button', { name: 'Acknowledge', exact: true }).click();
+  await expect(feedbackCard.getByRole('button', { name: 'Acknowledge', exact: true })).toHaveCount(0);
+  expect((await api(request, 'employee', 'GET', `feedback/${feedback._id}`)).acknowledgedAt).toBeTruthy();
+  await feedbackCard.getByRole('button', { name: 'Use in appraisal', exact: true }).click();
+  const evidenceDialog = page.getByRole('dialog', { name: 'Use feedback in an appraisal' });
+  await muiSelect(evidenceDialog, 'Appraisal').click();
+  await page.getByRole('option', { name: new RegExp(cycleName) }).click();
+  const selectionResponse = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith(`/feedback/${feedback._id}/appraisal-evidence`));
+  await evidenceDialog.getByRole('button', { name: 'Add to appraisal', exact: true }).click();
+  expect((await selectionResponse).status()).toBe(200);
+  await expect(evidenceDialog).toBeHidden();
+  await page.reload();
+  await expect(feedbackCard.getByText('Appraisal evidence', { exact: true })).toBeVisible();
+  const selected = await api(request, 'manager', 'GET', `appraisals/${appraisal._id}`);
+  expect(selected.feedbackEvidence).toEqual([expect.objectContaining({
+    feedbackId: feedback._id, content: message, contextType: 'project', contextLabel: projectName,
+    senderDisplay: 'Acceptance peer', selectedBy: 'acceptance-employee',
+  })]);
+  await login(page, 'manager', `/appraisals/${appraisal._id}/manager-review`);
+  await expect(page.getByText('Selected appraisal feedback (1)', { exact: true })).toBeVisible();
+  await expect(page.getByText(message, { exact: true })).toBeVisible();
+  await expect(page.getByText('The employee chose this feedback as supporting evidence. It does not set or change a rating.', { exact: true })).toBeVisible();
+  await page.getByText('Selected appraisal feedback (1)', { exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath('selected-project-feedback-reviewer.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByText('Selected appraisal feedback (1)', { exact: true }).scrollIntoViewIfNeeded();
+  const evidenceBounds = await page.getByText(message, { exact: true }).boundingBox();
+  expect(evidenceBounds).not.toBeNull();
+  expect(evidenceBounds!.x + evidenceBounds!.width).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: info.outputPath('selected-project-feedback-reviewer-mobile.png') });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  // Private source feedback is shared here only by the recipient's explicit selection.
+  expect(await api(request, 'manager', 'GET', 'feedback/direct-reports')).not.toEqual(expect.arrayContaining([expect.objectContaining({ _id: feedback._id })]));
+  await login(page, 'employee', `/feedback?feedback=${feedback._id}`);
+  await feedbackCard.getByRole('button', { name: 'Remove from appraisal', exact: true }).click();
+  const removal = page.getByRole('dialog', { name: 'Remove appraisal evidence' });
+  await removal.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(removal).toBeHidden();
+  await page.reload();
+  await expect(feedbackCard.getByRole('button', { name: 'Use in appraisal', exact: true })).toBeVisible();
+  expect((await api(request, 'manager', 'GET', `appraisals/${appraisal._id}`)).feedbackEvidence).toHaveLength(0);
+  await login(page, 'manager', `/appraisals/${appraisal._id}/manager-review`);
+  await page.reload();
+  await expect(page.getByText('Selected appraisal feedback (1)', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(message, { exact: true })).toHaveCount(0);
 });
 
 test('HR records calibration decisions, completes the session and downloads the report', async ({ page, request }) => {
