@@ -1,5 +1,6 @@
 name: Performance Management CI
 on:
+  workflow_dispatch:
   pull_request:
     paths: ['performance/**', '.github/workflows/performance-ci.yml']
   push:
