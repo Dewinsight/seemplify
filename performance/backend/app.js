@@ -131,6 +131,7 @@ mongoose.connect(mongoUri)
       startReminderScheduler();
       require('./services/quarterlyAppraisalService').startQuarterlyCycleScheduler();
       require('./services/appraisalMeetingMediaService').start();
+      require('./services/appraisalFinalReportService').start();
       const retention = () => require('./services/competency/retentionService').processDue({ limit: 100 }).catch(() => console.error('Competency retention sweep failed; retrying on the next interval'));
       const retentionTimer = setInterval(retention, 60000);
       retentionTimer.unref();

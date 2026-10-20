@@ -343,7 +343,7 @@ export default function FinalReviewPage() {
                                             justification: justification.trim() || undefined
                                         });
                                         mutate();
-                                        router.push(`/appraisals/${appraisalId}`);
+                                        router.push(`/appraisals/${appraisalId}/report`);
                                     } catch (e: unknown) {
                                         const axiosError = e as { response?: { data?: { error?: string; code?: string; assessmentId?: string } } };
                                         const failure = axiosError.response?.data;

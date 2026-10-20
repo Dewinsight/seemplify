@@ -81,8 +81,18 @@ module.exports = function createMeetingRouter({ canManageAppraisal, isAppraisalE
         void require('../services/appraisalNativeMediaService').process(meeting).catch(() => {});
         return res.status(202).json({ success: true, data: publicMeeting(meeting), message: 'Processing queued. Refresh the call to see progress.' });
       }
-      await require('../services/appraisalMeetingMediaService').sync(meeting);
-      return res.json({ success: true, data: publicMeeting(meeting) });
+      const updated = await require('../services/appraisalMeetingMediaService').sync(meeting);
+      return res.json({ success: true, data: publicMeeting(updated) });
+    } catch (error) { return errorResponse(res, error); }
+  });
+  router.post('/:meetingId/transcript', async (req, res) => {
+    try {
+      if (!req.canManageMeeting) return res.status(403).json({ success: false, error: 'Only the reviewer or HR can add a transcript.' });
+      if (req.appraisal.status === 'cancelled') return res.status(409).json({ success: false, error: 'This appraisal was cancelled.' });
+      const updated = await require('../services/appraisalMeetingMediaService').saveManualTranscript(req.meeting, req.body.content, shared.identityFromRequest(req).sub);
+      req.appraisal.addAuditLog('manual_meeting_transcript_added', req.session.user, { meetingId: req.meeting._id });
+      await req.appraisal.save();
+      return res.json({ success: true, data: publicMeeting(updated) });
     } catch (error) { return errorResponse(res, error); }
   });
   router.post('/:meetingId/summary', async (req, res) => {

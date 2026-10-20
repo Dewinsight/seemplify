@@ -33,9 +33,10 @@ async function process(meeting) {
       await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.transcriptionParts': parts, 'appraisalMeeting.transcriptionProvider': result.provider, 'appraisalMeeting.transcriptionModel': result.model } });
     }
     const content = parts.filter(Boolean).join('\n');
-    await OneOnOne.updateOne({ _id: meeting._id }, { $set: { transcript: { content, source: 'auto', status: 'ready', processedAt: new Date() }, 'appraisalMeeting.transcriptionState': content ? 'ready' : 'no_speech' }, $unset: { 'appraisalMeeting.transcriptionLeaseUntil': 1 } });
+    const saved = await OneOnOne.updateOne({ _id: meeting._id, 'transcript.source': { $ne: 'manual_upload' } }, { $set: { transcript: { content, source: 'auto', status: 'ready', processedAt: new Date() }, 'appraisalMeeting.transcriptionState': content ? 'ready' : 'no_speech' }, $unset: { 'appraisalMeeting.transcriptionLeaseUntil': 1 } });
+    if (saved.matchedCount) await require('./appraisalFinalReportService').invalidate(meeting.appraisalId, meeting.organizationId);
   } catch (error) {
-    await OneOnOne.updateOne({ _id: meeting._id }, { $set: { 'appraisalMeeting.transcriptionState': 'failed' }, $unset: { 'appraisalMeeting.transcriptionLeaseUntil': 1 } });
+    await OneOnOne.updateOne({ _id: meeting._id, 'transcript.source': { $ne: 'manual_upload' } }, { $set: { 'appraisalMeeting.transcriptionState': 'failed' }, $unset: { 'appraisalMeeting.transcriptionLeaseUntil': 1 } });
     // Provider diagnostics can contain signed media URLs; keep them out of logs.
     throw Object.assign(new Error('Transcription could not finish. The recording is saved; retry processing.'), { statusCode: 503, code: 'CALL_TRANSCRIPTION_FAILED' });
   } finally { await fs.rm(dir, { recursive: true, force: true }); }

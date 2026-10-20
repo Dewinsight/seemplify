@@ -3107,6 +3107,8 @@ router.get('/:appraisalId/report', requireAuth, async (req, res) => {
       organizationId: appraisal.organizationId, status: { $ne: 'deleted' }
     }).select('_id appraisalId organizationId visibility originalName fileType fileSize category status').lean() : [];
     const report = resultReport(appraisal, appraisal.cycleId);
+    report.aiReport = await require('../services/appraisalFinalReportService').view(appraisal);
+    report.canGenerateAIReport = managerAccess;
     // History exposes only the current viewer's authorized metadata. Content
     // authorization and fresh provider signing remain on the content route.
     report.documents = visibleAppraisalDocuments(req, { ...appraisal.toObject(), documents }, {
@@ -3122,6 +3124,16 @@ router.get('/:appraisalId/report', requireAuth, async (req, res) => {
 });
 
 // Get single appraisal
+router.post('/:appraisalId/report/ai', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId)).populate(tenantCyclePopulate(req));
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    if (!await canManageAppraisal(req, appraisal)) return res.status(403).json({ success: false, error: 'Only the reviewer or HR can generate this report.' });
+    await require('../services/appraisalFinalReportService').queue(appraisal, require('../services/sharedAIAccountService').identityFromRequest(req));
+    return res.status(202).json({ success: true, data: { state: 'pending' } });
+  } catch (error) { return res.status(error.statusCode || 503).json({ success: false, error: error.message || 'The final AI report could not be queued.' }); }
+});
+
 router.get('/:appraisalId', requireAuth, async (req, res) => {
   try {
     const appraisal = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId))
@@ -4478,6 +4490,10 @@ router.post('/:appraisalId/finalize', requireAuth, async (req, res) => {
     });
 
     await require('../services/competency/appraisalBridgeService').saveFinalOutcome(req, appraisal);
+    // Publication is the human decision. AI reporting is durable, separate work
+    // and a provider failure must not undo that published decision.
+    try { await require('../services/appraisalFinalReportService').queue(appraisal, require('../services/sharedAIAccountService').identityFromRequest(req)); }
+    catch { /* The final result page offers an explicit retry with the reviewer's own account. */ }
     await syncCycleProgress(appraisal.cycleId?._id || appraisal.cycleId, appraisal.organizationId);
 
     await recordAppraisalEvent(appraisal, acknowledgementRequired ? 'appraisal.finalized' : 'appraisal.finalized_no_ack', req.session.user, {

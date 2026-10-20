@@ -49,6 +49,10 @@ module.exports = ({ completeMeeting, onScheduled }) => {
   router.post('/summary', wrap(async (req, res) => {
     res.json({ success: true, data: calls.publicMeeting(await media.summarize(req.meeting, shared.identityFromRequest(req))) });
   }));
+  router.post('/transcript', wrap(async (req, res) => {
+    if (!req.oneOnOneAccess.isManager && !req.oneOnOneAccess.isHrAdmin) return res.status(403).json({ error: 'Only the organizer or HR can add a transcript.' });
+    res.json({ success: true, data: calls.publicMeeting(await media.saveManualTranscript(req.meeting, req.body.content, shared.identityFromRequest(req).sub)) });
+  }));
   router.post('/complete', (req, res) => { req.body.sharedNotes = req.body.notes; return completeMeeting(req, res); });
   return router;
 };

@@ -6,12 +6,13 @@ const recordingRevoked = meeting => Boolean(meeting.appraisalMeeting?.recordingC
 function publicMeeting(meeting) {
   const call = meeting.appraisalMeeting;
   const sourceRevoked = recordingRevoked(meeting);
+  const manualTranscript = meeting.transcript?.source === 'manual_upload';
   return { _id: meeting._id, title: meeting.title, scheduledDate: meeting.scheduledDate, startedAt: meeting.actualStartTime, duration: meeting.duration,
     status: meeting.status, stepId: meeting.workflowStepId, mode: call?.mode || 'calendar', conferenceUrl: meeting.nylas?.conferenceUrl,
     integration: call ? { recordingRequested: call.recordingRequested, recordingState: call.recordingState, calendarState: call.calendarState,
       recordingAvailable: !sourceRevoked && Boolean(call.recordingFileId), transcriptionState: call.transcriptionState, recordingUrl: sourceRevoked ? undefined : call.recordingUrl,
-      summaryState: call.summaryState, summaryModel: call.summaryModel } : undefined,
-    transcript: sourceRevoked ? undefined : meeting.transcript?.content, notes: meeting.sharedNotes, summary: sourceRevoked ? undefined : call?.summary };
+      transcriptSource: meeting.transcript?.source, summaryState: call.summaryState, summaryModel: call.summaryModel } : undefined,
+    transcript: sourceRevoked && !manualTranscript ? undefined : meeting.transcript?.content, notes: meeting.sharedNotes, summary: sourceRevoked && !manualTranscript ? undefined : call?.summary };
 }
 function failure(message, statusCode = 409) { return Object.assign(new Error(message), { statusCode }); }
 function validateLink(value) {

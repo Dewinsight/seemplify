@@ -46,10 +46,11 @@ test.beforeAll(async () => {
     if (operation === 'meetings/transcribe') return { transcript: 'Synthetic transcript fixture: Emery will document the release.', provider: 'test-fixture', model: 'test-fixture' };
     return { state: 'cancelled' };
   };
-  ai.getChatCompletions = async () => ({ model: 'test-fixture-terra', choices: [{ message: { content: 'Synthetic notes fixture: Emery will document the release.' } }] });
+  ai.getChatCompletions = async (_messages: unknown, options: { activity?: string }) => ({ model: 'test-fixture-terra', choices: [{ message: { content: options.activity === 'performance.self_assessment.report' ? 'Synthetic final appraisal report: the submitted assessment and manual transcript confirm the agreed release action. Human rating: 4/5.' : 'Synthetic notes fixture: Emery will document the release.' } }] });
   const app = express(); app.use(express.json());
   app.use((req: { session: unknown; get: (name: string) => string }, _res: unknown, next: () => void) => { req.session = { user: actor(req.get('x-call-actor') || 'manager'), currentOrganizationId: organization.id }; next(); });
   app.use('/api/one-on-ones', backend('./routes/oneOnOnes'));
+  app.use('/api/appraisals', backend('./routes/appraisals'));
   server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
   apiURL = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
 });
@@ -65,7 +66,7 @@ async function setup(page: Page, who: string) {
   await page.addInitScript(() => localStorage.setItem('accessToken', 'isolated-standalone-call-qa'));
   await page.route('**/__mock-api/**', async route => {
     const url = new URL(route.request().url()); const endpoint = url.pathname.slice('/__mock-api'.length);
-    if (endpoint.startsWith('/one-on-ones')) { const response = await route.fetch({ url: `${apiURL}/api${endpoint}${url.search}`, headers: { ...route.request().headers(), 'x-call-actor': who } }); await route.fulfill({ response }); return; }
+    if (endpoint.startsWith('/one-on-ones') || endpoint.startsWith('/appraisals/')) { const response = await route.fetch({ url: `${apiURL}/api${endpoint}${url.search}`, headers: { ...route.request().headers(), 'x-call-actor': who } }); await route.fulfill({ response }); return; }
     let response: unknown = { success: true, data: [] };
     if (endpoint === '/auth/me') response = { success: true, user, currentOrganization: organization, currentOrganizationId: organization.id };
     if (endpoint === '/user/context') response = { success: true, data: { user, organization, role: { name: who === 'manager' ? 'line_manager' : 'employee', isManager: who === 'manager', isHRAdmin: false }, teams: user.idpTeams, features: {}, stats: {} } };
@@ -73,6 +74,68 @@ async function setup(page: Page, who: string) {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
   });
 }
+
+test('manual transcript import persists, generates notes and feeds the final AI report on mobile', async ({ page, browser }, testInfo) => {
+  test.setTimeout(90000);
+  const transcript = 'Morgan: We agreed to document the release.\nEmery: I will write the handover by Friday.';
+  const meeting = await OneOnOne.create({ organizationId: organization.id, managerId: 'manager', employeeId: 'employee',
+    managerInfo: { name: 'Morgan Manager', email: 'manager@example.test' }, employeeInfo: { name: 'Emery Employee', email: 'employee@example.test' },
+    title: 'Completed appraisal discussion', status: 'completed', scheduledDate: new Date(Date.now() - 3600000), duration: 30,
+    sharedNotes: 'We agreed the release handover.', appraisalMeeting: { source: 'one_on_one', mode: 'calendar', recordingRequested: false,
+      ownerIdentity: { sub: 'manager', email: 'manager@example.test', organizationId: organization.id } } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page, 'manager'); await page.goto(`/one-on-ones/${meeting._id}`);
+  await page.getByRole('button', { name: 'Add transcript manually', exact: true }).click();
+  await page.getByLabel('Transcript file', { exact: true }).setInputFiles({ name: 'meeting-transcript.txt', mimeType: 'text/plain', buffer: Buffer.from(transcript) });
+  await expect(page.getByRole('textbox', { name: 'Meeting transcript', exact: true })).toHaveValue(transcript);
+  await page.getByRole('button', { name: 'Close editor', exact: true }).click();
+  await page.getByRole('button', { name: 'Add transcript manually', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Meeting transcript', exact: true })).toHaveValue(transcript);
+  await page.getByRole('button', { name: 'Save transcript', exact: true }).click();
+  await page.getByRole('button', { name: 'Transcript · Manually added', exact: true }).click();
+  await expect(page.getByText(transcript, { exact: true })).toBeVisible();
+  expect((await OneOnOne.findById(meeting._id)).transcript.source).toBe('manual_upload');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('manual-transcript-mobile.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Create meeting notes with my ChatGPT account', exact: true }).click();
+  await expect(page.getByText('Synthetic notes fixture: Emery will document the release.', { exact: true })).toBeVisible();
+
+  const Cycle = backend('./models/AppraisalCycle'), Appraisal = backend('./models/Appraisal');
+  const cycle = await Cycle.create({ organizationId: organization.id, name: 'Combined report QA', periodStart: '2026-01-01', periodEnd: '2026-03-31', createdBy: { userId: 'manager' }, status: 'active' });
+  const appraisal = await Appraisal.create({ organizationId: organization.id, cycleId: cycle._id, status: 'completed',
+    employee: { userId: 'employee', name: 'Emery Employee', email: 'employee@example.test' }, manager: { userId: 'manager', name: 'Morgan Manager', email: 'manager@example.test' },
+    selfAssessment: { submittedAt: new Date(), overallSummary: { achievements: 'Delivered release.' } },
+    managerReview: { submittedAt: new Date(), overallSummary: { strengths: 'Clear handover ownership.' } }, finalRating: { overall: 4, finalizedAt: new Date() } });
+  await OneOnOne.updateOne({ _id: meeting._id }, { $set: { appraisalId: appraisal._id } });
+  await page.goto(`/appraisals/${appraisal._id}/report`);
+  await expect(page.getByRole('heading', { name: 'AI appraisal report', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Generate with my ChatGPT account', exact: true }).click();
+  await expect(page.getByText(/The final AI report is queued or being generated/)).toBeVisible();
+  await backend('./services/appraisalFinalReportService').processDue();
+  await expect(page.getByText('Synthetic final appraisal report: the submitted assessment and manual transcript confirm the agreed release action. Human rating: 4/5.', { exact: true })).toBeVisible({ timeout: 15000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('final-ai-report-mobile.png'), fullPage: true });
+  const supplemental = await OneOnOne.create({ organizationId: organization.id, appraisalId: appraisal._id, workflowStepId: 'late-call', managerId: 'manager', employeeId: 'employee',
+    title: 'Call awaiting transcript', scheduledDate: new Date(Date.now() - 3600000), duration: 30, status: 'completed',
+    appraisalMeeting: { mode: 'calendar', recordingRequested: false, ownerIdentity: { sub: 'manager', email: 'manager@example.test', organizationId: organization.id } } });
+  await page.reload();
+  await expect(page.getByText(/Transcript unavailable for: Call awaiting transcript/)).toBeVisible();
+  await page.getByRole('button', { name: 'Add transcript manually', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Meeting transcript', exact: true }).fill('Emery: The release notes are now complete.');
+  await page.getByRole('button', { name: 'Save transcript', exact: true }).click();
+  await expect(page.getByText(/The final AI report is queued or being generated/)).toBeVisible();
+  expect((await OneOnOne.findById(supplemental._id)).transcript.source).toBe('manual_upload');
+  await backend('./services/appraisalFinalReportService').processDue();
+  await expect(page.getByText('Synthetic final appraisal report: the submitted assessment and manual transcript confirm the agreed release action. Human rating: 4/5.', { exact: true })).toBeVisible({ timeout: 15000 });
+  expect((await Appraisal.findById(appraisal._id)).finalRating.overall).toBe(4);
+  const employeeContext = await browser.newContext();
+  try {
+    const employee = await employeeContext.newPage(); await setup(employee, 'employee');
+    await employee.goto(page.url());
+    await expect(employee.getByText('Synthetic final appraisal report: the submitted assessment and manual transcript confirm the agreed release action. Human rating: 4/5.', { exact: true })).toBeVisible();
+    await expect(employee.getByRole('button', { name: /Generate with my|Regenerate with my/ })).toHaveCount(0);
+  } finally { await employeeContext.close(); }
+});
 
 test('calendar connection, failed invitation retry and cancelled-call history use the real API', async ({ page, browser }, testInfo) => {
   test.setTimeout(90000);
