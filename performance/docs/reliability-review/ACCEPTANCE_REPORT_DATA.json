@@ -1,0 +1,995 @@
+{
+  "status": "Verified CV and core workflow evidence; broader provider/media limits remain open",
+  "snapshot": "2026-10-20 18:33 UTC",
+  "sourceMain": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+  "deployedMain": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+  "deployedMainScope": "Both Performance services independently verified at 590e; Recruiter retains the exact D28 image",
+  "lastFullPerformanceRelease": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+  "unrelatedLocalSourceContext": {
+    "observedLocalMain": "fae0b75d1994c2c05a40b0ca8b9656209b6d67de",
+    "publishedAndLiveReleaseProofMain": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+    "recordingConsentAndOtherConcurrentEditsPreserved": true,
+    "notIncludedOrClaimedInThisReleaseProof": true
+  },
+  "baseline": {
+    "assertions": 887,
+    "failed": 0,
+    "identities": 16,
+    "organizations": 2,
+    "recordedAt": "2026-10-20T08:36:38Z",
+    "deployedMain": "dfaa2ace40b7ffdee2c3cb227a7b1946630ab745"
+  },
+  "roles": [
+    [
+      "Owner",
+      "Created organization OKRs; launched and completed a scoped staff review with human final rating 4, employee acknowledgement, reports and history; sent feedback and recognition.",
+      "Organization authority remains within the current tenant."
+    ],
+    [
+      "Admin",
+      "Created organization OKRs; completed a separate scoped staff journey through acknowledged rating 4, report and history; saved personal feedback, recognition and check-in.",
+      "Organization authority remains within the current tenant."
+    ],
+    [
+      "HR manager",
+      "Published competency report v3 with private oral evidence and retained history; calibrated a rating to 3; closed talent and succession work; launched cycles and read historical files.",
+      "Human decisions and file audiences remain explicit."
+    ],
+    [
+      "Line manager",
+      "Completed development at 70%; approved a revised goal; replied to a managed lead; completed support extension/history, project feedback, 360 responses and staff appraisals.",
+      "Staff scope and legal support transitions are enforced."
+    ],
+    [
+      "Department head",
+      "Saved department goals; completed a scoped staff appraisal at acknowledged rating 4; read the correct child-lead check-in and gave private and anonymous feedback.",
+      "Department scope excludes unrelated staff."
+    ],
+    [
+      "Team lead",
+      "Saved and edited team goals; completed a staff appraisal at acknowledged rating 4; read the manager reply and scoped picker; gave private and anonymous feedback.",
+      "Team scope excludes unrelated staff."
+    ],
+    [
+      "Main employee",
+      "Acknowledged final rating 4; revised and resubmitted a goal; saved development and support progress; received anonymous 360 results; read competency v3 with private oral material hidden.",
+      "Own records remain separate from assessor-only evidence."
+    ],
+    [
+      "Teamless employee",
+      "Completed an acknowledged rating-4 case and history; retained an intentionally unrated manual draft; submitted the fifth anonymous 360 response.",
+      "Personal access does not grant manager actions."
+    ],
+    [
+      "Six assigned staff",
+      "Completed all six original appraisals through acknowledgement and reports. Additional cases retained calibrated rating 3 and five historical supporting files.",
+      "Each employee sees their own permitted results and files."
+    ],
+    [
+      "Boundary controls",
+      "Verified same-organization and foreign denials, permitted foreign HR authority in its own organization, and the outsider's own pending appraisal.",
+      "Foreign authority never grants access across tenants."
+    ]
+  ],
+  "features": [
+    [
+      "01",
+      "Identity and authentication",
+      "LIVE",
+      "Sixteen normal OIDC identities across two isolated QA organizations; role, tenant and forbidden-route checks.",
+      "D29 central logout/private-route canonical sign-in handoff and normal HR return passed on 590e; no deep-link return claim."
+    ],
+    [
+      "02",
+      "Dashboard",
+      "LIVE READ",
+      "Role summaries, navigation destinations and scoped dashboard reads.",
+      "No dashboard mutation control was invented for testing."
+    ],
+    [
+      "03",
+      "Directory and user scope",
+      "LIVE",
+      "Fixture-only search and authority checks; unrelated and foreign boundaries.",
+      "One incorrect expected talent denial was corrected and rechecked separately, 10/10."
+    ],
+    [
+      "04",
+      "Goal periods",
+      "LIVE UI + API",
+      "Period selection and fiscal initialization; custom-period create, edit, open and close lifecycle with denials.",
+      "Administration transitions are API-only."
+    ],
+    [
+      "05",
+      "OKRs",
+      "LIVE UI + API",
+      "Organization, department, team and individual goals; alignment, progress and full revision-to-approval history, 16/16.",
+      "Close, cancel and proposal decisions are API-only and were tested separately."
+    ],
+    [
+      "06",
+      "Appraisal setup and cycles",
+      "LIVE",
+      "Six management roles launched scoped reviews; saved-template launch, draft design edits and active-cycle description persisted.",
+      "Two unfinished appraisals are deliberate test fixtures."
+    ],
+    [
+      "07",
+      "Appraisal completion",
+      "LIVE",
+      "Ten acknowledged results from twelve original QA appraisals; linked discussion and required-document handoffs completed. Momo history is counted separately.",
+      "Two unfinished states verify pending work and draft recovery."
+    ],
+    [
+      "08",
+      "Calibration",
+      "LIVE + UI REPAIR",
+      "Original manager rating 4, HR calibration 3 and human final 3; readable session counts and named CSV.",
+      "Deployed read-only fields, retained rating/reason and absent Save/Submit passed. Twelve invalid probes preserved both complete appraisal records."
+    ],
+    [
+      "09",
+      "History and reports",
+      "LIVE",
+      "Own results, history and CSV; filters and employee scope; read-only files, exact downloads and reversible removal/restoration. Fresh Momo owner reads also showed two existing acknowledged results and a published report.",
+      "Native print output remains unverified."
+    ],
+    [
+      "10",
+      "Check-ins",
+      "LIVE",
+      "Same-record draft recovery and submission; nested manager and department scope; team lead reply and two-staff picker.",
+      "Employee-private material remains outside manager visibility."
+    ],
+    [
+      "11",
+      "Development",
+      "LIVE",
+      "Employee goal/skill progress 60%/40%, manager updates 65%/45%, completion at actual 70%; notes, activity and check-in retained.",
+      "Completion does not fabricate 100% progress."
+    ],
+    [
+      "12",
+      "Learning",
+      "LIVE SSO / COURSE PREREQUISITE LIMITED",
+      "Scoped records/team reads; all 15 primary test actors were unassigned. Momo owner AppHub-to-Learning SSO opened My Learning under the correct account.",
+      "No enrollments were present. Course completion and Performance progress sync remain unverified; no course/progress/payment mutation occurred."
+    ],
+    [
+      "13",
+      "Feedback and 360",
+      "LIVE",
+      "Personal, project and declined requests; chosen appraisal evidence; five browser reviewers and hidden-to-published threshold; 118/118 privacy checks.",
+      "Author-own visibility is explicit. External delivery is separate."
+    ],
+    [
+      "14",
+      "Recognition",
+      "LIVE UI + API",
+      "Management and employee sends, private and organization feeds, acknowledgement and sender withdrawal.",
+      "Withdrawal is an API-only transition."
+    ],
+    [
+      "15",
+      "Projects",
+      "LIVE UI + API",
+      "Create, request, accept, respond and acknowledge; closed-project scope and absent request action.",
+      "Edit and close transitions are API-only."
+    ],
+    [
+      "16",
+      "One-to-ones and calls",
+      "LIVE + SCRIPT MEDIA",
+      "Agenda, notes and history; browser microphone/mute/leave; empty mood; genuine OIDC signaling and generated audio/video through TURN.",
+      "Momo calendar creation and cancellation passed in the browser and provider readback. Two-browser device media and recording/transcription remain unverified."
+    ],
+    [
+      "17",
+      "Support plans",
+      "LIVE BROWSER + API",
+      "Separate milestone authors; extension date and prior human decision retained through completion; closed plans reject edits unchanged.",
+      "The earlier lost date was not backfilled. D28's live support-plan AI replay now passed without choosing an employee or saving a plan."
+    ],
+    [
+      "18",
+      "Actions and notifications",
+      "LIVE",
+      "Read-all, snooze and dismissed history; time zone, quiet hours and digest save/restore; cohort-only anonymous notification.",
+      "Canonical Performance SMTP transport and Gmail inbox receipt passed; a browser-created domain notification remains pending."
+    ],
+    [
+      "19",
+      "Analytics and insights",
+      "LIVE",
+      "Original twelve-appraisal cohort: ten acknowledged, 83.3% funnel and final average 3.9; raw/cycle/team/UTC monthly reconciliation. Later CV fixtures are separate.",
+      "Unrated goal achievement is unavailable rather than an invented zero."
+    ],
+    [
+      "20",
+      "Organization features",
+      "LIVE READ",
+      "Scoped administration and programme configuration; foreign competency feature disabled; authority originates in the IdP.",
+      "No unspecified administration controls were assumed."
+    ],
+    [
+      "21",
+      "Competency, strategy and roles",
+      "LIVE",
+      "Published definitions and reviewed import; manual oral report v3; v1/v2 retained; individual and cohort PDFs and filters.",
+      "Optional CV request/private evidence handoff passed separately on 590e; connected recorded oral media remains unverified."
+    ],
+    [
+      "22",
+      "Talent and succession",
+      "LIVE",
+      "Human proposal/calibration with frozen rating 3; closed read-only view; candidate confirm/remove and criticality/date/closure history.",
+      "Closed mutation returned 409 without changing the record."
+    ],
+    [
+      "23",
+      "Storage and presence",
+      "LIVE PROVIDER + SCRIPT",
+      "Authenticated Cloudinary files in four formats; exact original bytes; PDF extraction with AI skipped; script and browser presence reporting.",
+      "Historical Azure and separate competency private files were preserved."
+    ]
+  ],
+  "images": {
+    "goals": "owner-organization-goals.png",
+    "launch": "hr-competency-appraisal-started.png",
+    "result": "teamless-acknowledged-result-report.png",
+    "legacy": "release1-employee-legacy-unfinished-private-safe.png",
+    "recognition": "owner-private-recognition.png",
+    "succession": "local-succession-retry-retained.png",
+    "competency": "competency-hr-cycle-published.png",
+    "call": "manager-audio-call-left.png",
+    "launch-current": "d25-live-hr-competency-only-cycle-launched.png",
+    "history-current": "d21-live-calibrated-historical-doc-readonly.png",
+    "manual-current": "d18-d24-live-manual-unrated-draft-reloaded.png",
+    "anonymous-current": "anonymous360-live-five-responses-anonymous.png",
+    "development-current": "development-live-completed-actual-progress.png",
+    "cv-live-current": "cv-published-final.png"
+  },
+  "nextSource": "Verified runtime and all required verification stages are pinned to 590e. Current published main 9ac includes the CV work and separate call-control changes; those newer changes are not claimed deployed by this receipt. The 590e workflow was cancelled during post-build artifact handling after every required test/build step succeeded.",
+  "preparedFinalContracts": 350,
+  "pdfArtifactStatus": "Final illustrated report approved for rendering after the consolidated 18:33 UTC evidence snapshot; this report does not certify the broader unverified provider/media paths.",
+  "postSnapshotReceipts": [
+    "Consolidated current report source; historical chronology lives in PRODUCTION_ROLE_RECEIPT.md and private proof files."
+  ],
+  "pendingD25DraftCycle": "6ad7406f66fe619f1e1c4f5d",
+  "failedFinalGate": {
+    "ciRun": 39406558690,
+    "head": "dd4f9960d5b15522441c9e320b0e76a1eff982c0",
+    "realApiPassed": 49,
+    "realApiFailed": 2,
+    "classification": "two harness interactions confirmed by artifacts and independent architecture review; no product source change",
+    "finalRunnerReady": false,
+    "backendPassed": 598,
+    "httpPassed": 709,
+    "httpFailed": 0,
+    "uiFullstackPassed": 200,
+    "build": "skipped after real API failure",
+    "correctedFull51Replay": "PASS51/51 in3.7min;866b17e4 test-only append, independently reviewed"
+  },
+  "integrationGate": {
+    "source": "866b17e4b0fc71d48c1f04a3bde56f7960241eda",
+    "productTreeIdenticalTo": "dd4f9960d5b15522441c9e320b0e76a1eff982c0",
+    "fullLocalActualApiChromePassed": 51,
+    "prCi": 39409157366,
+    "prMalware": 39409153359,
+    "releaseReady": true,
+    "predeploymentRequired": "Full exact-main CI; hosted tested-PR malware pass plus identical tree and fresh immutable main scan",
+    "mergedMain": "cf51d003671ffb0a08cdaa1cedab38e67bee9aa3",
+    "mainTreeEqualsTestedSource": true,
+    "mainCi": 39409281746,
+    "mainCiStatus": "success",
+    "mainSecurityProof": "tested PR hosted malware39409153359PASS plus identical tree and fresh MAIN immutable68blobs0errors1reviewedwarning; no hosted main job",
+    "deploymentStarted": true,
+    "mainCiFullRealApiPassed": 51,
+    "mainCiBuild": "passed",
+    "deploymentLiveVerified": true,
+    "productionReplays": "D1-D25 named replays complete or explicitly bounded; D26 is a subsequent support repair",
+    "liveBackendCommit": "cf51d003671ffb0a08cdaa1cedab38e67bee9aa3",
+    "liveFrontendCommit": "cf51d003671ffb0a08cdaa1cedab38e67bee9aa3",
+    "liveBackendHealth": "healthy",
+    "liveFrontendState": "running",
+    "deploymentResult": "success",
+    "allFeatureAcceptanceComplete": false
+  },
+  "productionReplayProgress": {
+    "D18_D24": {
+      "browser": "passed sameID manual/unrated save-reload and communication clear",
+      "independentApi": "PASS exact persisted state/absent ratings and403/404 denials",
+      "categoryComplete": true,
+      "proofFile": "performance-production-d24-manual-unrated-draft-proof.json"
+    },
+    "D25": {
+      "browser": "PASS saved-template launch and retained-draft edit/reload",
+      "cycleId": "6ad74a1c895a37f0493e3de2",
+      "draftCycleId": "6ad7406f66fe619f1e1c4f5d",
+      "independentApi": "PASS exact live/frozen settings and actor/tenant denials; retaineddraft0",
+      "categoryComplete": true,
+      "appraisalId": "6ad74a1c895a37f0493e3df0",
+      "proofFile": "performance-production-d25-cycle-launch-proof.json"
+    },
+    "D15": {
+      "browser": "PASS detail discussion save/reload/final4/employeeACK/results",
+      "independentApi": "PASS mainack4/allnotes/location/denials"
+    },
+    "development": {
+      "browser": "PASS employee60/40 thenmanager65/45 andComplete70",
+      "independentApi": "PASS14/14 GET scope/retained ratings",
+      "categoryComplete": true
+    },
+    "D16": {
+      "browser": "PASS closedtalentreadonly+successionconfirm/remove/critical/date/close-reopen-close",
+      "independentApi": "PASS audit/frozen3/closed409 nochange/tenantboundaries"
+    },
+    "D20": {
+      "browser": "PASS readableemployee CSV/separateID/original4cal3"
+    },
+    "parser": {
+      "browser": "PASS1749byteexactdownload",
+      "independentApi": "PASS extractioncompleted/AI skipped/roleprivate",
+      "canonicalAcknowledgement": "PASS final4 acknowledged; readonly five supporting files, individual and history CSV"
+    },
+    "D19": {
+      "browser": "PASS managerApprove/queue0 thenemployeeActive; reasonhistory retained",
+      "independentApi": "PASS16/16 scope/orderedversionactors/comments/times"
+    },
+    "D22": {
+      "browser": "PASS12/10ACK/83.3/3.9;calibration2/100/3.5;unratedGoalsNotavailable",
+      "independentApi": "PASS raw/cycle/team/monthly/funnel reconciliation"
+    },
+    "anonymous360": {
+      "browser": "PASS all5accept/respond andsubject5Anonymous+responseEackreload",
+      "independentApi": "PASS checkpoints71/76/81/102 andfinal118",
+      "authorOwnException": "exactownfeedback/request only, never HRrole privilege",
+      "categoryComplete": true
+    },
+    "support": {
+      "browser": "completed milestone/outcome with distinct author notes and reason audit",
+      "independentRead": "PASS allowed/denied reads; all12 ratings unchanged",
+      "categoryComplete": true,
+      "openGaps": [],
+      "proofFile": "performance-production-support-closure-proof.json",
+      "currentResult": "D26 prospective history retained; both closed plans reject milestone and outcome writes before changes; original lost historical date remains documented, not backfilled"
+    },
+    "D17": {
+      "browser": "PASS correctnestedlead/managerresponse/leadownread/departmentheadscope/picker2staff"
+    },
+    "D21": {
+      "browser": "PASS canonicalACK4/readonly5files/CSV5776/history2 pluscalibratedTXT157byteexact"
+    },
+    "D23": {
+      "browser": "PASS HRselected0Current/2History/clear2;managerlegacyalias0/0noreviewerleak"
+    },
+    "D26": {
+      "main": "86d2f4df187f478cccd4f40d898a7ea19bc34112",
+      "ci": 39414481458,
+      "status": "PASS deployed86d2; browser prospective extension/completion and independent API guards/history passed",
+      "ciStatus": "success",
+      "independentFocused": "27/27PASS1.896s",
+      "browserReplay": "PASS existing Revision handoff extended toDec20 then completed; employee25progress/history retained; old loss notbackfilled",
+      "proofFile": "performance-production-d26-postdeploy-proof.json"
+    },
+    "meetingMoodTutorial": {
+      "browser": "PASS actualunsharedNotsharedyet/recordoff/unjoined; tutorialmanual/optionalconsent/history",
+      "extraMeetingId": "6ad74f2b895a37f0493e79f8",
+      "cancelAttempt": "CUACDPtimeout; no statuschange claimed"
+    },
+    "D29": {
+      "status": "PASSED genuine central logout/private-route sign-in handoff and normal HR return on 590e",
+      "authCommit": "523e98be",
+      "integratedPublishedMain": "e9ff47d5c00c65324baaf1e5882fae8d5728f8c6",
+      "learningFixtureCommit": "d8cf1a452b91ef2af580d16b1940112ada3b7ad0",
+      "trigger": "After a long idle period, a direct private page rendered an empty User/Organization workspace without a login handoff. Genuine Momo owner AppHub/OIDC relaunch recovered the session.",
+      "rootCause": "AuthContext returns null with no token; ConditionalLayout lacked a protected-route authentication guard.",
+      "repair": "Wait for authentication status, then redirect unauthenticated private routes to login. Preserve public root/login behavior.",
+      "sourcePaths": [
+        "performance/frontend/components/AttendancePresenceReporter.tsx",
+        "performance/frontend/components/ConditionalLayout.tsx",
+        "performance/frontend/e2e/auth-route-recovery.spec.ts",
+        "performance/frontend/e2e/learning-development-sync.spec.ts",
+        "performance/frontend/lib/hooks.ts"
+      ],
+      "originalRedBrowserRegressionPreserved": true,
+      "focusedCases": "Corrected four-case browser suite passed in 16.5 seconds.",
+      "separateRecoveryChecks": "Fifteen existing recovery cases passed in the earlier combined run. The slow-auth case overlaps the new focused suite; these are not additive feature totals.",
+      "harnessCorrection": "The first post-fix run incorrectly classified one public/shared-provider GET as private. The expectation was corrected separately from the original product failure.",
+      "priorHarnessAssertionFailuresRetained": 3,
+      "isolatedUiGate": "Completed 212/213 on the earlier isolated candidate. One learning fixture omitted user organizations. Original failure retained; the committed one-line correction passed focused rerun 1/1. The original full run is not relabelled a clean pass.",
+      "integratedFocusedBatch": "Original eight of nine auth/link/learning cases passed; the same learning fixture failed. Its separate corrected rerun passed 1/1. Preserve both receipts and do not relabel the original batch.",
+      "learningFixtureCorrectionLog": "d29-learning-auth-fixture-final.log",
+      "isolatedCandidateUsesGitBranchOrWorktree": false,
+      "promotionOrder": "Keep the pinned D28 release first; integrate D29 with the newly approved CV feature in one reviewed Performance backend/frontend release, then live replay.",
+      "unrelatedDirtySourceExcluded": true,
+      "browserProofFile": "d29-signed-out-history-receipt.json",
+      "browserScreenshot": "d29-signed-out-history-identity-handoff.png",
+      "openingSignInThenCanonicalIdentityForm": true,
+      "hrDashboardRestored": true,
+      "deepLinkReturnAsserted": false
+    },
+    "D28": {
+      "status": "passed: exact-main CI, both backend deployments, independent runtime audit and original Momo owner browser AI replay",
+      "localMainCommit": "dcc0d1381db5019718cbffbdb41273b44dc0c61f",
+      "liveBaselineMain": "cd86ce3bbc6a875c3b50108a1637b8b984fba42e",
+      "browserFailureScreenshot": "d28-live-momo-support-ai-unknown-activity.png",
+      "trigger": "Momo owner opened New support-plan draft, entered fictional concern/expected standard and clicked AI. The UI returned Unknown AI activity.",
+      "employeeSelected": false,
+      "draftSaved": false,
+      "repair": "Synchronize central SupportPlan/Talent activity definitions and restore the missing local competency activity preference row. Preserve strict cross-service catalogue and service-scope guards.",
+      "sourcePaths": [
+        "performance/backend/config/aiActivityCatalog.js",
+        "performance/backend/test/ai-activity-coverage.test.js",
+        "recruiter/backend/config/aiRuntimeCatalog.js",
+        "recruiter/backend/tests/aiRuntimeGatewayIntegration.test.js"
+      ],
+      "redContractReceiptPreserved": true,
+      "focusedLocalChecks": "13/13 passed",
+      "recruiterAffectedChecks": "28/28 passed",
+      "independentReview": "accepted; 19/19 source-aligned catalogue/guard checks",
+      "fullBackendGate": "619 passed: 135 legacy, 38 unit and 446 Jest across 35 suites",
+      "initialDirectPush": "rejected GH013; original failure preserved",
+      "directPush": "published dcc to main after the user explicitly authorized direct publication/admin bypass; no force push",
+      "directPublishProofFile": "performance-d28-direct-publish-20261020T165812714221Z.json",
+      "publishedMainCommit": "dcc0d1381db5019718cbffbdb41273b44dc0c61f",
+      "rulesetHandling": "Temporary OrganizationAdmin always exceptions were applied to PR and no-bypass malware rulesets while both remained active. Both exact original policies were restored in finally and verified.",
+      "hostedPolinrider": "explicitly bypassed; did not run and did not pass",
+      "mainPerformanceCi": 39462069322,
+      "mainPerformanceCiStatus": "success",
+      "mainPerformanceBackendPassed": 619,
+      "mainPerformanceDefaultRoleMigrationPassed": 11,
+      "mainPerformanceHttpRequests": 709,
+      "mainPerformanceHttpFailed": 0,
+      "mainPerformanceUiPassed": 209,
+      "mainPerformanceActualApiBrowserPassed": 51,
+      "mainPerformanceBuild": "passed",
+      "mainPerformanceCiLog": "d28-main-ci-completed.log",
+      "mainCoreCi": 39462069621,
+      "mainCoreCiStatus": "cancelled after the affected Recruiter gateway QA step passed; broad deployment did not run",
+      "mainRecruiterGatewayQaPassed": true,
+      "mainCiAndRelease": "passed: coordinated Performance/Recruiter backend release from exact dcc main; frontend retained at cd86",
+      "runtimeAuditProofFile": "performance-recruiter-d28-runtime-audit-20261020T172158671578Z.json",
+      "runtimeAuditChecksPassed": 7,
+      "bothBackendLabelsAndHealthVerified": true,
+      "runtimeCommitIsHistoricalNotLatestPublishedMain": true,
+      "originalRuntimeAuditFailurePreserved": "The 17:21:26 audit compared raw CRLF/LF catalogue hashes and failed. Explicit LF canonical content matches Git and both live labels; the corrected read-only audit passed. No product change was required.",
+      "browserReplayProofFile": "momo-owner-support-ai-postdeploy-receipt.json",
+      "browserReplayScreenshot": "momo-owner-support-ai-postdeploy.png",
+      "browserReplay": "passed: the original fictional support-plan input generated six editable fields; no employee chosen, no plan saved and form cancelled",
+      "finalApiProofFile": "performance-production-d28-ai-postdeploy-proof-20261020T172210196432Z.json",
+      "finalApiOrdinaryOidcActors": 16,
+      "finalApiAuthorityChecks": 96,
+      "finalApiActivityPreferencesVerified": 17,
+      "finalApiActualInference": [
+        "support-plan draft",
+        "isolated new synthetic talent fixture evidence brief"
+      ],
+      "allTwelveHumanRatingsAndFrozenHistoryUnchanged": true,
+      "persistentChatGptConnectionRetained": true,
+      "priorCd86CoreGate": {
+        "run": 39424310133,
+        "conclusion": "success"
+      },
+      "scopeLimitedCancelledRuns": [
+        39462069318,
+        39462069969,
+        39462069579
+      ],
+      "immutableScan": {
+        "proofFile": "release-dcc0d138-immutable-scan-20261020T132510465887Z.json",
+        "blobs": 77,
+        "errors": 0,
+        "reviewedExistingWarnings": 1
+      },
+      "releaseRequiredServices": [
+        "Recruiter backend",
+        "Performance backend"
+      ],
+      "successfulLiveInference": true,
+      "permissionsOrConsentWeakened": false
+    },
+    "D27": {
+      "main": "cd86ce3bbc6a875c3b50108a1637b8b984fba42e",
+      "testedSource": "006fa465cd2eae29c5e2b1f1927f1ac41b28066b",
+      "ci": 39424310072,
+      "ciStatus": "success",
+      "ciBackendPassed": 618,
+      "ciIdpPassed": 11,
+      "ciHttpPassed": 709,
+      "ciHttpFailed": 0,
+      "ciUiPassed": 209,
+      "ciActualApiBrowserPassed": 51,
+      "ciProductionBuild": "passed",
+      "deploymentStatus": "passed; frontend and backend independently verified at cd86",
+      "runtimeProofFile": "release-cd86-independent-runtime-audit.json",
+      "focusedUiPassed": 9,
+      "tsc": "passed",
+      "independentSourceReview": "accepted; state allowlist exactly matches existing backend; final_review_pending remains editable, terminal/early stages readonly; numeric0 preserved",
+      "browserFailureReceipt": "d27-live-completed-calibration-edit-controls-found",
+      "backendWasAlreadyProtected": true,
+      "browserReplay": "passed: read-only fields and banner, retained rating 3 and justification, zero radio inputs and Save/Submit controls",
+      "browserProofFile": "d27-live-calibration-browser-receipt.json",
+      "browserScreenshot": "d27-live-completed-calibration-readonly.png",
+      "postdeployProofFile": "performance-production-d27-postdeploy-proof-20261020T131141951208Z.json",
+      "freshOrdinaryOidcActors": 16,
+      "lightAuthorityChecks": 96,
+      "lightAuthorityFailed": 0,
+      "invalidProbes": 12,
+      "completeRecordsUnchanged": 2,
+      "positiveContentWrites": false,
+      "originalHarnessFailurePreserved": "One probe expected 400 but the configured workflow rejected earlier with 409 APPRAISAL_STEP_ORDER. Source review confirmed the guard order. The original helper, failure and diagnosis remain preserved; only the private expectation changed.",
+      "supersededMain": "2c8d9f5a80e58ed77e701ccf2cacd794d66b6380",
+      "supersededCi": 39423305031,
+      "supersededCiConclusion": "cancelled",
+      "performanceSourceUnchangedFromD27Merge": true,
+      "mainImmutableScan": {
+        "file": "release-cd86ce3b-immutable-scan-20261020T124318205727Z.json",
+        "blobs": 73,
+        "errors": 0,
+        "reviewedWarnings": 1
+      }
+    }
+  },
+  "remainingProgrammeGates": [
+    "Connected-course completion and Performance progress sync",
+    "Browser-created external email/chat notification delivery",
+    "Two-browser physical-device audio/video, recording/transcription and native print",
+    "Any later fixture purge must use a fresh inventory; no total purge is claimed"
+  ],
+  "scopeExpansion": {
+    "requestedByUser": true,
+    "status": "open; SMTP transport/inbox, live OKR AI generation, three Momo role OIDC reads and Momo calendar create/cancel passed. Support-plan AI D28 release/replay and remaining browser/provider goals are pending.",
+    "goals": [
+      "Use existing CRM environment Nylas configuration and authorized connected accounts for live testing",
+      "Use the user's existing logged-in ChatGPT session for live shared-AI acceptance",
+      "Reuse Seemplify SMTP for live delivery testing",
+      "Exercise the relevant live workflows in the Momo account"
+    ],
+    "originalSyntheticScopeStillPreserved": true,
+    "newEvidenceRequiredBeforeFinalCloseout": true
+  },
+  "connectedProviderProgress": {
+    "smtp": {
+      "proofFile": "performance-mail-smtp-qa-202610204c31c125-inbox-proof.json",
+      "canonicalPerformanceBuilderAndTransport": "passed",
+      "gmailInboxAndBodyReference": "passed",
+      "spf": "pass",
+      "dkim": "pass",
+      "dmarc": "pass",
+      "appraisalOrEmployeeContentSent": false,
+      "browserCreatedDomainNotification": "pending"
+    },
+    "momo": {
+      "proofFile": "performance-momo-ordinary-oidc-readonly-20261020T131205876229Z.json",
+      "ordinaryRolesVerified": 3,
+      "methods": [
+        "GET"
+      ],
+      "operatorControlUsed": false,
+      "sessionsForged": false,
+      "existingStaffRatingsRead": false,
+      "initialHarnessFailurePreserved": "The first helper expected the IdP internal _id instead of canonical sub. The original expectation and corrected ordinary-OIDC proof remain separate.",
+      "browserProviderWorkflows": "Owner picker/navigation, ChatGPT Ready/consent, organization-goal form, alignment and approvals tabs passed. After D28 release, the original support-plan AI action generated six editable fields. No employee was selected or plan saved; the form was cancelled.",
+      "calendarProofFile": "performance-momo-calendar-cancellation-proof-20261020T132608713258Z.json",
+      "calendarBrowserCreateCancel": "passed: 30-minute Google Meet for DEMO P01 with recording off, then normal UI cancellation",
+      "calendarProviderReadback": "HTTP 200, cancelled tombstone confirmed; no physical erasure claim",
+      "newOneOffAppraisal": "Owner reached the appraisal preview and left via Back. No new appraisal was launched and no existing staff rating changed.",
+      "demoManagerOnboarding": {
+        "historicalReceiptBeforeUserRequestedMembershipRemoval": true,
+        "currentDemoAuthorityRemovedBySeparateUserRequest": true,
+        "browserProofFile": "momo-demo-manager-profile-ready.json",
+        "browserScreenshot": "momo-demo-manager-profile-ready.png",
+        "ordinaryIdentityPasswordUiLogin": true,
+        "requiredSyntheticProfileCompleted": true,
+        "profileValuesClearlyFictional": true,
+        "appHubPerformanceOidcHandoff": "passed; manager workspace showed 11 reports and Start appraisal",
+        "passwordAccessRoleProviderChanges": false,
+        "existingHumanHistoryChanged": false,
+        "boundary": "Ordinary identity profile artifacts are separate from product/appraisal acceptance. No new CV cycle, appraisal or upload has run before deployment."
+      },
+      "existingHistory": {
+        "browserHistoryCount": 2,
+        "freshDemoManagerHistory": {
+          "browserReceiptFile": "momo-demo-manager-history-receipt.json",
+          "browserScreenshot": "momo-demo-manager-history.png",
+          "browserCsvFile": "momo-demo-manager-history.csv",
+          "normalManagerTeamResults": "passed; the same two existing acknowledged DEMO results each showed 4/5",
+          "actualBrowserCsvDownloaded": true,
+          "csvLines": 3,
+          "csvKnownDemoPeople": 2,
+          "existingRecordsEdited": false,
+          "newCompletionsClaimed": false
+        },
+        "earlierTransientZeroNotFinalState": true,
+        "openedReport": "DEMO P01 final 4/5, acknowledged 19 October, employee/manager feedback, linked competency v1 with 3/3 criteria and 75/100 plus manual oral notes",
+        "browserReceiptFile": "historical-report-receipt.json",
+        "browserScreenshots": [
+          "momo-owner-historical-results.png",
+          "momo-owner-published-result-report.png"
+        ],
+        "independentRoleProofFile": "performance-momo-history-role-proof-20261020T132950152357Z.json",
+        "ordinaryActors": 3,
+        "getChecks": 6,
+        "passed": 6,
+        "permittedReports": 5,
+        "staffOtherReportDenied": 403,
+        "privateCalibrationAiAuditFieldsAbsent": true,
+        "newEndToEndCompletionToday": false,
+        "existingRatingsChanged": false,
+        "boundary": "Fresh browser report/history reads and independent role access; previously completed Momo results are separate from the synthetic twelve-appraisal matrix and from provider acceptance."
+      }
+    },
+    "chatGpt": {
+      "userCompletedOpenAiApproval": true,
+      "performanceConnection": "The genuine QA manager connection is now connected, consented and routable; no successful inference yet.",
+      "successfulLiveAiInvocation": true,
+      "liveInferenceProofFile": "performance-live-ai-generation-20261020T132722383788Z.json",
+      "liveInferenceActivity": "performance.okr.generate",
+      "liveInferenceHttpStatus": 200,
+      "schemaValidObjectives": 3,
+      "elapsedSeconds": 11.69,
+      "fictionalContentOnly": true,
+      "goalsSaved": false,
+      "employmentDecisionMade": false,
+      "inferenceEvidenceLayer": "genuine ordinary OIDC API request, separate from a browser inference transaction",
+      "initialHarnessFailurePreserved": "The first model request returned, but a private-output path guard prevented receipt writing. Corrected private output location and bounded rerun produced the passing receipt."
+    },
+    "learning": {
+      "browserReceiptFile": "momo-learning-browser-receipt.json",
+      "browserScreenshot": "momo-owner-learning-sso.png",
+      "ownerAppHubToLearningSso": "passed under the correct Momo owner account",
+      "destination": "My Learning",
+      "enrollmentsPresent": false,
+      "courseProgressPaymentMutations": false,
+      "completedCourseProven": false,
+      "performanceProgressSyncProven": false
+    },
+    "nylas": {
+      "existingCrmConnectionsRequested": true,
+      "livePerformanceWorkflow": "Momo Google Meet create/cancel passed with provider-confirmed cancelled tombstone; additional connected-account acceptance remains bounded to actual receipts"
+    }
+  },
+  "currentAppraisalSummary": {
+    "scope": "Historical original twelve-appraisal acceptance cohort before the CV extension; later CV fixtures and Momo history are separate",
+    "total": 12,
+    "employeeAcknowledged": 10,
+    "intentionallyUnfinished": 2,
+    "unfinishedStates": [
+      "self_assessment_in_progress",
+      "self_assessment_pending"
+    ],
+    "finalAverage": 3.9
+  },
+  "latestCleanupInventory": {
+    "recordedAt": "2026-10-20T11:25:59.942853Z",
+    "records": 1882,
+    "collections": 44,
+    "capturedCloudRefs": 6,
+    "privateFiles": 7,
+    "gridFs": 0,
+    "blockers": 0,
+    "proofFile": "performance-production-role-cleanup-inventory-20261020T112559942853Z.json",
+    "cleanupExecuted": false,
+    "transientWhileWritersActive": true
+  },
+  "sharedAiCleanupReview": {
+    "proofFile": "performance-production-role-shared-ai-inventory-20261020T124710056092Z.json",
+    "identities": 16,
+    "organizations": 2,
+    "sharedAiOnlyRecruiterShadows": 15,
+    "disconnectedRuntimeMirrors": 15,
+    "connectedIdentities": 0,
+    "fixtureCanonicalUsageAuditSessionReferences": 0,
+    "redisFixtureJobs": 0,
+    "activeJobs": 0,
+    "presentGatewayNamespaces": 15,
+    "authJsonFiles": 0,
+    "liveProcesses": 0,
+    "verdict": "Reviewed conservative retention of indexed shared-AI mirrors and gateway namespaces. Bounded metadata was retained unread; in-memory turn state was not observable. No deletion or total-erasure claim.",
+    "blocksBoundedCore": false
+  },
+  "currentSummary": "**CV request/upload is live and verified on release 590e.** A manager requested an optional CV during a role appraisal; the employee uploaded a fictional PDF, and employee/manager browser downloads matched all 3,600 original bytes. Nonassigned HR controls and independent role/private-storage checks passed. D29 central logout/sign-in recovery passed. All required 590e verification steps succeeded: 659 backend, 709 HTTP with zero failures, 228 UI, 54 API/Mongo browser cases and build. The overall workflow was cancelled after verification during post-build artifact handling. Runtime audit passed 20/20 and all ten original Momo assessments/two appraisals retained exact raw hashes. Published main is now 9ac; verified runtime remains 590e. Broader connected-course, external-delivery, device-media, recording and native-print evidence limits remain open.",
+  "cvFeature": {
+    "status": "PASSED request-to-private-evidence scope on verified release 590e; no new final human result was created",
+    "featureCommit": "aaad9af91b2be8dcd2231a9a7dd8404a0900b7e9",
+    "authCommit": "523e98be",
+    "directPublishProofFile": "performance-cv-d29-direct-publish-20261020T172617922472Z.json",
+    "correctedPublishedMain": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+    "cvPermissionParityMain": "e9ff47d5c00c65324baaf1e5882fae8d5728f8c6",
+    "learningFixtureMain": "d8cf1a452b91ef2af580d16b1940112ada3b7ad0",
+    "followupDirectPublishProofFile": "performance-cv-d29-direct-publish-20261020T172736930463Z.json",
+    "permissionParityPublishProofFile": "performance-cv-d29-direct-publish-20261020T174831568126Z.json",
+    "originalRulesetPoliciesRestored": true,
+    "candidateImmutableScan": {
+      "source": "e9ff47d5c00c65324baaf1e5882fae8d5728f8c6",
+      "proofFile": "release-e9ff47d5-immutable-scan-20261020T174823144029Z.json",
+      "blobs": 108,
+      "errors": 0,
+      "reviewedExistingWarnings": 1,
+      "boundary": "Previous e9ff scan; current 590e needs its own release proof"
+    },
+    "fullBackendFinal": {
+      "sourceMain": "d8cf1a452b91ef2af580d16b1940112ada3b7ad0",
+      "passed": 656,
+      "legacy": 135,
+      "unit": 38,
+      "jest": 483,
+      "jestSuites": 37,
+      "log": "cv-d29-backend-full.log",
+      "boundary": "Prior full-source receipt, not the e9ff exact-main gate"
+    },
+    "focusedFrontendFinal": "10 Chrome cases, type check and ESLint passed",
+    "focusedBackendFinal": {
+      "cvChecksPassed": 36,
+      "fileStorageChecksPassed": 20,
+      "overlapWithFullSuite": true
+    },
+    "supersededCandidateCi": 39466075528,
+    "supersededCandidateCiBoundary": "not used as the final exact-main release gate",
+    "priorExactMainCi": {
+      "source": "d8cf1a452b91ef2af580d16b1940112ada3b7ad0",
+      "run": 39466265045,
+      "conclusion": "success",
+      "backend": 656,
+      "roleMigration": 11,
+      "http": 709,
+      "httpFailed": 0,
+      "ui": 223,
+      "actualApiBrowser": 54,
+      "build": "passed",
+      "log": "cv-d29-d8cf-ci-completed.log"
+    },
+    "candidateCi": 39472900605,
+    "candidateCiStatus": "All required verification steps succeeded on 590e; overall workflow cancelled afterward during post-build artifact handling",
+    "previousE9ffExactMainCi": {
+      "source": "e9ff47d5c00c65324baaf1e5882fae8d5728f8c6",
+      "run": 39469295983,
+      "conclusion": "success",
+      "backend": 657,
+      "legacy": 135,
+      "unit": 38,
+      "jest": 484,
+      "jestSuites": 37,
+      "http": 709,
+      "httpFailed": 0,
+      "ui": 226,
+      "actualApiBrowser": 54,
+      "build": "passed",
+      "log": "cv-d29-e9ff-ci-completed.log"
+    },
+    "deploymentStatus": "success; both Performance services at exact 590e, independently audited 20/20",
+    "runtimeAuditProofFile": "performance-cv-d29-runtime-audit-20261020T181955496840Z.json",
+    "runtimeAuditChecksPassed": 20,
+    "releaseCleanupExitCode": 0,
+    "cvWorkflowLiveAccepted": true,
+    "liveBrowserEvidence": {
+      "releaseMain": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+      "cycleId": "6ad7b264c3b5429d25be1e8c",
+      "cycleSetup": "Isolated cycle published through ordinary authorized HR API, separate from browser appraisal launch",
+      "appraisalId": "6ad7b298c3b5429d25be207c",
+      "assessmentId": "6ad7b298c3b5429d25be20ac",
+      "managerLaunch": "Actual Start clicked once; role appraisal and CV request confirmed, manual mode",
+      "requestReceipt": "cv-browser-created-receipt.json",
+      "employeeUpload": "Real fictional PDF selected through the browser file chooser, Ready, persisted after reload",
+      "employeeDownloadReceipt": "cv-employee-download-receipt.json",
+      "managerDownloadReceipt": "cv-manager-download-receipt.json",
+      "bytes": 3600,
+      "sha256": "9b2b24fa171352ccfbcb4aff3744500cbba6c64c427c0a200a02e943015c1c7d",
+      "bothActualBrowserDownloadsMatchOriginal": true,
+      "nonassignedHrReceipt": "cv-hr-controls-receipt.json",
+      "nonassignedHrDownloadRetentionRemoveVisible": true,
+      "hrRemovalClicked": false,
+      "newFinalHumanDecisionPublished": false,
+      "independentFourActorProviderAndDenialProof": "passed"
+    },
+    "deploymentUnit": "seemplify-performance-ai-review-release-590e63c43615-20261020T181513Z-cc740a",
+    "existing590eReleaseGate": {
+      "reviewedByRoot": true,
+      "shellEquivalentToReviewedCvHelperExceptPrefix": true,
+      "baselineFullGreenSource": "e9ff47d5c00c65324baaf1e5882fae8d5728f8c6",
+      "deltaContractsPassed": 11,
+      "deltaApiPassed": 57,
+      "deltaRealApiBrowserPassed": 2,
+      "immutableScanAccepted": true,
+      "deltaLayer": "Focused source/API/browser checks, separate from production CUA/OIDC receipts",
+      "full590eCiStillRequiredForClosure": true,
+      "duplicateDeploymentStartedByThisTask": false
+    },
+    "abortedDeploymentUnit": "seemplify-performance-cv-d29-e9ff47d5c00c-20261020T181036Z-e149ba",
+    "abortedE9ffDeployment": {
+      "canonicalMainAdvancedTo": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+      "applied": false,
+      "composeLogPresent": false,
+      "preApplyReached": false,
+      "rollbackNeeded": false,
+      "releaseDirectoryRemoved": true,
+      "temporaryArtifactsAbsent": true,
+      "primaryExitCode": 1,
+      "originalBeforeImagesShowPerformance61dfa": true
+    },
+    "refAudit": {
+      "source": "e9ff47d5c00c65324baaf1e5882fae8d5728f8c6",
+      "relevantFetchedTaskRefsAheadOfMain": 0,
+      "localOriginMainEqualE9ff": true,
+      "originalActivePoliciesRestored": true,
+      "requiredReviews": 1,
+      "forcePushAllowed": false,
+      "boundary": "Prior e9ff audit; repeat final ref/revision checks for current main"
+    },
+    "current590eCore": {
+      "run": 39472900621,
+      "conclusion": "cancelled",
+      "cancelledByRoot": false
+    },
+    "preproductionAssessorUiFinding": {
+      "status": "Repaired before production; actual nonassigned HR controls and independent viewer proof passed on 590e",
+      "trigger": "An authorized nonassigned HR/admin assessor lacked Remove CV because the UI checked only frozen assigned assessor IDs.",
+      "backendAlreadyPermittedAction": true,
+      "repair": "Return server-computed viewerIsAssessor in the assessment detail DTO. Frontend uses explicit true/false; only absent flags use the legacy fallback.",
+      "permissionExpansion": false,
+      "repairCommit": "e9ff47d5c00c65324baaf1e5882fae8d5728f8c6",
+      "focusedUiChecksPassed": 13,
+      "focusedBackendChecksPassed": 24,
+      "independentProductSourceReview": "The DTO derives the flag from the existing current-assessor predicate. The UI preserves explicit false and still requires the existing allowed action; no permission widening found.",
+      "newRequiredRegressions": [
+        "organization-wide HR positive",
+        "explicit server denial overrides legacy fallback"
+      ],
+      "followupCommitPublished": true,
+      "exactMainCiAndLiveProofRequired": true
+    },
+    "newOwnedBroadCoreCancelRequested": 39466265085,
+    "finalOwnedBroadCoreCancelRequested": 39469296124,
+    "ownedBroadCoreCancelled": 39466075530,
+    "supersededOneOffCoreCancellation": {
+      "run": 39464991477,
+      "proofFile": "performance-cv-superseded-core-run-39464991477.json",
+      "runHeadVerified": "61dfa4c803c08f75e15229f56136c7ea101b0c27",
+      "ancestorOfFinalD8cfVerified": true,
+      "noDeploymentJobInProgressVerified": true,
+      "overallConclusion": "cancelled; not a full Core test pass",
+      "sourceRetainedInFinalMain": true,
+      "liveRecruiterAndPerformanceUntouchedByThisWorkflow": true
+    },
+    "scopedReleaseHelperReview": {
+      "acceptedHelperChecks": 24,
+      "independentAuditHelperChecks": 13,
+      "actualReleaseAuditExecuted": true,
+      "actualRuntimeChecksPassed": 20
+    },
+    "initialFrontendChecks": "Initial ten Chrome cases and type checking passed; final ten-case pass, type checking and lint subsequently confirmed",
+    "initialBackendChecks": "Initial 32 focused cases passed; the later full backend suite passed 656",
+    "acceptanceDocument": "CV_FEATURE_ACCEPTANCE.md",
+    "approvedContractPrivateFile": "performance-cv-request-contract-20261020.md",
+    "separateFromExistingFeatureAudit": true,
+    "requestScope": "Optional per assignment/appraisal linked to an occupational role; no global organization requirement",
+    "flag": "cvRequested, missing defaults false; freeze definitionSnapshot at launch and retain original role/request on idempotent replay",
+    "upload": "Real private PDF/DOCX/TXT with documentType cv, participant audience and existing evidence authorization/scanning/extraction/download controls",
+    "optional": true,
+    "missingCvBlocksSubmission": false,
+    "automaticScoringOrAi": false,
+    "historicalEvidenceRelabelled": false,
+    "rolePermissionBoundaries": "Owner/admin/HR and authorized manager may launch/request within existing scope; employee uploads permitted own evidence but cannot launch/request for others",
+    "releasePlan": "D28 pinned release/live proof is complete. Integrate CV with D29, then deploy the needed Performance backend/frontend from exact tested main while preserving the verified Recruiter image",
+    "liveManagerPrerequisite": "Historical Momo DEMO manager login/profile/history receipts remain valid at their timestamps, but the user later removed DEMO memberships. Actual CV acceptance uses the existing primary QA manager/employee workspace without new identities or grants.",
+    "liveWorkspaceSwitch": {
+      "reason": "Momo CV inventory detected the separate user-requested removal of 12 DEMO memberships and 14 team links at 18:00:19, before CV writes",
+      "userRemovalProofFile": "momo-demo-member-removal-execute-20261020T180019Z.json",
+      "nativeReadOnlyProofFile": "performance-momo-access-native-readonly-20261020T182229342819Z.json",
+      "membershipsOrIdentitiesReactivated": false,
+      "newIdentitiesOrGrantsCreated": false,
+      "target": "Existing authorized primary isolated QA manager/employee workspace",
+      "currentBrowserState": "Real QA role-appraisal launched with CV request; employee upload/persistence and employee/manager exact downloads passed",
+      "newCvAppraisalLaunched": true,
+      "cvUploaded": true
+    },
+    "predeployHumanHistoryBaseline": {
+      "proofFile": "performance-cv-human-history-before.json",
+      "sha256": "f088f696123994f30b93d1694cd89b2566d9e173126a0e5d6f7547c23810f730",
+      "momoAssessments": 10,
+      "momoAppraisals": 2,
+      "method": "Raw BSON hashes of the exact existing records, captured before CV deployment",
+      "postDeploymentComparison": "passed after 590e deployment: exact frozen raw hashes for all ten original Momo assessments and two appraisals unchanged",
+      "afterProofFile": "performance-cv-human-history-after-20261020T182603585879Z.json",
+      "afterReceiptSha256": "c7d10d9765b77c79968ae2563212ba8ffd129c2f38b849949a3761190c4d302b",
+      "nativeReadOnly": true,
+      "membershipRetirementSeparateFromHumanHistory": true,
+      "receiptFilesMayHaveDifferentHashes": "Record hashes match; receipt file hashes differ because the audit artifacts contain different timestamps/metadata"
+    },
+    "newAcceptanceRequired": [
+      "Request on/off and frozen role/flag readback with idempotent replay",
+      "Optional missing CV does not block completion",
+      "Server-authoritative assessor flag exposes permitted organization-wide HR controls and honors explicit denials",
+      "Real fictional CV browser upload and exact-byte assessor download",
+      "Foreign/unrelated/fileless/type/audience/closed-state/retry denials",
+      "CV report-source metadata with unchanged human ratings/calculations",
+      "Focused tests, full canonical-main CI, immutable scan and genuine OIDC live replay"
+    ],
+    "accepted": true,
+    "acceptedScope": "Optional role-appraisal request, frozen request/role metadata, real fictional-PDF upload/persistence, byte-exact employee/manager downloads, nonassigned HR controls and independent private-storage/action boundaries. No new final classification, finding, result or AI draft was produced.",
+    "finalReleaseVerification": {
+      "source": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+      "run": 39472900605,
+      "workflowConclusion": "cancelled",
+      "allRequiredVerificationStages": "success",
+      "backend": 659,
+      "legacy": 135,
+      "unit": 38,
+      "jest": 486,
+      "jestSuites": 37,
+      "http": 709,
+      "httpFailed": 0,
+      "ui": 228,
+      "actualApiBrowser": 54,
+      "build": "success",
+      "cancellationStage": "post-build artifact handling after all verification",
+      "log": "cv-d29-590e-ci-completed-cancelled-after-verification.log"
+    },
+    "independentLiveProof": {
+      "file": "performance-cv-isolated-proof-20261020T183052380202Z.json",
+      "sha256": "2081c9f405ec3500d3d0c4a8b10f447317582dbef54aa35aca2d43483226a66a",
+      "ordinaryRoles": 4,
+      "authenticatedCloudinaryRaw": true,
+      "scannerReady": true,
+      "hashAndSizeMatched": true,
+      "privateNoStore": true,
+      "nonactorDenied": 403,
+      "frozenRequestVerified": true,
+      "sourceHistoryUnchanged": true,
+      "humanFindingResultOrAiDraftCreated": false
+    },
+    "viewerProofFile": "performance-cv-isolated-viewer-proof-20261020T183045928174Z.json",
+    "viewerProof": "Nonassigned HR and manager: current assessor true, permitted delete/retention. Employee: assessor false, delete false."
+  },
+  "providerBoundary": "Verified: canonical SMTP transport/inbox, genuine OKR/support/talent AI calls, Momo calendar create/cancel, Learning SSO and live CV handoff. Unverified: connected-course completion/Performance sync, browser-created external email/chat delivery, two-browser device media, recording/transcription and native print. Calendar cancellation retained a provider tombstone. Reviewed shared-AI residuals and test fixtures are retained; no total erasure is claimed.",
+  "aggregateVerification": {
+    "proofFile": "performance-production-role-final-proof-20261020T122840085771Z.json",
+    "deployedMainCommit": "86d2f4df187f478cccd4f40d898a7ea19bc34112",
+    "checks": 1237,
+    "passedOriginal": 1236,
+    "failedOriginal": 1,
+    "classification": "One harness expected200-empty for an entirely unrelated talent review; backend correctly returned403 before exposing the review.",
+    "sourceAlignedCorrectionFile": "performance-production-talent-denial-corrected-proof.json",
+    "focusedCorrectionChecks": 10,
+    "focusedCorrectionFailed": 0,
+    "originalReceiptAndInputHashPreserved": true,
+    "backendIdenticalToD27Main": true,
+    "backendIdenticalToLatestMain": false,
+    "latestMain": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+    "originalBackendIdentityRelationshipEndsAt": "cd86ce3bbc6a875c3b50108a1637b8b984fba42e",
+    "newMainChanges": "Original 86d matrix remains unchanged. D28, D29/CV and later 590e verification/production receipts are separate. Current published 9ac includes unrelated newer call-control work; no additional rollout is claimed.",
+    "latestVerifiedMain": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+    "latestPublishedMain": "9ac7600454c15cf6c435d72104996289daf70449"
+  },
+  "finalVerification": {
+    "passed": false,
+    "reason": "Broader all-feature/provider certification remains open; the CV request-to-evidence scope and named core journeys are verified.",
+    "pending": [
+      "Connected-course completion and Performance progress sync",
+      "Browser-created external email/chat notification delivery",
+      "Two-browser physical-device audio/video, recording/transcription and native print",
+      "Any later fixture purge must use a fresh inventory; no total purge is claimed"
+    ]
+  },
+  "workflowCategoriesComplete": 9,
+  "finalRunnerReady": true,
+  "reportFinalized": true,
+  "publishedMainAtSnapshot": "9ac7600454c15cf6c435d72104996289daf70449",
+  "finalConsolidatedProofFile": "performance-cv-final-acceptance-20261020T183314658049Z.json",
+  "matrixIntroduction": "The table maps the original 16-identity QA cohort. Later Momo owner/DEMO reads and the new CV request-to-evidence handoff have separate receipts on the preceding pages. Transactions were verified across the named production releases; they are not a universal pass for every provider or device.",
+  "finalSummary": "Runtime 590e; published main 9ac. Test/build verification passed: 659 backend, 709 HTTP (0 failures), 228 UI, 54 API/Mongo browser cases and build. The workflow was cancelled afterward during artifact handling. Deploy temps were cleaned; rollback images, test fixtures and reviewed shared-AI residuals are retained. No total purge is claimed. Course completion/sync, browser-triggered external delivery, two-browser device media, recording/transcription and native print remain unverified.",
+  "releaseSnapshot": {
+    "verifiedMain": "590e63c436150337c97b5ab0cfa288b61d2f767b",
+    "publishedMain": "9ac7600454c15cf6c435d72104996289daf70449",
+    "cvAncestorOfPublishedMain": true,
+    "relevantTaskBranchesAheadOfMain": 0,
+    "originalRulesetsActive": true,
+    "prAdminBypassContext": "pull_request only",
+    "malwareRulesetNoBypassRestored": true,
+    "classicRequiredReviews": 1,
+    "forcePushAllowed": false,
+    "noFurtherRolloutByThisTask": true
+  }
+}
