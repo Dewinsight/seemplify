@@ -17,7 +17,7 @@ router.get('/bootstrap', handle(async (req, res) => {
   const state = await getOrganizationFeatureState(ctx.organizationId);
   const enabled = state.features.competencyAssessments === true;
   const canConfigure = hasAction(ctx, 'role.manage') || hasAction(ctx, 'framework.manage') || hasAction(ctx, 'cycle.manage');
-  const canChoose = enabled && (canConfigure || hasAction(ctx, 'assessment.launch') || hasAction(ctx, 'report.cohort'));
+  const canChoose = canConfigure || hasAction(ctx, 'assessment.launch') || hasAction(ctx, 'report.cohort');
   let roles = [], frameworks = [], strategies = [], cycles = [];
   if (canChoose) {
     const [roleRows, frameworkRows] = await Promise.all([Role.find({ organizationId: ctx.organizationId, archivedAt: null, currentVersionId: { $exists: true } }).lean(), Framework.find({ organizationId: ctx.organizationId, archivedAt: null, currentVersionId: { $exists: true } }).lean()]);
@@ -25,7 +25,7 @@ router.get('/bootstrap', handle(async (req, res) => {
       RoleVersion.find({ organizationId: ctx.organizationId, status: 'published', roleId: { $in: roleRows.map(row => row._id) } }).lean(),
       FrameworkVersion.find({ organizationId: ctx.organizationId, status: 'published', frameworkId: { $in: frameworkRows.map(row => row._id) } }).lean(),
       Strategy.find({ organizationId: ctx.organizationId, status: 'published' }).sort({ version: -1 }).lean(),
-      Cycle.find({ organizationId: ctx.organizationId, status: 'published' }).sort({ createdAt: -1 }).lean(),
+      Cycle.find({ organizationId: ctx.organizationId, status: 'published', ...(!enabled ? { reviewMode: 'regular' } : {}), ...require('../../services/competency/cyclePolicy').scopeFilter(ctx) }).sort({ createdAt: -1 }).lean(),
     ]);
     roles = roleVersions.map(row => ({ ...row, id: String(row.roleId), versionId: String(row._id), _id: undefined, organizationId: undefined }));
     frameworks = frameworkVersions.map(row => ({ ...row, id: String(row._id), frameworkId: String(row.frameworkId), versionId: String(row._id), _id: undefined, organizationId: undefined }));
@@ -38,7 +38,7 @@ router.get('/bootstrap', handle(async (req, res) => {
 }));
 router.use(handle(async (req, _res, next) => {
   const ctx = await context(req); const state = await getOrganizationFeatureState(ctx.organizationId);
-  if (state.features.competencyAssessments !== true) throw new DomainError(403, 'COMPETENCY_DISABLED', 'Competency assessments are not enabled. An administrator can enable them from the assessment overview.');
+  if (state.features.competencyAssessments !== true && !/^\/cycles(?:\/[^/]+(?:\/(?:validate|publish|start-appraisals))?)?$/.test(req.path)) throw new DomainError(403, 'COMPETENCY_DISABLED', 'Competency assessments are not enabled. An administrator can enable them from the assessment overview.');
   next();
 }));
 router.get('/settings', handle(async (req, res) => { const ctx = await context(req); send(res, await Settings.getSettings(ctx.organizationId)); }));

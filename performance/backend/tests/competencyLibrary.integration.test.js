@@ -14,7 +14,7 @@ const Cycle = require('../models/CompetencyCycle');
 const Operation = require('../models/CompetencyOperation');
 let mongo, app;
 const actor = 'configurator';
-const ctx = { organizationId: 'org-a', actor: { userId: actor, name: 'Synthetic Configurator' } };
+const ctx = { organizationWide: true, organizationId: 'org-a', actor: { userId: actor, name: 'Synthetic Configurator' } };
 const call = (method, url, who = 'admin', org = 'org-a') => request(app)[method]('/api/competency' + url).set('x-principal', who).set('x-org', org).set('Idempotency-Key', crypto.randomUUID());
 const roleDraft = (name = 'Delivery lead') => ({ name, description: 'Assess an existing employee', responsibilities: [{ id: 'delivery', text: 'Deliver reliable work.' }], requirements: [{ id: 'experience', text: 'Relevant delivery experience', required: true }], criteria: [] });
 const frameworkDraft = source => ({ name: source + ' framework', sourceType: source, source: 'Synthetic authored fixture', licenseProvenance: source === 'sfia' ? 'Synthetic source-specific example; not SFIA catalogue' : 'Organisation authored', levels: [{ id: 'foundation', label: 'Foundation', description: 'Works with guidance', order: 1 }, { id: 'advanced', label: 'Advanced', description: 'Works independently', order: 2 }], criteria: [{ id: 'delivery', code: 'DEL', name: 'Delivery', description: 'Delivers reliable outcomes', levelIds: ['foundation', 'advanced'] }] });

@@ -1,1 +1,2 @@
-export { default } from '../[id]/edit/page';
+import CycleEditor from '@/components/competency/library/CycleEditor';
+export default function Page() { return <CycleEditor />; }

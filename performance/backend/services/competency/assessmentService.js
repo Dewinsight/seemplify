@@ -43,6 +43,7 @@ async function cas(ctx,record,expected,changes,{status=editable,extra={},session
 async function launch(ctx,input,key) {
   auth.requireAction(ctx,'assessment.launch'); cleanObject(input,['cycleId','cycleRevision','assignments']); id(input.cycleId);
   if(!Number.isInteger(input.cycleRevision)||!Array.isArray(input.assignments)||!input.assignments.length||input.assignments.length>100) throw new DomainError(422,'INVALID_ASSIGNMENTS','Choose one to 100 participants and a current cycle revision.');
+  input={...input,cycleId:String(new mongoose.Types.ObjectId(id(input.cycleId))),assignments:input.assignments.map(assignment=>({...assignment,...(assignment?.appraisalId?{appraisalId:String(new mongoose.Types.ObjectId(id(assignment.appraisalId)))}:{}),...(assignment?.roleVersionId?{roleVersionId:String(new mongoose.Types.ObjectId(id(assignment.roleVersionId)))}:{})}))};
   return auth.operation(ctx,'assessment.launch',key,input,async()=>{
   const identities=new Set();
   // Validate every assignment before persisting any; receipts still describe
@@ -65,8 +66,9 @@ async function launch(ctx,input,key) {
   }
     const outcomes=[];
     for(const {assignment,participant,assessors,definition} of assignments) {
-      const scope={organizationId:ctx.organizationId,cycleId:input.cycleId,cycleVersion:definition.cycleVersion,'participant.userId':participant.userId};
+      const scope={organizationId:ctx.organizationId,cycleId:input.cycleId,cycleVersion:definition.cycleVersion,occurrenceKey:{$in:['legacy',null]},'participant.userId':participant.userId};
       const existing=await Assessment.findOne(scope).lean();
+      if(!existing&&await Assessment.exists({organizationId:ctx.organizationId,cycleId:input.cycleId,cycleVersion:definition.cycleVersion,occurrenceKey:{$nin:['legacy',null]},'participant.userId':participant.userId}))throw new DomainError(409,'USE_UNIFIED_APPRAISALS','This cycle uses appraisal periods. Start the next period from Start appraisals.');
       if(existing) { if(existing.definitionSnapshot.role.versionId!==definition.role.versionId)throw new DomainError(409,'ROLE_ASSIGNMENT_CONFLICT','This participant already has a different frozen role in this cycle. Start a new cycle to assess a different role.'); if((assignment.appraisalId||null)!==(existing.appraisalId||null)) throw new DomainError(409,'LINK_CONFLICT','This person already has an assessment linked to a different appraisal.'); outcomes.push({assessmentId:String(existing._id),participantId:participant.userId,status:'existing',cvRequested:existing.definitionSnapshot.cvRequested===true}); continue; }
       try {
         const payload={organizationId:ctx.organizationId,cycleId:input.cycleId,cycleVersion:definition.cycleVersion,cycleRevision:input.cycleRevision,appraisalId:assignment.appraisalId||null,participant:{userId:participant.userId,name:participant.name||'Not recorded',departmentId:participant.departmentId||null,teamIds:participant.teamIds||(participant.teams||[]).map(team=>String(team.id||team.teamId))},assessors,assessorIds:assessors.map(person=>person.userId),definitionSnapshot:{...clone(definition),cvRequested:validateCvRequested(assignment.cvRequested)},items:definition.criteria.map(criterion=>({criterionId:criterion.id,status:'not_started',rationale:'',evidenceIds:[],reviewedSuggestionIds:[]})),managerFeedback:[],createdBy:ctx.actor,results:[]};

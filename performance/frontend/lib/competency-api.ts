@@ -37,7 +37,7 @@ export interface CompetencyBootstrap {
   roles: Array<{ id: string; versionId: string; name: string; version: number; status: string }>;
   frameworks: Array<{ id: string; versionId: string; sourceType: 'sfia' | 'internal'; name: string; version: number; criteria: Array<{ id: string; name: string; description?: string; levelIds: string[] }>; levels: Array<{ id: string; label: string; description: string; order: number }> }>;
   strategies: Array<{ id: string; versionId: string; name?: string; title: string; version: number; criteria: Array<{ id: string; name: string; description?: string; levelIds: string[] }>; levels: Array<{ id: string; label: string; description: string; order: number }> }>;
-  cycles?: Array<{ id: string; name: string; revision: number; status: string; roleVersionIds: string[] }>;
+  cycles?: Array<{ id: string; name: string; revision: number; status: string; roleVersionIds: string[]; reviewMode?: 'regular' | 'competency' | 'combined'; cadence?: { type: 'one_time' | 'periodic'; frequency?: string }; period: { start: string; end: string } }>;
 }
 export interface CompetencySettings {
   revision: number;

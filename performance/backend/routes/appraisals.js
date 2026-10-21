@@ -30,7 +30,6 @@ const { findManagerForEmployee } = require('../services/idpService');
 const User = require('../models/User');
 const { resolveLaunchParticipants } = require('../services/appraisalLaunchParticipants');
 const { colleagueRoster, resolveColleagueParticipants } = require('../services/colleagueReviewService');
-const { ensureQuarterlyCycles } = require('../services/quarterlyAppraisalService');
 
 const colleagueLaunch = (req) => ['initiator', 'selected'].includes(req.body?.reviewerMode);
 function requireLaunchAccess(req, res, next) {
@@ -1254,6 +1253,7 @@ async function resolveManagerIdentityForLaunch(employee, req) {
 }
 
 async function createAppraisalsForCycle(cycle, employees = [], req) {
+  if (cycle.assessmentCycleId) throw Object.assign(new Error('Start this cycle through the unified appraisal setup so its role assessment and questions are created together.'), { status: 409, code: 'USE_UNIFIED_APPRAISALS' });
   const requestedFlow = req.body?.appraisalFlow;
   const flowResult = requestedFlow ? appraisalFlow.validateFlow(requestedFlow, getCycleDesign(cycle)) : null;
   if (flowResult?.errors.length) {
@@ -1745,7 +1745,9 @@ router.get('/cycles', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'No active organization selected' });
     }
 
-    await ensureQuarterlyCycles(orgId);
+    // Legacy cycles are history; new periods are configured and launched through
+    // the canonical competency-cycle API. Do not create a second cycle catalogue.
+
     const query = { organizationId: orgId, retiredAt: null };
     if (status) query.status = status;
     if (year) {
@@ -1848,6 +1850,9 @@ router.post('/cycles', requireAuth, requireLaunchAccess, async (req, res) => {
 
     const cycle = new AppraisalCycle({
       ...req.body,
+      // These references are assigned only by the transactional unified service.
+      assessmentCycleId: undefined,
+      assessmentOccurrenceKey: undefined,
       defaultQuarterKey: undefined,
       retiredAt: null,
       workflowDefinition: designResult.design,
@@ -1932,6 +1937,7 @@ router.put('/cycles/:cycleId', requireAuth, requireManager, async (req, res) => 
 
     const orgId = resolveOrganizationId(req);
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: orgId });
+    if (cycle?.assessmentCycleId) return res.status(409).json({ success: false, code: 'USE_UNIFIED_APPRAISALS', error: 'This review period uses a published appraisal cycle. Configure a new cycle in Appraisal cycles to change its expectations.' });
     if (!cycle) {
       return res.status(404).json({ success: false, error: 'Cycle not found' });
     }

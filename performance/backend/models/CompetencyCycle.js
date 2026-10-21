@@ -1,4 +1,12 @@
 const mongoose = require('mongoose');
 const schema = new mongoose.Schema({ organizationId: { type: String, required: true, index: true }, name: { type: String, required: true }, period: { start: String, end: String }, status: { type: String, enum: ['draft', 'published'], default: 'draft' }, selectedInputTypes: [String], frameworkVersionIds: [String], strategyVersionIds: [String], roleVersionIds: [String], scoringConfig: mongoose.Schema.Types.Mixed, rankingConfig: mongoose.Schema.Types.Mixed, definitionHash: String, version: { type: Number, default: 1 }, revision: { type: Number, default: 1 }, createdBy: { userId: String, name: String }, publishedBy: { userId: String, name: String }, publishedAt: Date }, { timestamps: true, strict: 'throw' });
 schema.index({ organizationId: 1, status: 1, createdAt: -1 });
+schema.add({
+  reviewMode: { type: String, enum: ['regular', 'competency', 'combined'], default: 'competency' },
+  cadence: { type: mongoose.Schema.Types.Mixed, default: () => ({ type: 'one_time' }) },
+  regularTemplateId: { type: String, default: 'balanced_performance' },
+  workflowDefinition: mongoose.Schema.Types.Mixed,
+  includeApprovedGoals: { type: Boolean, default: false },
+  configurationScope: { type: String, enum: ['organization', 'managed_teams'], default: 'organization' },
+});
 module.exports = mongoose.models.CompetencyCycle || mongoose.model('CompetencyCycle', schema);

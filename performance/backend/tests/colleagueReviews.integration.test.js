@@ -47,6 +47,15 @@ beforeEach(async () => {
 });
 afterAll(async () => { await mongoose.disconnect(); await mongo.stop(); });
 
+test('unified execution periods cannot bypass linked assessment creation through legacy launch or editing', async () => {
+  const cycle = await AppraisalCycle.create({ organizationId: org.id, name: 'Unified period', assessmentCycleId: String(new mongoose.Types.ObjectId()), assessmentOccurrenceKey: '2026-07-01:2026-09-30', periodStart: '2026-07-01', periodEnd: '2026-09-30', cycleType: 'quarterly', status: 'active', scope: { type: 'organization', targetIds: [] }, settings: { requireOkrAlignment: false } });
+  const response = await call('post', `/cycles/${cycle._id}/launch`, 'hr').send(launch('member')).expect(409);
+  expect(response.body.error).toMatch(/unified appraisal setup/);
+  await call('put', `/cycles/${cycle._id}`, 'hr').send({ name: 'Altered runtime configuration' }).expect(409);
+  expect(await Appraisal.countDocuments({ cycleId: cycle._id })).toBe(0);
+  expect((await AppraisalCycle.findById(cycle._id)).name).toBe('Unified period');
+});
+
 test('quarterly defaults are tenant scoped, concurrency safe, editable and roll over into a new year', async () => {
   const now = new Date('2026-10-18');
   await Promise.all([ensureQuarterlyCycles(org.id, now), ensureQuarterlyCycles(org.id, now)]);
