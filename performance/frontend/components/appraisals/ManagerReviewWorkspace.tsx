@@ -167,6 +167,7 @@ export default function ManagerReviewWorkspace({ embedded = false }: { embedded?
   const [feedbackList, setFeedbackList] = useState<any[]>([]);
   const [scoringData, setScoringData] = useState<ScoringData | null>(null);
   const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
+  const [aiSuggestionError, setAiSuggestionError] = useState('');
   const [scoringLoading, setScoringLoading] = useState(false);
 
   // Initialize form data from appraisal
@@ -294,15 +295,21 @@ export default function ManagerReviewWorkspace({ embedded = false }: { embedded?
       return;
     }
     setScoringLoading(true);
+    setAiSuggestionError('');
     try {
       const res = await api.post(`/appraisals/${appraisalId}/ai-rating-suggestion`);
-      if (res.data?.success && res.data?.data?.aiSuggestion) {
-        setAiSuggestion(res.data.data.aiSuggestion);
-      } else if (res.data?.aiSuggestion) {
-        setAiSuggestion(res.data.aiSuggestion);
+      const suggestion = res.data?.data?.aiSuggestion || res.data?.aiSuggestion;
+      if (res.data?.success === false || !suggestion || suggestion.success === false || suggestion.error
+        || typeof suggestion.suggestedRating !== 'number' || !Number.isFinite(suggestion.suggestedRating)
+        || suggestion.suggestedRating < 1 || suggestion.suggestedRating > 5
+        || typeof suggestion.ratingJustification !== 'string' || !suggestion.ratingJustification.trim()) {
+        throw new Error('The AI recommendation was incomplete. Retry or continue with your own assessment.');
       }
-    } catch (e) {
-      console.error('Failed to fetch AI suggestion', e);
+      setAiSuggestion(suggestion);
+    } catch (e: unknown) {
+      const failure = e as { response?: { data?: { error?: string } }; message?: string };
+      setAiSuggestion(null);
+      setAiSuggestionError(failure.response?.data?.error || failure.message || 'The AI recommendation could not be loaded.');
     } finally {
       setScoringLoading(false);
     }
@@ -1220,6 +1227,11 @@ export default function ManagerReviewWorkspace({ embedded = false }: { embedded?
                     </Typography>
                   </Alert>
                 </Box>
+              ) : aiSuggestionError ? (
+                <Alert severity="error">
+                  {aiSuggestionError} You can retry with Get AI Suggestion or submit your own review.
+                  <Button size="small" color="inherit" href="/settings/ai">Review AI settings</Button>
+                </Alert>
               ) : (
                 <Typography variant="body2" color="text.secondary">
                   Click "Get AI Suggestion" to receive an AI-powered rating recommendation based on OKR achievement,

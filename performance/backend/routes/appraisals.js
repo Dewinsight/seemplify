@@ -6395,7 +6395,7 @@ router.post('/:appraisalId/ai-rating-suggestion', requireAuth, async (req, res) 
     });
   } catch (error) {
     console.error('AI rating suggestion error:', error);
-    res.status(500).json({ success: false, error: 'Failed to get AI rating suggestion' });
+    return aiGatewayService.sendPerformanceAIError(res, error, 'Failed to get AI rating suggestion');
   }
 });
 

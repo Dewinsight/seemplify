@@ -180,6 +180,16 @@ test('AI policy changes never weaken employee, reviewer or tenant authorization'
   expect(provider).not.toHaveBeenCalled();
 });
 
+test('invalid rating advice returns an actionable failure and creates no advisory outcome', async () => {
+  const cycle = await createCycle(true), appraisal = await launch(cycle);
+  jest.spyOn(ai, 'generateAISuggestedRating').mockRejectedValue(new PerformanceAIRuntimeError('The AI rating recommendation was incomplete.', 'AI_RESPONSE_INVALID', 502));
+  const response = await call('post', `/${appraisal._id}/ai-rating-suggestion`).send({}).expect(502);
+  expect(response.body).toMatchObject({ success: false, code: 'AI_RESPONSE_INVALID', error: 'The AI rating recommendation was incomplete.' });
+  const saved = await Appraisal.findById(appraisal._id);
+  expect(saved.aiSuggestionReviews).toHaveLength(0);
+  expect(saved.finalRating?.overall).toBeUndefined();
+});
+
 test('live AI off changes no frozen questions, evidence requirements, self-rating or scoring settings', async () => {
   const cycle = await createCycle(true), appraisal = await launch(cycle), original = await rawSnapshot(appraisal._id);
   const changedDesign = JSON.parse(JSON.stringify(cycle.workflowDefinition)); changedDesign.sections[0].title = 'Changed live title after launch';
