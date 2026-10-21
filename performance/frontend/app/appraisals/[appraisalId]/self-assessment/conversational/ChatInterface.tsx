@@ -385,8 +385,7 @@ export default function ChatInterface({
           borderTop: 1,
           borderColor: 'divider',
           borderRadius: 0,
-          bgcolor: alpha(theme.palette.background.paper, 0.92),
-          backdropFilter: 'blur(6px)'
+          bgcolor: 'background.paper'
         }}
       >
         {/* Next Phase Button */}
@@ -479,7 +478,7 @@ export default function ChatInterface({
               color="primary"
               sx={{
                 bgcolor: 'primary.main',
-                color: 'white',
+                color: 'primary.contrastText',
                 mb: 0.5,
                 borderRadius: 2.5,
                 width: 42,

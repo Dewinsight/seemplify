@@ -703,8 +703,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
           overflow: 'hidden',
           border: 1,
           borderColor: 'divider',
-          bgcolor: alpha(theme.palette.background.paper, 0.84),
-          backdropFilter: 'blur(8px)'
+          bgcolor: 'background.paper'
         }}
       >
       {/* Progress Sidebar */}

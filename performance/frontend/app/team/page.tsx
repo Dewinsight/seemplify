@@ -317,7 +317,10 @@ export default function TeamHubPage() {
         {organizationView ? 'Your organization role gives you access to everyone in this organization. Filter by team, then choose who to review and who will conduct each appraisal.' : 'This manager view contains the teams you lead and their subteams. Use Personal for your own work.'}
       </Alert>
       {peopleError && <Alert severity="error">People and teams could not be refreshed from Seemplify Identity. Please refresh this page to retry.</Alert>}
-      {features.canonicalAppraisals !== false && <Button variant="contained" onClick={() => router.push(`/appraisals/start${selectedTeamFilter !== 'all' ? `?teamId=${encodeURIComponent(selectedTeamFilter)}` : ''}`)}>Start appraisal</Button>}
+      <div className="flex flex-wrap gap-3">
+        {features.canonicalAppraisals !== false && <Button variant="contained" onClick={() => router.push(`/appraisals/start${selectedTeamFilter !== 'all' ? `?teamId=${encodeURIComponent(selectedTeamFilter)}` : ''}`)}>Start appraisal</Button>}
+        {features.continuousPerformance !== false && <Button variant="outlined" startIcon={<Add />} onClick={() => router.push('/one-on-ones/new')}>New 1:1</Button>}
+      </div>
 
       {/* Summary Cards */}
       <div aria-label="Team summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -487,7 +490,7 @@ export default function TeamHubPage() {
                   className={`${styles.memberRow} p-4 transition-all cursor-pointer`}
                   onClick={() => handleViewProfile(member)}
                 >
-                  <div className="flex items-start gap-4">
+                  <div className="grid grid-cols-[56px_minmax(0,1fr)] items-start gap-4 xl:flex">
                     <div className="relative flex-shrink-0">
                       <div className="relative">
                         <div className={`${styles.avatar} w-14 h-14 rounded-full flex items-center justify-center font-semibold text-xl`}>
@@ -501,7 +504,7 @@ export default function TeamHubPage() {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h3 className={`font-semibold text-lg ${isDarkMode ? 'text-zinc-100' : 'text-gray-900'}`}>
+                        <h3 className={`break-words font-semibold text-lg ${isDarkMode ? 'text-zinc-100' : 'text-gray-900'}`}>
                           {member.name}
                         </h3>
                         {member.isSelf && <Chip size="small" label="You" variant="outlined" />}
@@ -518,7 +521,7 @@ export default function TeamHubPage() {
                       </div>
                       <div className="mt-1 space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
+                          <span className={`break-words text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>
                             {member.organizationRole ? `Organization role: ${member.organizationRole.replace(/_/g, ' ')}` : member.title || 'Team Member'}
                             {member.teams?.length ? ` · ${member.teams.filter(team => selectedTeamFilter === 'all' || team.id === selectedTeamFilter).map(team => `${team.name}: ${team.role.replace(/_/g, ' ')}`).join(' · ')}` : member.role ? ` · Team role: ${member.role.replace(/_/g, ' ')}` : ''}
                           </span>
@@ -532,14 +535,14 @@ export default function TeamHubPage() {
                             </>
                           )}
                         </div>
-                        <div className={`text-sm ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>
+                        <div className={`break-words text-sm ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>
                           {member.email}
                         </div>
                       </div>
                     </div>
 
                     {/* Stats chips */}
-                    <div className="flex gap-2 items-center flex-wrap mt-3">
+                    <div className="col-span-2 flex flex-wrap items-center gap-2 xl:mt-3">
                       <Tooltip title="OKR Progress">
                         <span className={`${styles.badge} inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold`}>
                           <Assessment sx={{ fontSize: 14 }} />
@@ -589,8 +592,8 @@ export default function TeamHubPage() {
                     </div>
 
                     {/* Quick Actions */}
-                    <div className="flex-shrink-0">
-                      <div className="flex gap-2">
+                    <div className="col-span-2 flex-shrink-0 xl:ml-auto">
+                      <div className="flex flex-wrap gap-2">
                         {features.continuousPerformance !== false && !member.isSelf && <Tooltip title="Schedule 1:1">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleSchedule1on1(member); }}
@@ -677,14 +680,6 @@ export default function TeamHubPage() {
         </MenuItem>}
       </Menu>
 
-      {/* Quick Actions FAB */}
-      {features.continuousPerformance !== false && <button
-        onClick={() => router.push('/one-on-ones/new')}
-        className={`${styles.primaryAction} fixed bottom-6 right-6 z-50 inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all`}
-      >
-        <Add />
-        New 1:1
-      </button>}
     </div>
   );
 }

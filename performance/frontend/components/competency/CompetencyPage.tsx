@@ -15,7 +15,10 @@ export function CompetencyPage({ title, description, children, action }: { title
       <Box><Typography component="h1" variant="h4" fontWeight={700}>{title}</Typography><Typography sx={{ color: 'var(--suite-muted)', mt: 1, maxWidth: 720 }}>{description}</Typography></Box>{action}
     </Stack>
     <Stack component="nav" aria-label="Competency assessments" direction="row" gap={1} sx={{ overflowX: 'auto', borderBottom: '1px solid var(--suite-line)', pb: 2, mb: 3 }}>
-      {[['Overview', '/competency'], ['Assessments', '/competency/assessments'], ['Role library', '/competency/roles'], ['Frameworks', '/competency/frameworks'], ['Strategy', '/competency/strategies'], ['Cycles', '/competency/cycles']].map(([label, href]) => <Button key={href} component={Link} href={href} aria-current={(href === '/competency' ? pathname === href : pathname.startsWith(href)) ? 'page' : undefined} variant={(href === '/competency' ? pathname === href : pathname.startsWith(href)) ? 'contained' : 'text'} sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{label}</Button>)}
+      {[['Overview', '/competency'], ['Assessments', '/competency/assessments'], ['Role library', '/competency/roles'], ['Frameworks', '/competency/frameworks'], ['Strategy', '/competency/strategies'], ['Cycles', '/competency/cycles']].map(([label, href]) => {
+        const active = href === '/competency' ? pathname === href : pathname.startsWith(href);
+        return <Button key={href} component={Link} href={href} aria-current={active ? 'page' : undefined} variant="text" sx={{ whiteSpace: 'nowrap', flexShrink: 0, borderRadius: 0, borderBottom: 2, borderColor: active ? 'primary.main' : 'transparent', color: active ? 'primary.main' : 'text.secondary', fontWeight: active ? 650 : 500 }}>{label}</Button>;
+      })}
     </Stack>{children}
   </Box>;
 }

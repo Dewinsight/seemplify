@@ -317,3 +317,34 @@ test('sign-in error and an incomplete Identity handoff expose usable recovery', 
   await noDocumentOverflow(page);
   await page.screenshot({ path: info.outputPath('identity-timeout-dark.png') });
 });
+
+test('competency wayfinding stays secondary and shows only actual supplied version metadata', async ({ page }) => {
+  await installDesignFixture(page);
+  await page.route('**/__mock-api/competency/**', async route => {
+    const path = new URL(route.request().url()).pathname.replace('/__mock-api/competency', '');
+    let data: unknown = [];
+    if (path === '/bootstrap') data = { enabled: true, capabilities: { roleManage: true, frameworkManage: true, cycleManage: true, assessmentLaunch: true } };
+    // Roles are aggregates: revision/currentVersionId must not become a numeric version.
+    if (path === '/roles') data = [{ id: 'metadata-role', name: 'Delivery lead', revision: 9, currentVersionId: 'opaque-version-id' }];
+    if (path === '/cycles') data = [{ id: 'metadata-cycle', name: 'Current review cycle', version: 3 }, { id: 'unknown-cycle', name: 'Imported cycle' }];
+    if (path === '/strategies') data = [{ id: 'strategy-version', strategyId: 'strategy', title: 'Strategic delivery outcome', version: 2 }];
+    await route.fulfill({ json: { success: true, data } });
+  });
+  await page.goto('/competency/roles');
+  const nav = page.getByRole('navigation', { name: 'Competency assessments', exact: true });
+  const current = nav.getByRole('link', { name: 'Role library', exact: true });
+  await expect(current).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('link', { name: 'Delivery lead', exact: true })).toBeVisible();
+  await expect(page.getByText(/Occupational role profile.*v9/)).toHaveCount(0);
+  const style = await current.evaluate(element => { const s = getComputedStyle(element); return { background: s.backgroundColor, decoration: s.textDecorationLine, border: parseFloat(s.borderBottomWidth) }; });
+  expect(style.background).toBe('rgba(0, 0, 0, 0)');
+  expect(style.decoration.includes('underline') || style.border >= 2).toBe(true);
+  await expect(page.getByRole('link', { name: 'New role', exact: true })).toBeVisible();
+  await nav.getByRole('link', { name: 'Cycles', exact: true }).click();
+  await expect(nav.getByRole('link', { name: 'Cycles', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByText(/Configured assessment cycle.*v3/)).toBeVisible();
+  const unknown = page.locator('.MuiPaper-root').filter({ has: page.getByRole('link', { name: 'Imported cycle', exact: true }) });
+  await expect(unknown).not.toContainText(/v(?:undefined|null|NaN|Infinity|1)\b/);
+  await nav.getByRole('link', { name: 'Strategy', exact: true }).click();
+  await expect(page.getByText(/Strategic outcome criteria.*v2/)).toBeVisible();
+});
