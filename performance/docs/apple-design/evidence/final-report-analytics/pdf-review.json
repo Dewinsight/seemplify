@@ -1,0 +1,15 @@
+{
+  "reviewedAt": "2026-10-21T12:07:36.643512+00:00",
+  "reviewer": "Retained architect / independent QA",
+  "verdict": "passed",
+  "method": "All6 final Poppler-rendered pages inspected plus PDF text extraction",
+  "pages": 6,
+  "sha256": "994e2ee1951b7cbb9497027979f9f4c56e22e69c501c8aaf5adfaacf3056ca8c",
+  "chartMarksAndLabelsReadable": true,
+  "noClippedOrOverlappingContent": true,
+  "allGoalAndCompetencyRowsRetained": true,
+  "fullNarrativeAndMatchingDOC1MEETING1ReferencesRetained": true,
+  "interactiveSourceLabelsAbsent": true,
+  "nonBlockingObservation": "Unused final-page canvas remains light grey; no content is hidden.",
+  "boundary": "Synthetic browser print sample; not a production employee document or external AI execution proof."
+}

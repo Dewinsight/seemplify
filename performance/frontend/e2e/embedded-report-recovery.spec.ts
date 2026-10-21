@@ -53,7 +53,7 @@ async function capture(page: Page, path: string) {
 }
 async function ordinaryVisible(page: Page) {
   await expect(page.getByRole('heading', { name: 'Appraisal result report', exact: true })).toBeVisible();
-  await expect(page.getByText(ordinaryNarrative, { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Appraisal analytics', exact: true }).getByText(ordinaryNarrative, { exact: true })).toBeVisible();
   await expect(page.getByText('4 / 5', { exact: false })).toBeVisible();
 }
 

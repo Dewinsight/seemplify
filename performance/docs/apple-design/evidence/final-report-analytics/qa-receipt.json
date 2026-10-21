@@ -1,0 +1,49 @@
+{
+  "verifiedAt": "2026-10-21T12:06:46.212523+00:00",
+  "baseMain": "7c3bd788652b0e1ceb58717cf2a3e567edff84fb",
+  "scope": "Published appraisal result presentation only; backend, Identity, calculations and gateway unchanged.",
+  "browserQA": {
+    "passed": 22,
+    "failed": 0,
+    "newAnalyticsCases": 17,
+    "existingRecoveryCases": 5,
+    "durationSeconds": 46.9,
+    "transport": "Synthetic API fixtures in real Chrome; read-only requests asserted",
+    "command": "PERFORMANCE_E2E_PORT=5038 npx playwright test e2e/appraisal-result-analytics.spec.ts e2e/embedded-report-recovery.spec.ts --workers=1"
+  },
+  "productionBuild": {
+    "command": "npm run build",
+    "exitCode": 0,
+    "executor": "Coordinating root",
+    "environment": "Explicit production public API/WS/Identity URLs",
+    "applicationBlobsUnchangedSinceBuild": true,
+    "subsequentTestOnlyChanges": "Aligned synthetic source references with server grammar and asserted citations separately in narrative and source inventory; final22-case replay passed."
+  },
+  "otherChecks": {
+    "TypeScript": "passed",
+    "scopedESLint": "passed on all7 source/test paths",
+    "existingBackendAppraisalReportingIntegration": "8/8 passed; backend unchanged"
+  },
+  "reviewGates": {
+    "independentArchitect": "passed",
+    "retainedProductR1toR9": "passed"
+  },
+  "sourceFilesSHA256": {
+    "performance/frontend/app/appraisals/[appraisalId]/report/page.tsx": "1322a01002327733c01a714bd091b81ac8220e4eceaf385c09118f095491fbd1",
+    "performance/frontend/components/appraisals/ResultAnalytics.tsx": "6d38c1e98729a458ffac69e60d7d9b893622839adb6fbee549064dbfd5922c9c",
+    "performance/frontend/components/appraisals/FinalAIReport.tsx": "21fa1e67dcfd43d5afcba05b0875f9581d196cb208ca130b2ce7225afe87f753",
+    "performance/frontend/components/appraisals/ResultPrintStyles.tsx": "6ba6b6e48612873e72a9e0418a377a840dbc0447fdb8fba6758ff61096840cd9",
+    "performance/frontend/lib/appraisal-report.ts": "fa09d3d18889f0aba38ce9326ef2d5d48a58a710ec3deea8b082323b06ea8559",
+    "performance/frontend/e2e/appraisal-result-analytics.spec.ts": "30615188f6cc1b5a7fa6544e639df39e086a6bb6843396c71c08de370a5d2e16",
+    "performance/frontend/e2e/embedded-report-recovery.spec.ts": "b96c84a744c16ef7472b9e7f915aa651e8d59a6a29efa3e5ed50cbe39d12c7b3"
+  },
+  "artifactsSHA256": {
+    "analytical-result-desktop-dark-initial.png": "d49582004fb78b85fa941bb9a1cc4d06c999337b9be0f593612602fb66a17c20",
+    "analytical-result-desktop-light-initial.png": "6ad6a557d910e8534b4f451bd274fe633fef8f790ac30a35a3ab97256641e908",
+    "analytical-result-mobile-dark-initial.png": "e31dc1a0854e66fedbf33c95acfa73ec71d1edbf4105ab69f9d14947436a10d0",
+    "analytical-result-mobile-light-initial.png": "a9a75461f90a2aaa7c9bd83371aa9e15c5b0f950f0353131c1359ae531e4965b",
+    "synthetic-appraisal-result-report.pdf": "994e2ee1951b7cbb9497027979f9f4c56e22e69c501c8aaf5adfaacf3056ca8c"
+  },
+  "privacy": "Only synthetic people, reports and generated concept. No environment/config dumps, tokens or traces copied. Exact known-sensitive-value scan found zero matches.",
+  "evidenceBoundary": "Local/browser/build evidence. Deployment and authenticated production acceptance are recorded separately after source publication."
+}

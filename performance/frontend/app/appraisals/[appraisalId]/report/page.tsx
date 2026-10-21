@@ -1,10 +1,11 @@
 'use client';
 
 import useSWR from 'swr';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Alert, Box, Button, CircularProgress, Divider, Paper, Stack, Typography } from '@mui/material';
-import { Download, Print } from '@mui/icons-material';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, CircularProgress, Divider, Paper, Stack, Typography } from '@mui/material';
+import { Download, ExpandMore, Print } from '@mui/icons-material';
 import api from '@/lib/api';
 import { downloadResultsCsv, shortDate } from '@/lib/appraisal-results';
 import ResultPrintStyles from '@/components/appraisals/ResultPrintStyles';
@@ -12,20 +13,10 @@ import AppraisalDocuments from '@/components/appraisals/AppraisalDocuments';
 import CompetencyReportSection from '@/components/competency/reports/CompetencyReportSection';
 import { competencyRequest } from '@/lib/competency-api';
 import { displayDate } from '@/components/competency/assessment/types';
-import FinalAIReport, { FinalAIReportData } from '@/components/appraisals/FinalAIReport';
+import FinalAIReport from '@/components/appraisals/FinalAIReport';
+import ResultAnalytics from '@/components/appraisals/ResultAnalytics';
+import { scoreLabel, type ResultReport } from '@/lib/appraisal-report';
 
-interface ResultReport {
-  aiReport?: FinalAIReportData; canGenerateAIReport?: boolean;
-  id: string; status: string; employee: { name: string; jobTitle?: string; department?: string }; manager: { name: string };
-  cycle: { name: string; periodStart?: string; periodEnd?: string }; ratingScale: { min?: number; max?: number };
-  finalRating: { overall: number | null; ratingLabel?: string; justification?: string; finalizedAt?: string };
-  employeeReflection?: Record<string, string>; managerSummary?: Record<string, string>; discussion?: Record<string, string | string[]>;
-  documents: Array<{ _id: string; originalName: string; fileType: string; fileSize?: number; category?: string; status: string }>;
-  acknowledgedAt?: string; goals: Array<{ title: string; score: number | null }>;
-  competencies?: Array<{ name: string; selfRating: number | null; managerRating: number | null; managerComments: string }>;
-  answers?: Array<{ section: string; question: string; respondent: string; answer: string }>;
-  managerFeedback?: { author?: { userId: string; name: string } | null; submittedAt?: string; overallRating?: number | null; goals: Array<{ id?: string; title: string; comments: string; verifiedCompletion?: number | null; qualityRating?: number | null }> } | null;
-}
 const labels: Record<string, string> = { achievements: 'Achievements', challenges: 'Challenges', learnings: 'Learning', improvements: 'Areas for improvement', goals: 'Next goals', strengths: 'Strengths', areasForImprovement: 'Areas for improvement', developmentNeeds: 'Development needs', agreedStrengths: 'Agreed strengths', agreedImprovements: 'Agreed improvements', developmentPlan: 'Development plan', careerAspirations: 'Career aspirations', supportNeeded: 'Support needed', nextSteps: 'Next steps' };
 function Narrative({ title, values }: { title: string; values?: Record<string, string | string[]> }) {
   const entries = Object.entries(values || {}).filter(([key, value]) => key !== '_id' && value && (typeof value === 'string' || Array.isArray(value)));
@@ -34,12 +25,15 @@ function Narrative({ title, values }: { title: string; values?: Record<string, s
 
 export default function AppraisalResultReportPage() {
   const params = useParams<{ appraisalId: string }>();
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const { data: competency, error: competencyFailure, isLoading: competencyLoading, isValidating: competencyChecking, mutate: retryCompetency } = useSWR<{ enabled: boolean }>('/competency/bootstrap', () => competencyRequest<{ enabled: boolean }>('GET', '/bootstrap'), { shouldRetryOnError: false });
   const { data: report, error: failure, isLoading: loading, mutate } = useSWR<ResultReport>(`/appraisals/${params.appraisalId}/report`, async (url: string) => (await api.get(url)).data.data, { shouldRetryOnError: false, refreshInterval: data => ['pending', 'processing'].includes(data?.aiReport?.state || '') || data?.aiReport?.retryScheduled ? 5000 : 0 });
   const error = failure ? failure.response?.data?.error || 'Could not load this result report. Please try again.' : '';
   if (loading) return <CircularProgress aria-label="Loading result report" />;
   if (error || !report) return <Stack spacing={2}><Button component={Link} href="/appraisals?section=history">Back to history</Button><Alert severity="warning" action={<Button onClick={() => mutate()}>Retry</Button>}>{error || 'Result report unavailable.'}</Alert></Stack>;
-  const rating = report.finalRating?.overall == null ? 'No final rating recorded' : `${report.finalRating.overall} / ${report.ratingScale?.max ?? 5}`;
+  const rating = report.finalRating?.overall == null ? 'No final rating recorded' : scoreLabel(report.finalRating.overall, report.ratingScale?.max);
+  const openSources = () => { setSourcesExpanded(true); document.getElementById('final-report-sources-heading')?.focus(); document.getElementById('final-report-sources')?.scrollIntoView({ block: 'start' }); };
+  const readAnalysis = () => { document.getElementById('final-ai-report-heading')?.focus(); document.getElementById('final-ai-report-heading')?.scrollIntoView({ block: 'start' }); };
   const csv = () => downloadResultsCsv([
     ['Appraisal result report', report.cycle.name], ['Employee', report.employee.name], ['Reviewer', report.manager.name], ['Period start', report.cycle.periodStart || ''], ['Period end', report.cycle.periodEnd || ''], ['Final result', rating], ['Rating label', report.finalRating?.ratingLabel || ''], ['Finalized', shortDate(report.finalRating?.finalizedAt)], ['Justification', report.finalRating?.justification || ''],
     ['Acknowledgement', report.status === 'employee_acknowledged' ? 'Recorded' : 'Awaiting employee acknowledgement'], ['Acknowledged at', shortDate(report.acknowledgedAt)],
@@ -58,14 +52,18 @@ export default function AppraisalResultReportPage() {
     ...(report.competencies || []).flatMap((item) => [[`Competency: ${item.name} - employee rating`, String(item.selfRating ?? 'Not rated')], [`Competency: ${item.name} - manager rating`, String(item.managerRating ?? 'Not rated')], [`Competency: ${item.name} - manager comments`, item.managerComments]]),
     ...(report.answers || []).map((item) => [`${item.respondent}: ${item.section} - ${item.question}`, item.answer]),
   ], 'appraisal-result-report.csv');
-  return <Box sx={{ maxWidth: 1000, mx: 'auto' }}>
+  return <Box sx={{ maxWidth: 1240, mx: 'auto', overflowWrap: 'anywhere' }}>
     <Stack className="no-print" direction={{ xs: 'column', sm: 'row' }} spacing={1} mb={3}><Button component={Link} href="/appraisals?section=history">Back to history</Button><Button component={Link} href={`/appraisals/${report.id}`}>Open appraisal</Button><Button startIcon={<Download />} onClick={csv}>Download CSV</Button><Button variant="outlined" startIcon={<Print />} onClick={() => window.print()}>Print / save PDF</Button></Stack>
-    <Paper className="appraisal-print" variant="outlined" sx={{ p: { xs: 2, sm: 4 } }}>
+    <Paper className="appraisal-print appraisal-result-print" variant="outlined" sx={{ p: { xs: 2, sm: 4 } }}>
       <ResultPrintStyles />
-      <Typography variant="h4" fontWeight={700}>Appraisal result report</Typography><Typography variant="h6" mt={1}>{report.cycle.name}</Typography><Typography color="text.secondary">{shortDate(report.cycle.periodStart)} – {shortDate(report.cycle.periodEnd)}</Typography>
-      <Stack spacing={1} my={3}><Typography><strong>Employee:</strong> {report.employee.name}{report.employee.jobTitle ? ` · ${report.employee.jobTitle}` : ''}</Typography><Typography><strong>Reviewer:</strong> {report.manager.name || 'Not recorded'}</Typography><Typography><strong>Final result:</strong> {rating}{report.finalRating?.ratingLabel ? ` · ${report.finalRating.ratingLabel}` : ''}</Typography><Typography><strong>Finalized:</strong> {shortDate(report.finalRating?.finalizedAt)}</Typography><Typography><strong>Acknowledgement:</strong> {report.status === 'employee_acknowledged' ? `Recorded${report.acknowledgedAt ? ` on ${shortDate(report.acknowledgedAt)}` : ''}` : 'Awaiting employee acknowledgement'}</Typography></Stack>
-      {report.finalRating?.justification && <Box mb={3}><Typography variant="h6">Final outcome</Typography><Typography sx={{ whiteSpace: 'pre-wrap' }}>{report.finalRating.justification}</Typography></Box>}
-      <FinalAIReport appraisalId={report.id} report={report.aiReport} canGenerate={report.canGenerateAIReport} onQueued={async () => { await mutate(); }} />
+      <Typography component="h1" variant="h4" fontWeight={650}>Appraisal result report</Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2} mt={1.5}>
+        <Box><Typography variant="h6">{report.employee.name}</Typography><Typography variant="body2" color="text.secondary">{[report.employee.jobTitle, report.employee.department].filter(Boolean).join(' · ')}</Typography><Typography variant="body2" color="text.secondary" mt={.5}>{report.cycle.name} · {shortDate(report.cycle.periodStart)} – {shortDate(report.cycle.periodEnd)}</Typography></Box>
+        <Box><Typography variant="body2">Reviewer: {report.manager.name || 'Not recorded'}</Typography><Typography variant="body2" color="text.secondary">Finalized: {shortDate(report.finalRating?.finalizedAt)}</Typography><Typography variant="body2" color="text.secondary">Acknowledgement: {report.status === 'employee_acknowledged' ? `Recorded${report.acknowledgedAt ? ` on ${shortDate(report.acknowledgedAt)}` : ''}` : 'Awaiting employee acknowledgement'}</Typography></Box>
+      </Stack>
+      <ResultAnalytics report={report} onSources={openSources} onAnalysis={readAnalysis} />
+      <FinalAIReport appraisalId={report.id} report={report.aiReport} canGenerate={report.canGenerateAIReport} onQueued={async () => { await mutate(); }} sourcesExpanded={sourcesExpanded} onSourcesExpanded={setSourcesExpanded} />
+      <Accordion className="report-record-section" variant="outlined" sx={{ mt: 3, boxShadow: 'none' }}><AccordionSummary expandIcon={<ExpandMore />} id="review-record-heading" aria-controls="review-record-content"><Box><Typography component="h2" variant="h6">Review record</Typography><Typography variant="body2" color="text.secondary">Submitted reflections, reviewer feedback, documents and answers</Typography></Box></AccordionSummary><AccordionDetails>
       <Box sx={{ '@media print': { '& button': { display: 'none' } } }}>
         <AppraisalDocuments appraisalId={report.id} documents={report.documents || []} readOnly onChanged={async () => undefined} />
       </Box>
@@ -78,6 +76,7 @@ export default function AppraisalResultReportPage() {
         {!!report.competencies?.length && <Box><Typography variant="h6" mb={1}>Competency assessment</Typography><Stack spacing={2}>{report.competencies.map((item, index) => <Box className="result-row" key={index}><Typography fontWeight={600}>{item.name}</Typography><Typography variant="body2">Employee rating: {item.selfRating ?? 'Not rated'} · Manager rating: {item.managerRating ?? 'Not rated'}</Typography>{item.managerComments && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{item.managerComments}</Typography>}</Box>)}</Stack></Box>}
         {!!report.answers?.length && <Box><Typography variant="h6" mb={1}>Review questions and submitted answers</Typography><Stack spacing={2}>{report.answers.map((item, index) => <Box className="result-row" key={index}><Typography variant="caption" color="text.secondary">{item.section} · {item.respondent === 'manager' ? 'Manager' : 'Employee'}</Typography><Typography fontWeight={600}>{item.question}</Typography><Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.answer || 'No answer recorded.'}</Typography></Box>)}</Stack></Box>}
       </Stack>
+      </AccordionDetails></Accordion>
       {(competencyLoading || competencyFailure || competency?.enabled) && <Box mt={4}>
         <Divider sx={{ mb: 4 }} />
         {competencyLoading && !competency && <Stack role="status" aria-busy="true" direction="row" spacing={2} alignItems="center">
