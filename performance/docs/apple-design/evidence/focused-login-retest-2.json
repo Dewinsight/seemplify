@@ -1,0 +1,170 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Users\\User\\AppData\\Local\\Programs\\node-v24.19.0-win-x64\\node.exe",
+      "E:\\GitHub\\C-drive\\seemplify\\performance\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "e2e/apple-design.spec.ts",
+      "--grep",
+      "sign-in error",
+      "--reporter=line,json",
+      "--output=E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\focused-login-retest-2"
+    ],
+    "configFile": "E:\\GitHub\\C-drive\\seemplify\\performance\\frontend\\playwright.config.ts",
+    "rootDir": "E:/GitHub/C-drive/seemplify/performance/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/focused-login-retest-2",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chrome",
+        "name": "chrome",
+        "testDir": "E:/GitHub/C-drive/seemplify/performance/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx next dev --webpack -p 5025 -H 127.0.0.1",
+      "url": "http://127.0.0.1:5025",
+      "reuseExistingServer": true,
+      "timeout": 120000,
+      "env": {
+        "PERFORMANCE_E2E_PORT": "5025",
+        "NEXT_PUBLIC_API_URL": "http://127.0.0.1:5025/__mock-api",
+        "NEXT_PUBLIC_WS_URL": "ws://127.0.0.1:5025/__mock-ws"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "apple-design.spec.ts",
+      "file": "apple-design.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "sign-in error and a stalled Identity handoff expose usable recovery",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 11184,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('main').getByRole('heading', { name: 'Redirecting to Login', exact: true })\nExpected: visible\nReceived: undefined\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('main').getByRole('heading', { name: 'Redirecting to Login', exact: true })\u001b[22m\n\u001b[2m    - waiting for \"http://127.0.0.1:5025/__mock-api/auth/oidc/start?returnTo=http%3A%2F%2F127.0.0.1%3A5025\" navigation to finish...\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('main').getByRole('heading', { name: 'Redirecting to Login', exact: true })\nExpected: visible\nReceived: undefined\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('main').getByRole('heading', { name: 'Redirecting to Login', exact: true })\u001b[22m\n\u001b[2m    - waiting for \"http://127.0.0.1:5025/__mock-api/auth/oidc/start?returnTo=http%3A%2F%2F127.0.0.1%3A5025\" navigation to finish...\u001b[22m\n\n    at E:\\GitHub\\C-drive\\seemplify\\performance\\frontend\\e2e\\apple-design.spec.ts:307:92",
+                    "location": {
+                      "file": "E:\\GitHub\\C-drive\\seemplify\\performance\\frontend\\e2e\\apple-design.spec.ts",
+                      "column": 92,
+                      "line": 307
+                    },
+                    "snippet": "  305 |   await handoff;\n  306 |   try {\n> 307 |     await expect(main.getByRole('heading', { name: 'Redirecting to Login', exact: true })).toBeVisible();\n      |                                                                                            ^\n  308 |     await page.clock.fastForward(15_100);\n  309 |     await expect(main.getByRole('alert')).toContainText('Sign-in is taking too long');\n  310 |     await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeEnabled();"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "E:\\GitHub\\C-drive\\seemplify\\performance\\frontend\\e2e\\apple-design.spec.ts",
+                        "column": 92,
+                        "line": 307
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('main').getByRole('heading', { name: 'Redirecting to Login', exact: true })\nExpected: visible\nReceived: undefined\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('main').getByRole('heading', { name: 'Redirecting to Login', exact: true })\u001b[22m\n\u001b[2m    - waiting for \"http://127.0.0.1:5025/__mock-api/auth/oidc/start?returnTo=http%3A%2F%2F127.0.0.1%3A5025\" navigation to finish...\u001b[22m\n\n\n  305 |   await handoff;\n  306 |   try {\n> 307 |     await expect(main.getByRole('heading', { name: 'Redirecting to Login', exact: true })).toBeVisible();\n      |                                                                                            ^\n  308 |     await page.clock.fastForward(15_100);\n  309 |     await expect(main.getByRole('alert')).toContainText('Sign-in is taking too long');\n  310 |     await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeEnabled();\n    at E:\\GitHub\\C-drive\\seemplify\\performance\\frontend\\e2e\\apple-design.spec.ts:307:92"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:49:00.318Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\focused-login-retest-2\\apple-design-sign-in-error-e89fe-doff-expose-usable-recovery-chrome\\test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\focused-login-retest-2\\apple-design-sign-in-error-e89fe-doff-expose-usable-recovery-chrome\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\focused-login-retest-2\\apple-design-sign-in-error-e89fe-doff-expose-usable-recovery-chrome\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "E:\\GitHub\\C-drive\\seemplify\\performance\\frontend\\e2e\\apple-design.spec.ts",
+                    "column": 92,
+                    "line": 307
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-d66dad013374e9051018",
+          "file": "apple-design.spec.ts",
+          "line": 285,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-20T23:48:54.480Z",
+    "duration": 17422.694,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

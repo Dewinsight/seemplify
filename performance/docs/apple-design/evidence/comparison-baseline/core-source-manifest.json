@@ -1,0 +1,25 @@
+{
+  "createdAt": "2026-10-21T00:27:03.871Z",
+  "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "intendedTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+  "candidatePath": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\baseline-a93-matched",
+  "applicationPath": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\baseline-a93-matched",
+  "build": "isolated-default-turbopack-production",
+  "server": "http://127.0.0.1:5036",
+  "evidenceBoundary": "Actual committed pre-redesign source using identical synthetic journey and supplemental fixtures as the final app. candidatePath/applicationPath name the baseline server checkout; fixtureSourcePath names the fixture/dependency source. Not live production.",
+  "fixtureFiles": [
+    {
+      "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\performance-journeys.spec.ts",
+      "sha256": "a3b96881f53886ace30e434be578a940252a912b072cd7d53713f370209d21d0"
+    },
+    {
+      "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\appraisal-navigation-accessibility.spec.ts",
+      "sha256": "5d35b07517f2b45b32d286b0b78b9566ae4f89d125af0cccf0f226e8a1ee47d2"
+    },
+    {
+      "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\core-supplemental-fixture.cjs",
+      "sha256": "d0471814e9352c25fc589a51b058dd6b2af0f85a805051d899e0770f1097fe19"
+    }
+  ],
+  "fixtureSourcePath": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps"
+}

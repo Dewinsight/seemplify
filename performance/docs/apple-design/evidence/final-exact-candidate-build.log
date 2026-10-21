@@ -1,0 +1,96 @@
+
+> frontend@0.1.0 build
+> next build
+
+▲ Next.js 16.3.0 (Turbopack)
+✓ Running next.config.ts took 33ms
+
+  Creating an optimized production build ...
+Browserslist: browsers data (caniuse-lite) is 10 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+✓ Compiled successfully in 2.2s
+  Running TypeScript ...
+  Finished TypeScript in 2.7s ...
+  Collecting page data using 15 workers ...
+  Generating static pages using 15 workers (0/3) ...
+✓ Generating static pages using 15 workers (3/3) in 81ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /action-centre
+├ ƒ /admin
+├ ƒ /admin/appraisal-cycles
+├ ƒ /admin/appraisal-cycles/[id]
+├ ƒ /admin/appraisal-cycles/[id]/edit
+├ ƒ /admin/appraisal-cycles/new
+├ ƒ /admin/calibration
+├ ƒ /admin/departments/[department]
+├ ƒ /admin/reports
+├ ƒ /admin/review-cycles
+├ ƒ /ai-account
+├ ƒ /analytics
+├ ƒ /api/auth/logout
+├ ƒ /appraisals
+├ ƒ /appraisals/[appraisalId]
+├ ƒ /appraisals/[appraisalId]/calibration
+├ ƒ /appraisals/[appraisalId]/discussion
+├ ƒ /appraisals/[appraisalId]/final-review
+├ ƒ /appraisals/[appraisalId]/goal-setting
+├ ƒ /appraisals/[appraisalId]/manager-review
+├ ƒ /appraisals/[appraisalId]/report
+├ ƒ /appraisals/[appraisalId]/self-assessment
+├ ƒ /appraisals/removed
+├ ƒ /appraisals/start
+├ ƒ /check-ins
+├ ƒ /coaching
+├ ƒ /competency
+├ ƒ /competency/assessments
+├ ƒ /competency/assessments/[assessmentId]
+├ ƒ /competency/cycles
+├ ƒ /competency/cycles/[id]
+├ ƒ /competency/cycles/new
+├ ƒ /competency/frameworks
+├ ƒ /competency/frameworks/[id]
+├ ƒ /competency/frameworks/new
+├ ƒ /competency/reports
+├ ƒ /competency/reports/[assessmentId]
+├ ƒ /competency/roles
+├ ƒ /competency/roles/[id]
+├ ƒ /competency/roles/new
+├ ƒ /competency/settings
+├ ƒ /competency/strategies
+├ ƒ /competency/strategies/[id]
+├ ƒ /competency/strategies/new
+├ ƒ /dashboard
+├ ƒ /development
+├ ƒ /feedback
+├ ƒ /feedback/new
+├ ƒ /login
+├ ƒ /okrs
+├ ƒ /okrs/alignment
+├ ƒ /one-on-ones
+├ ƒ /one-on-ones/[meetingId]
+├ ƒ /one-on-ones/new
+├ ƒ /project-feedback
+├ ƒ /recognition
+├ ƒ /reviews
+├ ƒ /reviews/[id]
+├ ƒ /settings/ai
+├ ƒ /support-plans
+├ ƒ /talent
+├ ƒ /team
+├ ƒ /team/[userId]
+├ ƒ /team/appraisals
+├ ƒ /team/feedback
+├ ƒ /team/okrs
+├ ƒ /team/reviews
+└ ƒ /tutorial
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+

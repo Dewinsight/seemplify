@@ -1,0 +1,451 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Users\\User\\AppData\\Local\\Programs\\node-v24.19.0-win-x64\\node.exe",
+      "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "e2e/apple-design.spec.ts",
+      "e2e/appraisal-navigation-accessibility.spec.ts",
+      "--grep",
+      "390px cycle|shared Tailwind|desktop navigation|mobile navigation|press feedback|reduced motion|portal feedback|sign-in error",
+      "--reporter=line,json",
+      "--output=E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-focused-replay"
+    ],
+    "configFile": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\playwright.config.ts",
+    "rootDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/candidate-b79d3ffcd1ce-localdeps/performance/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/candidate-focused-replay",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chrome",
+        "name": "chrome",
+        "testDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/candidate-b79d3ffcd1ce-localdeps/performance/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx next dev --webpack -p 5035 -H 127.0.0.1",
+      "url": "http://127.0.0.1:5035",
+      "reuseExistingServer": true,
+      "timeout": 120000,
+      "env": {
+        "PERFORMANCE_E2E_PORT": "5035",
+        "NEXT_PUBLIC_API_URL": "http://127.0.0.1:5035/__mock-api",
+        "NEXT_PUBLIC_WS_URL": "ws://127.0.0.1:5035/__mock-ws"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "apple-design.spec.ts",
+      "file": "apple-design.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "shared Tailwind and MUI controls and portal surfaces agree in light mode",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2107,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:20.288Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-96416e4ce4349ce6e478",
+          "file": "apple-design.spec.ts",
+          "line": 104,
+          "column": 7
+        },
+        {
+          "title": "shared Tailwind and MUI controls and portal surfaces agree in dark mode",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2105,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:22.616Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-ce7c87acabb24a490e90",
+          "file": "apple-design.spec.ts",
+          "line": 104,
+          "column": 7
+        },
+        {
+          "title": "desktop navigation opens from the keyboard and restores focus on Escape",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1453,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:24.729Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-ef7340fe541a8afd0e12",
+          "file": "apple-design.spec.ts",
+          "line": 142,
+          "column": 5
+        },
+        {
+          "title": "mobile navigation contains focus, closes safely, and keeps narrow content usable",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1662,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:26.191Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-c6136d631e3aa3cc2d9a",
+          "file": "apple-design.spec.ts",
+          "line": 172,
+          "column": 5
+        },
+        {
+          "title": "press feedback is immediate and releasing away cancels the action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1351,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:27.861Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-f05adb3e1ec6c888734a",
+          "file": "apple-design.spec.ts",
+          "line": 211,
+          "column": 5
+        },
+        {
+          "title": "reduced motion and material preferences retain readable interactive controls",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 1362,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"none\"\u001b[39m\nReceived: \u001b[31m\"blur(20px) saturate(1.4)\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"none\"\u001b[39m\nReceived: \u001b[31m\"blur(20px) saturate(1.4)\"\u001b[39m\n    at E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\apple-design.spec.ts:255:27",
+                    "location": {
+                      "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\apple-design.spec.ts",
+                      "column": 27,
+                      "line": 255
+                    },
+                    "snippet": "  253 |       return { blur: style.backdropFilter, alpha: components.length > 3 ? components[3] : 1, border: parseFloat(style.borderBottomWidth) };\n  254 |     });\n> 255 |     expect(material.blur).toBe('none');\n      |                           ^\n  256 |     expect(material.alpha).toBeGreaterThanOrEqual(0.95);\n  257 |     expect(material.border).toBeGreaterThan(0);\n  258 |     await page.screenshot({ path: info.outputPath(`${preference.file}.png`) });"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\apple-design.spec.ts",
+                        "column": 27,
+                        "line": 255
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"none\"\u001b[39m\nReceived: \u001b[31m\"blur(20px) saturate(1.4)\"\u001b[39m\n\n  253 |       return { blur: style.backdropFilter, alpha: components.length > 3 ? components[3] : 1, border: parseFloat(style.borderBottomWidth) };\n  254 |     });\n> 255 |     expect(material.blur).toBe('none');\n      |                           ^\n  256 |     expect(material.alpha).toBeGreaterThanOrEqual(0.95);\n  257 |     expect(material.border).toBeGreaterThan(0);\n  258 |     await page.screenshot({ path: info.outputPath(`${preference.file}.png`) });\n    at E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\apple-design.spec.ts:255:27"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:29.220Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-focused-replay\\apple-design-reduced-motio-9e189-adable-interactive-controls-chrome\\test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-focused-replay\\apple-design-reduced-motio-9e189-adable-interactive-controls-chrome\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-focused-replay\\apple-design-reduced-motio-9e189-adable-interactive-controls-chrome\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\apple-design.spec.ts",
+                    "column": 27,
+                    "line": 255
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-b181ca199d608e1de2f5",
+          "file": "apple-design.spec.ts",
+          "line": 230,
+          "column": 5
+        },
+        {
+          "title": "a portal feedback failure preserves the draft and recovery controls",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1485,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:31.064Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-41811f032a1e650ef57a",
+          "file": "apple-design.spec.ts",
+          "line": 263,
+          "column": 5
+        },
+        {
+          "title": "sign-in error and an incomplete Identity handoff expose usable recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1309,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:32.714Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-ce209fd0d21757979f3d",
+          "file": "apple-design.spec.ts",
+          "line": 285,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "appraisal-navigation-accessibility.spec.ts",
+      "file": "appraisal-navigation-accessibility.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "390px cycle and fallback appraisal phases fit and Final Rating is reachable by keyboard",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1789,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T23:59:34.043Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6a76c62f1b425a96de71-e0f53bc15dabd37c2bc6",
+          "file": "appraisal-navigation-accessibility.spec.ts",
+          "line": 76,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-20T23:59:19.771Z",
+    "duration": 16226.282000000001,
+    "expected": 8,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "checkedAt": "2026-10-21T00:04:04.667Z",
+  "intendedTree": "b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0",
+  "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "build": "isolated-default-turbopack-production",
+  "server": "http://127.0.0.1:5035",
+  "fixture": "Existing journey report with required synthetic participant identities",
+  "checks": [
+    {
+      "name": "print report retains text and hides print action",
+      "passed": true,
+      "computed": {
+        "background": "rgb(16, 17, 20)",
+        "foreground": "rgb(245, 245, 247)"
+      }
+    }
+  ],
+  "errors": []
+}

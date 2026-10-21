@@ -1,0 +1,220 @@
+{
+  "capturedAt": "2026-10-21T00:41:40.069Z",
+  "baseURL": "http://127.0.0.1:5035",
+  "sourceTree": "0edbadf7d189e26851f6a4ea68e58967500c6d56",
+  "sourceBase": "81212b2ae4528847d41f682af00bdb2e7810c491",
+  "sourceRevision": "candidate-tree-0edbadf7d189e26851f6a4ea68e58967500c6d56",
+  "candidatePaths": {
+    "candidatePath": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps",
+    "sourcePaths": [
+      "performance/frontend/app/admin/reports/page.tsx",
+      "performance/frontend/app/appraisals/[appraisalId]/page.tsx",
+      "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ChatInterface.tsx",
+      "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ConversationalAssessment.tsx",
+      "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/PhaseProgress.tsx",
+      "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ReportPreview.tsx",
+      "performance/frontend/app/appraisals/[appraisalId]/self-assessment/page.tsx",
+      "performance/frontend/app/appraisals/page.tsx",
+      "performance/frontend/app/dashboard/page.tsx",
+      "performance/frontend/app/development/page.tsx",
+      "performance/frontend/app/feedback/page.tsx",
+      "performance/frontend/app/globals.css",
+      "performance/frontend/app/layout.tsx",
+      "performance/frontend/app/login/page.tsx",
+      "performance/frontend/app/one-on-ones/page.tsx",
+      "performance/frontend/app/recognition/page.tsx",
+      "performance/frontend/app/reviews/page.tsx",
+      "performance/frontend/app/team/[userId]/page.tsx",
+      "performance/frontend/app/team/appraisals/page.tsx",
+      "performance/frontend/app/team/feedback/page.tsx",
+      "performance/frontend/app/team/okrs/page.tsx",
+      "performance/frontend/app/team/reviews/page.tsx",
+      "performance/frontend/app/theme.ts",
+      "performance/frontend/app/tutorial/page.tsx",
+      "performance/frontend/components/Layout.tsx",
+      "performance/frontend/components/PageGuide.tsx",
+      "performance/frontend/components/appraisals/AppraisalNativeCall.tsx",
+      "performance/frontend/components/appraisals/ManagerReviewWorkspace.tsx",
+      "performance/frontend/components/competency/CompetencyPage.tsx",
+      "performance/frontend/components/ui/badge.tsx",
+      "performance/frontend/components/ui/button.tsx",
+      "performance/frontend/components/ui/card.tsx",
+      "performance/frontend/e2e/apple-design.spec.ts",
+      "performance/frontend/lib/performance-design.ts",
+      "performance/frontend/tailwind.config.js",
+      "performance/frontend/e2e-live/appraisal-discussion-navigation.spec.ts",
+      "performance/frontend/e2e-live/competency-role-journey.spec.ts",
+      "performance/frontend/e2e-live/feature-actions.spec.ts",
+      "performance/frontend/app/team/page.tsx",
+      "performance/frontend/e2e/people-and-teams.spec.ts",
+      "performance/frontend/components/competency/library/LibraryList.tsx"
+    ],
+    "baseMain": "81212b2ae4528847d41f682af00bdb2e7810c491",
+    "status": "Exact full source production build and13checks pass; final matched all-route visual/product gate pending",
+    "intendedTree": "0edbadf7d189e26851f6a4ea68e58967500c6d56",
+    "followupPaths": [
+      "performance/frontend/app/team/page.tsx",
+      "performance/frontend/components/competency/CompetencyPage.tsx",
+      "performance/frontend/components/competency/library/LibraryList.tsx",
+      "performance/frontend/e2e/apple-design.spec.ts",
+      "performance/frontend/e2e/people-and-teams.spec.ts"
+    ],
+    "createdAt": "2026-10-21T00:27:15.6593362Z",
+    "builtAppTree": "0edbadf7d189e26851f6a4ea68e58967500c6d56",
+    "qa": {
+      "replayPassed": 2,
+      "passed": 20,
+      "fixtureCorrection": "New test expected transient /one-on-ones/new route; existing redirect opens /one-on-ones?compose=true preserving exact recipient/name. Composer recipient assertion added.",
+      "failed": 2,
+      "replay": "followup-people-replay.json",
+      "tranche": "followup-focused-regressions.json",
+      "finalExactRun": "final-exact-focused.json",
+      "finalExactPassed": 13,
+      "finalExactFailed": 0,
+      "coverage": "9 focused shared design/recovery/competency metadata checks plus4 People scoping/readability/person-action tests"
+    },
+    "productionBuild": "final-exact-candidate-build.log",
+    "sameFullSourceTreeBuiltAndTested": true
+  },
+  "fixtureSource": "E:/GitHub/C-drive/seemplify/performance/frontend/e2e (existing unchanged helper sections)",
+  "environment": "actual isolated candidate production build, synthetic controlled browser-test API fixtures; no production deployment or provider evidence",
+  "screens": [
+    {
+      "story": "AD-11",
+      "route": "/competency/roles",
+      "kind": "library",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "growth-populated-competency--roles-desktop-light.png",
+      "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nRole library\n\nDefine the work expectations used in appraisals. Assessment roles do not change app permissions.\n\nNew role\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch roles\nSearch roles\nStatus\nActive\nStatus\nDelivery lead\n\nOccupational role profile \u00b7 Updated 18/10/2026\n\nPublished\nOpen role\nCustomer success manager\n\nOccupational role profile \u00b7 Updated 18/10/2026\n\nPublished\nOpen role",
+      "headings": [
+        "Role library"
+      ],
+      "actualURL": "http://127.0.0.1:5035/competency/roles",
+      "overflow": false,
+      "selectedNavigation": {
+        "background": "rgba(0, 0, 0, 0)",
+        "borderWidth": "2px",
+        "borderStyle": "solid",
+        "borderColor": "rgb(0, 102, 204)",
+        "height": 42.5,
+        "href": "/competency/roles"
+      },
+      "selectedFocus": {
+        "focused": true,
+        "focusVisible": true,
+        "outline": "solid",
+        "outlineWidth": "2px"
+      },
+      "aggregateRoleVersionOmitted": true
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency/roles",
+      "kind": "library",
+      "variant": "desktop-dark",
+      "width": 1440,
+      "height": 900,
+      "theme": "dark",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "growth-populated-competency--roles-desktop-dark.png",
+      "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nRole library\n\nDefine the work expectations used in appraisals. Assessment roles do not change app permissions.\n\nNew role\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch roles\nSearch roles\nStatus\nActive\nStatus\nDelivery lead\n\nOccupational role profile \u00b7 Updated 18/10/2026\n\nPublished\nOpen role\nCustomer success manager\n\nOccupational role profile \u00b7 Updated 18/10/2026\n\nPublished\nOpen role",
+      "headings": [
+        "Role library"
+      ],
+      "actualURL": "http://127.0.0.1:5035/competency/roles",
+      "overflow": false,
+      "selectedNavigation": {
+        "background": "rgba(0, 0, 0, 0)",
+        "borderWidth": "2px",
+        "borderStyle": "solid",
+        "borderColor": "rgb(100, 167, 255)",
+        "height": 42.5,
+        "href": "/competency/roles"
+      },
+      "selectedFocus": {
+        "focused": true,
+        "focusVisible": true,
+        "outline": "solid",
+        "outlineWidth": "2px"
+      },
+      "aggregateRoleVersionOmitted": true
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency/roles",
+      "kind": "library",
+      "variant": "mobile-light",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "growth-populated-competency--roles-mobile-light.png",
+      "title": "Guide\nBack to appraisals\nRole library\n\nDefine the work expectations used in appraisals. Assessment roles do not change app permissions.\n\nNew role\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch roles\nSearch roles\nStatus\nActive\nStatus\nDelivery lead\n\nOccupational role profile \u00b7 Updated 18/10/2026\n\nPublished\nOpen role\nCustomer success manager\n\nOccupational role profile \u00b7 Updated 18/10/2026\n\nPublished\nOpen role",
+      "headings": [
+        "Role library"
+      ],
+      "actualURL": "http://127.0.0.1:5035/competency/roles",
+      "overflow": false,
+      "selectedNavigation": {
+        "background": "rgba(0, 0, 0, 0)",
+        "borderWidth": "2px",
+        "borderStyle": "solid",
+        "borderColor": "rgb(0, 102, 204)",
+        "height": 42.5,
+        "href": "/competency/roles"
+      },
+      "selectedFocus": {
+        "focused": true,
+        "focusVisible": true,
+        "outline": "solid",
+        "outlineWidth": "2px"
+      },
+      "aggregateRoleVersionOmitted": true
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency/roles",
+      "kind": "library",
+      "variant": "mobile-dark",
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "growth-populated-competency--roles-mobile-dark.png",
+      "title": "Guide\nBack to appraisals\nRole library\n\nDefine the work expectations used in appraisals. Assessment roles do not change app permissions.\n\nNew role\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch roles\nSearch roles\nStatus\nActive\nStatus\nDelivery lead\n\nOccupational role profile \u00b7 Updated 18/10/2026\n\nPublished\nOpen role\nCustomer success manager\n\nOccupational role profile \u00b7 Updated 18/10/2026\n\nPublished\nOpen role",
+      "headings": [
+        "Role library"
+      ],
+      "actualURL": "http://127.0.0.1:5035/competency/roles",
+      "overflow": false,
+      "selectedNavigation": {
+        "background": "rgba(0, 0, 0, 0)",
+        "borderWidth": "2px",
+        "borderStyle": "solid",
+        "borderColor": "rgb(100, 167, 255)",
+        "height": 42.5,
+        "href": "/competency/roles"
+      },
+      "selectedFocus": {
+        "focused": true,
+        "focusVisible": true,
+        "outline": "solid",
+        "outlineWidth": "2px"
+      },
+      "aggregateRoleVersionOmitted": true
+    }
+  ],
+  "fixtureSupplement": "Read-only aggregate GET roles response uses id/name/revision/currentVersionId/updatedAt from the existing list contract; no numeric version field, API join, write or fabricated version. Both matched baseline and current use identical synthetic role records."
+}

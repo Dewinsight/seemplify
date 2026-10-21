@@ -1,0 +1,40 @@
+# Growth and competency visual review
+
+Reviewed by PM 2 / UI-UX 2 on 21 October 2026. Disposition: **AD-07 to AD-12 presentation accepted locally, including the later matched comparison of current tree `7eb9c096330d19b1a854c0f45fa15d0583f09c13`.** The retained PM's [product acceptance](PRODUCT-IMPLEMENTATION-ACCEPTANCE.md) records the initial `81212b2a`/`d942` release approval and subsequent gates. Functional QA, deployment and authenticated production acceptance retain their separate receipts.
+
+## Later matched comparison and current visual gate
+
+The later user request triggered a fresh, fair audit of all 35 owned growth routes. Matched pre-redesign `a93ddbf9` and current built tree `7eb9c096330d19b1a854c0f45fa15d0583f09c13` use the same fixture records, actors and states. [VISUAL-COMPARISON-GROWTH](VISUAL-COMPARISON-GROWTH.md) records all 35 decisions: 22 visible hierarchy/affordance improvements and 13 modest refinements, with unchanged structures and concept gaps stated explicitly. All 40 current growth captures—35 route views, four populated-role variants and one strategy proof—have zero recorded errors, failed reads or page overflow.
+
+Populated desktop/mobile library review justified retaining the existing readable cards. It also prompted the approved underlined current navigation and truthful version metadata: only actual finite versions are displayed; missing aggregate role/framework versions remain omitted. The strategy subtitle now correctly says “Strategic outcome criteria”. Four-mode selection/href/target/focus/omitted-version checks and the exact strategy-label/version proof passed. [Current route receipt](evidence/final-comparison/growth-capture.json), [role checks](evidence/final-comparison/growth-populated-concept.json), [strategy proof](evidence/final-comparison/growth-strategy-proof.json).
+
+The current candidate is based on separately committed `d1b0307c`; its AI-assessment analytics are preserved and are not introduced by this design programme. Earlier `b79`, `f26` and `0edbad` screenshots retain their own provenance. Final functional QA, commit, deployment and authenticated live claims belong to the architect's release evidence.
+
+## Initial candidate and method
+
+The actual isolated production Next build at `http://127.0.0.1:5035` used source tree `b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0`, based on `a93ddbf9f5274b2083818a6c60f78c9dd49c92f5`. Exact included paths are in the [candidate manifest](evidence/candidate-manifest.json). The browser used controlled synthetic transport from existing tests plus explicit read-only data shapes derived from current editors. It did not contact real identity, AI, calendar or media providers.
+
+[Authoritative capture receipt](evidence/after/capture-02-receipt.json): **59 images** covering 35 route entries at desktop light and eight representative routes each at desktop dark, mobile light and mobile dark. No route timed out or remained at the auth guard; no failed API reads, uncaught browser errors or page-level horizontal overflow were recorded. The earlier development compilation/auth failures remain in [their separate receipt](evidence/after/capture-02-preliminary-dev-receipt.json).
+
+All ten growth contact sheets were inspected. Full-size mobile assessment and published competency report were additionally inspected. Contact previews retain the original PNG and mark any omitted middle region; they are navigation aids rather than altered evidence. The full 68-route cross-team index is [SCREEN-COVERAGE](SCREEN-COVERAGE.md).
+
+## Per-story disposition
+
+| Story | Observed visual evidence | Disposition and boundary |
+|---|---|---|
+| AD-07 Feedback, recognition, projects | Feedback populated list; compose redirect opens actual dialog; scoped Team Feedback; recognition/project empty states; feedback in both themes and compact layout | Visual treatment accepted. Recipient/audience/action hierarchy remains legible. Send, privacy threshold and persisted acknowledgement require the separate workflow tests. |
+| AD-08 Check-ins and one-to-ones | Submitted check-in; upcoming meeting list; schedule dialog; actual synthetic meeting detail; calendar disconnected/manual state; schedule dialog in dark/mobile | Visual treatment accepted. Calendar/recording notices and consent controls remain visible. No actual Nylas authorization, media, recording or transcription is claimed. |
+| AD-09 Development, coaching, support | Development scoped empty/My and Team count context; coaching attention queue; HR support review list; development/support in all four viewport/theme combinations | Visual treatment accepted. Existing plan/HR/employee business states are retained in source. Plan persistence, failed-save recovery and final outcomes remain separate QA assertions. |
+| AD-10 Talent | Review selector, frozen evidence, unassessed person, review state/action and nine-box structure; light/dark desktop/mobile | Visual treatment accepted. Frozen source evidence and human decision controls remain distinct. No new ranking or automated people decision is introduced. |
+| AD-11 Competency | All 18 route templates; empty libraries, populated role/framework/strategy/cycle editors, assessment list/workbench, settings, cohort empty state and published participant report; role library/workbench all four modes | Visual treatment accepted. Source versions, expected/observed information, manual evidence and human outcome remain legible. The original three-page PRD was read directly and mapped in DESIGN-02; full seven-combination/pilot/provider acceptance is not inferred from screenshots. |
+| AD-12 Action centre, AI, help | Empty action centre; disconnected account; AI policy surface; tutorial; AI account all four modes | Visual treatment accepted. Connection state and next action are clear; help stays secondary. Connection reads do not prove generation, and no real account connection is claimed. |
+
+## Defects, corrections and remaining checks
+
+1. Actual initial after-screen review found solid-background avatars inheriting a blue foreground, hiding icons. Explicit matching contrast text was added at affected feature callsites and re-reviewed in the production captures. The architect independently reviewed the color-only diffs; calendar/media logic was retained.
+2. The initial development captures encountered cold-compilation timeouts/auth guard screens. Those attempts were preserved and replaced by the compiled-candidate audit, which passed the rendering checks above.
+3. The architect found a compiled CSS preference-order issue. Its correction passed the separate final-candidate reduced-transparency/contrast/motion replay; see the architect's QA/review receipts. These 59 default images retain their actual `b79` source provenance.
+4. Core visual review found a Team OKRs metric-label contrast defect outside AD-07-12. The neutral-card correction passed at 5.97:1 light / 7.90:1 dark. The same screen omits the member-count parenthetical when `directReportCount` is not a finite number, retaining a real zero count; both cases passed the targeted assertions.
+5. The first targeted Team OKRs recapture passed contrast/count checks but exposed one-character mobile table wrapping. A named keyboard-focusable local horizontal region and a 760px table minimum width now preserve column readability. All four final desktop/mobile/theme views on built app tree `d9428462c2efea48cb52c55e4413636d7a7f4935` passed local scrolling, keyboard row-action reachability, readable name and page-overflow checks. PM1 accepted all four; PM2 additionally inspected full-size light mobile and dark desktop images. [Final delta receipt](evidence/after/team-okrs-delta-capture.json) preserves their source provenance; earlier rejected captures remain diagnostic evidence.
+
+The [source differential lint receipt](evidence/lane-b-lint.json) records no introduced lint findings across the checked source changes. It explicitly retains existing lint debt; it is not a clean whole-app lint certificate. Functional tests, final candidate preferences, CI, deployed revision and authenticated production acceptance have separate receipts.

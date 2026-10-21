@@ -1,0 +1,354 @@
+{
+  "capturedAt": "2026-10-20T23:47:34.647Z",
+  "baseURL": "http://127.0.0.1:5025",
+  "sourceRevision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+  "workingTreeDiffSHA256": "2c946e4085ff0894f9e1d021a3ed8a02d28df28a44072cb6cf489c220f637f38",
+  "environment": "actual local Next app, synthetic existing browser-test API fixtures; after redesign working tree plus preserved calendar changes; no production evidence",
+  "screens": [
+    {
+      "story": "AD-07",
+      "route": "/feedback",
+      "kind": "main",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "feedback-desktop-light.png",
+      "title": "Feedback guide\n\nUse this page to request, give, and review feedback.\n\nOpen guide\nTutorial\nFeedback\n\nRecognize good work and share useful coaching while the context is still fresh.\n\nGive feedback\nAll\nReceived\nSent\nRequests\nRequested by me\nAbout me\n\nTaylor Reed\n\n8 Aug 2026\nPraise\n\nYou kept the launch decision clear and well supported.\n\nCustomer launch\nprivate\nAcknowledge\nUse in appraisal\n\nAnonymous\n\n7 Aug 2026\nGeneral\n\nAnonymous cohort feedback remains private.\n\nprivate\nAcknowledge",
+      "headings": [
+        "Feedback"
+      ],
+      "actualURL": "http://127.0.0.1:5025/feedback",
+      "overflow": false
+    },
+    {
+      "story": "AD-07",
+      "route": "/feedback/new",
+      "kind": "main",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "feedback--new-desktop-light.png",
+      "title": "Feedback guide\n\nUse this page to request, give, and review feedback.\n\nOpen guide\nTutorial\nFeedback\n\nRecognize good work and share useful coaching while the context is still fresh.\n\nGive feedback\nAll\nReceived\nSent\nRequests\nRequested by me\nAbout me\n\nTaylor Reed\n\n8 Aug 2026\nPraise\n\nYou kept the launch decision clear and well supported.\n\nCustomer launch\nprivate\nAcknowledge\nUse in appraisal\n\nAnonymous\n\n7 Aug 2026\nGeneral\n\nAnonymous cohort feedback remains private.\n\nprivate\nAcknowledge",
+      "headings": [],
+      "actualURL": "http://127.0.0.1:5025/feedback?compose=true",
+      "overflow": false
+    },
+    {
+      "story": "AD-07",
+      "route": "/team/feedback",
+      "kind": "main",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "team--feedback-desktop-light.png",
+      "title": "Team Feedback guide\n\nUse this page to review and manage feedback activity across your team.\n\nOpen guide\nTutorial\nTeam Feedback\n\nMonitor feedback received by your direct reports\n\n0\n\nPositive Feedback\n\n0\n\nConstructive Feedback\n\nTeam Sentiment Score\n\n0%\nFeedback by Team Member\nNo feedback data available for your team yet.",
+      "headings": [
+        "Team Feedback",
+        "0",
+        "0",
+        "0%",
+        "Feedback by Team Member"
+      ],
+      "actualURL": "http://127.0.0.1:5025/team/feedback",
+      "overflow": false
+    },
+    {
+      "story": "AD-07",
+      "route": "/recognition",
+      "kind": "phase2",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "recognition-desktop-light.png",
+      "title": "Recognition guide\n\nThank a colleague for a specific contribution and choose the right audience.\n\nOpen guide\nTutorial\nRecognition\n\nThank colleagues for specific contributions and connect the message to company values.\n\nRecognize a colleague\nRecognition supports culture and coaching. It is never converted into an appraisal score or employee ranking.\nOrganization feed\nReceived\nSent\n\nNo recognition here yet\n\nSpecific, timely appreciation helps people understand which contributions matter.",
+      "headings": [
+        "Recognition"
+      ],
+      "actualURL": "http://127.0.0.1:5025/recognition",
+      "overflow": false
+    },
+    {
+      "story": "AD-07",
+      "route": "/project-feedback",
+      "kind": "phase2",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "auth-loading-only",
+      "file": "project-feedback-desktop-light.png",
+      "title": "Checking your session…",
+      "headings": [],
+      "actualURL": "http://127.0.0.1:5025/project-feedback",
+      "overflow": false
+    },
+    {
+      "story": "AD-08",
+      "route": "/check-ins",
+      "kind": "main",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "check-ins-desktop-light.png",
+      "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nPerformance check-ins\n\nCapture wins, next priorities, blockers, and the support needed between formal reviews.\n\nRefresh\nNew check-in\nEmployee\nMy check-ins\nEmployee\nAll (1)\nWeekly\nFortnightly\nAd hoc\n\nWeekly check-in\n\nsubmitted\nPulse 4/5\n\n3 Aug 2026 – 10 Aug 2026\n\nWins\nShipped manager dashboard\nNext priorities\nPrepare the next release",
+      "headings": [
+        "Performance check-ins",
+        "Wins",
+        "Next priorities"
+      ],
+      "actualURL": "http://127.0.0.1:5025/check-ins",
+      "overflow": false
+    },
+    {
+      "story": "AD-08",
+      "route": "/one-on-ones",
+      "kind": "development",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "one-on-ones-desktop-light.png",
+      "title": "1:1 Meetings guide\n\nUse this page to plan, review, and follow up on 1:1 conversations.\n\nOpen guide\nTutorial\n1:1 meetings\n\nPrepare together, keep shared notes, and follow through on agreed actions.\n\nSchedule 1:1\nHide calendar account\nYour Nylas calendar account\n\nNo verified calendar connected to your account.\n\nThis is your personal calendar connection, shared with Recruiter. Connect a new email to change the account used for future invitations. Existing invitations stay on their original calendar. Disconnecting can interrupt calendar sync. Manage a running notetaker separately in its call controls.\n\nCalendar provider\nGoogle Calendar\nCalendar provider\nConnect my calendar (opens Nylas)\nCheck connection again\nUpcoming (1)\nPast calls & history (1)\nSearch displayed meetings by person or title\nSearch displayed meetings by person or title\nEmployee QA\nregular 1:1\nscheduled\n\nTue 1 Dec, 10:00\n\n30 minutes\n\nVirtual\n\nOpen call & notes\nAgenda & actions",
+      "headings": [
+        "1:1 meetings",
+        "Your Nylas calendar account",
+        "Employee QA"
+      ],
+      "actualURL": "http://127.0.0.1:5025/one-on-ones",
+      "overflow": false
+    },
+    {
+      "story": "AD-08",
+      "route": "/one-on-ones/new",
+      "kind": "development",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "auth-loading-only",
+      "file": "one-on-ones--new-desktop-light.png",
+      "title": "Checking your session…",
+      "headings": [],
+      "actualURL": "http://127.0.0.1:5025/one-on-ones/new",
+      "overflow": false
+    },
+    {
+      "story": "AD-08",
+      "route": "/one-on-ones/507f1f77bcf86cd799439011",
+      "kind": "calendar",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [
+        "page.goto: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5025/one-on-ones/507f1f77bcf86cd799439011\", waiting until \"domcontentloaded\"\u001b[22m\n"
+      ],
+      "failedResponses": [],
+      "status": "capture-failed",
+      "file": ""
+    },
+    {
+      "story": "AD-09",
+      "route": "/development",
+      "kind": "development",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [
+        "page.goto: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5025/development\", waiting until \"domcontentloaded\"\u001b[22m\n"
+      ],
+      "failedResponses": [],
+      "status": "capture-failed",
+      "file": ""
+    },
+    {
+      "story": "AD-09",
+      "route": "/coaching",
+      "kind": "phase2",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [
+        "page.goto: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5025/coaching\", waiting until \"domcontentloaded\"\u001b[22m\n"
+      ],
+      "failedResponses": [],
+      "status": "capture-failed",
+      "file": ""
+    },
+    {
+      "story": "AD-09",
+      "route": "/support-plans",
+      "kind": "phase2",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [
+        "page.goto: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5025/support-plans\", waiting until \"domcontentloaded\"\u001b[22m\n"
+      ],
+      "failedResponses": [],
+      "status": "capture-failed",
+      "file": ""
+    },
+    {
+      "story": "AD-10",
+      "route": "/talent",
+      "kind": "phase3",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [
+        "page.goto: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5025/talent\", waiting until \"domcontentloaded\"\u001b[22m\n"
+      ],
+      "failedResponses": [],
+      "status": "capture-failed",
+      "file": ""
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency",
+      "kind": "library",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "competency-desktop-light.png",
+      "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nCompetency assessments\n\nAssess existing employees against clear role expectations, with evidence, human feedback and a preserved result.\n\nAssessment settings\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nEnabled\n\nYour existing appraisals and identity permissions are retained.\n\nOpen assessments\nPrepare an assessment\n\nPublish the definitions first, then select the cycle and a role for each person in Start appraisal.\n\n1. Define competency sources\n\nPublish internal or SFIA framework versions, with native level descriptions.\n\n1 published framework versions\n\nOpen frameworks\n\n2. Define strategic outcomes\n\nCreate strategy criteria or capture an existing authorised objective.\n\n0 published strategy versions\n\nOpen strategies\n\n3. Set role expectations\n\nCreate or upload roles, then map responsibilities to expected competencies and outcomes.\n\n1 published role versions\n\nOpen roles\n\n4. Configure an assessment cycle\n\nSelect inputs, role versions, explicit scoring conversions and suitability bands.\n\n0 published cycles\n\nOpen cycles\nStart appraisals with role comparison\n\nChoose people, assign eligible reviewers and select the exact published role versions.\n\nStart appraisal\nManual assessment remains available\n\nReview evidence and record findings without AI or recorded calls. Optional integrations require the orga",
+      "headings": [
+        "Competency assessments",
+        "Prepare an assessment",
+        "Start appraisals with role comparison",
+        "Manual assessment remains available"
+      ],
+      "actualURL": "http://127.0.0.1:5025/competency",
+      "overflow": false
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency/roles/new",
+      "kind": "library",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "auth-loading-only",
+      "file": "competency--roles--new-desktop-light.png",
+      "title": "Checking your session…",
+      "headings": [],
+      "actualURL": "http://127.0.0.1:5025/competency/roles/new",
+      "overflow": false
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency/roles",
+      "kind": "library",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "auth-loading-only",
+      "file": "competency--roles-desktop-light.png",
+      "title": "Checking your session…",
+      "headings": [],
+      "actualURL": "http://127.0.0.1:5025/competency/roles",
+      "overflow": false
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency/roles/created-role",
+      "kind": "library",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "competency--roles--created-role-desktop-light.png",
+      "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nDelivery lead\n\nDefine responsibilities and expectations. Assessment roles describe work; they do not change app permissions.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nOverview\nExpectations (1)\nVersions\nDraft v1\nRole name *\nRole name *\nSummary\nSummary\nResponsibilities\nResponsibility 1\nResponsibility 1\nRemove\nAdd responsibility\nRequirements\n\nKnowledge, experience or outcomes expected in this role.\n\nAdd requirement\n\nDraft ready to edit\n\nSave draft\nReview and publish\nArchive role",
+      "headings": [
+        "Delivery lead",
+        "Responsibilities",
+        "Requirements"
+      ],
+      "actualURL": "http://127.0.0.1:5025/competency/roles/created-role",
+      "overflow": false
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency/frameworks",
+      "kind": "library",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "competency--frameworks-desktop-light.png",
+      "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nCompetency frameworks\n\nKeep each framework’s competencies, native levels and published versions together.\n\nNew framework\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch frameworks\nSearch frameworks\nStatus\nActive\nStatus\nNo frameworks yet\n\nCreate a framework to get started.",
+      "headings": [
+        "Competency frameworks",
+        "No frameworks yet"
+      ],
+      "actualURL": "http://127.0.0.1:5025/competency/frameworks",
+      "overflow": false
+    },
+    {
+      "story": "AD-11",
+      "route": "/competency/frameworks/new",
+      "kind": "library",
+      "variant": "desktop-light",
+      "width": 1440,
+      "height": 900,
+      "theme": "light",
+      "errors": [],
+      "failedResponses": [],
+      "status": "captured",
+      "file": "competency--frameworks--new-desktop-light.png",
+      "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew framework\n\nDefine source-specific competencies and native levels. Matching labels in different frameworks do not imply equivalent proficiency.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (0)\nNative levels (0)\nDraft\nFramework name *\nFramework name *\nSource\nInternal framework\nSource\nSource and provenance\nSource and provenance\nLicence / ownership provenance\nLicence / ownership provenance\n\nUnsaved draft\n\nSave draft",
+      "headings": [
+        "New framework"
+      ],
+      "actualURL": "http://127.0.0.1:5025/competency/frameworks/new",
+      "overflow": false
+    }
+  ]
+}

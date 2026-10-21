@@ -1,0 +1,824 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Users\\User\\AppData\\Local\\Programs\\node-v24.19.0-win-x64\\node.exe",
+      "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--config",
+      "playwright.live.config.ts",
+      "feature-actions.spec.ts",
+      "competency-role-journey.spec.ts",
+      "appraisal-discussion-navigation.spec.ts",
+      "--reporter=line,json",
+      "--output=E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/combined-final-realapi-results"
+    ],
+    "configFile": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\playwright.live.config.ts",
+    "rootDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/realapi-562fad136a65/performance/frontend/e2e-live",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/combined-final-realapi-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "real-api-chrome",
+        "name": "real-api-chrome",
+        "testDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/realapi-562fad136a65/performance/frontend/e2e-live",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 120000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "appraisal-discussion-navigation.spec.ts",
+      "file": "appraisal-discussion-navigation.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "custom manual appraisal exposes its actual discussion stage and preserves completed discussion reading",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2775,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:07.900Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "21946b85835817ba9133-a3ed35ac8cde090fa9e9",
+          "file": "appraisal-discussion-navigation.spec.ts",
+          "line": 13,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "competency-role-journey.spec.ts",
+      "file": "competency-role-journey.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "admin configures a role; selected manager assesses; employee supplies evidence and receives the scoped final report",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 17742,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:10.848Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "760eef2f77c99005a261-3e90dcc853bd79a90372",
+          "file": "competency-role-journey.spec.ts",
+          "line": 50,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "feature-actions.spec.ts",
+      "file": "feature-actions.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "HR creates and saves two organization OKRs in the browser",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5426,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:28.610Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-75bbe45ed56acd50962a",
+          "file": "feature-actions.spec.ts",
+          "line": 58,
+          "column": 5
+        },
+        {
+          "title": "employee aligns an existing draft in its own period, submits it, and manager approves it",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3881,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:34.043Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-751d253a44ccdd38a3bb",
+          "file": "feature-actions.spec.ts",
+          "line": 81,
+          "column": 5
+        },
+        {
+          "title": "employee sends feedback from the real colleague picker",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1778,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:37.931Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-014bc67e7f8808401ada",
+          "file": "feature-actions.spec.ts",
+          "line": 111,
+          "column": 5
+        },
+        {
+          "title": "hr_manager exact-email feedback selection persists the intended recipient despite unrelated direct reports",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 6627,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveValue\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('dialog', { name: 'Give feedback' }).getByRole('combobox', { name: /Recipient/ })\nExpected: \u001b[32m\"Acceptance employee\"\u001b[39m\nReceived: \u001b[31m\"employee@example.test\"\u001b[39m\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveValue\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Give feedback' }).getByRole('combobox', { name: /Recipient/ })\u001b[22m\n\u001b[2m    14 × locator resolved to <input id=\"_r_8_\" required=\"\" type=\"text\" role=\"combobox\" autocomplete=\"off\" spellcheck=\"false\" aria-invalid=\"false\" aria-expanded=\"true\" autocapitalize=\"none\" aria-autocomplete=\"list\" value=\"employee@example.test\" aria-controls=\"_r_8_-listbox\" placeholder=\"Search by name or email\" class=\"MuiInputBase-input MuiOutlinedInput-input MuiInputBase-inputAdornedEnd MuiAutocomplete-input MuiAutocomplete-inputFocused mui-1hcykkc\"/>\u001b[22m\n\u001b[2m       - unexpected value \"employee@example.test\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveValue\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('dialog', { name: 'Give feedback' }).getByRole('combobox', { name: /Recipient/ })\nExpected: \u001b[32m\"Acceptance employee\"\u001b[39m\nReceived: \u001b[31m\"employee@example.test\"\u001b[39m\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveValue\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Give feedback' }).getByRole('combobox', { name: /Recipient/ })\u001b[22m\n\u001b[2m    14 × locator resolved to <input id=\"_r_8_\" required=\"\" type=\"text\" role=\"combobox\" autocomplete=\"off\" spellcheck=\"false\" aria-invalid=\"false\" aria-expanded=\"true\" autocapitalize=\"none\" aria-autocomplete=\"list\" value=\"employee@example.test\" aria-controls=\"_r_8_-listbox\" placeholder=\"Search by name or email\" class=\"MuiInputBase-input MuiOutlinedInput-input MuiInputBase-inputAdornedEnd MuiAutocomplete-input MuiAutocomplete-inputFocused mui-1hcykkc\"/>\u001b[22m\n\u001b[2m       - unexpected value \"employee@example.test\"\u001b[22m\n\n    at E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\e2e-live\\feature-actions.spec.ts:139:29",
+                    "location": {
+                      "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\e2e-live\\feature-actions.spec.ts",
+                      "column": 29,
+                      "line": 139
+                    },
+                    "snippet": "  137 |     await recipient.press('ArrowDown');\n  138 |     await recipient.press('Enter');\n> 139 |     await expect(recipient).toHaveValue('Acceptance employee');\n      |                             ^\n  140 |     const message = `Exact-email recipient proof ${actor} ${Date.now()}`;\n  141 |     await dialog.getByRole('textbox', { name: /^Feedback/ }).fill(message);\n  142 |     const sentRequest = page.waitForRequest(req => req.method() === 'POST' && new URL(req.url()).pathname === '/api/feedback');"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\e2e-live\\feature-actions.spec.ts",
+                        "column": 29,
+                        "line": 139
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveValue\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('dialog', { name: 'Give feedback' }).getByRole('combobox', { name: /Recipient/ })\nExpected: \u001b[32m\"Acceptance employee\"\u001b[39m\nReceived: \u001b[31m\"employee@example.test\"\u001b[39m\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveValue\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Give feedback' }).getByRole('combobox', { name: /Recipient/ })\u001b[22m\n\u001b[2m    14 × locator resolved to <input id=\"_r_8_\" required=\"\" type=\"text\" role=\"combobox\" autocomplete=\"off\" spellcheck=\"false\" aria-invalid=\"false\" aria-expanded=\"true\" autocapitalize=\"none\" aria-autocomplete=\"list\" value=\"employee@example.test\" aria-controls=\"_r_8_-listbox\" placeholder=\"Search by name or email\" class=\"MuiInputBase-input MuiOutlinedInput-input MuiInputBase-inputAdornedEnd MuiAutocomplete-input MuiAutocomplete-inputFocused mui-1hcykkc\"/>\u001b[22m\n\u001b[2m       - unexpected value \"employee@example.test\"\u001b[22m\n\n\n  137 |     await recipient.press('ArrowDown');\n  138 |     await recipient.press('Enter');\n> 139 |     await expect(recipient).toHaveValue('Acceptance employee');\n      |                             ^\n  140 |     const message = `Exact-email recipient proof ${actor} ${Date.now()}`;\n  141 |     await dialog.getByRole('textbox', { name: /^Feedback/ }).fill(message);\n  142 |     const sentRequest = page.waitForRequest(req => req.method() === 'POST' && new URL(req.url()).pathname === '/api/feedback');\n    at E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\e2e-live\\feature-actions.spec.ts:139:29"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:39.716Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\combined-final-realapi-results\\feature-actions-hr-manager-6e140-te-unrelated-direct-reports-real-api-chrome\\test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\combined-final-realapi-results\\feature-actions-hr-manager-6e140-te-unrelated-direct-reports-real-api-chrome\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\combined-final-realapi-results\\feature-actions-hr-manager-6e140-te-unrelated-direct-reports-real-api-chrome\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\e2e-live\\feature-actions.spec.ts",
+                    "column": 29,
+                    "line": 139
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-a343511fb7892971604a",
+          "file": "feature-actions.spec.ts",
+          "line": 126,
+          "column": 7
+        },
+        {
+          "title": "department_head exact-email feedback selection persists the intended recipient despite unrelated direct reports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1921,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:47.165Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-7266e0ba9c2f4dc8b0e0",
+          "file": "feature-actions.spec.ts",
+          "line": 126,
+          "column": 7
+        },
+        {
+          "title": "team_lead exact-email feedback selection persists the intended recipient despite unrelated direct reports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1886,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:49.236Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-93a6d54d210e780243de",
+          "file": "feature-actions.spec.ts",
+          "line": 126,
+          "column": 7
+        },
+        {
+          "title": "manager creates a support plan and employee acknowledges the HR-reviewed plan",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3721,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:51.128Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-098e99b05eafa086eb8b",
+          "file": "feature-actions.spec.ts",
+          "line": 153,
+          "column": 5
+        },
+        {
+          "title": "HR requests support-plan changes, manager amends the same plan, and employee acknowledges with comments",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3173,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:54.856Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-b12483099057173f8485",
+          "file": "feature-actions.spec.ts",
+          "line": 186,
+          "column": 5
+        },
+        {
+          "title": "manager finalizes a result and employee opens historical report and downloads CSV",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2109,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:58.036Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-ad0cda913606e132f1b5",
+          "file": "feature-actions.spec.ts",
+          "line": 242,
+          "column": 5
+        },
+        {
+          "title": "analytics shows unavailable goals rather than zero for a finalized unrated appraisal",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2509,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:00.153Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-9d147f36046ace0154b6",
+          "file": "feature-actions.spec.ts",
+          "line": 264,
+          "column": 5
+        },
+        {
+          "title": "HR nominates a synthetic succession candidate from active colleague search",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2255,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:02.669Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-ca4a7b6ad65a2f818d70",
+          "file": "feature-actions.spec.ts",
+          "line": 288,
+          "column": 5
+        },
+        {
+          "title": "manager launches from the three-step wizard and employee submits the manual self-assessment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5866,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:04.930Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-52946a2d2e9f9b240fa7",
+          "file": "feature-actions.spec.ts",
+          "line": 304,
+          "column": 5
+        },
+        {
+          "title": "employee saves, reloads, edits and submits the same real performance check-in draft",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2201,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:10.803Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-e4740f09d299ad9553d5",
+          "file": "feature-actions.spec.ts",
+          "line": 332,
+          "column": 5
+        },
+        {
+          "title": "manager creates a development plan including optional skill and learning fields",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1734,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:13.011Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-d39f2fad31ffb6020cf6",
+          "file": "feature-actions.spec.ts",
+          "line": 374,
+          "column": 5
+        },
+        {
+          "title": "project lead saves participants and sends a real project feedback request",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4019,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:14.752Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-2f0f7561372737e4e41c",
+          "file": "feature-actions.spec.ts",
+          "line": 390,
+          "column": 5
+        },
+        {
+          "title": "project feedback is accepted, acknowledged and selected as real appraisal evidence visible to its reviewer until removed",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6413,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:18.778Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-e3ef3ed8e222384b728b",
+          "file": "feature-actions.spec.ts",
+          "line": 409,
+          "column": 5
+        },
+        {
+          "title": "HR records calibration decisions, completes the session and downloads the report",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2695,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:25.198Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-dbb46ab0cc1c98918dac",
+          "file": "feature-actions.spec.ts",
+          "line": 509,
+          "column": 5
+        },
+        {
+          "title": "HR downloads actual OKR and appraisal CSV exports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1614,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:27.900Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-6079bea8c2b189e39712",
+          "file": "feature-actions.spec.ts",
+          "line": 555,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-21T00:46:07.424Z",
+    "duration": 82599.97,
+    "expected": 19,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

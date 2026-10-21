@@ -1,0 +1,1676 @@
+{
+  "beforeRevision": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "beforeTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+  "currentRevision": "candidate-tree-f26f4621d538383f33eb76aeb1d5020d44f65fd4",
+  "currentTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4",
+  "rows": [
+    {
+      "template": "/feedback",
+      "before": {
+        "story": "AD-07",
+        "route": "/feedback",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-feedback-desktop-light.png",
+        "title": "Feedback guide\n\nUse this page to request, give, and review feedback.\n\nOpen guide\nTutorial\nFeedback\n\nRecognize good work and share useful coaching while the context is still fresh.\n\nGive feedback\nAll\nReceived\nSent\nRequests\nRequested by me\nAbout me\n\nTaylor Reed\n\n8 Aug 2026\nPraise\n\nYou kept the launch decision clear and well supported.\n\nCustomer launch\nprivate\nAcknowledge\nUse in appraisal\n\nAnonymous\n\n7 Aug 2026\nGeneral\n\nAnonymous cohort feedback remains private.\n\nprivate\nAcknowledge",
+        "headings": [
+          "Feedback"
+        ],
+        "actualURL": "http://127.0.0.1:5036/feedback",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-07",
+        "route": "/feedback",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-feedback-desktop-light.png",
+        "title": "Feedback guide\n\nUse this page to request, give, and review feedback.\n\nOpen guide\nTutorial\nFeedback\n\nRecognize good work and share useful coaching while the context is still fresh.\n\nGive feedback\nAll\nReceived\nSent\nRequests\nRequested by me\nAbout me\n\nTaylor Reed\n\n8 Aug 2026\nPraise\n\nYou kept the launch decision clear and well supported.\n\nCustomer launch\nprivate\nAcknowledge\nUse in appraisal\n\nAnonymous\n\n7 Aug 2026\nGeneral\n\nAnonymous cohort feedback remains private.\n\nprivate\nAcknowledge",
+        "headings": [
+          "Feedback"
+        ],
+        "actualURL": "http://127.0.0.1:5035/feedback",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-feedback-desktop-light.png",
+      "currentImage": "final-comparison/growth-feedback-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-01.jpg"
+    },
+    {
+      "template": "/feedback/new",
+      "before": {
+        "story": "AD-07",
+        "route": "/feedback/new",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-feedback--new-desktop-light.png",
+        "title": "Feedback guide\n\nUse this page to request, give, and review feedback.\n\nOpen guide\nTutorial\nFeedback\n\nRecognize good work and share useful coaching while the context is still fresh.\n\nGive feedback\nAll\nReceived\nSent\nRequests\nRequested by me\nAbout me\n\nTaylor Reed\n\n8 Aug 2026\nPraise\n\nYou kept the launch decision clear and well supported.\n\nCustomer launch\nprivate\nAcknowledge\nUse in appraisal\n\nAnonymous\n\n7 Aug 2026\nGeneral\n\nAnonymous cohort feedback remains private.\n\nprivate\nAcknowledge",
+        "headings": [],
+        "actualURL": "http://127.0.0.1:5036/feedback?compose=true",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-07",
+        "route": "/feedback/new",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-feedback--new-desktop-light.png",
+        "title": "Feedback guide\n\nUse this page to request, give, and review feedback.\n\nOpen guide\nTutorial\nFeedback\n\nRecognize good work and share useful coaching while the context is still fresh.\n\nGive feedback\nAll\nReceived\nSent\nRequests\nRequested by me\nAbout me\n\nTaylor Reed\n\n8 Aug 2026\nPraise\n\nYou kept the launch decision clear and well supported.\n\nCustomer launch\nprivate\nAcknowledge\nUse in appraisal\n\nAnonymous\n\n7 Aug 2026\nGeneral\n\nAnonymous cohort feedback remains private.\n\nprivate\nAcknowledge",
+        "headings": [],
+        "actualURL": "http://127.0.0.1:5035/feedback?compose=true",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-feedback--new-desktop-light.png",
+      "currentImage": "final-comparison/growth-feedback--new-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-01.jpg"
+    },
+    {
+      "template": "/team/feedback",
+      "before": {
+        "story": "AD-07",
+        "route": "/team/feedback",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-team--feedback-desktop-light.png",
+        "title": "Team Feedback guide\n\nUse this page to review and manage feedback activity across your team.\n\nOpen guide\nTutorial\nTeam Feedback\n\nMonitor feedback received by your direct reports\n\n0\n\nPositive Feedback\n\n0\n\nConstructive Feedback\n\nTeam Sentiment Score\n\n0%\nFeedback by Team Member\nNo feedback data available for your team yet.",
+        "headings": [
+          "Team Feedback",
+          "0",
+          "0",
+          "0%",
+          "Feedback by Team Member"
+        ],
+        "actualURL": "http://127.0.0.1:5036/team/feedback",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-07",
+        "route": "/team/feedback",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-team--feedback-desktop-light.png",
+        "title": "Team Feedback guide\n\nUse this page to review and manage feedback activity across your team.\n\nOpen guide\nTutorial\nTeam Feedback\n\nMonitor feedback received by your direct reports\n\n0\n\nPositive Feedback\n\n0\n\nConstructive Feedback\n\nTeam Sentiment Score\n\n0%\nFeedback by Team Member\nNo feedback data available for your team yet.",
+        "headings": [
+          "Team Feedback",
+          "0",
+          "0",
+          "0%",
+          "Feedback by Team Member"
+        ],
+        "actualURL": "http://127.0.0.1:5035/team/feedback",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-team--feedback-desktop-light.png",
+      "currentImage": "final-comparison/growth-team--feedback-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-02.jpg"
+    },
+    {
+      "template": "/recognition",
+      "before": {
+        "story": "AD-07",
+        "route": "/recognition",
+        "kind": "phase2",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-recognition-desktop-light.png",
+        "title": "Recognition guide\n\nThank a colleague for a specific contribution and choose the right audience.\n\nOpen guide\nTutorial\nRecognition\n\nThank colleagues for specific contributions and connect the message to company values.\n\nRecognize a colleague\nRecognition supports culture and coaching. It is never converted into an appraisal score or employee ranking.\nOrganization feed\nReceived\nSent\n\nNo recognition here yet\n\nSpecific, timely appreciation helps people understand which contributions matter.",
+        "headings": [
+          "Recognition"
+        ],
+        "actualURL": "http://127.0.0.1:5036/recognition",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-07",
+        "route": "/recognition",
+        "kind": "phase2",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-recognition-desktop-light.png",
+        "title": "Recognition guide\n\nThank a colleague for a specific contribution and choose the right audience.\n\nOpen guide\nTutorial\nRecognition\n\nThank colleagues for specific contributions and connect the message to company values.\n\nRecognize a colleague\nRecognition supports culture and coaching. It is never converted into an appraisal score or employee ranking.\nOrganization feed\nReceived\nSent\n\nNo recognition here yet\n\nSpecific, timely appreciation helps people understand which contributions matter.",
+        "headings": [
+          "Recognition"
+        ],
+        "actualURL": "http://127.0.0.1:5035/recognition",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-recognition-desktop-light.png",
+      "currentImage": "final-comparison/growth-recognition-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-02.jpg"
+    },
+    {
+      "template": "/project-feedback",
+      "before": {
+        "story": "AD-07",
+        "route": "/project-feedback",
+        "kind": "phase2",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-project-feedback-desktop-light.png",
+        "title": "Project Feedback guide\n\nCreate a project membership record and request feedback between project participants.\n\nOpen guide\nTutorial\nProject feedback\n\nRequest feedback from people who worked together on a defined project.\n\nAdd project\nProject membership controls who can request and receive project feedback. A project lead cannot add people outside the project to a request.\n\nNo projects available\n\nAdd a project and its participants before requesting feedback.",
+        "headings": [
+          "Project feedback"
+        ],
+        "actualURL": "http://127.0.0.1:5036/project-feedback",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-07",
+        "route": "/project-feedback",
+        "kind": "phase2",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-project-feedback-desktop-light.png",
+        "title": "Project Feedback guide\n\nCreate a project membership record and request feedback between project participants.\n\nOpen guide\nTutorial\nProject feedback\n\nRequest feedback from people who worked together on a defined project.\n\nAdd project\nProject membership controls who can request and receive project feedback. A project lead cannot add people outside the project to a request.\n\nNo projects available\n\nAdd a project and its participants before requesting feedback.",
+        "headings": [
+          "Project feedback"
+        ],
+        "actualURL": "http://127.0.0.1:5035/project-feedback",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-project-feedback-desktop-light.png",
+      "currentImage": "final-comparison/growth-project-feedback-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-03.jpg"
+    },
+    {
+      "template": "/check-ins",
+      "before": {
+        "story": "AD-08",
+        "route": "/check-ins",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-check-ins-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nPerformance check-ins\n\nCapture wins, next priorities, blockers, and the support needed between formal reviews.\n\nRefresh\nNew check-in\nEmployee\nMy check-ins\nEmployee\nAll (1)\nWeekly\nFortnightly\nAd hoc\n\nWeekly check-in\n\nsubmitted\nPulse 4/5\n\n3 Aug 2026 \u2013 10 Aug 2026\n\nWins\nShipped manager dashboard\nNext priorities\nPrepare the next release",
+        "headings": [
+          "Performance check-ins",
+          "Wins",
+          "Next priorities"
+        ],
+        "actualURL": "http://127.0.0.1:5036/check-ins",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-08",
+        "route": "/check-ins",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-check-ins-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nPerformance check-ins\n\nCapture wins, next priorities, blockers, and the support needed between formal reviews.\n\nRefresh\nNew check-in\nEmployee\nMy check-ins\nEmployee\nAll (1)\nWeekly\nFortnightly\nAd hoc\n\nWeekly check-in\n\nsubmitted\nPulse 4/5\n\n3 Aug 2026 \u2013 10 Aug 2026\n\nWins\nShipped manager dashboard\nNext priorities\nPrepare the next release",
+        "headings": [
+          "Performance check-ins",
+          "Wins",
+          "Next priorities"
+        ],
+        "actualURL": "http://127.0.0.1:5035/check-ins",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-check-ins-desktop-light.png",
+      "currentImage": "final-comparison/growth-check-ins-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-03.jpg"
+    },
+    {
+      "template": "/one-on-ones",
+      "before": {
+        "story": "AD-08",
+        "route": "/one-on-ones",
+        "kind": "development",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-one-on-ones-desktop-light.png",
+        "title": "1:1 Meetings guide\n\nUse this page to plan, review, and follow up on 1:1 conversations.\n\nOpen guide\nTutorial\n1:1 meetings\n\nPrepare together, keep shared notes, and follow through on agreed actions.\n\nSchedule 1:1\nHide calendar account\nYour Nylas calendar account\n\nNo verified calendar connected to your account.\n\nThis is your personal calendar connection, shared with Recruiter. Connect a new email to change the account used for future invitations. Existing invitations stay on their original calendar. Disconnecting can interrupt calendar sync. Manage a running notetaker separately in its call controls.\n\nCalendar provider\nGoogle Calendar\nCalendar provider\nConnect my calendar (opens Nylas)\nCheck connection again\nUpcoming (1)\nPast calls & history (1)\nSearch displayed meetings by person or title\nSearch displayed meetings by person or title\nEmployee QA\nregular 1:1\nscheduled\n\nTue 1 Dec, 10:00\n\n30 minutes\n\nVirtual\n\nOpen call & notes\nAgenda & actions",
+        "headings": [
+          "1:1 meetings",
+          "Your Nylas calendar account",
+          "Employee QA"
+        ],
+        "actualURL": "http://127.0.0.1:5036/one-on-ones",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-08",
+        "route": "/one-on-ones",
+        "kind": "development",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-one-on-ones-desktop-light.png",
+        "title": "1:1 Meetings guide\n\nUse this page to plan, review, and follow up on 1:1 conversations.\n\nOpen guide\nTutorial\n1:1 meetings\n\nPrepare together, keep shared notes, and follow through on agreed actions.\n\nSchedule 1:1\nHide calendar account\nYour Nylas calendar account\n\nNo verified calendar connected to your account.\n\nThis is your personal calendar connection, shared with Recruiter. Connect a new email to change the account used for future invitations. Existing invitations stay on their original calendar. Disconnecting can interrupt calendar sync. Manage a running notetaker separately in its call controls.\n\nCalendar provider\nGoogle Calendar\nCalendar provider\nConnect my calendar (opens Nylas)\nCheck connection again\nUpcoming (1)\nPast calls & history (1)\nSearch displayed meetings by person or title\nSearch displayed meetings by person or title\nEmployee QA\nregular 1:1\nscheduled\n\nTue 1 Dec, 10:00\n\n30 minutes\n\nVirtual\n\nOpen call & notes\nAgenda & actions",
+        "headings": [
+          "1:1 meetings",
+          "Your Nylas calendar account",
+          "Employee QA"
+        ],
+        "actualURL": "http://127.0.0.1:5035/one-on-ones",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-one-on-ones-desktop-light.png",
+      "currentImage": "final-comparison/growth-one-on-ones-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-04.jpg"
+    },
+    {
+      "template": "/one-on-ones/new",
+      "before": {
+        "story": "AD-08",
+        "route": "/one-on-ones/new",
+        "kind": "development",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-one-on-ones--new-desktop-light.png",
+        "title": "1:1 Meetings guide\n\nUse this page to plan, review, and follow up on 1:1 conversations.\n\nOpen guide\nTutorial\n1:1 meetings\n\nPrepare together, keep shared notes, and follow through on agreed actions.\n\nSchedule 1:1\nHide calendar account\nYour Nylas calendar account\n\nNo verified calendar connected to your account.\n\nThis is your personal calendar connection, shared with Recruiter. Connect a new email to change the account used for future invitations. Existing invitations stay on their original calendar. Disconnecting can interrupt calendar sync. Manage a running notetaker separately in its call controls.\n\nCalendar provider\nGoogle Calendar\nCalendar provider\nConnect my calendar (opens Nylas)\nCheck connection again\nUpcoming (1)\nPast calls & history (1)\nSearch displayed meetings by person or title\nSearch displayed meetings by person or title\nEmployee QA\nregular 1:1\nscheduled\n\nTue 1 Dec, 10:00\n\n30 minutes\n\nVirtual\n\nOpen call & notes\nAgenda & actions",
+        "headings": [],
+        "actualURL": "http://127.0.0.1:5036/one-on-ones?compose=true",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-08",
+        "route": "/one-on-ones/new",
+        "kind": "development",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-one-on-ones--new-desktop-light.png",
+        "title": "1:1 Meetings guide\n\nUse this page to plan, review, and follow up on 1:1 conversations.\n\nOpen guide\nTutorial\n1:1 meetings\n\nPrepare together, keep shared notes, and follow through on agreed actions.\n\nSchedule 1:1\nHide calendar account\nYour Nylas calendar account\n\nNo verified calendar connected to your account.\n\nThis is your personal calendar connection, shared with Recruiter. Connect a new email to change the account used for future invitations. Existing invitations stay on their original calendar. Disconnecting can interrupt calendar sync. Manage a running notetaker separately in its call controls.\n\nCalendar provider\nGoogle Calendar\nCalendar provider\nConnect my calendar (opens Nylas)\nCheck connection again\nUpcoming (1)\nPast calls & history (1)\nSearch displayed meetings by person or title\nSearch displayed meetings by person or title\nEmployee QA\nregular 1:1\nscheduled\n\nTue 1 Dec, 10:00\n\n30 minutes\n\nVirtual\n\nOpen call & notes\nAgenda & actions",
+        "headings": [],
+        "actualURL": "http://127.0.0.1:5035/one-on-ones?compose=true",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-one-on-ones--new-desktop-light.png",
+      "currentImage": "final-comparison/growth-one-on-ones--new-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-04.jpg"
+    },
+    {
+      "template": "/one-on-ones/[meetingId]",
+      "before": {
+        "story": "AD-08",
+        "route": "/one-on-ones/507f1f77bcf86cd799439011",
+        "kind": "calendar",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-one-on-ones--507f1f77bcf86cd799439011-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nBack to 1:1 meetings\nCalendar connection QA\n\nSynthetic Manager and Synthetic Employee\n\nTuesday, 1 December 2026 at 12:00 \u00b7 30 minutes\n\nscheduled\nCall, recording and notes\n\nMeet, review the conversation, and agree on next steps.\n\nYour Nylas calendar account\n\nNo verified calendar connected to your account.\n\nThis is your personal calendar connection, shared with Recruiter. Connect a new email to change the account used for future invitations. Existing invitations stay on their original calendar. Disconnecting can interrupt calendar sync. Manage a running notetaker separately in its call controls.\n\nCalendar provider\nGoogle Calendar\nCalendar provider\nConnect my calendar (opens Nylas)\nCheck connection again\n\nCalendar connection QA\n\n1 Dec 2026, 12:00 \u00b7 30 min\n\nCalendar meeting\nScheduled\n\nRecording off\n\nJoin call\nCopy meeting link\nSend reminder email\nAdd transcript manually\nAgreed meeting notes\nAgreed meeting notes\n\nAdd agreed meeting notes or generate AI notes before completing the call. Recording is optional.\n\nComplete meeting\nYou can complete this meeting after the scheduled start time, once the call has finished.\nCancel meeting",
+        "headings": [
+          "Calendar connection QA",
+          "Call, recording and notes",
+          "Your Nylas calendar account",
+          "Calendar connection QA1 Dec 2026, 12:00 \u00b7 30 minCalendar meetingscheduled"
+        ],
+        "actualURL": "http://127.0.0.1:5036/one-on-ones/507f1f77bcf86cd799439011",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-08",
+        "route": "/one-on-ones/507f1f77bcf86cd799439011",
+        "kind": "calendar",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-one-on-ones--507f1f77bcf86cd799439011-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nBack to 1:1 meetings\nCalendar connection QA\n\nSynthetic Manager and Synthetic Employee\n\nTuesday, 1 December 2026 at 12:00 \u00b7 30 minutes\n\nscheduled\nCall, recording and notes\n\nMeet, review the conversation, and agree on next steps.\n\nYour Nylas calendar account\n\nNo verified calendar connected to your account.\n\nThis is your personal calendar connection, shared with Recruiter. Connect a new email to change the account used for future invitations. Existing invitations stay on their original calendar. Disconnecting can interrupt calendar sync. Manage a running notetaker separately in its call controls.\n\nCalendar provider\nGoogle Calendar\nCalendar provider\nConnect my calendar (opens Nylas)\nCheck connection again\n\nCalendar connection QA\n\n1 Dec 2026, 12:00 \u00b7 30 min\n\nCalendar meeting\nScheduled\n\nRecording off\n\nJoin call\nCopy meeting link\nSend reminder email\nAdd transcript manually\nAgreed meeting notes\nAgreed meeting notes\n\nAdd agreed meeting notes or generate AI notes before completing the call. Recording is optional.\n\nComplete meeting\nYou can complete this meeting after the scheduled start time, once the call has finished.\nCancel meeting",
+        "headings": [
+          "Calendar connection QA",
+          "Call, recording and notes",
+          "Your Nylas calendar account",
+          "Calendar connection QA1 Dec 2026, 12:00 \u00b7 30 minCalendar meetingscheduled"
+        ],
+        "actualURL": "http://127.0.0.1:5035/one-on-ones/507f1f77bcf86cd799439011",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-one-on-ones--507f1f77bcf86cd799439011-desktop-light.png",
+      "currentImage": "final-comparison/growth-one-on-ones--507f1f77bcf86cd799439011-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-05.jpg"
+    },
+    {
+      "template": "/development",
+      "before": {
+        "story": "AD-09",
+        "route": "/development",
+        "kind": "development",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-development-desktop-light.png",
+        "title": "Development guide\n\nUse this page to track growth plans, capability gaps, and follow-up actions.\n\nOpen guide\nTutorial\nDevelopment plans\n\nTurn career goals into skills, practical activities, and regular progress conversations.\n\nCreate Plan\nSeemplify Learning record\n\nCourses completed with your Seemplify account are recorded here and can support a development plan.\n\nin progress\n\ncompleted\n\nOpen Learning\n\nNo synchronized courses yet. Open Learning with your Seemplify account to connect future activity.\n\nMy Plans (0)\nTeam Plans (1)\nYou don't have any development plans yet. Ask your manager to create one for you!",
+        "headings": [
+          "Development plans",
+          "Seemplify Learning record"
+        ],
+        "actualURL": "http://127.0.0.1:5036/development",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-09",
+        "route": "/development",
+        "kind": "development",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-development-desktop-light.png",
+        "title": "Development guide\n\nUse this page to track growth plans, capability gaps, and follow-up actions.\n\nOpen guide\nTutorial\nDevelopment plans\n\nTurn career goals into skills, practical activities, and regular progress conversations.\n\nCreate Plan\nSeemplify Learning record\n\nCourses completed with your Seemplify account are recorded here and can support a development plan.\n\nin progress\n\ncompleted\n\nOpen Learning\n\nNo synchronized courses yet. Open Learning with your Seemplify account to connect future activity.\n\nMy Plans (0)\nTeam Plans (1)\nYou don't have any development plans yet. Ask your manager to create one for you!",
+        "headings": [
+          "Development plans",
+          "Seemplify Learning record"
+        ],
+        "actualURL": "http://127.0.0.1:5035/development",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-development-desktop-light.png",
+      "currentImage": "final-comparison/growth-development-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-05.jpg"
+    },
+    {
+      "template": "/coaching",
+      "before": {
+        "story": "AD-09",
+        "route": "/coaching",
+        "kind": "phase2",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-coaching-desktop-light.png",
+        "title": "Manager Coaching guide\n\nUse this queue to keep manager follow-ups consistent across the team.\n\nOpen guide\nTutorial\nManager coaching\n\nA practical queue for follow-ups across goals, check-ins, 1:1s, feedback, recognition, and support plans.\n\nRefresh\nThese signals help managers remember good practices. They do not score, rank, diagnose, or make decisions about employees.\n\n1 people in scope\n\nUpdated 21/10/2026, 01:27:33\n\n100% check-in coverage\n0% 1:1 coverage\n0% feedback coverage\n0% recognition coverage\n1 at-risk goals\nEmployee\n\u200b\nEmployee\nPriority\nAll priorities\nPriority\n\nCoaching attention\n\nJordan Lee\n\nhigh\n\n1 goal needs a progress conversation\n\nOpen\n\nJordan Lee\n\nmedium\n\nNo completed 1:1 in the last 45 days\n\nOpen\nHow coverage is calculated\nCheck-in coverage: Direct reports with a submitted check-in in the last 45 days.",
+        "headings": [
+          "Manager coaching",
+          "How coverage is calculated"
+        ],
+        "actualURL": "http://127.0.0.1:5036/coaching",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-09",
+        "route": "/coaching",
+        "kind": "phase2",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-coaching-desktop-light.png",
+        "title": "Manager Coaching guide\n\nUse this queue to keep manager follow-ups consistent across the team.\n\nOpen guide\nTutorial\nManager coaching\n\nA practical queue for follow-ups across goals, check-ins, 1:1s, feedback, recognition, and support plans.\n\nRefresh\nThese signals help managers remember good practices. They do not score, rank, diagnose, or make decisions about employees.\n\n1 people in scope\n\nUpdated 21/10/2026, 01:28:58\n\n100% check-in coverage\n0% 1:1 coverage\n0% feedback coverage\n0% recognition coverage\n1 at-risk goals\nEmployee\n\u200b\nEmployee\nPriority\nAll priorities\nPriority\n\nCoaching attention\n\nJordan Lee\n\nhigh\n\n1 goal needs a progress conversation\n\nOpen\n\nJordan Lee\n\nmedium\n\nNo completed 1:1 in the last 45 days\n\nOpen\nHow coverage is calculated\nCheck-in coverage: Direct reports with a submitted check-in in the last 45 days.",
+        "headings": [
+          "Manager coaching",
+          "How coverage is calculated"
+        ],
+        "actualURL": "http://127.0.0.1:5035/coaching",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-coaching-desktop-light.png",
+      "currentImage": "final-comparison/growth-coaching-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-06.jpg"
+    },
+    {
+      "template": "/support-plans",
+      "before": {
+        "story": "AD-09",
+        "route": "/support-plans",
+        "kind": "phase2",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-support-plans-desktop-light.png",
+        "title": "Support Plans guide\n\nUse this page to create, review, acknowledge, and track a fair support plan.\n\nOpen guide\nTutorial\nSupport plans\n\nClear expectations, documented support, regular reviews, and a complete decision history.\n\nNew support plan\nSupport plans organize fair coaching and improvement work. They never calculate appraisal ratings or automatic employment outcomes.\n\nHR review queue\n\nPlan view\nAwaiting HR review\nPlan view\nHR review\nFormal improvement\nDelivery reliability support\n\nEmployee: Jordan Lee\n\nUpdated 11 Aug 2026\nOpen plan",
+        "headings": [
+          "Support plans",
+          "Delivery reliability support"
+        ],
+        "actualURL": "http://127.0.0.1:5036/support-plans",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-09",
+        "route": "/support-plans",
+        "kind": "phase2",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-support-plans-desktop-light.png",
+        "title": "Support Plans guide\n\nUse this page to create, review, acknowledge, and track a fair support plan.\n\nOpen guide\nTutorial\nSupport plans\n\nClear expectations, documented support, regular reviews, and a complete decision history.\n\nNew support plan\nSupport plans organize fair coaching and improvement work. They never calculate appraisal ratings or automatic employment outcomes.\n\nHR review queue\n\nPlan view\nAwaiting HR review\nPlan view\nHR review\nFormal improvement\nDelivery reliability support\n\nEmployee: Jordan Lee\n\nUpdated 11 Aug 2026\nOpen plan",
+        "headings": [
+          "Support plans",
+          "Delivery reliability support"
+        ],
+        "actualURL": "http://127.0.0.1:5035/support-plans",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-support-plans-desktop-light.png",
+      "currentImage": "final-comparison/growth-support-plans-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-06.jpg"
+    },
+    {
+      "template": "/talent",
+      "before": {
+        "story": "AD-10",
+        "route": "/talent",
+        "kind": "phase3",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-talent-desktop-light.png",
+        "title": "Talent Planning guide\n\nUse finalized appraisal evidence to run a governed talent review and maintain succession coverage.\n\nOpen guide\nTutorial\nTalent planning\n\nCalibrate potential and readiness from finalized evidence, then maintain succession coverage without automated people decisions.\n\nRefresh\nNew talent review\nFinal appraisal ratings are copied as read-only evidence. Potential, readiness, and succession decisions always require an identified manager or HR reviewer.\nTalent reviews\nSuccession coverage\nExplainable signals (1)\nTalent review\nFY26 talent review\nTalent review\nOpen\nStart HR calibration\n\nFY26 mid-year \u00b7 1 people in your visible scope\n\nNeeds assessment (1)\n\nPerformance is fixed from the appraisal; potential and readiness require a proposal.\n\nEMPLOYEE\tPERFORMANCE EVIDENCE\tDECISION\tACTION\n\n\nJordan Lee\n\nCustomer Success Manager\t4.2/5 \u00b7 Strong \u00b7 88% goals\t\nNot assessed\n\tAssess\nNine-box discussion view\n\nRows are human-assessed potential; columns use the frozen final appraisal rating. Empty cells remain empty rather than being inferred.\n\nHigh potential\nDeveloping\n\nNo people\n\nHigh potential\nEffective\n\nNo people\n\nHigh potential\nStrong\n\nNo people\n\nModerate potential\nDeveloping\n\nNo people\n\nModerate potential\nEffective\n\nNo people\n\nModerate potential\nStrong\n\nNo people\n\nFocused potential\nDeveloping\n\nNo people\n\nFocused potential\nEffective\n\nNo people\n\nFocused potential\nStrong\n\nNo people",
+        "headings": [
+          "Talent planning",
+          "Nine-box discussion view"
+        ],
+        "actualURL": "http://127.0.0.1:5036/talent",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-10",
+        "route": "/talent",
+        "kind": "phase3",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-talent-desktop-light.png",
+        "title": "Talent Planning guide\n\nUse finalized appraisal evidence to run a governed talent review and maintain succession coverage.\n\nOpen guide\nTutorial\nTalent planning\n\nCalibrate potential and readiness from finalized evidence, then maintain succession coverage without automated people decisions.\n\nRefresh\nNew talent review\nFinal appraisal ratings are copied as read-only evidence. Potential, readiness, and succession decisions always require an identified manager or HR reviewer.\nTalent reviews\nSuccession coverage\nExplainable signals (1)\nTalent review\nFY26 talent review\nTalent review\nOpen\nStart HR calibration\n\nFY26 mid-year \u00b7 1 people in your visible scope\n\nNeeds assessment (1)\n\nPerformance is fixed from the appraisal; potential and readiness require a proposal.\n\nEmployee\tPerformance evidence\tDecision\tAction\n\n\nJordan Lee\n\nCustomer Success Manager\t4.2/5 \u00b7 Strong \u00b7 88% goals\t\nNot assessed\n\tAssess\nNine-box discussion view\n\nRows are human-assessed potential; columns use the frozen final appraisal rating. Empty cells remain empty rather than being inferred.\n\nHigh potential\nDeveloping\n\nNo people\n\nHigh potential\nEffective\n\nNo people\n\nHigh potential\nStrong\n\nNo people\n\nModerate potential\nDeveloping\n\nNo people\n\nModerate potential\nEffective\n\nNo people\n\nModerate potential\nStrong\n\nNo people\n\nFocused potential\nDeveloping\n\nNo people\n\nFocused potential\nEffective\n\nNo people\n\nFocused potential\nStrong\n\nNo people",
+        "headings": [
+          "Talent planning",
+          "Nine-box discussion view"
+        ],
+        "actualURL": "http://127.0.0.1:5035/talent",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-talent-desktop-light.png",
+      "currentImage": "final-comparison/growth-talent-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-07.jpg"
+    },
+    {
+      "template": "/competency",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nCompetency assessments\n\nAssess existing employees against clear role expectations, with evidence, human feedback and a preserved result.\n\nAssessment settings\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nEnabled\n\nYour existing appraisals and identity permissions are retained.\n\nOpen assessments\nPrepare an assessment\n\nPublish the definitions first, then select the cycle and a role for each person in Start appraisal.\n\n1. Define competency sources\n\nPublish internal or SFIA framework versions, with native level descriptions.\n\n1 published framework versions\n\nOpen frameworks\n\n2. Define strategic outcomes\n\nCreate strategy criteria or capture an existing authorised objective.\n\n0 published strategy versions\n\nOpen strategies\n\n3. Set role expectations\n\nCreate or upload roles, then map responsibilities to expected competencies and outcomes.\n\n1 published role versions\n\nOpen roles\n\n4. Configure an assessment cycle\n\nSelect inputs, role versions, explicit scoring conversions and suitability bands.\n\n0 published cycles\n\nOpen cycles\nStart appraisals with role comparison\n\nChoose people, assign eligible reviewers and select the exact published role versions.\n\nStart appraisal\nManual assessment remains available\n\nReview evidence and record findings without AI or recorded calls. Optional integrations require the orga",
+        "headings": [
+          "Competency assessments",
+          "Prepare an assessment",
+          "Start appraisals with role comparison",
+          "Manual assessment remains available"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nCompetency assessments\n\nAssess existing employees against clear role expectations, with evidence, human feedback and a preserved result.\n\nAssessment settings\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nEnabled\n\nYour existing appraisals and identity permissions are retained.\n\nOpen assessments\nPrepare an assessment\n\nPublish the definitions first, then select the cycle and a role for each person in Start appraisal.\n\n1. Define competency sources\n\nPublish internal or SFIA framework versions, with native level descriptions.\n\n1 published framework versions\n\nOpen frameworks\n\n2. Define strategic outcomes\n\nCreate strategy criteria or capture an existing authorised objective.\n\n0 published strategy versions\n\nOpen strategies\n\n3. Set role expectations\n\nCreate or upload roles, then map responsibilities to expected competencies and outcomes.\n\n1 published role versions\n\nOpen roles\n\n4. Configure an assessment cycle\n\nSelect inputs, role versions, explicit scoring conversions and suitability bands.\n\n0 published cycles\n\nOpen cycles\nStart appraisals with role comparison\n\nChoose people, assign eligible reviewers and select the exact published role versions.\n\nStart appraisal\nManual assessment remains available\n\nReview evidence and record findings without AI or recorded calls. Optional integrations require the orga",
+        "headings": [
+          "Competency assessments",
+          "Prepare an assessment",
+          "Start appraisals with role comparison",
+          "Manual assessment remains available"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-07.jpg"
+    },
+    {
+      "template": "/competency/roles",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/roles",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--roles-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nRole library\n\nDefine the work expectations used in appraisals. Assessment roles do not change app permissions.\n\nNew role\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch roles\nSearch roles\nStatus\nActive\nStatus\nNo roles yet\n\nCreate a role to get started.",
+        "headings": [
+          "Role library",
+          "No roles yet"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/roles",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/roles",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--roles-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nRole library\n\nDefine the work expectations used in appraisals. Assessment roles do not change app permissions.\n\nNew role\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch roles\nSearch roles\nStatus\nActive\nStatus\nNo roles yet\n\nCreate a role to get started.",
+        "headings": [
+          "Role library",
+          "No roles yet"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/roles",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--roles-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--roles-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-08.jpg"
+    },
+    {
+      "template": "/competency/roles/new",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/roles/new",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--roles--new-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew assessment role\n\nDefine responsibilities and expectations. Assessment roles describe work; they do not change app permissions.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nHow would you like to define this role?\n\nCreate it here, or upload a role description to produce a draft you can review.\n\nCreate manually\nUpload role description",
+        "headings": [
+          "New assessment role",
+          "How would you like to define this role?"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/roles/new",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/roles/new",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--roles--new-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew assessment role\n\nDefine responsibilities and expectations. Assessment roles describe work; they do not change app permissions.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nHow would you like to define this role?\n\nCreate it here, or upload a role description to produce a draft you can review.\n\nCreate manually\nUpload role description",
+        "headings": [
+          "New assessment role",
+          "How would you like to define this role?"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/roles/new",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--roles--new-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--roles--new-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-08.jpg"
+    },
+    {
+      "template": "/competency/roles/[id]",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/roles/created-role",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--roles--created-role-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nDelivery lead\n\nDefine responsibilities and expectations. Assessment roles describe work; they do not change app permissions.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nOverview\nExpectations (1)\nVersions\nDraft v1\nRole name\u2009*\nRole name\u2009*\nSummary\nSummary\nResponsibilities\nResponsibility 1\nResponsibility 1\nRemove\nAdd responsibility\nRequirements\n\nKnowledge, experience or outcomes expected in this role.\n\nAdd requirement\n\nDraft ready to edit\n\nSave draft\nReview and publish\nArchive role",
+        "headings": [
+          "Delivery lead",
+          "Responsibilities",
+          "Requirements"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/roles/created-role",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/roles/created-role",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--roles--created-role-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nDelivery lead\n\nDefine responsibilities and expectations. Assessment roles describe work; they do not change app permissions.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nOverview\nExpectations (1)\nVersions\nDraft v1\nRole name\u2009*\nRole name\u2009*\nSummary\nSummary\nResponsibilities\nResponsibility 1\nResponsibility 1\nRemove\nAdd responsibility\nRequirements\n\nKnowledge, experience or outcomes expected in this role.\n\nAdd requirement\n\nDraft ready to edit\n\nSave draft\nReview and publish\nArchive role",
+        "headings": [
+          "Delivery lead",
+          "Responsibilities",
+          "Requirements"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/roles/created-role",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--roles--created-role-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--roles--created-role-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-09.jpg"
+    },
+    {
+      "template": "/competency/frameworks",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/frameworks",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--frameworks-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nCompetency frameworks\n\nKeep each framework\u2019s competencies, native levels and published versions together.\n\nNew framework\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch frameworks\nSearch frameworks\nStatus\nActive\nStatus\nNo frameworks yet\n\nCreate a framework to get started.",
+        "headings": [
+          "Competency frameworks",
+          "No frameworks yet"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/frameworks",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/frameworks",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--frameworks-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nCompetency frameworks\n\nKeep each framework\u2019s competencies, native levels and published versions together.\n\nNew framework\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch frameworks\nSearch frameworks\nStatus\nActive\nStatus\nNo frameworks yet\n\nCreate a framework to get started.",
+        "headings": [
+          "Competency frameworks",
+          "No frameworks yet"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/frameworks",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--frameworks-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--frameworks-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-09.jpg"
+    },
+    {
+      "template": "/competency/frameworks/new",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/frameworks/new",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--frameworks--new-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew framework\n\nDefine source-specific competencies and native levels. Matching labels in different frameworks do not imply equivalent proficiency.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (0)\nNative levels (0)\nDraft\nFramework name\u2009*\nFramework name\u2009*\nSource\nInternal framework\nSource\nSource and provenance\nSource and provenance\nLicence / ownership provenance\nLicence / ownership provenance\n\nUnsaved draft\n\nSave draft",
+        "headings": [
+          "New framework"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/frameworks/new",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/frameworks/new",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--frameworks--new-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew framework\n\nDefine source-specific competencies and native levels. Matching labels in different frameworks do not imply equivalent proficiency.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (0)\nNative levels (0)\nDraft\nFramework name\u2009*\nFramework name\u2009*\nSource\nInternal framework\nSource\nSource and provenance\nSource and provenance\nLicence / ownership provenance\nLicence / ownership provenance\n\nUnsaved draft\n\nSave draft",
+        "headings": [
+          "New framework"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/frameworks/new",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--frameworks--new-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--frameworks--new-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-10.jpg"
+    },
+    {
+      "template": "/competency/frameworks/[id]",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/frameworks/created-framework",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--frameworks--created-framework-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nLeadership\n\nDefine source-specific competencies and native levels. Matching labels in different frameworks do not imply equivalent proficiency.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (1)\nNative levels (2)\nVersions\nDraft v1\nFramework name\u2009*\nFramework name\u2009*\nSource\nInternal framework\nSource\nSource and provenance\nSource and provenance\nLicence / ownership provenance\nLicence / ownership provenance\n\nDraft ready to edit\n\nSave draft\nReview and publish",
+        "headings": [
+          "Leadership"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/frameworks/created-framework",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/frameworks/created-framework",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--frameworks--created-framework-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nLeadership\n\nDefine source-specific competencies and native levels. Matching labels in different frameworks do not imply equivalent proficiency.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (1)\nNative levels (2)\nVersions\nDraft v1\nFramework name\u2009*\nFramework name\u2009*\nSource\nInternal framework\nSource\nSource and provenance\nSource and provenance\nLicence / ownership provenance\nLicence / ownership provenance\n\nDraft ready to edit\n\nSave draft\nReview and publish",
+        "headings": [
+          "Leadership"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/frameworks/created-framework",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--frameworks--created-framework-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--frameworks--created-framework-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-10.jpg"
+    },
+    {
+      "template": "/competency/strategies",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/strategies",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--strategies-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nStrategy criteria\n\nDefine strategic outcomes or capture an authorised objective for role assessment.\n\nNew strategy\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch strategies\nSearch strategies\nStatus\nActive\nStatus\nAnnual delivery strategy\n\nConfigured assessment cycle\n\nDraft\nOpen strategy",
+        "headings": [
+          "Strategy criteria"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/strategies",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/strategies",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--strategies-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nStrategy criteria\n\nDefine strategic outcomes or capture an authorised objective for role assessment.\n\nNew strategy\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch strategies\nSearch strategies\nStatus\nActive\nStatus\nAnnual delivery strategy\n\nConfigured assessment cycle \u00b7 v1\n\nDraft\nOpen strategy",
+        "headings": [
+          "Strategy criteria"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/strategies",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--strategies-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--strategies-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-11.jpg"
+    },
+    {
+      "template": "/competency/strategies/new",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/strategies/new",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--strategies--new-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew strategy\n\nDefine strategic outcomes and assessment criteria. Numeric targets use an explicit measurement scale when mapped to a role.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (0)\nNative levels (0)\nDraft\nStrategy name\u2009*\nStrategy name\u2009*\nDescription and expected outcomes\nDescription and expected outcomes\nLink an existing objective\n\nUnsaved draft\n\nSave draft",
+        "headings": [
+          "New strategy"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/strategies/new",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/strategies/new",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--strategies--new-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew strategy\n\nDefine strategic outcomes and assessment criteria. Numeric targets use an explicit measurement scale when mapped to a role.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (0)\nNative levels (0)\nDraft\nStrategy name\u2009*\nStrategy name\u2009*\nDescription and expected outcomes\nDescription and expected outcomes\nLink an existing objective\n\nUnsaved draft\n\nSave draft",
+        "headings": [
+          "New strategy"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/strategies/new",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--strategies--new-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--strategies--new-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-11.jpg"
+    },
+    {
+      "template": "/competency/strategies/[id]",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/strategies/strategy-1",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--strategies--strategy-1-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nAnnual delivery strategy\n\nDefine strategic outcomes and assessment criteria. Numeric targets use an explicit measurement scale when mapped to a role.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (0)\nNative levels (0)\nVersions\nDraft v1\nStrategy name\u2009*\nStrategy name\u2009*\nDescription and expected outcomes\nDescription and expected outcomes\nLink an existing objective\n\nDraft ready to edit\n\nSave draft\nReview and publish",
+        "headings": [
+          "Annual delivery strategy"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/strategies/strategy-1",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/strategies/strategy-1",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--strategies--strategy-1-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nAnnual delivery strategy\n\nDefine strategic outcomes and assessment criteria. Numeric targets use an explicit measurement scale when mapped to a role.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nDefinition\nCriteria (0)\nNative levels (0)\nVersions\nDraft v1\nStrategy name\u2009*\nStrategy name\u2009*\nDescription and expected outcomes\nDescription and expected outcomes\nLink an existing objective\n\nDraft ready to edit\n\nSave draft\nReview and publish",
+        "headings": [
+          "Annual delivery strategy"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/strategies/strategy-1",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--strategies--strategy-1-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--strategies--strategy-1-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-12.jpg"
+    },
+    {
+      "template": "/competency/cycles",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/cycles",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--cycles-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nAssessment cycles\n\nChoose assessment inputs, roles, scoring and outcomes before starting staff reviews.\n\nNew cycle\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch cycles\nSearch cycles\nStatus\nActive\nStatus\nNo cycles yet\n\nCreate a cycle to get started.",
+        "headings": [
+          "Assessment cycles",
+          "No cycles yet"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/cycles",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/cycles",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--cycles-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nAssessment cycles\n\nChoose assessment inputs, roles, scoring and outcomes before starting staff reviews.\n\nNew cycle\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nSearch cycles\nSearch cycles\nStatus\nActive\nStatus\nNo cycles yet\n\nCreate a cycle to get started.",
+        "headings": [
+          "Assessment cycles",
+          "No cycles yet"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/cycles",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--cycles-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--cycles-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-12.jpg"
+    },
+    {
+      "template": "/competency/cycles/new",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/cycles/new",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--cycles--new-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew assessment cycle\n\nChoose the sources, role versions and scoring rules staff will be assessed against. Published configuration stays fixed for historical results.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\n1\nInputs & roles\n2\nScoring\n3\nOutcomes\n4\nReview\nDraft \u2014 setup may be incomplete\nCycle name\u2009*\nCycle name\u2009*\nAssessment period starts\nAssessment period starts\nAssessment period ends\nAssessment period ends\nAssessment inputs\n\nChoose one source or combine them. Internal competencies and strategy work without SFIA.\n\nSFIA\nInternal competencies\nOrganisational strategy\nAssessment role versions\n\u200b\nAssessment role versions\n\nEach participant will be assigned one of these roles during appraisal setup.\n\nUnsaved draft\n\nPrevious\nContinue\nSave draft",
+        "headings": [
+          "New assessment cycle",
+          "Assessment inputs"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/cycles/new",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/cycles/new",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--cycles--new-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nNew assessment cycle\n\nChoose the sources, role versions and scoring rules staff will be assessed against. Published configuration stays fixed for historical results.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\n1\nInputs & roles\n2\nScoring\n3\nOutcomes\n4\nReview\nDraft \u2014 setup may be incomplete\nCycle name\u2009*\nCycle name\u2009*\nAssessment period starts\nAssessment period starts\nAssessment period ends\nAssessment period ends\nAssessment inputs\n\nChoose one source or combine them. Internal competencies and strategy work without SFIA.\n\nSFIA\nInternal competencies\nOrganisational strategy\nAssessment role versions\n\u200b\nAssessment role versions\n\nEach participant will be assigned one of these roles during appraisal setup.\n\nUnsaved draft\n\nPrevious\nContinue\nSave draft",
+        "headings": [
+          "New assessment cycle",
+          "Assessment inputs"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/cycles/new",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--cycles--new-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--cycles--new-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-13.jpg"
+    },
+    {
+      "template": "/competency/cycles/[id]",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/cycles/created-cycle",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--cycles--created-cycle-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nAnnual role assessment\n\nChoose the sources, role versions and scoring rules staff will be assessed against. Published configuration stays fixed for historical results.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\n1\nInputs & roles\n2\nScoring\n3\nOutcomes\n4\nReview\nDraft \u2014 setup may be incomplete\nCycle name\u2009*\nCycle name\u2009*\nAssessment period starts\nAssessment period starts\nAssessment period ends\nAssessment period ends\nAssessment inputs\n\nChoose one source or combine them. Internal competencies and strategy work without SFIA.\n\nSFIA\nInternal competencies\nInternal competencies versions\nLeadership v1 \u2014 1 criteria\nInternal competencies versions\n\nOnly published versions are available.\n\nOrganisational strategy\nAssessment role versions\nDelivery lead v1\nAssessment role versions\n\nEach participant will be assigned one of these roles during appraisal setup.\n\nDraft ready to edit\n\nPrevious\nContinue\nSave draft",
+        "headings": [
+          "Annual role assessment",
+          "Assessment inputs"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/cycles/created-cycle",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/cycles/created-cycle",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--cycles--created-cycle-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nAnnual role assessment\n\nChoose the sources, role versions and scoring rules staff will be assessed against. Published configuration stays fixed for historical results.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\n1\nInputs & roles\n2\nScoring\n3\nOutcomes\n4\nReview\nDraft \u2014 setup may be incomplete\nCycle name\u2009*\nCycle name\u2009*\nAssessment period starts\nAssessment period starts\nAssessment period ends\nAssessment period ends\nAssessment inputs\n\nChoose one source or combine them. Internal competencies and strategy work without SFIA.\n\nSFIA\nInternal competencies\nInternal competencies versions\nLeadership v1 \u2014 1 criteria\nInternal competencies versions\n\nOnly published versions are available.\n\nOrganisational strategy\nAssessment role versions\nDelivery lead v1\nAssessment role versions\n\nEach participant will be assigned one of these roles during appraisal setup.\n\nDraft ready to edit\n\nPrevious\nContinue\nSave draft",
+        "headings": [
+          "Annual role assessment",
+          "Assessment inputs"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/cycles/created-cycle",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--cycles--created-cycle-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--cycles--created-cycle-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-13.jpg"
+    },
+    {
+      "template": "/competency/assessments",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/assessments",
+        "kind": "assessment",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--assessments-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nCompetency assessments\n\nFind your assessments, reviewers and published results.\n\nAssessment cycles\nYour assessments\n\nShowing the people you are allowed to view. Newest assessments appear first.\n\nSearch people or roles\nSearch people or roles\nStatus\nAll statuses\nStatus\nJordan Ellis\nIn progress\n\nProduct operations lead \u00b7 Version 2\n\nReviewer: Robin Reviewer\n\nCreated 18 Oct 2026, 13:00 BST \u00b7 Updated 18 Oct 2026, 13:00 BST\n\nOpen assessment workspace",
+        "headings": [
+          "Competency assessments",
+          "Your assessments",
+          "Jordan Ellis"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/assessments",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/assessments",
+        "kind": "assessment",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--assessments-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nCompetency assessments\n\nFind your assessments, reviewers and published results.\n\nAssessment cycles\nYour assessments\n\nShowing the people you are allowed to view. Newest assessments appear first.\n\nSearch people or roles\nSearch people or roles\nStatus\nAll statuses\nStatus\nJordan Ellis\nIn progress\n\nProduct operations lead \u00b7 Version 2\n\nReviewer: Robin Reviewer\n\nCreated 18 Oct 2026, 13:00 BST \u00b7 Updated 18 Oct 2026, 13:00 BST\n\nOpen assessment workspace",
+        "headings": [
+          "Competency assessments",
+          "Your assessments",
+          "Jordan Ellis"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/assessments",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--assessments-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--assessments-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-14.jpg"
+    },
+    {
+      "template": "/competency/assessments/[assessmentId]",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/assessments/assessment",
+        "kind": "assessment",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--assessments--assessment-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to assessments\nJordan Ellis\nIn progress\n\nProduct operations lead \u00b7 Role version 2\n\nAssigned assessors: Robin Reviewer \u00b7 Updated 18 Oct 2026, 13:00 BST\n\nStrategy\nView role expectations\nSave draft\nCheck completion\n\nLast saved 18 Oct 2026, 13:00 BST\n\nAssessment\nEvidence\nOral assessment\nReport\nCompletion & outcome\nActivity\nCriteria\n\n0 of 1 assessed\n\nFilter criteria\nAll\nFilter criteria\nStrategy\n\nDelivery outcomes\n\nNot started\nDelivery outcomes\n\nExpected for this role\n\n90 Completion percentage\n\nAnnual strategy \u00b7 Role version 2\nFinding status\nNot started\nFinding status\nObserved Completion percentage\nObserved Completion percentage\n\nUse 0\u2013100 on the configured scale.\n\nAssessor rationale (required)\nAssessor rationale (required)\n\nExplain how the evidence supports your finding against this role expectation.\n\nSupporting evidence (required)\n\nNo supporting evidence linked to this criterion.\n\nManage evidence\nSave draft\nNext criterion\nAssessor feedback\n\nRecord your overall feedback and development recommendations. Submitted feedback is included in the final report.\n\nNo additional assessor feedback submitted yet.\nFeedback section\nOverall assessment\nFeedback section\nAssessor feedback\nAssessor feedback\n\nThis saves submitted feedback. It does not finalise the assessment.\n\nSave assessor feedback\nAI assistance\n\nOptional suggestions use your co",
+        "headings": [
+          "Jordan Ellis",
+          "Criteria",
+          "Delivery outcomes",
+          "Expected for this role",
+          "Assessor feedback",
+          "AI assistance"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/assessments/assessment",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/assessments/assessment",
+        "kind": "assessment",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--assessments--assessment-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to assessments\nJordan Ellis\nIn progress\n\nProduct operations lead \u00b7 Role version 2\n\nAssigned assessors: Robin Reviewer \u00b7 Updated 18 Oct 2026, 13:00 BST\n\nStrategy\nView role expectations\nSave draft\nCheck completion\n\nLast saved 18 Oct 2026, 13:00 BST\n\nAssessment\nEvidence\nOral assessment\nReport\nCompletion & outcome\nActivity\nCriteria\n\n0 of 1 assessed\n\nFilter criteria\nAll\nFilter criteria\nStrategy\n\nDelivery outcomes\n\nNot started\nDelivery outcomes\n\nExpected for this role\n\n90 Completion percentage\n\nAnnual strategy \u00b7 Role version 2\nFinding status\nNot started\nFinding status\nObserved Completion percentage\nObserved Completion percentage\n\nUse 0\u2013100 on the configured scale.\n\nAssessor rationale (required)\nAssessor rationale (required)\n\nExplain how the evidence supports your finding against this role expectation.\n\nSupporting evidence (required)\n\nNo supporting evidence linked to this criterion.\n\nManage evidence\nSave draft\nNext criterion\nAssessor feedback\n\nRecord your overall feedback and development recommendations. Submitted feedback is included in the final report.\n\nNo additional assessor feedback submitted yet.\nFeedback section\nOverall assessment\nFeedback section\nAssessor feedback\nAssessor feedback\n\nThis saves submitted feedback. It does not finalise the assessment.\n\nSave assessor feedback\nAI assistance\n\nOptional suggestions use your co",
+        "headings": [
+          "Jordan Ellis",
+          "Criteria",
+          "Delivery outcomes",
+          "Expected for this role",
+          "Assessor feedback",
+          "AI assistance"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/assessments/assessment",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--assessments--assessment-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--assessments--assessment-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-14.jpg"
+    },
+    {
+      "template": "/competency/reports",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/reports",
+        "kind": "assessment",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--reports-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nCompetency reports\n\nReview completion, role gaps and comparable results within your permitted scope.\n\nAssessment cycle\nSelect assessment cycle\n\u200b\nSelect assessment cycle\nNo assessment cycles are available in your scope.",
+        "headings": [
+          "Competency reports",
+          "Assessment cycle"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/reports",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/reports",
+        "kind": "assessment",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--reports-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nCompetency reports\n\nReview completion, role gaps and comparable results within your permitted scope.\n\nAssessment cycle\nSelect assessment cycle\n\u200b\nSelect assessment cycle\nNo assessment cycles are available in your scope.",
+        "headings": [
+          "Competency reports",
+          "Assessment cycle"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/reports",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--reports-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--reports-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-15.jpg"
+    },
+    {
+      "template": "/competency/reports/[assessmentId]",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/reports/assessment",
+        "kind": "assessment",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--reports--assessment-desktop-light.png",
+        "fixtureState": "published result1, derived from existing competency-assessment published-report test",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nAssessment report\nCompetency assessment report\n\nJordan Ellis \u00b7 Product operations lead \u00b7 Role version 2\n\nReport version 1 \u00b7 Finalised 19 Oct 2026, 11:00 BST\n\nDownload PDF\nFinal outcome\nSuitable\nCalculated suggestion: Suitable\n\nFinalised by Robin Reviewer \u00b7 19 Oct 2026, 11:00 BST\n\nRole comparison\n\nFindings use the role and source versions saved when this assessment started. Native framework levels and numeric strategy measures retain their own definitions.\n\nCriterion & source\tExpected for the role\tObserved finding\tRationale & evidence\n\n\nDelivery outcomes\n\nAnnual strategy \u00b7 Source version not recorded\n\n\tNumeric target\n\n90\n\n\t\n\n80\n\nAssessed\t\n\nDelivery evidence supports 80 percent.\n\nAssessed by Not recorded \u00b7 Not recorded\nManager & assessor feedback\n\nAssessed by Robin Reviewer \u00b7 Submitted 19 Oct 2026, 10:00 BST\n\nOverall manager rating: 4\n\nImprove delivery\nAssessed by Robin Reviewer \u00b7 Submitted 19 Oct 2026, 10:00 BST\n\nManager goal comment sentinel.\n\nScore & calculation\n\nCalculated score\n\n80.00 / 100\n\nCoverage\n\n1 of 1 criteria\nSource contribution\nSource\tScore\tConfigured weight\tOverall share\nStrategy\t80.00\t1\tNot recorded\nHow this was calculated\nEvidence & record dates\n\nCreated At: 18 Oct 2026, 13:00 BST\n\nReport visibility: Assigned. Historical role and calculation versions are preserved.",
+        "headings": [
+          "Assessment report",
+          "Competency assessment report",
+          "Final outcome",
+          "Role comparison",
+          "Manager & assessor feedback",
+          "Improve delivery",
+          "Score & calculation",
+          "80.00 / 100",
+          "1 of 1 criteria",
+          "Evidence & record dates"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/reports/assessment",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/reports/assessment",
+        "kind": "assessment",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--reports--assessment-desktop-light.png",
+        "fixtureState": "published result1, derived from existing competency-assessment published-report test",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nAssessment report\nCompetency assessment report\n\nJordan Ellis \u00b7 Product operations lead \u00b7 Role version 2\n\nReport version 1 \u00b7 Finalised 19 Oct 2026, 11:00 BST\n\nDownload PDF\nFinal outcome\nSuitable\nCalculated suggestion: Suitable\n\nFinalised by Robin Reviewer \u00b7 19 Oct 2026, 11:00 BST\n\nRole comparison\n\nFindings use the role and source versions saved when this assessment started. Native framework levels and numeric strategy measures retain their own definitions.\n\nCriterion & source\tExpected for the role\tObserved finding\tRationale & evidence\n\n\nDelivery outcomes\n\nAnnual strategy \u00b7 Source version not recorded\n\n\tNumeric target\n\n90\n\n\t\n\n80\n\nAssessed\t\n\nDelivery evidence supports 80 percent.\n\nAssessed by Not recorded \u00b7 Not recorded\nManager & assessor feedback\n\nAssessed by Robin Reviewer \u00b7 Submitted 19 Oct 2026, 10:00 BST\n\nOverall manager rating: 4\n\nImprove delivery\nAssessed by Robin Reviewer \u00b7 Submitted 19 Oct 2026, 10:00 BST\n\nManager goal comment sentinel.\n\nScore & calculation\n\nCalculated score\n\n80.00 / 100\n\nCoverage\n\n1 of 1 criteria\nSource contribution\nSource\tScore\tConfigured weight\tOverall share\nStrategy\t80.00\t1\tNot recorded\nHow this was calculated\nEvidence & record dates\n\nCreated At: 18 Oct 2026, 13:00 BST\n\nReport visibility: Assigned. Historical role and calculation versions are preserved.",
+        "headings": [
+          "Assessment report",
+          "Competency assessment report",
+          "Final outcome",
+          "Role comparison",
+          "Manager & assessor feedback",
+          "Improve delivery",
+          "Score & calculation",
+          "80.00 / 100",
+          "1 of 1 criteria",
+          "Evidence & record dates"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/reports/assessment",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--reports--assessment-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--reports--assessment-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-15.jpg"
+    },
+    {
+      "template": "/competency/settings",
+      "before": {
+        "story": "AD-11",
+        "route": "/competency/settings",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--settings-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nAssessment settings\n\nControl optional processing and retention for your organisation. Manual assessment stays available when calls and AI are off.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nOptional integrations\nAllow recorded-call evidence\n\nPermits authorised assessors to link consented Nylas or native-call recordings and transcripts. Enabling this setting does not record a call or grant media access.\n\nAllow AI assessment drafts\n\nEach requester uses their own connected ChatGPT account and applicable data-sharing consent. AI suggestions are editable drafts; people make the final decision.\n\nProcessing notice\nAssessment processing notice\nAssessment processing notice\n\nExplain the purpose, who can access the material and how long it is kept. A notice is required before calls or AI can be enabled.\n\nRetention\nRecording and transcript retention (days)\nRecording and transcript retention (days)\n\nRequired for recorded-call evidence. Set a period between 1 and 3,650 days.\n\nAssessment evidence retention (days)\nAssessment evidence retention (days)\n\nRequired for AI drafts. Set a period between 1 and 3,650 days.\n\nGenerated PDF download availability (hours)\nGenerated PDF download availability (hours)\n\nBetween 1 and 168 hours. The preserved assessment result is separate from its temporary PDF download.\n\nC",
+        "headings": [
+          "Assessment settings",
+          "Optional integrations",
+          "Processing notice",
+          "Retention"
+        ],
+        "actualURL": "http://127.0.0.1:5036/competency/settings",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-11",
+        "route": "/competency/settings",
+        "kind": "library",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-competency--settings-desktop-light.png",
+        "title": "Competency assessments guide\n\nUse published role expectations, retained evidence and human judgement to complete a fair assessment.\n\nOpen guide\nTutorial\nBack to appraisals\nAssessment settings\n\nControl optional processing and retention for your organisation. Manual assessment stays available when calls and AI are off.\n\nOverview\nAssessments\nRole library\nFrameworks\nStrategy\nCycles\nOptional integrations\nAllow recorded-call evidence\n\nPermits authorised assessors to link consented Nylas or native-call recordings and transcripts. Enabling this setting does not record a call or grant media access.\n\nAllow AI assessment drafts\n\nEach requester uses their own connected ChatGPT account and applicable data-sharing consent. AI suggestions are editable drafts; people make the final decision.\n\nProcessing notice\nAssessment processing notice\nAssessment processing notice\n\nExplain the purpose, who can access the material and how long it is kept. A notice is required before calls or AI can be enabled.\n\nRetention\nRecording and transcript retention (days)\nRecording and transcript retention (days)\n\nRequired for recorded-call evidence. Set a period between 1 and 3,650 days.\n\nAssessment evidence retention (days)\nAssessment evidence retention (days)\n\nRequired for AI drafts. Set a period between 1 and 3,650 days.\n\nGenerated PDF download availability (hours)\nGenerated PDF download availability (hours)\n\nBetween 1 and 168 hours. The preserved assessment result is separate from its temporary PDF download.\n\nC",
+        "headings": [
+          "Assessment settings",
+          "Optional integrations",
+          "Processing notice",
+          "Retention"
+        ],
+        "actualURL": "http://127.0.0.1:5035/competency/settings",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-competency--settings-desktop-light.png",
+      "currentImage": "final-comparison/growth-competency--settings-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-16.jpg"
+    },
+    {
+      "template": "/action-centre",
+      "before": {
+        "story": "AD-12",
+        "route": "/action-centre",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-action-centre-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nAction centre\n\nA single place for goal decisions, acknowledgements, check-ins, feedback, and review follow-ups.\n\nRefresh\nMy actions\nNotifications\nPreferences\nOpen\nSnoozed\nCompleted\nDismissed\n\nNothing needs your attention right now.\n\nNew work will appear automatically when somebody assigns or requests something from you.",
+        "headings": [
+          "Action centre"
+        ],
+        "actualURL": "http://127.0.0.1:5036/action-centre",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-12",
+        "route": "/action-centre",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-action-centre-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nAction centre\n\nA single place for goal decisions, acknowledgements, check-ins, feedback, and review follow-ups.\n\nRefresh\nMy actions\nNotifications\nPreferences\nOpen\nSnoozed\nCompleted\nDismissed\n\nNothing needs your attention right now.\n\nNew work will appear automatically when somebody assigns or requests something from you.",
+        "headings": [
+          "Action centre"
+        ],
+        "actualURL": "http://127.0.0.1:5035/action-centre",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-action-centre-desktop-light.png",
+      "currentImage": "final-comparison/growth-action-centre-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-16.jpg"
+    },
+    {
+      "template": "/ai-account",
+      "before": {
+        "story": "AD-12",
+        "route": "/ai-account",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-ai-account-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nChatGPT account\n\nConnect once for Seemplify Recruiter, Performance, and Workspace. Each app asks separately before sending its content to OpenAI.\n\nOpenAI connection\nNot connected\n\nNo ChatGPT credentials are stored in Performance Management.\n\nRefresh\n\nClear data boundary\n\nOnly the content of an AI task you start is processed by OpenAI. Ratings and final people decisions remain human-controlled. You can revoke access at any time.\n\nConnect ChatGPT",
+        "headings": [
+          "ChatGPT account",
+          "OpenAI connection"
+        ],
+        "actualURL": "http://127.0.0.1:5036/ai-account",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-12",
+        "route": "/ai-account",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-ai-account-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nChatGPT account\n\nConnect once for Seemplify Recruiter, Performance, and Workspace. Each app asks separately before sending its content to OpenAI.\n\nOpenAI connection\nNot connected\n\nNo ChatGPT credentials are stored in Performance Management.\n\nRefresh\n\nClear data boundary\n\nOnly the content of an AI task you start is processed by OpenAI. Ratings and final people decisions remain human-controlled. You can revoke access at any time.\n\nConnect ChatGPT",
+        "headings": [
+          "ChatGPT account",
+          "OpenAI connection"
+        ],
+        "actualURL": "http://127.0.0.1:5035/ai-account",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-ai-account-desktop-light.png",
+      "currentImage": "final-comparison/growth-ai-account-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-17.jpg"
+    },
+    {
+      "template": "/settings/ai",
+      "before": {
+        "story": "AD-12",
+        "route": "/settings/ai",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-settings--ai-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nAI and ChatGPT\n\nOne ChatGPT connection is shared with Recruiter. Choose the runtime and override the model or reasoning effort for each Performance action.\n\nChatGPT connection\n\nConnect once for Seemplify Recruiter, Performance, and Workspace.\n\nNot connected\nSign in with OpenAI\nRefresh\nAI runtime\n\nLocal inference follows Control Center. ChatGPT uses the account above.\n\nWorkspace default (Local)\nLocal inference\nChatGPT",
+        "headings": [
+          "AI and ChatGPT",
+          "ChatGPT connection",
+          "AI runtime"
+        ],
+        "actualURL": "http://127.0.0.1:5036/settings/ai",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-12",
+        "route": "/settings/ai",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-settings--ai-desktop-light.png",
+        "title": "Page Guide guide\n\nUse this page to complete the next task in your performance workflow.\n\nOpen guide\nTutorial\nAI and ChatGPT\n\nOne ChatGPT connection is shared with Recruiter. Choose the runtime and override the model or reasoning effort for each Performance action.\n\nChatGPT connection\n\nConnect once for Seemplify Recruiter, Performance, and Workspace.\n\nNot connected\nSign in with OpenAI\nRefresh\nAI runtime\n\nLocal inference follows Control Center. ChatGPT uses the account above.\n\nWorkspace default (Local)\nLocal inference\nChatGPT",
+        "headings": [
+          "AI and ChatGPT",
+          "ChatGPT connection",
+          "AI runtime"
+        ],
+        "actualURL": "http://127.0.0.1:5035/settings/ai",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-settings--ai-desktop-light.png",
+      "currentImage": "final-comparison/growth-settings--ai-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-17.jpg"
+    },
+    {
+      "template": "/tutorial",
+      "before": {
+        "story": "AD-12",
+        "route": "/tutorial",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-tutorial-desktop-light.png",
+        "title": "Full Tutorial guide\n\nUse this page for the long-form walkthrough of the platform by role.\n\nOpen guide\nTutorial\nWelcome to Performance Management\n\nLearn how to use the performance management portal effectively. Choose your role below to see relevant tutorials.\n\nEvery page in the app now has its own in-context guide. Use the floating Guide button on any screen for page-specific instructions.\nAppraisals with Optional AI Support\n\nEmployees and reviewers can complete manual forms without ChatGPT. People review and approve the final ratings.\n\nSelf-Assessment: Complete the manual form or choose optional AI assistance\n\nManager Review: Record your judgment; AI insights and bias checks are optional\n\n1:1 Meetings: Record agreed notes, support and follow-up actions\n\nEmployee Guide\nManager Guide\nHR Admin Guide\nEmployee Performance Journey\n\nFollow these steps throughout the year to maximize your performance review outcome.\n\nStep 1: Set Your OKRs\n\nDefine your objectives and key results for the period\n\nCreate 3-5 objectives that align with team and company goals\nEach objective should have 2-4 measurable key results\nLink your OKRs to your manager's or company OKRs for alignment\nUpdate progress regularly throughout the period\nGo to OKRs\nStep 2: Request & Give Feedback\n\nContinuous feedback helps you grow\n\nStep 3: Attend 1:1 Meetings\n\nRegular check-ins with your manager\n\nStep 4: Complete Self-Assessment\n\nReflect on your achievements during the review period\n\nStep 5: Discuss & Acknowledge\n\nReview",
+        "headings": [
+          "Welcome to Performance Management",
+          "Appraisals with Optional AI Support",
+          "Employee Performance Journey",
+          "Step 1: Set Your OKRsDefine your objectives and key results for the period",
+          "Step 1: Set Your OKRs",
+          "Step 2: Request & Give FeedbackContinuous feedback helps you grow",
+          "Step 2: Request & Give Feedback",
+          "Step 3: Attend 1:1 MeetingsRegular check-ins with your manager",
+          "Step 3: Attend 1:1 Meetings",
+          "Step 4: Complete Self-AssessmentReflect on your achievements during the review period",
+          "Step 4: Complete Self-Assessment",
+          "Step 5: Discuss & AcknowledgeReview results with your manager and acknowledge",
+          "Step 5: Discuss & Acknowledge",
+          "Step 6: Find Historical Appraisals and ResultsOpen completed reviews and their published results",
+          "Step 6: Find Historical Appraisals and Results",
+          "Example Appraisal Workflow",
+          "OKRs",
+          "Appraisals",
+          "Feedback"
+        ],
+        "actualURL": "http://127.0.0.1:5036/tutorial",
+        "overflow": false
+      },
+      "after": {
+        "story": "AD-12",
+        "route": "/tutorial",
+        "kind": "main",
+        "variant": "desktop-light",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "errors": [],
+        "failedResponses": [],
+        "status": "captured",
+        "file": "growth-tutorial-desktop-light.png",
+        "title": "Full Tutorial guide\n\nUse this page for the long-form walkthrough of the platform by role.\n\nOpen guide\nTutorial\nWelcome to Performance Management\n\nLearn how to use the performance management portal effectively. Choose your role below to see relevant tutorials.\n\nEvery page in the app now has its own in-context guide. Use the floating Guide button on any screen for page-specific instructions.\nAppraisals with Optional AI Support\n\nEmployees and reviewers can complete manual forms without ChatGPT. People review and approve the final ratings.\n\nSelf-Assessment: Complete the manual form or choose optional AI assistance\n\nManager Review: Record your judgment; AI insights and bias checks are optional\n\n1:1 Meetings: Record agreed notes, support and follow-up actions\n\nEmployee Guide\nManager Guide\nHR Admin Guide\nEmployee Performance Journey\n\nFollow these steps throughout the year to maximize your performance review outcome.\n\nStep 1: Set Your OKRs\n\nDefine your objectives and key results for the period\n\nCreate 3-5 objectives that align with team and company goals\nEach objective should have 2-4 measurable key results\nLink your OKRs to your manager's or company OKRs for alignment\nUpdate progress regularly throughout the period\nGo to OKRs\nStep 2: Request & Give Feedback\n\nContinuous feedback helps you grow\n\nStep 3: Attend 1:1 Meetings\n\nRegular check-ins with your manager\n\nStep 4: Complete Self-Assessment\n\nReflect on your achievements during the review period\n\nStep 5: Discuss & Acknowledge\n\nReview",
+        "headings": [
+          "Welcome to Performance Management",
+          "Appraisals with Optional AI Support",
+          "Employee Performance Journey",
+          "Step 1: Set Your OKRsDefine your objectives and key results for the period",
+          "Step 1: Set Your OKRs",
+          "Step 2: Request & Give FeedbackContinuous feedback helps you grow",
+          "Step 2: Request & Give Feedback",
+          "Step 3: Attend 1:1 MeetingsRegular check-ins with your manager",
+          "Step 3: Attend 1:1 Meetings",
+          "Step 4: Complete Self-AssessmentReflect on your achievements during the review period",
+          "Step 4: Complete Self-Assessment",
+          "Step 5: Discuss & AcknowledgeReview results with your manager and acknowledge",
+          "Step 5: Discuss & Acknowledge",
+          "Step 6: Find Historical Appraisals and ResultsOpen completed reviews and their published results",
+          "Step 6: Find Historical Appraisals and Results",
+          "Example Appraisal Workflow",
+          "OKRs",
+          "Appraisals",
+          "Feedback"
+        ],
+        "actualURL": "http://127.0.0.1:5035/tutorial",
+        "overflow": false
+      },
+      "beforeImage": "comparison-baseline/growth-tutorial-desktop-light.png",
+      "currentImage": "final-comparison/growth-tutorial-desktop-light.png",
+      "pairPreview": "comparison/growth-matched/pair-18.jpg"
+    }
+  ]
+}

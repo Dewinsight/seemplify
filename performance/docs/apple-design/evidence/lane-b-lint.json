@@ -1,0 +1,218 @@
+[
+  {
+    "file": "performance/frontend/app/admin/reports/page.tsx",
+    "baselineErrors": 7,
+    "currentErrors": 7,
+    "baselineWarnings": 2,
+    "currentWarnings": 2,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/appraisals/[appraisalId]/page.tsx",
+    "baselineErrors": 4,
+    "currentErrors": 4,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ChatInterface.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ConversationalAssessment.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/PhaseProgress.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ReportPreview.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/appraisals/[appraisalId]/self-assessment/page.tsx",
+    "baselineErrors": 6,
+    "currentErrors": 6,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/appraisals/page.tsx",
+    "baselineErrors": 4,
+    "currentErrors": 4,
+    "baselineWarnings": 9,
+    "currentWarnings": 9,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/dashboard/page.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/development/page.tsx",
+    "baselineErrors": 23,
+    "currentErrors": 23,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/feedback/page.tsx",
+    "baselineErrors": 13,
+    "currentErrors": 13,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/login/page.tsx",
+    "baselineErrors": 1,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/one-on-ones/page.tsx",
+    "baselineErrors": 17,
+    "currentErrors": 17,
+    "baselineWarnings": 3,
+    "currentWarnings": 3,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/recognition/page.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/reviews/page.tsx",
+    "baselineErrors": 2,
+    "currentErrors": 2,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/team/[userId]/page.tsx",
+    "baselineErrors": 3,
+    "currentErrors": 3,
+    "baselineWarnings": 15,
+    "currentWarnings": 15,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/team/appraisals/page.tsx",
+    "baselineErrors": 7,
+    "currentErrors": 7,
+    "baselineWarnings": 2,
+    "currentWarnings": 2,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/team/feedback/page.tsx",
+    "baselineErrors": 6,
+    "currentErrors": 6,
+    "baselineWarnings": 2,
+    "currentWarnings": 2,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/team/okrs/page.tsx",
+    "baselineErrors": 8,
+    "currentErrors": 8,
+    "baselineWarnings": 3,
+    "currentWarnings": 3,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/team/reviews/page.tsx",
+    "baselineErrors": 8,
+    "currentErrors": 8,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/app/tutorial/page.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/components/appraisals/AppraisalNativeCall.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/components/appraisals/ManagerReviewWorkspace.tsx",
+    "baselineErrors": 23,
+    "currentErrors": 23,
+    "baselineWarnings": 11,
+    "currentWarnings": 11,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/components/competency/CompetencyPage.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/components/ui/badge.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/components/ui/button.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  },
+  {
+    "file": "performance/frontend/components/ui/card.tsx",
+    "baselineErrors": 0,
+    "currentErrors": 0,
+    "baselineWarnings": 0,
+    "currentWarnings": 0,
+    "introduced": []
+  }
+]

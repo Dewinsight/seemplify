@@ -1,0 +1,14 @@
+[
+  {
+    "file": "0wmbzvcw9u64l.css",
+    "preference": "prefers-reduced-transparency",
+    "compiled": "prefers-reduced-transparency:reduce){.performance-chrome{background:var(--suite-surface);-webkit-backdrop-filter:none;backdrop-filter:none}}@media (prefers-contrast:more){.performance-chrome{background:var(--suite-surface);-webkit-backdrop-filter:none;backdrop-filter:none}html:root[data-theme]{--suite-line:var(--suite-line-strong);--suite-muted:var(--suite-ink);--suite-subtle:var(--suite-ink)}:where(button,input,select,textarea,[role=dialog]){border-color:var(--suite-ink)}}@media (prefers-reduced-motion:reduce){*,:before,:after{scroll-behavior:",
+    "hasStandardNone": true
+  },
+  {
+    "file": "0wmbzvcw9u64l.css",
+    "preference": "prefers-contrast",
+    "compiled": "prefers-contrast:more){.performance-chrome{background:var(--suite-surface);-webkit-backdrop-filter:none;backdrop-filter:none}html:root[data-theme]{--suite-line:var(--suite-line-strong);--suite-muted:var(--suite-ink);--suite-subtle:var(--suite-ink)}:where(button,input,select,textarea,[role=dialog]){border-color:var(--suite-ink)}}@media (prefers-reduced-motion:reduce){*,:before,:after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}.animate-shimmer,.animat",
+    "hasStandardNone": true
+  }
+]

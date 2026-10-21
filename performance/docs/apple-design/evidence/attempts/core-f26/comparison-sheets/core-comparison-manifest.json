@@ -1,0 +1,691 @@
+{
+  "createdAt": "2026-10-21T00:33:02.978Z",
+  "purpose": "Independent actual before/after visual comparison to generated concepts; contact sheets are overviews and original PNGs remain unchanged",
+  "pairCount": 54,
+  "sheets": [
+    {
+      "file": "comparison-matched/core-three-way-01.png",
+      "pairs": [
+        {
+          "route": "/",
+          "name": "root",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-root-light-1440.png",
+          "after": "final-comparison/core-root-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/login?error=Sign-in%20could%20not%20be%20completed",
+          "name": "login-error",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-login-error-light-1440.png",
+          "after": "final-comparison/core-login-error-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/dashboard",
+          "name": "dashboard-personal",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-dashboard-personal-light-1440.png",
+          "after": "final-comparison/core-dashboard-personal-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-02.png",
+      "pairs": [
+        {
+          "route": "/dashboard",
+          "name": "dashboard-manager",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-dashboard-manager-light-1440.png",
+          "after": "final-comparison/core-dashboard-manager-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/dashboard",
+          "name": "dashboard-admin",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-dashboard-admin-light-1440.png",
+          "after": "final-comparison/core-dashboard-admin-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/okrs",
+          "name": "goals",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-goals-light-1440.png",
+          "after": "final-comparison/core-goals-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-03.png",
+      "pairs": [
+        {
+          "route": "/okrs/alignment",
+          "name": "alignment",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-alignment-light-1440.png",
+          "after": "final-comparison/core-alignment-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals",
+          "name": "appraisals",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisals-light-1440.png",
+          "after": "final-comparison/core-appraisals-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/start",
+          "name": "appraisal-start",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-start-light-1440.png",
+          "after": "final-comparison/core-appraisal-start-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-04.png",
+      "pairs": [
+        {
+          "route": "/appraisals/removed",
+          "name": "appraisals-removed",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisals-removed-light-1440.png",
+          "after": "final-comparison/core-appraisals-removed-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011",
+          "name": "appraisal-detail",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-detail-light-1440.png",
+          "after": "final-comparison/core-appraisal-detail-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/goal-setting",
+          "name": "appraisal-goals",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-goals-light-1440.png",
+          "after": "final-comparison/core-appraisal-goals-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-05.png",
+      "pairs": [
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+          "name": "appraisal-self",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-self-light-1440.png",
+          "after": "final-comparison/core-appraisal-self-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+          "name": "appraisal-manager",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-manager-light-1440.png",
+          "after": "final-comparison/core-appraisal-manager-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/discussion",
+          "name": "appraisal-discussion",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-discussion-light-1440.png",
+          "after": "final-comparison/core-appraisal-discussion-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-06.png",
+      "pairs": [
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/calibration",
+          "name": "appraisal-calibration",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-calibration-light-1440.png",
+          "after": "final-comparison/core-appraisal-calibration-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/final-review",
+          "name": "appraisal-final",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-final-light-1440.png",
+          "after": "final-comparison/core-appraisal-final-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/report",
+          "name": "appraisal-report",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-report-light-1440.png",
+          "after": "final-comparison/core-appraisal-report-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-07.png",
+      "pairs": [
+        {
+          "route": "/admin",
+          "name": "admin",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-admin-light-1440.png",
+          "after": "final-comparison/core-admin-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/admin/appraisal-cycles",
+          "name": "cycles",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-cycles-light-1440.png",
+          "after": "final-comparison/core-cycles-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/admin/appraisal-cycles/new",
+          "name": "cycle-new",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-cycle-new-light-1440.png",
+          "after": "final-comparison/core-cycle-new-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-08.png",
+      "pairs": [
+        {
+          "route": "/admin/appraisal-cycles/cycle-1",
+          "name": "cycle-detail",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-cycle-detail-light-1440.png",
+          "after": "final-comparison/core-cycle-detail-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/admin/appraisal-cycles/cycle-1/edit",
+          "name": "cycle-edit",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-cycle-edit-light-1440.png",
+          "after": "final-comparison/core-cycle-edit-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/admin/calibration",
+          "name": "calibration",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-calibration-light-1440.png",
+          "after": "final-comparison/core-calibration-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-09.png",
+      "pairs": [
+        {
+          "route": "/admin/reports",
+          "name": "reports",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-reports-light-1440.png",
+          "after": "final-comparison/core-reports-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/admin/departments/Customer%20Success",
+          "name": "department",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-department-light-1440.png",
+          "after": "final-comparison/core-department-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/admin/review-cycles",
+          "name": "review-cycles",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-review-cycles-light-1440.png",
+          "after": "final-comparison/core-review-cycles-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-10.png",
+      "pairs": [
+        {
+          "route": "/analytics",
+          "name": "analytics",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-analytics-light-1440.png",
+          "after": "final-comparison/core-analytics-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/team",
+          "name": "people",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-people-light-1440.png",
+          "after": "final-comparison/core-people-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/team/member-1",
+          "name": "profile",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-profile-light-1440.png",
+          "after": "final-comparison/core-profile-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-11.png",
+      "pairs": [
+        {
+          "route": "/team/okrs",
+          "name": "team-goals",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-team-goals-light-1440.png",
+          "after": "final-comparison/core-team-goals-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/team/appraisals",
+          "name": "team-appraisals",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-team-appraisals-light-1440.png",
+          "after": "final-comparison/core-team-appraisals-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/team/reviews",
+          "name": "team-reviews",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-team-reviews-light-1440.png",
+          "after": "final-comparison/core-team-reviews-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-12.png",
+      "pairs": [
+        {
+          "route": "/reviews",
+          "name": "reviews",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-reviews-light-1440.png",
+          "after": "final-comparison/core-reviews-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/reviews/review-1",
+          "name": "review-detail",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-review-detail-light-1440.png",
+          "after": "final-comparison/core-review-detail-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/dashboard",
+          "name": "dashboard-personal",
+          "theme": "dark",
+          "width": 1440,
+          "before": "comparison-baseline/core-dashboard-personal-dark-1440.png",
+          "after": "final-comparison/core-dashboard-personal-dark-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-13.png",
+      "pairs": [
+        {
+          "route": "/okrs",
+          "name": "goals",
+          "theme": "dark",
+          "width": 1440,
+          "before": "comparison-baseline/core-goals-dark-1440.png",
+          "after": "final-comparison/core-goals-dark-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/start",
+          "name": "appraisal-start",
+          "theme": "dark",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-start-dark-1440.png",
+          "after": "final-comparison/core-appraisal-start-dark-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+          "name": "appraisal-self",
+          "theme": "dark",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-self-dark-1440.png",
+          "after": "final-comparison/core-appraisal-self-dark-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-14.png",
+      "pairs": [
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+          "name": "appraisal-manager",
+          "theme": "dark",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-manager-dark-1440.png",
+          "after": "final-comparison/core-appraisal-manager-dark-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/analytics",
+          "name": "analytics",
+          "theme": "dark",
+          "width": 1440,
+          "before": "comparison-baseline/core-analytics-dark-1440.png",
+          "after": "final-comparison/core-analytics-dark-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/team",
+          "name": "people",
+          "theme": "dark",
+          "width": 1440,
+          "before": "comparison-baseline/core-people-dark-1440.png",
+          "after": "final-comparison/core-people-dark-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-15.png",
+      "pairs": [
+        {
+          "route": "/dashboard",
+          "name": "dashboard-personal",
+          "theme": "light",
+          "width": 390,
+          "before": "comparison-baseline/core-dashboard-personal-light-390.png",
+          "after": "final-comparison/core-dashboard-personal-light-390.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/okrs",
+          "name": "goals",
+          "theme": "light",
+          "width": 390,
+          "before": "comparison-baseline/core-goals-light-390.png",
+          "after": "final-comparison/core-goals-light-390.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/start",
+          "name": "appraisal-start",
+          "theme": "light",
+          "width": 390,
+          "before": "comparison-baseline/core-appraisal-start-light-390.png",
+          "after": "final-comparison/core-appraisal-start-light-390.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-16.png",
+      "pairs": [
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+          "name": "appraisal-self",
+          "theme": "light",
+          "width": 390,
+          "before": "comparison-baseline/core-appraisal-self-light-390.png",
+          "after": "final-comparison/core-appraisal-self-light-390.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+          "name": "appraisal-manager",
+          "theme": "light",
+          "width": 390,
+          "before": "comparison-baseline/core-appraisal-manager-light-390.png",
+          "after": "final-comparison/core-appraisal-manager-light-390.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/analytics",
+          "name": "analytics",
+          "theme": "light",
+          "width": 390,
+          "before": "comparison-baseline/core-analytics-light-390.png",
+          "after": "final-comparison/core-analytics-light-390.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-17.png",
+      "pairs": [
+        {
+          "route": "/team",
+          "name": "people",
+          "theme": "light",
+          "width": 390,
+          "before": "comparison-baseline/core-people-light-390.png",
+          "after": "final-comparison/core-people-light-390.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/0123456789abcdef01234568/self-assessment",
+          "name": "self-form",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-self-form-light-1440.png",
+          "after": "final-comparison/core-self-form-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals/0123456789abcdef01234568/manager-review",
+          "name": "manager-form",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-manager-form-light-1440.png",
+          "after": "final-comparison/core-manager-form-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    },
+    {
+      "file": "comparison-matched/core-three-way-18.png",
+      "pairs": [
+        {
+          "route": "/appraisals/0123456789abcdef01234568/final-review",
+          "name": "final-form",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-final-form-light-1440.png",
+          "after": "final-comparison/core-final-form-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/okrs?view=my",
+          "name": "goal-populated",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-goal-populated-light-1440.png",
+          "after": "final-comparison/core-goal-populated-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        },
+        {
+          "route": "/appraisals?section=history",
+          "name": "appraisal-history",
+          "theme": "light",
+          "width": 1440,
+          "before": "comparison-baseline/core-appraisal-history-light-1440.png",
+          "after": "final-comparison/core-appraisal-history-light-1440.png",
+          "beforeState": "rendered-fixture",
+          "afterState": "rendered-fixture",
+          "afterSourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4"
+        }
+      ]
+    }
+  ]
+}

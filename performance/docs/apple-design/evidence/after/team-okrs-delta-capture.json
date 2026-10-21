@@ -1,0 +1,204 @@
+{
+  "checkedAt": "2026-10-21T00:12:19.358Z",
+  "appSourceTree": "d9428462c2efea48cb52c55e4413636d7a7f4935",
+  "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "build": "isolated-default-turbopack-production",
+  "server": "http://127.0.0.1:5035",
+  "evidenceBoundary": "Actual compiled app rendering with existing synthetic journey fixture plus explicit unknown and zero team counts. No real API, identity or provider claim.",
+  "results": [
+    {
+      "route": "/team/okrs",
+      "routeTemplate": "/team/okrs",
+      "sourceTree": "d9428462c2efea48cb52c55e4413636d7a7f4935",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "after/team-okrs-table-final-light-1440.png",
+      "computed": {
+        "foreground": "rgb(98, 99, 107)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 5.97205502989716
+      },
+      "tableMetrics": {
+        "scrollWidth": 1166,
+        "clientWidth": 1166,
+        "tabIndex": 0,
+        "tableWidth": 1166
+      },
+      "nameMetrics": {
+        "width": 117.671875,
+        "height": 21.6875,
+        "lineHeight": 21.7
+      },
+      "keyboardFocusedElement": null,
+      "checks": {
+        "normalTextContrast": true,
+        "unknownMemberCountOmitted": true,
+        "knownZeroPreserved": true,
+        "namedFocusableRegion": true,
+        "minimumReadableTableWidth": true,
+        "localScrollPresent": true,
+        "keyboardHorizontalScroll": true,
+        "keyboardRowActionReachable": true,
+        "readableEmployeeName": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true,
+      "state": "rendered-fixture"
+    },
+    {
+      "route": "/team/okrs",
+      "routeTemplate": "/team/okrs",
+      "sourceTree": "d9428462c2efea48cb52c55e4413636d7a7f4935",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "after/team-okrs-table-final-dark-1440.png",
+      "computed": {
+        "foreground": "rgb(176, 177, 187)",
+        "background": "rgb(28, 29, 33)",
+        "contrast": 7.900399831895369
+      },
+      "tableMetrics": {
+        "scrollWidth": 1166,
+        "clientWidth": 1166,
+        "tabIndex": 0,
+        "tableWidth": 1166
+      },
+      "nameMetrics": {
+        "width": 117.671875,
+        "height": 21.6875,
+        "lineHeight": 21.7
+      },
+      "keyboardFocusedElement": null,
+      "checks": {
+        "normalTextContrast": true,
+        "unknownMemberCountOmitted": true,
+        "knownZeroPreserved": true,
+        "namedFocusableRegion": true,
+        "minimumReadableTableWidth": true,
+        "localScrollPresent": true,
+        "keyboardHorizontalScroll": true,
+        "keyboardRowActionReachable": true,
+        "readableEmployeeName": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true,
+      "state": "rendered-fixture"
+    },
+    {
+      "route": "/team/okrs",
+      "routeTemplate": "/team/okrs",
+      "sourceTree": "d9428462c2efea48cb52c55e4413636d7a7f4935",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "after/team-okrs-table-final-light-390.png",
+      "computed": {
+        "foreground": "rgb(98, 99, 107)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 5.97205502989716
+      },
+      "tableMetrics": {
+        "scrollWidth": 760,
+        "clientWidth": 324,
+        "tabIndex": 0,
+        "tableWidth": 760
+      },
+      "nameMetrics": {
+        "width": 115.046875,
+        "height": 21.6875,
+        "lineHeight": 21.7
+      },
+      "keyboardFocusedElement": {
+        "tag": "A",
+        "label": "View Details",
+        "href": "/team/member-1",
+        "text": "",
+        "left": 305.3125,
+        "right": 335.3125
+      },
+      "checks": {
+        "normalTextContrast": true,
+        "unknownMemberCountOmitted": true,
+        "knownZeroPreserved": true,
+        "namedFocusableRegion": true,
+        "minimumReadableTableWidth": true,
+        "localScrollPresent": true,
+        "keyboardHorizontalScroll": true,
+        "keyboardRowActionReachable": true,
+        "readableEmployeeName": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true,
+      "state": "rendered-fixture"
+    },
+    {
+      "route": "/team/okrs",
+      "routeTemplate": "/team/okrs",
+      "sourceTree": "d9428462c2efea48cb52c55e4413636d7a7f4935",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "after/team-okrs-table-final-dark-390.png",
+      "computed": {
+        "foreground": "rgb(176, 177, 187)",
+        "background": "rgb(28, 29, 33)",
+        "contrast": 7.900399831895369
+      },
+      "tableMetrics": {
+        "scrollWidth": 760,
+        "clientWidth": 324,
+        "tabIndex": 0,
+        "tableWidth": 760
+      },
+      "nameMetrics": {
+        "width": 115.046875,
+        "height": 21.6875,
+        "lineHeight": 21.7
+      },
+      "keyboardFocusedElement": {
+        "tag": "A",
+        "label": "View Details",
+        "href": "/team/member-1",
+        "text": "",
+        "left": 305.3125,
+        "right": 335.3125
+      },
+      "checks": {
+        "normalTextContrast": true,
+        "unknownMemberCountOmitted": true,
+        "knownZeroPreserved": true,
+        "namedFocusableRegion": true,
+        "minimumReadableTableWidth": true,
+        "localScrollPresent": true,
+        "keyboardHorizontalScroll": true,
+        "keyboardRowActionReachable": true,
+        "readableEmployeeName": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true,
+      "state": "rendered-fixture"
+    }
+  ]
+}

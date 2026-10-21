@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-10-21T00:21:05.698821+00:00",
+  "frontendRevision": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "backendRevision": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "frontendImage": "seemplify/performance-frontend:hostinger-a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "backendImage": "seemplify/performance-backend:hostinger-a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "containerStatus": "running",
+  "frontendHTTP": 200,
+  "backendHTTP": 200,
+  "backendStatus": "ok",
+  "priorWorkflow": "https://github.com/Dewinsight/seemplify/actions/runs/39517446390",
+  "wholeCoreWorkflowStatus": "success",
+  "resourcesPreserved": true,
+  "workflowVerifiedAt": "2026-10-21T00:22:05.805848+00:00"
+}

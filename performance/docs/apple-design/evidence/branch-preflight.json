@@ -1,0 +1,196 @@
+{
+  "capturedAt": "2026-10-21T01:37:25.888223+00:00",
+  "fetchedAllRefs": true,
+  "baseMain": "8ce5e4b447d2b070870bdf75154b46abde6b18a7",
+  "remoteMain": "8ce5e4b447d2b070870bdf75154b46abde6b18a7",
+  "selection": "Refs updated since 2026-10-17 named performance/momo, plus any recent ref with ahead commits touching performance. Other-app-only refs excluded.",
+  "branches": [
+    {
+      "ref": "codex/momo-release-webpack",
+      "date": "2026-10-20T13:41:03+01:00",
+      "sha": "3d5db7d3e243545b04ecceb9feffa4c4cc2b2dc5",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "codex/momo-report-recovery",
+      "date": "2026-10-19T17:43:30+01:00",
+      "sha": "4f4ee4a3ab68bce2f6d9f4a88a21ea8846a9f938",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "codex/momo-report-test-parity",
+      "date": "2026-10-20T13:29:49+01:00",
+      "sha": "c6ae1868632c6f8ceb1a68e1d7f10017d2811d08",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/momo-release-webpack",
+      "date": "2026-10-20T13:41:03+01:00",
+      "sha": "3d5db7d3e243545b04ecceb9feffa4c4cc2b2dc5",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/momo-report-recovery",
+      "date": "2026-10-19T17:43:30+01:00",
+      "sha": "4f4ee4a3ab68bce2f6d9f4a88a21ea8846a9f938",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/momo-report-test-parity",
+      "date": "2026-10-20T13:29:49+01:00",
+      "sha": "c6ae1868632c6f8ceb1a68e1d7f10017d2811d08",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/mtn-momo-ai-policy-status",
+      "date": "2026-10-19T16:14:00+01:00",
+      "sha": "a430b591b77d725990d487219a2f3b5490d0cd10",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/mtn-momo-appraisal-audit",
+      "date": "2026-10-19T14:16:54+01:00",
+      "sha": "e26c3d880ac11a40377ac89b6d1c7600c37be892",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-ai-defaults-20261018",
+      "date": "2026-10-18T04:29:31+01:00",
+      "sha": "7b89b0da2a02555e765d1ba4cd78bab042d091b6",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-appraisal-start-history-20261017",
+      "date": "2026-10-17T11:28:38+01:00",
+      "sha": "d890cf7d65ad1176895888a0736e16c3a1aaa0d3",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-calendar-browser-assertion",
+      "date": "2026-10-20T19:33:28+01:00",
+      "sha": "67da87e9f15e6067988a85e2ffa43a552435edf9",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-calendar-call-controls",
+      "date": "2026-10-20T19:29:42+01:00",
+      "sha": "fae0b75d1994c2c05a40b0ca8b9656209b6d67de",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-calibration-history-readonly",
+      "date": "2026-10-20T13:33:03+01:00",
+      "sha": "006fa465cd2eae29c5e2b1f1927f1ac41b28066b",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-call-action-contrast",
+      "date": "2026-10-20T19:54:30+01:00",
+      "sha": "bd251a1382e0bf747e255a9deba45a7077ed57b8",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-direct-calendar-cv",
+      "date": "2026-10-20T20:05:43+01:00",
+      "sha": "0cd0dbb38395864aba0e6e3d0a03533a20d5c360",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-draft-preservation",
+      "date": "2026-10-19T12:48:34+01:00",
+      "sha": "d3cfe8d367dbe67066bb44bca2306b7a2b917a6f",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-goal-index-repair-20261017",
+      "date": "2026-10-17T18:51:20+01:00",
+      "sha": "f8c88911a788597f936217b9154575aedbd26e5f",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-legacy-appraisal-guard",
+      "date": "2026-10-18T22:13:13+01:00",
+      "sha": "986f3e74161271be0559025109cc338bb3c31cf4",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-notetaker-without-prompts",
+      "date": "2026-10-20T20:16:01+01:00",
+      "sha": "a9b1b55634853d7c467b9b380d002f450331f919",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-organization-okrs-20261017",
+      "date": "2026-10-17T10:22:57+01:00",
+      "sha": "27bd1703a00324b0f0bc01169659f7f78444f157",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-pending-changes-20261018",
+      "date": "2026-10-18T15:45:43+01:00",
+      "sha": "b9c1b06ffe510fb27572d22ba3e1ddb92c77e362",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-people-appraisal-clarity",
+      "date": "2026-10-18T21:58:07+01:00",
+      "sha": "3b155b30e176b6f78661341b7a746513dc138be7",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-production-browser-tests-20261018",
+      "date": "2026-10-18T18:34:59+01:00",
+      "sha": "55fda294fc45c2c23f9418af02f4bf789781396a",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-production-role-qa-20261020",
+      "date": "2026-10-20T08:55:17+01:00",
+      "sha": "0246fbcfca9af5be4c242de3fa47a536a6c85784",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-release-input-20261018",
+      "date": "2026-10-18T03:57:18+01:00",
+      "sha": "89ab30fe8ee3a47b15f6d8020c10803625d1d361",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-role-lifecycle-acceptance",
+      "date": "2026-10-20T11:36:33+01:00",
+      "sha": "866b17e4b0fc71d48c1f04a3bde56f7960241eda",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-smoke-readiness-20261018",
+      "date": "2026-10-18T18:13:11+01:00",
+      "sha": "dedf3162eda94a0570ead4831590da6d9652931c",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-standalone-one-on-one-calls",
+      "date": "2026-10-18T23:35:05+01:00",
+      "sha": "1e1d1610b264e7ed77101c3a330e8a4f8d14fded",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-support-evidence-closure",
+      "date": "2026-10-20T12:21:36+01:00",
+      "sha": "62cb5278dd842912baccc5198a4fa16ec3efc3eb",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/codex/performance-transactional-call-reminders",
+      "date": "2026-10-20T19:45:05+01:00",
+      "sha": "b061b58f06a71011ab0bc9574175a97fb98e6605",
+      "aheadOfMain": 0
+    },
+    {
+      "ref": "origin/fix/performance-acceptance-remediation",
+      "date": "2026-10-19T09:44:03+01:00",
+      "sha": "ce9564e8bfcd2a98929403e9439463fd29c2c4c4",
+      "aheadOfMain": 0
+    }
+  ],
+  "allRelevantRecentRefsIntegrated": true
+}

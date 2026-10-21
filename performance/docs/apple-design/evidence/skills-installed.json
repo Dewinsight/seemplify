@@ -1,0 +1,38 @@
+[
+  {
+    "name": "apple-design",
+    "exists": true,
+    "path": "C:\\Users\\User\\.codex\\skills\\apple-design\\SKILL.md",
+    "sha256": "77bb63b7043bb93aca2ff4ab040c249484eef35682bb6ff7163433c31d30adc7"
+  },
+  {
+    "name": "performance-apple-product",
+    "exists": true,
+    "path": "C:\\Users\\User\\.codex\\skills\\performance-apple-product\\SKILL.md",
+    "sha256": "d13a984f9fd2de575d8fe2de2b4c8444b4d09440ff2284522fa6942bdb09b258"
+  },
+  {
+    "name": "performance-apple-architecture",
+    "exists": true,
+    "path": "C:\\Users\\User\\.codex\\skills\\performance-apple-architecture\\SKILL.md",
+    "sha256": "7424e1719720d50137405b1683f25e5a16a15369538d479762da9c9b1efec50f"
+  },
+  {
+    "name": "performance-apple-design",
+    "exists": true,
+    "path": "C:\\Users\\User\\.codex\\skills\\performance-apple-design\\SKILL.md",
+    "sha256": "de77ed8c17f86b862b5f8c15a3a000d5d5606eee98e16dc0bda71adba308301b"
+  },
+  {
+    "name": "performance-apple-qa",
+    "exists": true,
+    "path": "C:\\Users\\User\\.codex\\skills\\performance-apple-qa\\SKILL.md",
+    "sha256": "d9f766df1012165b1067c3ff1df1d141ef3db04ad0bf24a8ad3a00a411546d14"
+  },
+  {
+    "name": "performance-apple-development",
+    "exists": true,
+    "path": "C:\\Users\\User\\.codex\\skills\\performance-apple-development\\SKILL.md",
+    "sha256": "15a317b7b436e152912b28dad1f0054bf10f32c6503e2244e86294d6ca3dd378"
+  }
+]

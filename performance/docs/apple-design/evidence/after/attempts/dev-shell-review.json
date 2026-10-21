@@ -1,0 +1,74 @@
+{
+  "checkedAt": "2026-10-20T23:48:26.724Z",
+  "boundary": "Local synthetic browser interaction and preference checks only; not production/backend authority evidence.",
+  "checks": [
+    {
+      "name": "menu ArrowDown opens and focuses first item",
+      "passed": true
+    },
+    {
+      "name": "menu End focuses last item",
+      "passed": true
+    },
+    {
+      "name": "Tab leaves desktop menu and closes without dropping focus",
+      "passed": true,
+      "active": "<button type=\"button\" aria-expanded=\"false\" aria-haspopup=\"menu\" data-shell-trigger=\"true\" class=\"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold border-zinc-800 bg-zinc-900/60 text-z"
+    },
+    {
+      "name": "Escape returns menu focus",
+      "passed": true
+    },
+    {
+      "name": "skip link focuses main",
+      "passed": true
+    },
+    {
+      "name": "dark account accent foreground tokens",
+      "passed": true,
+      "computed": {
+        "background": "rgb(100, 167, 255)",
+        "foreground": "rgb(7, 20, 38)",
+        "token": "#071426"
+      }
+    },
+    {
+      "name": "mobile navigation contains focus and inerts content",
+      "passed": true
+    },
+    {
+      "name": "mobile Escape restores trigger",
+      "passed": true
+    },
+    {
+      "name": "resize from mobile closes hidden modal and unlocks document",
+      "passed": true
+    },
+    {
+      "name": "reduced transparency makes chrome solid",
+      "passed": true,
+      "computed": {
+        "background": "rgb(28, 29, 33)",
+        "blur": "none"
+      }
+    },
+    {
+      "name": "increased contrast strengthens separators",
+      "passed": true
+    },
+    {
+      "name": "reduced motion removes spatial transition duration",
+      "passed": true
+    },
+    {
+      "name": "goal details dismissal restores opener focus",
+      "passed": true
+    },
+    {
+      "name": "mobile goal create dialog fits viewport",
+      "passed": true,
+      "documentOverflow": false
+    }
+  ],
+  "errors": []
+}

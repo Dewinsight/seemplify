@@ -1,0 +1,27 @@
+{
+  "capturedAt": "2026-10-21T01:35:39.666651+00:00",
+  "sourceCommit": "8ce5e4b447d2b070870bdf75154b46abde6b18a7",
+  "ordinaryCentralIdentityOIDC": true,
+  "outcomes": [
+    {
+      "role": "manager",
+      "apiAuthMeHTTP": 200,
+      "subjectAndOrganizationVerified": true
+    },
+    {
+      "role": "hr",
+      "apiAuthMeHTTP": 200,
+      "subjectAndOrganizationVerified": true
+    },
+    {
+      "role": "staff",
+      "apiAuthMeHTTP": 200,
+      "subjectAndOrganizationVerified": true
+    }
+  ],
+  "credentialsChanged": false,
+  "permissionsChanged": false,
+  "credentialsPrinted": false,
+  "boundary": "Existing authorized synthetic fixture actors. Bearer sessions stayed only in sibling access and were never serialized into programme evidence.",
+  "ephemeralPrivateSessionsRemovedAfterAcceptance": true
+}

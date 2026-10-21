@@ -1,0 +1,982 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Users\\User\\AppData\\Local\\Programs\\node-v24.19.0-win-x64\\node.exe",
+      "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "e2e/apple-design.spec.ts",
+      "e2e/people-and-teams.spec.ts",
+      "e2e/assessment-presentation.spec.ts",
+      "e2e/appraisal-navigation-accessibility.spec.ts",
+      "--reporter=line,json",
+      "--output=E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/combined-final-ui-results"
+    ],
+    "configFile": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\playwright.config.ts",
+    "rootDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/candidate-b79d3ffcd1ce-localdeps/performance/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/combined-final-ui-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chrome",
+        "name": "chrome",
+        "testDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/candidate-b79d3ffcd1ce-localdeps/performance/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx next dev --webpack -p 5035 -H 127.0.0.1",
+      "url": "http://127.0.0.1:5035",
+      "reuseExistingServer": true,
+      "timeout": 120000,
+      "env": {
+        "PERFORMANCE_E2E_PORT": "5035",
+        "NEXT_PUBLIC_API_URL": "http://127.0.0.1:5035/__mock-api",
+        "NEXT_PUBLIC_WS_URL": "ws://127.0.0.1:5035/__mock-ws"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "apple-design.spec.ts",
+      "file": "apple-design.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "shared Tailwind and MUI controls and portal surfaces agree in light mode",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2160,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:07.958Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-96416e4ce4349ce6e478",
+          "file": "apple-design.spec.ts",
+          "line": 104,
+          "column": 7
+        },
+        {
+          "title": "shared Tailwind and MUI controls and portal surfaces agree in dark mode",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2020,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:10.281Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-ce7c87acabb24a490e90",
+          "file": "apple-design.spec.ts",
+          "line": 104,
+          "column": 7
+        },
+        {
+          "title": "desktop navigation opens from the keyboard and restores focus on Escape",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1448,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:12.310Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-ef7340fe541a8afd0e12",
+          "file": "apple-design.spec.ts",
+          "line": 142,
+          "column": 5
+        },
+        {
+          "title": "mobile navigation contains focus, closes safely, and keeps narrow content usable",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1668,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:13.767Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-c6136d631e3aa3cc2d9a",
+          "file": "apple-design.spec.ts",
+          "line": 172,
+          "column": 5
+        },
+        {
+          "title": "press feedback is immediate and releasing away cancels the action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1395,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:15.443Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-f05adb3e1ec6c888734a",
+          "file": "apple-design.spec.ts",
+          "line": 211,
+          "column": 5
+        },
+        {
+          "title": "reduced motion and material preferences retain readable interactive controls",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1527,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:16.846Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "reduced-transparency-immediate-state",
+                      "contentType": "application/json",
+                      "body": "eyJtYXRjaGVzIjp0cnVlLCJibHVyIjoibm9uZSJ9"
+                    },
+                    {
+                      "name": "increased-contrast-immediate-state",
+                      "contentType": "application/json",
+                      "body": "eyJtYXRjaGVzIjp0cnVlLCJibHVyIjoibm9uZSJ9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-b181ca199d608e1de2f5",
+          "file": "apple-design.spec.ts",
+          "line": 230,
+          "column": 5
+        },
+        {
+          "title": "a portal feedback failure preserves the draft and recovery controls",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1469,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:18.380Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-41811f032a1e650ef57a",
+          "file": "apple-design.spec.ts",
+          "line": 269,
+          "column": 5
+        },
+        {
+          "title": "sign-in error and an incomplete Identity handoff expose usable recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1331,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:19.858Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-ce209fd0d21757979f3d",
+          "file": "apple-design.spec.ts",
+          "line": 291,
+          "column": 5
+        },
+        {
+          "title": "competency wayfinding stays secondary and shows only actual supplied version metadata",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1446,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:21.197Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a3b0356a19d16b4e1f5c-bc229115b89bcf4c282f",
+          "file": "apple-design.spec.ts",
+          "line": 321,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "appraisal-navigation-accessibility.spec.ts",
+      "file": "appraisal-navigation-accessibility.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "390px reviewer progress shows every label and Next retains manual persistence before changing stages",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1466,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:22.657Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6a76c62f1b425a96de71-f21d9f60e2c12c2a558c",
+          "file": "appraisal-navigation-accessibility.spec.ts",
+          "line": 61,
+          "column": 5
+        },
+        {
+          "title": "390px cycle and fallback appraisal phases fit and Final Rating is reachable by keyboard",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2023,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:24.131Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6a76c62f1b425a96de71-e0f53bc15dabd37c2bc6",
+          "file": "appraisal-navigation-accessibility.spec.ts",
+          "line": 76,
+          "column": 5
+        },
+        {
+          "title": "conversational OKR selection supports Enter and Space with the same existing context requests",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1566,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:26.162Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6a76c62f1b425a96de71-381a6b453b8e9e2b08d5",
+          "file": "appraisal-navigation-accessibility.spec.ts",
+          "line": 103,
+          "column": 5
+        },
+        {
+          "title": "tutorial explains scoped launch organization OKRs manual forms and historical results with working destinations",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2267,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:27.735Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6a76c62f1b425a96de71-fcb9cd96bf753e4898d5",
+          "file": "appraisal-navigation-accessibility.spec.ts",
+          "line": 122,
+          "column": 5
+        },
+        {
+          "title": "employee tutorial keeps manager and HR launch controls outside the employee guide",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1297,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:30.008Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6a76c62f1b425a96de71-b38790fdaebf6d1c750a",
+          "file": "appraisal-navigation-accessibility.spec.ts",
+          "line": 145,
+          "column": 5
+        },
+        {
+          "title": "discussion action follows the actual custom step for employee and reviewer instead of a fixed index",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2243,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:31.312Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6a76c62f1b425a96de71-fa9b01de2e0c730857fa",
+          "file": "appraisal-navigation-accessibility.spec.ts",
+          "line": 155,
+          "column": 5
+        },
+        {
+          "title": "future or omitted discussion stays hidden while a completed discussion remains readable during final review",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1694,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:33.561Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6a76c62f1b425a96de71-1d45f4700e1606ee9005",
+          "file": "appraisal-navigation-accessibility.spec.ts",
+          "line": 173,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "assessment-presentation.spec.ts",
+      "file": "assessment-presentation.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "visual overview, readable analysis and source drill-down in light",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1978,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:35.268Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "69ae2b10e78ef5697316-d7725c8564812f570eae",
+          "file": "assessment-presentation.spec.ts",
+          "line": 89,
+          "column": 44
+        },
+        {
+          "title": "visual overview, readable analysis and source drill-down in dark",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1924,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:37.252Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "69ae2b10e78ef5697316-5998f5917c5d11d0dde7",
+          "file": "assessment-presentation.spec.ts",
+          "line": 89,
+          "column": 44
+        },
+        {
+          "title": "mobile keeps real ratings, unrated goals and source excerpts readable",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1563,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:39.184Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "69ae2b10e78ef5697316-39f7b0913669713ec609",
+          "file": "assessment-presentation.spec.ts",
+          "line": 117,
+          "column": 5
+        },
+        {
+          "title": "load failures, update failures and paused assessment controls preserve the saved analysis",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1556,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:40.753Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "69ae2b10e78ef5697316-ff3c53006bf9f578c962",
+          "file": "assessment-presentation.spec.ts",
+          "line": 137,
+          "column": 5
+        },
+        {
+          "title": "an open citation cannot switch to another document after evidence is withdrawn and references change",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 16565,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:42.315Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "69ae2b10e78ef5697316-6be0eb31c347783448c7",
+          "file": "assessment-presentation.spec.ts",
+          "line": 152,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "people-and-teams.spec.ts",
+      "file": "people-and-teams.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Admin uses the complete team directory and filters by IDs even when team names match",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1640,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:46:58.895Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8719963ec7af0bf261b6-64a946865d1807879865",
+          "file": "people-and-teams.spec.ts",
+          "line": 36,
+          "column": 5
+        },
+        {
+          "title": "Manager view explains its scope and keeps the team filter available for a single team",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1332,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:00.543Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8719963ec7af0bf261b6-8e2d1f38dce8f58f683a",
+          "file": "people-and-teams.spec.ts",
+          "line": 60,
+          "column": 5
+        },
+        {
+          "title": "390px light person card keeps long identity, metrics and actions separate",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2254,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:01.883Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8719963ec7af0bf261b6-c03544de64968728787e",
+          "file": "people-and-teams.spec.ts",
+          "line": 70,
+          "column": 7
+        },
+        {
+          "title": "390px dark person card keeps long identity, metrics and actions separate",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2349,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:47:04.149Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8719963ec7af0bf261b6-d57f162273db092d9755",
+          "file": "people-and-teams.spec.ts",
+          "line": 70,
+          "column": 7
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-21T00:46:07.422Z",
+    "duration": 59464.136999999995,
+    "expected": 25,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

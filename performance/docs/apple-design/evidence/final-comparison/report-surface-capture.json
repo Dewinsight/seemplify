@@ -1,0 +1,433 @@
+{
+  "capturedAt": "2026-10-21T00:52:02.078Z",
+  "finalAppSourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+  "baselineSourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+  "boundary": "Actual baseline/final app rendering with identical existing synthetic fixtures. Conversation/report generation is test transport, not real AI/provider execution. Native viewport/element captures preserve actual pixels.",
+  "results": [
+    {
+      "name": "personal-dashboard-equal-viewport",
+      "stage": "before",
+      "sourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+      "server": "http://127.0.0.1:5036",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "comparison-baseline/dashboard-viewport.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/dashboard",
+      "method": "Native 1440x1000 viewport screenshot, fullPage:false"
+    },
+    {
+      "name": "conversational-assessment-chat",
+      "stage": "before",
+      "sourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+      "server": "http://127.0.0.1:5036",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "comparison-baseline/conversation-chat-light-1440.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ConversationalAssessment/ChatInterface/PhaseProgress",
+      "syntheticAITransport": true,
+      "completedQuestions": 1,
+      "syntheticMessageRequests": 1
+    },
+    {
+      "name": "conversational-report-preview",
+      "stage": "before",
+      "sourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+      "server": "http://127.0.0.1:5036",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "comparison-baseline/conversation-report-light-1440.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ReportPreview",
+      "syntheticAITransport": true,
+      "syntheticReportGenerations": 1
+    },
+    {
+      "name": "conversational-unsent-draft",
+      "stage": "before",
+      "sourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+      "server": "http://127.0.0.1:5036",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "comparison-baseline/conversation-enabled-send-light-1440.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ChatInterface enabled Send and opaque material",
+      "syntheticAITransport": true,
+      "computedSend": {
+        "foreground": "rgb(205, 215, 226)",
+        "background": "rgb(232, 240, 244)",
+        "contrast": 1.2627497163318167
+      },
+      "materials": {
+        "composer": {
+          "background": "rgba(255, 253, 250, 0.92)",
+          "alpha": 0.92,
+          "opacity": 1,
+          "backdropFilter": "blur(6px)"
+        },
+        "content": {
+          "background": "rgba(255, 253, 250, 0.82)",
+          "alpha": 0.82,
+          "opacity": 1,
+          "backdropFilter": "blur(8px)"
+        }
+      },
+      "blurredContent": [
+        {
+          "tag": "DIV",
+          "className": "MuiBox-root mui-1vc0uqa",
+          "filter": "blur(8px)"
+        },
+        {
+          "tag": "DIV",
+          "className": "MuiBox-root mui-8eoxxb",
+          "filter": "blur(8px)"
+        },
+        {
+          "tag": "DIV",
+          "className": "MuiPaper-root MuiPaper-elevation MuiPaper-rounded MuiPaper-elevation3 mui-198x79v",
+          "filter": "blur(6px)"
+        }
+      ],
+      "draftNotSubmitted": true,
+      "finalChecks": null
+    },
+    {
+      "name": "conversational-assessment-chat",
+      "stage": "before",
+      "sourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+      "server": "http://127.0.0.1:5036",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "comparison-baseline/conversation-chat-dark-390.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ConversationalAssessment/ChatInterface/PhaseProgress",
+      "syntheticAITransport": true,
+      "completedQuestions": 1,
+      "syntheticMessageRequests": 1
+    },
+    {
+      "name": "conversational-report-preview",
+      "stage": "before",
+      "sourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+      "server": "http://127.0.0.1:5036",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "comparison-baseline/conversation-report-dark-390.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ReportPreview",
+      "syntheticAITransport": true,
+      "syntheticReportGenerations": 1
+    },
+    {
+      "name": "conversational-unsent-draft",
+      "stage": "before",
+      "sourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+      "server": "http://127.0.0.1:5036",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "comparison-baseline/conversation-enabled-send-dark-390.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ChatInterface enabled Send and opaque material",
+      "syntheticAITransport": true,
+      "computedSend": {
+        "foreground": "rgb(59, 72, 92)",
+        "background": "rgb(29, 44, 61)",
+        "contrast": 1.53216405981748
+      },
+      "materials": {
+        "composer": {
+          "background": "rgba(24, 22, 31, 0.92)",
+          "alpha": 0.92,
+          "opacity": 1,
+          "backdropFilter": "blur(6px)"
+        },
+        "content": {
+          "background": "rgba(24, 22, 31, 0.82)",
+          "alpha": 0.82,
+          "opacity": 1,
+          "backdropFilter": "blur(8px)"
+        }
+      },
+      "blurredContent": [
+        {
+          "tag": "DIV",
+          "className": "MuiBox-root mui-1f6h8i4",
+          "filter": "blur(8px)"
+        },
+        {
+          "tag": "DIV",
+          "className": "MuiBox-root mui-17bzicm",
+          "filter": "blur(8px)"
+        },
+        {
+          "tag": "DIV",
+          "className": "MuiPaper-root MuiPaper-elevation MuiPaper-rounded MuiPaper-elevation3 mui-1w0l3pq",
+          "filter": "blur(6px)"
+        }
+      ],
+      "draftNotSubmitted": true,
+      "finalChecks": null
+    },
+    {
+      "name": "personal-dashboard-equal-viewport",
+      "stage": "final",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "server": "http://127.0.0.1:5035",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "final-comparison/dashboard-viewport.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/dashboard",
+      "method": "Native 1440x1000 viewport screenshot, fullPage:false"
+    },
+    {
+      "name": "dark-mobile-goal-create",
+      "stage": "final",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "server": "http://127.0.0.1:5035",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "final-comparison/goal-create-dark-390.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/okrs?view=my",
+      "geometry": {
+        "left": 16,
+        "right": 374,
+        "width": 358,
+        "viewport": 390
+      },
+      "primaryActionVisible": true
+    },
+    {
+      "name": "conversational-assessment-chat",
+      "stage": "final",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "server": "http://127.0.0.1:5035",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "final-comparison/conversation-chat-light-1440.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ConversationalAssessment/ChatInterface/PhaseProgress",
+      "syntheticAITransport": true,
+      "completedQuestions": 1,
+      "syntheticMessageRequests": 1
+    },
+    {
+      "name": "conversational-report-preview",
+      "stage": "final",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "server": "http://127.0.0.1:5035",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "final-comparison/conversation-report-light-1440.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ReportPreview",
+      "syntheticAITransport": true,
+      "syntheticReportGenerations": 1
+    },
+    {
+      "name": "conversational-unsent-draft",
+      "stage": "final",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "server": "http://127.0.0.1:5035",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "final-comparison/conversation-enabled-send-light-1440.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ChatInterface enabled Send and opaque material",
+      "syntheticAITransport": true,
+      "computedSend": {
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(0, 102, 204)",
+        "foregroundAlpha": 1,
+        "effectiveForeground": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 5.566637067604819
+      },
+      "materials": {
+        "composer": {
+          "background": "rgb(255, 255, 255)",
+          "alpha": 1,
+          "opacity": 1,
+          "backdropFilter": "none"
+        },
+        "content": {
+          "background": "rgb(255, 255, 255)",
+          "alpha": 1,
+          "opacity": 1,
+          "backdropFilter": "none"
+        }
+      },
+      "blurredContent": [],
+      "draftNotSubmitted": true,
+      "finalChecks": {
+        "iconContrast": true,
+        "noContentBlur": true,
+        "opaqueMaterials": true
+      }
+    },
+    {
+      "name": "conversational-assessment-chat",
+      "stage": "final",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "server": "http://127.0.0.1:5035",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "final-comparison/conversation-chat-dark-390.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ConversationalAssessment/ChatInterface/PhaseProgress",
+      "syntheticAITransport": true,
+      "completedQuestions": 1,
+      "syntheticMessageRequests": 1
+    },
+    {
+      "name": "conversational-report-preview",
+      "stage": "final",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "server": "http://127.0.0.1:5035",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "final-comparison/conversation-report-dark-390.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ReportPreview",
+      "syntheticAITransport": true,
+      "syntheticReportGenerations": 1
+    },
+    {
+      "name": "conversational-unsent-draft",
+      "stage": "final",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "server": "http://127.0.0.1:5035",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "final-comparison/conversation-enabled-send-dark-390.png",
+      "pageErrors": [],
+      "failedRequests": [],
+      "documentOverflow": false,
+      "route": "/appraisals/[appraisalId]/self-assessment",
+      "embeddedSurface": "ChatInterface enabled Send and opaque material",
+      "syntheticAITransport": true,
+      "computedSend": {
+        "foreground": "rgb(7, 20, 38)",
+        "background": "rgb(100, 167, 255)",
+        "foregroundAlpha": 1,
+        "effectiveForeground": [
+          7,
+          20,
+          38
+        ],
+        "contrast": 7.486998976337511
+      },
+      "materials": {
+        "composer": {
+          "background": "rgb(28, 29, 33)",
+          "alpha": 1,
+          "opacity": 1,
+          "backdropFilter": "none"
+        },
+        "content": {
+          "background": "rgb(28, 29, 33)",
+          "alpha": 1,
+          "opacity": 1,
+          "backdropFilter": "none"
+        }
+      },
+      "blurredContent": [],
+      "draftNotSubmitted": true,
+      "finalChecks": {
+        "iconContrast": true,
+        "noContentBlur": true,
+        "opaqueMaterials": true
+      }
+    }
+  ]
+}

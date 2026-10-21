@@ -1,0 +1,107 @@
+{
+  "checkedAt": "2026-10-21T00:09:54.194Z",
+  "appSourceTree": "547284f5c7503ae0cc8db5edaaddd53755978cc5",
+  "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "build": "isolated-default-turbopack-production",
+  "server": "http://127.0.0.1:5035",
+  "evidenceBoundary": "Actual compiled app rendering with existing synthetic journey fixture plus explicit unknown and zero team counts. No real API, identity or provider claim.",
+  "results": [
+    {
+      "route": "/team/okrs",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "after/core-team-okrs-final-light-1440.png",
+      "computed": {
+        "foreground": "rgb(98, 99, 107)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 5.97205502989716
+      },
+      "checks": {
+        "normalTextContrast": true,
+        "unknownMemberCountOmitted": true,
+        "knownZeroPreserved": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    },
+    {
+      "route": "/team/okrs",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "after/core-team-okrs-final-dark-1440.png",
+      "computed": {
+        "foreground": "rgb(176, 177, 187)",
+        "background": "rgb(28, 29, 33)",
+        "contrast": 7.900399831895369
+      },
+      "checks": {
+        "normalTextContrast": true,
+        "unknownMemberCountOmitted": true,
+        "knownZeroPreserved": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    },
+    {
+      "route": "/team/okrs",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "after/core-team-okrs-final-light-390.png",
+      "computed": {
+        "foreground": "rgb(98, 99, 107)",
+        "background": "rgb(255, 255, 255)",
+        "contrast": 5.97205502989716
+      },
+      "checks": {
+        "normalTextContrast": true,
+        "unknownMemberCountOmitted": true,
+        "knownZeroPreserved": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    },
+    {
+      "route": "/team/okrs",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "after/core-team-okrs-final-dark-390.png",
+      "computed": {
+        "foreground": "rgb(176, 177, 187)",
+        "background": "rgb(28, 29, 33)",
+        "contrast": 7.900399831895369
+      },
+      "checks": {
+        "normalTextContrast": true,
+        "unknownMemberCountOmitted": true,
+        "knownZeroPreserved": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    }
+  ],
+  "finalSourceTreeWithTestOnlyDelta": "ebbffcc4697fa7db391e1bde33f4edb1bcc45c73"
+}

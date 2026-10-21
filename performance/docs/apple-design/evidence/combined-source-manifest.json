@@ -1,0 +1,105 @@
+{
+  "candidatePath": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps",
+  "sourcePaths": [
+    "performance/frontend/app/admin/reports/page.tsx",
+    "performance/frontend/app/appraisals/[appraisalId]/page.tsx",
+    "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ChatInterface.tsx",
+    "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ConversationalAssessment.tsx",
+    "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/PhaseProgress.tsx",
+    "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ReportPreview.tsx",
+    "performance/frontend/app/appraisals/[appraisalId]/self-assessment/page.tsx",
+    "performance/frontend/app/appraisals/page.tsx",
+    "performance/frontend/app/dashboard/page.tsx",
+    "performance/frontend/app/development/page.tsx",
+    "performance/frontend/app/feedback/page.tsx",
+    "performance/frontend/app/globals.css",
+    "performance/frontend/app/layout.tsx",
+    "performance/frontend/app/login/page.tsx",
+    "performance/frontend/app/one-on-ones/page.tsx",
+    "performance/frontend/app/recognition/page.tsx",
+    "performance/frontend/app/reviews/page.tsx",
+    "performance/frontend/app/team/[userId]/page.tsx",
+    "performance/frontend/app/team/appraisals/page.tsx",
+    "performance/frontend/app/team/feedback/page.tsx",
+    "performance/frontend/app/team/okrs/page.tsx",
+    "performance/frontend/app/team/reviews/page.tsx",
+    "performance/frontend/app/theme.ts",
+    "performance/frontend/app/tutorial/page.tsx",
+    "performance/frontend/components/Layout.tsx",
+    "performance/frontend/components/PageGuide.tsx",
+    "performance/frontend/components/appraisals/AppraisalNativeCall.tsx",
+    "performance/frontend/components/appraisals/ManagerReviewWorkspace.tsx",
+    "performance/frontend/components/competency/CompetencyPage.tsx",
+    "performance/frontend/components/ui/badge.tsx",
+    "performance/frontend/components/ui/button.tsx",
+    "performance/frontend/components/ui/card.tsx",
+    "performance/frontend/e2e/apple-design.spec.ts",
+    "performance/frontend/lib/performance-design.ts",
+    "performance/frontend/tailwind.config.js",
+    "performance/frontend/e2e-live/appraisal-discussion-navigation.spec.ts",
+    "performance/frontend/e2e-live/competency-role-journey.spec.ts",
+    "performance/frontend/e2e-live/feature-actions.spec.ts",
+    "performance/frontend/app/team/page.tsx",
+    "performance/frontend/e2e/people-and-teams.spec.ts",
+    "performance/frontend/components/competency/library/LibraryList.tsx"
+  ],
+  "baseMain": "d1b0307c0504548bf8b76630d622057ab9149362",
+  "status": "Exact source published/deployed; workflow, independent revision/health/OIDC and three-role browser acceptance passed",
+  "intendedTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+  "followupPaths": [
+    "performance/frontend/app/team/page.tsx",
+    "performance/frontend/components/competency/CompetencyPage.tsx",
+    "performance/frontend/components/competency/library/LibraryList.tsx",
+    "performance/frontend/e2e/apple-design.spec.ts",
+    "performance/frontend/e2e/people-and-teams.spec.ts",
+    "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ChatInterface.tsx",
+    "performance/frontend/app/appraisals/[appraisalId]/self-assessment/conversational/ConversationalAssessment.tsx"
+  ],
+  "createdAt": "2026-10-21T00:27:15.6593362Z",
+  "builtAppTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+  "qa": {
+    "ui": {
+      "evidence": "combined-final-ui.json",
+      "passed": 25,
+      "failed": 0,
+      "coverage": "Shared design9, People4, appraisal navigation7, preserved AI presentation5"
+    },
+    "backend": {
+      "evidence": "combined-assessment-backend.json",
+      "passed": 9,
+      "failed": 0,
+      "testedTree": "978ec19e64973a7c34d3a39abcac1a3ecf259d87",
+      "backendBlobsIdenticalToFinal": true
+    },
+    "realApi": {
+      "evidence": "combined-final-realapi.json",
+      "passed": 19,
+      "failed": 1,
+      "failure": "HR exact-email keyboard selection left the query unselected in one run. No source or assertion was changed.",
+      "unchangedReplays": "combined-final-feedback-replays.json",
+      "replayPassed": 3,
+      "replayFailed": 0,
+      "boundary": "One initial failure not reproduced in three unchanged isolated replays; retained as diagnostic evidence. Not a clean single 20-test run."
+    }
+  },
+  "productionBuild": "combined-final-mock-build.log",
+  "sameFullSourceTreeBuiltAndTested": true,
+  "builds": {
+    "mock": "combined-final-mock-build.log",
+    "realApi": "combined-final-realapi-build.log",
+    "sameFullSourceTree": true
+  },
+  "preservedCommittedBase": {
+    "sha": "d1b0307c0504548bf8b76630d622057ab9149362",
+    "description": "Concurrent AI assessment analytics and source drill-down work, preserved rather than attributed to this design programme."
+  },
+  "updatedAt": "2026-10-21T01:35:39.666651+00:00",
+  "sourceCommit": "8ce5e4b447d2b070870bdf75154b46abde6b18a7",
+  "deploymentRun": "https://github.com/Dewinsight/seemplify/actions/runs/39524124932",
+  "productionVerified": true,
+  "liveEvidence": [
+    "live/release-verification.json",
+    "live/identity-acceptance.json",
+    "live/authenticated-smoke.json"
+  ]
+}

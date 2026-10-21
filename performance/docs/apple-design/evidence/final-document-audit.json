@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-10-21T01:38:33.882641+00:00",
+  "boundary": "Confined read-only exact-value scan of programme artifacts and the 41 programme paths in both published source commits; valid UTF-8 and public-only Playwright environment fields. Binary/image contents were read, never rewritten. Sensitive values are never printed or retained.",
+  "artifactFiles": 1072,
+  "knownSensitiveValuesMatched": 0,
+  "invalidUTF8Documents": [],
+  "reporterEnvironmentViolations": [],
+  "sourceCommitMatches": [],
+  "sourcePathCount": 41,
+  "sourceCommitsChecked": [
+    "81212b2ae4528847d41f682af00bdb2e7810c491",
+    "8ce5e4b447d2b070870bdf75154b46abde6b18a7"
+  ]
+}

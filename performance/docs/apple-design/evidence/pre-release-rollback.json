@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-10-21T01:07:27.969052+00:00",
+  "frontendRevision": "d1b0307c0504548bf8b76630d622057ab9149362",
+  "backendRevision": "d1b0307c0504548bf8b76630d622057ab9149362",
+  "frontendImage": "seemplify/performance-frontend:hostinger-d1b0307c0504548bf8b76630d622057ab9149362",
+  "backendImage": "seemplify/performance-backend:hostinger-d1b0307c0504548bf8b76630d622057ab9149362",
+  "containerStatus": "running",
+  "frontendHTTP": 200,
+  "backendHTTP": 200,
+  "backendStatus": "ok",
+  "priorWorkflow": "https://github.com/Dewinsight/seemplify/actions/runs/39522850712",
+  "wholeCoreWorkflowStatus": "success",
+  "resourcesPreserved": true,
+  "boundary": "Immediately prior healthy release. Existing concurrent analytics work preserved; no images, volumes or app data removed."
+}

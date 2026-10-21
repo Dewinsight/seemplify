@@ -1,0 +1,86 @@
+{
+  "boundary": "Playwright JSON reporter inherited the process environment in config.webServer.env. Published reporter files and task-local duplicates retain only public test URLs/port/CI flags. Full environment values were removed before documentation publication; test results and assertions are unchanged.",
+  "files": [
+    {
+      "file": "candidate-562-focused.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "candidate-d942-focused.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "candidate-d942-tab.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "candidate-final-replay.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "candidate-final38-focused.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "candidate-final38-tab.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "candidate-focused-replay.json",
+      "removedEnvironmentKeys": 124
+    },
+    {
+      "file": "candidate-preferences-retest.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "combined-final-ui.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "final-exact-focused.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "focused-login-retest-2.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "focused-login-retest-3.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "focused-login-retest.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "focused-qa.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "followup-focused-regressions.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "followup-people-replay.json",
+      "removedEnvironmentKeys": 123
+    },
+    {
+      "file": "regression-qa.json",
+      "removedEnvironmentKeys": 123
+    }
+  ],
+  "audit": {
+    "capturedAt": "2026-10-21T00:55:24.693616+00:00",
+    "knownSensitiveEnvironmentValuesChecked": 1,
+    "programmeFileMatches": [],
+    "localDuplicateMatches": [],
+    "sourceCommitMatches": [],
+    "sourcePathsCheckedPerCommit": 41,
+    "sourceCommits": [
+      "81212b2ae4528847d41f682af00bdb2e7810c491",
+      "8ce5e4b447d2b070870bdf75154b46abde6b18a7"
+    ],
+    "binaryImagesAndPdfUntouched": true
+  }
+}

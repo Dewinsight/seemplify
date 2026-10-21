@@ -1,0 +1,23 @@
+{
+  "createdAt": "2026-10-21T00:40:53.827Z",
+  "baseMain": "81212b2ae4528847d41f682af00bdb2e7810c491",
+  "intendedTree": "0edbadf7d189e26851f6a4ea68e58967500c6d56",
+  "candidatePath": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps",
+  "build": "isolated-default-turbopack-production",
+  "server": "http://127.0.0.1:5035",
+  "evidenceBoundary": "Fresh final coalesced production source rendering with identical synthetic fixtures as the matched pre-redesign a93 baseline. Root/architect separately own source freeze/build provenance. No live identity or provider claim.",
+  "fixtureFiles": [
+    {
+      "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\performance-journeys.spec.ts",
+      "sha256": "a3b96881f53886ace30e434be578a940252a912b072cd7d53713f370209d21d0"
+    },
+    {
+      "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps\\performance\\frontend\\e2e\\appraisal-navigation-accessibility.spec.ts",
+      "sha256": "5d35b07517f2b45b32d286b0b78b9566ae4f89d125af0cccf0f226e8a1ee47d2"
+    },
+    {
+      "file": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\core-supplemental-fixture.cjs",
+      "sha256": "d0471814e9352c25fc589a51b058dd6b2af0f85a805051d899e0770f1097fe19"
+    }
+  ]
+}

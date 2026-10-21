@@ -1,0 +1,1426 @@
+{
+  "capturedAt": "2026-10-20T23:45:11.231Z",
+  "baseline": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+  "analysisBaseline": "9e8fecc1",
+  "scope": "AD-01..AD-06",
+  "evidenceBoundary": "Actual browser rendering using controlled existing synthetic test fixtures; not live backend or production evidence. Missing mocks and recovery states are recorded explicitly. Source baseline refreshed to calendar commit 39c3f4ff before programme implementation.",
+  "results": [
+    {
+      "name": "root",
+      "requestedRoute": "/",
+      "actualRoute": "/dashboard",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-root-light-1440.png",
+      "headings": [
+        "Run a clear and consistent performance process.",
+        "Performance workspace",
+        "Administration overview",
+        "Start appraisal",
+        "Appraisal results",
+        "Calibration",
+        "Performance reports"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "on\nInsights\nAdmin\n1\nA\n\nDashboard guide\n\nUse the dashboard to see what needs attention now and jump directly into the right workflow.\n\nOpen guide\nTutorial\n\nADMIN WORKSPACE\n\nRun a clear and consistent performance process.\n\nManage cycles, calibration, reporting, and organization-wide performance settings for Acme Ltd.\n\nAC\n\nPERFORMANCE WORKSPACE\n\nAcme Ltd\n\nApp Hub\n\nCURRENT VIEW\n\nAdmin\n\nHR Administrator\n\nCustomer Success\n\nAPPRAISAL CYCLES\n\nOpen\n\nManage timelines and participants\n\nCALIBRATION\n\nReview\n\nRating distribution and fairness\n\nREPORTING\n\nLive\n\nOrganization performance data\n\nANALYTICS\n\nExplore\n\nTrends and completion\n\nPerformance workspace\n\nStart with the action that needs to move today.\n\nAdministration overview\n\nSee cycle health, organization activity, and exceptions that need HR attention.\n\nCURRENT STATE\n\nOrganization-wide\n\nOpen\nStart appraisal\n\nChoose staff, review deadlines, and start their appraisals.\n\nCURRENT STATE\n\nNew review\n\nOpen\nAppraisal results\n\nFind completed appraisals and individual result reports.\n\nCURRENT STATE\n\nHistory & results\n\nOpen\nCalibration\n\nReview rating distribution and complete fair, auditable calibration.\n\nCURRENT STATE\n\nHR workflow\n\nOpen\nPerformance reports\n\nMonitor completion, progress, and organization-level outcomes.\n\nCURRENT STATE\n\nReporting\n\nOpen",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "login-error",
+      "requestedRoute": "/login?error=Sign-in%20could%20not%20be%20completed",
+      "actualRoute": "/login?error=Sign-in%20could%20not%20be%20completed",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "public",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-login-error-light-1440.png",
+      "headings": [
+        "Performance Management",
+        "Drive performancewith AI insights",
+        "Welcome back"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\n\nAI-Powered Performance Reviews\n\nDrive performance\nwith AI insights\n\nStreamline reviews, track OKRs, and empower your team with intelligent performance management.\n\nAI-Powered Reviews\n\nAutomated review generation and bias detection\n\nOKR Tracking\n\nGoal alignment from organization to individual\n\nContinuous Feedback\n\nReal-time recognition and 360° feedback\nWelcome back\n\nSign in to your Performance Management account\n\nSign-in could not be completed\n\nSign in securely using your Identity Provider account\n\nLogin with Identity Provider\n\nOpen App Hub\n\nView all SmartHR apps and tools\nYour data is protected with enterprise-grade security\nGuide",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "dashboard-personal",
+      "requestedRoute": "/dashboard",
+      "actualRoute": "/dashboard",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "personal",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-dashboard-personal-light-1440.png",
+      "headings": [
+        "Your performance work, in one place.",
+        "Performance workspace",
+        "Set and update OKRs",
+        "My appraisals",
+        "My appraisal results"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n1\nA\n\nDashboard guide\n\nUse the dashboard to see what needs attention now and jump directly into the right workflow.\n\nOpen guide\nTutorial\n\nWEDNESDAY 21 OCTOBER\n\nYour performance work, in one place.\n\nWelcome back, Alex. Keep your goals, appraisals, feedback, and development moving.\n\nAC\n\nPERFORMANCE WORKSPACE\n\nAcme Ltd\n\nApp Hub\n\nCURRENT VIEW\n\nPersonal\n\nHR Administrator\n\nOKR PROGRESS\n\n35%\n\nACTIVE OKRS\n\n1\n\n0 completed\n\nUPCOMING DEADLINES\n\n1\n\nNext 7 days\n\nRECENT FEEDBACK\n\n2\n\nShared with you\n\nPerformance workspace\n\nStart with the action that needs to move today.\n\nSet and update OKRs\n\nCreate objectives, update progress, and keep outcomes connected to your work.\n\nCURRENT STATE\n\n1 active\n\nOpen\nMy appraisals\n\nContinue your self-assessments, discussions, and assigned reviews.\n\nCURRENT STATE\n\n1 due soon\n\nOpen\nMy appraisal results\n\nFind past reviews, final results, and downloadable reports.\n\nCURRENT STATE\n\nHistory & results\n\nOpen",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "dashboard-manager",
+      "requestedRoute": "/dashboard",
+      "actualRoute": "/dashboard",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "manager",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-dashboard-manager-light-1440.png",
+      "headings": [
+        "Keep your team’s performance work moving.",
+        "Performance workspace",
+        "Direct reports",
+        "Team goals",
+        "Team appraisals",
+        "Start appraisal",
+        "Team appraisal results",
+        "Manager actions"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "uide\n\nUse the dashboard to see what needs attention now and jump directly into the right workflow.\n\nOpen guide\nTutorial\n\nMANAGER WORKSPACE\n\nKeep your team’s performance work moving.\n\nReview direct reports, goals, coaching, and manager assessments for Acme Ltd.\n\nAC\n\nPERFORMANCE WORKSPACE\n\nAcme Ltd\n\nApp Hub\n\nCURRENT VIEW\n\nManager\n\nHR Administrator\n\nCustomer Success\n\nDIRECT REPORTS\n\n1\n\nPeople you manage\n\nTEAM OKR PROGRESS\n\n35%\n\nPENDING REVIEWS\n\n2\n\nNeeds your attention\n\nUPCOMING DEADLINES\n\n1\n\nNext 7 days\n\nPerformance workspace\n\nStart with the action that needs to move today.\n\nDirect reports\n\nReview your team, coaching activity, feedback, and development follow-ups.\n\nCURRENT STATE\n\n1 reports\n\nOpen\nTeam goals\n\nAssign, approve, and monitor goals for the people who report to you.\n\nCURRENT STATE\n\n1 in view\n\nOpen\nTeam appraisals\n\nComplete manager assessments and move submitted appraisals forward.\n\nCURRENT STATE\n\n2 pending\n\nOpen\nStart appraisal\n\nChoose staff, confirm review details, and start their appraisal.\n\nCURRENT STATE\n\nNew review\n\nOpen\nTeam appraisal results\n\nReview previous outcomes and download a results report.\n\nCURRENT STATE\n\nHistory & results\n\nOpen\nManager actions\n\nReviews and follow-ups routed directly to you.\n\nYou are all caught up\n\nNo reviews or follow-ups need your attention.",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "dashboard-admin",
+      "requestedRoute": "/dashboard",
+      "actualRoute": "/dashboard",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-dashboard-admin-light-1440.png",
+      "headings": [
+        "Run a clear and consistent performance process.",
+        "Performance workspace",
+        "Administration overview",
+        "Start appraisal",
+        "Appraisal results",
+        "Calibration",
+        "Performance reports"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "on\nInsights\nAdmin\n1\nA\n\nDashboard guide\n\nUse the dashboard to see what needs attention now and jump directly into the right workflow.\n\nOpen guide\nTutorial\n\nADMIN WORKSPACE\n\nRun a clear and consistent performance process.\n\nManage cycles, calibration, reporting, and organization-wide performance settings for Acme Ltd.\n\nAC\n\nPERFORMANCE WORKSPACE\n\nAcme Ltd\n\nApp Hub\n\nCURRENT VIEW\n\nAdmin\n\nHR Administrator\n\nCustomer Success\n\nAPPRAISAL CYCLES\n\nOpen\n\nManage timelines and participants\n\nCALIBRATION\n\nReview\n\nRating distribution and fairness\n\nREPORTING\n\nLive\n\nOrganization performance data\n\nANALYTICS\n\nExplore\n\nTrends and completion\n\nPerformance workspace\n\nStart with the action that needs to move today.\n\nAdministration overview\n\nSee cycle health, organization activity, and exceptions that need HR attention.\n\nCURRENT STATE\n\nOrganization-wide\n\nOpen\nStart appraisal\n\nChoose staff, review deadlines, and start their appraisals.\n\nCURRENT STATE\n\nNew review\n\nOpen\nAppraisal results\n\nFind completed appraisals and individual result reports.\n\nCURRENT STATE\n\nHistory & results\n\nOpen\nCalibration\n\nReview rating distribution and complete fair, auditable calibration.\n\nCURRENT STATE\n\nHR workflow\n\nOpen\nPerformance reports\n\nMonitor completion, progress, and organization-level outcomes.\n\nCURRENT STATE\n\nReporting\n\nOpen",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "goals",
+      "requestedRoute": "/okrs",
+      "actualRoute": "/okrs",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-goals-light-1440.png",
+      "headings": [
+        "Goals",
+        "No organization goals for this period"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nMy OKRs guide\n\nCreate, update, and monitor your objectives and key results here.\n\nOpen guide\nTutorial\nGoals\n\nSet organization direction and monitor goal alignment.\n\nCreate goal\nUpcoming\nCurrent\nPast\nPeriod\n​\nPeriod\nOrganization Goals (0)\nTeam & Department Goals (0)\nOrganization Alignment\nApprovals (0)\nNo organization goals for this period\n\nCreate an organization goal to set direction for departments and teams.",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "alignment",
+      "requestedRoute": "/okrs/alignment",
+      "actualRoute": "/okrs/alignment",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-alignment-light-1440.png",
+      "headings": [
+        "OKR Alignment",
+        "OKR Hierarchy"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nOKR Alignment guide\n\nUse this page to connect your goals to team or organization priorities.\n\nOpen guide\nTutorial\nOKR Alignment\n\nView how objectives cascade from the organization through departments and teams to individuals.\n\nBack to My OKRs\nOKR Hierarchy\nNo organization-level OKRs are available in this view.",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisals",
+      "requestedRoute": "/appraisals",
+      "actualRoute": "/appraisals",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-appraisals-light-1440.png",
+      "headings": [
+        "Performance Appraisals",
+        "Organization appraisals",
+        "1",
+        "1",
+        "1",
+        "1",
+        "Jordan Lee"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAppraisals guide\n\nContinue current appraisals or find past results across all cycles.\n\nOpen guide\nTutorial\nPerformance Appraisals\n\nStart staff reviews, track current work, and find results across your organization.\n\nCycle\nAll cycles\nCycle\nStart appraisal\nReviews I’m conducting\nRemoved appraisals\nCurrent (1)\nHistory & results (0)\nOrganization appraisals\nAppraisals for your organization, across every cycle.\nHR view\n0\n\nNewest first by creation date. Completed and cancelled reviews are in History.\n\n1\n\nTotal\n\n1\n\nPending Action\n\n1\n\nSelf-Assessment Done\n\n1\n\nAwaiting Employee\n\nJ\nJordan Lee\n\nReviewer: Alex Morgan\n\n2026 Annual Review\nSelf-Assessment In Progress\nSelf: 4\nMgr: 4\nCreated\nNot recorded\nCreated by\nNot recorded\nStarted from\nNot recorded\nAssessment period\n1 Jan 2026 – 31 Dec 2026\nEmployee response due\nNot set\nReviewer response due\nNot set\nEmployee submitted\n1 Oct 2026, 01:00 BST\nSelf-Assessment\nManager Review\nDiscussion\nCalibration\nFinal Review",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-start",
+      "requestedRoute": "/appraisals/start",
+      "actualRoute": "/appraisals/start",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-with-unavailable-secondary-data",
+      "screenshot": "before/core-appraisal-start-light-1440.png",
+      "headings": [
+        "Start appraisal",
+        "Choose staff"
+      ],
+      "failedRequests": [
+        {
+          "path": "/competency/bootstrap",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nStart appraisal guide\n\nChoose staff, review details, then confirm the launch.\n\nOpen guide\nTutorial\nBack to appraisals\nStart appraisal\n\nSet up reviews for anyone in your organization, including its leaders. Choose a reviewer for each person, then agree the assessment period and response deadlines.\n\n1\nPeople\n2\nReview details\n3\nConfirm and start\nChoose staff\nSearch staff\nSearch staff\nRefresh staff\nFilter by team\nAll available teams\nFilter by team\n\n0 selected · 1 eligible\n\nJordan Lee\n\nCustomer Success\n\nPrevious\nContinue",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisals-removed",
+      "requestedRoute": "/appraisals/removed",
+      "actualRoute": "/appraisals/removed",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-appraisals-removed-light-1440.png",
+      "headings": [
+        "Removed appraisals"
+      ],
+      "failedRequests": [
+        {
+          "path": "/appraisals/lifecycle/removed",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAppraisal Overview guide\n\nUse the appraisal overview as the control panel for one appraisal record.\n\nOpen guide\nTutorial\nBack to appraisals\nRemoved appraisals\n\nRestore a review to History. Cancelled reviews stay closed, and calls and reminders do not restart.\n\nRemoved appraisals could not be loaded.\nRetry",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-detail",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-appraisal-detail-light-1440.png",
+      "headings": [
+        "Jordan Lee's Appraisal",
+        "Self-Assessment"
+      ],
+      "failedRequests": [
+        {
+          "path": "/appraisals/lifecycle/507f1f77bcf86cd799439011",
+          "status": 501
+        },
+        {
+          "path": "/competency/bootstrap",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAppraisal Overview guide\n\nUse the appraisal overview as the control panel for one appraisal record.\n\nOpen guide\nTutorial\nBack to Appraisals\nJ\nJordan Lee's Appraisal\n\n2026 Annual Review • Team Member\n\nSelf-Assessment In Progress\nMy calendar account\nCurrent AI assessment\nAppraisal controls could not be loaded.\nRetry\nCurrent task\nPrevious work & analytics\nDetails & evidence\nCurrent AI assessment\n\nStep 2 of 6\n\nSelf-Assessment\n\nReflect on the review period and submit your employee assessment.\n\nNext: Manager Review\n\nWaiting for the employee to complete this step. You can view submitted work in Previous work & analytics.",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-goals",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/goal-setting",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/goal-setting",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-appraisal-goals-light-1440.png",
+      "headings": [
+        "Goals in this appraisal",
+        "1",
+        "1 of 1",
+        "40%",
+        "Build launch readiness",
+        "Prepare the launch",
+        "Your goal evidence is already saved"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAppraisal Goals guide\n\nReview the locked goal evidence captured automatically for this appraisal.\n\nOpen guide\nTutorial\nBack to appraisal\nGoals in this appraisal\n\n2026 Annual Review · 1 captured goal\n\nOpen Goals workspace\n\nNo save is needed.\n\nThese approved individual goals were attached automatically when the appraisal began. They are a locked historical snapshot, so later goal edits cannot change this review.\n\nCaptured goals\n1\nGoals with reported progress\n1 of 1\nGoal contribution\n40%\nIndividual\nQ1 2027\nVersion 2\nBuild launch readiness\nCutoff achievement\n\n75%\n\nPrepare the launch\n\nMake the release ready for customers.\n\nComplete launch checklist\n\n75 / 100\n\nYour goal evidence is already saved\n\nContinue when you are ready to reflect on the captured outcomes and evidence.\n\nContinue self-assessment",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-self",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "employee",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-appraisal-self-light-1440.png",
+      "headings": [
+        "Self-Assessment Already Submitted"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n1\nA\n\nSelf-Assessment guide\n\nThis is where the employee completes their side of the appraisal.\n\nOpen guide\nTutorial\nSelf-Assessment Already Submitted\n\nYou submitted your self-assessment on 01/10/2026. Your manager will now review it.\n\nBack to Appraisals",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-manager",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "reviewer",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-appraisal-manager-light-1440.png",
+      "headings": [
+        "Review: Jordan Lee",
+        "Supporting documents",
+        "Review Jordan Lee's Self-Assessment",
+        "Jordan Lee",
+        "Employee's Self-Summary",
+        "Competency Self-Ratings",
+        "Performance Feedback (0)"
+      ],
+      "failedRequests": [
+        {
+          "path": "/competency/appraisal-links/507f1f77bcf86cd799439011",
+          "status": 501
+        },
+        {
+          "path": "/competency/appraisal-links/507f1f77bcf86cd799439011",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nManager Review guide\n\nUse this page to assess the employee after the self-assessment is submitted.\n\nOpen guide\nTutorial\nBack to appraisal\nReview: Jordan Lee\n\n2026 Annual Review\n\nSave Progress\nReview Self-Assessment\nCompetency Ratings\nOKR Verification\nOverall Assessment\nCV evidence could not be loaded. No browser-test mock for GET /competency/appraisal-links/507f1f77bcf86cd799439011\nRetry\nSupporting documents\n\nDocuments uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.\n\nNo documents attached.\n\nChoose document\n\nPDF, DOCX, TXT or PPTX · up to 10 MB\n\nReview Jordan Lee's Self-Assessment\n\nReview the employee's self-assessment before providing your evaluation. Look for alignment and gaps between your observations.\n\nJ\nJordan Lee\n\nTeam Member - Department\n\nSelf-Rating: 4/5\n\nEmployee's Self-Summary\n\nKey Achievements\n\nDelivered customer improvements\n\nChallenges Faced\n\nBalanced release priorities\n\nKey Learnings\n\nNot provided\n\nGoals for Next Period\n\nNot provided\n\nCompetency Self-Ratings\n\nPerformance Feedback (0)\n\nAI assistance is disabled for this cycle. Complete the review manually.\nPrevious\nNext",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-discussion",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/discussion",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/discussion",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "discussion",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-appraisal-discussion-light-1440.png",
+      "headings": [
+        "Performance Discussion",
+        "Meeting Details",
+        "Discussion Notes & Outcomes"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nDiscussion guide\n\nUse this page to capture the appraisal conversation between manager and employee.\n\nOpen guide\nTutorial\nBack to Appraisal\nPerformance Discussion\n\nJordan Lee • 2026 Annual Review\n\nThis discussion is read-only. Saved notes remain available.\nMeeting Details\nScheduled Date/Time\nScheduled Date/Time\n\nYour device time zone: Europe/London\n\nLocation\nLocation\nMeeting Link\nMeeting Link\nDiscussion Notes & Outcomes\nThese notes summarize the agreement between Employee and Manager. Both parties will acknowledge these notes.\nAgreed Strengths\nAgreed Strengths\nAgreed Improvements\nAgreed Improvements\nDevelopment Plan for Next Period\nDevelopment Plan for Next Period\n\nProvide detailed actions for development.\n\nCareer Aspirations Discussion\nCareer Aspirations Discussion\nSupport Needed from Manager\nSupport Needed from Manager",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-calibration",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/calibration",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/calibration",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "calibration",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-appraisal-calibration-light-1440.png",
+      "headings": [],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nCalibration guide\n\nUse this page to review rating consistency and fairness before finalization.\n\nOpen guide\nTutorial\nManager review must be submitted before calibration can begin.\nBack to Appraisal",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-final",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/final-review",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/final-review",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "final",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-appraisal-final-light-1440.png",
+      "headings": [
+        "Final Review",
+        "Rating Inputs",
+        "AI Recommendation",
+        "Final Rating Decision"
+      ],
+      "failedRequests": [
+        {
+          "path": "/competency/appraisal-links/507f1f77bcf86cd799439011",
+          "status": 501
+        },
+        {
+          "path": "/competency/appraisal-links/507f1f77bcf86cd799439011",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nFinal Review guide\n\nUse this page to confirm the final outcome of the appraisal.\n\nOpen guide\nTutorial\nBack to Appraisal\nFinal Review\nUse this step to finalize the overall rating. AI assistance is disabled for this cycle.\nRating Inputs\nSelf: 4/5\nManager: 4/5\nAI Recommendation\n\nAI suggestion is unavailable because AI assistance is disabled for this cycle.\n\nNo browser-test mock for GET /competency/appraisal-links/507f1f77bcf86cd799439011\nRetry\nFinal Rating Decision\n1 Star\n2 Stars\n3 Stars\n4 Stars\n5 Stars\n4/5\nThe calculated evidence rating is unavailable. Refresh before finalizing.\nJustification (required when overriding evidence rating)\nJustification (required when overriding evidence rating)\n\nExplain the final outcome.\n\nComplete Appraisal",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "appraisal-report",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/report",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/report",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "completed",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-with-unavailable-secondary-data",
+      "screenshot": "before/core-appraisal-report-light-1440.png",
+      "headings": [
+        "Appraisal result report",
+        "2024 annual review",
+        "Final outcome",
+        "AI appraisal report",
+        "Supporting documents",
+        "Employee reflection",
+        "Achievements",
+        "Manager assessment",
+        "Strengths",
+        "Discussion and agreed next steps",
+        "Goals reviewed",
+        "Competency assessment",
+        "Review questions and submitted answers"
+      ],
+      "failedRequests": [
+        {
+          "path": "/competency/bootstrap",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "praisal.\n\nOpen guide\nTutorial\nBack to history\nOpen appraisal\nDownload CSV\nPrint / save PDF\nAppraisal result report\n2024 annual review\n\n1 Jan 2024 – 31 Dec 2024\n\nEmployee: Jordan Lee\n\nReviewer: Alex Morgan\n\nFinal result: 4 / 5 · Exceeds expectations\n\nFinalized: 15 Jan 2025\n\nAcknowledgement: Recorded\n\nFinal outcome\n\nStrong delivery\n\nAI appraisal report\n\nA combined report from submitted assessments, OKRs, competencies, shared evidence and meeting transcripts. The published rating remains the human reviewer’s decision.\n\nThe combined AI report has not been generated yet.\nSupporting documents\n\nRetained supporting documents available to your role. Download access follows each document’s original audience restrictions.\n\nNo documents attached.\n\nEmployee reflection\nAchievements\n\nDelivered customer improvements\n\nManager assessment\nStrengths\n\nReliable delivery\n\nDiscussion and agreed next steps\n\nNo narrative recorded.\n\nGoals reviewed\n\nNo goal evidence was attached to this appraisal.\n\nCompetency assessment\n\nDelivery\n\nEmployee rating: 3 · Manager rating: 4\n\nConsistent delivery\n\nReview questions and submitted answers\nLearning · Employee\n\nWhat did you apply?\n\nPublished learning answer\n\nCould not check the linked competency report. Your appraisal result is still available.\n\nRetry competency report",
+      "analysisBaseline": "9e8fecc1"
+    },
+    {
+      "name": "people",
+      "requestedRoute": "/team",
+      "actualRoute": "/team",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-people-light-1440.png",
+      "headings": [
+        "People & teams"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nMy OKRs\nU\n\nPeople & teams guide\n\nAdmin shows the organization. Manager shows the teams you lead and their subteams.\n\nOpen guide\nTutorial\nMy Team\n\nLoading your team…"
+    },
+    {
+      "name": "analytics",
+      "requestedRoute": "/analytics",
+      "actualRoute": "/analytics",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-analytics-light-1440.png",
+      "headings": [
+        "Performance analytics",
+        "12",
+        "75%",
+        "4.2/5",
+        "83%",
+        "Final rating distribution",
+        "Cycle trend"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nMy OKRs\nU\n\nAnalytics guide\n\nUse this page to understand performance patterns and trends.\n\nOpen guide\nTutorial"
+    },
+    {
+      "name": "team-goals",
+      "requestedRoute": "/team/okrs",
+      "actualRoute": "/team/okrs",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-with-unavailable-secondary-data",
+      "screenshot": "before/core-team-goals-light-1440.png",
+      "headings": [
+        "Team OKRs",
+        "Direct Reports",
+        "1",
+        "Avg. Progress",
+        "0%",
+        "On Track",
+        "0",
+        "Needs Attention",
+        "0",
+        "Managing 1 team:",
+        "Direct Reports OKR Status"
+      ],
+      "failedRequests": [
+        {
+          "path": "/okrs/direct-reports",
+          "status": 404
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nTeam OKRs guide\n\nUse this page to monitor team goal progress and coaching needs.\n\nOpen guide\nTutorial\nTeam OKRs\n\nMonitor your direct reports' objectives and key results progress\n\nDirect Reports\n1\n0 total OKRs\nAvg. Progress\n0%\nOn Track\n0\nNeeds Attention\n0\nManaging 1 team:\nCustomer Success (undefined members)\nDirect Reports OKR Status\nTEAM MEMBER\tROLE\tOKRS\tAVG PROGRESS\tSTATUS\tACTIONS\n\nJ\n\nJordan Lee\n\njordan@example.com\n\t\n\nCustomer Success Manager\n\n\t\n0\n\tNo OKRs\t\nNo Data\n\t"
+    },
+    {
+      "name": "team-appraisals",
+      "requestedRoute": "/team/appraisals",
+      "actualRoute": "/team/appraisals",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-team-appraisals-light-1440.png",
+      "headings": [
+        "Team Appraisals",
+        "1",
+        "0",
+        "0",
+        "0"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nTeam Appraisals guide\n\nUse this page to track appraisal progress across your direct reports.\n\nOpen guide\nTutorial\nTeam Appraisals\n\nReview and manage performance appraisals for your direct reports\n\n​\n​\nStatus\nAll Statuses\nStatus\nReview Cycle\n​\nReview Cycle\nEMPLOYEE\tREVIEW CYCLE\tSTATUS\tPROGRESS\tDOCUMENTS\tMESSAGES\tACTIONS\n\nJ\n\nJordan Lee\n\njordan@example.com\n\t\n\n2026 Annual Review\n\n01/01/2026 - 31/12/2026\t\nself assessment in progress\n\t\n1\nSelf\n2\nManager\n3\nFinal\n4\nCompleted\n\t-\t-\t\nView\n1\n\nTotal Appraisals\n\n0\n\nRequiring Action\n\n0\n\nFinal Review Pending\n\n0\n\nCompleted"
+    },
+    {
+      "name": "team-reviews",
+      "requestedRoute": "/team/reviews",
+      "actualRoute": "/team/appraisals",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-team-reviews-light-1440.png",
+      "headings": [
+        "Team Appraisals",
+        "1",
+        "0",
+        "0",
+        "0"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nTeam Appraisals guide\n\nUse this page to track appraisal progress across your direct reports.\n\nOpen guide\nTutorial\nTeam Appraisals\n\nReview and manage performance appraisals for your direct reports\n\n​\n​\nStatus\nAll Statuses\nStatus\nReview Cycle\n​\nReview Cycle\nEMPLOYEE\tREVIEW CYCLE\tSTATUS\tPROGRESS\tDOCUMENTS\tMESSAGES\tACTIONS\n\nJ\n\nJordan Lee\n\njordan@example.com\n\t\n\n2026 Annual Review\n\n01/01/2026 - 31/12/2026\t\nself assessment in progress\n\t\n1\nSelf\n2\nManager\n3\nFinal\n4\nCompleted\n\t-\t-\t\nView\n1\n\nTotal Appraisals\n\n0\n\nRequiring Action\n\n0\n\nFinal Review Pending\n\n0\n\nCompleted"
+    },
+    {
+      "name": "review-detail",
+      "requestedRoute": "/reviews/review-1",
+      "actualRoute": "/reviews/review-1",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-with-unavailable-secondary-data",
+      "screenshot": "before/core-review-detail-light-1440.png",
+      "headings": [
+        "Historical review"
+      ],
+      "failedRequests": [
+        {
+          "path": "/reviews/review-1",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nMy OKRs\nU\n\nHistorical review guide\n\nRead a retained review from the earlier review system.\n\nOpen guide\nTutorial\nBack to appraisal history\nCurrent appraisals\nHistorical review\nThis review is retained as a read-only historical record. Start and complete new reviews in Appraisals."
+    },
+    {
+      "name": "reviews",
+      "requestedRoute": "/reviews",
+      "actualRoute": "/appraisals",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-reviews-light-1440.png",
+      "headings": [
+        "Performance Appraisals",
+        "Organization appraisals",
+        "1",
+        "1",
+        "1",
+        "1",
+        "Jordan Lee"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAppraisals guide\n\nContinue current appraisals or find past results across all cycles.\n\nOpen guide\nTutorial\nPerformance Appraisals\n\nStart staff reviews, track current work, and find results across your organization.\n\nCycle\nAll cycles\nCycle\nStart appraisal\nReviews I’m conducting\nRemoved appraisals\nCurrent (1)\nHistory & results (0)\nOrganization appraisals\nAppraisals for your organization, across every cycle.\nHR view\n0\n\nNewest first by creation date. Completed and cancelled reviews are in History.\n\n1\n\nTotal\n\n1\n\nPending Action\n\n1\n\nSelf-Assessment Done\n\n1\n\nAwaiting Employee\n\nJ\nJordan Lee\n\nReviewer: Alex Morgan\n\n2026 Annual Review\nSelf-Assessment In Progress\nSelf: 4\nMgr: 4\nCreated\nNot recorded\nCreated by\nNot recorded\nStarted from\nNot recorded\nAssessment period\n1 Jan 2026 – 31 Dec 2026\nEmployee response due\nNot set\nReviewer response due\nNot set\nEmployee submitted\n1 Oct 2026, 01:00 BST\nSelf-Assessment\nManager Review\nDiscussion\nCalibration\nFinal Review"
+    },
+    {
+      "name": "appraisal-self",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "employee",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-appraisal-self-light-390.png",
+      "headings": [
+        "Self-Assessment Already Submitted"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "1\nA\nGuide\nSelf-Assessment Already Submitted\n\nYou submitted your self-assessment on 01/10/2026. Your manager will now review it.\n\nBack to Appraisals"
+    },
+    {
+      "name": "appraisal-manager",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "reviewer",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-appraisal-manager-light-390.png",
+      "headings": [
+        "Review: Jordan Lee",
+        "Supporting documents",
+        "Review Jordan Lee's Self-Assessment",
+        "Jordan Lee",
+        "Employee's Self-Summary",
+        "Competency Self-Ratings",
+        "Performance Feedback (0)"
+      ],
+      "failedRequests": [
+        {
+          "path": "/competency/appraisal-links/507f1f77bcf86cd799439011",
+          "status": 501
+        },
+        {
+          "path": "/competency/appraisal-links/507f1f77bcf86cd799439011",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "1\nA\nGuide\nBack to appraisal\nReview: Jordan Lee\n\n2026 Annual Review\n\nSave Progress\nReview Self-Assessment\nCompetency Ratings\nOKR Verification\nOverall Assessment\nCV evidence could not be loaded. No browser-test mock for GET /competency/appraisal-links/507f1f77bcf86cd799439011\nRetry\nSupporting documents\n\nDocuments uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.\n\nNo documents attached.\n\nChoose document\n\nPDF, DOCX, TXT or PPTX · up to 10 MB\n\nReview Jordan Lee's Self-Assessment\n\nReview the employee's self-assessment before providing your evaluation. Look for alignment and gaps between your observations.\n\nJ\nJordan Lee\n\nTeam Member - Department\n\nSelf-Rating: 4/5\n\nEmployee's Self-Summary\n\nKey Achievements\n\nDelivered customer improvements\n\nChallenges Faced\n\nBalanced release priorities\n\nKey Learnings\n\nNot provided\n\nGoals for Next Period\n\nNot provided\n\nCompetency Self-Ratings\n\nPerformance Feedback (0)\n\nAI assistance is disabled for this cycle. Complete the review manually.\nPrevious\nNext"
+    },
+    {
+      "name": "analytics",
+      "requestedRoute": "/analytics",
+      "actualRoute": "/analytics",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-analytics-light-390.png",
+      "headings": [
+        "Performance analytics",
+        "12",
+        "75%",
+        "4.2/5",
+        "83%",
+        "Final rating distribution",
+        "Cycle trend"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "1\nA\nGuide\nPerformance analytics\n\nFinal ratings, completion, goal achievement, configured section coverage, and performer drilldowns from the canonical appraisal record.\n\nRefresh\nCycle\n​\nCycle\nTeam\n​\nTeam\nDepartment\n​\nDepartment\n\nParticipants\n\n12\nAppraisals in this scope\n\nCompletion\n\n75%\n9 completed\n\nAverage final rating\n\n4.2/5\n9 finalized ratings\n\nManager review\n\n83%\n1 rating gaps need attention\nOverview\nTop performers (1)\nTeams and departments\nConfigured sections\nFinal rating distribution\n\nOnly finalized ratings are counted.\n\n1/5\n2/5\n3/5\n4/5\n5/5\n0\n1\n2\n3\n4\nCycle trend\n\nAverage final rating and completion by cycle.\n\n2026 Annual Review\n1\n2\n3\n4\n5\n0\n25\n50\n75\n100\nMetric rules: Mean finalized rating. Completed appraisals divided by all appraisals.\nRefreshed 11/08/2026, 01:00:00. Draft ratings and AI suggestions are excluded from top-performer ranking.\n25"
+    },
+    {
+      "name": "admin",
+      "requestedRoute": "/admin",
+      "actualRoute": "/admin",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-admin-light-1440.png",
+      "headings": [],
+      "failedRequests": [
+        {
+          "path": "/appraisals/admin/analytics",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAdmin Panel guide\n\nUse the admin panel to manage cycles and monitor organization-level performance workflows.\n\nOpen guide\nTutorial\nUnable to load admin analytics. Please refresh and try again."
+    },
+    {
+      "name": "cycles",
+      "requestedRoute": "/admin/appraisal-cycles",
+      "actualRoute": "/admin/appraisal-cycles",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-cycles-light-1440.png",
+      "headings": [
+        "Appraisal Cycle Management",
+        "1",
+        "0",
+        "0",
+        "0",
+        "0",
+        "2026 Annual Review"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAppraisal Cycle Management guide\n\nUse this page to create, inspect, and monitor appraisal cycles.\n\nOpen guide\nTutorial\nAppraisal Cycle Management\n\nManage review cycles and their progress, or start appraisals for selected staff.\n\nView Analytics\nStart appraisal\nConfigure a cycle\nStart appraisal uses an existing cycle or a one-off review. Configure a cycle when you need a custom assessment design.\nACTIVE CYCLES\n1\nLEGACY DRAFTS\n0\nCOMPLETED\n0\nAPPRAISALS LAUNCHED\n0\n0 completed (0%)\nBOTTLENECKS\n0\nSelf 0 | Manager 0 | Calibration 0\nActive\n1\nLegacy Drafts\n0\nCompleted\n2026 Annual Review\n\nAnnual Review\n\n01/01/2026 - 19/10/2026\nActive\nSelf-Assessment\nPhase Auto-Progress\nView"
+    },
+    {
+      "name": "cycle-new",
+      "requestedRoute": "/admin/appraisal-cycles/new",
+      "actualRoute": "/admin/appraisal-cycles/new",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-cycle-new-light-1440.png",
+      "headings": [
+        "Create Appraisal Cycle",
+        "Cycle Details"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nCreate Review Cycle guide\n\nSet the review period, customize the review design, choose employees, and confirm the launch in four steps.\n\nOpen guide\nTutorial\nBack\nCreate Appraisal Cycle\n\nSet the cycle up once, choose who participates, and launch it immediately.\n\nContinue\n1\nReview period\n2\nReview design\n3\nPeople\n4\nConfirm\nCycle Details\nCycle Name\nCycle Name\nCycle Type\nAnnual Review\nCycle Type\nDescription\nDescription\nPeriod Start\nPeriod Start\nPeriod End\nPeriod End\nNext, you will choose a template and customize the stages, questions, evidence, and scoring before selecting participants."
+    },
+    {
+      "name": "calibration",
+      "requestedRoute": "/admin/calibration",
+      "actualRoute": "/admin/calibration",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-with-unavailable-secondary-data",
+      "screenshot": "before/core-calibration-light-1440.png",
+      "headings": [
+        "Rating Calibration"
+      ],
+      "failedRequests": [
+        {
+          "path": "/calibration",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nCalibration Center guide\n\nUse this page to review rating fairness and consistency across the organization.\n\nOpen guide\nTutorial\nRating Calibration\nNew Session\nCould not load calibration sessions. Try again to see the latest sessions.\nRetry sessions"
+    },
+    {
+      "name": "cycle-detail",
+      "requestedRoute": "/admin/appraisal-cycles/cycle-1",
+      "actualRoute": "/admin/appraisal-cycles/cycle-1",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-cycle-detail-light-1440.png",
+      "headings": [
+        "2026 Annual Review",
+        "Overview",
+        "Period",
+        "Current Phase",
+        "Phases & Timeline",
+        "Statistics",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "Settings",
+        "Rating Weight"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nCycle Detail guide\n\nUse this page to inspect one appraisal cycle and its current progress.\n\nOpen guide\nTutorial\nBack to Cycles\n2026 Annual Review\nAnnual Review\nACTIVE\nEdit Cycle\nOverview\n\nAnnual review\n\nPeriod\n\n01/01/2026 - 31/12/2026\n\nCurrent Phase\nSelf-Assessment\nPhases & Timeline\nStatistics\n\nCompletion Progress\n\n0%\n\n0\nTotal Employees\n0\nCompleted\n0\nPending Self\n0\nPending Manager\n0\nPending Calibration\n0\nOverdue\nSettings\n\nSelf Rating\n\nDisabled\n\nAI Assistance\n\nDisabled\n\nPeer Feedback\n\nDisabled\nRating Weight\n\nOKRs: 40% | Competencies: 60%"
+    },
+    {
+      "name": "cycle-edit",
+      "requestedRoute": "/admin/appraisal-cycles/cycle-1/edit",
+      "actualRoute": "/admin/appraisal-cycles/cycle-1/edit",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-cycle-edit-light-1440.png",
+      "headings": [
+        "Edit Cycle",
+        "Cycle Details",
+        "Phase Timeline",
+        "Self-Assessment",
+        "Manager Review",
+        "Calibration",
+        "Final Review",
+        "Scope Configuration",
+        "Review design",
+        "Workflow stages",
+        "Assessment sections",
+        "Section 1",
+        "Section 2",
+        "Section 3",
+        "Questions",
+        "Settings"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "ewer confirms the outcome.\n\nEmployee acknowledgement\n\nThe employee confirms they received the result.\nAssessment sections\n\nSections appear in this order. Only scored sections contribute to the final calculated rating.\n\nScored weight 100%\nSection 1\nSection title\nSection title\nSection type\nGoals\nSection type\nWho responds\nEmployee and manager\nWho responds\nInstructions\nInstructions\nRequired section\nEvidence attachment required\nContributes to rating\nWeight %\nWeight %\nSection 2\nSection title\nSection title\nSection type\nCompetencies\nSection type\nWho responds\nEmployee and manager\nWho responds\nInstructions\nInstructions\nRequired section\nEvidence attachment required\nContributes to rating\nWeight %\nWeight %\nSection 3\nSection title\nSection title\nSection type\nLearning\nSection type\nWho responds\nEmployee\nWho responds\nInstructions\nInstructions\nRequired section\nEvidence attachment required\nContributes to rating\nQuestions\nQuestion 1\nQuestion 1\nAnswer type\nLong text\nAnswer type\nRequired\nQuestion guidance\nQuestion guidance\n\nShown with this question in the guided assessment and form.\n\nAdd question\nAdd section\nThis design is frozen because the cycle has launched. Duplicate the cycle to create a revised version.\nSettings\nAllow Self Rating\nEnable AI Assistance\nEnable Peer Feedback\nRequire Employee Sign-off"
+    },
+    {
+      "name": "review-cycles",
+      "requestedRoute": "/admin/review-cycles",
+      "actualRoute": "/admin/appraisal-cycles",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-review-cycles-light-1440.png",
+      "headings": [
+        "Appraisal Cycle Management",
+        "1",
+        "0",
+        "0",
+        "0",
+        "0",
+        "2026 Annual Review"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAppraisal Cycle Management guide\n\nUse this page to create, inspect, and monitor appraisal cycles.\n\nOpen guide\nTutorial\nAppraisal Cycle Management\n\nManage review cycles and their progress, or start appraisals for selected staff.\n\nView Analytics\nStart appraisal\nConfigure a cycle\nStart appraisal uses an existing cycle or a one-off review. Configure a cycle when you need a custom assessment design.\nACTIVE CYCLES\n1\nLEGACY DRAFTS\n0\nCOMPLETED\n0\nAPPRAISALS LAUNCHED\n0\n0 completed (0%)\nBOTTLENECKS\n0\nSelf 0 | Manager 0 | Calibration 0\nActive\n1\nLegacy Drafts\n0\nCompleted\n2026 Annual Review\n\nAnnual Review\n\n01/01/2026 - 19/10/2026\nActive\nSelf-Assessment\nPhase Auto-Progress\nView"
+    },
+    {
+      "name": "department",
+      "requestedRoute": "/admin/departments/Customer%20Success",
+      "actualRoute": "/admin/departments/Customer%20Success",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-department-light-1440.png",
+      "headings": [
+        "Customer Success",
+        "1",
+        "0",
+        "0",
+        "0%",
+        "Team Members",
+        "Appraisal Stage Breakdown",
+        "Department OKRs",
+        "Appraisal Records"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nDepartment Drill-Down guide\n\nUse this page to inspect performance data for one department.\n\nOpen guide\nTutorial\nBack To Admin Panel\nCustomer Success\n\nDepartment drill-down with employee, OKR, and appraisal workflow details.\n\nDepartment Detail\nMEMBERS\n1\n\nLine managers: 0\n\nOKRS\n0\n\nActive: 0\n\nAPPRAISALS\n0\n\nCompleted: 0\n\nCOMPLETION\n0%\n\nWorkflow completion rate\n\nTeam Members\n\nManagers observed in appraisal assignments: -\n\nNAME\tEMAIL\tJOB TITLE\tROLE\n\n\nJordan Lee\n\n\tjordan@example.com\t-\t\nMember\nAppraisal Stage Breakdown\nSTATUS\tCOUNT\n\n\nNo appraisal status data available.\n\nDepartment OKRs\nTITLE\tSTATUS\tPROGRESS\n\n\nNo OKRs mapped to this department.\n\nAppraisal Records\nEMPLOYEE\tMANAGER\tCYCLE\tSTATUS\tOPEN\n\n\nNo appraisal records found for this department."
+    },
+    {
+      "name": "reports",
+      "requestedRoute": "/admin/reports",
+      "actualRoute": "/admin/reports",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-with-unavailable-secondary-data",
+      "screenshot": "before/core-reports-light-1440.png",
+      "headings": [
+        "Analytics & Reports",
+        "0",
+        "0",
+        "0",
+        "0%",
+        "OKR Status Distribution",
+        "Feedback by Type",
+        "Review Status Breakdown"
+      ],
+      "failedRequests": [
+        {
+          "path": "/reports/org-summary",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nReports guide\n\nUse this page to analyze and export organization-level performance information.\n\nOpen guide\nTutorial\nAnalytics & Reports\nOrganization Overview\nReview Cycle Analysis\nExport Data\n0\n\nTotal OKRs\n\n0 created this month\n0\n\nReviews\n\n0\n\nFeedback Items\n\n0 this month\n0%\n\nAvg OKR Progress\n\nOKR Status Distribution\nFeedback by Type\nReview Status Breakdown"
+    },
+    {
+      "name": "profile",
+      "requestedRoute": "/team/member-1",
+      "actualRoute": "/team/member-1",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-profile-light-1440.png",
+      "headings": [
+        "Jordan Lee",
+        "Customer Success Manager",
+        "N/A",
+        "62%",
+        "0",
+        "0",
+        "Rating Trend",
+        "Current Appraisal"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nTeam Member Profile guide\n\nUse this page to review one direct report in detail.\n\nOpen guide\nTutorial\nBack to Team\nJ\nJordan Lee\nCustomer Success Manager\nCustomer Success\njordan@example.com\nStart appraisal\nAppraisal results\nSchedule 1:1\nGive Feedback\nAVG RATING\nN/A\nOKR PROGRESS\n62%\nFEEDBACK RECEIVED\n0\n1:1 MEETINGS\n0\nPerformance History\nOKRs\nFeedback\n1:1 Meetings\nDevelopment\nRating Trend\nNo historical ratings available yet.\nCurrent Appraisal\nNo active appraisal for this employee."
+    },
+    {
+      "name": "dashboard-personal",
+      "requestedRoute": "/dashboard",
+      "actualRoute": "/dashboard",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "personal",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-dashboard-personal-dark-1440.png",
+      "headings": [
+        "Your performance work, in one place.",
+        "Performance workspace",
+        "Set and update OKRs",
+        "My appraisals",
+        "My appraisal results"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n1\nA\n\nDashboard guide\n\nUse the dashboard to see what needs attention now and jump directly into the right workflow.\n\nOpen guide\nTutorial\n\nWednesday 21 October\n\nYour performance work, in one place.\n\nWelcome back, Alex. Keep your goals, appraisals, feedback, and development moving.\n\nAC\n\nPERFORMANCE WORKSPACE\n\nAcme Ltd\n\nApp Hub\n\nCURRENT VIEW\n\nPersonal\n\nHR Administrator\n\nOKR PROGRESS\n\n35%\n\nACTIVE OKRS\n\n1\n\n0 completed\n\nUPCOMING DEADLINES\n\n1\n\nNext 7 days\n\nRECENT FEEDBACK\n\n2\n\nShared with you\n\nPerformance workspace\n\nStart with the action that needs to move today.\n\nSet and update OKRs\n\nCreate objectives, update progress, and keep outcomes connected to your work.\n\n1 active\n\nOpen\nMy appraisals\n\nContinue your self-assessments, discussions, and assigned reviews.\n\n1 due soon\n\nOpen\nMy appraisal results\n\nFind past reviews, final results, and downloadable reports.\n\nHistory & results\n\nOpen"
+    },
+    {
+      "name": "appraisal-self",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "employee",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-appraisal-self-dark-1440.png",
+      "headings": [
+        "Self-Assessment Already Submitted"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n1\nA\n\nSelf-Assessment guide\n\nThis is where the employee completes their side of the appraisal.\n\nOpen guide\nTutorial\nSelf-Assessment Already Submitted\n\nYou submitted your self-assessment on 01/10/2026. Your manager will now review it.\n\nBack to Appraisals"
+    },
+    {
+      "name": "appraisal-start",
+      "requestedRoute": "/appraisals/start",
+      "actualRoute": "/appraisals/start",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-with-unavailable-secondary-data",
+      "screenshot": "before/core-appraisal-start-dark-1440.png",
+      "headings": [
+        "Start appraisal",
+        "Choose staff"
+      ],
+      "failedRequests": [
+        {
+          "path": "/competency/bootstrap",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nStart appraisal guide\n\nChoose staff, review details, then confirm the launch.\n\nOpen guide\nTutorial\nBack to appraisals\nStart appraisal\n\nSet up reviews for anyone in your organization, including its leaders. Choose a reviewer for each person, then agree the assessment period and response deadlines.\n\n1\nPeople\n2\nReview details\n3\nConfirm and start\nChoose staff\nSearch staff\nSearch staff\nRefresh staff\nFilter by team\nAll available teams\nFilter by team\n\n0 selected · 1 eligible\n\nJordan Lee\n\nCustomer Success\n\nPrevious\nContinue"
+    },
+    {
+      "name": "goals",
+      "requestedRoute": "/okrs",
+      "actualRoute": "/okrs",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-goals-dark-1440.png",
+      "headings": [
+        "Goals",
+        "No organization goals for this period"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nMy OKRs guide\n\nCreate, update, and monitor your objectives and key results here.\n\nOpen guide\nTutorial\nGoals\n\nSet organization direction and monitor goal alignment.\n\nCreate goal\nUpcoming\nCurrent\nPast\nPeriod\n​\nPeriod\nOrganization Goals (0)\nTeam & Department Goals (0)\nOrganization Alignment\nApprovals (0)\nNo organization goals for this period\n\nCreate an organization goal to set direction for departments and teams."
+    },
+    {
+      "name": "people",
+      "requestedRoute": "/team",
+      "actualRoute": "/team",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-people-dark-1440.png",
+      "headings": [
+        "People & teams",
+        "Jordan Lee"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nPeople & teams guide\n\nAdmin shows the organization. Manager shows the teams you lead and their subteams.\n\nOpen guide\nTutorial\nPeople & teams\n\nOrganization-wide access · 1 team · 1 people\n\nYour organization role gives you access to everyone in this organization. Filter by team, then choose who to review and who will conduct each appraisal.\nStart appraisal\nTEAM MEMBERS\n1\nNEEDS ATTENTION\n1\nAVG OKR PROGRESS\n62%\nOVERDUE 1:1S\n1\nAll Members\nNeeds Attention\n1\nRecently Active\n🏢 All Teams (1 teams • 1 members)\nCustomer Success (0 people)\nJ\nJordan Lee\nNeeds Attention\nActive Appraisal\nCustomer Success Manager\n•\nCustomer Success\njordan@example.com\n62%\n4.1\n1\n3\n01/08/2026\nNew 1:1"
+    },
+    {
+      "name": "appraisal-manager",
+      "requestedRoute": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+      "actualRoute": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "reviewer",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-appraisal-manager-dark-1440.png",
+      "headings": [
+        "Review: Jordan Lee",
+        "Supporting documents",
+        "Review Jordan Lee's Self-Assessment",
+        "Jordan Lee",
+        "Employee's Self-Summary",
+        "Competency Self-Ratings",
+        "Performance Feedback (0)"
+      ],
+      "failedRequests": [
+        {
+          "path": "/competency/appraisal-links/507f1f77bcf86cd799439011",
+          "status": 501
+        },
+        {
+          "path": "/competency/appraisal-links/507f1f77bcf86cd799439011",
+          "status": 501
+        }
+      ],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nManager Review guide\n\nUse this page to assess the employee after the self-assessment is submitted.\n\nOpen guide\nTutorial\nBack to appraisal\nReview: Jordan Lee\n\n2026 Annual Review\n\nSave Progress\nReview Self-Assessment\nCompetency Ratings\nOKR Verification\nOverall Assessment\nCV evidence could not be loaded. No browser-test mock for GET /competency/appraisal-links/507f1f77bcf86cd799439011\nRetry\nSupporting documents\n\nDocuments uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.\n\nNo documents attached.\n\nChoose document\n\nPDF, DOCX, TXT or PPTX · up to 10 MB\n\nReview Jordan Lee's Self-Assessment\n\nReview the employee's self-assessment before providing your evaluation. Look for alignment and gaps between your observations.\n\nJ\nJordan Lee\n\nTeam Member - Department\n\nSelf-Rating: 4/5\n\nEmployee's Self-Summary\n\nKey Achievements\n\nDelivered customer improvements\n\nChallenges Faced\n\nBalanced release priorities\n\nKey Learnings\n\nNot provided\n\nGoals for Next Period\n\nNot provided\n\nCompetency Self-Ratings\n\nPerformance Feedback (0)\n\nAI assistance is disabled for this cycle. Complete the review manually.\nPrevious\nNext"
+    },
+    {
+      "name": "analytics",
+      "requestedRoute": "/analytics",
+      "actualRoute": "/analytics",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-analytics-dark-1440.png",
+      "headings": [
+        "Performance analytics",
+        "12",
+        "75%",
+        "4.2/5",
+        "83%",
+        "Final rating distribution",
+        "Cycle trend"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "Performance Management\nby Seemplify\nDashboard\nAdministration\nInsights\nAdmin\n1\nA\n\nAnalytics guide\n\nUse this page to understand performance patterns and trends.\n\nOpen guide\nTutorial\nPerformance analytics\n\nFinal ratings, completion, goal achievement, configured section coverage, and performer drilldowns from the canonical appraisal record.\n\nRefresh\nCycle\n​\nCycle\nTeam\n​\nTeam\nDepartment\n​\nDepartment\n\nParticipants\n\n12\nAppraisals in this scope\n\nCompletion\n\n75%\n9 completed\n\nAverage final rating\n\n4.2/5\n9 finalized ratings\n\nManager review\n\n83%\n1 rating gaps need attention\nOverview\nTop performers (1)\nTeams and departments\nConfigured sections\nFinal rating distribution\n\nOnly finalized ratings are counted.\n\n1/5\n2/5\n3/5\n4/5\n5/5\n0\n1\n2\n3\n4\nCycle trend\n\nAverage final rating and completion by cycle.\n\n2026 Annual Review\n1\n2\n3\n4\n5\n0\n25\n50\n75\n100\nMetric rules: Mean finalized rating. Completed appraisals divided by all appraisals.\nRefreshed 11/08/2026, 01:00:00. Draft ratings and AI suggestions are excluded from top-performer ranking.\n25"
+    },
+    {
+      "name": "goals",
+      "requestedRoute": "/okrs",
+      "actualRoute": "/okrs",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-goals-light-390.png",
+      "headings": [
+        "Goals",
+        "No organization goals for this period"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "1\nA\nGuide\nGoals\n\nSet organization direction and monitor goal alignment.\n\nCreate goal\nUpcoming\nCurrent\nPast\nPeriod\n​\nPeriod\nOrganization Goals (0)\nTeam & Department Goals (0)\nOrganization Alignment\nApprovals (0)\nNo organization goals for this period\n\nCreate an organization goal to set direction for departments and teams."
+    },
+    {
+      "name": "dashboard-personal",
+      "requestedRoute": "/dashboard",
+      "actualRoute": "/dashboard",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "personal",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-dashboard-personal-light-390.png",
+      "headings": [
+        "Your performance work, in one place.",
+        "Performance workspace",
+        "Set and update OKRs",
+        "My appraisals",
+        "My appraisal results"
+      ],
+      "failedRequests": [],
+      "pageErrors": [
+        "Invalid or unexpected token"
+      ],
+      "overflow": false,
+      "bodyExcerpt": "1\nA\nGuide\n\nWEDNESDAY 21 OCTOBER\n\nYour performance work, in one place.\n\nWelcome back, Alex. Keep your goals, appraisals, feedback, and development moving.\n\nAC\n\nPERFORMANCE WORKSPACE\n\nAcme Ltd\n\nApp Hub\n\nCURRENT VIEW\n\nPersonal\n\nHR Administrator\n\nOKR PROGRESS\n\n35%\n\nACTIVE OKRS\n\n1\n\n0 completed\n\nUPCOMING DEADLINES\n\n1\n\nNext 7 days\n\nRECENT FEEDBACK\n\n2\n\nShared with you\n\nPerformance workspace\n\nStart with the action that needs to move today.\n\nSet and update OKRs\n\nCreate objectives, update progress, and keep outcomes connected to your work.\n\nCURRENT STATE\n\n1 active\n\nOpen\nMy appraisals\n\nContinue your self-assessments, discussions, and assigned reviews.\n\nCURRENT STATE\n\n1 due soon\n\nOpen\nMy appraisal results\n\nFind past reviews, final results, and downloadable reports.\n\nCURRENT STATE\n\nHistory & results\n\nOpen"
+    },
+    {
+      "name": "appraisal-start",
+      "requestedRoute": "/appraisals/start",
+      "actualRoute": "/appraisals/start",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "unavailable-or-recovery",
+      "screenshot": "before/core-appraisal-start-light-390.png",
+      "headings": [
+        "Start appraisal",
+        "Choose staff"
+      ],
+      "failedRequests": [
+        {
+          "path": "/competency/bootstrap",
+          "status": 501
+        }
+      ],
+      "pageErrors": [
+        "Invalid or unexpected token"
+      ],
+      "overflow": false,
+      "bodyExcerpt": "1\nA\nGuide\nBack to appraisals\nStart appraisal\n\nSet up reviews for anyone in your organization, including its leaders. Choose a reviewer for each person, then agree the assessment period and response deadlines.\n\n1\nPeople\n2\nReview details\n3\nConfirm and start\nChoose staff\nSearch staff\nSearch staff\nRefresh staff\nFilter by team\nAll available teams\nFilter by team\n\n0 selected · 1 eligible\n\nJordan Lee\n\nCustomer Success\n\nPrevious\nContinue"
+    },
+    {
+      "name": "people",
+      "requestedRoute": "/team",
+      "actualRoute": "/team",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "admin",
+      "revision": "39c3f4ff56851609921a19e5bb1e0d226893bd59",
+      "analysisBaseline": "9e8fecc1",
+      "transport": "controlled-existing-fixture",
+      "state": "rendered-fixture",
+      "screenshot": "before/core-people-light-390.png",
+      "headings": [
+        "People & teams",
+        "Jordan Lee"
+      ],
+      "failedRequests": [],
+      "pageErrors": [],
+      "overflow": false,
+      "bodyExcerpt": "1\nA\nGuide\nPeople & teams\n\nOrganization-wide access · 1 team · 1 people\n\nYour organization role gives you access to everyone in this organization. Filter by team, then choose who to review and who will conduct each appraisal.\nStart appraisal\nTEAM MEMBERS\n1\nNEEDS ATTENTION\n1\nAVG OKR PROGRESS\n62%\nOVERDUE 1:1S\n1\nAll Members\nNeeds Attention\n1\nRecently Active\n🏢 All Teams (1 teams • 1 members)\nCustomer Success (0 people)\nJ\nJordan Lee\nNeeds Attention\nActive Appraisal\nCustomer Success Manager\n•\nCustomer Success\njordan@example.com\n62%\n4.1\n1\n3\n01/08/2026\nNew 1:1"
+    }
+  ]
+}

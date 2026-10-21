@@ -1,0 +1,267 @@
+{
+  "capturedAt": "2026-10-21T01:34:47.618Z",
+  "sourceCommit": "8ce5e4b447d2b070870bdf75154b46abde6b18a7",
+  "boundary": "Existing authorized synthetic demo actors, ordinary Identity OIDC, read-only product pages; no external provider execution",
+  "rows": [
+    {
+      "role": "manager",
+      "route": "/dashboard",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "manager-dashboard-light.png",
+      "authenticated": true,
+      "bodyLength": 1276,
+      "documentOverflow": false
+    },
+    {
+      "role": "manager",
+      "route": "/okrs",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "manager-okrs-light.png",
+      "authenticated": true,
+      "bodyLength": 496,
+      "documentOverflow": false
+    },
+    {
+      "role": "manager",
+      "route": "/appraisals",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "manager-appraisals-light.png",
+      "authenticated": true,
+      "bodyLength": 1600,
+      "documentOverflow": false
+    },
+    {
+      "role": "manager",
+      "route": "/feedback",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "manager-feedback-light.png",
+      "authenticated": true,
+      "bodyLength": 929,
+      "documentOverflow": false
+    },
+    {
+      "role": "manager",
+      "route": "/competency",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "manager-competency-light.png",
+      "authenticated": true,
+      "bodyLength": 849,
+      "documentOverflow": false
+    },
+    {
+      "role": "manager",
+      "route": "/dashboard",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "manager-dashboard-dark-desktop.png",
+      "authenticated": true
+    },
+    {
+      "role": "manager",
+      "route": "/dashboard",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "manager-dashboard-dark-mobile.png",
+      "mobileMenuEscape": true,
+      "documentOverflow": false,
+      "browserErrors": [],
+      "failedReads": []
+    },
+    {
+      "role": "hr",
+      "route": "/dashboard",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "hr-dashboard-light.png",
+      "authenticated": true,
+      "bodyLength": 1216,
+      "documentOverflow": false
+    },
+    {
+      "role": "hr",
+      "route": "/okrs",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "hr-okrs-light.png",
+      "authenticated": true,
+      "bodyLength": 729,
+      "documentOverflow": false
+    },
+    {
+      "role": "hr",
+      "route": "/appraisals",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "hr-appraisals-light.png",
+      "authenticated": true,
+      "bodyLength": 2597,
+      "documentOverflow": false
+    },
+    {
+      "role": "hr",
+      "route": "/feedback",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "hr-feedback-light.png",
+      "authenticated": true,
+      "bodyLength": 751,
+      "documentOverflow": false
+    },
+    {
+      "role": "hr",
+      "route": "/competency",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "hr-competency-light.png",
+      "authenticated": true,
+      "bodyLength": 1603,
+      "documentOverflow": false
+    },
+    {
+      "role": "hr",
+      "route": "/dashboard",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "hr-dashboard-dark-mobile.png",
+      "mobileMenuEscape": true,
+      "documentOverflow": false,
+      "browserErrors": [],
+      "failedReads": []
+    },
+    {
+      "role": "staff",
+      "route": "/dashboard",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "staff-dashboard-light.png",
+      "authenticated": true,
+      "bodyLength": 887,
+      "documentOverflow": false
+    },
+    {
+      "role": "staff",
+      "route": "/okrs",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "staff-okrs-light.png",
+      "authenticated": true,
+      "bodyLength": 442,
+      "documentOverflow": false
+    },
+    {
+      "role": "staff",
+      "route": "/appraisals",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "staff-appraisals-light.png",
+      "authenticated": true,
+      "bodyLength": 1458,
+      "documentOverflow": false
+    },
+    {
+      "role": "staff",
+      "route": "/feedback",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "staff-feedback-light.png",
+      "authenticated": true,
+      "bodyLength": 2939,
+      "documentOverflow": false
+    },
+    {
+      "role": "staff",
+      "route": "/competency",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "staff-competency-light.png",
+      "authenticated": true,
+      "bodyLength": 691,
+      "documentOverflow": false
+    },
+    {
+      "role": "staff",
+      "route": "/dashboard",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "staff-dashboard-dark-mobile.png",
+      "mobileMenuEscape": true,
+      "documentOverflow": false,
+      "browserErrors": [],
+      "failedReads": []
+    }
+  ],
+  "summary": {
+    "roles": [
+      "manager",
+      "hr",
+      "staff"
+    ],
+    "captures": 19,
+    "browserErrors": 0,
+    "failedReads": 0,
+    "documentOverflow": 0,
+    "scope": "Error/read listeners accumulate throughout each complete role context; their final arrays are recorded on the last mobile row for that role."
+  }
+}

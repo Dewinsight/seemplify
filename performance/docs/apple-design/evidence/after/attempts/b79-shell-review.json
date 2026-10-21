@@ -1,0 +1,109 @@
+{
+  "checkedAt": "2026-10-21T00:03:24.493Z",
+  "checks": [
+    {
+      "name": "menu ArrowDown opens and focuses first item",
+      "passed": true
+    },
+    {
+      "name": "menu End focuses last item",
+      "passed": true
+    },
+    {
+      "name": "Tab leaves desktop menu and closes without dropping focus",
+      "passed": true,
+      "active": "<button type=\"button\" aria-expanded=\"false\" aria-haspopup=\"menu\" data-shell-trigger=\"true\" class=\"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold border-zinc-800 bg-zinc-900/60 text-z"
+    },
+    {
+      "name": "Escape returns menu focus",
+      "passed": true
+    },
+    {
+      "name": "skip link focuses main",
+      "passed": true
+    },
+    {
+      "name": "system typography applied to dashboard and task cards",
+      "passed": true,
+      "computed": [
+        {
+          "selector": "body",
+          "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+        },
+        {
+          "selector": ".suite-dashboard-title",
+          "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+        },
+        {
+          "selector": ".suite-card-title",
+          "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+        },
+        {
+          "selector": ".suite-card-copy",
+          "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+        }
+      ]
+    },
+    {
+      "name": "dark account accent foreground tokens",
+      "passed": true,
+      "computed": {
+        "background": "rgb(100, 167, 255)",
+        "foreground": "rgb(7, 20, 38)",
+        "token": "#071426"
+      }
+    },
+    {
+      "name": "mobile navigation contains focus and inerts content",
+      "passed": true
+    },
+    {
+      "name": "mobile Escape restores trigger",
+      "passed": true
+    },
+    {
+      "name": "resize from mobile closes hidden modal and unlocks document",
+      "passed": true
+    },
+    {
+      "name": "reduced transparency makes chrome solid",
+      "passed": false,
+      "computed": {
+        "background": "rgb(28, 29, 33)",
+        "blur": "blur(20px) saturate(1.4)"
+      }
+    },
+    {
+      "name": "increased contrast strengthens separators",
+      "passed": true
+    },
+    {
+      "name": "reduced motion removes spatial transition duration",
+      "passed": true
+    },
+    {
+      "name": "goal details dismissal restores opener focus",
+      "passed": true
+    },
+    {
+      "name": "mobile goal create dialog fits viewport",
+      "passed": true,
+      "documentOverflow": false
+    },
+    {
+      "name": "200 percent text mobile goal dialog fits and action remains visible",
+      "passed": true,
+      "documentOverflow": false
+    }
+  ],
+  "errors": [
+    {
+      "message": "Cannot read properties of undefined (reading 'name')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'name')\n    at http://127.0.0.1:5035/_next/static/chunks/3t6qk0j8lrqlq.js:1:10138\n    at aS (http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:79243)\n    at o1 (http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:99536)\n    at id (http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:111225)\n    at sh (http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:154609)\n    at http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:154454\n    at sm (http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:154462)\n    at sr (http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:150376)\n    at sK (http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:176291)\n    at sH (http://127.0.0.1:5035/_next/static/chunks/0lssu-lr7xcz1.js:1:174505)"
+    }
+  ],
+  "fatal": {
+    "message": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('heading', { name: 'Appraisal result report', exact: true }) to be visible\u001b[22m\n",
+    "stack": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('heading', { name: 'Appraisal result report', exact: true }) to be visible\u001b[22m\n\n    at E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\review-shell-production.cjs:56:828"
+  }
+}

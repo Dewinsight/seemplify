@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-10-21T01:35:53.687Z",
+  "sourceCommit": "8ce5e4b447d2b070870bdf75154b46abde6b18a7",
+  "role": "manager",
+  "route": "/dashboard",
+  "theme": "dark",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "fullPage": false,
+  "screenshot": "manager-dashboard-dark-viewport.png",
+  "authenticated": true,
+  "browserErrors": [],
+  "failedReads": [],
+  "supplementTo": "authenticated-smoke.json",
+  "boundary": "Native viewport supplemental capture; nineteen original screenshots preserved. No form submitted."
+}

@@ -1,0 +1,115 @@
+{
+  "routeCount": 68,
+  "outcome": "Performance Management now uses one visual system for its existing employee, manager and HR workflows. The delivery changes presentation and navigation accessibility while preserving product permissions and data contracts.",
+  "delivered": [
+    "One shared palette feeds server-rendered CSS, Tailwind and Material UI. System typography replaces competing remote fonts.",
+    "Sign-in, dashboard, appraisals, reports and conversation surfaces use quieter layouts and solid semantic actions.",
+    "Keyboard navigation, mobile focus containment, resize recovery and accessibility preference fallbacks are implemented.",
+    "Twelve story packages, per-story architecture and UX handoffs, paired reviews and reusable role skills document the work."
+  ],
+  "images": {
+    "dashboardBefore": "evidence/comparison-baseline/dashboard-viewport.png",
+    "dashboardAfter": "evidence/final-comparison/dashboard-viewport.png",
+    "coreOne": "evidence/final-comparison/core-appraisals-light-1440.png",
+    "coreTwo": "evidence/after/core-goal-details-dark-1440.png",
+    "growthOne": "evidence/final-comparison/growth-feedback-desktop-light.png",
+    "growthTwo": "evidence/final-comparison/growth-populated-competency--roles-desktop-light.png",
+    "mobile": "evidence/final-comparison/goal-create-dark-390.png",
+    "dark": "evidence/live/manager-dashboard-dark-viewport.png",
+    "peopleBefore": "evidence/comparison-baseline/people-card-before-390.png",
+    "peopleAfter": "evidence/final-comparison/people-card-final-390.png"
+  },
+  "captions": {
+    "coreOne": "Appraisals - actual local application using controlled synthetic records.",
+    "coreTwo": "Goal details - dark dialog with real focus and keyboard behavior; synthetic records.",
+    "growthOne": "Feedback - actual implementation, with synthetic records and existing audience controls.",
+    "growthTwo": "Role library - actual populated implementation. Real aggregate fields are used; numeric role versions are not invented.",
+    "dashboardAfter": "FINAL - equal 1440 x 1000 viewport and matching synthetic records; existing task destinations are preserved.",
+    "mobile": "Actual final mobile goal dialog, dark mode; controlled synthetic data.",
+    "dark": "Authenticated production manager view, dark mode; existing QA account on deployed 8ce5e4b4."
+  },
+  "accessibility": [
+    "Visible focus and skip-to-content.",
+    "Arrow keys, Home/End, Escape and native Tab dismissal.",
+    "Mobile dialog focus containment, safe resize and readable keyboard-scrollable tables.",
+    "Immediate press feedback; release away cancels.",
+    "Reduced motion, solid materials and high-contrast edges.",
+    "Consistent light/dark inputs and portal surfaces."
+  ],
+  "checks": [
+    {
+      "name": "TypeScript validation",
+      "result": "PASS",
+      "detail": "npx tsc --noEmit completed successfully after foundation and screen changes."
+    },
+    {
+      "name": "Scoped code checks",
+      "result": "PASS",
+      "detail": "Foundation ESLint passed; screen pair reported zero introduced lint findings against the existing baseline."
+    },
+    {
+      "name": "Independent partner browser review",
+      "result": "PASS",
+      "detail": "14 behavior checks passed: navigation, focus, themes, resize, preferences and goal dialogs; no uncaught page errors."
+    },
+    {
+      "name": "Focused interaction and recovery suite",
+      "result": "PASS",
+      "detail": "Nine focused design/recovery/metadata checks and four People readability, scoping and action checks passed on the final combined source."
+    },
+    {
+      "name": "Existing workflow regression",
+      "result": "PASS",
+      "detail": "105 existing workflow cases: 104 passed in the initial run; the single mobile tab defect was fixed and its unchanged regression passed on the production candidate. Initial failures and replays are retained."
+    },
+    {
+      "name": "Final combined browser, API and backend checks",
+      "result": "PASS",
+      "detail": "Both default builds, 25 browser checks and nine backend checks passed. Of 20 real-API journeys, 19 passed initially; the HR selection case then passed three unchanged replays. Its cause is not established."
+    },
+    {
+      "name": "All-page matched visual review",
+      "result": "PASS",
+      "detail": "68/68 templates have matched before/final captures and independent verdicts: 29 visible hierarchy/readability gains, 39 modest refinements. Mobile People and conversation findings are closed."
+    }
+  ],
+  "coverageBoundary": "All 68 page templates have fresh matched pre-redesign/final captures. Independent per-route reviews distinguish visible improvements from modest refinements and deliberate concept adaptations. Synthetic screenshots, real-API tests and authenticated production checks each retain their own evidence boundary.",
+  "release": {
+    "testedRevision": "Exact combined source tree 7eb9c096330d19b1a854c0f45fa15d0583f09c13; both default production builds passed. Concurrent committed AI assessment work is preserved.",
+    "publishedRevision": "main: 8ce5e4b447d2b070870bdf75154b46abde6b18a7. Seven follow-up paths; 41 unique programme paths across both source commits. Documentation is published separately.",
+    "liveRevision": "Both Performance containers run 8ce5e4b447d2b070870bdf75154b46abde6b18a7. Frontend HTTP 200; API health 200/ok. Prior healthy d1 remains available for rollback.",
+    "deployment": "Run 39524124932 succeeded on the exact tested source. The existing core workflow also rebuilt other suite services.",
+    "identity": "OIDC 302 to Seemplify Identity; manager, HR and employee authentication passed. Nineteen live captures passed with no browser errors, failed API reads or overflow; mobile menu Escape passed for all three roles.",
+    "protection": "Normal push was blocked. The authorized organization-admin bypass was applied narrowly, then the original ruleset was restored and verified immediately. Classic protection stayed unchanged; no force-push.",
+    "deploymentUrl": "https://github.com/Dewinsight/seemplify/actions/runs/39524124932",
+    "verified": true
+  },
+  "limits": [
+    "The existing whole-app lint backlog remains; scoped checks passed with no introduced feature findings. Automated checks are not a blanket WCAG certification.",
+    "AI, calendar, recording, LMS and other provider actions need their genuine configured-account prerequisites; synthetic screenshots do not establish provider success."
+  ],
+  "handover": [
+    [
+      "Plan and stories",
+      "DELIVERY-PLAN.md; product-01.md; product-02.md. Source mappings distinguish the available competency PRD from the broader redesign brief."
+    ],
+    [
+      "Architecture and design",
+      "architecture-01.md; DESIGN.md; DESIGN-02.md; QA-PLAN.md; RELEASE-PLAN.md. Every story has a concrete handoff."
+    ],
+    [
+      "Reviews and evidence",
+      "VISUAL-COMPARISON.html and per-route reviews; SCREEN-COVERAGE.md; evidence/comparison-baseline and final-comparison; REVIEW-LOG.md and QA receipts."
+    ],
+    [
+      "Reusable skills",
+      "Product, architecture/release, UI/UX, QA and paired development skills are validated and installed locally. Emil Kowalski's Apple design skill is installed separately and available on the next turn."
+    ]
+  ],
+  "comparisonComplete": true,
+  "comparisonFindings": [
+    "Dashboard: three task destinations fit one desktop row. System type and secondary help reduce competing emphasis.",
+    "People: mobile identity, metrics and actions occupy separate rows; the scheduling shortcut moves into page actions to avoid the Guide.",
+    "Competency: an underline identifies the current section. Readable responsive cards preserve real actions; numeric versions appear only when the existing API provides them."
+  ]
+}

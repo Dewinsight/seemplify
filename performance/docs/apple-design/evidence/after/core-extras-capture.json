@@ -1,0 +1,150 @@
+{
+  "capturedAt": "2026-10-21T00:02:36.832Z",
+  "evidenceBoundary": "Actual after-change browser rendering with existing controlled synthetic fixtures; no real API/provider evidence.",
+  "intendedTree": "b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0",
+  "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "candidatePath": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\candidate-b79d3ffcd1ce-localdeps",
+  "build": "isolated-default-turbopack-production",
+  "results": [
+    {
+      "name": "self-form",
+      "requestedRoute": "/appraisals/0123456789abcdef01234568/self-assessment",
+      "actualRoute": "/appraisals/0123456789abcdef01234568/self-assessment",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "state": "rendered-fixture",
+      "screenshot": "after/core-self-form-light-1440.png",
+      "fixture": "appraisal-navigation-accessibility",
+      "headings": [
+        "Self-Assessment",
+        "Supporting documents",
+        "Overall Reflection",
+        "Overall Self-Rating"
+      ],
+      "pageErrors": [],
+      "failedRequests": [],
+      "bodyExcerpt": "Skip to content\nPerformance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n0\nS\n\nSelf-Assessment guide\n\nThis is where the employee completes their side of the appraisal.\n\nOpen guide\nTutorial\nBack to Appraisals\nSelf-Assessment\n\nSynthetic mobile cycle\n\nManual Mode\nThis appraisal uses a manual assessment form. Complete and submit your self-assessment here; a ChatGPT connection is not required.\nSupporting documents\n\nDocuments uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.\n\nNo documents attached.\n\nChoose document\n\nPDF, DOCX, TXT or PPTX · up to 10 MB\n\nOverall Reflection\nKey Achievements\nKey Achievements\nChallenges Faced\nChallenges Faced\nKey Learnings\nKey Learnings\nGoals for Next Period\nGoals for Next Period\nAreas for Improvement\nAreas for Improvement\nOverall Self-Rating\n1 Star\n2 Stars\n3 Stars\n4 Stars\n5 Stars\nEmpty\nRequired to submit\nSave Draft\nSubmit Self-Assessment",
+      "revision": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "intendedTree": "b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0",
+      "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "build": "isolated-default-turbopack-production",
+      "server": "http://127.0.0.1:5035",
+      "devOverlayPresent": false
+    },
+    {
+      "name": "manager-form",
+      "requestedRoute": "/appraisals/0123456789abcdef01234568/manager-review",
+      "actualRoute": "/appraisals/0123456789abcdef01234568/manager-review",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "state": "rendered-fixture",
+      "screenshot": "after/core-manager-form-light-1440.png",
+      "fixture": "appraisal-navigation-accessibility",
+      "headings": [
+        "Review: Synthetic Employee",
+        "Supporting documents",
+        "Review Synthetic Employee's Self-Assessment",
+        "Synthetic Employee",
+        "Employee's Self-Summary",
+        "Competency Self-Ratings",
+        "Performance Feedback (0)"
+      ],
+      "pageErrors": [],
+      "failedRequests": [],
+      "bodyExcerpt": "Skip to content\nPerformance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n0\nS\n\nManager Review guide\n\nUse this page to assess the employee after the self-assessment is submitted.\n\nOpen guide\nTutorial\nBack to appraisal\nReview: Synthetic Employee\n\nSynthetic mobile cycle\n\nSave Progress\nReview Self-Assessment\nCompetency Ratings\nOKR Verification\nOverall Assessment\nSupporting documents\n\nDocuments uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.\n\nNo documents attached.\n\nChoose document\n\nPDF, DOCX, TXT or PPTX · up to 10 MB\n\nReview Synthetic Employee's Self-Assessment\n\nReview the employee's self-assessment before providing your evaluation. Look for alignment and gaps between your observations.\n\nS\nSynthetic Employee\n\nTeam Member - Department\n\nSelf-Rating: 4/5\n\nEmployee's Self-Summary\n\nKey Achievements\n\nNot provided\n\nChallenges Faced\n\nNot provided\n\nKey Learnings\n\nNot provided\n\nGoals for Next Period\n\nNot provided\n\nCompetency Self-Ratings\n\nPerformance Feedback (0)\n\nAI assistance is disabled for this cycle. Complete the review manually.\nPrevious\nNext",
+      "revision": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "intendedTree": "b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0",
+      "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "build": "isolated-default-turbopack-production",
+      "server": "http://127.0.0.1:5035",
+      "devOverlayPresent": false
+    },
+    {
+      "name": "final-form",
+      "requestedRoute": "/appraisals/0123456789abcdef01234568/final-review",
+      "actualRoute": "/appraisals/0123456789abcdef01234568/final-review",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "state": "rendered-fixture",
+      "screenshot": "after/core-final-form-light-1440.png",
+      "fixture": "appraisal-navigation-accessibility",
+      "headings": [
+        "Final Review",
+        "Rating Inputs",
+        "AI Recommendation",
+        "Final Rating Decision"
+      ],
+      "pageErrors": [],
+      "failedRequests": [],
+      "bodyExcerpt": "Skip to content\nPerformance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n0\nS\n\nFinal Review guide\n\nUse this page to confirm the final outcome of the appraisal.\n\nOpen guide\nTutorial\nBack to Appraisal\nFinal Review\nUse this step to finalize the overall rating. AI assistance is disabled for this cycle.\nRating Inputs\nSelf: 4/5\nManager: 4/5\nAI Recommendation\n\nAI suggestion is unavailable because AI assistance is disabled for this cycle.\n\nFinal Rating Decision\n1 Star\n2 Stars\n3 Stars\n4 Stars\n5 Stars\n4/5\nThe calculated evidence rating is unavailable. Refresh before finalizing.\nJustification (required when overriding evidence rating)\nJustification (required when overriding evidence rating)\n\nExplain the final outcome.\n\nComplete Appraisal",
+      "revision": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "intendedTree": "b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0",
+      "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "build": "isolated-default-turbopack-production",
+      "server": "http://127.0.0.1:5035",
+      "devOverlayPresent": false
+    },
+    {
+      "name": "goal-populated",
+      "requestedRoute": "/okrs?view=my",
+      "actualRoute": "/okrs?view=my",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "state": "rendered-fixture",
+      "screenshot": "after/core-goal-populated-light-1440.png",
+      "fixture": "performance-journeys",
+      "headings": [
+        "Goals",
+        "Build launch readiness"
+      ],
+      "pageErrors": [],
+      "failedRequests": [],
+      "bodyExcerpt": "Skip to content\nPerformance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n1\nA\n\nMy OKRs guide\n\nCreate, update, and monitor your objectives and key results here.\n\nOpen guide\nTutorial\nGoals\n\nSet your direction and keep your own progress current.\n\nCreate goal\nUpcoming\nCurrent\nPast\nPeriod\nQ1 2027\nPeriod\nMy Goals (1)\nIndividual\nActive\nBuild launch readiness\n\nAlex Morgan · Created by you\n\nPeriod: Q1 2027\n\nProgress\n\nNot rated\n\nView details\nUpdate progress\nEdit goal\nSuggest a change\nContext",
+      "revision": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "intendedTree": "b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0",
+      "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "build": "isolated-default-turbopack-production",
+      "server": "http://127.0.0.1:5035",
+      "devOverlayPresent": false
+    },
+    {
+      "name": "appraisal-history",
+      "requestedRoute": "/appraisals?section=history",
+      "actualRoute": "/appraisals?section=history",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "state": "rendered-fixture",
+      "screenshot": "after/core-appraisal-history-light-1440.png",
+      "fixture": "performance-journeys",
+      "headings": [
+        "Performance Appraisals",
+        "Appraisal results report",
+        "2026 Annual Review"
+      ],
+      "pageErrors": [],
+      "failedRequests": [],
+      "bodyExcerpt": "Skip to content\nPerformance Management\nby Seemplify\nDashboard\nMy OKRs\nMy Appraisals\nGrowth\nPersonal\n1\nA\n\nAppraisals guide\n\nContinue current appraisals or find past results across all cycles.\n\nOpen guide\nTutorial\nPerformance Appraisals\n\nContinue your current appraisal or find past results and reports.\n\nCycle\nAll cycles\nCycle\nStart appraisal\nReviews I’m conducting\nRemoved appraisals\nCurrent (0)\nHistory & results (1)\nAppraisal results report\n\nAcme Ltd · 1 completed review · All years\n\nDownload CSV\nPrint report\nSearch past appraisals\nSearch past appraisals\nReview year\nAll years\nReview year\nSort results\nNewest first\nSort results\n2026 Annual Review\n\n1 Jan 2026 – 31 Dec 2026\n\nReviewer: Alex Morgan\n\n4 / 5\n\nExceeds expectations\n\nCompleted · awaiting acknowledgement\nView result report\nCreated\nNot recorded\nCreated by\nNot recorded\nStarted from\nNot recorded\nAssessment period\n1 Jan 2026 – 31 Dec 2026\nEmployee response due\nNot set\nReviewer response due\nNot set",
+      "revision": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "intendedTree": "b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0",
+      "baseMain": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+      "build": "isolated-default-turbopack-production",
+      "server": "http://127.0.0.1:5035",
+      "devOverlayPresent": false
+    }
+  ]
+}

@@ -1,0 +1,269 @@
+{
+  "createdAt": "2026-10-21T00:04:13.933Z",
+  "intendedTree": "b79d3ffcd1ce9b6b0fb755bfe5320e54d56bf4a0",
+  "purpose": "Deterministic contact sheets for visual review, using unchanged actual screenshots.",
+  "imageCount": 59,
+  "pages": [
+    {
+      "file": "after/core-contact-01.png",
+      "items": [
+        {
+          "name": "root / light / 1440",
+          "file": "after/core-root-light-1440.png"
+        },
+        {
+          "name": "login-error / light / 1440",
+          "file": "after/core-login-error-light-1440.png"
+        },
+        {
+          "name": "dashboard-personal / light / 1440",
+          "file": "after/core-dashboard-personal-light-1440.png"
+        },
+        {
+          "name": "dashboard-manager / light / 1440",
+          "file": "after/core-dashboard-manager-light-1440.png"
+        },
+        {
+          "name": "dashboard-admin / light / 1440",
+          "file": "after/core-dashboard-admin-light-1440.png"
+        },
+        {
+          "name": "goals / light / 1440",
+          "file": "after/core-goals-light-1440.png"
+        },
+        {
+          "name": "alignment / light / 1440",
+          "file": "after/core-alignment-light-1440.png"
+        },
+        {
+          "name": "appraisals / light / 1440",
+          "file": "after/core-appraisals-light-1440.png"
+        },
+        {
+          "name": "appraisal-start / light / 1440",
+          "file": "after/core-appraisal-start-light-1440.png"
+        },
+        {
+          "name": "appraisals-removed / light / 1440",
+          "file": "after/core-appraisals-removed-light-1440.png"
+        },
+        {
+          "name": "appraisal-detail / light / 1440",
+          "file": "after/core-appraisal-detail-light-1440.png"
+        },
+        {
+          "name": "appraisal-goals / light / 1440",
+          "file": "after/core-appraisal-goals-light-1440.png"
+        }
+      ]
+    },
+    {
+      "file": "after/core-contact-02.png",
+      "items": [
+        {
+          "name": "appraisal-self / light / 1440",
+          "file": "after/core-appraisal-self-light-1440.png"
+        },
+        {
+          "name": "appraisal-manager / light / 1440",
+          "file": "after/core-appraisal-manager-light-1440.png"
+        },
+        {
+          "name": "appraisal-discussion / light / 1440",
+          "file": "after/core-appraisal-discussion-light-1440.png"
+        },
+        {
+          "name": "appraisal-calibration / light / 1440",
+          "file": "after/core-appraisal-calibration-light-1440.png"
+        },
+        {
+          "name": "appraisal-final / light / 1440",
+          "file": "after/core-appraisal-final-light-1440.png"
+        },
+        {
+          "name": "appraisal-report / light / 1440",
+          "file": "after/core-appraisal-report-light-1440.png"
+        },
+        {
+          "name": "admin / light / 1440",
+          "file": "after/core-admin-light-1440.png"
+        },
+        {
+          "name": "cycles / light / 1440",
+          "file": "after/core-cycles-light-1440.png"
+        },
+        {
+          "name": "cycle-new / light / 1440",
+          "file": "after/core-cycle-new-light-1440.png"
+        },
+        {
+          "name": "cycle-detail / light / 1440",
+          "file": "after/core-cycle-detail-light-1440.png"
+        },
+        {
+          "name": "cycle-edit / light / 1440",
+          "file": "after/core-cycle-edit-light-1440.png"
+        },
+        {
+          "name": "calibration / light / 1440",
+          "file": "after/core-calibration-light-1440.png"
+        }
+      ]
+    },
+    {
+      "file": "after/core-contact-03.png",
+      "items": [
+        {
+          "name": "reports / light / 1440",
+          "file": "after/core-reports-light-1440.png"
+        },
+        {
+          "name": "department / light / 1440",
+          "file": "after/core-department-light-1440.png"
+        },
+        {
+          "name": "review-cycles / light / 1440",
+          "file": "after/core-review-cycles-light-1440.png"
+        },
+        {
+          "name": "analytics / light / 1440",
+          "file": "after/core-analytics-light-1440.png"
+        },
+        {
+          "name": "people / light / 1440",
+          "file": "after/core-people-light-1440.png"
+        },
+        {
+          "name": "profile / light / 1440",
+          "file": "after/core-profile-light-1440.png"
+        },
+        {
+          "name": "team-goals / light / 1440",
+          "file": "after/core-team-goals-light-1440.png"
+        },
+        {
+          "name": "team-appraisals / light / 1440",
+          "file": "after/core-team-appraisals-light-1440.png"
+        },
+        {
+          "name": "team-reviews / light / 1440",
+          "file": "after/core-team-reviews-light-1440.png"
+        },
+        {
+          "name": "reviews / light / 1440",
+          "file": "after/core-reviews-light-1440.png"
+        },
+        {
+          "name": "review-detail / light / 1440",
+          "file": "after/core-review-detail-light-1440.png"
+        },
+        {
+          "name": "dashboard-personal / dark / 1440",
+          "file": "after/core-dashboard-personal-dark-1440.png"
+        }
+      ]
+    },
+    {
+      "file": "after/core-contact-04.png",
+      "items": [
+        {
+          "name": "goals / dark / 1440",
+          "file": "after/core-goals-dark-1440.png"
+        },
+        {
+          "name": "appraisal-start / dark / 1440",
+          "file": "after/core-appraisal-start-dark-1440.png"
+        },
+        {
+          "name": "appraisal-self / dark / 1440",
+          "file": "after/core-appraisal-self-dark-1440.png"
+        },
+        {
+          "name": "appraisal-manager / dark / 1440",
+          "file": "after/core-appraisal-manager-dark-1440.png"
+        },
+        {
+          "name": "analytics / dark / 1440",
+          "file": "after/core-analytics-dark-1440.png"
+        },
+        {
+          "name": "people / dark / 1440",
+          "file": "after/core-people-dark-1440.png"
+        },
+        {
+          "name": "dashboard-personal / light / 390",
+          "file": "after/core-dashboard-personal-light-390.png"
+        },
+        {
+          "name": "goals / light / 390",
+          "file": "after/core-goals-light-390.png"
+        },
+        {
+          "name": "appraisal-start / light / 390",
+          "file": "after/core-appraisal-start-light-390.png"
+        },
+        {
+          "name": "appraisal-self / light / 390",
+          "file": "after/core-appraisal-self-light-390.png"
+        },
+        {
+          "name": "appraisal-manager / light / 390",
+          "file": "after/core-appraisal-manager-light-390.png"
+        },
+        {
+          "name": "analytics / light / 390",
+          "file": "after/core-analytics-light-390.png"
+        }
+      ]
+    },
+    {
+      "file": "after/core-contact-05.png",
+      "items": [
+        {
+          "name": "people / light / 390",
+          "file": "after/core-people-light-390.png"
+        },
+        {
+          "name": "self-form / light / 1440",
+          "file": "after/core-self-form-light-1440.png"
+        },
+        {
+          "name": "manager-form / light / 1440",
+          "file": "after/core-manager-form-light-1440.png"
+        },
+        {
+          "name": "final-form / light / 1440",
+          "file": "after/core-final-form-light-1440.png"
+        },
+        {
+          "name": "goal-populated / light / 1440",
+          "file": "after/core-goal-populated-light-1440.png"
+        },
+        {
+          "name": "appraisal-history / light / 1440",
+          "file": "after/core-appraisal-history-light-1440.png"
+        },
+        {
+          "name": "core-goal-details-dark-1440",
+          "file": "after/core-goal-details-dark-1440.png"
+        },
+        {
+          "name": "core-goal-create-dark-1440",
+          "file": "after/core-goal-create-dark-1440.png"
+        },
+        {
+          "name": "core-goal-create-dark-390",
+          "file": "after/core-goal-create-dark-390.png"
+        },
+        {
+          "name": "core-goal-create-dark-390-text-200",
+          "file": "after/core-goal-create-dark-390-text-200.png"
+        },
+        {
+          "name": "core-appraisal-report-print-1440",
+          "file": "after/core-appraisal-report-print-1440.png"
+        }
+      ]
+    }
+  ]
+}

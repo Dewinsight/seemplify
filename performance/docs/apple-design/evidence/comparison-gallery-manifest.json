@@ -1,0 +1,1297 @@
+{
+  "routeCount": 68,
+  "routes": [
+    {
+      "template": "/",
+      "before": {
+        "path": "/",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-root-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-root-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Redirect has no independent body. Improved destination; scope unchanged."
+    },
+    {
+      "template": "/action-centre",
+      "before": {
+        "path": "/action-centre",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-action-centre-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/action-centre",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-action-centre-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Two-level navigation and empty content are unchanged; no task consolidation claimed."
+    },
+    {
+      "template": "/admin",
+      "before": {
+        "path": "/admin",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-admin-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-admin-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same sparse charts/drilldown rows in both versions. Long-page information density largely retained. Polished operational panels."
+    },
+    {
+      "template": "/admin/appraisal-cycles",
+      "before": {
+        "path": "/admin/appraisal-cycles",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-cycles-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin/appraisal-cycles",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-cycles-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Fifth metric wraps to a new desktop row; retained existing composition. Polished."
+    },
+    {
+      "template": "/admin/appraisal-cycles/[id]",
+      "before": {
+        "path": "/admin/appraisal-cycles/cycle-1",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-cycle-detail-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin/appraisal-cycles/cycle-1",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-cycle-detail-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Timeline empty in both; no populated-phase improvement proof. Polished."
+    },
+    {
+      "template": "/admin/appraisal-cycles/[id]/edit",
+      "before": {
+        "path": "/admin/appraisal-cycles/cycle-1/edit",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-cycle-edit-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin/appraisal-cycles/cycle-1/edit",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-cycle-edit-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Editor remains long; no compact redesign claimed. Disabled frozen fields intentionally subdued. Polished, density largely unchanged."
+    },
+    {
+      "template": "/admin/appraisal-cycles/new",
+      "before": {
+        "path": "/admin/appraisal-cycles/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-cycle-new-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin/appraisal-cycles/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-cycle-new-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Screenshot is first step, not every editor state/mobile. Polished first step."
+    },
+    {
+      "template": "/admin/calibration",
+      "before": {
+        "path": "/admin/calibration",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-calibration-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin/calibration",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-calibration-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same no-sessions task on both sides; decision detail remains separate QA evidence. Polished empty session list."
+    },
+    {
+      "template": "/admin/departments/[department]",
+      "before": {
+        "path": "/admin/departments/Customer%20Success",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-department-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin/departments/Customer%20Success",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-department-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Sparse rows/empty goals; no dense mobile table claim. Polished desktop."
+    },
+    {
+      "template": "/admin/reports",
+      "before": {
+        "path": "/admin/reports",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-reports-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin/reports",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-reports-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same populated counts/charts now compared fairly. Improved metric hierarchy; chart data semantics unchanged."
+    },
+    {
+      "template": "/admin/review-cycles",
+      "before": {
+        "path": "/admin/review-cycles",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-review-cycles-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/admin/review-cycles",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-review-cycles-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "No independent new legacy screen. Polished destination, not extra functionality."
+    },
+    {
+      "template": "/ai-account",
+      "before": {
+        "path": "/ai-account",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-ai-account-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/ai-account",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-ai-account-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Same disconnected flow; no new account capability or provider success."
+    },
+    {
+      "template": "/analytics",
+      "before": {
+        "path": "/analytics",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-analytics-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/analytics",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-analytics-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Long technical subtitle persists; mobile remains tall. Polished panels/controls in desktop, dark and 390px; no changed analytics meaning."
+    },
+    {
+      "template": "/appraisals",
+      "before": {
+        "path": "/appraisals",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisals-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisals-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Dense metadata remains; no information was removed solely to look cleaner. Polished, including real history extra."
+    },
+    {
+      "template": "/appraisals/[appraisalId]",
+      "before": {
+        "path": "/appraisals/507f1f77bcf86cd799439011",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-detail-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/507f1f77bcf86cd799439011",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-detail-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same waiting-for-employee task/controls in both sources. Polished hierarchy; no loading-success claim."
+    },
+    {
+      "template": "/appraisals/[appraisalId]/calibration",
+      "before": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/calibration",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-calibration-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/calibration",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-calibration-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "No same-task decision form screenshot here. Polished prerequisite state; decision-layout improvement unproven."
+    },
+    {
+      "template": "/appraisals/[appraisalId]/discussion",
+      "before": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/discussion",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-discussion-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/discussion",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-discussion-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Current body remains lengthy; desktop read-only state only. Polished, not a new discussion layout."
+    },
+    {
+      "template": "/appraisals/[appraisalId]/final-review",
+      "before": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/final-review",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-final-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/final-review",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-final-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same business component and unavailable-evidence fixture. Disabled affordance is improved; successful finalization is separate real-API evidence."
+    },
+    {
+      "template": "/appraisals/[appraisalId]/goal-setting",
+      "before": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/goal-setting",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-goals-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/goal-setting",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-goals-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Single synthetic captured goal; large goal set not shown. Polished."
+    },
+    {
+      "template": "/appraisals/[appraisalId]/manager-review",
+      "before": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-manager-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/manager-review",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-manager-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same supporting documents and employee summary; editable extra also compared. Narrow stage list stays readable. Polished."
+    },
+    {
+      "template": "/appraisals/[appraisalId]/report",
+      "before": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/report",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-report-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/report",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-report-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same source/participant report data in matched capture; print was separately inspected. Polished report, no new report-content claim."
+    },
+    {
+      "template": "/appraisals/[appraisalId]/self-assessment",
+      "before": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-self-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/507f1f77bcf86cd799439011/self-assessment",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-self-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Submitted-state composition mostly unchanged. Dark/mobile submitted state reviewed; editable mobile is covered by functional suites rather than this screenshot set. Polished."
+    },
+    {
+      "template": "/appraisals/removed",
+      "before": {
+        "path": "/appraisals/removed",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisals-removed-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/removed",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisals-removed-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Both show the same honest empty state; no populated restore-row proof here. Polished empty state."
+    },
+    {
+      "template": "/appraisals/start",
+      "before": {
+        "path": "/appraisals/start",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-appraisal-start-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/appraisals/start",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-appraisal-start-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Matched staff/filter task in both builds. Dark/390px labels and controls remain readable. Polished wizard."
+    },
+    {
+      "template": "/check-ins",
+      "before": {
+        "path": "/check-ins",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-check-ins-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/check-ins",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-check-ins-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Two-column submitted narrative and cadence tabs are retained."
+    },
+    {
+      "template": "/coaching",
+      "before": {
+        "path": "/coaching",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-coaching-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/coaching",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-coaching-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Queue placement and coverage density are unchanged; no broader prioritization algorithm change."
+    },
+    {
+      "template": "/competency",
+      "before": {
+        "path": "/competency",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Preparation remains long-form; no role-library table is introduced here."
+    },
+    {
+      "template": "/competency/assessments",
+      "before": {
+        "path": "/competency/assessments",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--assessments-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/assessments",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--assessments-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Identity, role and reviewer ordering is retained; no new list layout."
+    },
+    {
+      "template": "/competency/assessments/[assessmentId]",
+      "before": {
+        "path": "/competency/assessments/assessment",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--assessments--assessment-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/assessments/assessment",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--assessments--assessment-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Three-column structure, long rationale flow and disabled/manual states are retained; no claim of shorter completion time."
+    },
+    {
+      "template": "/competency/cycles",
+      "before": {
+        "path": "/competency/cycles",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--cycles-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/cycles",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--cycles-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. No populated cycle-row comparison."
+    },
+    {
+      "template": "/competency/cycles/[id]",
+      "before": {
+        "path": "/competency/cycles/created-cycle",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--cycles--created-cycle-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/cycles/created-cycle",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--cycles--created-cycle-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Same name and selected input fixture. Stage/field order and scoring workflow remain unchanged."
+    },
+    {
+      "template": "/competency/cycles/new",
+      "before": {
+        "path": "/competency/cycles/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--cycles--new-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/cycles/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--cycles--new-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Stepper sequence and field order remain; no scoring/configuration redesign."
+    },
+    {
+      "template": "/competency/frameworks",
+      "before": {
+        "path": "/competency/frameworks",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--frameworks-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/frameworks",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--frameworks-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. No populated framework rows in paired evidence."
+    },
+    {
+      "template": "/competency/frameworks/[id]",
+      "before": {
+        "path": "/competency/frameworks/created-framework",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--frameworks--created-framework-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/frameworks/created-framework",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--frameworks--created-framework-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Same saved name/criteria/native-level counts. No source-content or publication feature added."
+    },
+    {
+      "template": "/competency/frameworks/new",
+      "before": {
+        "path": "/competency/frameworks/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--frameworks--new-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/frameworks/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--frameworks--new-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Definition/Criteria/Native levels workflow is unchanged; sticky footer is not a new layout."
+    },
+    {
+      "template": "/competency/reports",
+      "before": {
+        "path": "/competency/reports",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--reports-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/reports",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--reports-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. No cohort records are present in either image; population/readability of a large report table is untested by this pair."
+    },
+    {
+      "template": "/competency/reports/[assessmentId]",
+      "before": {
+        "path": "/competency/reports/assessment",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--reports--assessment-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/reports/assessment",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--reports--assessment-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Both sides use the same published result. Report structure and available evidence are unchanged; this is not new reporting functionality."
+    },
+    {
+      "template": "/competency/roles",
+      "before": {
+        "path": "/competency/roles",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-populated-competency--roles-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/roles",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-populated-competency--roles-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Readable cards retained; unavailable numeric version omitted. Matched populated evidence is linked in the growth review. Gallery shows the matched populated role-library state; both stages use identical aggregate fixtures."
+    },
+    {
+      "template": "/competency/roles/[id]",
+      "before": {
+        "path": "/competency/roles/created-role",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--roles--created-role-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/roles/created-role",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--roles--created-role-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Same saved name/expectation fixture. Responsibilities and version workflow are preserved, not redesigned."
+    },
+    {
+      "template": "/competency/roles/new",
+      "before": {
+        "path": "/competency/roles/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--roles--new-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/roles/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--roles--new-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Same choice panel and workflow, not a new wizard."
+    },
+    {
+      "template": "/competency/settings",
+      "before": {
+        "path": "/competency/settings",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--settings-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/settings",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--settings-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Long form and sticky save behavior are retained; full-page screenshot places the sticky bar mid-image because it reflects the initial viewport."
+    },
+    {
+      "template": "/competency/strategies",
+      "before": {
+        "path": "/competency/strategies",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--strategies-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/strategies",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--strategies-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Same strategy row on both sides. Actual missing role/framework versions are omitted rather than inferred from revision or IDs."
+    },
+    {
+      "template": "/competency/strategies/[id]",
+      "before": {
+        "path": "/competency/strategies/strategy-1",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--strategies--strategy-1-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/strategies/strategy-1",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--strategies--strategy-1-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Same record/version fixture; no new criteria, link or publication behavior."
+    },
+    {
+      "template": "/competency/strategies/new",
+      "before": {
+        "path": "/competency/strategies/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-competency--strategies--new-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/competency-responsive-concept.png",
+      "final": {
+        "path": "/competency/strategies/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-competency--strategies--new-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. No structural shortening or new strategy feature is claimed."
+    },
+    {
+      "template": "/dashboard",
+      "before": {
+        "path": "/dashboard",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-dashboard-personal-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/dashboard",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-dashboard-personal-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Concept uses larger heading/filled actions; current links are intentionally quieter. Dark and 390px also reviewed. Improved."
+    },
+    {
+      "template": "/development",
+      "before": {
+        "path": "/development",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-development-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/development",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-development-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Same empty My Plans/populated Team count fixture. Learning summary totals are absent in both fixture responses; no numeric-content acceptance claimed."
+    },
+    {
+      "template": "/feedback",
+      "before": {
+        "path": "/feedback",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-feedback-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/feedback",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-feedback-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Six-view navigation and card structure remain; no new information architecture."
+    },
+    {
+      "template": "/feedback/new",
+      "before": {
+        "path": "/feedback/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-feedback--new-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/feedback/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-feedback--new-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Field order is retained; no claim that sending is faster from a screenshot."
+    },
+    {
+      "template": "/login",
+      "before": {
+        "path": "/login",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-login-error-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/login",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-login-error-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Desktop error state compared; provider success is separate. Improved."
+    },
+    {
+      "template": "/okrs",
+      "before": {
+        "path": "/okrs",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-goals-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/okrs",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-goals-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Empty organization state alone cannot prove dense-list quality; populated extra reviewed. Dark/mobile preserve local tabs. Polished."
+    },
+    {
+      "template": "/okrs/alignment",
+      "before": {
+        "path": "/okrs/alignment",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-alignment-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/okrs/alignment",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-alignment-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Both are empty hierarchy; populated/large tree visual improvement unproven. Polished empty state."
+    },
+    {
+      "template": "/one-on-ones",
+      "before": {
+        "path": "/one-on-ones",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-one-on-ones-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/one-on-ones",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-one-on-ones-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Same populated calendar/list fixture and actor; the long connection explanation remains, so no structural simplification claimed."
+    },
+    {
+      "template": "/one-on-ones/[meetingId]",
+      "before": {
+        "path": "/one-on-ones/507f1f77bcf86cd799439011",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-one-on-ones--507f1f77bcf86cd799439011-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/one-on-ones/507f1f77bcf86cd799439011",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-one-on-ones--507f1f77bcf86cd799439011-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Same scheduled meeting/state on both sides. Repeated connection explanation still takes substantial space before Join call."
+    },
+    {
+      "template": "/one-on-ones/new",
+      "before": {
+        "path": "/one-on-ones/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-one-on-ones--new-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/one-on-ones/new",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-one-on-ones--new-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Same actor/calendar state and form order; automatic date/time differs only by capture time."
+    },
+    {
+      "template": "/project-feedback",
+      "before": {
+        "path": "/project-feedback",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-project-feedback-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/project-feedback",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-project-feedback-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Same task order and empty state; no populated project-row redesign claimed."
+    },
+    {
+      "template": "/recognition",
+      "before": {
+        "path": "/recognition",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-recognition-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/recognition",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-recognition-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Empty feed only; contribution-message row hierarchy is not evidenced here."
+    },
+    {
+      "template": "/reviews",
+      "before": {
+        "path": "/reviews",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-reviews-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/reviews",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-reviews-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Do not call this screenshot an assigned-review editor. Polished destination only."
+    },
+    {
+      "template": "/reviews/[id]",
+      "before": {
+        "path": "/reviews/review-1",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-review-detail-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/reviews/review-1",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-review-detail-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same synthetic self/manager/peer content and zero-versus-rating distinction retained. Polished historical report."
+    },
+    {
+      "template": "/settings/ai",
+      "before": {
+        "path": "/settings/ai",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-settings--ai-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/settings/ai",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-settings--ai-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Runtime/content groups stay in the same order. No real gateway generation is inferred."
+    },
+    {
+      "template": "/support-plans",
+      "before": {
+        "path": "/support-plans",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-support-plans-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/support-plans",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-support-plans-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Existing queue/filter/decision sequence is retained."
+    },
+    {
+      "template": "/talent",
+      "before": {
+        "path": "/talent",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-talent-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/talent",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-talent-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved. Nine-box composition and evidence table are retained; no claim of a redesigned talent model."
+    },
+    {
+      "template": "/team",
+      "before": {
+        "path": "/team",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-people-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/team",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-people-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Improved responsive readability. Normal and long-name states verified at390/768/1440 in both themes; metric/action separation and Guide/New1:1 bounds pass."
+    },
+    {
+      "template": "/team/[userId]",
+      "before": {
+        "path": "/team/member-1",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-profile-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/team/member-1",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-profile-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "This audit's profile capture is desktop only. Polished desktop; mobile judgment not inferred."
+    },
+    {
+      "template": "/team/appraisals",
+      "before": {
+        "path": "/team/appraisals",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-team-appraisals-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/team/appraisals",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-team-appraisals-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Desktop populated row compared; no new narrow-table proof here. Polished desktop."
+    },
+    {
+      "template": "/team/feedback",
+      "before": {
+        "path": "/team/feedback",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-team--feedback-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/team/feedback",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-team--feedback-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. The empty-data structure and three metric cards are unchanged; no populated table comparison."
+    },
+    {
+      "template": "/team/okrs",
+      "before": {
+        "path": "/team/okrs",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-team-goals-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/team/okrs",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-team-goals-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Same goal data now compared. Improved contrast/readability; final delta provides 760px named local table and actual keyboard action proof."
+    },
+    {
+      "template": "/team/reviews",
+      "before": {
+        "path": "/team/reviews",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/core-team-reviews-light-1440.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/team/reviews",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/core-team-reviews-light-1440.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "No independent reviewer workflow newly created. Polished destination."
+    },
+    {
+      "template": "/tutorial",
+      "before": {
+        "path": "/tutorial",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/comparison-baseline/growth-tutorial-desktop-light.png",
+        "source": "8f97b7f88ded397c3d291158645b6fe138c3cad6"
+      },
+      "concept": "evidence/concepts/dashboard-apple-concept.png",
+      "final": {
+        "path": "/tutorial",
+        "width": 1440,
+        "theme": "light",
+        "picture": "evidence/final-comparison/growth-tutorial-desktop-light.png",
+        "source": "7eb9c096330d19b1a854c0f45fa15d0583f09c13"
+      },
+      "verdict": "Refined. Introductory callout and long sequential walkthrough remain. No material restructuring of tutorial content."
+    }
+  ]
+}

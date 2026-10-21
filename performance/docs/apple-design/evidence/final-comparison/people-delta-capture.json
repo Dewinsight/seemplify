@@ -1,0 +1,374 @@
+{
+  "checkedAt": "2026-10-21T00:50:58.045Z",
+  "appSourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+  "baseMain": "d1b0307c0504548bf8b76630d622057ab9149362",
+  "build": "isolated-default-turbopack-production",
+  "server": "http://127.0.0.1:5035",
+  "evidenceBoundary": "Actual compiled final app with existing detailed People QA fixture. Synthetic content only; no live production claim.",
+  "results": [
+    {
+      "route": "/team",
+      "routeTemplate": "/team",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "final-comparison/people-long-final-light-1440.png",
+      "state": "rendered-fixture",
+      "boxes": {
+        "identity": {
+          "x": 201,
+          "y": 735.5,
+          "width": 429.5625,
+          "height": 28
+        },
+        "email": {
+          "x": 201,
+          "y": 827.5,
+          "width": 560.40625,
+          "height": 20
+        },
+        "metricGroup": {
+          "x": 777.40625,
+          "y": 747.5,
+          "width": 349.59375,
+          "height": 30
+        },
+        "actionGroup": {
+          "x": 1143,
+          "y": 735.5,
+          "width": 168,
+          "height": 40.25
+        },
+        "headerNew": {
+          "x": 247.40625,
+          "y": 349,
+          "width": 105.265625,
+          "height": 42.5
+        },
+        "guide": null
+      },
+      "checks": {
+        "readableIdentity": true,
+        "identityMetricSeparated": true,
+        "metricsActionSeparated": true,
+        "narrowStacked": true,
+        "allActionsPresent": true,
+        "headerActionInline": true,
+        "guideAndNewActionSeparated": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    },
+    {
+      "route": "/team",
+      "routeTemplate": "/team",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screenshot": "final-comparison/people-long-final-dark-1440.png",
+      "state": "rendered-fixture",
+      "boxes": {
+        "identity": {
+          "x": 201,
+          "y": 735.5,
+          "width": 429.5625,
+          "height": 28
+        },
+        "email": {
+          "x": 201,
+          "y": 827.5,
+          "width": 560.40625,
+          "height": 20
+        },
+        "metricGroup": {
+          "x": 777.40625,
+          "y": 747.5,
+          "width": 349.59375,
+          "height": 30
+        },
+        "actionGroup": {
+          "x": 1143,
+          "y": 735.5,
+          "width": 168,
+          "height": 40.25
+        },
+        "headerNew": {
+          "x": 247.40625,
+          "y": 349,
+          "width": 105.265625,
+          "height": 42.5
+        },
+        "guide": null
+      },
+      "checks": {
+        "readableIdentity": true,
+        "identityMetricSeparated": true,
+        "metricsActionSeparated": true,
+        "narrowStacked": true,
+        "allActionsPresent": true,
+        "headerActionInline": true,
+        "guideAndNewActionSeparated": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    },
+    {
+      "route": "/team",
+      "routeTemplate": "/team",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "final-comparison/people-long-final-light-390.png",
+      "state": "rendered-fixture",
+      "boxes": {
+        "identity": {
+          "x": 105,
+          "y": 1213.5,
+          "width": 252,
+          "height": 56
+        },
+        "email": {
+          "x": 105,
+          "y": 1381.5,
+          "width": 252,
+          "height": 40
+        },
+        "metricGroup": {
+          "x": 33,
+          "y": 1437.5,
+          "width": 324,
+          "height": 68
+        },
+        "actionGroup": {
+          "x": 33,
+          "y": 1521.5,
+          "width": 324,
+          "height": 40.25
+        },
+        "headerNew": {
+          "x": 151.40625,
+          "y": 311,
+          "width": 105.265625,
+          "height": 42.5
+        },
+        "guide": {
+          "x": 278.53125,
+          "y": 785.5,
+          "width": 95.46875,
+          "height": 42.5
+        }
+      },
+      "checks": {
+        "readableIdentity": true,
+        "identityMetricSeparated": true,
+        "metricsActionSeparated": true,
+        "narrowStacked": true,
+        "allActionsPresent": true,
+        "headerActionInline": true,
+        "guideAndNewActionSeparated": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    },
+    {
+      "route": "/team",
+      "routeTemplate": "/team",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "final-comparison/people-long-final-dark-390.png",
+      "state": "rendered-fixture",
+      "boxes": {
+        "identity": {
+          "x": 105,
+          "y": 1213.5,
+          "width": 252,
+          "height": 56
+        },
+        "email": {
+          "x": 105,
+          "y": 1381.5,
+          "width": 252,
+          "height": 40
+        },
+        "metricGroup": {
+          "x": 33,
+          "y": 1437.5,
+          "width": 324,
+          "height": 68
+        },
+        "actionGroup": {
+          "x": 33,
+          "y": 1521.5,
+          "width": 324,
+          "height": 40.25
+        },
+        "headerNew": {
+          "x": 151.40625,
+          "y": 311,
+          "width": 105.265625,
+          "height": 42.5
+        },
+        "guide": {
+          "x": 278.53125,
+          "y": 785.5,
+          "width": 95.46875,
+          "height": 42.5
+        }
+      },
+      "checks": {
+        "readableIdentity": true,
+        "identityMetricSeparated": true,
+        "metricsActionSeparated": true,
+        "narrowStacked": true,
+        "allActionsPresent": true,
+        "headerActionInline": true,
+        "guideAndNewActionSeparated": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    },
+    {
+      "route": "/team",
+      "routeTemplate": "/team",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "theme": "light",
+      "viewport": {
+        "width": 768,
+        "height": 1000
+      },
+      "screenshot": "final-comparison/people-long-final-light-768.png",
+      "state": "rendered-fixture",
+      "boxes": {
+        "identity": {
+          "x": 121,
+          "y": 919.5,
+          "width": 429.5625,
+          "height": 28
+        },
+        "email": {
+          "x": 121,
+          "y": 1011.5,
+          "width": 598,
+          "height": 20
+        },
+        "metricGroup": {
+          "x": 49,
+          "y": 1047.5,
+          "width": 670,
+          "height": 30
+        },
+        "actionGroup": {
+          "x": 49,
+          "y": 1093.5,
+          "width": 670,
+          "height": 40.25
+        },
+        "headerNew": {
+          "x": 167.40625,
+          "y": 349,
+          "width": 105.265625,
+          "height": 42.5
+        },
+        "guide": null
+      },
+      "checks": {
+        "readableIdentity": true,
+        "identityMetricSeparated": true,
+        "metricsActionSeparated": true,
+        "narrowStacked": true,
+        "allActionsPresent": true,
+        "headerActionInline": true,
+        "guideAndNewActionSeparated": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    },
+    {
+      "route": "/team",
+      "routeTemplate": "/team",
+      "sourceTree": "7eb9c096330d19b1a854c0f45fa15d0583f09c13",
+      "theme": "dark",
+      "viewport": {
+        "width": 768,
+        "height": 1000
+      },
+      "screenshot": "final-comparison/people-long-final-dark-768.png",
+      "state": "rendered-fixture",
+      "boxes": {
+        "identity": {
+          "x": 121,
+          "y": 919.5,
+          "width": 429.5625,
+          "height": 28
+        },
+        "email": {
+          "x": 121,
+          "y": 1011.5,
+          "width": 598,
+          "height": 20
+        },
+        "metricGroup": {
+          "x": 49,
+          "y": 1047.5,
+          "width": 670,
+          "height": 30
+        },
+        "actionGroup": {
+          "x": 49,
+          "y": 1093.5,
+          "width": 670,
+          "height": 40.25
+        },
+        "headerNew": {
+          "x": 167.40625,
+          "y": 349,
+          "width": 105.265625,
+          "height": 42.5
+        },
+        "guide": null
+      },
+      "checks": {
+        "readableIdentity": true,
+        "identityMetricSeparated": true,
+        "metricsActionSeparated": true,
+        "narrowStacked": true,
+        "allActionsPresent": true,
+        "headerActionInline": true,
+        "guideAndNewActionSeparated": true,
+        "noDocumentOverflow": true,
+        "noDevOverlay": true
+      },
+      "pageErrors": [],
+      "failedRequests": [],
+      "passed": true
+    }
+  ]
+}

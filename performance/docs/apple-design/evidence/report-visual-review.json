@@ -1,0 +1,17 @@
+{
+  "file": "Performance-Management-Design-Delivery.pdf",
+  "sha256": "0815c1688a94f8617d230a67021b4b1e5d4f9eaf163ccea6da5398df453e7b2e",
+  "reviewer": "coordinating architect",
+  "render": "All nine final pages rendered with Poppler at 100 dpi and individually inspected.",
+  "pagesInspected": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "result": "PASS",
+  "checks": [
+    "No document text/image overlap, clipped headings or footer collisions.",
+    "Equal 1440x1000 before/final dashboard viewports and unmodified native People card comparison.",
+    "Generated proposals clearly labeled separately from actual implementation screenshots.",
+    "Production manager dark viewport clearly distinguished from controlled local fixtures.",
+    "Exact tested tree, published/live source and successful workflow stated separately.",
+    "Initial real-API failure and three unchanged replays stated without an unsupported cause.",
+    "Provider, lint and accessibility-certification limits remain explicit."
+  ]
+}

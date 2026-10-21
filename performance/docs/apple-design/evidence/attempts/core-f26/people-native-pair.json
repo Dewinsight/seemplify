@@ -1,0 +1,34 @@
+{
+  "capturedAt": "2026-10-21T00:34:00.074Z",
+  "fixture": "Identical existing journey state, hrAdminMode=true/managerMode=true plus shared supplemental read shapes, Jordan Lee with all existing metric chips",
+  "results": [
+    {
+      "stage": "before",
+      "sourceTree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+      "server": "http://127.0.0.1:5036",
+      "route": "/team",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "theme": "light",
+      "screenshot": "comparison-baseline/people-card-before-390.png",
+      "method": "Native locator.screenshot on actual memberRow element; no bitmap editing",
+      "pageErrors": []
+    },
+    {
+      "stage": "final",
+      "sourceTree": "f26f4621d538383f33eb76aeb1d5020d44f65fd4",
+      "server": "http://127.0.0.1:5035",
+      "route": "/team",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "theme": "light",
+      "screenshot": "attempts/core-f26/people-card-final-390.png",
+      "method": "Native locator.screenshot on actual memberRow element; no bitmap editing",
+      "pageErrors": []
+    }
+  ]
+}

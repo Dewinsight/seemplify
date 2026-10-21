@@ -1,0 +1,44 @@
+{
+  "reviewedAt": "2026-10-21T01:37:26.028602+00:00",
+  "reviewer": "Product Manager 2 / UI-UX 2, independent final document review",
+  "file": "Performance-Management-Design-Delivery.pdf",
+  "sha256": "0815c1688a94f8617d230a67021b4b1e5d4f9eaf163ccea6da5398df453e7b2e",
+  "pages": 9,
+  "passed": true,
+  "visualReview": {
+    "renderedPages": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "renderDpi": 100,
+    "clipping": false,
+    "reportOverlap": false,
+    "legible": true,
+    "actualVsConceptLabels": "Actual synthetic app screens on pages 2/4/5, actual synthetic dialog and authenticated production manager on page 6; generated proposals explicitly labeled on pages 3/9.",
+    "beforePeopleOverlap": "Intentional existing-UI defect in the native before screenshot, not a report-layout defect."
+  },
+  "crossChecks": {
+    "dashboardEqualViewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "peopleEqualViewport": {
+      "width": 390,
+      "height": 844
+    },
+    "nativeProductionManager": true,
+    "publishedCommit": "8ce5e4b447d2b070870bdf75154b46abde6b18a7",
+    "deploymentRun": "39524124932",
+    "exactReleaseEvidenceMatches": true,
+    "realApiHistory": "19 initial passes / 1 failure, then three unchanged passing replays; no clean single-run 20/20 claim or unsupported cause."
+  },
+  "boundaries": "Read-only document/evidence review. No new live execution, source changes, PDF edits or provider-success claim.",
+  "clearance": "Passed final PDF visual and evidence-label gate; architect cleared to deliver this exact PDF."
+}

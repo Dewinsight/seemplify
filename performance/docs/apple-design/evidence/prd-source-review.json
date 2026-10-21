@@ -1,0 +1,16 @@
+{
+  "reviewedOn": "2026-10-21",
+  "reviewer": "PM2 / UI-UX2",
+  "sourcePath": "C:\\Users\\User\\Downloads\\Seemplify Competency Assessment PRD.pdf",
+  "sourceSHA256": "6e39179f51bf7202cdd57fdddefe06c9bea07579f7a1c4db29587ea49870976f",
+  "pageCount": 3,
+  "pagesRead": [
+    1,
+    2,
+    3
+  ],
+  "method": "pypdf text extraction, all pages read directly",
+  "scope": "Competency assessment requirements preserved by AD-11 design; wider Performance redesign scope comes from user brief and current source",
+  "mapping": "DESIGN-02.md section8, direct PRD preservation mapping",
+  "limitations": "Read-only source review; no new pilot/business functionality or functional acceptance claimed"
+}

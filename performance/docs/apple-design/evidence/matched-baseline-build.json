@@ -1,0 +1,13 @@
+{
+  "commit": "a93ddbf9f5274b2083818a6c60f78c9dd49c92f5",
+  "tree": "8f97b7f88ded397c3d291158645b6fe138c3cad6",
+  "purpose": "Fair before-versus-final visual comparison using identical synthetic transport fixtures",
+  "isolation": "git archive of committed pre-redesign frontend, copied existing exact dependencies, separate .next and port 5036; shared checkout and final candidate unchanged",
+  "build": "Default next build / Turbopack passed, including TypeScript and all routes",
+  "compileSeconds": 11.1,
+  "typeCheckSeconds": 15.5,
+  "apiUrl": "http://127.0.0.1:5036/__mock-api",
+  "wsUrl": "ws://127.0.0.1:5036/__mock-ws",
+  "server": "http://127.0.0.1:5036",
+  "evidenceBoundary": "Visual and interaction baseline only; sample data is synthetic and does not establish real Identity, persistence or provider outcomes"
+}

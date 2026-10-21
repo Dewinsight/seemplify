@@ -1,0 +1,122 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Users\\User\\AppData\\Local\\Programs\\node-v24.19.0-win-x64\\node.exe",
+      "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--config",
+      "playwright.live.config.ts",
+      "feature-actions.spec.ts",
+      "--grep",
+      "manager finalizes a result",
+      "--reporter=line,json",
+      "--output=E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/realapi-history-replay-results"
+    ],
+    "configFile": "E:\\GitHub\\C-drive\\seemplify\\.codex-temp\\apple-design\\realapi-562fad136a65\\performance\\frontend\\playwright.live.config.ts",
+    "rootDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/realapi-562fad136a65/performance/frontend/e2e-live",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/realapi-history-replay-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "real-api-chrome",
+        "name": "real-api-chrome",
+        "testDir": "E:/GitHub/C-drive/seemplify/.codex-temp/apple-design/realapi-562fad136a65/performance/frontend/e2e-live",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 120000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "feature-actions.spec.ts",
+      "file": "feature-actions.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "manager finalizes a result and employee opens historical report and downloads CSV",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real-api-chrome",
+              "projectName": "real-api-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1802,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-21T00:09:03.034Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "efb720cc9c21022eb7b2-ad0cda913606e132f1b5",
+          "file": "feature-actions.spec.ts",
+          "line": 242,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-21T00:09:02.616Z",
+    "duration": 2499.1850000000004,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
