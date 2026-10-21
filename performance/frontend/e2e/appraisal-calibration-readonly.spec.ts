@@ -20,7 +20,7 @@ async function install(page: Page, status: string, rating = 3) {
   await page.route('**/__mock-api/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace('/__mock-api', '');
-    if (request.method() === 'POST') writes.push({ path, body: request.postDataJSON() || {} });
+    if (request.method() === 'POST' && path.startsWith('/appraisals/')) writes.push({ path, body: request.postDataJSON() || {} });
     if (path === '/auth/me') return route.fulfill({ json: { success: true, user: { ...user, organizations: [organization] }, currentOrganization: organization, currentOrganizationId: organization.id } });
     let data: unknown = [];
     if (path === '/user/context') data = { user, organization, role: { name: 'owner', isManager: true, isHRAdmin: true }, teams: [], features: { canonicalAppraisals: true }, stats: {} };

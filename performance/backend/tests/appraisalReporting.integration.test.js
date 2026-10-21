@@ -148,6 +148,28 @@ test('finalization durably queues the AI report without making the provider part
   expect((await Job.findOne({ appraisalId: appraisal._id }).select('+identity')).identity.sub).toBe('reviewer');
 });
 
+test('a review without a calculated score retains the human outcome without inventing a zero-score override', async () => {
+  const { appraisal } = await fixture('final_review_pending');
+  const scoring = await api('get', `/${appraisal._id}/scoring`).expect(200);
+  expect(scoring.body.data.suggestedRating).toBeNull();
+  const response = await api('post', `/${appraisal._id}/finalize`).send({ finalRating: 4 }).expect(200);
+  expect(response.body.data.finalRating).toMatchObject({ overall: 4, override: { applied: false, selectedRating: 4 } });
+  expect(response.body.data.finalRating.override.calculatedRating).toBeUndefined();
+  const saved = await Appraisal.findById(appraisal._id);
+  expect(saved.finalRating.overall).toBe(4);
+  expect(saved.auditLog.find(entry => entry.action === 'appraisal_finalized').details.calculatedRating).toBeNull();
+});
+
+test('a real calculated score still requires a reason to override and records the original rating', async () => {
+  const { appraisal } = await fixture('final_review_pending');
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { 'managerReview.competencyRatings': [{ competencyId: 'communication', competencyName: 'Communication', managerRating: 3 }] } });
+  expect((await api('get', `/${appraisal._id}/scoring`).expect(200)).body.data.suggestedRating).toBe(3);
+  await api('post', `/${appraisal._id}/finalize`).send({ finalRating: 4 }).expect(400);
+  expect((await Appraisal.findById(appraisal._id)).status).toBe('final_review_pending');
+  const response = await api('post', `/${appraisal._id}/finalize`).send({ finalRating: 4, justification: 'Additional verified evidence supports the higher human outcome.' }).expect(200);
+  expect(response.body.data.finalRating.override).toMatchObject({ applied: true, calculatedRating: 3, selectedRating: 4 });
+});
+
 test('queue retries coalesce and unchanged evidence does not cause another paid generation', async () => {
   const { appraisal } = await fixture('completed');
   const first = await reports.queue(appraisal, identity);
