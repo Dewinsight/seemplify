@@ -3138,6 +3138,7 @@ router.get('/:appraisalId/report', requireAuth, async (req, res) => {
       organizationId: appraisal.organizationId, status: { $ne: 'deleted' }
     }).select('_id appraisalId organizationId visibility originalName fileType fileSize category status').lean() : [];
     const report = resultReport(appraisal, appraisal.cycleId);
+    report.roleAssessment = await require('../services/appraisalRoleResultService').forViewer(req, appraisal);
     report.aiReport = await require('../services/appraisalFinalReportService').view(appraisal);
     report.canGenerateAIReport = managerAccess;
     // History exposes only the current viewer's authorized metadata. Content

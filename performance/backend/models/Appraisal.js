@@ -84,6 +84,7 @@ const appraisalSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: undefined
   },
+  competencyResultReference: { assessmentId: String, number: Number, reportHash: String },
   customResponses: [{
     sectionId: { type: String, required: true },
     questionId: { type: String, required: true },

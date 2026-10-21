@@ -17,7 +17,7 @@ async function fixture({ linked = true } = {}) {
   if (linked) {
     assessment = await Assessment.create({ organizationId: 'org-a', cycleId: String(new mongoose.Types.ObjectId()), cycleVersion: 1, appraisalId: String(appraisal._id), participant: { userId: 'employee' }, assessorIds: ['reviewer'], definitionSnapshot: {}, status: 'published', currentResultNumber: 1, results: [] });
     const source = await require('../services/competency/assessmentService').sourceFeedback(assessment.toObject());
-    await Assessment.updateOne({ _id: assessment._id }, { $set: { results: [{ number: 1, managerSource: source }] } });
+    await Assessment.updateOne({ _id: assessment._id }, { $set: { results: [{ number: 1, reportHash: 'published-result-hash', managerSource: source }] } });
   }
   const pending = await Appraisal.findById(appraisal._id);
   pending.status = 'completed'; pending.finalRating = { overall: 4, finalizedAt: new Date(), finalizedBy: { userId: 'reviewer', name: 'Synthetic reviewer' } };
@@ -37,6 +37,7 @@ test('linked parent final outcome and competency fence commit atomically', async
   const { pending, assessment } = await fixture();
   await service.saveFinalOutcome(req, pending);
   expect((await Appraisal.findById(pending._id)).status).toBe('completed');
+  expect((await Appraisal.findById(pending._id)).competencyResultReference.toObject()).toEqual({ assessmentId: String(assessment._id), number: 1, reportHash: 'published-result-hash' });
   expect((await Assessment.findById(assessment._id)).__v).toBe(1);
   expect(pending.$session()).toBeNull();
 });
