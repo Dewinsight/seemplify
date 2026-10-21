@@ -50,6 +50,11 @@ export default function AppraisalResultReportPage() {
     ...Object.entries(report.discussion || {}).filter(([key]) => key !== '_id').map(([key, value]) => [`Discussion: ${labels[key] || key}`, Array.isArray(value) ? value.join('; ') : value]),
     ...report.goals.map((goal) => [`Goal: ${goal.title}`, goal.score == null ? 'Not rated' : `${goal.score}%`]),
     ...(report.competencies || []).flatMap((item) => [[`Competency: ${item.name} - employee rating`, String(item.selfRating ?? 'Not rated')], [`Competency: ${item.name} - manager rating`, String(item.managerRating ?? 'Not rated')], [`Competency: ${item.name} - manager comments`, item.managerComments]]),
+    ...(report.roleAssessment?.state === 'published' ? [
+      ['Role assessment', report.roleAssessment.role.name], ['Role result version', String(report.roleAssessment.resultVersion)],
+      ['Role competency score (0–100)', scoreLabel(report.roleAssessment.overallScore, 100)], ['Role classification', report.roleAssessment.classification],
+      ...report.roleAssessment.criteria.flatMap(item => [[`Role criterion: ${item.name} - expected native level`, item.expected || 'Not recorded'], [`Role criterion: ${item.name} - observed native level`, item.observed || 'Not rated'], [`Role criterion: ${item.name} - normalized score (0–100)`, scoreLabel(item.score, 100)], [`Role criterion: ${item.name} - assessor rationale`, item.rationale]])
+    ] : []),
     ...(report.answers || []).map((item) => [`${item.respondent}: ${item.section} - ${item.question}`, item.answer]),
   ], 'appraisal-result-report.csv');
   return <Box sx={{ maxWidth: 1240, mx: 'auto', overflowWrap: 'anywhere' }}>
@@ -90,7 +95,8 @@ export default function AppraisalResultReportPage() {
             </Button>
           </Stack>
         </Alert>}
-        {competency?.enabled && <CompetencyReportSection appraisalId={params.appraisalId} />}
+        {competency?.enabled && report.roleAssessment?.state === 'published' && <CompetencyReportSection assessmentId={report.roleAssessment.assessmentId} resultVersion={report.roleAssessment.resultVersion} />}
+        {competency?.enabled && !report.roleAssessment && <CompetencyReportSection appraisalId={params.appraisalId} />}
       </Box>}
     </Paper>
   </Box>;

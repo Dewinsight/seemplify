@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import type { RoleAssessmentResult } from '../lib/appraisal-report';
 
 // These are actual browser rendering contracts with synthetic final-report
 // transport. They do not prove API authorization or external AI execution.
@@ -10,6 +11,7 @@ const discussionNarrative = 'Retain the agreed mentoring session and next-quarte
 
 type RecordedNumber = number | string | null;
 interface ReportFixture {
+  roleAssessment?: RoleAssessmentResult | { state: 'unavailable' };
   id: string; status: string;
   employee: { name: string; jobTitle: string; department: string };
   manager: { name: string };
@@ -365,4 +367,83 @@ test('CSV and print retain raw evidence, narratives and the published human resu
   expect(visibleMarks).toBeGreaterThan(0);
   await page.pdf({ path: info.outputPath('synthetic-analytical-result-print.pdf'), format: 'A4', printBackground: true });
   state.assertReadOnly();
+});
+
+
+function nativeResult(): RoleAssessmentResult {
+  return { state: 'published', assessmentId: 'frozen-native-assessment', resultVersion: 1, cycleId: 'native-cycle', cycleVersion: 2,
+    role: { name: 'Solution Architect', version: 3 }, overallScore: 85, classification: 'Suitable', coverage: { assessed: 2, selected: 2 },
+    sources: [{ type: 'internal', score: 85, weight: 1 }], criteria: [
+      { id: 'architecture', name: 'Architecture delivery', sourceType: 'internal', sourceName: 'Published internal framework', status: 'assessed', expected: 'Independent', observed: 'Independent', score: 100, weight: .4, rationale: 'The assessor retained the architecture decision evidence.' },
+      { id: 'coordination', name: 'Delivery coordination', sourceType: 'internal', sourceName: 'Published internal framework', status: 'assessed', expected: 'Leads and improves', observed: 'Independent', score: 75, weight: .6, rationale: 'Continue the agreed coordination development plan.' },
+    ] };
+}
+for (const mode of [{ name: 'desktop', width: 1440, height: 1000 }, { name: 'mobile', width: 390, height: 844 }]) {
+  test(`native charts preserve published scores, native levels, text and CSV in ${mode.name}`, async ({ page }, info) => {
+    await page.setViewportSize(mode);
+    const report = populatedReport(); report.roleAssessment = nativeResult(); report.competencies = []; report.goals = []; report.managerFeedback!.goals = [];
+    const state = await setup(page, report); await openReport(page);
+    const chart = analytics(page).getByRole('figure', { name: 'Role competency assessment', exact: true });
+    await expect(chart).toContainText('Solution Architect'); await expect(chart).toContainText('85 / 100');
+    await expect(chart).toContainText('Role version 3 · Result version 1');
+    await expect(chart).toContainText('Expected: Leads and improves · Observed: Independent');
+    await expect(chart.getByRole('meter', { name: 'Published role competency score', exact: true })).toHaveAttribute('aria-valuenow', '85');
+    await expect(chart.getByRole('meter', { name: 'Delivery coordination: published normalized score', exact: true })).toHaveAttribute('aria-valuenow', '75');
+    await expect(competencyChart(page)).toHaveCount(0);
+    await expect(analytics(page).getByRole('img', { name: /^Published outcome:/ })).toHaveAttribute('aria-label', /4 \/ 5/);
+    await expectValidMeters(page); await expectNarratives(page);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const downloadPromise = page.waitForEvent('download'); await page.getByRole('button', { name: 'Download CSV', exact: true }).click();
+    const download = await downloadPromise; const csv = await readFile((await download.path())!, 'utf8');
+    expect(csv).toContain('"Role competency score (0–100)","85 / 100"');
+    expect(csv).toContain('"Final result","4 / 5"'); expect(csv).toContain('Leads and improves');
+    await page.emulateMedia({ media: 'print' }); await expect(chart).toBeVisible();
+    await page.emulateMedia({ media: 'screen' });
+    await chart.screenshot({ path: info.outputPath(`native-role-${mode.name}.png`) }); state.assertReadOnly();
+  });
+}
+test('combined report separates scales and missing native values while retaining recorded zero', async ({ page }) => {
+  const report = populatedReport(); report.roleAssessment = nativeResult(); report.roleAssessment.overallScore = null;
+  report.roleAssessment.criteria[0].score = 0; report.roleAssessment.criteria[1].score = null; report.roleAssessment.criteria[1].observed = null;
+  const state = await setup(page, report); await openReport(page);
+  const chart = analytics(page).getByRole('figure', { name: 'Role competency assessment', exact: true });
+  await expect(competencyChart(page)).toBeVisible(); await expect(competencyChart(page)).toContainText('Scale 1–5');
+  await expect(chart.getByRole('meter', { name: 'Published role competency score', exact: true })).toHaveCount(0);
+  await expect(chart.getByRole('meter', { name: 'Architecture delivery: published normalized score', exact: true })).toHaveAttribute('aria-valuenow', '0');
+  await expect(chart.getByRole('meter', { name: 'Delivery coordination: published normalized score', exact: true })).toHaveCount(0);
+  await expect(chart).toContainText('Not rated'); await expectValidMeters(page); state.assertReadOnly();
+});
+test('unavailable role result never fabricates a generic competency score', async ({ page }) => {
+  const report = populatedReport(); report.roleAssessment = { state: 'unavailable' }; report.competencies = [];
+  const state = await setup(page, report, 'employee'); await openReport(page);
+  await expect(analytics(page)).toContainText('No competency score has been inferred.');
+  await expect(competencyChart(page)).toHaveCount(0); state.assertReadOnly();
+});
+
+
+test('linked native report and PDF request use the same pinned result version as the charts', async ({ page }) => {
+  const report = populatedReport(); report.roleAssessment = nativeResult(); report.competencies = [];
+  const state = await setup(page, report); const nativeRequests: string[] = []; let exportVersion: unknown;
+  await page.route('**/__mock-api/competency/**', async route => {
+    const url = new URL(route.request().url()); const path = url.pathname.replace('/__mock-api/competency', ''); nativeRequests.push(path + url.search);
+    let data: unknown;
+    if (path === '/bootstrap') data = { enabled: true, capabilities: {} };
+    else if (path === '/assessments/frozen-native-assessment') data = { result: { number: 2 }, resultVersions: [{ number: 1 }, { number: 2 }], allowedActions: ['competency.report.export'] };
+    else if (path === '/assessments/frozen-native-assessment/report' && url.searchParams.get('resultVersion') === '1') data = {
+      number: 1, participant: { name: 'Synthetic Participant' }, role: { name: 'Solution Architect', version: 3 }, status: 'superseded',
+      finalClassification: { label: 'Suitable', finalisedAt: '2026-10-18' }, findings: [], evidenceReferences: [], managerFeedback: [], criteria: [],
+      score: { overallScore: 85, sourceScores: [], criterionScores: [], coverage: { assessed: 2, selected: 2 } }, dates: {},
+    };
+    else if (path === '/assessments/frozen-native-assessment/exports') { exportVersion = route.request().postDataJSON().resultVersion; data = { id: 'synthetic-export', status: 'pending' }; }
+    else { await route.fulfill({ status: 501, json: { error: 'Unexpected native request' } }); return; }
+    await route.fulfill({ json: { success: true, data } });
+  });
+  await openReport(page);
+  const native = page.getByRole('region', { name: 'Competency assessment report', exact: true });
+  await expect(native).toContainText('Report version 1');
+  await expect(native.getByRole('combobox', { name: 'Report version' })).toHaveCount(0);
+  await native.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  await expect(native).toContainText('Preparing PDF.'); expect(exportVersion).toBe(1);
+  expect(nativeRequests).toContain('/assessments/frozen-native-assessment/report?resultVersion=1');
+  expect(nativeRequests).not.toContain('/assessments/frozen-native-assessment/report'); state.assertReadOnly();
 });

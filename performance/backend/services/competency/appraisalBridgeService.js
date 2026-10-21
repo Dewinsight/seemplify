@@ -98,6 +98,7 @@ async function saveFinalOutcome(req, appraisal) {
       // retry sees its new state rather than finalising against a stale read.
       const fenced = await Assessment.updateOne({ ...filter, _id: linked._id, revision: linked.revision, status: 'published', currentResultNumber: linked.currentResultNumber, mutationLock: null }, { $inc: { __v: 1 } }, { session });
       if (fenced.matchedCount !== 1) throw new DomainError(409, 'ROLE_ASSESSMENT_CHANGED', 'The linked role assessment changed. Reload before completing this appraisal.');
+      appraisal.competencyResultReference = { assessmentId: String(linked._id), number: published.number, reportHash: published.reportHash };
       appraisal.$where = { ...priorWhere, organizationId, __v: originalVersion, removedAt: null };
       appraisal.increment();
       await appraisal.save({ session });

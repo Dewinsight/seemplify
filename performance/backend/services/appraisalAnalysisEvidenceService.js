@@ -46,7 +46,8 @@ async function collect(appraisal, profile = { shared: true }) {
   const snapshot = plain(appraisal.cycleConfigurationSnapshot) || {};
   add('review', String(appraisalId), 'Appraisal context and preserved review design', { employee: appraisal.employee?.name, jobTitle: appraisal.employee?.jobTitle, periodStart: snapshot.periodStart || cycle?.periodStart,
     periodEnd: snapshot.periodEnd || cycle?.periodEnd, cycle: snapshot.cycleName || cycle?.name, phase: shared && published ? 'finalised' : appraisal.status, design: snapshot.workflowDefinition || cycle?.workflowDefinition,
-    workflow: snapshot.appraisalFlow, finalRating: published ? plain(appraisal.finalRating) : undefined });
+    workflow: snapshot.appraisalFlow, reviewMode: snapshot.reviewMode, cadence: snapshot.cadence, assessmentCycleId: snapshot.assessmentCycleId,
+    occurrenceKey: snapshot.occurrenceKey, finalRating: published ? plain(appraisal.finalRating) : undefined });
   const humanFields = (value, names) => Object.fromEntries(names.map(name => [name, plain(value?.[name])]).filter(([, value]) => value !== undefined));
   const self = humanFields(appraisal.selfAssessment, ['submittedAt', 'overallSummary', 'competencyRatings', 'okrAssessment', 'overallSelfRating']);
   const manager = humanFields(appraisal.managerReview, ['submittedAt', 'overallSummary', 'competencyRatings', 'okrAssessment', 'overallManagerRating']);
@@ -111,11 +112,16 @@ async function collect(appraisal, profile = { shared: true }) {
   if (profile.competency) ctx = { ...profile.competency, permissions: new Set(profile.competency.permissions), req: profile.request };
   for (const role of roles) {
     const auth = require('./competency/authorizationService');
-    const allowed = shared ? role.status === 'published' : ctx && auth.canAccessAssessment(ctx, role, 'evidence.view');
+    const roleResults = require('./appraisalRoleResultService');
+    const publishedResult = roleResults.resolve(appraisal, role);
+    const allowed = shared ? Boolean(publishedResult) : ctx && auth.canAccessAssessment(ctx, role, 'evidence.view');
     if (!allowed) { gaps.push('Linked role assessment/CV access could not be verified for this view.'); continue; }
     const isAssessor = !shared && auth.isCurrentAssessor(ctx, role);
-    add('role_assessment', id(role), role.definitionSnapshot?.role?.name || 'Role expectations', { role: role.definitionSnapshot?.role, criteria: role.definitionSnapshot?.criteria, status: role.status,
-      result: role.results?.find(result => result.number === role.currentResultNumber)?.score, reviewerFindings: isAssessor ? role.items : undefined }, role.status);
+    add('role_assessment', id(role), role.definitionSnapshot?.role?.name || 'Role expectations', {
+      role: role.definitionSnapshot?.role, criteria: role.definitionSnapshot?.criteria,
+      result: publishedResult ? roleResults.summary(role, publishedResult) : null,
+      reviewerFindings: isAssessor && !published ? role.items : undefined
+    }, publishedResult ? 'published' : role.status);
     const evidence = await require('../models/CompetencyEvidence').find({ organizationId: org, assessmentId: id(role), status: 'ready' }).sort({ _id: 1 }).lean();
     for (const entry of evidence) {
       const visible = shared ? entry.visibility === 'participant' : require('./competency/assessmentService').visible(ctx, role, entry)

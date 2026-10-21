@@ -64,7 +64,7 @@ async function processDue() {
       }
       const deep = require('./deepAppraisalAIService');
       const response = await deep.generate(job.identity, [
-        { role: 'system', content: `${deep.SYSTEM} This is the final published appraisal report shared with the employee and reviewer. Preserve its human final rating exactly.` },
+        { role: 'system', content: `${deep.SYSTEM} This is the final published appraisal report shared with the employee and reviewer. Preserve its human final rating exactly. The ROLE sources contain the frozen cycle and role result version, published criterion findings, native expected/observed levels, and configured normalized 0–100 scores. Use these for competency analysis and development gaps. Keep native levels and normalized competency scores separate from the human appraisal rating; never convert them to 1–5 or invent missing results. Charts are rendered from saved structured measures, never numbers inferred from your prose.` },
         { role: 'user', content: `Evidence coverage:\n${JSON.stringify(source.coverage)}\n\n${source.text}` }
       ]);
       const content = response.choices?.[0]?.message?.content?.trim();

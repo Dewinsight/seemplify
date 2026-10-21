@@ -3,7 +3,7 @@
 import { useId, useState } from 'react';
 import { Box, Button, Divider, Stack, Typography } from '@mui/material';
 import { analysisSections, categoryNames, coverageGroups, type AssessmentSource } from '@/lib/assessment-presentation';
-import { recordedNumber, recordedScale, scoreLabel, type ResultReport } from '@/lib/appraisal-report';
+import { recordedNumber, recordedScale, scoreLabel, type ResultReport, type RoleAssessmentResult } from '@/lib/appraisal-report';
 import AssessmentNarrative from './AssessmentNarrative';
 
 const panel = { p: { xs: 2, sm: 3 }, border: '1px solid', borderColor: 'divider', borderRadius: 2, minWidth: 0 };
@@ -42,6 +42,31 @@ function ProgressPlot({ value, label }: { value: unknown; label: string }) {
       <rect x="0" y="3" width={value * 3} height="8" rx="2" fill="var(--suite-accent)" />
       {value === 0 && <line x1="1" y1="1" x2="1" y2="13" stroke="var(--suite-accent)" strokeWidth="2" />}
     </svg>
+  </Box>;
+}
+
+function RoleResult({ result }: { result: RoleAssessmentResult | { state: 'unavailable' } }) {
+  if (result.state !== 'published') return <Box sx={panel}><Typography component="h2" variant="h6">Role competency assessment</Typography><Typography variant="body2" color="text.secondary" mt={1}>The published role result for this appraisal is unavailable for this view. No competency score has been inferred.</Typography></Box>;
+  return <Box component="figure" aria-labelledby="result-role-heading" sx={{ ...panel, m: 0 }}>
+    <Typography component="h2" variant="h6" id="result-role-heading">Role competency assessment</Typography>
+    <Typography variant="body2" color="text.secondary" mt={.5}>{result.role.name} · Role version {result.role.version ?? 'not recorded'} · Result version {result.resultVersion}</Typography>
+    <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2} mt={2}>
+      <Typography fontWeight={650} sx={{ fontSize: '1.75rem', ...numberStyle }}>{scoreLabel(result.overallScore, 100)}</Typography>
+      <Typography variant="body2">{result.coverage.assessed} / {result.coverage.selected} criteria scored</Typography>
+    </Stack>
+    <Typography variant="body2" fontWeight={600} mt={.5}>{result.classification}</Typography>
+    <Typography variant="caption" color="text.secondary" display="block" mt={1}>Configured normalized score · 0–100 · Separate from the final appraisal rating</Typography>
+    <ProgressPlot value={result.overallScore} label="Published role competency score" />
+    <Stack spacing={2.5} mt={3}>{result.criteria.map(criterion => <Box key={criterion.id} className="result-row">
+      <Stack direction="row" justifyContent="space-between" gap={2}><Typography variant="body2" fontWeight={600}>{criterion.name}</Typography><Typography variant="body2" sx={{ flexShrink: 0, ...numberStyle }}>{scoreLabel(criterion.score, 100)}</Typography></Stack>
+      <Typography variant="caption" color="text.secondary" display="block">{criterion.sourceName || criterion.sourceType.replaceAll('_', ' ')}</Typography>
+      <Typography variant="body2" mt={.75}>Expected: {criterion.expected || 'Not recorded'} · Observed: {criterion.observed || 'Not rated'}</Typography>
+      <ProgressPlot value={criterion.score} label={`${criterion.name}: published normalized score`} />
+      <Typography variant="caption" color="text.secondary">{criterion.status.replaceAll('_', ' ')}{recordedNumber(criterion.weight) ? ` · Effective weight ${Number((criterion.weight * 100).toFixed(2))}%` : ''}</Typography>
+      {criterion.rationale && <Box mt={.75}><RecordedText content={criterion.rationale} label="assessor rationale" /></Box>}
+    </Box>)}</Stack>
+    {result.sources.length > 1 && <Box mt={3} pt={2} sx={{ borderTop: '1px solid', borderColor: 'divider' }}><Typography component="h3" variant="subtitle2">Framework and strategy scores</Typography><Stack spacing={1.5} mt={1.5}>{result.sources.map(source => <Box key={source.type}><Typography variant="body2">{source.type.replaceAll('_', ' ')}: {scoreLabel(source.score, 100)}</Typography><ProgressPlot value={source.score} label={`${source.type.replaceAll('_', ' ')}: published source score`} /></Box>)}</Stack></Box>}
+    <Typography component="figcaption" variant="caption" color="text.secondary" display="block" mt={2.5}>Published findings from this appraisal’s frozen role and cycle. Bars use the configured 0–100 conversion; native level labels retain their own framework meaning.</Typography>
   </Box>;
 }
 
@@ -88,6 +113,9 @@ export default function ResultAnalytics({ report, onSources, onAnalysis }: { rep
     </Box>
 
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: 'minmax(0,1.2fr) minmax(0,1fr)' }, alignItems: 'start', gap: 3, mt: 3 }}>
+      <Stack spacing={3}>
+      {report.roleAssessment && <RoleResult result={report.roleAssessment} />}
+      {(!report.roleAssessment || competencies.length > 0) &&
       <Box component="figure" aria-labelledby="result-competencies-heading" sx={{ ...panel, m: 0 }}>
         <Stack direction="row" justifyContent="space-between" gap={1} flexWrap="wrap"><Typography component="h2" variant="h6" id="result-competencies-heading">Competency ratings</Typography><Typography variant="body2" color="text.secondary">{scale ? `Scale ${scale.min}–${scale.max}` : 'Rating scale not available'}</Typography></Stack>
         <Stack direction="row" gap={2} mt={1.5} mb={2.5}><Stack direction="row" alignItems="center" gap={.75}><svg className="report-chart" width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.5" fill="var(--suite-surface)" stroke="var(--suite-muted)" strokeWidth="2" /></svg><Typography variant="caption">Employee</Typography></Stack><Stack direction="row" alignItems="center" gap={.75}><svg className="report-chart" width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4.5" fill="var(--suite-accent)" /></svg><Typography variant="caption">Reviewer</Typography></Stack></Stack>
@@ -99,7 +127,8 @@ export default function ResultAnalytics({ report, onSources, onAnalysis }: { rep
           {item.managerComments && <Box mt={.75}><RecordedText content={item.managerComments} label="reviewer comment" /></Box>}
         </Box>)}</Stack> : <Typography variant="body2" color="text.secondary">No competency ratings were recorded for this appraisal.</Typography>}
         {!!validPairs.length && <Typography component="figcaption" variant="body2" sx={{ mt: 2.5, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>{differing ? `Employee and reviewer ratings differ on ${differing} of ${validPairs.length} competencies rated by both.` : `Employee and reviewer ratings agree on all ${validPairs.length} competencies rated by both.`} These comparisons do not change the final result.</Typography>}
-      </Box>
+      </Box>}
+      </Stack>
       <Stack spacing={3}>
         <Box sx={panel}><Excerpt title="Strengths and development" content={strengths?.body} fallback={report.managerSummary?.strengths || 'Read the saved reviewer comments and discussion for strengths and development context. No AI interpretation is available yet.'} onSources={onSources} onAnalysis={onAnalysis} />
           {report.discussion?.developmentPlan && <Box mt={2} pt={2} sx={{ borderTop: '1px solid', borderColor: 'divider' }}><Typography variant="subtitle2" mb={.75}>Agreed development plan</Typography><RecordedText content={Array.isArray(report.discussion.developmentPlan) ? report.discussion.developmentPlan.join('\n') : report.discussion.developmentPlan} label="development plan" /></Box>}

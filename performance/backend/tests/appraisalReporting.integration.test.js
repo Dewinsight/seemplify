@@ -181,3 +181,46 @@ test('queue retries coalesce and unchanged evidence does not cause another paid 
   await reports.queue(appraisal, identity); await reports.processDue();
   expect(ai.getChatCompletions).toHaveBeenCalledTimes(2);
 });
+
+
+test('native result charts and final AI use the same frozen published role version, not reopened drafts', async () => {
+  const { appraisal } = await fixture('completed');
+  const Assessment = require('../models/CompetencyAssessment');
+  const auth = require('../services/competency/authorizationService');
+  jest.spyOn(auth, 'context').mockImplementation(async req => ({ organizationId: org.id, actor: { userId: req.session.user.sub },
+    permissions: new Set(['competency.report.view', 'competency.evidence.view']), organizationWide: false,
+    directory: { members: [{ userId: 'employee' }, { userId: 'reviewer' }], reviewers: [{ userId: 'reviewer', organizationWide: true }] } }));
+  const cutoff = new Date(appraisal.finalRating.finalizedAt).getTime();
+  const result = { number: 1, reportHash: 'frozen-v1', dates: { finalisedAt: new Date(cutoff - 1000).toISOString() },
+    finalClassification: { label: 'Suitable' }, score: { overallScore: 85, coverage: { assessed: 1 }, sourceScores: [{ sourceType: 'internal', score: 85, effectiveWeight: 1 }],
+      criterionScores: [{ criterionId: 'delivery', score: 85, effectiveWeight: 1 }] },
+    findings: [{ criterionId: 'delivery', status: 'assessed', observedLevelId: 'independent', rationale: 'PUBLISHED ROLE RATIONALE', evidenceIds: ['private-evidence'] }],
+    evidenceReferences: [{ id: 'private-evidence', title: 'PRIVATE ASSESSOR SENTINEL', visibility: 'assessors' }] };
+  const assessment = await Assessment.create({ organizationId: org.id, appraisalId: String(appraisal._id), cycleId: 'native-cycle', cycleVersion: 2,
+    participant: { userId: 'employee' }, assessors: [{ userId: 'reviewer' }], assessorIds: ['reviewer'], status: 'reopened', currentResultNumber: 2,
+    definitionSnapshot: { role: { name: 'Frozen Solution Architect', version: 3 }, criteria: [{ id: 'delivery', name: 'Architecture delivery', sourceType: 'internal', sourceName: 'Frozen internal framework', expectedLevelId: 'independent', levels: [{ id: 'independent', label: 'Independent' }] }] },
+    items: [{ criterionId: 'delivery', status: 'assessed', rationale: 'MUTABLE DRAFT SENTINEL' }],
+    results: [result, { ...result, number: 2, reportHash: 'later-v2', dates: { finalisedAt: new Date(cutoff + 60000).toISOString() }, score: { ...result.score, overallScore: 10 } }] });
+  for (const who of ['reviewer', 'employee']) {
+    const response = await api('get', `/${appraisal._id}/report`, who).expect(200);
+    expect(response.body.data.roleAssessment).toMatchObject({ state: 'published', resultVersion: 1, overallScore: 85, role: { version: 3 }, criteria: [{ expected: 'Independent', observed: 'Independent', score: 85 }] });
+    expect(JSON.stringify(response.body.data)).not.toMatch(/PRIVATE ASSESSOR SENTINEL|MUTABLE DRAFT SENTINEL/);
+  }
+  await api('get', `/${appraisal._id}/report`, 'foreign').expect(404);
+  await api('get', `/${appraisal._id}/report`, 'outsider').expect(403);
+  await reports.queue(appraisal, identity); await reports.processDue();
+  const [messages] = ai.getChatCompletions.mock.calls[0];
+  expect(messages[1].content).toContain('PUBLISHED ROLE RATIONALE');
+  expect(messages[1].content).toContain('"overallScore":85');
+  expect(messages[1].content).not.toMatch(/PRIVATE ASSESSOR SENTINEL|MUTABLE DRAFT SENTINEL/);
+  expect(messages[0].content).toContain('never convert them to 1–5');
+  expect((await reports.view(appraisal)).state).toBe('ready');
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { competencyResultReference: { assessmentId: String(assessment._id), number: 1, reportHash: 'frozen-v1' } } });
+  // Even a later timestamp change cannot replace the explicit final-outcome link.
+  await Assessment.updateOne({ _id: assessment._id }, { $set: { 'results.1.dates.finalisedAt': new Date(cutoff - 500).toISOString() } });
+  expect((await api('get', `/${appraisal._id}/report`).expect(200)).body.data.roleAssessment.resultVersion).toBe(1);
+  await Assessment.updateOne({ _id: assessment._id }, { $set: { 'results.0.score.overallScore': null, 'results.0.score.criterionScores.0.score': null } });
+  expect((await api('get', `/${appraisal._id}/report`).expect(200)).body.data.roleAssessment.overallScore).toBeNull();
+  auth.context.mockResolvedValue({ organizationId: org.id, actor: { userId: 'employee' }, permissions: new Set(), organizationWide: false });
+  expect((await api('get', `/${appraisal._id}/report`, 'employee').expect(200)).body.data.roleAssessment).toEqual({ state: 'unavailable' });
+});
