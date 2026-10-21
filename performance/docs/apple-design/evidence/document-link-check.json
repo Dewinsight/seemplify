@@ -1,4 +1,8 @@
 {
-  "checked": 595,
-  "missing": []
+  "checked": 593,
+  "missing": [],
+  "trackedTargets": 593,
+  "untrackedTargets": [],
+  "publishedLocalLinkTargetsAllTracked": true,
+  "boundary": "Two reviewed reliability inputs remain explicitly labeled unpublished local paths in plain code; their files are intentionally excluded from publication. All remaining Markdown local hyperlink targets exist and are tracked."
 }
