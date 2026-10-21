@@ -161,12 +161,12 @@ export default function AppraisalNativeCall({ base, record, recorded, onSaved, p
       <Box sx={{ display: joined ? 'grid' : 'none', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
         <Box sx={tileStyle}>
           <Box component="video" ref={localVideo} autoPlay playsInline muted aria-label="Your camera preview" sx={{ ...videoStyle, transform: 'scaleX(-1)' }} />
-          {!camera && <Box sx={overlayStyle}><Avatar sx={{ width: { xs: 48, sm: 64 }, height: { xs: 48, sm: 64 }, background: theme => theme.palette.primary.main, fontSize: 24 }}>{initials(ownName)}</Avatar><Stack direction="row" gap={.75} alignItems="center"><VideocamOffOutlined fontSize="small" /><Typography variant="body2">Camera off</Typography></Stack></Box>}
+          {!camera && <Box sx={overlayStyle}><Avatar sx={{ width: { xs: 48, sm: 64 }, height: { xs: 48, sm: 64 }, background: theme => theme.palette.primary.main, color: 'primary.contrastText', fontSize: 24 }}>{initials(ownName)}</Avatar><Stack direction="row" gap={.75} alignItems="center"><VideocamOffOutlined fontSize="small" /><Typography variant="body2">Camera off</Typography></Stack></Box>}
           <Typography variant="caption" sx={nameStyle}>{ownName}{ownName !== 'You' ? ' (you)' : ''}{!mic ? ' · Muted' : ''}</Typography>
         </Box>
         <Box sx={tileStyle}>
           <Box component="video" ref={remoteVideo} autoPlay playsInline aria-label="Other participant" sx={videoStyle} />
-          {(!remoteReady || !remoteHasVideo) && <Box sx={overlayStyle}><Avatar sx={{ width: { xs: 48, sm: 64 }, height: { xs: 48, sm: 64 }, background: theme => theme.palette.grey[700], fontSize: 24 }}>{initials(participantName)}</Avatar><Typography variant="body2">{remoteReady ? 'Camera off' : 'Waiting to connect…'}</Typography></Box>}
+          {(!remoteReady || !remoteHasVideo) && <Box sx={overlayStyle}><Avatar sx={{ width: { xs: 48, sm: 64 }, height: { xs: 48, sm: 64 }, background: theme => theme.palette.grey[700], color: 'common.white', fontSize: 24 }}>{initials(participantName)}</Avatar><Typography variant="body2">{remoteReady ? 'Camera off' : 'Waiting to connect…'}</Typography></Box>}
           <Typography variant="caption" sx={nameStyle}>{participantName}</Typography>
         </Box>
       </Box>

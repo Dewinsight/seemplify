@@ -163,7 +163,7 @@ export default function OneOnOnesPage() {
                   <CardContent>
                     <Box display="flex" justifyContent="space-between" alignItems="start" mb={2}>
                       <Box display="flex" alignItems="center" gap={1}>
-                        <Avatar sx={{ bgcolor: 'primary.main' }}>
+                        <Avatar sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>
                           <Person />
                         </Avatar>
                         <Box>

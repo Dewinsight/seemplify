@@ -176,7 +176,7 @@ export default function DashboardPage() {
   };
 
   if (authLoading || dashboardLoading || contextLoading) {
-    return <div className="flex h-64 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--suite-line)] border-t-[var(--suite-accent)]" /></div>;
+    return <div role="status" aria-live="polite" className="flex h-64 items-center justify-center gap-3"><div aria-hidden="true" className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--suite-line)] border-t-[var(--suite-accent)]" /><span className="text-sm" style={{ color: 'var(--suite-muted)' }}>Loading your performance workspace…</span></div>;
   }
 
   if (isError) {
@@ -239,7 +239,7 @@ export default function DashboardPage() {
     <Link key={name} href={href} className={`suite-card${compact ? ' suite-role-card' : ''}`}>
       <div className="suite-card-top"><div className="suite-icon"><Icon className="h-5 w-5" /></div><ArrowRight className="h-4 w-4" style={{ color: 'var(--suite-subtle)' }} /></div>
       <h3 className="suite-card-title mt-4">{name}</h3><p className="suite-card-copy">{copy}</p>
-      <div className="suite-card-footer"><div className="min-w-0"><p className="suite-label">Current state</p><p className="mt-1 truncate text-sm font-semibold">{meta}</p></div><span className="suite-button">Open <ArrowRight className="h-4 w-4" /></span></div>
+      <div className="suite-card-footer"><p className="min-w-0 truncate text-sm" style={{ color: 'var(--suite-muted)' }}>{meta}</p><span className="inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: 'var(--suite-accent)' }}>Open <ArrowRight aria-hidden="true" className="h-4 w-4" /></span></div>
     </Link>
   );
 
@@ -247,7 +247,7 @@ export default function DashboardPage() {
     <div className="suite-dashboard">
       <header className="suite-dashboard-header">
         <div>
-          <p className="suite-kicker">{workspaceHeading.kicker}</p>
+          <p className="mb-2 text-sm font-medium" style={{ color: 'var(--suite-muted)' }}>{workspaceHeading.kicker}</p>
           <h1 className="suite-dashboard-title">{workspaceHeading.title}</h1>
           <p className="suite-dashboard-copy">{workspaceHeading.copy}</p>
         </div>

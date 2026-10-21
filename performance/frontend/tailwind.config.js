@@ -16,46 +16,20 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
       },
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
-        },
-        secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
-        },
-        destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
-        },
-        muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
-        },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
-        popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
-        },
-        card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
-        },
-        zinc: {
-          850: '#1f1f22',
-          950: '#0a0a0c',
-        }
+        border: 'rgb(var(--border-rgb) / <alpha-value>)', input: 'rgb(var(--input-rgb) / <alpha-value>)', ring: 'rgb(var(--primary-rgb) / <alpha-value>)',
+        background: 'rgb(var(--background-rgb) / <alpha-value>)', foreground: 'rgb(var(--foreground-rgb) / <alpha-value>)',
+        primary: { DEFAULT: 'rgb(var(--primary-rgb) / <alpha-value>)', foreground: 'rgb(var(--primary-foreground-rgb) / <alpha-value>)' },
+        secondary: { DEFAULT: 'rgb(var(--muted-rgb) / <alpha-value>)', foreground: 'rgb(var(--foreground-rgb) / <alpha-value>)' },
+        destructive: { DEFAULT: 'rgb(var(--danger-rgb) / <alpha-value>)', foreground: 'rgb(var(--background-rgb) / <alpha-value>)' },
+        muted: { DEFAULT: 'rgb(var(--muted-rgb) / <alpha-value>)', foreground: 'rgb(var(--muted-foreground-rgb) / <alpha-value>)' },
+        accent: { DEFAULT: 'rgb(var(--accent-rgb) / <alpha-value>)', foreground: 'rgb(var(--foreground-rgb) / <alpha-value>)' },
+        popover: { DEFAULT: 'rgb(var(--card-rgb) / <alpha-value>)', foreground: 'rgb(var(--foreground-rgb) / <alpha-value>)' },
+        card: { DEFAULT: 'rgb(var(--card-rgb) / <alpha-value>)', foreground: 'rgb(var(--foreground-rgb) / <alpha-value>)' },
+        positive: 'rgb(var(--positive-rgb) / <alpha-value>)', warning: 'rgb(var(--warning-rgb) / <alpha-value>)', danger: 'rgb(var(--danger-rgb) / <alpha-value>)',
+        zinc: { 850: '#25262b', 950: '#101114' },
       },
       borderRadius: {
         lg: 'var(--radius)',

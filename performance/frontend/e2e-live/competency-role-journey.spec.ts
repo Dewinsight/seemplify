@@ -14,9 +14,9 @@ async function api(request: APIRequestContext, actor: string, method: string, pa
 }
 async function login(page: Page, actor: string, path: string) {
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(path)}`);
-  await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible();
   if (actor === 'admin' || actor === 'manager') {
-    await page.getByRole('button', { name: 'Personal', exact: true }).click();
+    await page.getByRole('button', { name: /^(Personal|Manager|Admin)$/ }).click();
     await page.getByRole('menuitemradio', { name: actor === 'admin' ? /^Admin/ : /^Manager/ }).click();
     await page.goto(path);
   }

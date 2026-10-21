@@ -211,7 +211,7 @@ export default function TeamReviewsPage() {
                       <TableRow key={memberId}>
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main' }}>
+                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main', color: 'secondary.contrastText' }}>
                               {(member.name || member.email)?.[0]?.toUpperCase() || '?'}
                             </Avatar>
                             <Box>

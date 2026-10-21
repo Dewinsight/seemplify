@@ -23,7 +23,6 @@ import {
   Visibility, Chat, Star, Warning, ArrowForward, Add, Refresh,
   Psychology, AssessmentOutlined, Groups, TrendingUp, Rocket, NotificationsActive
 } from '@mui/icons-material';
-import { gradients } from '../theme';
 
 interface Appraisal extends AppraisalResultItem {
   _id: string;
@@ -70,17 +69,17 @@ interface AppraisalCycle {
   phases: Record<string, { startDate?: string; endDate?: string; isActive: boolean }>;
 }
 
-const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error'; icon: React.ReactNode; gradient?: string }> = {
+const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error'; icon: React.ReactNode }> = {
   'not_started': { label: 'Not Started', color: 'default', icon: <Schedule /> },
   'goal_setting': { label: 'Goal Setting', color: 'info', icon: <Edit /> },
   'goal_approval_pending': { label: 'Goal Approval Pending', color: 'warning', icon: <Schedule /> },
 
-  'self_assessment_pending': { label: 'Self-Assessment Pending', color: 'warning', icon: <Assignment />, gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' },
+  'self_assessment_pending': { label: 'Self-Assessment Pending', color: 'warning', icon: <Assignment /> },
   'self_assessment_in_progress': { label: 'Self-Assessment In Progress', color: 'info', icon: <Edit /> },
-  'self_assessment_submitted': { label: 'Self-Assessment Submitted', color: 'success', icon: <CheckCircle />, gradient: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)' },
-  'manager_review_pending': { label: 'Manager Review Pending', color: 'warning', icon: <Person />, gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' },
+  'self_assessment_submitted': { label: 'Self-Assessment Submitted', color: 'success', icon: <CheckCircle /> },
+  'manager_review_pending': { label: 'Manager Review Pending', color: 'warning', icon: <Person /> },
   'manager_review_in_progress': { label: 'Manager Review In Progress', color: 'info', icon: <Edit /> },
-  'manager_review_submitted': { label: 'Manager Review Submitted', color: 'success', icon: <CheckCircle />, gradient: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)' },
+  'manager_review_submitted': { label: 'Manager Review Submitted', color: 'success', icon: <CheckCircle /> },
   'meeting_pending': { label: 'One-on-one call', color: 'info', icon: <Groups /> },
   'discussion_scheduled': { label: 'Discussion Scheduled', color: 'info', icon: <Chat /> },
   'discussion_completed': { label: 'Discussion Completed', color: 'success', icon: <CheckCircle /> },
@@ -89,7 +88,7 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
   'calibration_completed': { label: 'Calibration Completed', color: 'success', icon: <CheckCircle /> },
   'final_review_pending': { label: 'Final Review Pending', color: 'warning', icon: <AssessmentOutlined /> },
   'employee_acknowledged': { label: 'Employee Acknowledged', color: 'success', icon: <CheckCircle /> },
-  'completed': { label: 'Completed', color: 'success', icon: <CheckCircle />, gradient: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)' },
+  'completed': { label: 'Completed', color: 'success', icon: <CheckCircle /> },
   'cancelled': { label: 'Cancelled', color: 'error', icon: <Warning /> },
 };
 
@@ -312,7 +311,7 @@ export default function AppraisalsPage() {
           mb: 2,
           position: 'relative',
           overflow: 'hidden',
-          transition: 'all 0.3s ease',
+          transition: 'border-color 160ms ease',
           '&:hover': {
             borderColor: 'primary.main',
           },
@@ -324,8 +323,8 @@ export default function AppraisalsPage() {
             bottom: 0,
             width: 4,
             background: selfOverdue || managerOverdue
-              ? 'linear-gradient(180deg, #ef4444 0%, #f87171 100%)'
-              : config.gradient || `linear-gradient(180deg, ${theme.palette[config.color]?.main || theme.palette.grey[400]} 0%, ${theme.palette[config.color]?.light || theme.palette.grey[300]} 100%)`,
+              ? theme.palette.error.main
+              : config.color === 'default' ? theme.palette.divider : theme.palette[config.color].main,
           },
         }}
       >
@@ -336,10 +335,11 @@ export default function AppraisalsPage() {
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Avatar
                   sx={{
-                    background: gradients.primary,
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText',
                     width: 52,
                     height: 52,
-                    boxShadow: '0 4px 14px -4px rgba(99, 102, 241, 0.4)',
+                    boxShadow: 'none',
                   }}
                 >
                   {isEmployee ? (appraisal.manager?.name?.[0] || 'M') : (appraisal.employee?.name?.[0] || 'E')}
@@ -366,11 +366,10 @@ export default function AppraisalsPage() {
                   <Chip
                     size="small"
                     icon={config.icon as any}
+                    color={config.color}
                     label={appraisal.status === 'employee_acknowledged' && customSteps && !customSteps.some(step => step.type === 'acknowledgement') ? 'Completed' : config.label}
                     sx={{
                       fontWeight: 600,
-                      background: config.gradient || alpha(theme.palette[config.color]?.main || theme.palette.grey[500], 0.1),
-                      color: config.gradient ? 'white' : theme.palette[config.color]?.dark || theme.palette.grey[700],
                       '& .MuiChip-icon': {
                         color: 'inherit',
                       },
@@ -381,11 +380,10 @@ export default function AppraisalsPage() {
                       size="small"
                       icon={<Warning />}
                       label="Overdue"
+                      color="error"
                       sx={{
                         fontWeight: 600,
-                        background: 'linear-gradient(135deg, #ef4444 0%, #f87171 100%)',
-                        color: 'white',
-                        '& .MuiChip-icon': { color: 'white' },
+                        '& .MuiChip-icon': { color: 'inherit' },
                       }}
                     />
                   )}
@@ -427,10 +425,9 @@ export default function AppraisalsPage() {
                       size="small"
                       icon={<Star />}
                       label={`Final: ${appraisal.finalRating.overall}`}
+                      color="success"
                       sx={{
-                        background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)',
-                        color: 'white',
-                        '& .MuiChip-icon': { color: 'white' },
+                        '& .MuiChip-icon': { color: 'inherit' },
                       }}
                     />
                   </Tooltip>
@@ -448,8 +445,6 @@ export default function AppraisalsPage() {
                     disabled={actionLoading === appraisal._id}
                     sx={{
                       ml: 1,
-                      background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)',
-                      '&:hover': { background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)' }
                     }}
                   >
                     {actionLoading === appraisal._id ? 'Starting...' : 'Start Appraisal'}
@@ -575,8 +570,8 @@ export default function AppraisalsPage() {
                       '& .MuiChip-icon': { color: theme.palette.success.main },
                     }),
                     ...(stepStatus === 'active' && {
-                      background: gradients.primary,
-                      color: 'white',
+                      bgcolor: 'primary.main',
+                      color: 'primary.contrastText',
                     }),
                   }}
                 />
@@ -599,7 +594,7 @@ export default function AppraisalsPage() {
         sx={{
           p: 3,
           mb: 3,
-          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.03) 0%, rgba(139, 92, 246, 0.03) 100%)',
+          bgcolor: 'background.paper',
           border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
         }}
       >
@@ -614,12 +609,9 @@ export default function AppraisalsPage() {
           </Box>
           <Chip
             label={activeCycle.status.charAt(0).toUpperCase() + activeCycle.status.slice(1)}
+            color={activeCycle.status === 'active' ? 'success' : 'default'}
             sx={{
               fontWeight: 600,
-              background: activeCycle.status === 'active'
-                ? 'linear-gradient(135deg, #10b981 0%, #34d399 100%)'
-                : alpha(theme.palette.grey[500], 0.1),
-              color: activeCycle.status === 'active' ? 'white' : 'text.secondary',
             }}
           />
         </Box>
@@ -727,7 +719,7 @@ export default function AppraisalsPage() {
             mb: 3,
             borderRadius: 3,
             border: `1px solid ${alpha(theme.palette.warning.main, 0.35)}`,
-            background: `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.12)} 0%, ${alpha(theme.palette.background.paper, 0.94)} 100%)`
+            bgcolor: 'background.paper'
           }}
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, gap: 1 }}>

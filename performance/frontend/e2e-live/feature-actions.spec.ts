@@ -6,7 +6,7 @@ function muiSelect(scope: Page | Locator, label: string) {
 }
 async function login(page: Page, actor: string, path: string) {
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(path)}`);
-  await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible();
   if (['manager', 'team_lead', 'department_head', 'hr_manager', 'admin', 'owner'].includes(actor)) {
     await page.getByRole('button', { name: /^(Personal|Manager|Admin)$/ }).click();
     await page.getByRole('menuitemradio', { name: ['hr_manager', 'admin', 'owner'].includes(actor) ? /^Admin/ : /^Manager/ }).click();
@@ -247,7 +247,7 @@ test('manager finalizes a result and employee opens historical report and downlo
   const complete = page.getByRole('button', { name: 'Complete Appraisal', exact: true });
   await expect(complete).toBeEnabled();
   await complete.click();
-  await expect(page).toHaveURL(new RegExp(`/appraisals/${appraisal._id}$`), { timeout: 30_000 });
+  await expect(page).toHaveURL(new RegExp(`/appraisals/${appraisal._id}/report$`), { timeout: 30_000 });
   expect(await api(request, 'manager', 'GET', `appraisals/${appraisal._id}`)).toMatchObject({
     status: 'completed', finalRating: { overall: 4 }
   });

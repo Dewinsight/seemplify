@@ -132,7 +132,7 @@ export default function TeamMemberProfilePage() {
       <Paper sx={{ p: 3, mb: 3 }}>
         <Grid container spacing={3} alignItems="center">
           <Grid size={{ xs: 12, md: 'auto' }}>
-            <Avatar sx={{ width: 100, height: 100, bgcolor: 'primary.main', fontSize: 40 }}>
+            <Avatar sx={{ width: 100, height: 100, bgcolor: 'primary.main', fontSize: 40, color: 'primary.contrastText' }}>
               {profile.name[0]}
             </Avatar>
           </Grid>

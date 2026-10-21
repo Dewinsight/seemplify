@@ -18,7 +18,6 @@ import {
   useTheme,
 } from '@mui/material';
 import { RateReview, OpenInNew } from '@mui/icons-material';
-import { gradients } from '../theme';
 
 export default function ReviewsPage() {
   const theme = useTheme();
@@ -44,11 +43,7 @@ export default function ReviewsPage() {
         <Typography
           variant="h4"
           fontWeight={800}
-          sx={{
-            background: gradients.primary,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
+          component="h1"
         >
           Performance Reviews
         </Typography>
@@ -62,25 +57,25 @@ export default function ReviewsPage() {
           sx={{
             p: 6,
             textAlign: 'center',
-            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)',
+            bgcolor: 'background.paper',
             border: `2px dashed ${alpha(theme.palette.primary.main, 0.2)}`,
           }}
         >
           <Box
             sx={{
-              width: 80,
-              height: 80,
+              width: 48,
+              height: 48,
               borderRadius: 3,
-              background: gradients.primary,
+              bgcolor: 'primary.main',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               mx: 'auto',
               mb: 3,
-              boxShadow: '0 12px 32px -8px rgba(99, 102, 241, 0.4)',
+              boxShadow: 'none',
             }}
           >
-            <RateReview sx={{ fontSize: 40, color: 'white' }} />
+            <RateReview sx={{ fontSize: 24, color: 'primary.contrastText' }} />
           </Box>
           <Typography variant="h6" fontWeight={700} gutterBottom>
             No Reviews Yet
@@ -111,13 +106,12 @@ export default function ReviewsPage() {
                       left: 0,
                       right: 0,
                       height: 4,
-                      background: gradients.primary,
+                      bgcolor: 'primary.main',
                       opacity: 0.9,
                     },
-                    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                    transition: 'border-color 160ms ease',
                     '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: theme.shadows[8],
+                      borderColor: 'primary.main',
                     },
                   }}
                 >

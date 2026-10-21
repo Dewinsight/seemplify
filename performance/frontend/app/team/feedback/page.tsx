@@ -149,7 +149,7 @@ export default function TeamFeedbackPage() {
                   <Accordion key={memberId} sx={{ mb: 1 }}>
                     <AccordionSummary expandIcon={<ExpandMore />}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
-                        <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+                        <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
                           {(member.name || member.email)?.[0]?.toUpperCase() || '?'}
                         </Avatar>
                         <Box sx={{ flex: 1 }}>

@@ -465,7 +465,7 @@ export default function FeedbackPage() {
                 >
                   <CardContent>
                     <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                      <Avatar sx={{ bgcolor: label === 'Praise' ? 'success.main' : label === 'Coaching' ? 'warning.main' : 'primary.main' }}>
+                      <Avatar sx={{ bgcolor: label === 'Praise' ? 'success.main' : label === 'Coaching' ? 'warning.main' : 'primary.main', color: theme => label === 'Praise' ? theme.palette.success.contrastText : label === 'Coaching' ? theme.palette.warning.contrastText : theme.palette.primary.contrastText }}>
                         {label === 'Praise' ? <ThumbUp fontSize="small" /> : <Lightbulb fontSize="small" />}
                       </Avatar>
                       <Box sx={{ flex: 1, minWidth: 0 }}>

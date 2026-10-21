@@ -64,12 +64,11 @@ const OKRCard = ({ okr, isActive, onClick }: { okr: OKRSummary; isActive: boolea
       borderColor: isActive ? 'primary.main' : 'divider',
       bgcolor: isActive ? 'primary.lighter' : 'background.paper',
       borderRadius: 2.5,
-      transition: 'all 0.2s',
-      boxShadow: isActive ? 3 : 0,
+      transition: 'border-color 160ms ease, background-color 160ms ease',
+      boxShadow: 'none',
       '&:hover': {
         borderColor: 'primary.main',
-        bgcolor: isActive ? 'primary.lighter' : 'action.hover',
-        transform: 'translateY(-1px)'
+        bgcolor: isActive ? 'primary.lighter' : 'action.hover'
       }
     }}
   >
@@ -208,7 +207,7 @@ export default function PhaseProgress({
           mb: 2,
           borderRadius: 2.5,
           borderColor: alpha(theme.palette.primary.main, 0.25),
-          backgroundImage: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.15 : 0.08)} 0%, ${alpha(theme.palette.background.paper, 0.8)} 100%)`
+          bgcolor: 'background.paper'
         }}
       >
         <Typography variant="overline" color="text.secondary">

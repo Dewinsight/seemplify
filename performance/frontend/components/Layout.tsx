@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -107,6 +107,84 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
   const [switchingTeam, setSwitchingTeam] = useState(false);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const mobilePanelRef = useRef<HTMLDivElement>(null);
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const closeShellMenus = useCallback(() => {
+    setOpenNavGroup(null);
+    setOrgDropdownOpen(false);
+    setUserDropdownOpen(false);
+    setWorkspaceDropdownOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!openNavGroup && !orgDropdownOpen && !userDropdownOpen && !workspaceDropdownOpen) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.hasAttribute('data-shell-trigger')) menuTriggerRef.current = active;
+    const frame = requestAnimationFrame(() => {
+      shellRef.current?.querySelector<HTMLElement>('[data-shell-menu] a[href], [data-shell-menu] button:not([disabled])')?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [openNavGroup, orgDropdownOpen, userDropdownOpen, workspaceDropdownOpen]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    if (desktop.matches) {
+      const closeFrame = requestAnimationFrame(() => setMobileOpen(false));
+      return () => cancelAnimationFrame(closeFrame);
+    }
+    const closeOnDesktop = (event: MediaQueryListEvent) => { if (event.matches) setMobileOpen(false); };
+    desktop.addEventListener('change', closeOnDesktop);
+    const previousOverflow = document.body.style.overflow;
+    const trigger = mobileTriggerRef.current;
+    document.body.style.overflow = 'hidden';
+    const frame = requestAnimationFrame(() => mobilePanelRef.current?.querySelector<HTMLButtonElement>('button')?.focus());
+    return () => {
+      cancelAnimationFrame(frame);
+      desktop.removeEventListener('change', closeOnDesktop);
+      document.body.style.overflow = previousOverflow;
+      trigger?.focus();
+    };
+  }, [mobileOpen]);
+
+  function handleShellKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (mobileOpen && mobilePanelRef.current) {
+      if (event.key === 'Escape') {
+        event.preventDefault(); event.stopPropagation(); setMobileOpen(false); return;
+      }
+      if (event.key === 'Tab') {
+        const items = Array.from(mobilePanelRef.current.querySelectorAll<HTMLElement>('a[href],button:not([disabled]):not([tabindex="-1"]),[tabindex="0"]')).filter(item => item.getClientRects().length > 0);
+        const first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && target === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && target === last) { event.preventDefault(); first?.focus(); }
+      }
+      return;
+    }
+    const menu = target.closest<HTMLElement>('[data-shell-menu]');
+    if (!menu && target.hasAttribute('data-shell-trigger') && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault();
+      if (target.getAttribute('aria-expanded') !== 'true') target.click();
+      else shellRef.current?.querySelector<HTMLElement>('[data-shell-menu] a[href], [data-shell-menu] button:not([disabled])')?.focus();
+      return;
+    }
+    if (!menu) return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); closeShellMenus(); menuTriggerRef.current?.focus(); return;
+    }
+    const items = Array.from(menu.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'));
+    const index = items.indexOf(target);
+    let next: number;
+    if (event.key === 'ArrowDown') next = (index + 1) % items.length;
+    else if (event.key === 'ArrowUp') next = (index - 1 + items.length) % items.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = items.length - 1;
+    else return;
+    event.preventDefault(); items[next]?.focus();
+  }
+
 
   // Get current team (from hook or context)
   const activeCurrentTeam = currentTeam || contextCurrentTeam;
@@ -250,22 +328,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   if (showNoOrganizations) {
     return (
       <div className={cn(
-        "min-h-screen transition-colors duration-300",
-        isDarkMode ? "bg-[#0f0e13]" : "bg-[#f1efe9]"
+        "performance-shell",
+        isDarkMode ? "bg-[var(--suite-canvas)]" : "bg-[var(--suite-canvas)]"
       )}>
         {isDarkMode && <div className="bg-noise" />}
         <div className="relative mx-auto px-4 py-16 lg:px-8 max-w-3xl">
           <div className={cn(
             "rounded-2xl border p-8 text-center shadow-2xl",
             isDarkMode
-              ? "bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 border-zinc-700/50"
+              ? "bg-[var(--suite-surface)] border-zinc-700/50"
               : "bg-white border-gray-200"
           )}>
             <div className={cn(
               "mx-auto mb-6 h-16 w-16 rounded-2xl flex items-center justify-center",
               isDarkMode
-                ? "bg-zinc-800/70 text-teal-300"
-                : "bg-teal-50 text-teal-700"
+                ? "bg-zinc-800/70 text-blue-300"
+                : "bg-blue-50 text-blue-700"
             )}>
               <Building2 className="h-8 w-8" />
             </div>
@@ -290,7 +368,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <a
               href={hubUrl}
               onClick={handleHubExit}
-              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 via-cyan-500 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition-all hover:shadow-teal-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[var(--suite-accent)] px-4 py-2.5 text-sm font-semibold text-[var(--suite-action-ink)] transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             >
               <LayoutGrid className="h-4 w-4" />
               Return to Hub
@@ -302,25 +380,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className={cn(
-      "min-h-screen transition-colors duration-300",
-        isDarkMode ? "bg-[#0f0e13]" : "bg-[#f1efe9]"
+    <div ref={shellRef} onKeyDown={handleShellKeyDown} onBlurCapture={(event) => {
+      const menu = (event.target as HTMLElement).closest('[data-shell-menu]');
+      if (menu && !menu.contains(event.relatedTarget as Node | null)) closeShellMenus();
+    }} className={cn(
+      "performance-shell",
+        isDarkMode ? "bg-[var(--suite-canvas)]" : "bg-[var(--suite-canvas)]"
     )}>
+      <a href="#performance-main" className="performance-skip-link">Skip to content</a>
       {/* Background Noise */}
       {isDarkMode && <div className="bg-noise" />}
 
       {/* Top Navbar */}
-      <nav className={cn(
-        "fixed top-0 left-0 right-0 z-50 border-b transition-colors duration-300",
-        isDarkMode
-          ? "border-[#312d39] bg-[#0f0e13]"
-          : "border-[#cbc6bc] bg-[#f1efe9]"
-      )}>
+      <nav aria-label="Performance navigation" data-testid="performance-header" inert={mobileOpen} className="performance-chrome fixed top-0 left-0 right-0 z-50 border-b">
         <div className="mx-auto max-w-[100rem] px-4 lg:px-6">
           <div className="flex h-16 items-center justify-between gap-4">
             {/* Logo */}
             <Link href="https://seemplifyai.com" className="flex shrink-0 items-center gap-2.5 group">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-teal-500/25 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div className="hidden sm:block">
@@ -343,6 +420,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
+                    aria-current={isNavItemActive(item) ? 'page' : undefined}
                     className={cn(
                       'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-medium transition-colors duration-150',
                       active
@@ -357,7 +435,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     <item.icon className="h-4 w-4" />
                     {item.name}
                     {item.badge && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-teal-500 to-cyan-500 text-white">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--suite-accent)] text-[var(--suite-action-ink)]">
                         {item.badge}
                       </span>
                     )}
@@ -373,7 +451,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <div className="relative" key={group.section}>
                   <button
                     type="button"
-                    onClick={() => setOpenNavGroup((open) => open === group.section ? null : group.section)}
+                    data-shell-trigger
+                    onClick={() => { const next = openNavGroup === group.section ? null : group.section; closeShellMenus(); setOpenNavGroup(next); }}
                     className={cn(
                       'relative z-50 flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
                       groupActive
@@ -402,12 +481,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           isDarkMode ? 'border-zinc-800 bg-zinc-950' : 'border-gray-200 bg-white'
                         )}
                         role="menu"
+                        data-shell-menu
                         aria-label={`${group.label} navigation`}
                       >
                         {items.map((item) => (
                           <Link
                             key={item.href}
                             href={item.href}
+                    aria-current={isNavItemActive(item) ? 'page' : undefined}
                             onClick={() => setOpenNavGroup(null)}
                             className={cn(
                               'flex items-center gap-2 px-3 py-2.5 text-sm transition-colors',
@@ -453,7 +534,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         className={cn(
                           'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors',
                           active
-                            ? 'bg-teal-700 text-white'
+                            ? 'bg-blue-700 text-white'
                             : isDarkMode
                               ? 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
                               : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -472,7 +553,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     type="button"
                     aria-expanded={workspaceDropdownOpen}
                     aria-haspopup="menu"
-                    onClick={() => setWorkspaceDropdownOpen((open) => !open)}
+                    data-shell-trigger
+                    onClick={() => { const next = !workspaceDropdownOpen; closeShellMenus(); setWorkspaceDropdownOpen(next); }}
                     className={cn(
                       'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold',
                       isDarkMode ? 'border-zinc-800 bg-zinc-900/60 text-zinc-200' : 'border-gray-200 bg-white text-gray-700'
@@ -485,7 +567,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   {workspaceDropdownOpen && (
                     <>
                       <button type="button" tabIndex={-1} aria-hidden="true" className="fixed inset-0 z-40 cursor-default" onClick={() => setWorkspaceDropdownOpen(false)} />
-                      <div className={cn('absolute right-0 top-11 z-50 w-64 overflow-hidden rounded-lg border py-1 shadow-lg', isDarkMode ? 'border-zinc-800 bg-zinc-950' : 'border-gray-200 bg-white')} role="menu">
+                      <div className={cn('absolute right-0 top-11 z-50 w-64 overflow-hidden rounded-lg border py-1 shadow-lg', isDarkMode ? 'border-zinc-800 bg-zinc-950' : 'border-gray-200 bg-white')} role="menu" data-shell-menu aria-label="Choose workspace">
                         {availableWorkspaces.map((option) => {
                           const Icon = WORKSPACE_ICONS[option.value];
                           const active = option.value === workspace;
@@ -506,7 +588,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                 <span className="block text-sm font-semibold">{option.label}</span>
                                 <span className={cn('mt-0.5 block text-xs', isDarkMode ? 'text-zinc-500' : 'text-gray-500')}>{option.description}</span>
                               </span>
-                              {active && <span className="ml-auto text-xs text-teal-600">Current</span>}
+                              {active && <span className="ml-auto text-xs text-blue-600">Current</span>}
                             </button>
                           );
                         })}
@@ -521,7 +603,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               {/* Organization & Team Switcher */}
               <div className="relative hidden min-[1500px]:block">
                 <button
-                  onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+                  data-shell-trigger
+                  aria-label="Organization and team"
+                  aria-haspopup="menu"
+                  aria-expanded={orgDropdownOpen}
+                  onClick={() => { const next = !orgDropdownOpen; closeShellMenus(); setOrgDropdownOpen(next); }}
                   className={cn(
                     "flex items-center gap-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-sm transition-colors",
                     isDarkMode
@@ -546,8 +632,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       className="fixed inset-0 z-40"
                       onClick={() => setOrgDropdownOpen(false)}
                     />
-                    <div className={cn(
-                      "absolute right-0 top-12 w-72 rounded-xl border shadow-2xl overflow-hidden z-50",
+                    <div role="menu" data-shell-menu aria-label="Organization and team" className={cn(
+                      "performance-menu absolute right-0 top-12 w-72 max-w-[calc(100vw-2rem)] rounded-xl border overflow-hidden z-50",
                       isDarkMode
                         ? "border-white/[0.08] bg-zinc-950"
                         : "border-gray-200 bg-white"
@@ -558,7 +644,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         isDarkMode ? "border-zinc-800/60 bg-zinc-900/50" : "border-gray-100 bg-gray-50"
                       )}>
                         <div className="flex items-center gap-2">
-                          <Building2 className={cn("h-4 w-4", isDarkMode ? "text-teal-400" : "text-teal-700")} />
+                          <Building2 className={cn("h-4 w-4", isDarkMode ? "text-blue-400" : "text-blue-700")} />
                           <span className={cn("text-sm font-semibold", isDarkMode ? "text-white" : "text-gray-900")}>
                             {currentOrganization?.name || 'Organization'}
                           </span>
@@ -613,8 +699,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               className={cn(
                                 "inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
                                 isDarkMode
-                                  ? "bg-teal-500/20 text-teal-300 hover:bg-teal-500/30"
-                                  : "bg-teal-100 text-teal-700 hover:bg-teal-200"
+                                  ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30"
+                                  : "bg-blue-100 text-blue-700 hover:bg-blue-200"
                               )}
                               onClick={() => setOrgDropdownOpen(false)}
                             >
@@ -658,17 +744,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               {/* User Menu */}
               <div className="relative">
                 <button
-                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  data-shell-trigger
+                  aria-label="Account menu"
+                  aria-haspopup="menu"
+                  aria-expanded={userDropdownOpen}
+                  onClick={() => { const next = !userDropdownOpen; closeShellMenus(); setUserDropdownOpen(next); }}
                   className={cn(
                     "flex min-w-0 items-center gap-2 rounded-lg p-1.5 transition-colors",
                     isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
                   )}
                 >
                   <div className={cn(
-                    "h-9 w-9 rounded-full bg-gradient-to-br from-teal-500 via-cyan-500 to-emerald-500 flex items-center justify-center ring-2",
+                    "h-9 w-9 rounded-full bg-[var(--suite-accent)] flex items-center justify-center ring-2",
                     isDarkMode ? "ring-zinc-800" : "ring-gray-200"
                   )}>
-                    <span className="text-sm font-semibold text-white">{user?.name?.charAt(0) || 'U'}</span>
+                    <span className="text-sm font-semibold text-[var(--suite-action-ink)]">{user?.name?.charAt(0) || 'U'}</span>
                   </div>
                   <div className="hidden max-w-[132px] text-left min-[1900px]:block">
                     <div className={cn(
@@ -688,8 +778,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       className="fixed inset-0 z-40"
                       onClick={() => setUserDropdownOpen(false)}
                     />
-                    <div className={cn(
-                      "absolute right-0 top-14 w-56 rounded-xl border shadow-2xl overflow-hidden z-50",
+                    <div role="menu" data-shell-menu aria-label="Account" className={cn(
+                      "performance-menu absolute right-0 top-14 w-56 max-w-[calc(100vw-2rem)] rounded-xl border overflow-hidden z-50",
                       isDarkMode ? "border-white/[0.08] bg-zinc-950" : "border-gray-200 bg-white"
                     )}>
                       <div className={cn(
@@ -779,7 +869,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   "lg:hidden p-2 rounded-lg transition-colors",
                   isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
                 )}
-                onClick={() => setMobileOpen(true)}
+                ref={mobileTriggerRef}
+                aria-expanded={mobileOpen}
+                aria-controls="performance-mobile-navigation"
+                onClick={() => { closeShellMenus(); setMobileOpen(true); }}
                 aria-label="Open menu"
               >
                 <Menu className={cn("h-5 w-5", isDarkMode ? "text-zinc-300" : "text-gray-600")} />
@@ -796,15 +889,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
             onClick={() => setMobileOpen(false)}
           />
-          <div className={cn(
-            "fixed inset-y-0 right-0 w-80 max-w-[85vw] border-l shadow-2xl z-50 lg:hidden overflow-y-auto",
+          <div ref={mobilePanelRef} id="performance-mobile-navigation" role="dialog" aria-modal="true" aria-label="Navigation" className={cn(
+            "performance-mobile-panel fixed inset-y-0 right-0 w-80 max-w-[85vw] border-l z-50 lg:hidden overflow-y-auto",
             isDarkMode ? "bg-zinc-950 border-zinc-800/60" : "bg-white border-gray-200"
           )}>
             <div className="p-4">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-teal-500 via-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg">
-                    <Sparkles className="h-5 w-5 text-white" />
+                  <div className="h-10 w-10 rounded-xl bg-[var(--suite-accent)] flex items-center justify-center shadow-lg">
+                    <Sparkles className="h-5 w-5 text-[var(--suite-action-ink)]" />
                   </div>
                   <div>
                     <div className={cn(
@@ -823,6 +916,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
                   )}
                   onClick={() => setMobileOpen(false)}
+                  aria-label="Close menu"
                 >
                   <X className={cn("h-5 w-5", isDarkMode ? "text-zinc-400" : "text-gray-500")} />
                 </button>
@@ -849,7 +943,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             'flex w-full items-start gap-3 border-b px-3 py-3 text-left last:border-b-0',
                             isDarkMode ? 'border-zinc-800' : 'border-gray-200',
                             active
-                              ? isDarkMode ? 'bg-teal-950/50 text-teal-200' : 'bg-teal-50 text-teal-900'
+                              ? isDarkMode ? 'bg-blue-950/50 text-blue-200' : 'bg-blue-50 text-blue-900'
                               : isDarkMode ? 'text-zinc-300 hover:bg-zinc-900' : 'text-gray-700 hover:bg-gray-50'
                           )}
                         >
@@ -937,6 +1031,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     <Link
                       key={item.href}
                       href={item.href}
+                    aria-current={isNavItemActive(item) ? 'page' : undefined}
                       onClick={() => setMobileOpen(false)}
                       className={cn(
                         'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
@@ -952,7 +1047,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       <item.icon className="h-4 w-4" />
                       {item.name}
                       {item.badge && (
-                        <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-teal-500 to-cyan-500 text-white">
+                        <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--suite-accent)] text-[var(--suite-action-ink)]">
                           {item.badge}
                         </span>
                       )}
@@ -970,6 +1065,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         <Link
                           key={item.href}
                           href={item.href}
+                    aria-current={isNavItemActive(item) ? 'page' : undefined}
                           onClick={() => setMobileOpen(false)}
                           className={cn(
                             'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
@@ -996,10 +1092,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content */}
-      <main className={cn(
-        "min-h-screen bg-[var(--suite-canvas)] pt-16 transition-colors duration-150"
-      )}>
-        <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
+      <main id="performance-main" tabIndex={-1} inert={mobileOpen} className="performance-main">
+        <div className="performance-content">
           <PageGuide />
           {children}
         </div>

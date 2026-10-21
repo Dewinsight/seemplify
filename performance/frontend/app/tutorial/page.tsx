@@ -261,7 +261,7 @@ export default function TutorialPage() {
         <Accordion key={index} defaultExpanded={index === 0}>
           <AccordionSummary expandIcon={<ExpandMore />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Avatar sx={{ bgcolor: 'primary.light', width: 40, height: 40 }}>
+              <Avatar sx={{ bgcolor: 'primary.light', width: 40, height: 40, color: theme => theme.palette.getContrastText(theme.palette.primary.light) }}>
                 {step.icon}
               </Avatar>
               <Box>

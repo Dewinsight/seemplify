@@ -7,7 +7,7 @@ async function api(request: APIRequestContext, actor: string, method: string, pa
 }
 async function login(page: Page, actor: string, path: string) {
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(path)}`);
-  await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible();
 }
 
 test('custom manual appraisal exposes its actual discussion stage and preserves completed discussion reading', async ({ page, request }, info) => {
@@ -48,6 +48,7 @@ test('custom manual appraisal exposes its actual discussion stage and preserves 
   for (const actor of ['employee', 'manager']) {
     await login(page, actor, detail);
     await expect(page.getByRole('button', { name: 'Open Discussion', exact: true })).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Previous work & analytics', exact: true }).click();
     await page.getByRole('button', { name: 'View Discussion', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Agreed Strengths' })).toHaveValue(notes.agreedStrengths[0]);
     await expect(page.getByRole('textbox', { name: 'Agreed Strengths' })).toBeDisabled();

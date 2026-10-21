@@ -275,7 +275,7 @@ export default function ReportPreview({
           mb: 2,
           borderRadius: 2.5,
           borderColor: alpha(theme.palette.primary.main, 0.25),
-          backgroundImage: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08)} 0%, ${alpha(theme.palette.background.paper, 0.86)} 100%)`
+          bgcolor: 'background.paper'
         }}
       >
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>

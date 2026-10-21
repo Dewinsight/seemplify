@@ -547,7 +547,7 @@ export default function ManagerReviewWorkspace({ embedded = false }: { embedded?
       {/* Employee Info Card */}
       <Card sx={{ mb: 3, p: 2, bgcolor: 'action.hover' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main' }}>
+          <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
             {appraisal.employee.name[0]}
           </Avatar>
           <Box>

@@ -114,7 +114,7 @@ export default function ReportsPage() {
           {/* Summary Cards */}
           <Grid container spacing={3} mb={4}>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+              <Card sx={{ bgcolor: 'background.paper', color: 'text.primary' }}>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={2}>
                     <Assessment sx={{ fontSize: 40, opacity: 0.8 }} />
@@ -130,7 +130,7 @@ export default function ReportsPage() {
               </Card>
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card sx={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white' }}>
+              <Card sx={{ bgcolor: 'background.paper', color: 'text.primary' }}>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={2}>
                     <People sx={{ fontSize: 40, opacity: 0.8 }} />
@@ -143,7 +143,7 @@ export default function ReportsPage() {
               </Card>
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card sx={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white' }}>
+              <Card sx={{ bgcolor: 'background.paper', color: 'text.primary' }}>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={2}>
                     <FeedbackIcon sx={{ fontSize: 40, opacity: 0.8 }} />
@@ -159,7 +159,7 @@ export default function ReportsPage() {
               </Card>
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card sx={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', color: 'white' }}>
+              <Card sx={{ bgcolor: 'background.paper', color: 'text.primary' }}>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={2}>
                     <TrendingUp sx={{ fontSize: 40, opacity: 0.8 }} />

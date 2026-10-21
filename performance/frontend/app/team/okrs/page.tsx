@@ -88,7 +88,7 @@ export default function TeamOKRsPage() {
           </Card>
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card sx={{ bgcolor: avgProgress >= 60 ? 'success.light' : avgProgress >= 40 ? 'warning.light' : 'error.light' }}>
+          <Card sx={{ bgcolor: 'background.paper' }}>
             <CardContent>
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                 Avg. Progress
@@ -141,7 +141,9 @@ export default function TeamOKRsPage() {
             {managedTeams.map((team) => (
               <Chip
                 key={team.id}
-                label={`${team.name} (${team.directReportCount} members)`}
+                label={typeof team.directReportCount === 'number' && Number.isFinite(team.directReportCount)
+                  ? `${team.name} (${team.directReportCount} members)`
+                  : team.name}
                 color="primary"
                 variant="outlined"
               />
@@ -162,8 +164,8 @@ export default function TeamOKRsPage() {
               No direct reports found. Team members will appear here once they are assigned to your team in the Identity Provider.
             </Alert>
           ) : (
-            <TableContainer>
-              <Table>
+            <TableContainer role="region" aria-label="Direct reports OKR status" tabIndex={0} sx={{ overflowX: 'auto' }}>
+              <Table sx={{ minWidth: 760 }}>
                 <TableHead>
                   <TableRow>
                     <TableCell>Team Member</TableCell>
@@ -188,7 +190,7 @@ export default function TeamOKRsPage() {
                       <TableRow key={memberId}>
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
                               {(member.name || member.email)?.[0]?.toUpperCase() || '?'}
                             </Avatar>
                             <Box>

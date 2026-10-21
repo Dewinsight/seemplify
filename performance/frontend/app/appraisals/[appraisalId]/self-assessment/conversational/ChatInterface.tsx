@@ -135,12 +135,11 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
         {!isUser && (
           <Avatar
             sx={{
-              background: isAI
-                ? `linear-gradient(140deg, ${theme.palette.primary.main} 0%, ${theme.palette.info.main} 100%)`
-                : `linear-gradient(140deg, ${theme.palette.secondary.main} 0%, ${theme.palette.warning.main} 100%)`,
+              bgcolor: isAI ? 'primary.main' : 'secondary.main',
+              color: isAI ? 'primary.contrastText' : 'secondary.contrastText',
               width: 36,
               height: 36,
-              boxShadow: `0 8px 18px -12px ${alpha(theme.palette.primary.main, 0.8)}`
+              boxShadow: 'none'
             }}
           >
             {isAI ? <SmartToy fontSize="small" /> : <Person fontSize="small" />}
@@ -166,22 +165,17 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
             sx={{
               p: 2,
               bgcolor: isUser
-                ? 'transparent'
+                ? 'primary.main'
                 : isAI
                   ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.08)
                   : 'background.default',
-              backgroundImage: isUser
-                ? `linear-gradient(145deg, ${theme.palette.primary.main} 0%, ${theme.palette.info.main} 100%)`
-                : undefined,
-              color: isUser ? 'white' : 'text.primary',
+              color: isUser ? 'primary.contrastText' : 'text.primary',
               border: isAI ? 1 : 0,
               borderColor: 'divider',
               borderRadius: 2.75,
               borderTopLeftRadius: isUser ? 18 : 8,
               borderTopRightRadius: isUser ? 8 : 18,
-              boxShadow: isUser
-                ? `0 10px 24px -16px ${alpha(theme.palette.primary.main, 0.9)}`
-                : `0 8px 20px -16px ${alpha(theme.palette.common.black, 0.5)}`
+              boxShadow: 'none'
             }}
           >
             <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
@@ -218,7 +212,7 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
         </Box>
 
         {isUser && (
-          <Avatar sx={{ bgcolor: 'secondary.main', width: 36, height: 36 }}>
+          <Avatar sx={{ bgcolor: 'secondary.main', width: 36, height: 36, color: 'secondary.contrastText' }}>
             <Person fontSize="small" />
           </Avatar>
         )}
@@ -229,7 +223,7 @@ const MessageBubble = ({ message, isUser }: { message: Message; isUser: boolean 
 
 const TypingIndicator = () => (
   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2.25 }}>
-    <Avatar sx={{ background: 'linear-gradient(140deg, #0f766e 0%, #0284c7 100%)', width: 36, height: 36 }}>
+    <Avatar sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', width: 36, height: 36 }}>
       <SmartToy fontSize="small" />
     </Avatar>
     <Paper
@@ -343,8 +337,7 @@ export default function ChatInterface({
         overflow: 'hidden',
         border: 1,
         borderColor: 'divider',
-        backgroundColor: alpha(theme.palette.background.paper, 0.82),
-        backdropFilter: 'blur(8px)'
+        backgroundColor: 'background.paper'
       }}
     >
       {/* Messages Area */}
@@ -353,12 +346,7 @@ export default function ChatInterface({
           flex: 1,
           overflow: 'auto',
           p: { xs: 1.5, sm: 2 },
-          bgcolor: 'background.default',
-          backgroundImage: `
-            radial-gradient(circle at 6% 0%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08)} 0%, transparent 40%),
-            radial-gradient(circle at 95% 8%, ${alpha(theme.palette.info.main, theme.palette.mode === 'dark' ? 0.14 : 0.06)} 0%, transparent 42%),
-            linear-gradient(180deg, ${alpha(theme.palette.background.default, 0.96)} 0%, ${alpha(theme.palette.background.paper, 0.45)} 100%)
-          `
+          bgcolor: 'background.default'
         }}
       >
         {messages.map((msg, index) => (

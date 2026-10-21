@@ -279,7 +279,7 @@ export default function DevelopmentPlansPage() {
               sx={{ mt: 0.5 }}
             />
           </Box>
-          <Avatar sx={{ bgcolor: 'secondary.main' }}>
+          <Avatar sx={{ bgcolor: 'secondary.main', color: 'secondary.contrastText' }}>
             <TrendingUp />
           </Avatar>
         </Box>

@@ -754,7 +754,7 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
               </Typography>
             </Stack>
             <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
-              <Button size="small" variant="contained" onClick={openDrawer}>
+              <Button size="small" variant="text" onClick={openDrawer}>
                 Open guide
               </Button>
               <Button component={Link} href="/tutorial" size="small" variant="text" startIcon={<MenuBookOutlined />}>
@@ -769,7 +769,7 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
       )}
 
       <Button
-        variant="contained"
+        variant="outlined"
         color="info"
         startIcon={<HelpOutline />}
         onClick={openDrawer}
@@ -777,12 +777,13 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
           display: { xs: 'inline-flex', sm: showBanner && bannerVisible ? 'none' : 'inline-flex' },
           position: { xs: inlineMobileGuide ? 'static' : 'fixed', sm: 'fixed' },
           mb: { xs: inlineMobileGuide ? 2 : 0, sm: 0 },
-          right: 24,
-          bottom: 24,
+          right: 'max(16px, env(safe-area-inset-right))',
+          bottom: 'max(16px, env(safe-area-inset-bottom))',
           zIndex: 1200,
           borderRadius: 2,
           px: 2,
-          boxShadow: 2
+          bgcolor: 'background.paper',
+          boxShadow: 1
         }}
       >
         Guide

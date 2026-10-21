@@ -218,7 +218,7 @@ export default function AppraisalDetailPage() {
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, maxWidth: '100%' }}>
-            <Avatar sx={{ width: 64, height: 64, bgcolor: 'primary.main', fontSize: 28 }}>
+            <Avatar sx={{ width: 64, height: 64, bgcolor: 'primary.main', fontSize: 28, color: 'primary.contrastText' }}>
               {appraisal.employee?.name?.[0] || 'E'}
             </Avatar>
             <Box sx={{ minWidth: 0 }}>

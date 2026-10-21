@@ -210,7 +210,7 @@ export default function TeamAppraisalsPage() {
                   >
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <Avatar sx={{ bgcolor: needsAction ? 'warning.main' : 'primary.main' }}>
+                        <Avatar sx={{ bgcolor: needsAction ? 'warning.main' : 'primary.main', color: theme => needsAction ? theme.palette.warning.contrastText : theme.palette.primary.contrastText }}>
                           {appraisal.employee?.name?.[0] || 'E'}
                         </Avatar>
                         <Box>
