@@ -4461,7 +4461,9 @@ router.post('/:appraisalId/finalize', requireAuth, async (req, res) => {
     }
 
     const overall = Math.round(numericRating * 10) / 10;
-    const calculatedRating = Number(scores?.suggestedRating);
+    const calculatedRating = typeof scores?.suggestedRating === 'number' && Number.isFinite(scores.suggestedRating)
+      ? scores.suggestedRating
+      : null;
     const overrideApplied = Number.isFinite(calculatedRating) && Math.abs(overall - calculatedRating) >= 0.05;
     const overrideReason = String(justification || appraisal.calibration?.justification || '').trim();
     if (overrideApplied && overrideReason.length < 10) {

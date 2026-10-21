@@ -57,7 +57,13 @@ export default function FinalReviewPage() {
       api.get(`/appraisals/${appraisalId}/scoring`).then(response => {
         const score = response.data?.data?.suggestedRating;
         if (active) {
-          if (typeof score === 'number' && Number.isFinite(score)) { setEvidenceScore(score); setEvidenceLoaded(true); }
+          if (response.data?.success === true && (score === null || (typeof score === 'number' && Number.isFinite(score)))) {
+            // Native role levels stay separate from the human 1–5 decision.
+            // A successful null score means no calculated rating, not a failed request.
+            setEvidenceScore(score);
+            setScoreError('');
+            setEvidenceLoaded(true);
+          }
           else setScoreError('The calculated evidence rating is unavailable. Refresh before finalizing.');
         }
       }).catch(() => { if (active) setScoreError('Evidence score could not be loaded. Refresh before finalizing.'); });
@@ -313,6 +319,7 @@ export default function FinalReviewPage() {
                         {!evidenceLoaded && !scoreError && <Typography role="status">Loading calculated evidence rating…</Typography>}
                         {scoreError && <Alert severity="error">{scoreError}</Alert>}
                         {evidenceScore !== null && <Typography>Calculated evidence rating: {evidenceScore}/5</Typography>}
+                        {evidenceLoaded && evidenceScore === null && <Alert severity="info" sx={{ mb: 2 }}>No calculated 1–5 rating is available. Review the submitted evidence and any linked competency result, then choose the final rating. Competency levels remain separate.</Alert>}
                         <TextField
                             fullWidth
                             multiline
