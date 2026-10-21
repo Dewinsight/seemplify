@@ -1,0 +1,18 @@
+{
+  "verifiedAt": "2026-10-21T12:40:49.8703826Z",
+  "sourceCommit": "b59a578f7c3cd9c472992ed6a448a4d4bff9c279",
+  "environment": "Authenticated production, existing authorized browser session",
+  "route": "/appraisals/[appraisalId]/report",
+  "boundary": "Read-only verification of an existing completed report. No regeneration, transcript or saved business record writes.",
+  "publishedRatingUnchanged": true,
+  "competencyChartVerified": true,
+  "writtenAnalysisAlongsideCharts": true,
+  "sourceCountReconciled": true,
+  "missingGoalEvidenceExplicit": true,
+  "sourceDisclosureAndKeyboardFocus": true,
+  "fullAnalysisDisclosure": true,
+  "fullReviewRecordDisclosure": true,
+  "noDocumentOverflow": true,
+  "privateEvidence": "Native before/after screenshots retained in sibling access workspace, excluded from Git",
+  "userDataIncluded": false
+}

@@ -1,0 +1,38 @@
+{
+  "capturedAt": "2026-10-21T12:39:10.180706+00:00",
+  "sourceCommit": "b59a578f7c3cd9c472992ed6a448a4d4bff9c279",
+  "testedTree": "0b75d3e1aa20042f942caf373c3e79e5d96fa1fd",
+  "workflow": {
+    "conclusion": "success",
+    "headSha": "b59a578f7c3cd9c472992ed6a448a4d4bff9c279",
+    "status": "completed",
+    "url": "https://github.com/Dewinsight/seemplify/actions/runs/39597205624"
+  },
+  "containers": [
+    {
+      "name": "/seemplify-core-performance-frontend-1",
+      "revision": "b59a578f7c3cd9c472992ed6a448a4d4bff9c279",
+      "state": "running",
+      "image": "seemplify/performance-frontend:hostinger-b59a578f7c3cd9c472992ed6a448a4d4bff9c279"
+    },
+    {
+      "name": "/seemplify-core-performance-backend-1",
+      "revision": "b59a578f7c3cd9c472992ed6a448a4d4bff9c279",
+      "state": "running",
+      "image": "seemplify/performance-backend:hostinger-b59a578f7c3cd9c472992ed6a448a4d4bff9c279"
+    }
+  ],
+  "frontendHTTP": 200,
+  "backendHTTP": 200,
+  "backendStatus": "ok",
+  "oidc": {
+    "httpStatus": 302,
+    "destinationOrigin": "https://auth.seemplifyai.com",
+    "destinationPath": "/auth",
+    "queryAndTokensExcluded": true
+  },
+  "archiveRemoved": true,
+  "rollbackImagesRetained": true,
+  "rollbackRevision": "8ce5e4b447d2b070870bdf75154b46abde6b18a7",
+  "boundary": "Whole-core workflow successful; independent Performance exact running revision/public health/OIDC. Authenticated final-report task proof recorded separately by the retained product operator."
+}
