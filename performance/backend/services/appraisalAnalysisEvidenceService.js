@@ -124,6 +124,13 @@ async function collect(appraisal, profile = { shared: true }) {
     }, publishedResult ? 'published' : role.status);
     const evidence = await require('../models/CompetencyEvidence').find({ organizationId: org, assessmentId: id(role), status: 'ready' }).sort({ _id: 1 }).lean();
     for (const entry of evidence) {
+      if (published && publishedResult) {
+        const reference = publishedResult.evidenceReferences?.find(item => String(item.id) === id(entry));
+        // Later draft additions and changed/private-at-publication evidence do
+        // not become sources for an earlier published appraisal result.
+        if (!reference || (shared && reference.visibility !== 'participant')) continue;
+        if (reference.sha256 !== entry.sha256) { gaps.push('Some published role evidence has changed since finalisation and is excluded.'); continue; }
+      }
       const visible = shared ? entry.visibility === 'participant' : require('./competency/assessmentService').visible(ctx, role, entry)
         && (isAssessor || entry.createdBy?.userId === ctx.actor.userId || role.status === 'published' || (entry.documentType === 'cv' && role.participant.userId === ctx.actor.userId));
       if (!visible) continue;

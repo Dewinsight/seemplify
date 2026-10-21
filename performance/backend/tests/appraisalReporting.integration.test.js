@@ -208,9 +208,23 @@ test('native result charts and final AI use the same frozen published role versi
   }
   await api('get', `/${appraisal._id}/report`, 'foreign').expect(404);
   await api('get', `/${appraisal._id}/report`, 'outsider').expect(403);
+  const Evidence = require('../models/CompetencyEvidence');
+  const retained = await Evidence.create([
+    { organizationId: org.id, assessmentId: String(assessment._id), participantId: 'employee', kind: 'manual', visibility: 'participant', text: 'FROZEN SHARED SOURCE', sha256: 'same' },
+    { organizationId: org.id, assessmentId: String(assessment._id), participantId: 'employee', kind: 'manual', visibility: 'participant', text: 'LATER DRAFT SOURCE', sha256: 'later' },
+    { organizationId: org.id, assessmentId: String(assessment._id), participantId: 'employee', kind: 'manual', visibility: 'participant', text: 'PRIVATE AT PUBLICATION', sha256: 'private' },
+    { organizationId: org.id, assessmentId: String(assessment._id), participantId: 'employee', kind: 'manual', visibility: 'participant', text: 'CHANGED SOURCE', sha256: 'changed' }
+  ]);
+  await Assessment.updateOne({ _id: assessment._id }, { $push: { 'results.0.evidenceReferences': { $each: [
+    { id: String(retained[0]._id), visibility: 'participant', sha256: 'same' },
+    { id: String(retained[2]._id), visibility: 'assessors', sha256: 'private' },
+    { id: String(retained[3]._id), visibility: 'participant', sha256: 'earlier' }
+  ] } } });
   await reports.queue(appraisal, identity); await reports.processDue();
   const [messages] = ai.getChatCompletions.mock.calls[0];
   expect(messages[1].content).toContain('PUBLISHED ROLE RATIONALE');
+  expect(messages[1].content).toContain('FROZEN SHARED SOURCE');
+  expect(messages[1].content).not.toMatch(/LATER DRAFT SOURCE|PRIVATE AT PUBLICATION|CHANGED SOURCE/);
   expect(messages[1].content).toContain('"overallScore":85');
   expect(messages[1].content).not.toMatch(/PRIVATE ASSESSOR SENTINEL|MUTABLE DRAFT SENTINEL/);
   expect(messages[0].content).toContain('never convert them to 1–5');
