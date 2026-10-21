@@ -132,8 +132,8 @@ test('HR manager matches admin across products except explicit top-level control
   ]) assert.ok(!getDefaultRolePermissions('hr_manager', appId).includes(permissionId), `HR manager received protected ${appId}:${permissionId}`)
 })
 
-test('schema version five refreshes locked role baselines without replacing custom roles', () => {
-  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 5)
+test('schema version six preserves locked role baselines without replacing custom roles', () => {
+  assert.equal(ACCESS_CONTROL_SCHEMA_VERSION, 6)
   const customRole = {
     key: 'project_coordinator', name: 'Project Coordinator', locked: false,
     sourceOrganizationRoles: [], sourceTeamRoles: [],

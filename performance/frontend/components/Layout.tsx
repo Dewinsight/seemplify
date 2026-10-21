@@ -222,7 +222,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { name: 'Competency assessments', href: '/competency', icon: ListChecks, section: 'administration' },
         ...(appraisalsEnabled ? [
           { name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'administration' as const },
-          { name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'administration' as const },
+          { name: 'Cycles', href: '/competency/cycles', icon: Settings, section: 'administration' as const },
           { name: 'Calibration', href: '/admin/calibration', icon: ClipboardCheck, section: 'administration' as const },
           { name: 'Reports', href: '/admin/reports', icon: BarChart3, section: 'administration' as const },
         ] : []),

@@ -206,6 +206,11 @@ const appraisalCycleSchema = new mongoose.Schema({
 
 // Indexes
 appraisalCycleSchema.index({ organizationId: 1, status: 1 });
+appraisalCycleSchema.add({
+  assessmentCycleId: String,
+  assessmentOccurrenceKey: String,
+});
+appraisalCycleSchema.index({ organizationId: 1, assessmentCycleId: 1, assessmentOccurrenceKey: 1 }, { unique: true, partialFilterExpression: { assessmentCycleId: { $type: 'string' } }, name: 'unified_cycle_occurrence' });
 appraisalCycleSchema.index({ organizationId: 1, defaultQuarterKey: 1 }, { unique: true, partialFilterExpression: { defaultQuarterKey: { $type: 'string' } } });
 appraisalCycleSchema.index({ organizationId: 1, periodStart: 1, periodEnd: 1 });
 
@@ -222,7 +227,7 @@ appraisalCycleSchema.pre('save', function (next) {
   }
 
   // Default competencies
-  if (!this.competencies || this.competencies.length === 0) {
+  if (!this.assessmentCycleId && (!this.competencies || this.competencies.length === 0)) {
     this.competencies = [
       { id: 'communication', name: 'Communication', description: 'Ability to communicate effectively', weight: 1, category: 'core' },
       { id: 'teamwork', name: 'Teamwork', description: 'Ability to work effectively in a team', weight: 1, category: 'core' },

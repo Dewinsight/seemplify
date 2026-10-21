@@ -7,6 +7,24 @@ import { getOrCreateGlobalAccessPolicy } from '../src/services/accessControlServ
 
 // Deterministic model-boundary race tests: real Mongo persistence is exercised
 // separately in the programme integration evidence. No live database is used.
+test('schema five upgrade adds only manager cycle setup and preserves deliberate product edits', async (t) => {
+  const roles = structuredClone(DEFAULT_ACCESS_ROLES)
+  const manager = roles.find(role => role.key === 'line_manager')
+  manager.grants = [{ appId: 'performance-management', permissions: ['review:conduct:direct_reports'] }, { appId: 'messaging', permissions: ['deliberate.custom'] }]
+  manager.denies = [{ appId: 'performance-management', permissions: ['competency.cycle.manage'] }]
+  let invalidations = 0
+  const policy = { schemaVersion: 5, revision: 12, roles, async save() { return this } }
+  t.mock.method(AccessControlPolicy, 'findOne', async () => policy)
+  t.mock.method(Account, 'updateMany', async () => { invalidations++; return { modifiedCount: 1 } })
+  const result = await getOrCreateGlobalAccessPolicy()
+  const updated = result.roles.find(role => role.key === 'line_manager')
+  assert.equal(result.schemaVersion, 6)
+  assert.equal(result.revision, 13)
+  assert.deepEqual(updated.grants[0].permissions, ['review:conduct:direct_reports', 'competency.cycle.manage'])
+  assert.deepEqual(updated.grants[1], manager.grants[1])
+  assert.deepEqual(updated.denies, manager.denies)
+  assert.equal(invalidations, 1)
+})
 test('concurrent schema migration reloads winner instead of exposing VersionError', async (t) => {
   let reads = 0, saves = 0, invalidations = 0
   const winner = { schemaVersion: ACCESS_CONTROL_SCHEMA_VERSION, revision: 8, roles: DEFAULT_ACCESS_ROLES }
@@ -80,7 +98,7 @@ test('schema four Performance overgrants are removed by locked-role refresh and 
     return { modifiedCount: 3 }
   })
   const migrated = await getOrCreateGlobalAccessPolicy()
-  assert.equal(migrated.schemaVersion, 5)
+  assert.equal(migrated.schemaVersion, 6)
   assert.equal(migrated.revision, 24)
   const employee = migrated.roles.find(role => role.key === 'employee')
   const performance = employee.grants.find(row => row.appId === 'performance-management').permissions

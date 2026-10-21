@@ -21,7 +21,7 @@ export function EditorError({ error, reload, draft }: { error: unknown; reload?:
 export function EditorActions({ children, status }: {
     children: ReactNode;
     status: string;
-}) { return <Box sx={{ position: 'sticky', bottom: 12, zIndex: 3, mt: 3, p: 2, bgcolor: 'var(--suite-surface)', border: '1px solid var(--suite-line)', borderRadius: 2, boxShadow: '0 8px 24px #00000012' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2}><Typography variant="body2" role="status" sx={{ color: 'var(--suite-muted)' }}>{status}</Typography><Stack direction="row" gap={1} flexWrap="wrap">{children}</Stack></Stack></Box>; }
+}) { return <Box sx={{ position: { xs: 'static', sm: 'sticky' }, bottom: 12, mb: { xs: 8, sm: 0 }, zIndex: 3, mt: 3, p: 2, bgcolor: 'var(--suite-surface)', border: '1px solid var(--suite-line)', borderRadius: 2, boxShadow: '0 8px 24px #00000012' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2}><Typography variant="body2" role="status" sx={{ color: 'var(--suite-muted)' }}>{status}</Typography><Stack direction="row" gap={1} flexWrap="wrap">{children}</Stack></Stack></Box>; }
 export function ConfirmDialog({ open, title, children, action, onConfirm, onClose, busy = false }: {
     open: boolean;
     title: string;

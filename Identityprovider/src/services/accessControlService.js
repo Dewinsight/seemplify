@@ -188,6 +188,17 @@ async function notifyGlobalAccessControlChanged(policy, actor, action) {
   if (failures.length) console.error(`Failed to queue ${failures.length} global access-control webhook delivery group(s).`)
 }
 
+export function upgradeManagerCyclePermission(roles) {
+  return roles.map(role => {
+    const result = cloneRole(role)
+    if (!result.locked || !['line_manager', 'team_lead', 'department_head'].includes(result.key)) return result
+    let row = result.grants.find(grant => grant.appId === 'performance-management')
+    if (!row) { row = { appId: 'performance-management', permissions: [] }; result.grants.push(row) }
+    row.permissions = uniqueStrings([...row.permissions, 'competency.cycle.manage'])
+    return result
+  })
+}
+
 export function mergeDefaultRoles(existingRoles = [], { refreshLocked = false, refreshAppIds = null } = {}) {
   const roles = (existingRoles || []).map((role) => cloneRole(role.toObject ? role.toObject() : role))
   for (const defaultRole of DEFAULT_ACCESS_ROLES) {
@@ -246,14 +257,17 @@ export async function getOrCreateGlobalAccessPolicy() {
     }
 
     const schemaUpgrade = policy.schemaVersion !== ACCESS_CONTROL_SCHEMA_VERSION
-    const mergedRoles = mergeDefaultRoles(policy.roles, {
-      refreshLocked: schemaUpgrade,
+    let mergedRoles = mergeDefaultRoles(policy.roles, {
+      refreshLocked: schemaUpgrade && policy.schemaVersion < 5,
       // Version 5 deliberately normalizes built-in Performance policy only.
       // Preserve all other product rows, custom role definitions and metadata.
-      refreshAppIds: schemaUpgrade && policy.schemaVersion < 5 && ACCESS_CONTROL_SCHEMA_VERSION === 5
+      refreshAppIds: schemaUpgrade && policy.schemaVersion < 5
         ? ['performance-management']
         : null
     })
+    // v6 adds only the requested manager cycle grant. Preserve all persisted
+    // product policies, deliberate denies, custom roles and role metadata.
+    if (schemaUpgrade && policy.schemaVersion < 6) mergedRoles = upgradeManagerCyclePermission(mergedRoles)
     if (mergedRoles.length !== policy.roles.length || schemaUpgrade) {
       policy.roles = mergedRoles
       policy.schemaVersion = ACCESS_CONTROL_SCHEMA_VERSION

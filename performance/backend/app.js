@@ -129,7 +129,8 @@ mongoose.connect(mongoUri)
     if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_BACKGROUND_WORKERS !== 'true') {
       startNotificationWorker();
       startReminderScheduler();
-      require('./services/quarterlyAppraisalService').startQuarterlyCycleScheduler();
+      // New review periods use published competency-cycle schedules. Legacy
+      // quarterly definitions remain available as history and migration input.
       require('./services/appraisalMeetingMediaService').start();
       require('./services/appraisalFinalReportService').start();
       require('./services/appraisalCurrentAssessmentService').worker();

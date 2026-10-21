@@ -77,7 +77,7 @@ const PERMISSIONS = {
   // Competency actions mirror the central IdP catalogue; resource checks remain mandatory.
   'competency.role.manage': ['hr_admin'],
   'competency.framework.manage': ['hr_admin'],
-  'competency.cycle.manage': ['hr_admin'],
+  'competency.cycle.manage': ['hr_admin', 'line_manager', 'team_lead'],
   'competency.assessment.launch': ['team_lead', 'line_manager', 'hr_admin'],
   'competency.assessment.view': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'competency.assessment.edit': ['team_lead', 'line_manager', 'hr_admin'],

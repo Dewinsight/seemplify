@@ -12,7 +12,7 @@ const files = require('./fileSafetyService');
 const roleKeys = ['name', 'description', 'responsibilities', 'requirements', 'criteria'];
 const frameworkKeys = ['name', 'criteria', 'levels', 'source', 'licenseProvenance'];
 const strategyKeys = ['title', 'description', 'criteria', 'levels', 'sourceRef'];
-const cycleKeys = ['name', 'period', 'selectedInputTypes', 'frameworkVersionIds', 'strategyVersionIds', 'roleVersionIds', 'scoringConfig', 'rankingConfig'];
+const cycleKeys = ['includeApprovedGoals', 'workflowDefinition', 'reviewMode', 'cadence', 'regularTemplateId', 'name', 'period', 'selectedInputTypes', 'frameworkVersionIds', 'strategyVersionIds', 'roleVersionIds', 'scoringConfig', 'rankingConfig'];
 const plain = d => d?.toObject ? d.toObject() : d;
 function dto(d) { if (!d)
     return null; const v = plain(d); const { _id, __v, ...rest } = v; return { ...rest, id: String(_id), ...(v.roleId ? { roleId: String(v.roleId), versionId: String(_id) } : {}), ...(v.frameworkId ? { frameworkId: String(v.frameworkId), versionId: String(_id) } : {}), ...(v.strategyId ? { strategyId: String(v.strategyId), versionId: String(_id) } : {}) }; }
@@ -86,7 +86,7 @@ async function cas(Model, document, expected, updates, extra = {}) { if (documen
     throw new DomainError(409, 'REVISION_CONFLICT', 'This draft changed. Reload before saving.'); return result; }
 const slug = name => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80) + '-' + crypto.randomUUID();
 const exactName = name => new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
-async function list(kind, org, query = {}) { const model = { roles: Role, frameworks: Framework, strategies: Strategy, cycles: Cycle }[kind]; const filter = { organizationId: org }; if (kind === 'roles' || kind === 'frameworks') {
+async function list(kind, org, query = {}, scope = {}) { const model = { roles: Role, frameworks: Framework, strategies: Strategy, cycles: Cycle }[kind]; const filter = { organizationId: org, ...scope }; if (kind === 'roles' || kind === 'frameworks') {
     if (query.status === 'archived')
         filter.archivedAt = { $ne: null };
     else if (query.status !== 'all')
@@ -205,15 +205,22 @@ async function updateStrategyVersion(ctx, strategyId, versionId, input, rev, req
 async function publishStrategy(ctx, strategyId, versionId, rev) { const version = await find(Strategy, ctx.organizationId, versionId, { strategyId: id(strategyId) }); if (version.status !== 'draft')
     throw new DomainError(409, 'IMMUTABLE_VERSION', 'This strategy version is already published.'); if (!version.criteria.length)
     invalid('Add at least one strategy assessment criterion.', 'criteria'); const content = Object.fromEntries(strategyKeys.map(k => [k, plain(version)[k]])); return dto(await cas(Strategy, version, rev, { status: 'published', contentHash: hash(content), publishedAt: new Date(), publishedBy: ctx.actor }, { status: 'draft' })); }
-function cycleContent(input) { cleanObject(input, cycleKeys); const out = { name: requiredText(input.name, 'name', 200) }; cleanObject(input.period || {}, ['start', 'end']); out.period = { start: text(input.period?.start, 'period.start', 40), end: text(input.period?.end, 'period.end', 40) }; if (out.period.start && (!Number.isFinite(Date.parse(out.period.start)) || !Number.isFinite(Date.parse(out.period.end)) || out.period.start > out.period.end))
+function cycleContent(input) { cleanObject(input, cycleKeys); const out = { ...require('./cyclePolicy').setup(input), name: requiredText(input.name, 'name', 200) }; cleanObject(input.period || {}, ['start', 'end']); out.period = { start: text(input.period?.start, 'period.start', 40), end: text(input.period?.end, 'period.end', 40) }; if (out.period.start && (!Number.isFinite(Date.parse(out.period.start)) || !Number.isFinite(Date.parse(out.period.end)) || out.period.start > out.period.end))
     invalid('Choose a valid assessment period.', 'period'); out.selectedInputTypes = unique(arr(input.selectedInputTypes || [], 'selectedInputTypes', 3), 'selectedInputTypes'); if (out.selectedInputTypes.some(v => !['sfia', 'internal', 'strategy'].includes(v)))
     invalid('Choose valid assessment inputs.', 'selectedInputTypes'); for (const k of ['frameworkVersionIds', 'strategyVersionIds', 'roleVersionIds'])
     out[k] = unique(arr(input[k] || [], k).map(id), k); out.scoringConfig = input.scoringConfig || null; out.rankingConfig = input.rankingConfig || { enabled: false }; return out; }
-async function createCycle(ctx, input) { return dto(await Cycle.create({ organizationId: ctx.organizationId, ...cycleContent(input), createdBy: ctx.actor })); }
+async function createCycle(ctx, input) { require('./cyclePolicy').assertCreate(ctx); await require('./cyclePolicy').assertFeature(ctx, input); return dto(await Cycle.create({ organizationId: ctx.organizationId, ...cycleContent(input), configurationScope: ctx.organizationWide ? 'organization' : 'managed_teams', createdBy: ctx.actor })); }
 async function updateCycle(org, cycleId, input, rev) { cleanObject(input, cycleKeys); const cycle = await find(Cycle, org, cycleId); if (cycle.status !== 'draft')
     throw new DomainError(409, 'IMMUTABLE_CYCLE', 'Create a new cycle to change published configuration.'); const content = cycleContent({ ...Object.fromEntries(cycleKeys.map(k => [k, plain(cycle)[k]])), ...input }); return dto(await cas(Cycle, cycle, rev, content, { status: 'draft' })); }
 async function validateCycle(org, cycle) {
     const c = plain(cycle);
+    const setup = require('./cyclePolicy').setup(c);
+    if (setup.reviewMode !== 'competency') require('./cyclePolicy').regularWorkflow(c);
+    if (!c.period?.start || !c.period?.end || !Number.isFinite(Date.parse(c.period.start)) || !Number.isFinite(Date.parse(c.period.end)) || c.period.start > c.period.end) invalid('Choose a valid assessment period.', 'period');
+    if (setup.reviewMode === 'regular') {
+        if (c.selectedInputTypes?.length || c.frameworkVersionIds?.length || c.strategyVersionIds?.length || c.roleVersionIds?.length || c.rankingConfig?.enabled) invalid('Regular appraisals do not use role frameworks or competency ranking. Choose combined to include them.');
+        return { valid: true, selectedInputTypes: [], frameworks: [], strategies: [], roles: [], scoringConfig: null, rankingConfig: { enabled: false } };
+    }
     validateSources(c.selectedInputTypes);
     const scoringConfig = validateScoring(c.scoringConfig, c.selectedInputTypes);
     const rankingConfig = validateRanking(c.rankingConfig);
@@ -285,8 +292,8 @@ async function validateCycle(org, cycle) {
         invalid('Remove normalization rules for unselected or missing criteria.', 'scoringConfig.normalization');
     return { valid: true, selectedInputTypes: [...c.selectedInputTypes], frameworks, strategies, roles, scoringConfig, rankingConfig, formula: 'sum(sourceScore × sourceWeight) / sum(sourceWeight)' };
 }
-async function publishCycle(ctx, cycleId, rev) { const cycle = await find(Cycle, ctx.organizationId, cycleId); if (cycle.status !== 'draft')
-    throw new DomainError(409, 'IMMUTABLE_CYCLE', 'This cycle is already published.'); const valid = await validateCycle(ctx.organizationId, cycle); const definitionHash = hash({ selectedInputTypes: valid.selectedInputTypes, roles: valid.roles.map(r => ({ versionId: r.versionId, contentHash: r.contentHash })), frameworks: valid.frameworks.map(f => ({ id: f.id, contentHash: f.contentHash })), strategies: valid.strategies.map(s => ({ id: s.id, contentHash: s.contentHash })), scoringConfig: valid.scoringConfig, rankingConfig: valid.rankingConfig }); return dto(await cas(Cycle, cycle, rev, { status: 'published', scoringConfig: valid.scoringConfig, rankingConfig: valid.rankingConfig, definitionHash, publishedAt: new Date(), publishedBy: ctx.actor }, { status: 'draft' })); }
+async function publishCycle(ctx, cycleId, rev) { const cycle = await find(Cycle, ctx.organizationId, cycleId); require('./cyclePolicy').assertManage(ctx, cycle); await require('./cyclePolicy').assertFeature(ctx, cycle); if (cycle.status !== 'draft')
+    throw new DomainError(409, 'IMMUTABLE_CYCLE', 'This cycle is already published.'); const valid = await validateCycle(ctx.organizationId, cycle); const definitionHash = hash({ ...require('./cyclePolicy').setup(cycle), period: plain(cycle).period, selectedInputTypes: valid.selectedInputTypes, roles: valid.roles.map(r => ({ versionId: r.versionId, contentHash: r.contentHash })), frameworks: valid.frameworks.map(f => ({ id: f.id, contentHash: f.contentHash })), strategies: valid.strategies.map(s => ({ id: s.id, contentHash: s.contentHash })), scoringConfig: valid.scoringConfig, rankingConfig: valid.rankingConfig }); return dto(await cas(Cycle, cycle, rev, { status: 'published', scoringConfig: valid.scoringConfig, rankingConfig: valid.rankingConfig, definitionHash, publishedAt: new Date(), publishedBy: ctx.actor }, { status: 'draft' })); }
 async function getPublishedDefinition({ organizationId, cycleId, cycleRevision, roleVersionId }) { const cycle = await find(Cycle, organizationId, cycleId, { status: 'published' }); if (cycle.revision !== cycleRevision)
     throw new DomainError(409, 'REVISION_CONFLICT', 'Cycle configuration changed. Review it before starting.'); if (!cycle.roleVersionIds.includes(String(roleVersionId)))
     invalid('Choose a role included in this cycle.', 'roleVersionId'); const valid = await validateCycle(organizationId, cycle); const role = valid.roles.find(r => r.versionId === String(roleVersionId)); const sources = [...valid.frameworks, ...valid.strategies.map(s => ({ ...s, sourceType: 'strategy' }))]; const criteria = role.criteria.filter(c => valid.selectedInputTypes.includes(c.sourceType)).map(c => { const source = sources.find(s => s.id === String(c.frameworkVersionId || c.strategyVersionId)); const native = source.criteria.find(n => n.id === c.criterionId); const expected = source.levels.find(l => l.id === c.expectedLevelId); return { ...c, name: native.name, code: native.code, description: native.description, sourceVersionId: source.id, sourceName: source.name || source.title, nativeCriterionId: native.id, levelIds: native.levelIds, levels: source.levels.filter(l => native.levelIds.includes(l.id)), expectedLevel: expected || null }; }); const snapshot = { role, selectedInputTypes: valid.selectedInputTypes, frameworks: valid.frameworks, strategies: valid.strategies, criteria, scoringConfig: valid.scoringConfig, rankingConfig: valid.rankingConfig }; return { ...snapshot, definitionHash: hash(definitionContent(snapshot)), cycleId: String(cycle._id), cycleVersion: cycle.version, cycleRevision: cycle.revision }; }

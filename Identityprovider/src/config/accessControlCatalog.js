@@ -6,7 +6,7 @@
  * responsible for resource-level checks such as "is this a direct report?".
  */
 
-export const ACCESS_CONTROL_SCHEMA_VERSION = 5
+export const ACCESS_CONTROL_SCHEMA_VERSION = 6
 
 const permission = (id, label, scope, description = '', options = {}) => ({
   id,
@@ -153,7 +153,7 @@ export const PRODUCT_PERMISSION_CATALOG = Object.freeze([
     permission('admin:reports', 'Manage performance reports', 'organization'),
     permission('competency.role.manage', 'Manage assessment roles and versions', 'organization'),
     permission('competency.framework.manage', 'Manage competency frameworks and levels', 'organization'),
-    permission('competency.cycle.manage', 'Configure competency assessment cycles', 'organization'),
+    permission('competency.cycle.manage', 'Configure appraisal cycles', 'team'),
     permission('competency.assessment.launch', 'Start competency assessments in assigned scope', 'reports'),
     permission('competency.assessment.view', 'View permitted competency assessments', 'self'),
     permission('competency.assessment.edit', 'Assess assigned employee competencies', 'reports'),
@@ -541,7 +541,7 @@ const managerGrants = [
     'feedback:view:direct_reports', 'support_plan:manage:direct_reports', 'project_feedback:request',
     'manager_practice:view:team', 'talent_review:view:team', 'talent_review:manage:team',
     'analytics:view:team', 'analytics:view:direct_reports', 'team:view:members', 'user:view:direct_reports',
-    'competency.assessment.launch', 'competency.assessment.edit', 'competency.assessment.finalise',
+    'competency.cycle.manage', 'competency.assessment.launch', 'competency.assessment.edit', 'competency.assessment.finalise',
     'competency.evidence.delete', 'competency.report.export', 'competency.report.cohort', 'competency.ai.use'
   ]),
   grant('payroll-management', [

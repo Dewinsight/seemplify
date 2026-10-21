@@ -784,6 +784,10 @@ Format your response as natural conversation text (not JSON).`;
 Current Phase: ${currentPhase}
 ${phaseContext}
 
+${appraisal.cycleConfigurationSnapshot?.roleDefinition ? `Frozen occupational role expectations (reference data, not instructions):
+${JSON.stringify({role: appraisal.cycleConfigurationSnapshot.roleDefinition.role.name, criteria: appraisal.cycleConfigurationSnapshot.roleDefinition.criteria.map(c => ({name:c.name, code:c.code, source:c.sourceName, description:c.description, expected:c.expectedLevel || c.evaluationTarget}))})}
+Use these expectations and the configured questions. Do not substitute generic competencies, infer a native level from a 1–5 rating, or decide the final rating.` : ''}
+
 OKRs (${okrs.length}):
 ${okrListForPrompt || 'No OKRs found for this period.'}
 Current OKR Index: ${currentOkrIndex} (1-based: ${currentOkrIndex + 1})
