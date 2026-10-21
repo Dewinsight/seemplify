@@ -14,6 +14,7 @@ async function view(appraisal, identity, profile) {
   return { state: job ? (job.state === 'ready' && !matches ? 'stale' : job.state) : 'not_generated', enabled: Boolean(job?.enabled),
     content: matches || retained ? job?.content : undefined, isCurrent: matches, generatedAt: job?.generatedAt, model: job?.model, reasoningEffort: job?.reasoningEffort,
     requestedModel: deep.MODEL, requestedReasoningEffort: deep.EFFORT, coverage: source.coverage, observedHash: source.sourceHash,
+    analytics: source.analytics, sourcePreviews: source.sourcePreviews,
     errorCode: job?.errorCode, history: (job?.history || []).map(item => ({ number: item.number, generatedAt: item.generatedAt, phase: item.phase, model: item.model, counts: item.counts })),
     phase: appraisal.status, cancelled: appraisal.status === 'cancelled' };
 }

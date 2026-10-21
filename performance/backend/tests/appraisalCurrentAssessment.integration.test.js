@@ -139,3 +139,44 @@ test('frozen and live versions of the same OKR retain distinct references during
   const next = (await api('get').expect(200)).body.data;
   expect(next.isCurrent).toBe(false); expect(next.content).toBe(first.content);
 });
+
+test('presentation returns recorded ratings on their real scale and keeps unrated, zero and frozen goals distinct', async () => {
+  const OKR = require('../models/OKR');
+  const goal = await OKR.findOne({ organizationId: org.id, type: 'individual' });
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: {
+    'cycleConfigurationSnapshot.ratingScale': { min: 1, max: 10 },
+    'selfAssessment.overallSelfRating': 8, 'managerReview.overallManagerRating': 7,
+    'selfAssessment.competencyRatings': [{ competencyId: 'delivery', competencyName: 'Delivery', selfRating: 8 }],
+    'managerReview.competencyRatings': [{ competencyId: 'delivery', competencyName: 'Delivery', managerRating: 6 }],
+    goalSnapshots: [{ sourceGoalId: goal._id, definition: { title: goal.title }, achievement: { rated: true, score: 62 }, cutoffAt: new Date('2026-03-31') }]
+  } });
+  await OKR.updateOne({ _id: teamGoal._id }, { $set: { progress: 0 } });
+  const result = (await api('get').expect(200)).body.data;
+  expect(result.analytics).toMatchObject({ scale: { min: 1, max: 10 }, ratings: { employee: { value: 8, state: 'draft' }, reviewer: { value: 7, state: 'draft' } },
+    competencies: [{ title: 'Delivery', employee: 8, reviewer: 6 }] });
+  expect(result.analytics.goals).toEqual(expect.arrayContaining([
+    expect.objectContaining({ title: goal.title, basis: 'appraisal_snapshot', progress: 62 }),
+    expect.objectContaining({ title: goal.title, basis: 'live_context', progress: null }),
+    expect.objectContaining({ title: teamGoal.title, progress: 0, scope: 'team' })
+  ]));
+  expect(ai.getChatCompletions).not.toHaveBeenCalled();
+  expect((await Appraisal.findById(appraisal._id)).finalRating?.overall).toBeUndefined();
+});
+
+test('source previews and charts use the same permissions as AI evidence and never persist preview text in history', async () => {
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { 'managerReview.overallManagerRating': 4 } });
+  const employee = (await api('get', 'employee').expect(200)).body.data;
+  expect(employee.analytics.ratings.reviewer.value).toBeNull();
+  expect(employee.analytics.competencies.every(item => item.reviewer === null)).toBe(true);
+  const rendered = JSON.stringify({ analytics: employee.analytics, previews: employee.sourcePreviews });
+  for (const sentinel of ['MANAGER DRAFT JUDGMENT', 'PRIVATE ASSESSOR SENTINEL', 'PRIVATE HR FILE', 'UNRELATED TEAM PRIVATE SENTINEL']) expect(rendered).not.toContain(sentinel);
+  expect(rendered).toContain('PRIVATE EMPLOYEE FILE');
+  expect(rendered).toContain('MEETING TRANSCRIPT');
+  await api('post').send({}).expect(202); await service.processDue();
+  const stored = await Job.findOne({ appraisalId: appraisal._id }).lean();
+  expect(stored.coverage.sources.every(source => source.text === undefined)).toBe(true);
+  expect(stored.sourcePreviews).toBeUndefined();
+  await require('../models/CompetencyEvidence').updateOne({ _id: cv._id }, { $set: { status: 'deleted', text: '' } });
+  const updated = (await api('get').expect(200)).body.data;
+  expect(JSON.stringify(updated.sourcePreviews)).not.toContain('CV CLAIM');
+});

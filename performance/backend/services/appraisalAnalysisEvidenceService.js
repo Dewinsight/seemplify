@@ -140,7 +140,9 @@ async function collect(appraisal, profile = { shared: true }) {
     characters: source.text.length, includedCharacters: total <= maxChars ? source.text.length : Math.min(source.text.length, fair) }));
   const text = sources.map((source, index) => `[${source.ref}] ${source.title} (${source.state})\n${source.text.slice(0, manifest[index].includedCharacters)}${manifest[index].includedCharacters < source.text.length ? '\n[Excerpt; additional source text is not included.]' : ''}`).join('\n\n');
   const counts = Object.fromEntries([...new Set(sources.map(source => source.category))].map(category => [category, sources.filter(source => source.category === category).length]));
+  const presentation = require('./appraisalAssessmentPresentation');
   return { sourceHash: hash({ sources, gaps, visibility: { shared, actor: profile.actorId, canManage: profile.canManage, isHR: profile.isHR } }), text,
+    analytics: presentation.build(sources, snapshot.ratingScale || cycle?.ratingScale), sourcePreviews: presentation.previews(sources),
     coverage: { counts, sources: manifest, gaps: [...new Set(gaps)], excerpted: manifest.filter(source => source.includedCharacters < source.characters).length, phase: shared && published ? 'finalised' : appraisal.status } };
 }
 function retainedSnapshot(previous, current) {

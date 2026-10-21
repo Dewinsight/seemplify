@@ -143,11 +143,12 @@ test('manual transcript import persists, generates notes and feeds the final AI 
   await calendarDialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('tab', { name: 'Current AI assessment', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Current AI assessment', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Assessment details and update history', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Pause automatic updates', exact: true })).toBeVisible();
   await backend('./services/appraisalCurrentAssessmentService').processDue();
   await expect(page.getByRole('region', { name: 'Current assessment analysis', exact: true })).toContainText('Synthetic final appraisal report', { timeout: 20000 });
   await expect(page.getByText(/gpt-6.1-sol · max reasoning/)).toBeVisible();
-  await page.getByRole('button', { name: /Evidence coverage/ }).click();
+  await expect(page.getByRole('heading', { name: 'Evidence at a glance', exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('current-ai-assessment-mobile.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Pause automatic updates', exact: true }).click();
