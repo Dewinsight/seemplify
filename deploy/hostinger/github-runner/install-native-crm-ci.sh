@@ -28,6 +28,11 @@ EOF
 # them or restarting Docker/Swarm. Verify the downloaded extras archive first.
 echo '32dc3dd0d8b512ccf30a7efe84d360b5ade65ac4fec92a2a5ad0fe791da6ab0d  '"$tools/rootless-extras.tgz" | sha256sum -c -
 tar xzf "$tools/rootless-extras.tgz" -C "$tools" --strip-components=1
+echo 'c019c608ba2bb009dd673f3230e4d743f36a78d36166c6c2444c05d0aa9ff0d9  '"$tools/docker.tgz" | sha256sum -c -
+tar xzf "$tools/docker.tgz" -C "$tools" --strip-components=1
+# Keep Docker/containerd/runc versions aligned, but use the distribution's
+# AppArmor-confined RootlessKit rather than disabling user-namespace policy.
+ln -sf /usr/bin/rootlesskit "$tools/rootlesskit"
 chmod 0755 "$root/native-ci-hook.py"
 
 for role in backend frontend; do
@@ -42,13 +47,15 @@ for role in backend frontend; do
   grep -q "^$account:" /etc/subgid
   install -d -m 0700 -o "$account" -g "$account" "$home/.config/systemd/user" "$home/.config/docker" "$home/_work" "$home/_work/_tool"
   cat >"$home/.config/docker/daemon.json" <<'EOF'
-{"builder":{"gc":{"enabled":true,"defaultKeepStorage":"4GB"}},"log-driver":"local","log-opts":{"max-size":"10m","max-file":"2"}}
+{"builder":{"gc":{"enabled":true,"defaultKeepStorage":"4GB"}},"log-driver":"local","log-opts":{"max-size":"10m","max-file":"2"},"exec-opts":["native.cgroupdriver=cgroupfs"]}
 EOF
   cat >"$home/.config/systemd/user/docker.service" <<EOF
 [Unit]
 Description=Isolated rootless Docker for CRM $role CI
 [Service]
-Environment=PATH=/usr/bin:/usr/sbin:/bin:$tools
+Environment=PATH=$tools:/usr/bin:/usr/sbin:/bin
+Environment=XDG_RUNTIME_DIR=/run/user/$uid
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus
 Environment=DOCKERD_ROOTLESS_ROOTLESSKIT=/usr/bin/rootlesskit
 ExecStart=$tools/dockerd-rootless.sh --host=unix:///run/user/$uid/docker.sock
 Restart=on-failure

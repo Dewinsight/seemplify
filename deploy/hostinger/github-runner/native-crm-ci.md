@@ -18,6 +18,12 @@ endpoint on a different address remains separate.
 `hostinger-native-ci.slice` caps the native agents and their user service
 managers together at 2 CPUs / 7 GiB, no swap. A runner process has a 4-GiB
 ceiling, and each rootless engine has a 4-GiB ceiling within the aggregate slice.
+This host's rootless systemd container-scope creation requires interactive
+authorization. The isolated engine therefore uses the cgroupfs compatibility
+setting (Docker reports cgroup driver `none`); individual Docker resource flags
+are ignored. The host systemd service and aggregate slice enforce the stated
+ceilings on the engine and all inherited container processes. Never substitute
+per-container Docker flags for those host limits or remove the shared lease.
 Only one native job or local release may hold
 `/run/lock/hostinger-ci-compute.lock`. The job-start hook holds a lease tied to
 the actual Runner.Worker PID and start time, including post-job cleanup. Before
@@ -36,8 +42,11 @@ not disable the host's unprivileged-user-namespace restriction.
 
 Install `native-ci-hook.py` and `install-native-crm-ci.sh` as root-owned files in
 `/opt/hostinger-native-ci`. The installer verifies the matching Docker 29.1.3
-rootless-extras archive at `/opt/hostinger-native-tools/29.1.3/rootless-extras.tgz`
-before extracting it. Stage the reviewed GitHub runner archive, verify its
+rootless-extras and Docker runtime archives at
+`/opt/hostinger-native-tools/29.1.3/{rootless-extras,docker}.tgz`
+before extracting them. Matching Docker/containerd/runc binaries stay private
+to the CI engines; the production binaries and Docker service are unchanged.
+Stage the reviewed GitHub runner archive, verify its
 published checksum, and extract it into each user's `runner` directory.
 Register each agent with a short-lived repository registration token using the
 normal GitHub runner setup. Never commit tokens or credentials. Configure its
