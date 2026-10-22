@@ -70,9 +70,12 @@ remain routing aliases. They do not identify the physical host.
 The former KVM8 at `179.198.192.126` has no production role. All its containers
 are stopped with automatic restarts disabled and both Swarm services scaled to
 zero. Its cached-DNS forwarding edge and temporary SMTP transport are retired.
-The five original migration recovery archives are retained on KVM4 under
-`/opt/seemplify-migration/kvm4-20261015` and their SHA-256 checksums match the
-source originals. Do not restart the old applications. Before deleting or
+The five original migration recovery archives and temporary Traefik binary were
+retired on 22 October 2026 after checking that no container, process or service
+depended on them, verifying the completed migration, and saving a fully
+restore-tested current backup in an encrypted off-host archive. Verification
+metadata remains under `/opt/seemplify-migration/kvm4-20261015`; the large bundles
+are no longer needed on KVM4. Do not restart the old applications. Before deleting or
 allowing the old VPS subscription to expire, retain and verify an encrypted
 off-host copy of the current KVM4 backup as well.
 
@@ -436,6 +439,17 @@ systemctl list-timers seemplify-runner-cache.timer seemplify-storage-maintenance
 The `Hostinger storage policy` workflow tests and installs this policy without
 recreating application containers. Its deployed Git SHA is recorded in
 `/opt/seemplify/deploy/hostinger/storage-policy.revision`.
+
+On 22 October 2026, the replacement backup passed MongoDB, PostgreSQL, MariaDB,
+Redis, ArangoDB, Weaviate and private-file recovery checks, including two managed
+CVs and nine private references. Retention removed 18 old daily snapshots,
+205 old source archives and 12 old gateway archives, retaining one complete
+daily backup and one archive per deployment category. Together with retiring
+the migration bundles, available disk space increased from approximately
+31 GiB to 89 GiB (84% used to 54%). The encrypted off-host copy was fully
+decrypted and all 31 members checked against the backup manifest. Private proof
+is under the sibling access workspace's `private-storage-policy-20261022` folder;
+server cleanup proof is under `/var/lib/seemplify-storage-maintenance`.
 
 The current Cloudflare token is DNS-only and receives HTTP `403` from the R2
 bucket API. To finish R2, activate R2 without changing DNS, create a dedicated
