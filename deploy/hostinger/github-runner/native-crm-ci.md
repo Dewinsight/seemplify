@@ -17,6 +17,11 @@ endpoint on a different address remains separate.
 The account homes remain mode 0700 and credential files remain private. Runner
 source creation uses umask 022 so Docker build contexts and packaged assets
 remain readable by non-root application users in the resulting images.
+CPU CI accounts and the local execution image set ONNX's supported optional
+asset install flag to `skip`; the npm package already bundles its native CPU
+binding. CPU inference is retained, while unused CUDA downloads are avoided.
+Backend image build stages use that same CPU-only install policy. A synthetic
+native ONNX Identity model returned 42 from input 42 before applying this policy.
 
 `hostinger-native-ci.slice` caps the native agents and their user service
 managers together at 2 CPUs / 7 GiB, no swap. A runner process has a 4-GiB
@@ -36,6 +41,9 @@ admission it also requires 7.5 GiB available RAM and 12 GiB free disk.
 The local driver's optional `compute_lock` config uses that same lock for the
 entire job. Other hosts without this config retain their existing behavior.
 Do not reuse the narrower deployment-mutation lock for this purpose.
+Job-start lease waiting counts toward GitHub's job timeout. Explicit heavy
+workflow timeouts therefore allow 180 minutes for shared-slot queueing plus
+execution; resource ceilings and existing test commands remain in force.
 
 Provision prerequisites (`uidmap`, `rootlesskit`, `slirp4netns`,
 `fuse-overlayfs`, DBus user sessions), a PostgreSQL client, the runner's runtime

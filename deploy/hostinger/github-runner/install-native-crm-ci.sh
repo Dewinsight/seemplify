@@ -43,6 +43,11 @@ for role in backend frontend; do
   usermod -a -G hostinger-compute "$account"
   [[ $(id -nG "$account") != *docker* ]]
   chmod 0700 "$home"
+  # npm propagates user config to lifecycle scripts. Keep bundled CPU bindings,
+  # and avoid downloading GPU-only assets on this CPU-only CI host.
+  printf 'onnxruntime-node-install=skip\nonnxruntime-node-install-cuda=skip\n' >"$home/.npmrc"
+  chown "$account:$account" "$home/.npmrc"
+  chmod 0600 "$home/.npmrc"
   uid=$(id -u "$account")
   grep -q "^$account:" /etc/subuid
   grep -q "^$account:" /etc/subgid
