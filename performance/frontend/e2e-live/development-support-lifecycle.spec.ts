@@ -10,7 +10,7 @@ async function api(request: APIRequestContext, actor: string, method: string, pa
 async function login(page: Page, actor: string, path: string) {
   const entry = path.split('?')[0];
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(entry)}`);
-  await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible();
   if (['manager', 'hr_manager'].includes(actor)) {
     await page.getByRole('button', { name: /^(Personal|Manager|Admin)$/ }).click();
     await page.getByRole('menuitemradio', { name: actor === 'hr_manager' ? /^Admin/ : /^Manager/ }).click();

@@ -2,7 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const productionServer = Boolean(process.env.CI || process.env.PERFORMANCE_E2E_PRODUCTION);
 
-// Unlike playwright.config.ts, this suite never intercepts product API requests.
+// This suite uses real product API responses and persistence. The keyboard
+// regression holds an unchanged HTTP response to reproduce a network race.
 export default defineConfig({
   testDir: './e2e-live', fullyParallel: false, workers: 1, retries: 0, timeout: 120_000,
   reporter: [['line'], ['html', { outputFolder: 'playwright-report/live', open: 'never' }]],

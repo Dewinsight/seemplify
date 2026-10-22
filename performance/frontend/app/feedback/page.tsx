@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -127,6 +127,8 @@ export default function FeedbackPage() {
   const [open, setOpen] = useState(false);
   const [recipient, setRecipient] = useState<PersonOption | null>(null);
   const [search, setSearch] = useState('');
+  const [recipientPickerOpen, setRecipientPickerOpen] = useState(false);
+  const keyboardRecipient = useRef<{ id: string; query: string } | null>(null);
   const searchQuery = search.trim();
   const { users: searchResults, isLoading: searchLoading } = useUserSearch(searchQuery);
   const [type, setType] = useState<FeedbackType>('praise');
@@ -228,6 +230,8 @@ export default function FeedbackPage() {
   const closeDialog = () => {
     if (sending) return;
     setOpen(false);
+    setRecipientPickerOpen(false);
+    keyboardRecipient.current = null;
     setRecipient(null);
     setSearch('');
     setType('praise');
@@ -515,18 +519,51 @@ export default function FeedbackPage() {
             {formError && <Alert severity="error">{formError}</Alert>}
             <Autocomplete
               disabled={Boolean(requestId)}
+              open={recipientPickerOpen}
+              onOpen={() => setRecipientPickerOpen(true)}
+              onClose={() => {
+                setRecipientPickerOpen(false);
+                keyboardRecipient.current = null;
+              }}
               options={suggestions}
               value={recipient}
               inputValue={search}
               onInputChange={(_, value, reason) => {
                 if (reason === 'input' || reason === 'clear') {
+                  keyboardRecipient.current = null;
                   setSearch(value);
                   setRecipient(null);
                 }
               }}
               onChange={(_, value) => {
+                keyboardRecipient.current = null;
                 setRecipient(value);
                 setSearch(value?.name || value?.email || '');
+              }}
+              onHighlightChange={(_, option, reason) => {
+                if (reason === 'keyboard') {
+                  keyboardRecipient.current = option ? { id: option.id, query: searchQuery } : null;
+                } else if (reason === 'mouse' || reason === 'touch') {
+                  keyboardRecipient.current = null;
+                }
+              }}
+              onKeyDown={(event) => {
+                // MUI can clear its highlight when async results replace the
+                // same roster entry. Preserve the user's explicit keyboard
+                // choice only while that person remains in this search.
+                const previous = keyboardRecipient.current;
+                const input = event.target as HTMLInputElement;
+                if (event.key !== 'Enter' || event.nativeEvent.isComposing || !recipientPickerOpen
+                  || input.tagName !== 'INPUT' || input.getAttribute('role') !== 'combobox'
+                  || input.getAttribute('aria-activedescendant') || previous?.query !== searchQuery) return;
+                const option = suggestions.find(person => person.id === previous.id);
+                if (!option) return;
+                (event as typeof event & { defaultMuiPrevented?: boolean }).defaultMuiPrevented = true;
+                event.preventDefault();
+                setRecipient(option);
+                setSearch(option.name || option.email || '');
+                setRecipientPickerOpen(false);
+                keyboardRecipient.current = null;
               }}
               getOptionLabel={(option) => option.name || option.email || ''}
               isOptionEqualToValue={(option, value) => option.id === value.id}

@@ -3,7 +3,7 @@
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 const http = require('node:http');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHmac } = require('node:crypto');
 const signature = require('cookie-signature');
 
 const ORG = 'aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -88,6 +88,7 @@ async function start() {
   Object.assign(process.env, { NODE_ENV: 'test', MONGO_URI: mongo.getUri('performance_acceptance'),
     FRONTEND_URL: 'http://127.0.0.1:5015', SESSION_SECRET: 'disposable-acceptance-only', DISABLE_BACKGROUND_WORKERS: 'true',
     IDP_ISSUER_URL: 'http://127.0.0.1:5014/__no_external_identity', SEEMPLIFY_SHARED_AI_URL: 'http://127.0.0.1:5014/__no_external_ai',
+    PERFORMANCE_AI_SHARED_SECRET: 'disposable-loopback-shared-service-only',
     TIME_ATTENDANCE_PRESENCE_URL: 'http://127.0.0.1:5014/__no_external_presence' });
   const app = require('../../app');
   await mongoose.connection.asPromise();
@@ -108,6 +109,29 @@ async function start() {
   await Promise.all(Object.values(mongoose.models).map((model) => model.createIndexes()));
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1:5014');
+    const calendarPath = '/api/internal/ai/v1/meetings/connection';
+    if (url.pathname === `/__no_external_ai${calendarPath}` && req.method === 'POST') {
+      // Substitute the external calendar account boundary, while the real
+      // product route still performs RBAC, identity resolution and signed HTTP.
+      // This fixture represents a healthy service with no connected calendar.
+      let raw = '';
+      req.setEncoding('utf8');
+      req.on('data', chunk => { raw += chunk; });
+      req.on('end', () => {
+        let identity;
+        try { identity = JSON.parse(raw).identity; } catch { /* denied below */ }
+        const actor = actors.find(value => ids[value] === identity?.sub);
+        const canonical = `${req.headers['x-seemplify-timestamp']}\n${req.headers['x-seemplify-nonce']}\nperformance-management\nPOST\n${calendarPath}\n${raw}`;
+        const expected = createHmac('sha256', process.env.PERFORMANCE_AI_SHARED_SECRET).update(canonical).digest('hex');
+        const valid = actor && identity.email === principal(actor).email
+          && identity.organizationId === principal(actor).currentOrganization.id
+          && req.headers['x-seemplify-service'] === 'performance-management'
+          && req.headers['x-seemplify-signature'] === expected;
+        res.writeHead(valid ? 200 : 403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(valid ? { connected: false, email: null, provider: null } : { error: 'Synthetic calendar identity/signature denied' }));
+      });
+      return;
+    }
     if (url.pathname.startsWith('/__no_external_identity/api/organizations/')) {
       const actor = actors.find(value => req.headers.authorization === `Bearer disposable-acceptance-${value}`);
       const prefix = actor && `/__no_external_identity/api/organizations/${principal(actor).currentOrganization.id}`;

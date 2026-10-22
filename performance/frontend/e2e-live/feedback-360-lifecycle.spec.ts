@@ -7,7 +7,7 @@ async function api(request: APIRequestContext, actor: string, method: string, pa
 }
 async function login(page: Page, actor: string, path = '/feedback') {
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(path)}`);
-  await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible();
 }
 
 test('employee requests anonymous 360 feedback and five real reviewers unlock only anonymous subject responses', async ({ page, request }, info) => {

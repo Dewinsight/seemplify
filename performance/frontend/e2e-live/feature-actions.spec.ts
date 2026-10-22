@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 const date = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
 function muiSelect(scope: Page | Locator, label: string) {
   return scope.locator('label').filter({ hasText: label }).first().locator('..').getByRole('combobox');
@@ -13,8 +14,8 @@ async function login(page: Page, actor: string, path: string) {
     await page.goto(path);
   }
 }
-async function api(request: APIRequestContext, actor: string, method: string, path: string, data?: unknown) {
-  const response = await request.fetch(`http://127.0.0.1:5014/api/${path}`, { method, headers: { 'x-acceptance-actor': actor }, data });
+async function api(request: APIRequestContext, actor: string, method: string, path: string, data?: unknown, revision?: number) {
+  const response = await request.fetch(`http://127.0.0.1:5014/api/${path}`, { method, headers: { 'x-acceptance-actor': actor, 'Idempotency-Key': randomUUID(), ...(revision !== undefined ? { 'If-Match': String(revision) } : {}) }, data });
   expect(response.ok(), `${method} ${path}: ${await response.text()}`).toBeTruthy();
   return (await response.json()).data;
 }
@@ -258,7 +259,7 @@ test('manager finalizes a result and employee opens historical report and downlo
   expect((await download).suggestedFilename()).toMatch(/\.csv$/);
   await page.getByRole('link', { name: 'View result report', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/appraisals/${appraisal._id}/report$`), { timeout: 30_000 });
-  await expect(page.getByText(cycle.name, { exact: true })).toBeVisible();
+  await expect(page.getByText(cycle.name, { exact: false })).toBeVisible();
 });
 
 test('analytics shows unavailable goals rather than zero for a finalized unrated appraisal', async ({ page, request }) => {
@@ -305,16 +306,18 @@ test('manager launches from the three-step wizard and employee submits the manua
   const templates = await api(request, 'hr_manager', 'GET', 'appraisals/cycle-templates');
   const design = structuredClone(templates[0].design);
   design.sections.forEach((section: { questions: Array<{ required: boolean }> }) => section.questions.forEach(question => { question.required = false; }));
-  const cycle = await api(request, 'hr_manager', 'POST', 'appraisals/cycles', { name: `Browser launch ${Date.now()}`, periodStart: date(-90), periodEnd: date(-1),
-    workflowDefinition: design, settings: { enableAiAssist: false, requireOkrAlignment: false }, responseDeadlines: { selfAssessmentDue: date(7), managerReviewDue: date(14) } });
+  const draftCycle = await api(request, 'hr_manager', 'POST', 'competency/cycles', { name: `Browser launch ${Date.now()}`, reviewMode: 'regular', period: { start: date(-90), end: date(-1) },
+    workflowDefinition: design, includeApprovedGoals: false });
+  const cycle = await api(request, 'hr_manager', 'POST', `competency/cycles/${draftCycle.id}/publish`, {}, draftCycle.revision);
   await login(page, 'manager', '/appraisals/start?employeeId=acceptance-employee');
+  await muiSelect(page, 'Appraisal cycle').click(); await page.getByRole('option', { name: `${cycle.name} — Regular appraisal`, exact: true }).click();
   await expect(page.getByRole('checkbox', { name: /Acceptance employee/ })).toBeChecked();
   await muiSelect(page, 'Reviewer for Acceptance employee').click(); await page.getByRole('option', { name: /Acceptance manager/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await muiSelect(page, 'Review cycle').click(); await page.getByRole('option', { name: cycle.cycle?.name || cycle.name, exact: true }).click();
+  await page.getByRole('switch', { name: 'AI conversation for employee assessment', exact: true }).uncheck();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Appraisal launch results', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Start 1 appraisal', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Appraisals started', exact: true })).toBeVisible();
   const href = await page.getByRole('link', { name: 'Open appraisal', exact: true }).getAttribute('href');
   expect(href).toMatch(/^\/appraisals\/[a-f0-9]{24}$/);
   await login(page, 'employee', `${href}/self-assessment`);

@@ -5,7 +5,7 @@ const hrRoles = new Set(['hr_manager', 'admin', 'owner']);
 const managerRoles = new Set(['team_lead', 'manager', 'department_head', ...hrRoles]);
 async function login(page: Page, actor: string, path = '/recognition') {
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(path)}`);
-  await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible();
 }
 for (const actor of actors) {
   test(`${actor}: real colleague picker, private persistence and audience recovery`, async ({ page }) => {
@@ -124,6 +124,9 @@ for (const actor of actors) {
       ]);
       if (path === '/team') {
         await expect(page.getByRole('button', { name: 'All Members', exact: true })).toBeVisible();
+      }
+      if (path === '/one-on-ones' && managerRoles.has(actor)) {
+        await expect(page.getByText('No verified calendar connected to your account.', { exact: true })).toBeVisible();
       }
       await expect(page.locator('main').getByRole('heading').first(), path).toBeVisible();
       await expect(page.getByText('Application error: a client-side exception has occurred', { exact: false })).toHaveCount(0);

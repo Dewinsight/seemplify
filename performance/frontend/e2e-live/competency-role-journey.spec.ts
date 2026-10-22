@@ -113,7 +113,7 @@ test('admin configures a role; selected manager assesses; employee supplies evid
     await expect(admin).toHaveURL(/\/competency\/cycles\/[a-f0-9]{24}$/);
     await admin.getByText('Review', { exact: true }).click();
     await admin.getByRole('button', { name: 'Check readiness', exact: true }).click();
-    await expect(admin.getByText('Configuration is valid. Role mappings, native levels, scales, weights and suitability bands have been checked.', { exact: true })).toBeVisible();
+    await expect(admin.getByText('Configuration is valid and ready to publish.', { exact: true })).toBeVisible();
     await admin.getByRole('button', { name: 'Publish cycle', exact: true }).click();
     await admin.getByRole('dialog').getByRole('button', { name: 'Publish cycle', exact: true }).click();
     await expect(admin.getByText('Cycle published. Select it when starting an appraisal.', { exact: true })).toBeVisible();

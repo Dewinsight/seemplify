@@ -9,7 +9,7 @@ async function api(request: APIRequestContext, actor: string, method: string, pa
 async function openGoals(page: Page, actor: string, period: string, approvals = false) {
   const path = `/okrs${approvals ? '?view=approvals' : ''}`;
   await page.goto(`http://127.0.0.1:5014/__test/login/${actor}?path=${encodeURIComponent(path)}`);
-  await expect(page.getByRole('button', { name: 'A', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible();
   if (actor === 'manager') {
     if ((page.viewportSize()?.width || 1280) < 1024) {
       await page.getByRole('button', { name: 'Open menu', exact: true }).click();
