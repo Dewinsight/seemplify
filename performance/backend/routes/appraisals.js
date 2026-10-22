@@ -3954,7 +3954,15 @@ router.post('/:appraisalId/chat', requireAuth, async (req, res) => {
 // =============================================
 
 // Upload document
-router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/:appraisalId/documents', requireAuth, (req, res, next) => {
+  upload.single('file')(req, res, error => {
+    if (!error) return next();
+    removeRejectedUpload(req.file);
+    const tooLarge = error.code === 'LIMIT_FILE_SIZE';
+    return res.status(tooLarge ? 413 : 422).json({ success: false,
+      error: tooLarge ? 'Choose a file no larger than 10 MiB.' : 'Choose a supported file: PDF, DOCX or TXT for a CV; PPTX is also supported for other evidence.' });
+  });
+}, async (req, res) => {
   let storedFile = null;
   try {
     const organizationId = resolveOrganizationId(req);
@@ -3991,6 +3999,19 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
       return res.status(400).json({ success: false, error: 'A document file is required' });
     }
     const fileType = path.extname(file.originalname).slice(1).toLowerCase();
+    const isCv = req.body.category === 'cv';
+    if (isCv && req.body.visibility && req.body.visibility !== 'employee_manager') {
+      removeRejectedUpload(file);
+      return res.status(422).json({ success: false, error: 'A CV must be shared with the employee and authorised reviewer.' });
+    }
+    const fileBytes = await fs.promises.readFile(file.path);
+    if (isCv) {
+      // Reuse the existing bounded document validator. The ordinary appraisal
+      // upload must not depend on a competency feature, role or AI connection.
+      require('../services/competency/fileSafetyService').inspectFile({
+        buffer: fileBytes, originalName: file.originalname, mimeType: file.mimetype
+      });
+    }
     const allowedVisibility = new Set(['employee_only', 'employee_manager', 'all_reviewers', 'hr_only']);
     const requestedVisibility = allowedVisibility.has(req.body.visibility)
       ? req.body.visibility
@@ -4000,7 +4021,7 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
       return res.status(403).json({ success: false, error: 'Only HR can upload HR-only documents' });
     }
 
-    storedFile = await createStorageService().uploadBuffer(await fs.promises.readFile(file.path), {
+    storedFile = await createStorageService().uploadBuffer(fileBytes, {
       fileName: file.originalname,
       mimeType: file.mimetype,
       folder: `performance/appraisals/${appraisal.organizationId}/${appraisal._id}`
@@ -4035,7 +4056,7 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
     });
 
     // Manual mode never queues optional analysis, even if extraction fails.
-    if (req.body.assessmentMode === 'form') document.aiAnalysis.status = 'skipped';
+    if (isCv || req.body.assessmentMode === 'form') document.aiAnalysis.status = 'skipped';
 
     // Extract text if supported
     if (documentExtractionService.isSupported(fileType)) {
@@ -4052,7 +4073,7 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
         };
 
         // Manual uploads keep extraction/storage without optional AI analysis.
-        const aiAssistEnabled = req.body.assessmentMode !== 'form' && await isAiAssistEnabledForAppraisal(appraisal);
+        const aiAssistEnabled = !isCv && req.body.assessmentMode !== 'form' && await isAiAssistEnabledForAppraisal(appraisal);
         if (!aiAssistEnabled) document.aiAnalysis.status = 'skipped';
 
         // Trigger AI analysis
@@ -4098,6 +4119,9 @@ router.post('/:appraisalId/documents', requireAuth, upload.single('file'), async
   } catch (error) {
     removeRejectedUpload(req.file);
     if (storedFile?.storageKey) await createStorageService().remove(storedFile).catch(() => undefined);
+    if (error instanceof require('../contracts/competency').DomainError) {
+      return res.status(error.status).json({ success: false, code: error.code, error: error.message });
+    }
     console.error('Upload document error:', error);
     res.status(500).json({ success: false, error: 'Failed to upload document' });
   }

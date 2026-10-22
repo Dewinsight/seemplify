@@ -62,6 +62,7 @@ const appraisalDocumentSchema = new mongoose.Schema({
   category: {
     type: String,
     enum: [
+      'cv',                    // Optional employee CV for this appraisal
       'achievement_evidence',    // Proof of achievements
       'project_documentation',   // Project deliverables
       'certification',          // Certifications/training

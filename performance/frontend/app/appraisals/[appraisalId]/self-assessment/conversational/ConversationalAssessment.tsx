@@ -108,6 +108,7 @@ interface ReportData {
 
 interface ConversationalAssessmentProps {
   appraisalId: string;
+  evidenceBusy?: boolean;
   onComplete?: () => void;
   onChatGptUnavailable?: (message?: string) => void;
 }
@@ -176,7 +177,7 @@ function mergeCanonicalChatThread(current: Message[], canonical: Message[]) {
   return merged;
 }
 
-export default function ConversationalAssessment({ appraisalId, onComplete, onChatGptUnavailable }: ConversationalAssessmentProps) {
+export default function ConversationalAssessment({ appraisalId, onComplete, onChatGptUnavailable, evidenceBusy = false }: ConversationalAssessmentProps) {
   const theme = useTheme();
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -519,7 +520,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
 
   // Submit report
   const handleSubmitReport = async () => {
-    if (!report) return;
+    if (!report || evidenceBusy) return;
 
     setIsSubmitting(true);
 
@@ -646,6 +647,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
           onSubmit={handleSubmitReport}
           onRegenerate={generateReport}
           isSubmitting={isSubmitting}
+          submitDisabled={evidenceBusy}
           isRegenerating={isRegenerating}
           requireSelfRating={requireSelfRating}
         />

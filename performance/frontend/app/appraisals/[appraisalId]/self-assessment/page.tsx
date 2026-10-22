@@ -121,6 +121,12 @@ function SelfAssessmentContent() {
     query.set('assessmentMode', 'form');
     router.replace(`${pathname}?${query.toString()}`, { scroll: false });
   };
+  const refreshDocuments = async () => {
+    // SWR's revalidation-only mutate can retain stale data on a failed GET.
+    // Fetch explicitly so the uploader can distinguish saved-but-not-refreshed.
+    const response = await api.get(`/appraisals/${appraisalId}`);
+    return mutate(response.data.data, { revalidate: false });
+  };
   const [manualForm, setManualForm] = useState<ManualSelfAssessmentForm>({
     overallSummary: EMPTY_SUMMARY,
     overallSelfRating: null,
@@ -129,6 +135,7 @@ function SelfAssessmentContent() {
   });
   const [saving, setSaving] = useState(false);
   const [documentsBusy, setDocumentsBusy] = useState(false);
+  const [cvBusy, setCvBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const customSectionsRef = useRef<CustomAssessmentSectionsHandle>(null);
   const draftBaseline = useRef<AppraisalDraftBaseline<ManualSelfAssessmentForm> | null>(null);
@@ -333,7 +340,10 @@ function SelfAssessmentContent() {
         </Alert>
       )}
 
-      <AppraisalCvEvidence appraisalId={appraisalId} />
+      <AppraisalCvEvidence appraisalId={appraisalId}
+        preferFallback={appraisal.documents?.some((document: { category?: string }) => document.category === 'cv')}
+        fallback={<AppraisalDocuments key={`cv-${appraisalId}`} kind="cv" appraisalId={appraisalId} documents={appraisal.documents}
+          onChanged={refreshDocuments} disabled={saving || submitting || documentsBusy} onBusyChange={setCvBusy} />} />
 
       {conversationSelected ? (
         <Fade in>
@@ -342,6 +352,7 @@ function SelfAssessmentContent() {
               {({ requireChatGptConnection }) => (
                 <ConversationalAssessment
                   appraisalId={appraisalId}
+                  evidenceBusy={cvBusy || documentsBusy}
                   onComplete={handleConversationComplete}
                   onChatGptUnavailable={requireChatGptConnection}
                 />
@@ -363,8 +374,8 @@ function SelfAssessmentContent() {
               This appraisal uses a manual assessment form. Complete and submit your self-assessment here; a ChatGPT connection is not required.
             </Alert>
 
-            <AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate}
-              disabled={saving || submitting} onBusyChange={setDocumentsBusy} />
+            <AppraisalDocuments key={appraisalId} excludeCv appraisalId={appraisalId} documents={appraisal.documents} onChanged={refreshDocuments}
+              disabled={saving || submitting || cvBusy} onBusyChange={setDocumentsBusy} />
 
             <Card sx={{ mb: 3 }}>
               <CardContent>
@@ -578,7 +589,7 @@ function SelfAssessmentContent() {
                 variant="outlined"
                 startIcon={saving ? <CircularProgress size={16} /> : <Save />}
                 onClick={() => persistManualAssessment(false)}
-                disabled={saving || submitting || documentsBusy}
+                disabled={saving || submitting || documentsBusy || cvBusy}
               >
                 Save Draft
               </Button>
@@ -587,7 +598,7 @@ function SelfAssessmentContent() {
                 color="success"
                 startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <Send />}
                 onClick={() => persistManualAssessment(true)}
-                disabled={saving || submitting || documentsBusy}
+                disabled={saving || submitting || documentsBusy || cvBusy}
               >
                 Submit Self-Assessment
               </Button>

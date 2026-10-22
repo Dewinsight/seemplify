@@ -52,6 +52,7 @@ interface ReportPreviewProps {
   onSubmit: () => Promise<void>;
   onRegenerate: () => Promise<void>;
   isSubmitting: boolean;
+  submitDisabled?: boolean;
   isRegenerating: boolean;
   requireSelfRating?: boolean;
 }
@@ -236,6 +237,7 @@ export default function ReportPreview({
   onSubmit,
   onRegenerate,
   isSubmitting,
+  submitDisabled = false,
   isRegenerating,
   requireSelfRating = true
 }: ReportPreviewProps) {
@@ -580,7 +582,7 @@ export default function ReportPreview({
           size="large"
           startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <Send />}
           onClick={onSubmit}
-          disabled={isSubmitting || isRegenerating || (requireSelfRating && !overallSelfRating)}
+          disabled={submitDisabled || isSubmitting || isRegenerating || (requireSelfRating && !overallSelfRating)}
           sx={{ borderRadius: 999, width: { xs: '100%', sm: 'auto' }, px: 3 }}
         >
           Submit Self-Assessment

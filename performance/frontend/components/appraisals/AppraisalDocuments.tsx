@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Paper, Stack, Typography } from '@mui/material';
 import api from '@/lib/api';
 import { useUserContext } from '@/lib/hooks';
@@ -11,6 +11,8 @@ interface AppraisalDocument {
   originalName: string;
   status?: string;
   uploadedBy?: { userId?: string };
+  category?: string;
+  textExtraction?: { status?: string; extractedText?: string; wordCount?: number };
 }
 
 interface Props {
@@ -20,13 +22,15 @@ interface Props {
   readOnly?: boolean;
   onChanged: () => Promise<unknown>;
   onBusyChange?: (busy: boolean) => void;
+  kind?: 'cv' | 'supporting';
+  excludeCv?: boolean;
 }
 
 function errorMessage(error: unknown, fallback: string) {
   return (error as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
 }
 
-export default function AppraisalDocuments({ appraisalId, documents = [], disabled = false, readOnly = false, onChanged, onBusyChange }: Props) {
+export default function AppraisalDocuments({ appraisalId, documents = [], disabled = false, readOnly = false, onChanged, onBusyChange, kind = 'supporting', excludeCv = false }: Props) {
   const { user } = useUserContext();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -34,24 +38,42 @@ export default function AppraisalDocuments({ appraisalId, documents = [], disabl
   const [error, setError] = useState('');
   const [uploadFailed, setUploadFailed] = useState(false);
   const [remove, setRemove] = useState<AppraisalDocument | null>(null);
-  const visibleDocuments = documents.filter(document => document && document._id && document.status !== 'deleted');
+  const [savedDocument, setSavedDocument] = useState<AppraisalDocument | null>(null);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const [success, setSuccess] = useState('');
+  const isCv = kind === 'cv';
+  useEffect(() => {
+    if (savedDocument && documents.some(document => document._id === savedDocument._id)) setSavedDocument(null);
+  }, [documents, savedDocument]);
+  const retained = documents.filter(document => document && document._id && document.status !== 'deleted');
+  if (savedDocument && !retained.some(document => document._id === savedDocument._id)) retained.push(savedDocument);
+  const visibleDocuments = retained.filter(document => isCv ? document.category === 'cv' : !excludeCv || document.category !== 'cv');
   const blocked = disabled || Boolean(busy);
   const begin = (action: string) => { setBusy(action); setError(''); onBusyChange?.(true); };
   const finish = () => { setBusy(''); onBusyChange?.(false); };
+  const refresh = async () => {
+    try { await onChanged(); setRefreshFailed(false); }
+    catch { setRefreshFailed(true); setError('The file was saved, but the list could not be refreshed. Refresh the list to check it.'); }
+  };
 
   const upload = async () => {
     if (!file || blocked || readOnly) return;
-    if (file.size > 10 * 1024 * 1024) { setError('Choose a document no larger than 10 MB.'); return; }
+    if (!file.size || file.size > 10 * 1024 * 1024) { setError('Choose a non-empty file no larger than 10 MiB.'); return; }
+    if (isCv && !/\.(pdf|docx|txt)$/i.test(file.name)) { setError('Choose a PDF, DOCX or TXT file for your CV.'); return; }
     begin('upload');
+    setSuccess('');
     try {
       const body = new FormData();
       body.append('file', file);
       body.append('visibility', 'employee_manager');
       body.append('assessmentMode', 'form');
-      await api.post(`/appraisals/${appraisalId}/documents`, body, { headers: { 'Content-Type': undefined } });
+      if (isCv) body.append('category', 'cv');
+      const response = await api.post(`/appraisals/${appraisalId}/documents`, body, { headers: { 'Content-Type': undefined } });
+      setSavedDocument(response.data.data);
       setFile(null);
       setUploadFailed(false);
-      await onChanged();
+      setSuccess(isCv ? 'CV saved. Your reviewer can use it as supporting evidence.' : 'Document saved.');
+      await refresh();
     } catch (requestError) {
       setUploadFailed(true);
       setError(errorMessage(requestError, 'Failed to upload document. Please retry.'));
@@ -80,37 +102,45 @@ export default function AppraisalDocuments({ appraisalId, documents = [], disabl
     begin(`remove-${remove._id}`);
     try {
       await api.delete(`/appraisals/${appraisalId}/documents/${remove._id}`);
+      if (savedDocument?._id === remove._id) setSavedDocument(null);
       setRemove(null);
+      setSuccess('');
       await onChanged();
     } catch (requestError) { setError(errorMessage(requestError, 'Could not remove this document. Please retry.')); }
     finally { finish(); }
   };
 
   return <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-    <Typography variant="h6" component="h2" fontWeight={600}>Supporting documents</Typography>
+    <Typography variant="h6" component="h2" fontWeight={600}>{isCv ? 'CV (optional)' : 'Supporting documents'}</Typography>
     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-      {readOnly ? 'Retained supporting documents available to your role. Download access follows each document’s original audience restrictions.'
+      {isCv ? 'Would you like to add your current CV? Your reviewer can use it alongside your self-assessment. You can continue without one.'
+        : readOnly ? 'Retained supporting documents available to your role. Download access follows each document’s original audience restrictions.'
         : 'Documents uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.'}
     </Typography>
     {error && !remove && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    {success && <Alert severity="success" role="status" sx={{ mb: 2 }}>{success}</Alert>}
+    {refreshFailed && <Button disabled={blocked} onClick={async () => { begin('refresh'); await refresh(); finish(); }}>Refresh file list</Button>}
     <Stack spacing={1.5}>
-      {visibleDocuments.length === 0 && <Typography variant="body2" color="text.secondary">No documents attached.</Typography>}
+      {visibleDocuments.length === 0 && <Typography variant="body2" color="text.secondary">{isCv ? 'No CV uploaded. You can continue without one.' : 'No documents attached.'}</Typography>}
       {visibleDocuments.map(document => <Stack key={document._id} role="group" aria-label={document.originalName}
         direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1 }}>
-        <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{document.originalName}</Typography>
+        <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}><Typography variant="body2">{document.originalName}{!isCv && document.category === 'cv' ? ' · CV' : ''}</Typography>
+          {isCv && <Typography variant="body2" color="text.secondary">{document.textExtraction?.status === 'completed' && (document.textExtraction.extractedText?.trim() || (document.textExtraction.wordCount || 0) > 0) ? 'Ready for assessment analysis' : ['failed', 'completed'].includes(document.textExtraction?.status || '') ? 'Text could not be read. Your reviewer can download the CV; try a text-based file for AI analysis.' : 'Text processing has not completed. Refresh the list to check it.'}</Typography>}
+        </Box>
         <Stack direction="row" gap={1} flexWrap="wrap">
-          <Button size="small" disabled={blocked} onClick={() => void download(document)}>Download document</Button>
-          {!readOnly && [user?.id, user?.sub].filter(Boolean).includes(document.uploadedBy?.userId) && <Button size="small" color="error" disabled={blocked} onClick={() => { setError(''); setRemove(document); }}>Remove document</Button>}
+          <Button size="small" disabled={blocked} onClick={() => void download(document)}>{isCv ? 'Download CV' : 'Download document'}</Button>
+          {!readOnly && [user?.id, user?.sub].filter(Boolean).includes(document.uploadedBy?.userId) && <Button size="small" color="error" disabled={blocked} onClick={() => { setError(''); setRemove(document); }}>{isCv ? 'Remove CV' : 'Remove document'}</Button>}
         </Stack>
       </Stack>)}
       {!readOnly && <Box>
-        <Button variant="outlined" disabled={blocked} onClick={() => input.current?.click()}>Choose document</Button>
-        <input ref={input} type="file" hidden aria-label="Supporting document" accept=".pdf,.docx,.txt,.pptx" onChange={event => {
+        <Button variant="outlined" disabled={blocked} onClick={() => input.current?.click()}>{isCv ? 'Choose CV file' : 'Choose document'}</Button>
+        <input ref={input} type="file" hidden disabled={blocked} aria-label={isCv ? 'Choose CV file' : 'Supporting document'} accept={isCv ? '.pdf,.docx,.txt' : '.pdf,.docx,.txt,.pptx'} onChange={event => {
           setFile(event.target.files?.[0] || null); event.target.value = ''; setError(''); setUploadFailed(false);
         }} />
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, overflowWrap: 'anywhere' }}>{file?.name || 'PDF, DOCX, TXT or PPTX · up to 10 MB'}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, overflowWrap: 'anywhere' }}>{file?.name || (isCv ? 'PDF, DOCX or TXT · up to 10 MiB' : 'PDF, DOCX, TXT or PPTX · up to 10 MB')}</Typography>
+        {isCv && <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Shared with you and authorised reviewers. Uploading does not change your score or start AI processing.</Typography>}
       </Box>}
-      {!readOnly && file && <Box><Button variant="contained" disabled={blocked} onClick={() => void upload()}>{busy === 'upload' ? 'Uploading…' : uploadFailed ? 'Retry upload' : 'Upload document'}</Button></Box>}
+      {!readOnly && file && <Box><Button variant="contained" disabled={blocked} onClick={() => void upload()}>{busy === 'upload' ? 'Uploading…' : uploadFailed ? 'Retry upload' : isCv ? 'Upload CV' : 'Upload document'}</Button></Box>}
     </Stack>
     <Dialog open={Boolean(remove)} onClose={() => { if (!busy) setRemove(null); }} fullWidth maxWidth="xs">
       <DialogTitle>Remove document</DialogTitle>

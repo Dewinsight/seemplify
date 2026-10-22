@@ -112,7 +112,7 @@ test('denied appraisal link never fetches another assessment and offers a read r
   await page.goto('/appraisals/appraisal/self-assessment?assessmentMode=form');
   await expect(page.getByText(/CV evidence could not be loaded/)).toBeVisible();
   expect(state.reads()).toBe(0);
-  await expect(page.getByLabel('Choose CV file', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Choose CV file', exact: true })).toBeVisible();
   state.allowRead(); await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'CV (optional)', exact: true })).toBeVisible();
 });
@@ -132,8 +132,7 @@ test('manager can optionally request a CV and the launch confirmation and link r
   const manager = { id: 'manager-1', sub: 'manager-1', name: 'Alex Morgan', email: 'alex@example.test' };
   const organization = { id: 'org-1', name: 'Atlas Fictional QA', role: 'employee' };
   const teams = [{ id: 'team-1', name: 'Product', organizationId: organization.id, role: 'line_manager', isManager: true }];
-  const linkBodies: Record<string, unknown>[] = [];
-  const validations: { assignments: { cvRequested?: boolean }[] }[] = [];
+  const launches: { cycleRevision: number; assignments: { participantId: string; reviewerId: string; roleVersionId: string; cvRequested: boolean }[] }[] = [];
   await page.clock.setFixedTime(new Date('2026-10-20T12:00:00Z'));
   await page.addInitScript(() => { localStorage.setItem('accessToken', 'synthetic-cv-launch-contract'); localStorage.setItem('performance-workspace:org-1:manager-1', 'manager'); });
   await page.route('**/__mock-api/**', async route => {
@@ -143,31 +142,31 @@ test('manager can optionally request a CV and the launch confirmation and link r
     if (path === '/user/context') data = { user: manager, role: { name: 'line_manager', isManager: true, isHRAdmin: false }, organization, teams, currentTeam: teams[0], features: { canonicalAppraisals: true }, stats: {} };
     if (path === '/user/current-team') data = { currentTeam: teams[0], availableTeams: teams };
     if (path === '/appraisals/colleague-roster') data = { employees: [{ userId: 'employee-1', name: 'Jordan Lee', email: 'jordan@example.test', isSelectableForAppraisal: true, reviewerOptions: [{ userId: manager.id, name: manager.name, role: 'team_manager' }] }] };
-    if (path === '/appraisals/cycle-templates') data = [{ id: 'balanced_performance', name: 'Balanced performance review', version: 1, description: 'Review completed work.', design: { version: 1, scoring: { goalsWeight: 0, competenciesWeight: 100 }, stages: {}, sections: [{ id: 'competencies', type: 'competencies', title: 'Competency ratings', scored: true, weight: 100, questions: [], respondent: 'both', required: true }] } }];
-    if (path === '/competency/bootstrap') data = { enabled: true, capabilities: { assessmentLaunch: true }, people: [], roles: [{ id: 'role', versionId: 'role-v2', ...role, status: 'published' }], frameworks: [], strategies: [], cycles: [{ id: 'competency-cycle', name: 'Competency pilot', revision: 3, status: 'published', roleVersionIds: ['role-v2'] }], settings: {} };
-    if (path === '/competency/appraisal-links/validate') { validations.push(route.request().postDataJSON()); data = { valid: true }; }
-    if (method === 'POST' && path.startsWith('/appraisals/cycles')) data = { launchSummary: { launched: 1, replayed: 0, errors: 0, appraisals: [{ _id: 'created-review', employee: { userId: 'employee-1', name: 'Jordan Lee' }, manager: { name: manager.name }, status: 'self_assessment_pending', createdAt: '2026-10-20T12:00:00Z', cycleId: { name: 'Fictional review' } }], existingAppraisals: [] } };
-    if (path === '/competency/appraisal-links' && method === 'POST') { linkBodies.push(route.request().postDataJSON()); data = { assessmentId: 'assessment', status: 'linked' }; }
+    if (path === '/competency/bootstrap') data = { enabled: true, capabilities: { assessmentLaunch: true }, people: [], roles: [{ id: 'role', versionId: 'role-v2', ...role, status: 'published' }], frameworks: [], strategies: [], cycles: [{ id: 'competency-cycle', name: 'Competency pilot', revision: 3, status: 'published', reviewMode: 'combined', cadence: { type: 'one_time' }, period: { start: '2026-07-01', end: '2026-10-19' }, roleVersionIds: ['role-v2'] }], settings: {} };
+    if (path === '/competency/cycles/competency-cycle/start-appraisals' && method === 'POST') {
+      launches.push(route.request().postDataJSON());
+      data = { launched: 1, replayed: 0, appraisals: [{ _id: 'created-review', employee: { name: 'Jordan Lee' }, manager: { name: manager.name } }], existingAppraisals: [] };
+    }
     await route.fulfill({ json: { success: true, data, meta: { schemaVersion: '1' } } });
   });
   await page.goto('/appraisals/start?employeeId=employee-1');
+  await page.getByRole('combobox', { name: 'Appraisal cycle', exact: true }).click();
+  await page.getByRole('option', { name: 'Competency pilot — Combined appraisal and competency', exact: true }).click();
   await page.getByRole('combobox', { name: /Reviewer for Jordan Lee/ }).click();
   await page.getByRole('option', { name: /Alex Morgan/ }).click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('checkbox', { name: 'Request a CV for this appraisal', exact: true })).toHaveCount(0);
-  await page.getByRole('checkbox', { name: 'Assess against an occupational role', exact: true }).check();
   const request = page.getByRole('checkbox', { name: 'Request a CV for this appraisal', exact: true });
   await expect(request).not.toBeChecked(); await request.check();
-  await page.getByRole('combobox', { name: 'Competency assessment cycle', exact: true }).click();
-  await page.getByRole('option', { name: 'Competency pilot', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Assessment role for Jordan Lee', exact: true }).click();
-  await page.getByRole('option', { name: 'Product operations lead v2', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Role for Jordan Lee', exact: true }).click();
+  await page.getByRole('option', { name: 'Product operations lead · v2', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByText(/CV: Requested/)).toBeVisible();
-  await page.getByRole('button', { name: 'Start appraisals', exact: true }).click();
-  await expect(page.getByText('Role assessment linked. Open this appraisal to review the frozen role expectations.', { exact: true })).toBeVisible();
-  expect(linkBodies).toHaveLength(1); expect(linkBodies[0].cvRequested).toBe(true);
-  expect(validations[0].assignments[0].cvRequested).toBe(true);
+  await expect(page.getByLabel('Period ends', { exact: true })).toHaveValue('2026-10-19');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByText('Optional CV requested for the selected roles.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Start 1 appraisal', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Appraisals started', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open appraisal', exact: true })).toHaveAttribute('href', '/appraisals/created-review');
+  expect(launches).toHaveLength(1); expect(launches[0].cycleRevision).toBe(3);
+  expect(launches[0].assignments).toEqual([{ participantId: 'employee-1', reviewerId: manager.id, roleVersionId: 'role-v2', cvRequested: true }]);
 });
 
 test('participant can download an assessor-uploaded CV without an unusable remove control', async ({ page }) => {
@@ -179,7 +178,7 @@ test('participant can download an assessor-uploaded CV without an unusable remov
   await expect(page.getByRole('button', { name: 'Remove CV', exact: true })).toHaveCount(0);
 });
 
-test('ordinary appraisal stays quiet when competency assessments are disabled', async ({ page }) => {
+test('ordinary appraisal offers a CV without requiring competency assessments', async ({ page }) => {
   const state = await setup(page);
   let checked = false;
   await page.route('**/__mock-api/competency/appraisal-links/appraisal', async route => {
@@ -188,7 +187,7 @@ test('ordinary appraisal stays quiet when competency assessments are disabled', 
   });
   await page.goto('/appraisals/appraisal/self-assessment?assessmentMode=form');
   await expect.poll(() => checked).toBe(true);
-  await expect(page.getByRole('heading', { name: 'CV (optional)', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'CV (optional)', exact: true })).toBeVisible();
   await expect(page.getByText(/CV evidence could not be loaded/)).toHaveCount(0);
   expect(state.reads()).toBe(0);
   await expect(page.getByRole('button', { name: 'Submit Self-Assessment', exact: true })).toBeEnabled();

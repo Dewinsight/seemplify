@@ -76,6 +76,15 @@ async function collect(appraisal, profile = { shared: true }) {
     // counted again as independent evidence or allowed to replace that discussion.
   }
   for (const document of documents) {
+    if (document.category === 'cv') {
+      const text = document.textExtraction?.extractedText;
+      if (document.textExtraction?.status === 'completed' && typeof text === 'string' && text.trim()) {
+        add('cv', `appraisal-document:${id(document)}`, document.originalName, { text, kind: 'file' }, 'ready');
+      } else {
+        gaps.push(`CV text unavailable: ${document.originalName}. File processing must complete with readable text before it can inform analysis.`);
+      }
+      continue;
+    }
     add('documents', id(document), document.originalName, { category: document.category, text: document.textExtraction?.extractedText || '', extractionState: document.textExtraction?.status }, document.textExtraction?.status === 'completed' ? 'ready' : 'pending');
     if (document.textExtraction?.status !== 'completed') gaps.push(`Text extraction pending: ${document.originalName}`);
   }
@@ -143,7 +152,7 @@ async function collect(appraisal, profile = { shared: true }) {
       add(entry.documentType === 'cv' ? 'cv' : 'role_evidence', id(entry), entry.originalName || entry.title || 'Assessment evidence', { text: entry.text, kind: entry.kind, criteria: entry.criterionIds }, 'ready');
     }
   }
-  if (!sources.some(source => source.category === 'cv')) gaps.push('No accessible, processed CV is attached to the linked assessment.');
+  if (!sources.some(source => source.category === 'cv')) gaps.push('No accessible, processed CV is attached to this appraisal or its linked role assessment.');
   sources.sort((left, right) => left.category.localeCompare(right.category) || left.id.localeCompare(right.id));
   const prefixes = { review: 'CONTEXT', employee_assessment: 'SELF', manager_review: 'REVIEWER', review_answers: 'ANSWER', ai_conversation: 'CHAT', documents: 'DOC', meetings: 'MEETING', personal_okrs: 'OKR', aligned_okrs: 'ALIGN', cv: 'CV', role_assessment: 'ROLE', role_evidence: 'EVIDENCE' };
   const referenceCounts = {};
