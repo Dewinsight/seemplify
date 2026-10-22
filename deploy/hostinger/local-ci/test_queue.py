@@ -136,6 +136,8 @@ class QueueTests(unittest.TestCase):
     def test_image_guard_failure_blocks_execution_and_records_failure(self, run):
         run.return_value.stdout = ''
         driver = module.Driver.__new__(module.Driver)
+        driver.config = {}
+        driver.stop = module.threading.Event()
         driver.queue = self.queue
         driver.command = Mock(side_effect=RuntimeError('image unavailable'))
         driver.routes = {'frontend': {'repo': 'Dewinsight/Xplorer-crm'}}

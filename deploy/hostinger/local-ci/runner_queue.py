@@ -22,6 +22,29 @@ SHA = re.compile(r'[0-9a-f]{40}\Z')
 CRM_IMAGE = re.compile(r'(xplorer-(?:crm|backend)-(?:dev|staging)):[a-f0-9]{12,40}\Z')
 
 
+@contextlib.contextmanager
+def compute_slot(config, stop):
+    """Serialize native CI and local releases when a host shares one CPU/RAM slot."""
+    filename = config.get('compute_lock')
+    if not filename:
+        yield
+        return
+    import fcntl
+    fd = os.open(filename, os.O_RDWR | os.O_NOFOLLOW)
+    with os.fdopen(fd, 'a') as lock:
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if stop.wait(.25):
+                    raise InterruptedError('Stopped while waiting for shared compute slot')
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def obsolete_release_images(images, used, service_images, keep=3, minimum_age_hours=24):
     """Select only old CRM releases; protect all container/service/rollback refs."""
     protected = set(used)
@@ -374,6 +397,10 @@ class Driver:
         return workspace
 
     def work(self, job):
+        with compute_slot(self.config, self.stop):
+            self._work(job)
+
+    def _work(self, job):
         root = self.queue.root / 'jobs' / str(job['id'])
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
         label = f"hostinger-ci.job={job['id']}"

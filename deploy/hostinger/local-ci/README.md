@@ -15,7 +15,9 @@ at the exact queued SHA. Without modifying that checked-out tree, the local
 workflow adapter disables remote cache inputs and the Actions-driver condition,
 and delegates workflow concurrency to the durable host queue.
 
-The current KVM2 has 2 vCPU and 8 GiB RAM. One heavy job executes at a time;
+The current CRM application/CI host (`srv2082470`, 72.60.190.15) has 4 vCPU
+and 16 GiB RAM; the physical PostgreSQL primary is on a separate host. One
+heavy local job executes at a time;
 additional accepted revisions remain queued. Each job container is capped at 1.5 vCPU and
 3500 MiB RAM with bridged networking, no swap or host Docker socket. Jobs in the same lane serialize;
 the existing shared host deployment lock also serializes builds, migrations and
@@ -34,6 +36,13 @@ failure for one lane leaves its cursor unchanged and does not stop other lanes.
 The independent BuildKit builder uses 1 CPU / 3 GiB, no swap, max-parallelism=1
 and disk GC limits; builds and migrations share the deployment lock.
 Native lightweight scanner agents are capped separately at .5 CPU / 512 MiB each.
+
+Native CRM validation/image-build workers are separate unprivileged accounts
+with their own rootless Docker engines. The local `compute_lock` setting shares
+one job-lifetime CPU/RAM slot with those workers, including tests before the
+deployment mutation lock is acquired. See
+[native CRM CI operations](../github-runner/native-crm-ci.md). Hosts without
+`compute_lock` retain their existing compute-admission behavior.
 
 The execution image is built locally rather than published in a registry.
 `ensure-image.sh` checks it before service startup and every job, rebuilds a
@@ -103,7 +112,9 @@ existing GitHub OAuth credential also revokes this service's API connection.
 
 ## Current CRM host and recovery
 
-CRM moved on 2026-10-15 to Hostinger KVM2 2065023 / 89.116.229.22.
+CRM's current application/CI host is srv2082470 / 72.60.190.15. The earlier
+Hostinger KVM2 2065023 / 89.116.229.22 now holds the physical PostgreSQL
+primaries; application-side PostgreSQL containers are forwarding/client proxies.
 Canonical URLs use dev-crm.cernel.ng, staging-crm.cernel.ng and their
 dev-crm-api / staging-crm-api counterparts. Historical scripts called the old
 1903452 / 191.215.40.99 host kvm2; it is retained KVM4 rollback storage and
