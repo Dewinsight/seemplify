@@ -27,7 +27,8 @@ EOF
 # This matches the installed production Docker client/daemon, without replacing
 # them or restarting Docker/Swarm. Verify the downloaded extras archive first.
 echo '32dc3dd0d8b512ccf30a7efe84d360b5ade65ac4fec92a2a5ad0fe791da6ab0d  '"$tools/rootless-extras.tgz" | sha256sum -c -
-tar xzf "$tools/rootless-extras.tgz" -C "$tools" --strip-components=1
+tar xzf "$tools/rootless-extras.tgz" -C "$tools" --strip-components=1 \
+  docker-rootless-extras/dockerd-rootless.sh docker-rootless-extras/dockerd-rootless-setuptool.sh
 echo 'c019c608ba2bb009dd673f3230e4d743f36a78d36166c6c2444c05d0aa9ff0d9  '"$tools/docker.tgz" | sha256sum -c -
 tar xzf "$tools/docker.tgz" -C "$tools" --strip-components=1
 # Keep Docker/containerd/runc versions aligned, but use the distribution's
