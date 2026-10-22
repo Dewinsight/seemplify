@@ -132,7 +132,7 @@ test('manager can optionally request a CV and the launch confirmation and link r
   const manager = { id: 'manager-1', sub: 'manager-1', name: 'Alex Morgan', email: 'alex@example.test' };
   const organization = { id: 'org-1', name: 'Atlas Fictional QA', role: 'employee' };
   const teams = [{ id: 'team-1', name: 'Product', organizationId: organization.id, role: 'line_manager', isManager: true }];
-  const launches: { cycleRevision: number; assignments: { participantId: string; reviewerId: string; roleVersionId: string; cvRequested: boolean }[] }[] = [];
+  const launches: { cycleRevision: number; cvRequired: boolean; assignments: { participantId: string; reviewerId: string; roleVersionId: string; cvRequested: boolean }[] }[] = [];
   await page.clock.setFixedTime(new Date('2026-10-20T12:00:00Z'));
   await page.addInitScript(() => { localStorage.setItem('accessToken', 'synthetic-cv-launch-contract'); localStorage.setItem('performance-workspace:org-1:manager-1', 'manager'); });
   await page.route('**/__mock-api/**', async route => {
@@ -152,6 +152,7 @@ test('manager can optionally request a CV and the launch confirmation and link r
   await page.goto('/appraisals/start?employeeId=employee-1');
   await page.getByRole('combobox', { name: 'Appraisal cycle', exact: true }).click();
   await page.getByRole('option', { name: 'Competency pilot — Combined appraisal and competency', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: /^CV requirement\b/ })).toHaveText('Optional');
   await page.getByRole('combobox', { name: /Reviewer for Jordan Lee/ }).click();
   await page.getByRole('option', { name: /Alex Morgan/ }).click();
   const request = page.getByRole('checkbox', { name: 'Request a CV for this appraisal', exact: true });
@@ -162,10 +163,11 @@ test('manager can optionally request a CV and the launch confirmation and link r
   await expect(page.getByLabel('Period ends', { exact: true })).toHaveValue('2026-10-19');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByText('Optional CV requested for the selected roles.', { exact: true })).toBeVisible();
+  await expect(page.getByText('CV: Optional', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Start 1 appraisal', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Appraisals started', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open appraisal', exact: true })).toHaveAttribute('href', '/appraisals/created-review');
-  expect(launches).toHaveLength(1); expect(launches[0].cycleRevision).toBe(3);
+  expect(launches).toHaveLength(1); expect(launches[0].cycleRevision).toBe(3); expect(launches[0].cvRequired).toBe(false);
   expect(launches[0].assignments).toEqual([{ participantId: 'employee-1', reviewerId: manager.id, roleVersionId: 'role-v2', cvRequested: true }]);
 });
 

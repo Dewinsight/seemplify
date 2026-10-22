@@ -35,6 +35,12 @@ const colleagueLaunch = (req) => ['initiator', 'selected'].includes(req.body?.re
 function requireLaunchAccess(req, res, next) {
   return requireManager(req, res, () => requirePermission('review:conduct:direct_reports')(req, res, next));
 }
+function validateCvLaunchPolicy(req, res, next) {
+  if (req.body?.cvRequired !== undefined && typeof req.body.cvRequired !== 'boolean') {
+    return res.status(422).json({ success: false, code: 'INVALID_CV_REQUIREMENT', error: 'Choose whether a CV is required for employee submission.' });
+  }
+  next();
+}
 async function launchParticipants(req, selections) {
   return colleagueLaunch(req) ? resolveColleagueParticipants(req, selections) : resolveLaunchParticipants(req, selections);
 }
@@ -1334,6 +1340,7 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
         goalEvidenceSummary: goalSnapshot.evidenceSummary,
         cycleConfigurationSnapshot: {
           version: 1,
+          cvRequired: req.body?.cvRequired === true,
           ...(flowResult ? { appraisalFlow: flowResult.flow } : {}),
           cycleId: String(cycle._id),
           cycleName: cycle.name,
@@ -1372,6 +1379,7 @@ async function createAppraisalsForCycle(cycle, employees = [], req) {
       appraisal.addAuditLog('appraisal_created', req.session.user, {
         cycleId: cycle._id,
         cycleName: cycle.name,
+        cvRequired: req.body?.cvRequired === true,
         goalSnapshotCount: goalSnapshot.snapshots.length,
         goalSnapshotCutoff: goalSnapshot.evidenceSummary.cutoffAt
       });
@@ -1791,7 +1799,7 @@ router.get('/cycles', requireAuth, async (req, res) => {
 });
 
 // Create new cycle (HR Admin or Manager)
-router.post('/cycles', requireAuth, requireLaunchAccess, async (req, res) => {
+router.post('/cycles', requireAuth, requireLaunchAccess, validateCvLaunchPolicy, async (req, res) => {
   try {
     if (req.body?.appraisalFlow) { const result = appraisalFlow.validateFlow(req.body.appraisalFlow); if (result.errors.length) return res.status(400).json({ success: false, error: result.errors[0], errors: result.errors }); }
     const orgId = resolveOrganizationId(req);
@@ -2078,7 +2086,7 @@ router.patch('/cycles/:cycleId/phase', requireAuth, requireHRAdmin, async (req, 
  * HR Admin launches a cycle - creates appraisals for specified employees
  * This is the starting point of the appraisal flow!
  */
-router.post('/cycles/:cycleId/launch', requireAuth, requireLaunchAccess, async (req, res) => {
+router.post('/cycles/:cycleId/launch', requireAuth, requireLaunchAccess, validateCvLaunchPolicy, async (req, res) => {
   try {
     if (req.body?.appraisalFlow) { const result = appraisalFlow.validateFlow(req.body.appraisalFlow); if (result.errors.length) return res.status(400).json({ success: false, error: result.errors[0], errors: result.errors }); }
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: resolveOrganizationId(req) });
@@ -2170,7 +2178,7 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireLaunchAccess, async (
  * POST /api/appraisals/cycles/:cycleId/launch-for-team
  * Manager can launch appraisals for their direct reports in an active cycle
  */
-router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireLaunchAccess, async (req, res) => {
+router.post('/cycles/:cycleId/launch-for-team', requireAuth, requireLaunchAccess, validateCvLaunchPolicy, async (req, res) => {
   try {
     if (colleagueLaunch(req)) return res.status(400).json({ success: false, error: 'Use the cycle launch endpoint to choose reviewer response deadlines.' });
     const cycle = await AppraisalCycle.findOne({ _id: req.params.cycleId, organizationId: resolveOrganizationId(req) });
@@ -3208,6 +3216,7 @@ router.get('/:appraisalId', requireAuth, async (req, res) => {
     const readableAppraisal = appraisal.toJSON();
     readableAppraisal.documents = visibleAppraisalDocuments(req, appraisal, { isEmployee, canManage: hasManagerAccess, isHR })
       .map(document => document.toJSON());
+    readableAppraisal.cvRequirement = await require('../services/appraisalCvPolicyService').statusFor(appraisal);
     res.json({
       success: true,
       data: readableAppraisal,
@@ -3457,12 +3466,14 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
       });
     }
 
-    const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
     const { selfAssessment = {}, submit, assessmentMode } = req.body;
 
     if (!phaseHasOpened(appraisal.cycleId, 'selfAssessment')) {
       return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
     }
+
+    if (submit) await require('../services/appraisalCvPolicyService').assertSubmissionCv(appraisal);
+    const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
 
     const normalizedSummary = normalizeSelfAssessmentSummary(selfAssessment.overallSummary || {});
     if (submit) {
@@ -3596,6 +3607,7 @@ router.post('/:appraisalId/self-assessment', requireAuth, async (req, res) => {
     if (error?.code === 'INVALID_APPRAISAL_RATING') {
       return res.status(400).json({ success: false, error: error.message });
     }
+    if (error?.code === 'CV_REQUIRED') return res.status(422).json({ success: false, code: error.code, error: error.message });
     console.error('Save self-assessment error:', error);
     res.status(500).json({ success: false, error: 'Failed to save self-assessment' });
   }
@@ -6010,6 +6022,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       return res.status(409).json({ success: false, error: 'Self-assessment has not opened for this cycle' });
     }
 
+    await require('../services/appraisalCvPolicyService').assertSubmissionCv(appraisal);
     ensureConversationAssessmentState(appraisal);
     const aiAssistEnabled = await isAiAssistEnabledForAppraisal(appraisal);
 
@@ -6232,6 +6245,7 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
       }
     });
   } catch (error) {
+    if (error?.code === 'CV_REQUIRED') return res.status(422).json({ success: false, code: error.code, error: error.message });
     console.error('Finalize report error:', error);
     const validationMessage = error?.name === 'ValidationError'
       ? Object.values(error.errors || {}).map((issue) => issue?.message).filter(Boolean).join('; ')

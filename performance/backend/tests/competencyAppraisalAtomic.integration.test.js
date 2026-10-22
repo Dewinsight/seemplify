@@ -31,8 +31,21 @@ function linkedLaunch(pending) {
   const cycleId = String(new mongoose.Types.ObjectId()), versionId = String(new mongoose.Types.ObjectId());
   jest.spyOn(require('../services/competency/libraryService'), 'getPublishedDefinition').mockResolvedValue({ cycleVersion: 1, role: { versionId, name: 'Synthetic pinned role', version: 1 }, criteria: [], definitionHash: 'synthetic-definition' });
   const payload = { cycleId, cycleRevision: 1, assignments: [{ participantId: 'employee', roleVersionId: versionId, assessorIds: ['reviewer'], appraisalId: String(pending._id) }] };
-  return () => assessmentService.launch(ctx, payload, `race-${new mongoose.Types.ObjectId()}`);
+  const launch = () => assessmentService.launch(ctx, payload, `race-${new mongoose.Types.ObjectId()}`);
+  launch.context = ctx;
+  return launch;
 }
+
+test.each([undefined, false, true])('later role linking copies frozen parent CV requirement %s into its workspace definition', async cvRequired => {
+  const { pending } = await fixture({ linked: false });
+  if (cvRequired !== undefined) await Appraisal.updateOne({ _id: pending._id }, { $set: { 'cycleConfigurationSnapshot.cvRequired': cvRequired } });
+  const launch = linkedLaunch(pending);
+  await launch();
+  const linked = await Assessment.findOne({ appraisalId: String(pending._id) }).lean();
+  expect(linked.definitionSnapshot.cvRequired).toBe(cvRequired === true);
+  expect(linked.definitionSnapshot.cvRequested).toBe(false);
+  expect((await service.links(launch.context, String(pending._id))).assessments[0].cvRequired).toBe(cvRequired === true);
+});
 test('linked parent final outcome and competency fence commit atomically', async () => {
   const { pending, assessment } = await fixture();
   await service.saveFinalOutcome(req, pending);

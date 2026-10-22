@@ -41,7 +41,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   await mongoose.connection.db.dropDatabase();
-  const cycle = await Cycle.create({ organizationId: org, name: 'Ordinary review without a role', periodStart: '2026-01-01', periodEnd: '2026-12-31', createdBy: { userId: 'manager' }, settings: { enableAiAssist: true } });
+  const cycle = await Cycle.create({ organizationId: org, name: 'Ordinary review without a role', periodStart: '2026-01-01', periodEnd: '2026-12-31', createdBy: { userId: 'manager' }, settings: { enableAiAssist: true, requireOkrAlignment: false } });
   appraisal = await Appraisal.create({ organizationId: org, cycleId: cycle._id, status: 'self_assessment_in_progress', employee: { userId: 'employee', name: 'Fictional employee', email: 'employee@example.test' }, manager: { userId: 'manager', name: 'Fictional manager', email: 'manager@example.test' } });
   bytesStored = null;
   transport = jest.spyOn(cloudinary.uploader, 'upload_stream').mockImplementation((options, done) => {
@@ -153,4 +153,79 @@ test('blank, private, deleted and cross-tenant CV sources cannot become shared f
   const result = await collect(true);
   expect(result.coverage.counts.cv).toBeUndefined(); expect(result.text).not.toContain('CV SENTINEL');
   expect(result.coverage.gaps.join(' ')).toContain('blank.txt');
+});
+
+const selfReport = () => ({ overallSelfRating: 4, overallSummary: {
+  achievements: 'Delivered the fictional project with clearly documented outcomes.', challenges: 'Resolved an invented dependency through early planning.',
+  learnings: 'Applied a structured approach to fictional delivery.', improvements: 'Improve the next fictional handover using a checklist.', goals: 'Practice the next synthetic capability with measured evidence.'
+} });
+const submit = (mode, extra = {}) => mode === 'form'
+  ? call('post', '/self-assessment').send({ assessmentMode: 'form', submit: true, selfAssessment: selfReport(), ...extra })
+  : call('post', '/conversation/finalize-report').send({ report: selfReport(), ...extra });
+async function requireCv() {
+  await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.enableAiAssist': false } });
+  await Appraisal.updateOne({ _id: appraisal._id }, { $set: { 'cycleConfigurationSnapshot.cvRequired': true } });
+}
+async function linkedCv(overrides = {}) {
+  const assessment = await CompetencyAssessment.create({ organizationId: org, cycleId: String(new mongoose.Types.ObjectId()), appraisalId: String(appraisal._id), participant: { userId: 'employee' }, definitionSnapshot: { role: { name: 'Fictional role' }, criteria: [] } });
+  return require('../models/CompetencyEvidence').create({ organizationId: org, assessmentId: String(assessment._id), participantId: 'employee', documentType: 'cv', kind: 'file', status: 'ready', visibility: 'participant', storageKey: 'private-fictional-cv.txt', originalName: 'cv.txt', mimeType: 'text/plain', size: 100, ...overrides });
+}
+
+test.each(['form', 'conversation'])('mandatory CV blocks %s submission before changing any appraisal state or calling AI', async mode => {
+  await requireCv();
+  const analyze = jest.spyOn(ai, 'analyzeSelfAssessment').mockResolvedValue({});
+  const before = await Appraisal.collection.findOne({ _id: appraisal._id });
+  const response = await submit(mode, { cvRequired: false, cycleConfigurationSnapshot: { cvRequired: false } }).expect(422);
+  expect(response.body).toMatchObject({ success: false, code: 'CV_REQUIRED' }); expect(response.body.error).toContain('Upload your CV');
+  expect(await Appraisal.collection.findOne({ _id: appraisal._id })).toEqual(before);
+  expect(analyze).not.toHaveBeenCalled(); expect(ai.analyzeDocument).not.toHaveBeenCalled();
+  expect((await call('get', '').expect(200)).body.data.cvRequirement).toEqual({ required: true, fulfilled: false });
+});
+
+test('mandatory CV still allows a draft and ignores client attempts to change the frozen policy', async () => {
+  await requireCv();
+  await call('post', '/self-assessment').send({ assessmentMode: 'form', submit: false, selfAssessment: { overallSummary: { achievements: 'A fictional saved draft without any CV.' } }, cvRequired: false }).expect(200);
+  const saved = await Appraisal.findById(appraisal._id);
+  expect(saved.selfAssessment.submittedAt).toBeUndefined(); expect(saved.selfAssessment.overallSummary.achievements).toContain('saved draft');
+  expect(saved.cycleConfigurationSnapshot.cvRequired).toBe(true);
+});
+
+test.each(['form', 'conversation'])('legacy optional CV does not block %s submission without a file', async mode => {
+  await Cycle.updateOne({ _id: appraisal.cycleId }, { $set: { 'settings.enableAiAssist': false } });
+  expect((await call('get', '').expect(200)).body.data.cvRequirement).toEqual({ required: false, fulfilled: false });
+  await submit(mode).expect(200); expect((await Appraisal.findById(appraisal._id)).selfAssessment.submittedAt).toBeTruthy();
+});
+
+test.each(['form', 'conversation'])('ordinary CV with failed extraction satisfies mandatory %s upload without fabricating analysis coverage', async mode => {
+  await requireCv(); jest.spyOn(extraction, 'extractText').mockRejectedValue(new Error('Fictional text extraction unavailable'));
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  await upload().expect(201);
+  expect((await call('get', '').expect(200)).body.data.cvRequirement).toEqual({ required: true, fulfilled: true });
+  expect((await collect()).coverage.counts.cv).toBeUndefined();
+  await submit(mode).expect(200); expect((await Appraisal.findById(appraisal._id)).selfAssessment.submittedAt).toBeTruthy();
+  expect(ai.analyzeDocument).not.toHaveBeenCalled();
+});
+
+test.each(['form', 'conversation'])('retained participant-visible linked CV satisfies mandatory %s upload', async mode => {
+  await requireCv(); await linkedCv();
+  expect((await call('get', '').expect(200)).body.data.cvRequirement).toEqual({ required: true, fulfilled: true });
+  await submit(mode).expect(200); expect((await Appraisal.findById(appraisal._id)).selfAssessment.submittedAt).toBeTruthy();
+});
+
+test.each([
+  { visibility: 'assessors' }, { status: 'deleted' }, { retention: { expiresAt: new Date('2020-01-01') } },
+  { source: { withdrawnAt: new Date() } }, { participantId: 'outsider' }, { organizationId: 'foreign-org' },
+  { documentType: 'supporting_evidence' }, { kind: 'manual' }, { storageKey: '' }
+])('inaccessible or non-CV linked evidence cannot satisfy a mandatory CV (%j)', async overrides => {
+  await requireCv(); await linkedCv(overrides);
+  await submit('form').expect(422); await submit('conversation').expect(422);
+  expect((await call('get', '').expect(200)).body.data.cvRequirement.fulfilled).toBe(false);
+});
+
+test('ordinary supporting files and deleted CVs do not satisfy the dedicated requirement', async () => {
+  await requireCv();
+  const response = await call('post', '/documents').field('assessmentMode', 'form').attach('file', bytes, { filename: 'evidence.txt', contentType: 'text/plain' }).expect(201);
+  expect(response.body.data.category).toBe('other'); await submit('form').expect(422);
+  const cv = await upload().expect(201); await call('delete', `/documents/${cv.body.data._id}`).expect(200);
+  await submit('form').expect(422); await submit('conversation').expect(422);
 });

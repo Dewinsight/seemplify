@@ -1452,8 +1452,8 @@ export default function ManagerReviewWorkspace({ embedded = false }: { embedded?
       </Stepper>}
 
       {embedded && <Accordion variant="outlined" sx={{ mb: 3 }}><AccordionSummary expandIcon={<ExpandMore />}>Employee submission and review context</AccordionSummary><AccordionDetails>{renderSelfAssessmentReview()}</AccordionDetails></Accordion>}
-      {embedded && <Accordion variant="outlined" sx={{ mb: 3 }}><AccordionSummary expandIcon={<ExpandMore />}>CV & supporting documents</AccordionSummary><AccordionDetails><AppraisalCvEvidence appraisalId={appraisalId} /><AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate} readOnly={!isAssignedReviewer && !isHRAdmin} disabled={saving || submitting} onBusyChange={setDocumentsBusy} /></AccordionDetails></Accordion>}
-      {!embedded && <><AppraisalCvEvidence appraisalId={appraisalId} />
+      {embedded && <Accordion variant="outlined" sx={{ mb: 3 }}><AccordionSummary expandIcon={<ExpandMore />}>CV & supporting documents</AccordionSummary><AccordionDetails><AppraisalCvEvidence appraisalId={appraisalId} required={appraisal.cycleConfigurationSnapshot?.cvRequired === true} /><AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate} readOnly={!isAssignedReviewer && !isHRAdmin} disabled={saving || submitting} onBusyChange={setDocumentsBusy} /></AccordionDetails></Accordion>}
+      {!embedded && <><AppraisalCvEvidence appraisalId={appraisalId} required={appraisal.cycleConfigurationSnapshot?.cvRequired === true} />
       <AppraisalDocuments key={appraisalId} appraisalId={appraisalId} documents={appraisal.documents} onChanged={mutate}
         readOnly={!isAssignedReviewer && !isHRAdmin} disabled={saving || submitting} onBusyChange={setDocumentsBusy} /></>}
 

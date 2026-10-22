@@ -23,7 +23,7 @@ function receiptRecord(appraisal) {
   // Persist a bounded receipt, never another reviewer's draft or hundreds of
   // repeated framework snapshots in the idempotency document.
   return { _id: String(appraisal._id), cycleId: String(appraisal.cycleId), employee: { userId: appraisal.employee.userId, name: appraisal.employee.name }, manager: { userId: appraisal.manager.userId, name: appraisal.manager.name }, status: appraisal.status,
-    cycleConfigurationSnapshot: { cycleName: snapshot.cycleName, periodStart: snapshot.periodStart, periodEnd: snapshot.periodEnd, reviewMode: snapshot.reviewMode, assessmentCycleId: snapshot.assessmentCycleId, occurrenceKey: snapshot.occurrenceKey } };
+    cycleConfigurationSnapshot: { cycleName: snapshot.cycleName, periodStart: snapshot.periodStart, periodEnd: snapshot.periodEnd, reviewMode: snapshot.reviewMode, assessmentCycleId: snapshot.assessmentCycleId, occurrenceKey: snapshot.occurrenceKey, cvRequired: snapshot.cvRequired === true } };
 }
 
 function workflow(cycle, definition) {
@@ -50,7 +50,8 @@ function workflow(cycle, definition) {
 
 async function prepare(ctx, cycleId, input) {
   auth.requireAction(ctx, 'assessment.launch');
-  cleanObject(input, ['cycleRevision', 'period', 'assignments', 'responseDeadlines', 'appraisalFlow']);
+  cleanObject(input, ['cycleRevision', 'period', 'assignments', 'responseDeadlines', 'appraisalFlow', 'cvRequired']);
+  if (input.cvRequired !== undefined && typeof input.cvRequired !== 'boolean') fail('INVALID_CV_REQUIREMENT', 'Choose whether a CV is required for employee submission.');
   const cycle = await library.find(Cycle, ctx.organizationId, id(cycleId), { status: 'published' });
   policy.assertUse(ctx, cycle);
   await policy.assertFeature(ctx, cycle);
@@ -88,7 +89,7 @@ async function prepare(ctx, cycleId, input) {
     if (setup.reviewMode !== 'competency' && setup.includeApprovedGoals && !goals.snapshots.length) fail('APPROVED_GOALS_REQUIRED', `Approve aligned goals for ${participant.name} in this review period before starting.`);
     assignments.push({ participant, selection, definition, goals });
   }
-  return { cycle, setup, period, assignments, deadlines: { selfAssessmentDue: selfDue, managerReviewDue: managerDue }, flow: flow.flow };
+  return { cycle, setup, period, assignments, deadlines: { selfAssessmentDue: selfDue, managerReviewDue: managerDue }, flow: flow.flow, cvRequired: input.cvRequired === true };
 }
 
 async function launch(ctx, cycleId, input, key) {
@@ -96,7 +97,7 @@ async function launch(ctx, cycleId, input, key) {
   // Re-validate scope even on a completed idempotency receipt.
   const plan = await prepare(ctx, cycleId, input);
   return auth.operation(ctx, `unified.appraisal.launch:${cycleId}`, key, input, async () => {
-    const { cycle, setup, period, assignments, deadlines, flow } = plan;
+    const { cycle, setup, period, assignments, deadlines, flow, cvRequired } = plan;
     const session = await mongoose.startSession();
     let result;
     try {
@@ -131,10 +132,10 @@ async function launch(ctx, cycleId, input, key) {
             launchContext: { method: 'existing_cycle', createdBy: ctx.actor }, employee: { userId: person.userId, name: person.name, email: person.email, department: person.department || person.departmentName, teamId: person.teamId || person.teamIds?.[0], teamName: person.teamName, jobTitle: person.jobTitle },
             manager: { userId: person.managerId, name: person.managerName, email: person.managerEmail }, status: 'self_assessment_pending', deadlines,
             goals: goals.goalIds, goalSnapshots: goals.snapshots, goalEvidenceSummary: goals.evidenceSummary,
-            cycleConfigurationSnapshot: { version: 1, cycleId: String(run._id), cycleName: cycle.name, assessmentCycleId: cycleId, occurrenceKey: period.key, reviewMode: setup.reviewMode, cadence: setup.cadence, periodStart: run.periodStart, periodEnd: run.periodEnd, ratingScale: clone(run.ratingScale), competencies, settings: clone(run.settings), workflowDefinition: design, appraisalFlow: flow, sourceTemplate: { id: cycle.regularTemplateId || 'balanced_performance', name: 'Unified appraisal cycle', version: cycle.version }, roleDefinition: definition ? clone(definition) : null, capturedAt: new Date() },
-            auditLog: [{ action: 'appraisal_created', performedBy: ctx.actor, timestamp: new Date(), details: { assessmentCycleId: cycleId, occurrenceKey: period.key, reviewMode: setup.reviewMode } }],
+            cycleConfigurationSnapshot: { version: 1, cycleId: String(run._id), cycleName: cycle.name, assessmentCycleId: cycleId, occurrenceKey: period.key, reviewMode: setup.reviewMode, cadence: setup.cadence, cvRequired, periodStart: run.periodStart, periodEnd: run.periodEnd, ratingScale: clone(run.ratingScale), competencies, settings: clone(run.settings), workflowDefinition: design, appraisalFlow: flow, sourceTemplate: { id: cycle.regularTemplateId || 'balanced_performance', name: 'Unified appraisal cycle', version: cycle.version }, roleDefinition: definition ? clone(definition) : null, capturedAt: new Date() },
+            auditLog: [{ action: 'appraisal_created', performedBy: ctx.actor, timestamp: new Date(), details: { assessmentCycleId: cycleId, occurrenceKey: period.key, reviewMode: setup.reviewMode, cvRequired } }],
           }], { session }))[0];
-          if (definition) await Assessment.create([{ organizationId: ctx.organizationId, cycleId, cycleVersion: definition.cycleVersion, cycleRevision: cycle.revision, occurrenceKey: period.key, appraisalId: String(appraisal._id), participant: { userId: person.userId, name: person.name, departmentId: person.departmentId, teamIds: person.teamIds || [] }, assessors: [{ userId: person.managerId, name: person.managerName }], assessorIds: [person.managerId], definitionSnapshot: { ...clone(definition), occurrenceKey: period.key, period: { start: period.start, end: period.end }, cvRequested: selection.cvRequested === true }, items: definition.criteria.map(c => ({ criterionId: c.id, status: 'not_started', rationale: '', evidenceIds: [], reviewedSuggestionIds: [] })), managerFeedback: [], results: [], createdBy: ctx.actor }], { session });
+          if (definition) await Assessment.create([{ organizationId: ctx.organizationId, cycleId, cycleVersion: definition.cycleVersion, cycleRevision: cycle.revision, occurrenceKey: period.key, appraisalId: String(appraisal._id), participant: { userId: person.userId, name: person.name, departmentId: person.departmentId, teamIds: person.teamIds || [] }, assessors: [{ userId: person.managerId, name: person.managerName }], assessorIds: [person.managerId], definitionSnapshot: { ...clone(definition), occurrenceKey: period.key, period: { start: period.start, end: period.end }, cvRequired, cvRequested: selection.cvRequested === true }, items: definition.criteria.map(c => ({ criterionId: c.id, status: 'not_started', rationale: '', evidenceIds: [], reviewedSuggestionIds: [] })), managerFeedback: [], results: [], createdBy: ctx.actor }], { session });
           const employeeAssessment = flow.steps.some(step => step.type === 'selfAssessment');
           for (const eventType of ['appraisal.cycle_launched', ...(employeeAssessment ? ['appraisal.self_assessment_due'] : [])]) await require('../outboxService').recordEvent({
             eventId: `${eventType}:${appraisal._id}`, eventType, organizationId: ctx.organizationId, aggregateType: 'appraisal', aggregateId: String(appraisal._id), actor: ctx.actor,

@@ -48,6 +48,8 @@ test.each(['regular', 'competency', 'combined'])('%s launches one appraisal with
   const result = await unified.launch(ctx(), fixture.cycle.id, input(fixture), crypto.randomUUID());
   expect(result.launched).toBe(1);
   const appraisal = await Appraisal.findById(result.appraisals[0]._id).lean();
+  expect(appraisal.cycleConfigurationSnapshot.cvRequired).toBe(false);
+  expect(result.appraisals[0].cycleConfigurationSnapshot.cvRequired).toBe(false);
   const prompts = getConversationQuestionQueue(appraisal);
   const linked = await Assessment.find({ appraisalId: String(appraisal._id) }).lean();
   expect(linked).toHaveLength(mode === 'regular' ? 0 : 1);
@@ -62,6 +64,25 @@ test.each(['regular', 'competency', 'combined'])('%s launches one appraisal with
   const run = await Run.findOne().lean();
   expect(run.competencies.length).toBe(mode === 'competency' ? 0 : 5);
   expect(await Run.countDocuments()).toBe(1);
+});
+
+test('CV requirement freezes per launch and duplicate-period replay cannot change it', async () => {
+  const fixture = await configured('regular'), body = { ...input(fixture), cvRequired: true }, key = crypto.randomUUID();
+  const first = await unified.launch(ctx(), fixture.cycle.id, body, key);
+  expect(first.appraisals[0].cycleConfigurationSnapshot.cvRequired).toBe(true);
+  expect((await Appraisal.findById(first.appraisals[0]._id)).cycleConfigurationSnapshot.cvRequired).toBe(true);
+  const replay = await unified.launch(ctx(), fixture.cycle.id, { ...body, cvRequired: false }, crypto.randomUUID());
+  expect(replay.replayed).toBe(1); expect(replay.existingAppraisals[0].cycleConfigurationSnapshot.cvRequired).toBe(true);
+  await expect(unified.launch(ctx(), fixture.cycle.id, { ...body, cvRequired: false }, key)).rejects.toMatchObject({ code: 'REQUEST_KEY_CONFLICT' });
+  const saved = await Appraisal.findById(first.appraisals[0]._id);
+  expect(saved.cycleConfigurationSnapshot.cvRequired).toBe(true);
+  expect(saved.auditLog.find(entry => entry.action === 'appraisal_created').details.cvRequired).toBe(true);
+});
+
+test.each([null, 'true', 1, {}])('launch rejects non-boolean CV requirement %s before creating reviews', async cvRequired => {
+  const fixture = await configured('regular');
+  await expect(unified.launch(ctx(), fixture.cycle.id, { ...input(fixture), cvRequired }, crypto.randomUUID())).rejects.toMatchObject({ code: 'INVALID_CV_REQUIREMENT', status: 422 });
+  expect(await Appraisal.countDocuments()).toBe(0);
 });
 test('a quarterly second occurrence reassesses the same person; same-period replay never duplicates', async () => {
   const fixture = await configured(), body = input(fixture), key = crypto.randomUUID();

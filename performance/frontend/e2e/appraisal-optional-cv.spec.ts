@@ -7,7 +7,7 @@ const appraisalId = 'ordinary-cv-review';
 const filename = 'jordan-fictional-cv.txt';
 const savedCv = { _id: 'ordinary-cv-document', originalName: filename, category: 'cv', status: 'active', uploadedBy: { userId: 'employee' }, textExtraction: { status: 'completed', extractedText: 'Jordan Ellis. Fictional CV. Delivery planning experience for synthetic testing only.', wordCount: 11 } };
 
-async function setup(page: Page, options: { disabledFeature?: boolean; existing?: boolean; failUpload?: boolean; failRefresh?: boolean; extractionFailed?: boolean; submitted?: boolean; closed?: boolean; reviewer?: boolean } = {}) {
+async function setup(page: Page, options: { disabledFeature?: boolean; existing?: boolean; failUpload?: boolean; failRefresh?: boolean; extractionFailed?: boolean; submitted?: boolean; closed?: boolean; reviewer?: boolean; required?: boolean; conversationReady?: boolean } = {}) {
   const user = options.reviewer ? { id: 'reviewer', sub: 'reviewer', name: 'Robin Reviewer', email: 'robin@example.test' } : { id: 'employee', sub: 'employee', name: 'Jordan Ellis', email: 'jordan@example.test' };
   const organization = { id: 'ordinary-cv-org', name: 'Fictional CV QA', role: 'staff' };
   const documents = options.existing ? [{ ...structuredClone(savedCv), textExtraction: { ...structuredClone(savedCv.textExtraction), ...(options.extractionFailed ? { status: 'failed', extractedText: '', wordCount: 0 } : {}) } }] : [];
@@ -30,11 +30,11 @@ async function setup(page: Page, options: { disabledFeature?: boolean; existing?
     if (path.startsWith('/competency/assessments/')) roleReads++;
     if (path === `/appraisals/${appraisalId}`) {
       if (failRead) { await route.fulfill({ status: 503, json: { error: 'Synthetic list refresh unavailable.' } }); return; }
-      data = { _id: appraisalId, status: options.closed ? 'employee_acknowledged' : options.reviewer ? 'manager_review_pending' : 'self_assessment_pending', employee: { userId: 'employee', name: 'Jordan Ellis' }, manager: { userId: 'reviewer', name: 'Robin Reviewer' }, cycleId: { name: 'Fictional ordinary appraisal', settings: { enableAiAssist: !options.reviewer, allowSelfRating: false }, competencies: [] }, selfAssessment: options.submitted || options.reviewer ? { submittedAt: '2026-10-20T12:00:00Z' } : {}, managerReview: {}, customSections: [], documents, deadlines: {}, viewerCapabilities: { isEmployee: !options.reviewer, canManage: options.reviewer === true } };
+      data = { _id: appraisalId, status: options.closed ? 'employee_acknowledged' : options.reviewer ? 'manager_review_pending' : 'self_assessment_pending', employee: { userId: 'employee', name: 'Jordan Ellis' }, manager: { userId: 'reviewer', name: 'Robin Reviewer' }, cycleId: { name: 'Fictional ordinary appraisal', settings: { enableAiAssist: !options.reviewer, allowSelfRating: false }, competencies: [] }, cycleConfigurationSnapshot: { cvRequired: options.required === true }, cvRequirement: { required: options.required === true, fulfilled: documents.some(document => document.category === 'cv' && document.status === 'active') }, selfAssessment: options.submitted || options.reviewer ? { submittedAt: '2026-10-20T12:00:00Z' } : {}, managerReview: {}, customSections: [], documents, deadlines: {}, viewerCapabilities: { isEmployee: !options.reviewer, canManage: options.reviewer === true } };
     }
     if (path === `/appraisals/${appraisalId}/scoring`) data = { okrScore: null, competencyScore: null, compositeScore: null, breakdown: { okrWeight: 0, competencyWeight: 0 } };
     if (path === '/ai-account') data = { policy: { chatgptEnabled: true }, account: { status: 'connected', routable: true } };
-    if (path === `/appraisals/${appraisalId}/conversation/context`) data = { cycle: { settings: { allowSelfRating: false } }, conversationState: null, chatThread: [] };
+    if (path === `/appraisals/${appraisalId}/conversation/context`) data = { cycle: { settings: { allowSelfRating: false } }, conversationState: options.conversationReady ? { mode: 'conversation', currentPhase: 'review', currentOkrIndex: 0, completedPhases: ['report_generation'], extractedData: {}, messageCount: 1 } : null, chatThread: options.conversationReady ? [{ messageId: 'synthetic-ready-report', sender: { userId: 'ai', name: 'Synthetic assistant', role: 'ai' }, message: 'Your synthetic report is ready.', messageType: 'report_draft', phase: 'review', structuredData: { type: 'report', data: { overallSummary: { achievements: 'Completed fictional delivery planning and handover.', challenges: 'Balanced fictional delivery work and documentation.', learnings: 'Used clearer fictional evidence and priorities.', improvements: 'Document fictional outcomes throughout the period.', goals: 'Continue the fictional delivery planning practice.' }, okrAssessment: [], suggestedOverallRating: 3, ratingJustification: 'Synthetic review evidence for browser testing.', aiInsights: { strengths: ['Planning'], developmentAreas: [], suggestions: [], sentiment: 'neutral' } } }, createdAt: '2026-10-20T12:00:00Z' }] : [] };
     if (path === `/appraisals/${appraisalId}/documents` && method === 'POST') {
       posts.push(route.request().postDataBuffer()?.toString() || '');
       if (options.failUpload && posts.length === 1) { await route.fulfill({ status: 503, json: { error: 'File storage is temporarily unavailable. Try again.' } }); return; }
@@ -74,6 +74,92 @@ for (const mode of ['form', 'conversation'] as const) {
     if (mode === 'form') await expect(page.getByRole('button', { name: 'Submit Self-Assessment', exact: true })).toBeEnabled();
     expect(state.roleReads()).toBe(0); expect(state.posts).toHaveLength(0);
   });
+}
+
+for (const mode of ['form', 'conversation'] as const) {
+  test(`required CV blocks ${mode} submission until the employee uploads one`, async ({ page }, info) => {
+    const state = await setup(page, { required: true, disabledFeature: true, conversationReady: mode === 'conversation' });
+    if (mode === 'form') await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`/appraisals/${appraisalId}/self-assessment${mode === 'form' ? '?assessmentMode=form' : ''}`);
+    await expect(page.getByRole('heading', { name: 'CV (required)', exact: true })).toBeVisible();
+    await expect(page.getByText('A CV is required for this appraisal. Upload one before submitting your self-assessment.', { exact: true })).toBeVisible();
+    const submit = page.getByRole('button', { name: 'Submit Self-Assessment', exact: true });
+    await expect(submit).toBeDisabled();
+    if (mode === 'form') {
+      await waitForManualFormFade(page);
+      await page.screenshot({ path: info.outputPath('required-cv-missing-mocked.png'), fullPage: false });
+    }
+    await selectCv(page); await page.getByRole('button', { name: 'Upload CV', exact: true }).click();
+    await expect(page.getByText('CV saved. Your reviewer can use it as supporting evidence.', { exact: true })).toBeVisible();
+    await expect(submit).toBeEnabled();
+    await expect(page.getByText('A CV is required for this appraisal. Upload one before submitting your self-assessment.', { exact: true })).toHaveCount(0);
+    if (mode === 'form') await page.screenshot({ path: info.outputPath('required-cv-uploaded-mocked.png'), fullPage: false });
+    expect(state.posts).toHaveLength(1);
+  });
+
+  test(`optional CV does not block ${mode} submission when no file was uploaded`, async ({ page }) => {
+    const state = await setup(page, { required: false, disabledFeature: true, conversationReady: mode === 'conversation' });
+    await page.goto(`/appraisals/${appraisalId}/self-assessment${mode === 'form' ? '?assessmentMode=form' : ''}`);
+    await expect(page.getByRole('heading', { name: 'CV (optional)', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Submit Self-Assessment', exact: true })).toBeEnabled();
+    expect(state.posts).toHaveLength(0);
+  });
+}
+
+test('an uploaded CV satisfies the file requirement even if text extraction failed', async ({ page }) => {
+  await setup(page, { required: true, existing: true, extractionFailed: true, disabledFeature: true });
+  await page.goto(`/appraisals/${appraisalId}/self-assessment?assessmentMode=form`);
+  await expect(page.getByRole('heading', { name: 'CV (required)', exact: true })).toBeVisible();
+  await expect(page.getByText(/Text could not be read/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Submit Self-Assessment', exact: true })).toBeEnabled();
+});
+
+for (const mode of ['regular', 'combined'] as const) {
+  for (const required of [false, true]) {
+    test(`${mode} launch defaults to optional CV and can launch with CV ${required ? 'required' : 'optional'}`, async ({ page }, info) => {
+      const manager = { id: 'launch-manager', sub: 'launch-manager', name: 'Robin Reviewer', email: 'robin@example.test' };
+      const organization = { id: 'launch-cv-org', name: 'Fictional launch QA', role: 'owner' };
+      const launches: { cvRequired: boolean; assignments: { participantId: string; reviewerId: string; roleVersionId?: string; cvRequested?: boolean }[] }[] = [];
+      if (required && mode === 'regular') await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.clock.setFixedTime(new Date('2026-10-20T12:00:00Z'));
+      await page.addInitScript(() => localStorage.setItem('accessToken', 'synthetic-cv-policy-launch'));
+      await page.route('**/__mock-api/**', async route => {
+        const path = new URL(route.request().url()).pathname.replace('/__mock-api', '');
+        let data: unknown = [];
+        if (path === '/auth/me') { await route.fulfill({ json: { success: true, user: { ...manager, organizations: [organization] }, currentOrganization: organization, currentOrganizationId: organization.id } }); return; }
+        if (path === '/user/context') data = { user: manager, organization, role: { name: 'owner', isManager: true, isHRAdmin: true }, teams: [], features: {}, stats: {} };
+        if (path === '/competency/bootstrap') data = { enabled: true, capabilities: { assessmentLaunch: true }, people: [], roles: [{ id: 'published-role', versionId: 'role-v2', name: 'Product operations lead', version: 2, status: 'published' }], frameworks: [], strategies: [], cycles: [{ id: 'launch-cycle', name: 'Fictional policy cycle', revision: 3, status: 'published', reviewMode: mode, cadence: { type: 'one_time' }, period: { start: '2026-07-01', end: '2026-10-19' }, roleVersionIds: mode === 'regular' ? [] : ['role-v2'] }] };
+        if (path === '/appraisals/colleague-roster') data = { employees: [{ userId: 'launch-employee', name: 'Jordan Ellis', email: 'jordan@example.test', isSelectableForAppraisal: true, reviewerOptions: [{ userId: manager.id, name: manager.name }] }] };
+        if (path === '/competency/cycles/launch-cycle/start-appraisals' && route.request().method() === 'POST') {
+          launches.push(route.request().postDataJSON());
+          data = { launched: 1, replayed: 0, appraisals: [{ _id: 'policy-appraisal', employee: { name: 'Jordan Ellis' }, manager: { name: manager.name } }], existingAppraisals: [] };
+        }
+        await route.fulfill({ json: { success: true, data } });
+      });
+      await page.goto('/appraisals/start?employeeId=launch-employee');
+      await page.getByRole('combobox', { name: 'Appraisal cycle', exact: true }).click();
+      await page.getByRole('option', { name: `Fictional policy cycle — ${mode === 'regular' ? 'Regular appraisal' : 'Combined appraisal and competency'}`, exact: true }).click();
+      const requirement = page.getByRole('combobox', { name: /^CV requirement\b/ });
+      await expect(requirement).toHaveText('Optional');
+      if (required) {
+        await requirement.click();
+        await page.getByRole('option', { name: 'Required', exact: true }).click();
+      }
+      if (mode === 'combined') {
+        await page.getByRole('combobox', { name: 'Role for Jordan Ellis', exact: true }).click();
+        await page.getByRole('option', { name: 'Product operations lead · v2', exact: true }).click();
+        if (required) await expect(page.getByRole('checkbox', { name: 'Request a CV for this appraisal', exact: true })).toHaveCount(0);
+      }
+      await page.getByRole('button', { name: 'Continue', exact: true }).click();
+      await page.getByRole('button', { name: 'Continue', exact: true }).click();
+      await expect(page.getByText(`CV: ${required ? 'Required' : 'Optional'}`, { exact: true })).toBeVisible();
+      if (required && mode === 'regular') await page.screenshot({ path: info.outputPath('required-cv-launch-confirmation-mocked.png'), fullPage: false });
+      await page.getByRole('button', { name: 'Start 1 appraisal', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Appraisals started', exact: true })).toBeVisible();
+      expect(launches).toHaveLength(1); expect(launches[0].cvRequired).toBe(required);
+      expect(launches[0].assignments).toEqual([{ participantId: 'launch-employee', reviewerId: manager.id, ...(mode === 'combined' ? { roleVersionId: 'role-v2', cvRequested: required } : {}) }]);
+    });
+  }
 }
 
 test('CV upload remains available when competency assessments are disabled', async ({ page }, info) => {

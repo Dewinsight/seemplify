@@ -23,6 +23,7 @@ export default function UnifiedAppraisalStart() {
   const [reviewers, setReviewers] = useState<Record<string, string>>({});
   const [roles, setRoles] = useState<Record<string, string>>({});
   const [cvRequested, setCvRequested] = useState(false);
+  const [cvRequired, setCvRequired] = useState(false);
   const [search, setSearch] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
@@ -64,7 +65,7 @@ export default function UnifiedAppraisalStart() {
   }
   async function launch() {
     const problem = issue(); if (problem) { setError(problem); return; }
-    const body = { cycleRevision: cycle!.revision, period: { start, end }, assignments: participants.map(person => ({ participantId: person.userId, reviewerId: reviewers[person.userId], ...(needsRole ? { roleVersionId: roles[person.userId], cvRequested } : {}) })), responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` }, appraisalFlow: flow };
+    const body = { cycleRevision: cycle!.revision, period: { start, end }, cvRequired, assignments: participants.map(person => ({ participantId: person.userId, reviewerId: reviewers[person.userId], ...(needsRole ? { roleVersionId: roles[person.userId], cvRequested: cvRequested || cvRequired } : {}) })), responseDeadlines: { selfAssessmentDue: `${selfDue}T23:59:59.000Z`, managerReviewDue: `${managerDue}T23:59:59.000Z` }, appraisalFlow: flow };
     const fingerprint = JSON.stringify({ cycleId, body });
     if (request.current.body !== fingerprint) request.current = { body: fingerprint, key: newIdempotencyKey() };
     setBusy(true); setError('');
@@ -95,7 +96,11 @@ export default function UnifiedAppraisalStart() {
           <Button component={Link} href="/competency/cycles" sx={{ alignSelf: 'flex-start' }}>Manage appraisal cycles</Button>
           {cycle && <Typography>{labels[mode]} · {cycle.cadence?.type === 'periodic' ? `Repeats ${cycle.cadence.frequency?.replace('_', ' ')}` : 'One-time'}</Typography>}
           <Divider />
-          {needsRole && <Box><FormControlLabel control={<Checkbox checked={cvRequested} onChange={event => setCvRequested(event.target.checked)} />} label="Request a CV for this appraisal" /><Typography variant="body2" color="text.secondary">A CV is optional evidence for the selected role. A missing CV does not block submission.</Typography></Box>}
+          <TextField select label="CV requirement" value={cvRequired ? 'required' : 'optional'} onChange={event => setCvRequired(event.target.value === 'required')}
+            helperText={cvRequired ? 'Employees must upload a CV before submitting in either assessment mode. They can save drafts without one.' : 'Employees can upload a CV in either assessment mode and submit without one.'}>
+            <MenuItem value="optional">Optional</MenuItem><MenuItem value="required">Required</MenuItem>
+          </TextField>
+          {needsRole && !cvRequired && <Box><FormControlLabel control={<Checkbox checked={cvRequested} onChange={event => setCvRequested(event.target.checked)} />} label="Request a CV for this appraisal" /><Typography variant="body2" color="text.secondary">A CV is optional evidence for the selected role. A missing CV does not block submission.</Typography></Box>}
           <TextField label="Find staff" value={search} onChange={event => setSearch(event.target.value)} />
           {loading ? <CircularProgress aria-label="Loading eligible staff" /> : !people.length ? <Alert severity="info" action={<Button onClick={() => void loadPeople()}>Refresh</Button>}>No staff are available in your current scope.</Alert> : <Stack divider={<Divider />}>
             {people.filter(person => `${person.name} ${person.teamName || ''}`.toLowerCase().includes(search.toLowerCase())).map(person => <Box key={person.userId} sx={{ py: 2 }}>
@@ -120,7 +125,8 @@ export default function UnifiedAppraisalStart() {
           <Divider />{participants.map(person => <Box key={person.userId}><Typography fontWeight={600}>{person.name}</Typography><Typography color="text.secondary">{needsRole ? `${eligibleRoles.find(role => role.versionId === roles[person.userId])?.name || 'Role needed'} · ` : ''}Reviewer: {person.reviewerOptions.find(reviewer => reviewer.userId === reviewers[person.userId])?.name || 'Reviewer needed'}</Typography></Box>)}
           <Typography variant="body2">Employee responses due {selfDue}. Reviewer responses due {managerDue}.</Typography>
           <Typography variant="body2">Workflow: {flow.steps.map(step => step.label).join(' → ')}. Employee assessment: {flow.assessmentMode === 'conversation' ? 'AI conversation or manual form' : 'Manual form'}.</Typography>
-          {needsRole && cvRequested && <Typography variant="body2">Optional CV requested for the selected roles.</Typography>}
+          <Typography variant="body2">CV: {cvRequired ? 'Required' : 'Optional'}</Typography>
+          {needsRole && cvRequested && !cvRequired && <Typography variant="body2">Optional CV requested for the selected roles.</Typography>}
         </Stack>}
       </Surface>
       <Stack direction="row" justifyContent="space-between" mt={3} gap={2}><Button disabled={busy || step === 0} onClick={() => move(step - 1)}>Previous</Button>{step < 2 ? <Button variant="contained" disabled={loading || busy} onClick={() => { const problem = step === 0 ? (!cycle ? 'Choose a cycle.' : !participants.length ? 'Choose staff.' : participants.some(person => !reviewers[person.userId] || needsRole && !roles[person.userId]) ? 'Choose a reviewer and, where required, a role for each person.' : '') : issue(); if (problem) setError(problem); else move(step + 1); }}>Continue</Button> : <Button variant="contained" disabled={busy} onClick={() => void launch()}>{busy ? 'Starting…' : `Start ${participants.length} appraisal${participants.length === 1 ? '' : 's'}`}</Button>}</Stack>

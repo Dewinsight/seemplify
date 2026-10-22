@@ -32,9 +32,9 @@ async function validatePlan(ctx, input) {
   return { valid: true, participants: seen.size };
 }
 async function links(ctx, appraisalId) {
-  await parent(ctx, appraisalId); auth.requireAction(ctx, 'assessment.view');
+  const appraisal = await parent(ctx, appraisalId); auth.requireAction(ctx, 'assessment.view');
   const records = await Assessment.find({ organizationId: ctx.organizationId, appraisalId }).sort({ createdAt: -1 }).lean();
-  return { appraisalId, assessments: records.filter(record => auth.canAccessAssessment(ctx, record)).map(record => ({ id: String(record._id), assessmentId: String(record._id), status: record.status, cvRequested: record.definitionSnapshot.cvRequested === true, role: { name: record.definitionSnapshot.role.name, version: record.definitionSnapshot.role.version }, participant: record.participant, createdAt: record.createdAt, currentResultNumber: record.currentResultNumber || null, allowedActions: require('./assessmentService').actions(ctx, record) })) };
+  return { appraisalId, assessments: records.filter(record => auth.canAccessAssessment(ctx, record)).map(record => ({ id: String(record._id), assessmentId: String(record._id), status: record.status, cvRequested: record.definitionSnapshot.cvRequested === true, cvRequired: appraisal.cycleConfigurationSnapshot?.cvRequired === true, role: { name: record.definitionSnapshot.role.name, version: record.definitionSnapshot.role.version }, participant: record.participant, createdAt: record.createdAt, currentResultNumber: record.currentResultNumber || null, allowedActions: require('./assessmentService').actions(ctx, record) })) };
 }
 async function link(ctx, input, key) {
   cleanObject(input, ['appraisalId', 'cycleId', 'cycleRevision', 'roleVersionId', 'assessorIds', 'cvRequested']);

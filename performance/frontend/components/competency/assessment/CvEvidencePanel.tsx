@@ -10,6 +10,7 @@ import EvidenceRetention from './EvidenceRetention';
 export interface CvEvidencePanelProps {
   assessment: Assessment;
   refresh: () => Promise<void>;
+  required?: boolean;
 }
 
 const closed = (assessment: Assessment) => !['draft', 'in_progress', 'reopened'].includes(assessment.status);
@@ -26,7 +27,7 @@ function sourceState(source: Evidence) {
   return 'File check in progress. Refresh to check availability.';
 }
 
-export default function CvEvidencePanel({ assessment, refresh }: CvEvidencePanelProps) {
+export default function CvEvidencePanel({ assessment, refresh, required }: CvEvidencePanelProps) {
   const { user } = useAuth();
   const actorId = String(user?.id || user?.sub || '');
   // The server includes organisation-wide and currently eligible assessor scope.
@@ -47,6 +48,7 @@ export default function CvEvidencePanel({ assessment, refresh }: CvEvidencePanel
   const canView = permitted(assessment.allowedActions, 'evidence.view');
   const canUpload = permitted(assessment.allowedActions, 'evidence.create') && !closed(assessment);
   const requested = assessment.definitionSnapshot.cvRequested === true || assessment.cvRequested === true;
+  const cvRequired = required ?? assessment.definitionSnapshot.cvRequired === true;
   const role = assessment.definitionSnapshot.role;
 
   function selectFile(next: File | null) {
@@ -93,16 +95,16 @@ export default function CvEvidencePanel({ assessment, refresh }: CvEvidencePanel
       await competencyRequest('DELETE', `/assessments/${assessment.id}/evidence/${source.id}`);
       if (uploaded?.id === source.id) setUploaded(null);
       await refresh();
-      setSaved('CV removed. A CV remains optional for this appraisal.');
+      setSaved(cvRequired ? 'CV removed. Upload a CV before submitting this self-assessment.' : 'CV removed. A CV remains optional for this appraisal.');
     } catch (reason) { setError(competencyError(reason).message); }
     finally { setBusy(false); }
   }
 
-  return <Section title="CV (optional)">
+  return <Section title={`CV (${cvRequired ? 'required' : 'optional'})`}>
     <Stack gap={2}>
       <Box>
         <Typography fontWeight={600}>{role.name} · Version {role.version}</Typography>
-        <Typography variant="body2" sx={muted}>{requested ? 'A current CV was requested for this appraisal. A missing CV does not block submission.' : 'You can add a current CV as optional evidence for this role.'}</Typography>
+        <Typography variant="body2" sx={muted}>{cvRequired ? 'Upload your current CV before submitting your self-assessment.' : requested ? 'A current CV was requested for this appraisal. A missing CV does not block submission.' : 'You can add a current CV as optional evidence for this role.'}</Typography>
       </Box>
       {error && <Alert severity="error" action={refreshFailed ? <Button color="inherit" disabled={busy} onClick={() => void reload()}>Retry refresh</Button> : undefined}>{error}</Alert>}
       {saved && <Alert severity="success" role="status">{saved}</Alert>}
@@ -121,7 +123,7 @@ export default function CvEvidencePanel({ assessment, refresh }: CvEvidencePanel
             </Stack>
           </Stack>
         </Box>)}
-      </Stack> : <Typography variant="body2" sx={muted}>No CV uploaded. You can continue without one.</Typography>}
+      </Stack> : <Typography variant="body2" sx={muted}>{cvRequired ? 'No CV uploaded yet. You can save your draft and add it before submitting.' : 'No CV uploaded. You can continue without one.'}</Typography>}
       {canUpload ? <Box component="form" onSubmit={event => { event.preventDefault(); void upload(); }} aria-busy={busy}>
         <Stack gap={1.5}>
           <Typography component="label" htmlFor={inputId} fontWeight={600}>Choose CV file</Typography>

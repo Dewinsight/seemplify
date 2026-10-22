@@ -32,8 +32,9 @@ async function createCycle(enabled = true) {
     createdBy: { userId: 'reviewer', name: 'Synthetic reviewer' }, settings: { enableAiAssist: enabled, requireOkrAlignment: false, allowSelfRating: true, enableChat: true },
     competencies: [{ id: 'delivery', name: 'Delivery', weight: 100 }], workflowDefinition: designService.cloneBuiltInTemplate('balanced_performance').design });
 }
-async function launch(cycle, employee = 'employee', assessmentMode = 'form') {
+async function launch(cycle, employee = 'employee', assessmentMode = 'form', cvRequired) {
   const response = await call('post', `/cycles/${cycle._id}/launch`).send({ employees: [{ userId: employee }], reviewerMode: 'initiator',
+    ...(cvRequired !== undefined ? { cvRequired } : {}),
     responseDeadlines: { selfAssessmentDue: '2099-01-01', managerReviewDue: '2099-01-10' },
     appraisalFlow: { assessmentMode, steps: ['selfAssessment', 'managerReview', 'finalReview'].map(type => ({ id: type, type, label: type })) } }).expect(200);
   expect(response.body.data.launched).toBe(1);
@@ -66,6 +67,18 @@ beforeEach(async () => {
 });
 afterEach(() => jest.restoreAllMocks());
 afterAll(async () => { await mongoose.disconnect(); if (mongo) await mongo.stop(); });
+
+test.each([undefined, false, true])('legacy cycle launch freezes CV requirement %s without changing the cycle policy', async cvRequired => {
+  const cycle = await createCycle(false), appraisal = await launch(cycle, 'employee', 'form', cvRequired);
+  expect(appraisal.cycleConfigurationSnapshot.cvRequired).toBe(cvRequired === true);
+  expect(appraisal.auditLog.find(entry => entry.action === 'appraisal_created').details.cvRequired).toBe(cvRequired === true);
+  expect((await Cycle.findById(cycle._id)).toObject().cvRequired).toBeUndefined();
+});
+
+test.each(['/cycles', '/cycles/000000000000000000000001/launch', '/cycles/000000000000000000000001/launch-for-team'])('legacy launch %s rejects a malformed CV requirement before creating records', async endpoint => {
+  const response = await call('post', endpoint).send({ cvRequired: 'true' }).expect(422);
+  expect(response.body.code).toBe('INVALID_CV_REQUIREMENT'); expect(await Appraisal.countDocuments()).toBe(0); expect(await Cycle.countDocuments()).toBe(0);
+});
 
 test('manager assistance returns the data envelope and keeps human review fields unchanged', async () => {
   const cycle = await createCycle(true), appraisal = await launch(cycle);

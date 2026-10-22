@@ -8,14 +8,14 @@ import type { Assessment } from './types';
 import { permitted } from './types';
 import { Failure, Loading } from './ui';
 
-export interface AppraisalCvEvidenceProps { appraisalId: string; fallback?: ReactNode; preferFallback?: boolean }
+export interface AppraisalCvEvidenceProps { appraisalId: string; fallback?: ReactNode; preferFallback?: boolean; required?: boolean; onChanged?: () => Promise<unknown> }
 
 /** Resolve through the authorised appraisal link; never accept an assessment ID from a form. */
 export default function AppraisalCvEvidence(props: AppraisalCvEvidenceProps) {
   return <AppraisalCvEvidenceContent key={props.appraisalId} {...props}/>;
 }
 
-function AppraisalCvEvidenceContent({ appraisalId, fallback, preferFallback }: AppraisalCvEvidenceProps) {
+function AppraisalCvEvidenceContent({ appraisalId, fallback, preferFallback, required, onChanged }: AppraisalCvEvidenceProps) {
   const [assessments, setAssessments] = useState<Assessment[] | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -51,6 +51,7 @@ function AppraisalCvEvidenceContent({ appraisalId, fallback, preferFallback }: A
   async function refresh(id: string) {
     const record = await competencyRequest<Assessment>('GET', `/assessments/${encodeURIComponent(id)}`);
     setAssessments(previous => previous?.map(item => item.id === id ? record : item) || [record]);
+    await onChanged?.();
   }
   if (error) return <>{fallback}<Box mb={3}><Failure message={`Linked role CV evidence could not be loaded. ${error}`} retry={() => { setAssessments(null); setError(''); setAttempt(value => value + 1); }}/></Box></>;
   if (!assessments) return <Box mb={3}><Loading label="Checking optional CV evidence…"/></Box>;
@@ -59,5 +60,5 @@ function AppraisalCvEvidenceContent({ appraisalId, fallback, preferFallback }: A
   // A CV uploaded before a role was linked stays accessible in its original
   // appraisal storage; do not make the employee upload it again.
   const roleCvs = preferFallback ? visible.filter(assessment => assessment.evidence?.some(source => source.documentType === 'cv')) : visible;
-  return <>{preferFallback && fallback}<Stack gap={2} mb={3}>{roleCvs.map(assessment => <CvEvidencePanel key={`${appraisalId}:${assessment.id}`} assessment={assessment} refresh={() => refresh(assessment.id)}/>)}</Stack></>;
+  return <>{preferFallback && fallback}<Stack gap={2} mb={3}>{roleCvs.map(assessment => <CvEvidencePanel key={`${appraisalId}:${assessment.id}`} assessment={assessment} required={required} refresh={() => refresh(assessment.id)}/>)}</Stack></>;
 }

@@ -24,13 +24,14 @@ interface Props {
   onBusyChange?: (busy: boolean) => void;
   kind?: 'cv' | 'supporting';
   excludeCv?: boolean;
+  cvRequired?: boolean;
 }
 
 function errorMessage(error: unknown, fallback: string) {
   return (error as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
 }
 
-export default function AppraisalDocuments({ appraisalId, documents = [], disabled = false, readOnly = false, onChanged, onBusyChange, kind = 'supporting', excludeCv = false }: Props) {
+export default function AppraisalDocuments({ appraisalId, documents = [], disabled = false, readOnly = false, onChanged, onBusyChange, kind = 'supporting', excludeCv = false, cvRequired = false }: Props) {
   const { user } = useUserContext();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -111,9 +112,9 @@ export default function AppraisalDocuments({ appraisalId, documents = [], disabl
   };
 
   return <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-    <Typography variant="h6" component="h2" fontWeight={600}>{isCv ? 'CV (optional)' : 'Supporting documents'}</Typography>
+    <Typography variant="h6" component="h2" fontWeight={600}>{isCv ? `CV (${cvRequired ? 'required' : 'optional'})` : 'Supporting documents'}</Typography>
     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-      {isCv ? 'Would you like to add your current CV? Your reviewer can use it alongside your self-assessment. You can continue without one.'
+      {isCv ? cvRequired ? 'Upload your current CV before submitting your self-assessment.' : 'Would you like to add your current CV? Your reviewer can use it alongside your self-assessment. You can continue without one.'
         : readOnly ? 'Retained supporting documents available to your role. Download access follows each document’s original audience restrictions.'
         : 'Documents uploaded here are shared with the employee and reviewer as supporting evidence. A ChatGPT connection is not required.'}
     </Typography>
@@ -121,7 +122,7 @@ export default function AppraisalDocuments({ appraisalId, documents = [], disabl
     {success && <Alert severity="success" role="status" sx={{ mb: 2 }}>{success}</Alert>}
     {refreshFailed && <Button disabled={blocked} onClick={async () => { begin('refresh'); await refresh(); finish(); }}>Refresh file list</Button>}
     <Stack spacing={1.5}>
-      {visibleDocuments.length === 0 && <Typography variant="body2" color="text.secondary">{isCv ? 'No CV uploaded. You can continue without one.' : 'No documents attached.'}</Typography>}
+      {visibleDocuments.length === 0 && <Typography variant="body2" color="text.secondary">{isCv ? cvRequired ? 'No CV uploaded yet. You can save your draft and add it before submitting.' : 'No CV uploaded. You can continue without one.' : 'No documents attached.'}</Typography>}
       {visibleDocuments.map(document => <Stack key={document._id} role="group" aria-label={document.originalName}
         direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1 }}>
         <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}><Typography variant="body2">{document.originalName}{!isCv && document.category === 'cv' ? ' · CV' : ''}</Typography>

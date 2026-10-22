@@ -178,6 +178,8 @@ function SelfAssessmentContent() {
   const aiAssistEnabled = appraisal?.cycleId?.settings?.enableAiAssist !== false && appraisal?.cycleConfigurationSnapshot?.appraisalFlow?.assessmentMode !== 'form';
   const conversationSelected = aiAssistEnabled && searchParams.get('assessmentMode') !== 'form';
   const requireSelfRating = appraisal?.cycleId?.settings?.allowSelfRating !== false;
+  const cvRequired = appraisal.cycleConfigurationSnapshot?.cvRequired === true;
+  const cvMissing = cvRequired && appraisal.cvRequirement?.fulfilled !== true;
 
   if (appraisal.selfAssessment?.submittedAt) {
     return (
@@ -215,6 +217,10 @@ function SelfAssessmentContent() {
 
   const persistManualAssessment = async (submit: boolean) => {
     if (persistPending.current) return;
+    if (submit && cvMissing) {
+      setSnackbar({ open: true, message: 'Upload your CV before submitting this self-assessment.', severity: 'error' });
+      return;
+    }
     if (submit && requireSelfRating && manualForm.overallSelfRating === null) {
       setSnackbar({ open: true, message: 'Please choose your overall self-rating before submitting.', severity: 'error' });
       return;
@@ -340,9 +346,10 @@ function SelfAssessmentContent() {
         </Alert>
       )}
 
-      <AppraisalCvEvidence appraisalId={appraisalId}
+      {cvMissing && <Alert severity="info" sx={{ mb: 3 }}>A CV is required for this appraisal. Upload one before submitting your self-assessment.</Alert>}
+      <AppraisalCvEvidence appraisalId={appraisalId} required={cvRequired} onChanged={refreshDocuments}
         preferFallback={appraisal.documents?.some((document: { category?: string }) => document.category === 'cv')}
-        fallback={<AppraisalDocuments key={`cv-${appraisalId}`} kind="cv" appraisalId={appraisalId} documents={appraisal.documents}
+        fallback={<AppraisalDocuments key={`cv-${appraisalId}`} kind="cv" cvRequired={cvRequired} appraisalId={appraisalId} documents={appraisal.documents}
           onChanged={refreshDocuments} disabled={saving || submitting || documentsBusy} onBusyChange={setCvBusy} />} />
 
       {conversationSelected ? (
@@ -352,7 +359,7 @@ function SelfAssessmentContent() {
               {({ requireChatGptConnection }) => (
                 <ConversationalAssessment
                   appraisalId={appraisalId}
-                  evidenceBusy={cvBusy || documentsBusy}
+                  evidenceBusy={cvBusy || documentsBusy || cvMissing}
                   onComplete={handleConversationComplete}
                   onChatGptUnavailable={requireChatGptConnection}
                 />
@@ -598,7 +605,7 @@ function SelfAssessmentContent() {
                 color="success"
                 startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <Send />}
                 onClick={() => persistManualAssessment(true)}
-                disabled={saving || submitting || documentsBusy || cvBusy}
+                disabled={saving || submitting || documentsBusy || cvBusy || cvMissing}
               >
                 Submit Self-Assessment
               </Button>
