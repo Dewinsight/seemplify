@@ -14,6 +14,9 @@ at `/run/user/<uid>/docker.sock`; never mount or grant access to the production
 Docker socket. The rootless engines support service containers and image builds.
 Test PostgreSQL is published only on `127.0.0.1:5432`; the production forwarding
 endpoint on a different address remains separate.
+The account homes remain mode 0700 and credential files remain private. Runner
+source creation uses umask 022 so Docker build contexts and packaged assets
+remain readable by non-root application users in the resulting images.
 
 `hostinger-native-ci.slice` caps the native agents and their user service
 managers together at 2 CPUs / 7 GiB, no swap. A runner process has a 4-GiB
