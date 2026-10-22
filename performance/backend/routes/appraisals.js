@@ -4767,6 +4767,43 @@ function cycleQuestionResponseData(appraisal) {
   };
 }
 
+// Conflict responses carry the same persisted conversation cursor as a resume.
+// A late reply from another tab must not strand the employee on an old question
+// or overwrite the answer that won the save race.
+function conversationRecoveryData(appraisal) {
+  // Manual edits can change canonical answers while a chat request is pending.
+  // Normalize the returned cursor in memory; the losing request must never
+  // perform another save or reopen a submitted assessment.
+  if (isSelfAssessmentEditable(appraisal)) reconcileConfiguredCycleConversation(appraisal);
+  return {
+    currentPhase: appraisal.conversationAssessment?.currentPhase || 'initialized',
+    conversationState: appraisal.conversationAssessment,
+    chatThread: (appraisal.chatThread || []).slice(-20),
+    appraisalStatus: appraisal.status,
+    selfAssessment: appraisal.selfAssessment,
+    editable: isSelfAssessmentEditable(appraisal),
+    ...cycleQuestionResponseData(appraisal)
+  };
+}
+
+async function sendConversationSaveConflict(req, res) {
+  try {
+    const latest = await Appraisal.findOne(tenantAppraisalIdFilter(req, req.params.appraisalId))
+      .populate(tenantCyclePopulate(req));
+    if (!latest) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    if (!isAppraisalEmployee(req, latest)) return res.status(403).json({ success: false, error: 'Access denied' });
+    return res.status(409).json({
+      success: false,
+      code: 'CONVERSATION_UPDATED',
+      error: 'Your conversation was updated by another request. Review the latest question and continue; your unsent answer has not been saved.',
+      data: conversationRecoveryData(latest)
+    });
+  } catch (error) {
+    console.error('Read updated conversation error:', error);
+    return res.status(500).json({ success: false, error: 'Unable to reload your conversation. Your unsent answer has not been saved; try again.' });
+  }
+}
+
 function displayCycleResponseValue(value) {
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
@@ -4781,6 +4818,9 @@ function sameCycleResponseValue(left, right) {
 }
 
 function reconcileConfiguredCycleConversation(appraisal) {
+  if (!isSelfAssessmentEditable(appraisal)) {
+    return { state: getCycleQuestionState(appraisal), changed: false };
+  }
   ensureConversationAssessmentState(appraisal);
   const beforePhase = appraisal.conversationAssessment.currentPhase;
   const beforeProgress = JSON.stringify(toPlainObject(
@@ -4798,7 +4838,7 @@ function reconcileConfiguredCycleConversation(appraisal) {
   const currentPhase = appraisal.conversationAssessment.currentPhase;
   if (
     !state.progress.completed
-    && (legacyGenericPhases.has(currentPhase) || currentPhase === 'report_generation')
+    && (legacyGenericPhases.has(currentPhase) || currentPhase === 'report_generation' || currentPhase === 'review')
   ) {
     appraisal.conversationAssessment.currentPhase = 'cycle_questions';
   } else if (
@@ -4938,8 +4978,8 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
     );
 
     if (existingConversation) {
-      reconcileConfiguredCycleConversation(appraisal);
-      await appraisal.save();
+      const reconciliation = reconcileConfiguredCycleConversation(appraisal);
+      if (reconciliation.changed) await appraisal.save();
       const okrSummary = okrs.map((okr, index) => ({
         id: okr._id,
         title: okr.title || okr.objectives?.[0]?.title || `OKR ${index + 1}`,
@@ -5042,6 +5082,7 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
       }
     });
   } catch (error) {
+    if (error?.name === 'VersionError') return sendConversationSaveConflict(req, res);
     console.error('Start conversation error:', error);
     sendConversationRuntimeError(res, error, 'Failed to start conversation');
   }
@@ -5137,8 +5178,8 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       return res.status(409).json({
         success: false,
         code: 'CYCLE_QUESTION_STALE',
-        error: 'The conversation has moved past that question. Use the review form to edit a saved response.',
-        data: cycleQuestionResponseData(appraisal)
+        error: 'An answer to this question is already saved. Your unsent answer has not replaced it. Review the saved answers or continue with the current question.',
+        data: conversationRecoveryData(appraisal)
       });
     }
 
@@ -5153,11 +5194,7 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
           success: false,
           code: 'CYCLE_QUESTIONS_COMPLETE',
           error: 'The configured cycle questions are already complete. Generate the report next.',
-          data: {
-            currentPhase: 'report_generation',
-            conversationState: appraisal.conversationAssessment,
-            ...cycleQuestionResponseData(appraisal)
-          }
+          data: conversationRecoveryData(appraisal)
         });
       }
 
@@ -5206,8 +5243,8 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
         return res.status(409).json({
           success: false,
           code: 'CYCLE_QUESTION_STALE',
-          error: 'The conversation has moved to a different question. Review the current question and try again.',
-          data: cycleQuestionResponseData(appraisal)
+          error: 'The current question has changed. Your unsent answer has not been saved. Review the latest question and continue.',
+          data: conversationRecoveryData(appraisal)
         });
       }
 
@@ -5455,6 +5492,7 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       }
     });
   } catch (error) {
+    if (error?.name === 'VersionError') return sendConversationSaveConflict(req, res);
     console.error('Conversation message error:', error);
     sendConversationRuntimeError(res, error, 'Failed to process message');
   }
@@ -5857,6 +5895,7 @@ router.get('/:appraisalId/conversation/context', requireAuth, async (req, res) =
       }
     });
   } catch (error) {
+    if (error?.name === 'VersionError') return sendConversationSaveConflict(req, res);
     console.error('Get conversation context error:', error);
     res.status(500).json({ success: false, error: 'Failed to get conversation context' });
   }

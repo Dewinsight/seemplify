@@ -39,7 +39,7 @@ interface Message {
 
 interface ChatInterfaceProps {
   messages: Message[];
-  onSendMessage: (message: string) => Promise<void>;
+  onSendMessage: (message: string) => Promise<boolean>;
   onUploadFile: (file: File) => Promise<void>;
   onAdvancePhase?: () => void;
   isLoading: boolean;
@@ -294,11 +294,11 @@ export default function ChatInterface({
     }
 
     setInputError('');
-    setInputValue('');
     setIsSending(true);
 
     try {
-      await onSendMessage(message);
+      const saved = await onSendMessage(message);
+      if (saved) setInputValue('');
     } finally {
       setIsSending(false);
     }

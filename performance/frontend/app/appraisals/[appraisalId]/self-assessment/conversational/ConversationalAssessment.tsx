@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Paper, Alert, CircularProgress, Button, Typography, Snackbar, Chip } from '@mui/material';
 import { PlayArrow, AutoAwesome } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
@@ -108,6 +108,9 @@ interface ReportData {
 
 interface ConversationalAssessmentProps {
   appraisalId: string;
+  active?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+  onAppraisalChanged?: () => Promise<unknown>;
   evidenceBusy?: boolean;
   onComplete?: () => void;
   onChatGptUnavailable?: (message?: string) => void;
@@ -177,7 +180,7 @@ function mergeCanonicalChatThread(current: Message[], canonical: Message[]) {
   return merged;
 }
 
-export default function ConversationalAssessment({ appraisalId, onComplete, onChatGptUnavailable, evidenceBusy = false }: ConversationalAssessmentProps) {
+export default function ConversationalAssessment({ appraisalId, active = true, onBusyChange, onAppraisalChanged, onComplete, onChatGptUnavailable, evidenceBusy = false }: ConversationalAssessmentProps) {
   const theme = useTheme();
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -193,6 +196,16 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
   const [allowReviewConversation, setAllowReviewConversation] = useState(false);
   const [reviewAutoGenerateAttempted, setReviewAutoGenerateAttempted] = useState(false);
   const [cycleQuestionProgress, setCycleQuestionProgress] = useState<CycleQuestionProgress | null>(null);
+  const [contextLoaded, setContextLoaded] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [conversationClosed, setConversationClosed] = useState(false);
+  const [unsentResponse, setUnsentResponse] = useState<{ message: string; question?: string } | null>(null);
+  const [showSavedResponses, setShowSavedResponses] = useState(false);
+  const loadRevision = useRef(0);
+  const messagePending = useRef(false);
+  const savedAnswersFingerprint = useRef<string | null>(null);
+  const savedAssessmentFingerprint = useRef<string | null>(null);
+  const wasActive = useRef(active);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
   const findLatestReportInThread = useCallback((thread: Message[] = []) => {
@@ -204,21 +217,50 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
 
   const applyCycleQuestionProgress = useCallback((data: unknown) => {
     const next = normalizeCycleQuestionProgress(data);
-    if (next) setCycleQuestionProgress(next);
+    if (next) {
+      savedAnswersFingerprint.current = JSON.stringify(next.responses.map(response => ({
+        key: response.key, value: response.value, skipped: response.skipped === true,
+      })).sort((left, right) => left.key.localeCompare(right.key)));
+      setCycleQuestionProgress(next);
+    }
     return next;
   }, []);
 
   // Load existing conversation or initialize
-  const loadConversation = useCallback(async () => {
-    setIsLoading(true);
+  const loadConversation = useCallback(async (background = false) => {
+    const revision = ++loadRevision.current;
+    if (!background) setIsLoading(true);
+    else setIsRestoring(true);
     setError(null);
 
     try {
       // Try to get existing conversation context
       const response = await api.get(`/appraisals/${appraisalId}/conversation/context`);
+      if (revision !== loadRevision.current) return;
       const data = response.data.data;
+      setContextLoaded(true);
       setRequireSelfRating(data?.cycle?.settings?.allowSelfRating !== false);
-      applyCycleQuestionProgress(data);
+      const previousAnswers = savedAnswersFingerprint.current;
+      const previousAssessment = savedAssessmentFingerprint.current;
+      const progress = applyCycleQuestionProgress(data);
+      // Ignore save timestamps: inspecting the form must not discard an edited
+      // report or self-rating. Only actual source changes invalidate a draft.
+      savedAssessmentFingerprint.current = JSON.stringify({
+        summary: data.selfAssessment?.overallSummary,
+        rating: data.selfAssessment?.overallSelfRating,
+        competencies: data.selfAssessment?.competencyRatings,
+        okrs: data.selfAssessment?.okrAssessment,
+      });
+      const invalidateReport = background && (
+        (previousAnswers !== null && previousAnswers !== savedAnswersFingerprint.current)
+        || (previousAssessment !== null && previousAssessment !== savedAssessmentFingerprint.current)
+      );
+      const canShowReport = !progress?.currentQuestion && ['review', 'report_generation', 'completed'].includes(data.conversationState?.currentPhase);
+      if (invalidateReport || !canShowReport) {
+        setReport(null);
+        setShowReport(false);
+        setReviewAutoGenerateAttempted(false);
+      }
 
       if (data.conversationState && data.chatThread && data.chatThread.length > 0) {
         // Resume existing conversation
@@ -237,7 +279,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
         })) || []);
 
         // Check if we should show report
-        if (data.conversationState.currentPhase === 'review' || data.conversationState.currentPhase === 'completed') {
+        if (!background && canShowReport) {
           const latestReport = findLatestReportInThread(data.chatThread || []);
           if (latestReport) {
             setReport(latestReport);
@@ -246,16 +288,31 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
         }
       }
     } catch (err: unknown) {
+      if (revision !== loadRevision.current) return;
       console.error('Load conversation error:', err);
-      // Not an error - conversation hasn't started yet
+      setError('Your conversation could not be loaded. Try again to resume where you left off.');
     } finally {
-      setIsLoading(false);
+      if (revision === loadRevision.current) {
+        setIsLoading(false);
+        setIsRestoring(false);
+      }
     }
   }, [appraisalId, applyCycleQuestionProgress, findLatestReportInThread]);
 
   useEffect(() => {
     loadConversation();
   }, [loadConversation]);
+
+  useEffect(() => {
+    // Returning from the answer form may introduce saved answers. Reconcile in
+    // place so the current composer survives when the question has not changed.
+    if (active && !wasActive.current) void loadConversation(true);
+    wasActive.current = active;
+  }, [active, loadConversation]);
+
+  useEffect(() => {
+    onBusyChange?.(isLoading || isRestoring || isProcessing || isSubmitting || isRegenerating);
+  }, [isLoading, isRestoring, isProcessing, isSubmitting, isRegenerating, onBusyChange]);
 
   // Start a new conversation
   const startConversation = async () => {
@@ -295,6 +352,9 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
     message: string,
     cycleResponse?: { sectionId: string; questionId: string; value?: CycleQuestionValue; skip?: boolean }
   ) => {
+    if (messagePending.current || isRestoring || conversationClosed) return false;
+    messagePending.current = true;
+    ++loadRevision.current;
     setIsProcessing(true);
     setError(null);
     const isReviewPhase = conversationState?.currentPhase === 'review' || conversationState?.currentPhase === 'report_generation';
@@ -326,7 +386,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
       if (data.fallback === true || data.aiAvailable === false) {
         onChatGptUnavailable?.('ChatGPT could not be reached, so the conversation has been locked.');
         setMessages(prev => prev.slice(0, -1));
-        return;
+        return false;
       }
 
       // Update with AI response
@@ -334,17 +394,16 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
       setConversationState(data.conversationState);
       applyCycleQuestionProgress(data);
 
-      // Check if we should transition to report generation
-      if (data.currentPhase === 'report_generation') {
-        await generateReport();
-      }
+      // Report generation runs after this answer has settled, in the phase
+      // effect below. It must not race the answer write or a recovery notice.
+      return true;
     } catch (err: unknown) {
       console.error('Send message error:', err);
       const gateMessage = chatGptGateFailure(err);
       if (gateMessage) {
         onChatGptUnavailable?.(gateMessage);
         setMessages(prev => prev.slice(0, -1));
-        return;
+        return false;
       }
       const requestError = asApiRequestError(err);
       const status = Number(requestError.response?.status || 0);
@@ -369,12 +428,24 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
             ? mergeCanonicalChatThread(withoutOptimisticMessage, authoritative.chatThread)
             : withoutOptimisticMessage;
         });
+        if (status === 409) {
+          setUnsentResponse({ message, question: cycleResponse ? cycleQuestionProgress?.currentQuestion?.prompt : undefined });
+          setError(null);
+        }
+        if (authoritative.editable === false) {
+          setConversationClosed(true);
+          void onAppraisalChanged?.().catch(() => {
+            setError('This self-assessment is closed. Reload the page to see its latest status.');
+          });
+        }
       } else {
         // Remove the optimistic message while retaining the active question for retry.
         setMessages(prev => prev.slice(0, -1));
       }
-      setError(requestError.response?.data?.error || 'Failed to send message');
+      if (!canRecoverFromAuthoritativeState || status !== 409) setError(requestError.response?.data?.error || 'Your answer could not be sent. Your text is still here; try again.');
+      return false;
     } finally {
+      messagePending.current = false;
       setIsProcessing(false);
     }
   };
@@ -425,7 +496,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
 
   // Generate report
   const generateReport = useCallback(async () => {
-    if (isRegenerating) return;
+    if (isRegenerating || conversationClosed || messagePending.current || isRestoring) return;
     setIsRegenerating(true);
 
     try {
@@ -458,9 +529,10 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
     } finally {
       setIsRegenerating(false);
     }
-  }, [appraisalId, applyCycleQuestionProgress, isRegenerating, onChatGptUnavailable]);
+  }, [appraisalId, applyCycleQuestionProgress, isRegenerating, isRestoring, conversationClosed, onChatGptUnavailable]);
 
   const handleEditCycleResponse = async (question: CycleQuestionDefinition, value: CycleQuestionValue) => {
+    if (conversationClosed) return false;
     setIsRegenerating(true);
     try {
       await api.put(`/appraisals/${appraisalId}/custom-responses`, {
@@ -469,8 +541,11 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
         responses: [{ sectionId: question.sectionId, questionId: question.questionId, value }]
       });
       const contextResponse = await api.get(`/appraisals/${appraisalId}/conversation/context`);
-      applyCycleQuestionProgress(contextResponse.data.data);
-      setSnackbar({ open: true, message: 'Cycle response updated. Refreshing your report…', severity: 'success' });
+      const data = contextResponse.data.data;
+      applyCycleQuestionProgress(data);
+      setConversationState(data.conversationState);
+      setMessages(previous => mergeCanonicalChatThread(previous, data.chatThread || []));
+      setSnackbar({ open: true, message: 'Your answer has been updated.', severity: 'success' });
     } catch (err: unknown) {
       const requestError = asApiRequestError(err);
       const message = requestError.response?.data?.error || 'The cycle response could not be updated.';
@@ -481,7 +556,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
     }
 
     setIsRegenerating(false);
-    await generateReport();
+    if (showReport) await generateReport();
     return true;
   };
 
@@ -520,7 +595,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
 
   // Submit report
   const handleSubmitReport = async () => {
-    if (!report || evidenceBusy) return;
+    if (!report || evidenceBusy || conversationClosed) return;
 
     setIsSubmitting(true);
 
@@ -540,7 +615,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
   };
 
   const handleOkrSelect = (index: number) => {
-    if (!conversationState || conversationState.currentOkrIndex === index) return;
+    if (messagePending.current || isRestoring || conversationClosed || !conversationState || conversationState.currentOkrIndex === index) return;
 
     const okr = okrSummary[index];
     if (okr) {
@@ -558,6 +633,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
   }, [appraisalId]);
 
   useEffect(() => {
+    if (!active || isRestoring || isProcessing || unsentResponse || conversationClosed || cycleQuestionProgress?.currentQuestion) return;
     const phase = conversationState?.currentPhase;
     if (!phase) return;
 
@@ -577,6 +653,12 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
       generateReport();
     }
   }, [
+    active,
+    isRestoring,
+    isProcessing,
+    unsentResponse,
+    conversationClosed,
+    cycleQuestionProgress?.currentQuestion,
     appraisalId,
     conversationState?.currentPhase,
     report,
@@ -586,12 +668,34 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
     generateReport
   ]);
 
+  const recoveryNotice = unsentResponse && (
+    <Alert severity="info" sx={{ mb: 2 }}>
+      <Typography variant="body2" fontWeight={600}>Your saved progress has been restored. This response has not been saved.</Typography>
+      {unsentResponse.question && <Typography variant="body2" sx={{ mt: 1 }}>{unsentResponse.question}</Typography>}
+      <Typography variant="body2" sx={{ mt: 1, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{unsentResponse.message}</Typography>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+        {cycleQuestionProgress && cycleQuestionProgress.responses.length > 0 && (
+          <Button size="small" onClick={() => { setShowReport(false); setShowSavedResponses(previous => !previous); }}>
+            {showSavedResponses ? 'Hide saved answers' : 'Review saved answers'}
+          </Button>
+        )}
+        <Button size="small" color="inherit" onClick={() => setUnsentResponse(null)}>Dismiss unsent response</Button>
+      </Box>
+    </Alert>
+  );
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
         <CircularProgress />
       </Box>
     );
+  }
+
+  if (!contextLoaded && error) {
+    return <Alert severity="warning" action={<Button onClick={() => { void loadConversation(); }}>Try again</Button>}>
+      {error}
+    </Alert>;
   }
 
   // Not started - show start button
@@ -627,6 +731,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
   if (showReport && report) {
     return (
       <Box>
+        {recoveryNotice}
         <Button
           variant="outlined"
           onClick={() => setShowReport(false)}
@@ -637,7 +742,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
         {cycleQuestionProgress && cycleQuestionProgress.total > 0 && (
           <CycleResponsesReview
             progress={cycleQuestionProgress}
-            busy={isSubmitting || isRegenerating}
+            busy={isSubmitting || isRegenerating || conversationClosed}
             onSave={handleEditCycleResponse}
           />
         )}
@@ -647,7 +752,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
           onSubmit={handleSubmitReport}
           onRegenerate={generateReport}
           isSubmitting={isSubmitting}
-          submitDisabled={evidenceBusy}
+          submitDisabled={evidenceBusy || conversationClosed}
           isRegenerating={isRegenerating}
           requireSelfRating={requireSelfRating}
         />
@@ -664,6 +769,10 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
   // Main conversation view
   return (
     <Box>
+      {recoveryNotice}
+      {showSavedResponses && cycleQuestionProgress && (
+        <CycleResponsesReview progress={cycleQuestionProgress} busy={isProcessing || isRegenerating || conversationClosed} onSave={handleEditCycleResponse} />
+      )}
       <Paper
         variant="outlined"
         sx={{
@@ -774,12 +883,12 @@ export default function ConversationalAssessment({ appraisalId, onComplete, onCh
           messages={messages}
           onSendMessage={handleSendMessage}
           onUploadFile={handleUploadFile}
-          isLoading={isProcessing}
+          isLoading={isProcessing || isRestoring}
           currentPhase={conversationState?.currentPhase || 'okr_reflection'}
           cycleQuestionProgress={cycleQuestionProgress}
           onSubmitCycleResponse={handleSubmitCycleResponse}
           disabled={
-            conversationState?.currentPhase === 'completed'
+            conversationClosed || conversationState?.currentPhase === 'completed'
             || (
               (conversationState?.currentPhase === 'review' || conversationState?.currentPhase === 'report_generation')
               && !allowReviewConversation

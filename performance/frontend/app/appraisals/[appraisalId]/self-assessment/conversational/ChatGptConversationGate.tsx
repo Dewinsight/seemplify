@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Alert,
@@ -51,21 +51,29 @@ export default function ChatGptConversationGate({
   appraisalId,
   onUseManualForm,
   children,
+  active = true,
 }: {
   appraisalId: string;
   onUseManualForm?: () => void;
   children: (controls: GateControls) => ReactNode;
+  active?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<GateState>('checking');
   const [account, setAccount] = useState<ChatGptAccount | null>(null);
   const [detail, setDetail] = useState('');
+  const [hasOpened, setHasOpened] = useState(false);
+  const latestCheck = useRef(0);
 
   const checkConnection = useCallback(async () => {
-    setState('checking');
+    const check = ++latestCheck.current;
+    // A background connection check must not tear down an open composer or
+    // abandon the response to an answer that is still being saved.
+    setState(previous => previous === 'ready' ? previous : 'checking');
     setDetail('');
     try {
       const result = dataOf<{ account: ChatGptAccount; policy: RuntimePolicy }>(await api.get('/ai-account'));
+      if (check !== latestCheck.current) return;
       setAccount(result.account);
 
       if (!result.policy?.chatgptEnabled) {
@@ -74,6 +82,7 @@ export default function ChatGptConversationGate({
       }
 
       if (result.account?.routable && !result.account.lastError) {
+        setHasOpened(true);
         setState('ready');
         return;
       }
@@ -86,6 +95,7 @@ export default function ChatGptConversationGate({
 
       setState('required');
     } catch (reason) {
+      if (check !== latestCheck.current) return;
       setDetail(errorMessage(reason));
       setState('unavailable');
     }
@@ -97,12 +107,15 @@ export default function ChatGptConversationGate({
   }, [checkConnection]);
 
   useEffect(() => {
+    if (!active) return;
     const refreshOnFocus = () => { void checkConnection(); };
     window.addEventListener('focus', refreshOnFocus);
     return () => window.removeEventListener('focus', refreshOnFocus);
-  }, [checkConnection]);
+  }, [active, checkConnection]);
 
   const requireChatGptConnection = useCallback((message?: string) => {
+    // A failed write is newer evidence than an earlier background check.
+    ++latestCheck.current;
     setDetail(message || 'ChatGPT became unavailable. Reconnect or try again before continuing.');
     setState('unavailable');
   }, []);
@@ -117,12 +130,17 @@ export default function ChatGptConversationGate({
         ? 'ChatGPT is not available for this workspace'
         : 'ChatGPT is required';
 
+  // The render prop forwards this event handler to a component; it does not
+  // invoke the handler or read its request-sequence ref during render.
+  // eslint-disable-next-line react-hooks/refs
+  const conversationContent = hasOpened ? children({ requireChatGptConnection }) : null;
+
   return (
     <>
-      {state === 'ready' ? children({ requireChatGptConnection }) : null}
+      {conversationContent}
 
       <Dialog
-        open={state !== 'ready'}
+        open={active && state !== 'ready'}
         disableEscapeKeyDown
         onClose={() => undefined}
         aria-labelledby="chatgpt-required-title"

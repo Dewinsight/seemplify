@@ -2317,7 +2317,8 @@ test('completes frozen cycle questions inside guided self-assessment, reviews ex
   await card.getByRole('button', { name: 'Save and continue' }).click();
 
   await expect(card).toContainText('Was the change adopted?');
-  await expect(page.getByText('This answer was saved in another session. The latest question is now shown.')).toBeVisible();
+  await expect(page.getByText('Your saved progress has been restored. This response has not been saved.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Dismiss unsent response', exact: true }).click();
   await card.getByRole('radio', { name: 'Yes' }).check();
   await card.getByRole('button', { name: 'Save and continue' }).click();
 

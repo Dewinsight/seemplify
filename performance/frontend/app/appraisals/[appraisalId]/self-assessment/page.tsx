@@ -19,7 +19,9 @@ import {
   Grid,
   TextField,
   Rating,
-  Snackbar
+  Snackbar,
+  Tabs,
+  Tab
 } from '@mui/material';
 import { ArrowBack, AutoAwesome, EditNote, Save, Send } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
@@ -116,7 +118,11 @@ function SelfAssessmentContent() {
   const appraisalId = params.appraisalId as string;
 
   const { appraisal, isLoading, mutate } = useAppraisal(appraisalId);
+  const [conversationOpened, setConversationOpened] = useState(searchParams.get('assessmentMode') !== 'form');
+  const [conversationBusy, setConversationBusy] = useState(false);
+  const [switchingView, setSwitchingView] = useState(false);
   const chooseManualForm = () => {
+    setConversationOpened(true);
     const query = new URLSearchParams(searchParams.toString());
     query.set('assessmentMode', 'form');
     router.replace(`${pathname}?${query.toString()}`, { scroll: false });
@@ -293,6 +299,27 @@ function SelfAssessmentContent() {
     }
   };
 
+  const changeAssessmentView = async (next: 'conversation' | 'form') => {
+    if (switchingView || saving || submitting || conversationBusy || documentsBusy || cvBusy) return;
+    setSwitchingView(true);
+    try {
+      // Flush the form's cycle answers before resuming the shared question flow.
+      // Summary drafts live in this page and survive switching either way.
+      if (next === 'conversation' && !conversationSelected) {
+        if (await customSectionsRef.current?.save(false) === false) return;
+      }
+      await refreshDocuments();
+      setConversationOpened(true);
+      const query = new URLSearchParams(searchParams.toString());
+      query.set('assessmentMode', next);
+      router.replace(`${pathname}?${query.toString()}`, { scroll: false });
+    } catch {
+      setSnackbar({ open: true, message: 'Your view could not be changed. Your text is still here; please try again.', severity: 'error' });
+    } finally {
+      setSwitchingView(false);
+    }
+  };
+
   return (
     <Box>
       <Paper
@@ -324,7 +351,6 @@ function SelfAssessmentContent() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-          {conversationSelected && <Button variant="outlined" onClick={chooseManualForm}>Use manual form</Button>}
           <Chip
             icon={conversationSelected ? <AutoAwesome /> : <EditNote />}
             color={conversationSelected ? 'primary' : 'default'}
@@ -334,6 +360,25 @@ function SelfAssessmentContent() {
           />
           </Box>
         </Box>
+        {aiAssistEnabled && (
+          <Box sx={{ mt: 2 }}>
+            <Tabs
+              value={conversationSelected ? 'conversation' : 'form'}
+              onChange={(_, value: 'conversation' | 'form') => { void changeAssessmentView(value); }}
+              aria-label="Assessment view"
+              variant="fullWidth"
+              sx={{ maxWidth: 480 }}
+            >
+              <Tab value="conversation" label="AI chat" icon={<AutoAwesome fontSize="small" />} iconPosition="start"
+                disabled={switchingView || saving || submitting || conversationBusy || documentsBusy || cvBusy} />
+              <Tab value="form" label="Answer form" icon={<EditNote fontSize="small" />} iconPosition="start"
+                disabled={switchingView || saving || submitting || conversationBusy || documentsBusy || cvBusy} />
+            </Tabs>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Use AI chat for guided questions, or enter answers directly in the form. Switch back without losing your place.
+            </Typography>
+          </Box>
+        )}
       </Paper>
 
       {appraisal.deadlines?.selfAssessmentDue && (
@@ -352,13 +397,15 @@ function SelfAssessmentContent() {
         fallback={<AppraisalDocuments key={`cv-${appraisalId}`} kind="cv" cvRequired={cvRequired} appraisalId={appraisalId} documents={appraisal.documents}
           onChanged={refreshDocuments} disabled={saving || submitting || documentsBusy} onBusyChange={setCvBusy} />} />
 
-      {conversationSelected ? (
-        <Fade in>
-          <Box>
-            <ChatGptConversationGate appraisalId={appraisalId} onUseManualForm={chooseManualForm}>
+      {aiAssistEnabled && (conversationSelected || conversationOpened) && (
+          <Box hidden={!conversationSelected}>
+            <ChatGptConversationGate appraisalId={appraisalId} active={conversationSelected} onUseManualForm={chooseManualForm}>
               {({ requireChatGptConnection }) => (
                 <ConversationalAssessment
                   appraisalId={appraisalId}
+                  active={conversationSelected}
+                  onBusyChange={setConversationBusy}
+                  onAppraisalChanged={refreshDocuments}
                   evidenceBusy={cvBusy || documentsBusy || cvMissing}
                   onComplete={handleConversationComplete}
                   onChatGptUnavailable={requireChatGptConnection}
@@ -366,8 +413,8 @@ function SelfAssessmentContent() {
               )}
             </ChatGptConversationGate>
           </Box>
-        </Fade>
-      ) : (
+      )}
+      {!conversationSelected && (
         <Fade in>
           <Box>
             <CustomAssessmentSections
