@@ -17,12 +17,14 @@ endpoint on a different address remains separate.
 
 `hostinger-native-ci.slice` caps the native agents and their user service
 managers together at 2 CPUs / 7 GiB, no swap. A runner process has a 4-GiB
-ceiling, and each rootless engine has a 4-GiB ceiling within the aggregate slice.
+ceiling, and each CI user service manager (including its rootless engine and
+all container scopes) has a 4-GiB ceiling within the aggregate slice.
 This host's rootless systemd container-scope creation requires interactive
 authorization. The isolated engine therefore uses the cgroupfs compatibility
 setting (Docker reports cgroup driver `none`); individual Docker resource flags
 are ignored. The host systemd service and aggregate slice enforce the stated
-ceilings on the engine and all inherited container processes. Never substitute
+ceilings through the user service manager, including container scopes created
+beside the engine service. Never substitute
 per-container Docker flags for those host limits or remove the shared lease.
 Only one native job or local release may hold
 `/run/lock/hostinger-ci-compute.lock`. The job-start hook holds a lease tied to

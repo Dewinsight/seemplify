@@ -75,6 +75,10 @@ EOF
   cat >"/etc/systemd/system/user@$uid.service.d/hostinger-ci.conf" <<'EOF'
 [Service]
 Slice=hostinger-native-ci.slice
+MemoryMax=4G
+MemorySwapMax=0
+CPUQuota=200%
+TasksMax=3072
 EOF
   loginctl enable-linger "$account"
   systemctl daemon-reload
