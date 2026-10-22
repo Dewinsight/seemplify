@@ -1,0 +1,12 @@
+[Unit]
+Description=Check disposable runner npm downloads hourly
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=1h
+RandomizedDelaySec=5m
+Persistent=true
+Unit=seemplify-runner-cache.service
+
+[Install]
+WantedBy=timers.target

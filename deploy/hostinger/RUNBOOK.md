@@ -312,7 +312,13 @@ authenticated browser view, and the complete production smoke suite.
 
 `seemplify-backup.timer` runs daily at 02:15 Africa/Lagos with up to 15 minutes
 of randomized delay. Backups are root-only under `/var/backups/seemplify`, with
-14-day local retention.
+**one verified complete snapshot retained**. The previous copy remains until
+the replacement passes SHA-256, compressed-stream checks and real restores into
+isolated disposable databases. A failed replacement preserves the previous
+`latest` pointer and good recovery copy. Unusable failed-attempt payloads are
+removed after writers resume, with a bounded `last-failure.txt` diagnostic and
+the service journal retained. Old good snapshots are retired only after
+promotion. Shared model hardlinks remain valid in the retained snapshot.
 
 ```bash
 systemctl list-timers seemplify-backup.timer
@@ -324,7 +330,7 @@ readlink -f /var/backups/seemplify/latest
 Scheduled and standalone manual backups must use this service so they share
 `/var/lock/seemplify-production-deploy.lock` with deployments. The service waits
 up to 30 minutes for the deployment lock, then the backup script takes its own
-backup lock. The timer cadence and 14-day retention remain unchanged. A lock
+backup lock. The daily timer cadence remains unchanged. A lock
 timeout is a failed backup to investigate, not a successful snapshot.
 
 When rebuilding/restoring a host, install the reviewed drop-in from a verified
@@ -352,6 +358,13 @@ Weaviate, Postal, Mail API, Experience runtime, Dokploy and gateway
 state, including the Workspace uploads volume. If the separately staged n8n
 containers exist, it also writes a native n8n PostgreSQL dump and archives the
 n8n home volume. All generated files are covered by `SHA256SUMS`.
+Managed Cloudinary CVs are downloaded through the existing authenticated storage
+adapter into root-only `managed-cv-backup.json`. Every CV byte hash must match
+its paired MongoDB reference during restore. Local private files retain their
+existing manifest and isolated restore checks. Provider credentials and signed
+download URLs are never embedded in CV metadata. To recover after provider data
+loss, restore the saved bytes through the storage adapter and reconcile the
+resulting references before reopening assessments.
 
 Keep the pre-n8n Automation Hub SQLite volume as a rollback asset. Record only
 its Docker volume name in root-owned `/etc/seemplify/backup.env`:
@@ -393,6 +406,36 @@ verify the archive by decrypting and reading every member. Keep that data backup
 outside Git; the encrypted access handover contains its checksum and location.
 This one-time offline copy does not configure recurring off-host backups.
 Configure a Cloudflare R2 destination when its credentials are issued.
+
+### Bounded runner and deployment storage
+
+`seemplify-runner-cache.timer` scans the build runner hourly with up to five
+minutes of jitter. Above 1 GiB, its service clears only `/home/runner/.npm` using
+the runner's installed npm CLI as the non-root runner user. It takes the existing
+production lock and the **same compute-lock inode** used by native and local CI.
+Busy workers, dependency processes, recovery markers, changed runner identity,
+unexpected cache paths and missing locks prevent cleanup. Toolchains, browser
+caches, checkouts, application volumes and release images are preserved.
+
+`seemplify-storage-maintenance.timer` also bounds each derived archive category
+to its newest readable tar: `release-source-archives` and
+`chatgpt-gateway-deployments`. Retention runs even with ample free space. A corrupt
+replacement prevents retirement; partial writes and symlinks are ignored.
+The shared deployment lock excludes archive writers during retention checks.
+Existing running-image and rollback-image protections stay in force.
+
+Install from a tested checkout while holding the production deployment lock:
+
+```bash
+flock --exclusive --wait 1800 /run/lock/seemplify-production-deploy.lock \
+  bash deploy/hostinger/install-storage-policy.sh
+systemctl start seemplify-runner-cache.service
+systemctl list-timers seemplify-runner-cache.timer seemplify-storage-maintenance.timer
+```
+
+The `Hostinger storage policy` workflow tests and installs this policy without
+recreating application containers. Its deployed Git SHA is recorded in
+`/opt/seemplify/deploy/hostinger/storage-policy.revision`.
 
 The current Cloudflare token is DNS-only and receives HTTP `403` from the R2
 bucket API. To finish R2, activate R2 without changing DNS, create a dedicated

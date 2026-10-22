@@ -1,0 +1,16 @@
+[Unit]
+Description=Bound disposable npm downloads in the idle Seemplify build runner
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/seemplify/deploy/hostinger/runner-cache-maintenance.py --apply
+TimeoutStartSec=10m
+UMask=0077
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=50%
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true

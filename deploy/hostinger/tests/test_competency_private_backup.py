@@ -164,6 +164,10 @@ elif args[0] == 'exec':
                 fails = failure != "none"
                 (self.source / KEY).chmod(0o644 if failure == "archive" else 0o600)
                 backup = self.root / (failure + "-backup")
+                previous = backup / '20200101T000000Z'
+                previous.mkdir(parents=True)
+                (previous / 'recovery-data').write_bytes(b'last-good-backup')
+                (backup / 'latest').symlink_to(previous.name)
                 script = template.replace("/var/backups/seemplify", str(backup))
                 script = script.replace("/opt/seemplify/data/competency", str(self.source))
                 script = script.replace("/run/lock/seemplify-backup.lock", str(self.root / "backup.lock"))
@@ -174,7 +178,11 @@ elif args[0] == 'exec':
                 result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env)
                 self.assertEqual(result.returncode == 0, not fails, result.stderr)
                 self.assertEqual(log.read_text().splitlines(), ["pause:private-writer", "unpause:private-writer"])
-                self.assertEqual(len(list(backup.glob("*/FAILED"))), int(fails))
+                self.assertEqual((backup / 'last-failure.txt').exists(), fails)
+                self.assertEqual((previous / 'recovery-data').read_bytes(), b'last-good-backup')
+                self.assertEqual((backup / 'latest').resolve(), previous)
+                if fails:
+                    self.assertEqual(list(backup.glob('20*')), [previous], 'Failed payloads must not accumulate')
 
 
 if __name__ == "__main__":

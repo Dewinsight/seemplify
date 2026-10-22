@@ -12,6 +12,31 @@ import time
 APP_REPOSITORIES = {"recruiter-backend", "recruiter-frontend", "candidate-portal", "identity-provider", "leave-backend", "leave-frontend", "performance-backend", "performance-frontend", "payroll-backend", "payroll-frontend", "time-backend", "time-frontend", "ai-interview-backend", "ai-interview-frontend", "marketing", "knowledge-runtime", "approver", "chatgpt-gateway", "mail-api", "mail-relay", "turn-api"}
 RELEASES = Path('/opt/seemplify/releases')
 ARCHIVES = Path('/var/backups/seemplify/release-source-archives')
+GATEWAY_ARCHIVES = Path('/var/backups/seemplify/chatgpt-gateway-deployments')
+
+def prune_archives(root, pattern, apply=False):
+    """Keep one complete archive per category, regardless of free disk space."""
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError('Unsafe deployment archive directory')
+    files = [p for p in root.iterdir() if re.fullmatch(pattern, p.name)
+             and not p.is_symlink() and p.is_file()]
+    files.sort(key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
+    if len(files) < 2:
+        return []
+    # Fully read the retained tar before unlinking any predecessor. Incomplete
+    # .partial writes cannot become candidates and corrupt replacements fail shut.
+    subprocess.run(['tar', '-tzf', str(files[0])], stdout=subprocess.DEVNULL,
+                   stderr=subprocess.PIPE, check=True)
+    removed = []
+    for older in files[1:]:
+        if older.resolve().parent != root.resolve() or older.is_symlink():
+            raise ValueError('Archive path changed during retention')
+        if apply:
+            older.unlink()
+        removed.append(older.name)
+    return removed
 
 def command(args):
     return subprocess.check_output(args, text=True)
@@ -79,15 +104,20 @@ def main():
         print(json.dumps({'skipped': 'production deployment is active'}))
         return
     before = shutil.disk_usage('/').free
-    if before >= args.min_free_gib * 1024**3:
-        print(json.dumps({'sufficientHeadroom': True, 'freeGiB': round(before/1024**3, 2)}))
+    retired = {
+        'source': prune_archives(ARCHIVES, r'[a-f0-9]{40}\.tar\.gz', args.apply),
+        'gateway': prune_archives(GATEWAY_ARCHIVES, r'predeploy-[a-f0-9]{40}\.tar\.gz', args.apply),
+    }
+    if shutil.disk_usage('/').free >= args.min_free_gib * 1024**3:
+        print(json.dumps({'sufficientHeadroom': True, 'retiredArchives': retired,
+                          'freeGiB': round(shutil.disk_usage('/').free/1024**3, 2)}))
         return
     ids = list(dict.fromkeys(command(['docker','image','ls','-q','--no-trunc']).splitlines()))
     images = json.loads(command(['docker','image','inspect'] + ids))
     container_ids = command(['docker','ps','-aq']).splitlines()
     containers = json.loads(command(['docker','inspect'] + container_ids)) if container_ids else []
     selected = select_images(images, {row['Image'] for row in containers})
-    report = {'unusedImageTags': [tag for row in selected for tag in row['RepoTags']], 'archivedReleases': [], 'containersRemoved': 0, 'volumesRemoved': 0, 'applied': args.apply}
+    report = {'unusedImageTags': [tag for row in selected for tag in row['RepoTags']], 'archivedReleases': [], 'retiredArchives': retired, 'containersRemoved': 0, 'volumesRemoved': 0, 'applied': args.apply}
     if args.apply:
         for image in selected:
             # The lock excludes every canonical Seemplify deployment. Docker
@@ -114,11 +144,13 @@ def main():
             temporary.chmod(0o600)
             os.replace(temporary, target)
         # Compare every archived file against the original before removing
-        # this inactive source copy. Archives remain recoverable indefinitely.
+        # this inactive source copy. Retention bounds these derived copies.
         subprocess.run(['tar','--compare','-zf',str(target),'-C',str(RELEASES)], check=True, capture_output=True)
         assert eligible_release(folder, protected, current_references(containers), newest, time.time())
         assert folder.resolve().parent == RELEASES.resolve() and not folder.is_symlink()
         shutil.rmtree(folder)
+    if args.apply:
+        report['retiredArchives']['source'] += prune_archives(ARCHIVES, r'[a-f0-9]{40}\.tar\.gz', True)
     report['freeGiB'] = round(shutil.disk_usage('/').free/1024**3, 2)
     report['freedGiB'] = round((shutil.disk_usage('/').free-before)/1024**3, 2)
     print(json.dumps(report))

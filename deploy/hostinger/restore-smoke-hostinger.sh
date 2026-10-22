@@ -4,7 +4,7 @@ set -Eeuo pipefail
 umask 077
 
 BACKUP_ROOT="/var/backups/seemplify"
-LATEST_BACKUP="$(readlink -f "${BACKUP_ROOT}/latest")"
+LATEST_BACKUP="${SEEMPLIFY_RESTORE_BACKUP:-$(readlink -f "${BACKUP_ROOT}/latest")}"
 RUN_ID="$$"
 MONGO_CONTAINER="seemplify-restore-smoke-mongo-${RUN_ID}"
 EXPERIENCE_CONTAINER="seemplify-restore-smoke-experience-${RUN_ID}"
@@ -22,6 +22,7 @@ case "${LATEST_BACKUP}" in
     exit 1
     ;;
 esac
+[[ -d "${LATEST_BACKUP}" && ! -L "${LATEST_BACKUP}" ]] || { echo 'Unsafe restore snapshot' >&2; exit 1; }
 
 cleanup_container() {
   local container="$1"
@@ -168,7 +169,7 @@ if archive.exists():
     print('competency private isolated restore ok files=' + str(len(expected)))
 COMPETENCY_RESTORE_PY
 
-python3 - "${LATEST_BACKUP}" <<'PY'
+python3 - "${LATEST_BACKUP}" <<'QUEUE_RESTORE_PY'
 from pathlib import Path, PurePosixPath
 import sqlite3
 import sys
@@ -186,12 +187,14 @@ if archive.is_file():
     print('production configuration archive validation ok')
 queue = backup / 'hostinger-ci-queue.sqlite3'
 if queue.is_file():
-    database = sqlite3.connect('file:' + str(queue) + '?mode=ro', uri=True)
+    # sqlite3.backup produced a standalone immutable snapshot. Avoid creating
+    # WAL/SHM sidecars during verification of the checksum-covered directory.
+    database = sqlite3.connect('file:' + str(queue) + '?mode=ro&immutable=1', uri=True)
     assert database.execute('pragma integrity_check').fetchone()[0] == 'ok'
     assert database.execute("select count(*) from sqlite_master where name='jobs'").fetchone()[0] == 1
     database.close()
     print('deployment queue snapshot validation ok')
-PY
+QUEUE_RESTORE_PY
 
 MONGO_PASSWORD="$(openssl rand -hex 24)"
 docker run -d --rm \
@@ -222,6 +225,9 @@ if [[ -f "${LATEST_BACKUP}/competency-private.manifest.json" ]]; then
   docker cp "${LATEST_BACKUP}/competency-private.manifest.json" \
     "${MONGO_CONTAINER}:/tmp/competency-private.manifest.json"
 fi
+if [[ -f "${LATEST_BACKUP}/managed-cv-backup.json" ]]; then
+  docker cp "${LATEST_BACKUP}/managed-cv-backup.json" "${MONGO_CONTAINER}:/tmp/managed-cv-backup.json"
+fi
 # Metadata-only DB restoration is insufficient: every currently usable private
 # reference must have matching bytes in the independently restored manifest.
 # COMPETENCY_REFERENCE_CHECK_START
@@ -232,6 +238,18 @@ docker exec "${MONGO_CONTAINER}" mongosh --quiet \
     const p = "/tmp/competency-private.manifest.json";
     const entries = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")).files : [];
     const files = new Map(entries.map(item => [item.key, item]));
+    const managedPath = "/tmp/managed-cv-backup.json";
+    if (fs.existsSync(managedPath)) {
+      const managed = JSON.parse(fs.readFileSync(managedPath, "utf8"));
+      if (managed.schemaVersion !== 1 || !Array.isArray(managed.files)) throw Error("Invalid managed CV backup");
+      for (const item of managed.files) {
+        if (!item.storageKey.startsWith("cloudinary-cv:v1:") || files.has(item.storageKey)) throw Error("Invalid managed CV reference");
+        const bytes = Buffer.from(item.dataBase64, "base64");
+        if (require("crypto").createHash("sha256").update(bytes).digest("hex") !== item.sha256) throw Error("Managed CV backup hash mismatch");
+        files.set(item.storageKey, item);
+      }
+      print("managed CV backup bytes verified files=" + managed.files.length);
+    }
     const database = db.getSiblingDB("performance_db");
     const now = new Date();
     const references = [

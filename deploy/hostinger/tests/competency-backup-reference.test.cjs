@@ -19,13 +19,13 @@ const key='12345678-1234-4234-8234-123456789abc',sha256='a'.repeat(64);
 before(async()=>{server=await MongoMemoryServer.create();client=new MongoClient(server.getUri());await client.connect();database=client.db('performance_db');});
 after(async()=>{await client?.close();await server?.stop();});
 beforeEach(async()=>{await database.dropDatabase();});
-async function check(files){
+async function check(files,managed=null){
   const logs=[];
   await new AsyncFunction('db','require','print',code)(
     {getSiblingDB:name=>{assert.equal(name,'performance_db');return new Proxy({}, {
       get:(_,collection)=>({find:(filter,projection)=>database.collection(collection).find(filter,{projection})})
     });}},
-    name=>{assert.equal(name,'fs');return{existsSync:()=>files!==null,readFileSync:()=>JSON.stringify({files})};},
+    name=>{if(name==='crypto')return require('node:crypto');assert.equal(name,'fs');return{existsSync:p=>p.endsWith('managed-cv-backup.json')?managed!==null:files!==null,readFileSync:p=>JSON.stringify(p.endsWith('managed-cv-backup.json')?managed:{files})};},
     line=>logs.push(line));
   return logs;
 }
@@ -57,4 +57,15 @@ test('expired or deletion-pending sources do not falsely require removed private
 });
 test('unused archived files are retained without inventing live references',async()=>{
   assert.deepEqual(await check([entry]),['competency restored reference integrity ok references=0']);
+});
+
+test('managed CV references require independently restored matching private bytes',async()=>{
+  const bytes=Buffer.from('fictional CV'),hash=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+  const storageKey='cloudinary-cv:v1:fixture';
+  await database.collection('competencyevidences').insertOne({storageKey,sha256:hash,status:'ready',retention:{expiresAt:null}});
+  await assert.rejects(()=>check([]),/reference\/hash mismatch/);
+  const managed={schemaVersion:1,files:[{storageKey,sha256:hash,dataBase64:bytes.toString('base64')}]};
+  assert.deepEqual(await check([],managed),['managed CV backup bytes verified files=1','competency restored reference integrity ok references=1']);
+  managed.files[0].dataBase64=Buffer.from('altered CV').toString('base64');
+  await assert.rejects(()=>check([],managed),/CV backup hash mismatch/);
 });

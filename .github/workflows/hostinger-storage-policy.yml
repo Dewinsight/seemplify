@@ -1,0 +1,67 @@
+name: Hostinger storage policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/hostinger/runner-cache-maintenance.py'
+      - 'deploy/hostinger/seemplify-runner-cache.*'
+      - 'deploy/hostinger/storage-maintenance.py'
+      - 'deploy/hostinger/storage-maintenance.test.py'
+      - 'deploy/hostinger/backup-hostinger.sh'
+      - 'deploy/hostinger/restore-smoke-hostinger.sh'
+      - 'deploy/hostinger/tests/test_storage_policy.py'
+      - 'deploy/hostinger/install-storage-policy.sh'
+      - '.github/workflows/hostinger-storage-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-storage-policy
+  cancel-in-progress: false
+
+jobs:
+  verify-and-install:
+    runs-on: [self-hosted, dewinsight-kvm8-control]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify retention and busy-runner safety
+        run: |
+          python3 -m unittest discover -s deploy/hostinger/tests -p test_storage_policy.py -v
+          python3 -m unittest discover -s deploy/hostinger/tests -p test_competency_private_backup.py -v
+          python3 deploy/hostinger/storage-maintenance.test.py
+          bash -n deploy/hostinger/backup-hostinger.sh deploy/hostinger/install-storage-policy.sh deploy/hostinger/restore-smoke-hostinger.sh
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Install tested main revision
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+        run: |
+          set -euo pipefail
+          payload="/var/tmp/seemplify-storage-$GITHUB_SHA.tgz"
+          tar -czf storage-policy.tgz deploy/hostinger
+          scp storage-policy.tgz "$SSH_USER@$SSH_HOST:$payload"
+          ssh "$SSH_USER@$SSH_HOST" "POLICY_SHA='$GITHUB_SHA' flock --exclusive --wait 1800 /run/lock/seemplify-production-deploy.lock bash -s" <<'REMOTE'
+          set -euo pipefail
+          payload="/var/tmp/seemplify-storage-$POLICY_SHA.tgz"
+          work=$(mktemp -d /var/tmp/seemplify-storage.XXXXXXXX)
+          trap 'rm -rf -- "$work"; rm -f -- "$payload"' EXIT
+          tar -xzf "$payload" -C "$work"
+          bash "$work/deploy/hostinger/install-storage-policy.sh"
+          printf '%s\n' "$POLICY_SHA" >/opt/seemplify/deploy/hostinger/storage-policy.revision
+          REMOTE
+          ssh "$SSH_USER@$SSH_HOST" 'systemctl start seemplify-runner-cache.service; systemctl show seemplify-runner-cache.service -p Result; systemctl is-active seemplify-backup.timer seemplify-runner-cache.timer'

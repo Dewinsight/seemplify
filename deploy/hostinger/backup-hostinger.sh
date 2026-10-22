@@ -4,7 +4,6 @@ set -Eeuo pipefail
 umask 077
 
 BACKUP_ROOT="/var/backups/seemplify"
-RETENTION_DAYS="${RETENTION_DAYS:-14}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DESTINATION="${BACKUP_ROOT}/${STAMP}"
 LOCK_FILE="/run/lock/seemplify-backup.lock"
@@ -23,7 +22,9 @@ if ! flock -n 9; then
   exit 0
 fi
 
-mkdir -p "${DESTINATION}"
+[[ ! -L "${BACKUP_ROOT}" && ! -e "${DESTINATION}" ]] || { echo 'Unsafe or existing backup destination' >&2; exit 1; }
+mkdir -p "${BACKUP_ROOT}"
+mkdir "${DESTINATION}"
 chmod 700 "${BACKUP_ROOT}" "${DESTINATION}"
 
 PAUSED_CONTAINERS=()
@@ -57,7 +58,24 @@ cleanup_failed_backup() {
   local exit_code=$?
   resume_paused_containers
   if (( exit_code != 0 )); then
-    printf 'Backup failed at %s\n' "$(date -u +%FT%TZ)" >"${DESTINATION}/FAILED"
+    printf 'Backup failed at %s (exit %s); previous verified snapshot preserved\n' "$(date -u +%FT%TZ)" "${exit_code}" >&2
+    # Failed attempts must not accumulate gigabytes while the last good copy
+    # remains intact. Keep a bounded diagnostic instead of unusable payloads.
+    python3 - "${BACKUP_ROOT}" "${STAMP}" "${exit_code}" <<'FAILED_BACKUP_PY'
+import datetime, os, pathlib, re, shutil, sys
+root, stamp = pathlib.Path(sys.argv[1]), sys.argv[2]
+candidate = root / stamp
+assert not root.is_symlink() and re.fullmatch(r'20\d{6}T\d{6}Z', stamp)
+if (root / 'latest').resolve() != candidate.resolve():
+    note = root / '.last-failure.partial'
+    fd = os.open(note, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(f'{datetime.datetime.now(datetime.timezone.utc).isoformat()} candidate={stamp} exit={sys.argv[3]}\n')
+    os.replace(note, root / 'last-failure.txt')
+    assert candidate.is_dir() and not candidate.is_symlink() and not candidate.is_mount()
+    assert candidate.resolve().parent == root.resolve()
+    shutil.rmtree(candidate)
+FAILED_BACKUP_PY
   fi
   exit "${exit_code}"
 }
@@ -137,6 +155,16 @@ timeout 300 docker exec seemplify-shared-mongodb-1 sh -lc \
   'exec mongodump --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip' \
   >"${DESTINATION}/mongodb.archive.gz"
 
+# Capture managed CV references while Performance writers are still paused.
+# Download through the existing authenticated storage adapter after resuming;
+# never put provider credentials or signed URLs in the backup metadata/logs.
+timeout 60 docker exec seemplify-shared-mongodb-1 sh -lc '
+  exec mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval '\''
+    const now=new Date(), d=db.getSiblingDB("performance_db");
+    print(JSON.stringify(d.competencyevidences.find({status:"ready",storageKey:{$regex:"^cloudinary-cv:"},$or:[{"retention.expiresAt":null},{"retention.expiresAt":{$gt:now}}]},{storageKey:1,sha256:1,_id:0}).toArray()));
+  '\''
+' >"${DESTINATION}/managed-cv-backup.json"
+
 if [[ "${COMPETENCY_PRESENT}" == true ]]; then
   timeout 300 python3 - "${DESTINATION}" "${COMPETENCY_SOURCE}" <<'COMPETENCY_ARCHIVE_PY'
 import hashlib, json, os, pathlib, re, stat, sys, tarfile
@@ -169,6 +197,25 @@ else
   printf 'optional_bind_skipped=%s\n' "${COMPETENCY_SOURCE}" >>"${DESTINATION}/SKIPPED"
 fi
 resume_paused_containers
+
+timeout 300 docker exec -i seemplify-core-performance-backend-1 node -e '
+  const crypto=require("node:crypto"), fs=require("node:fs");
+  const storage=require("./services/competency/fileSafetyService");
+  (async()=>{
+    const references=JSON.parse(fs.readFileSync(0,"utf8")), files=[];
+    if(!Array.isArray(references)||references.length>1000) throw Error("Invalid CV backup inventory");
+    let total=0;
+    for(const reference of references){
+      const bytes=await storage.readPrivate(reference.storageKey);
+      if(crypto.createHash("sha256").update(bytes).digest("hex")!==reference.sha256) throw Error("CV backup hash mismatch");
+      total+=bytes.length;if(total>256*1024*1024) throw Error("CV backup exceeds bounded batch size");
+      files.push({...reference,dataBase64:bytes.toString("base64")});
+    }
+    process.stdout.write(JSON.stringify({schemaVersion:1,files}));
+  })().catch(()=>{console.error("Managed CV backup failed; previous recovery snapshot preserved");process.exit(1);});
+' <"${DESTINATION}/managed-cv-backup.json" >"${DESTINATION}/.managed-cv-backup.partial"
+chmod 600 "${DESTINATION}/.managed-cv-backup.partial"
+mv "${DESTINATION}/.managed-cv-backup.partial" "${DESTINATION}/managed-cv-backup.json"
 
 docker exec seemplify-shared-experience-postgres-1 sh -lc \
   'exec pg_dumpall --username "$POSTGRES_USER"' \
@@ -339,16 +386,69 @@ PY
     | xargs -0 sha256sum >SHA256SUMS
 )
 
-ln -sfn "${STAMP}" "${BACKUP_ROOT}/latest"
+# Restore the candidate into disposable isolated databases before promotion.
+# This helper takes no second deployment lock: the caller already owns it.
+SEEMPLIFY_RESTORE_BACKUP="${DESTINATION}" timeout 1800 /usr/local/sbin/seemplify-restore-smoke
 
-find "${BACKUP_ROOT}" \
-  -mindepth 1 \
-  -maxdepth 1 \
-  -type d \
-  -name '20??????T??????Z' \
-  -mtime "+${RETENTION_DAYS}" \
-  -print \
-  -exec rm -rf -- {} +
+# Publish only after every byte and compressed stream has been checked. A
+# failed replacement leaves the previous latest pointer and recovery copy.
+python3 - "${BACKUP_ROOT}" "${STAMP}" <<'BACKUP_RETENTION_PY'
+import hashlib, json, os, pathlib, re, shutil, stat, subprocess, sys
+
+def finalize(root, stamp):
+    root = pathlib.Path(root)
+    if root.is_symlink() or not root.is_dir() or not re.fullmatch(r'20\d{6}T\d{6}Z', stamp):
+        raise ValueError('Unsafe backup root or timestamp')
+    destination = root / stamp
+    if destination.is_symlink() or not destination.is_dir() or (destination / 'FAILED').exists():
+        raise ValueError('Replacement backup is incomplete')
+    manifest = destination / 'SHA256SUMS'
+    if manifest.is_symlink() or not manifest.is_file():
+        raise ValueError('Missing backup manifest')
+    expected = {}
+    for line in manifest.read_text().splitlines():
+        match = re.fullmatch(r'([a-f0-9]{64})  \./([A-Za-z0-9_.-]+)', line)
+        if not match or match[2] in expected:
+            raise ValueError('Unsafe or duplicate checksum entry')
+        expected[match[2]] = match[1]
+    required = {'mongodb.archive.gz', 'production-configuration.tar.gz', 'metadata.txt',
+                'experience-postgres.sql.gz', 'dokploy-postgres.sql.gz', 'mail-mariadb.sql.gz',
+                'shared-redis.rdb', 'chatgpt-gateway-data.tar.gz', 'workspace-uploads.tar.gz', 'managed-cv-backup.json'}
+    if not required.issubset(expected):
+        raise ValueError('Required recovery payload missing')
+    actual = {item.name for item in destination.iterdir() if item.name not in {'SHA256SUMS', 'VERIFIED.json'}}
+    if actual != set(expected):
+        raise ValueError('Backup manifest does not cover all files')
+    for name, checksum in expected.items():
+        item = destination / name
+        if item.is_symlink() or not stat.S_ISREG(item.lstat().st_mode):
+            raise ValueError('Backup contains a non-regular file')
+        with item.open('rb') as stream:
+            if hashlib.file_digest(stream, 'sha256').hexdigest() != checksum:
+                raise ValueError('Backup checksum mismatch: ' + name)
+        if name.endswith('.gz'):
+            subprocess.run(['gzip', '-t', '--', str(item)], check=True, capture_output=True)
+    proof = destination / 'VERIFIED.json'
+    proof.write_text(json.dumps({'policy': 'keep-one-after-verified-replacement', 'files': len(expected),
+                                 'checksumsAndCompressedStreamsVerified': True}) + '\n')
+    proof.chmod(0o600)
+    temporary = root / ('.latest-' + stamp)
+    temporary.symlink_to(stamp)
+    os.replace(temporary, root / 'latest')
+    # Hardlinked models stay alive in the retained snapshot. Never traverse a
+    # symlink or remove a newer directory, including an unfinished replacement.
+    removed = []
+    for older in sorted(root.iterdir()):
+        if (re.fullmatch(r'20\d{6}T\d{6}Z', older.name) and older.name < stamp
+                and not older.is_symlink() and older.is_dir()
+                and older.resolve().parent == root.resolve() and not older.is_mount()):
+            shutil.rmtree(older)
+            removed.append(older.name)
+    print(json.dumps({'verifiedBackup': stamp, 'removedOlderBackups': removed}))
+
+if __name__ == '__main__':
+    finalize(sys.argv[1], sys.argv[2])
+BACKUP_RETENTION_PY
 
 trap - EXIT
 printf 'Backup completed: %s\n' "${DESTINATION}"
