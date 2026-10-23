@@ -83,7 +83,7 @@ services:
       PAYROLL_WEBHOOK_URL: http://payroll-backend:5006/api/webhooks/idp
       PERFORMANCE_WEBHOOK_URL: http://performance-backend:5004/api/webhooks/idp
       TIME_ATTENDANCE_WEBHOOK_URL: http://time-backend:5010/api/webhooks/idp
-      MESSAGING_WEBHOOK_URL: http://workspace-backend:5009/api/webhooks/idp
+      MESSAGING_WEBHOOK_URL: https://api-workspace.seemplifyai.com/api/webhooks/idp
       APPROVER_WEBHOOK_URL: http://approver:80/api/webhooks/idp
       SHARED_AI_ADMIN_BASE_URL: http://recruiter-backend:5001
       AI_GATEWAY_ADMIN_ANALYTICS_SECRET: ${AI_GATEWAY_ADMIN_ANALYTICS_SECRET:?required}

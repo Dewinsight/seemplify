@@ -31,3 +31,13 @@ test('Identity production wiring exposes every dedicated webhook signing secret'
     assert.match(identityService, new RegExp(`\\b${variable}:`))
   }
 })
+
+test('Workspace membership webhooks reach its public API after host separation', () => {
+  const value = name => identityService.match(new RegExp(`^\\s+${name}:\\s*(\\S+)`, 'm'))?.[1]
+  const api = new URL(value('MESSAGING_API_URL'))
+  const webhook = new URL(value('MESSAGING_WEBHOOK_URL'))
+  assert.equal(webhook.protocol, 'https:')
+  assert.equal(webhook.origin, api.origin)
+  assert.equal(webhook.pathname, '/api/webhooks/idp')
+  assert.equal(webhook.username + webhook.password + webhook.search + webhook.hash, '')
+})
